@@ -99,15 +99,15 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
   return (
     <TiptapBubbleMenu
       editor={editor}
-      className="flex items-center gap-1 rounded-lg border border-border bg-card p-1 shadow-lg"
+      className="flex items-center gap-1 rounded-lg border border-border bg-background/95 backdrop-blur-md p-1.5 shadow-xl ring-1 ring-border/50"
     >
       <Button
         size="sm"
         variant="ghost"
         onClick={() => editor.chain().focus().toggleBold().run()}
         className={cn(
-          "h-8 w-8 p-0",
-          editor.isActive("bold") && "bg-accent"
+          "h-8 w-8 p-0 hover:bg-accent hover:text-accent-foreground",
+          editor.isActive("bold") && "bg-accent text-accent-foreground"
         )}
         title="Bold (Cmd+B)"
       >

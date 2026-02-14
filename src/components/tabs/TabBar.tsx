@@ -3,11 +3,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-interface TabBarProps {
-  settingsButton?: React.ReactNode;
-}
-
-export function TabBar({ settingsButton }: TabBarProps) {
+export function TabBar() {
   const { tabs, activeTabId, setActiveTab, closeTab } = useEditorStore();
 
   const handleCloseTab = (
@@ -61,11 +57,8 @@ export function TabBar({ settingsButton }: TabBarProps) {
         </Tabs>
       ) : (
         <div className="flex-1 px-4 py-2 text-sm text-muted-foreground">
-          Notesage
+          No files open
         </div>
-      )}
-      {settingsButton && (
-        <div className="px-2 py-1">{settingsButton}</div>
       )}
     </div>
   );
