@@ -44,12 +44,14 @@ export function TabBar() {
                     <span className="h-2 w-2 rounded-full bg-primary" />
                   )}
                   <span className="max-w-[150px] truncate">{tab.fileName}</span>
-                  <button
+                  <span
                     onClick={(e) => handleCloseTab(e, tab.id, tab.isDirty)}
-                    className="ml-2 hover:bg-accent rounded-sm p-0.5 transition-colors"
+                    className="ml-2 hover:bg-accent rounded-sm p-0.5 transition-colors cursor-pointer inline-flex items-center justify-center"
+                    role="button"
+                    aria-label="Close tab"
                   >
                     <X className="h-3 w-3" />
-                  </button>
+                  </span>
                 </span>
               </TabsTrigger>
             ))}

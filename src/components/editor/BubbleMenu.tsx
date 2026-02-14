@@ -18,6 +18,7 @@ import {
 import { useState } from "react";
 import { useAIStore } from "@/stores/ai-store";
 import { useAIOperations } from "@/hooks/useAIOperations";
+import { setSuggestion, hasActiveSuggestion } from "@/components/editor/extensions";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,6 +35,7 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
   const [isAILoading, setIsAILoading] = useState(false);
   const { provider } = useAIStore();
   const { generateText } = useAIOperations();
+  const hasSuggestion = hasActiveSuggestion(editor);
 
   const setLink = () => {
     const previousUrl = editor.getAttributes("link").href;
@@ -82,12 +84,8 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
 
       const result = await generateText(prompt);
 
-      editor
-        .chain()
-        .focus()
-        .deleteSelection()
-        .insertContent(result.trim())
-        .run();
+      // Show suggestion with decorations instead of immediately replacing
+      setSuggestion(editor, from, to, selectedText, result.trim());
     } catch (error) {
       console.error('AI action failed:', error);
       alert(`AI ${action} failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -270,7 +268,7 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
         <AlignRight className="h-4 w-4" />
       </Button>
 
-      {provider && (
+      {provider && !hasSuggestion && (
         <>
           <Separator orientation="vertical" className="h-6" />
 
@@ -313,6 +311,17 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
           >
             Expand
           </Button>
+        </>
+      )}
+
+      {hasSuggestion && (
+        <>
+          <Separator orientation="vertical" className="h-6" />
+          <div className="flex items-center gap-2 px-2 text-xs text-muted-foreground">
+            <Sparkles className="h-3 w-3 text-green-600 dark:text-green-400" />
+            <span className="font-medium">AI suggestion active</span>
+            <span className="opacity-70">• Press Cmd+Enter to accept or Cmd+Backspace to reject</span>
+          </div>
         </>
       )}
     </TiptapBubbleMenu>

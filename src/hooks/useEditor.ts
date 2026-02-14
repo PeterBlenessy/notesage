@@ -15,6 +15,7 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { common, createLowlight } from "lowlight";
 import { Markdown } from "tiptap-markdown";
 import { SlashCommand } from "@/components/editor/extensions/slash-command";
+import { AISuggestion } from "@/components/editor/extensions";
 import { getMarkdownFromEditor } from "@/lib/markdown";
 
 const lowlight = createLowlight(common);
@@ -91,8 +92,11 @@ export function useEditor({ content, onUpdate, editable = true }: UseEditorOptio
         html: false,
         transformPastedText: true,
         transformCopiedText: true,
+        // Prevent duplicate extensions
+        linkify: false,
       }),
       SlashCommand,
+      AISuggestion,
     ],
     content,
     editable,

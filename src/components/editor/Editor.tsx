@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { EditorContent } from "@tiptap/react";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -15,6 +15,7 @@ export function Editor() {
   const { showFloatingToolbar } = useSettingsStore();
   const { saveFile } = useFileOperations();
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
+  const lastLoadedTabId = useRef<string | null>(null);
 
   const handleUpdate = useCallback(
     (content: string) => {
@@ -35,13 +36,12 @@ export function Editor() {
 
   // Update editor content when switching tabs
   useEffect(() => {
-    if (editor && activeTab) {
-      const currentMarkdown = getMarkdownFromEditor(editor);
-      if (currentMarkdown !== activeTab.content) {
-        editor.commands.setContent(activeTab.content);
-      }
+    if (editor && activeTab && activeTab.id !== lastLoadedTabId.current) {
+      console.log('Switching to tab:', activeTab.id, 'content length:', activeTab.content.length);
+      lastLoadedTabId.current = activeTab.id;
+      editor.commands.setContent(activeTab.content);
     }
-  }, [activeTab?.id, activeTab?.content, editor]);
+  }, [activeTab?.id, editor, activeTab]);
 
   // Handle Cmd+S to save
   useEffect(() => {
