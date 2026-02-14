@@ -3,12 +3,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function TabBar() {
-  const { tabs, activeTabId, setActiveTab, closeTab } = useEditorStore();
+interface TabBarProps {
+  settingsButton?: React.ReactNode;
+}
 
-  if (tabs.length === 0) {
-    return null;
-  }
+export function TabBar({ settingsButton }: TabBarProps) {
+  const { tabs, activeTabId, setActiveTab, closeTab } = useEditorStore();
 
   const handleCloseTab = (
     e: React.MouseEvent,
@@ -28,36 +28,45 @@ export function TabBar() {
   };
 
   return (
-    <div className="border-b border-border bg-card">
-      <Tabs value={activeTabId || undefined} className="w-full">
-        <TabsList className="w-full justify-start rounded-none bg-transparent h-auto p-0">
-          {tabs.map((tab) => (
-            <TabsTrigger
-              key={tab.id}
-              value={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                "relative rounded-none border-r border-border px-4 py-2",
-                "data-[state=active]:bg-background data-[state=active]:shadow-none",
-                "hover:bg-accent/50 transition-colors"
-              )}
-            >
-              <span className="flex items-center gap-2">
-                {tab.isDirty && (
-                  <span className="h-2 w-2 rounded-full bg-primary" />
+    <div className="border-b border-border bg-card flex items-center justify-between">
+      {tabs.length > 0 ? (
+        <Tabs value={activeTabId || undefined} className="flex-1">
+          <TabsList className="w-full justify-start rounded-none bg-transparent h-auto p-0">
+            {tabs.map((tab) => (
+              <TabsTrigger
+                key={tab.id}
+                value={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "relative rounded-none border-r border-border px-4 py-2",
+                  "data-[state=active]:bg-background data-[state=active]:shadow-none",
+                  "hover:bg-accent/50 transition-colors"
                 )}
-                <span className="max-w-[150px] truncate">{tab.fileName}</span>
-                <button
-                  onClick={(e) => handleCloseTab(e, tab.id, tab.isDirty)}
-                  className="ml-2 hover:bg-accent rounded-sm p-0.5 transition-colors"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+              >
+                <span className="flex items-center gap-2">
+                  {tab.isDirty && (
+                    <span className="h-2 w-2 rounded-full bg-primary" />
+                  )}
+                  <span className="max-w-[150px] truncate">{tab.fileName}</span>
+                  <button
+                    onClick={(e) => handleCloseTab(e, tab.id, tab.isDirty)}
+                    className="ml-2 hover:bg-accent rounded-sm p-0.5 transition-colors"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      ) : (
+        <div className="flex-1 px-4 py-2 text-sm text-muted-foreground">
+          Notesage
+        </div>
+      )}
+      {settingsButton && (
+        <div className="px-2 py-1">{settingsButton}</div>
+      )}
     </div>
   );
 }

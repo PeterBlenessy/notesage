@@ -18,6 +18,8 @@ pub fn run() {
             delete_path,
             path_exists,
             open_folder_dialog,
+            ai_generate_text,
+            ai_chat,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

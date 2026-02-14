@@ -1,0 +1,108 @@
+import { useEffect, useRef } from 'react';
+import { X, Trash2, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
+import { useChatStore } from '@/stores/chat-store';
+import { useAIStore } from '@/stores/ai-store';
+import { useAIOperations } from '@/hooks/useAIOperations';
+import { ChatMessage } from './ChatMessage';
+import { ChatInput } from './ChatInput';
+
+interface ChatPanelProps {
+  onClose: () => void;
+}
+
+export function ChatPanel({ onClose }: ChatPanelProps) {
+  const { messages, isLoading, error, clearMessages } = useChatStore();
+  const { provider } = useAIStore();
+  const { sendChatMessage } = useAIOperations();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const handleSend = async (content: string) => {
+    if (!provider) {
+      return;
+    }
+
+    await sendChatMessage(content, messages);
+  };
+
+  const handleClear = () => {
+    if (confirm('Clear all chat history?')) {
+      clearMessages();
+    }
+  };
+
+  return (
+    <div className="w-80 border-l bg-background flex flex-col h-full">
+      <div className="p-4 border-b bg-card flex items-center justify-between">
+        <h2 className="font-semibold text-lg">AI Chat</h2>
+        <div className="flex gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleClear}
+            title="Clear chat history"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onClose} title="Close chat">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {!provider && (
+        <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border-b">
+          <p className="text-sm text-yellow-800 dark:text-yellow-200">
+            Please configure an AI provider in Settings (Cmd+,) before using chat.
+          </p>
+        </div>
+      )}
+
+      <div className="flex-1 overflow-y-auto p-4">
+        {messages.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-muted-foreground text-sm text-center">
+            <p>
+              Start a conversation with AI.
+              <br />
+              Ask questions about your writing or get suggestions.
+            </p>
+          </div>
+        ) : (
+          <>
+            {messages.map((message, index) => (
+              <ChatMessage key={index} message={message} />
+            ))}
+            {isLoading && (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm">AI is thinking...</span>
+              </div>
+            )}
+          </>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {error && (
+        <div className="px-4 py-2 bg-destructive/10 border-t border-destructive/20">
+          <p className="text-sm text-destructive">{error}</p>
+        </div>
+      )}
+
+      <Separator />
+
+      <div className="p-4">
+        <ChatInput onSend={handleSend} disabled={isLoading || !provider} />
+      </div>
+    </div>
+  );
+}

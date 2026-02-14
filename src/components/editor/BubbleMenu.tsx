@@ -12,7 +12,12 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
+import { useState } from "react";
+import { useAIStore } from "@/stores/ai-store";
+import { useAIOperations } from "@/hooks/useAIOperations";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,6 +31,10 @@ interface BubbleMenuProps {
 }
 
 export function BubbleMenu({ editor }: BubbleMenuProps) {
+  const [isAILoading, setIsAILoading] = useState(false);
+  const { provider } = useAIStore();
+  const { generateText } = useAIOperations();
+
   const setLink = () => {
     const previousUrl = editor.getAttributes("link").href;
     const url = window.prompt("URL", previousUrl);
@@ -40,6 +49,51 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
     }
 
     editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+  };
+
+  const handleAIAction = async (action: 'improve' | 'summarize' | 'expand') => {
+    if (!provider) {
+      alert('Please configure an AI provider in Settings first.');
+      return;
+    }
+
+    const { from, to } = editor.state.selection;
+    const selectedText = editor.state.doc.textBetween(from, to, '\n');
+
+    if (!selectedText.trim()) {
+      return;
+    }
+
+    setIsAILoading(true);
+
+    try {
+      let prompt = '';
+      switch (action) {
+        case 'improve':
+          prompt = `Improve the following text while keeping the same meaning and tone:\n\n${selectedText}\n\nProvide only the improved text without any explanation.`;
+          break;
+        case 'summarize':
+          prompt = `Summarize the following text concisely:\n\n${selectedText}\n\nProvide only the summary without any explanation.`;
+          break;
+        case 'expand':
+          prompt = `Expand on the following text with more detail:\n\n${selectedText}\n\nProvide only the expanded text without any explanation.`;
+          break;
+      }
+
+      const result = await generateText(prompt);
+
+      editor
+        .chain()
+        .focus()
+        .deleteSelection()
+        .insertContent(result.trim())
+        .run();
+    } catch (error) {
+      console.error('AI action failed:', error);
+      alert(`AI ${action} failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsAILoading(false);
+    }
   };
 
   return (
@@ -215,6 +269,52 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
       >
         <AlignRight className="h-4 w-4" />
       </Button>
+
+      {provider && (
+        <>
+          <Separator orientation="vertical" className="h-6" />
+
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => handleAIAction('improve')}
+            disabled={isAILoading}
+            className="h-8 px-2 text-sm"
+            title="Improve with AI"
+          >
+            {isAILoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4 mr-1" />
+                Improve
+              </>
+            )}
+          </Button>
+
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => handleAIAction('summarize')}
+            disabled={isAILoading}
+            className="h-8 px-2 text-sm"
+            title="Summarize with AI"
+          >
+            Summarize
+          </Button>
+
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => handleAIAction('expand')}
+            disabled={isAILoading}
+            className="h-8 px-2 text-sm"
+            title="Expand with AI"
+          >
+            Expand
+          </Button>
+        </>
+      )}
     </TiptapBubbleMenu>
   );
 }

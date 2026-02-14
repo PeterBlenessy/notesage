@@ -4,6 +4,8 @@
   outline: none;
   min-height: 400px;
   padding: 2rem;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
 }
 
 .ProseMirror p.is-editor-empty:first-child::before {

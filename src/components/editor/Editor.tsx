@@ -1,6 +1,7 @@
 import { useEffect, useCallback } from "react";
 import { EditorContent } from "@tiptap/react";
 import { useEditorStore } from "@/stores/editor-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useEditor } from "@/hooks/useEditor";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { getMarkdownFromEditor } from "@/lib/markdown";
@@ -11,6 +12,7 @@ import "@/styles/editor.css";
 
 export function Editor() {
   const { tabs, activeTabId, updateTabContent } = useEditorStore();
+  const { showFloatingToolbar } = useSettingsStore();
   const { saveFile } = useFileOperations();
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
 
@@ -84,10 +86,10 @@ export function Editor() {
 
   if (!activeTab) {
     return (
-      <div className="flex h-full items-center justify-center text-muted-foreground">
-        <div className="text-center">
-          <h2 className="text-2xl font-semibold mb-2">No file open</h2>
-          <p>Select a file from the sidebar to start editing</p>
+      <div className="flex h-full items-center justify-center bg-background text-muted-foreground">
+        <div className="text-center p-8 rounded-lg bg-card border border-border shadow-sm">
+          <h2 className="text-2xl font-semibold mb-2 text-foreground">No file open</h2>
+          <p className="text-muted-foreground">Select a file from the sidebar to start editing</p>
         </div>
       </div>
     );
@@ -95,8 +97,10 @@ export function Editor() {
 
   if (!editor) {
     return (
-      <div className="flex h-full items-center justify-center text-muted-foreground">
-        <p>Loading editor...</p>
+      <div className="flex h-full items-center justify-center bg-background">
+        <div className="text-center p-8 rounded-lg bg-card border border-border shadow-sm">
+          <p className="text-muted-foreground">Loading editor...</p>
+        </div>
       </div>
     );
   }
@@ -106,7 +110,7 @@ export function Editor() {
       <Toolbar editor={editor} />
       <div className="flex-1 overflow-y-auto">
         <EditorContent editor={editor} className="h-full" />
-        {editor && <BubbleMenu editor={editor} />}
+        {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}
       </div>
       <StatusBar editor={editor} />
     </div>
