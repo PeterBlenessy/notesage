@@ -20,6 +20,7 @@ pub fn run() {
             open_folder_dialog,
             ai_generate_text,
             ai_chat,
+            ai_chat_stream,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

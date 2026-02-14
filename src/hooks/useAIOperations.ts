@@ -3,10 +3,12 @@ import { useAIStore } from '@/stores/ai-store';
 import { useChatStore } from '@/stores/chat-store';
 import { getAIProvider } from '@/lib/ai';
 import type { ChatMessage } from '@/lib/ai/types';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 export function useAIOperations() {
   const { provider, apiKeys, ollamaUrl } = useAIStore();
-  const { addMessage, setLoading, setError } = useChatStore();
+  const { addMessage, updateMessage, setLoading, setError, setActiveTool } = useChatStore();
 
   const generateText = useCallback(
     async (prompt: string): Promise<string> => {
@@ -41,22 +43,49 @@ export function useAIOperations() {
       const userMessage: ChatMessage = { role: 'user', content };
       addMessage(userMessage);
 
-      try {
-        const aiProvider = getAIProvider(
-          provider,
-          provider === 'ollama' ? undefined : apiKeys[provider],
-          ollamaUrl
-        );
-        const response = await aiProvider.chat([...messages, userMessage]);
+      // Add placeholder message for streaming
+      const assistantMessageId = Date.now();
+      addMessage({ role: 'assistant', content: '', timestamp: assistantMessageId });
 
-        addMessage({ role: 'assistant', content: response });
+      try {
+        let streamedContent = '';
+
+        // Listen for stream chunks
+        const unlistenChunk = await listen<string>('ai-stream-chunk', (event) => {
+          streamedContent += event.payload;
+          updateMessage(assistantMessageId, streamedContent);
+        });
+
+        // Listen for tool use events
+        const unlistenTool = await listen<{ tool: string; status: string }>('ai-tool-use', (event) => {
+          if (event.payload.status === 'start') {
+            setActiveTool(event.payload.tool);
+          }
+        });
+
+        // Listen for stream completion
+        const unlistenDone = await listen('ai-stream-done', () => {
+          unlistenChunk();
+          unlistenTool();
+          unlistenDone();
+          setLoading(false);
+          setActiveTool(null);
+        });
+
+        // Start streaming
+        await invoke('ai_chat_stream', {
+          messages: [...messages, userMessage],
+          provider,
+          apiKey: provider === 'ollama' ? undefined : apiKeys[provider],
+          ollamaUrl,
+        });
       } catch (error) {
         setError(error instanceof Error ? error.message : 'Unknown error');
-      } finally {
         setLoading(false);
+        setActiveTool(null);
       }
     },
-    [provider, apiKeys, ollamaUrl, addMessage, setLoading, setError]
+    [provider, apiKeys, ollamaUrl, addMessage, updateMessage, setLoading, setError, setActiveTool]
   );
 
   return { generateText, sendChatMessage };

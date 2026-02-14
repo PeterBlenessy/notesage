@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { X, Trash2, Loader2 } from 'lucide-react';
+import { X, Trash2, Loader2, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useChatStore } from '@/stores/chat-store';
@@ -13,7 +13,7 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ onClose }: ChatPanelProps) {
-  const { messages, isLoading, error, clearMessages } = useChatStore();
+  const { messages, isLoading, error, activeTool, clearMessages } = useChatStore();
   const { provider } = useAIStore();
   const { sendChatMessage } = useAIOperations();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -81,10 +81,19 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
             {messages.map((message, index) => (
               <ChatMessage key={index} message={message} />
             ))}
-            {isLoading && (
+            {isLoading && !activeTool && (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 <span className="text-sm">AI is thinking...</span>
+              </div>
+            )}
+            {activeTool && (
+              <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 rounded-lg px-3 py-2">
+                <Search className="h-4 w-4 animate-pulse" />
+                <span className="text-sm font-medium">
+                  {activeTool === 'web_search' && 'Searching the web...'}
+                  {activeTool !== 'web_search' && `Using ${activeTool}...`}
+                </span>
               </div>
             )}
           </>

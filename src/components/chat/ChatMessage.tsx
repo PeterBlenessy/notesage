@@ -3,6 +3,7 @@ import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
+import { useChatStore } from '@/stores/chat-store';
 import type { ChatMessage as ChatMessageType } from '@/lib/ai/types';
 
 interface ChatMessageProps {
@@ -11,14 +12,16 @@ interface ChatMessageProps {
 
 export function ChatMessage({ message }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
+  const { isLoading } = useChatStore();
+
+  const isUser = message.role === 'user';
+  const isStreaming = !isUser && isLoading && message.content.length === 0;
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(message.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
-
-  const isUser = message.role === 'user';
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
@@ -33,11 +36,20 @@ export function ChatMessage({ message }: ChatMessageProps) {
           <div className="prose prose-sm dark:prose-invert max-w-none flex-1">
             {isUser ? (
               <p className="m-0 whitespace-pre-wrap">{message.content}</p>
+            ) : isStreaming ? (
+              <div className="flex items-center gap-1">
+                <div className="h-2 w-2 rounded-full bg-current animate-pulse" />
+                <div className="h-2 w-2 rounded-full bg-current animate-pulse delay-75" />
+                <div className="h-2 w-2 rounded-full bg-current animate-pulse delay-150" />
+              </div>
             ) : (
               <div className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {message.content}
                 </ReactMarkdown>
+                {isLoading && (
+                  <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse" />
+                )}
               </div>
             )}
           </div>

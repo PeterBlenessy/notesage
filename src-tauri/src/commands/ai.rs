@@ -41,6 +41,24 @@ pub async fn ai_chat(
     }
 }
 
+#[tauri::command]
+pub async fn ai_chat_stream(
+    window: tauri::Window,
+    messages: Vec<ChatMessage>,
+    provider: String,
+    api_key: Option<String>,
+    ollama_url: Option<String>,
+) -> Result<(), String> {
+    use crate::commands::ai_streaming::*;
+
+    match provider.as_str() {
+        "anthropic" => anthropic_chat_stream(&window, &messages, &api_key).await,
+        "openai" => openai_chat_stream(&window, &messages, &api_key).await,
+        "ollama" => ollama_chat_stream(&window, &messages, &ollama_url).await,
+        _ => Err(format!("Unknown provider: {}", provider)),
+    }
+}
+
 // Anthropic API implementation
 async fn anthropic_generate(request: &AIRequest) -> Result<String, String> {
     let api_key = request
