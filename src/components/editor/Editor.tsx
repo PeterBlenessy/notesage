@@ -6,6 +6,7 @@ import { useFileOperations } from "@/hooks/useFileOperations";
 import { getMarkdownFromEditor } from "@/lib/markdown";
 import { Toolbar } from "./Toolbar";
 import { BubbleMenu } from "./BubbleMenu";
+import { StatusBar } from "./StatusBar";
 import "@/styles/editor.css";
 
 export function Editor() {
@@ -107,6 +108,7 @@ export function Editor() {
         <EditorContent editor={editor} className="h-full" />
         {editor && <BubbleMenu editor={editor} />}
       </div>
+      <StatusBar editor={editor} />
     </div>
   );
 }
