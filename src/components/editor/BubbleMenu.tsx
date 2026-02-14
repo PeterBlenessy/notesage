@@ -15,7 +15,7 @@ import {
   Sparkles,
   Loader2,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAIStore } from "@/stores/ai-store";
 import { useAIOperations } from "@/hooks/useAIOperations";
 import { setSuggestion, hasActiveSuggestion } from "@/components/editor/extensions";
@@ -32,10 +32,29 @@ interface BubbleMenuProps {
 }
 
 export function BubbleMenu({ editor }: BubbleMenuProps) {
-  const [isAILoading, setIsAILoading] = useState(false);
+  const [loadingAction, setLoadingAction] = useState<'improve' | 'summarize' | 'expand' | null>(null);
+  const [hasSuggestion, setHasSuggestion] = useState(false);
   const { provider } = useAIStore();
   const { generateText } = useAIOperations();
-  const hasSuggestion = hasActiveSuggestion(editor);
+
+  // Check for active suggestion on every editor update
+  useEffect(() => {
+    const updateSuggestionState = () => {
+      setHasSuggestion(hasActiveSuggestion(editor));
+    };
+
+    // Initial check
+    updateSuggestionState();
+
+    // Listen to editor updates
+    editor.on('update', updateSuggestionState);
+    editor.on('transaction', updateSuggestionState);
+
+    return () => {
+      editor.off('update', updateSuggestionState);
+      editor.off('transaction', updateSuggestionState);
+    };
+  }, [editor]);
 
   const setLink = () => {
     const previousUrl = editor.getAttributes("link").href;
@@ -66,7 +85,7 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
       return;
     }
 
-    setIsAILoading(true);
+    setLoadingAction(action);
 
     try {
       let prompt = '';
@@ -90,7 +109,7 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
       console.error('AI action failed:', error);
       alert(`AI ${action} failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
-      setIsAILoading(false);
+      setLoadingAction(null);
     }
   };
 
@@ -276,11 +295,11 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
             size="sm"
             variant="ghost"
             onClick={() => handleAIAction('improve')}
-            disabled={isAILoading}
+            disabled={loadingAction !== null}
             className="h-8 px-2 text-sm"
             title="Improve with AI"
           >
-            {isAILoading ? (
+            {loadingAction === 'improve' ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <>
@@ -294,22 +313,30 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
             size="sm"
             variant="ghost"
             onClick={() => handleAIAction('summarize')}
-            disabled={isAILoading}
+            disabled={loadingAction !== null}
             className="h-8 px-2 text-sm"
             title="Summarize with AI"
           >
-            Summarize
+            {loadingAction === 'summarize' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              'Summarize'
+            )}
           </Button>
 
           <Button
             size="sm"
             variant="ghost"
             onClick={() => handleAIAction('expand')}
-            disabled={isAILoading}
+            disabled={loadingAction !== null}
             className="h-8 px-2 text-sm"
             title="Expand with AI"
           >
-            Expand
+            {loadingAction === 'expand' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              'Expand'
+            )}
           </Button>
         </>
       )}
@@ -317,10 +344,19 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
       {hasSuggestion && (
         <>
           <Separator orientation="vertical" className="h-6" />
-          <div className="flex items-center gap-2 px-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 px-2 text-xs">
             <Sparkles className="h-3 w-3 text-green-600 dark:text-green-400" />
-            <span className="font-medium">AI suggestion active</span>
-            <span className="opacity-70">• Press Cmd+Enter to accept or Cmd+Backspace to reject</span>
+            <span className="font-medium text-foreground">AI suggestion</span>
+            <span className="flex items-center gap-1 text-muted-foreground">
+              <kbd className="px-1.5 py-0.5 text-xs font-semibold border rounded bg-muted">⌘</kbd>
+              <span className="text-[10px]">+</span>
+              <kbd className="px-1.5 py-0.5 text-xs font-semibold border rounded bg-muted">↵</kbd>
+              <span className="text-[10px] ml-0.5">accept</span>
+              <kbd className="px-1.5 py-0.5 text-xs font-semibold border rounded bg-muted ml-2">⌘</kbd>
+              <span className="text-[10px]">+</span>
+              <kbd className="px-1.5 py-0.5 text-xs font-semibold border rounded bg-muted">⌫</kbd>
+              <span className="text-[10px] ml-0.5">reject</span>
+            </span>
           </div>
         </>
       )}

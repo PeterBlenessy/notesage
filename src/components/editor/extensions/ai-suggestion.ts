@@ -132,9 +132,9 @@ function createDiffDecorations(
 
       const acceptBtn = document.createElement('button');
       acceptBtn.className = 'ai-suggestion-accept';
-      acceptBtn.textContent = '✓';
-      acceptBtn.title = 'Accept (Cmd+Enter)';
-      acceptBtn.style.cssText = 'background: rgb(34, 197, 94); color: white; border: none; padding: 1px 4px; border-radius: 2px; font-size: 10px; cursor: pointer; margin: 0 2px; line-height: 1;';
+      acceptBtn.textContent = '✓ Accept';
+      acceptBtn.title = 'Cmd+Enter';
+      acceptBtn.style.cssText = 'background: rgb(34, 197, 94); color: white; border: none; padding: 2px 6px; border-radius: 3px; font-size: 11px; cursor: pointer; margin: 0 2px; line-height: 1; font-weight: 500;';
       acceptBtn.onmouseover = () => acceptBtn.style.background = 'rgb(22, 163, 74)';
       acceptBtn.onmouseout = () => acceptBtn.style.background = 'rgb(34, 197, 94)';
       acceptBtn.onclick = (e) => {
@@ -145,9 +145,9 @@ function createDiffDecorations(
 
       const rejectBtn = document.createElement('button');
       rejectBtn.className = 'ai-suggestion-reject';
-      rejectBtn.textContent = '✗';
-      rejectBtn.title = 'Reject (Cmd+Backspace)';
-      rejectBtn.style.cssText = 'background: rgb(239, 68, 68); color: white; border: none; padding: 1px 4px; border-radius: 2px; font-size: 10px; cursor: pointer; margin: 0 2px; line-height: 1;';
+      rejectBtn.textContent = '✗ Reject';
+      rejectBtn.title = 'Cmd+Backspace';
+      rejectBtn.style.cssText = 'background: rgb(239, 68, 68); color: white; border: none; padding: 2px 6px; border-radius: 3px; font-size: 11px; cursor: pointer; margin: 0 2px; line-height: 1; font-weight: 500;';
       rejectBtn.onmouseover = () => rejectBtn.style.background = 'rgb(220, 38, 38)';
       rejectBtn.onmouseout = () => rejectBtn.style.background = 'rgb(239, 68, 68)';
       rejectBtn.onclick = (e) => {
