@@ -96,11 +96,8 @@ export function PersonasSettings() {
       {/* Header */}
       <div className="space-y-3">
         <div>
-          <Label className="text-base font-semibold flex items-center gap-2">
-            <UserCircle2 className="h-4 w-4 text-primary" />
-            AI Personas
-          </Label>
-          <p className="text-sm text-muted-foreground mt-1">
+          <Label className="text-sm font-semibold">AI Personas</Label>
+          <p className="text-xs text-muted-foreground mt-1">
             Configure the tone and expertise of your AI assistant
           </p>
         </div>
@@ -180,7 +177,7 @@ export function PersonasSettings() {
             <DialogTrigger asChild>
               <Button
                 size="sm"
-                className="ml-auto hover:scale-105 active:scale-95 transition-transform"
+                className="ml-auto transition-colors"
               >
                 <Plus className="h-4 w-4 mr-1" />
                 Create Persona

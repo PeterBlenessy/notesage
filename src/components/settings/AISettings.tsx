@@ -124,11 +124,8 @@ export function AISettings() {
       {/* Provider Selection */}
       <div className="space-y-3">
         <div>
-          <Label className="text-base font-semibold flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" />
-            AI Provider
-          </Label>
-          <p className="text-sm text-muted-foreground mt-1">
+          <Label className="text-sm font-semibold">AI Provider</Label>
+          <p className="text-xs text-muted-foreground mt-1">
             Choose your preferred AI service
           </p>
         </div>
@@ -229,7 +226,7 @@ export function AISettings() {
                   <Button
                     onClick={handleSaveAnthropicKey}
                     size="sm"
-                    className="hover:bg-primary/90 transition-all hover:scale-105"
+                    className="transition-colors"
                   >
                     <Check className={`h-4 w-4 mr-1 transition-colors ${savedFlash ? 'text-green-500' : ''}`} />
                     Save
@@ -281,7 +278,7 @@ export function AISettings() {
                   <Button
                     onClick={handleSaveOpenAIKey}
                     size="sm"
-                    className="hover:bg-primary/90 transition-all hover:scale-105"
+                    className="transition-colors"
                   >
                     <Check className={`h-4 w-4 mr-1 transition-colors ${savedFlash ? 'text-green-500' : ''}`} />
                     Save
@@ -322,7 +319,7 @@ export function AISettings() {
                   <Button
                     onClick={handleSaveOllamaUrl}
                     size="sm"
-                    className="hover:bg-primary/90 transition-all hover:scale-105"
+                    className="transition-colors"
                   >
                     <Check className={`h-4 w-4 mr-1 transition-colors ${savedFlash ? 'text-green-500' : ''}`} />
                     Save
@@ -337,7 +334,7 @@ export function AISettings() {
             <Button
               onClick={handleTestConnection}
               disabled={isTesting}
-              className="w-full h-11 transition-all hover:scale-[1.02] active:scale-[0.98] hover:bg-primary/90"
+              className="w-full h-10 transition-colors"
               variant="default"
             >
               {isTesting ? (
@@ -367,7 +364,7 @@ export function AISettings() {
           {/* Additional Options */}
           <div className="pt-2">
             <div className="h-px bg-border mb-4" />
-            <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg border border-border hover:border-primary/50 transition-colors bg-card/50">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border transition-colors" style={{ borderColor: 'var(--color-border)' }} onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}>
               <div>
                 <Label
                   htmlFor="suggestions"
@@ -383,7 +380,7 @@ export function AISettings() {
                 id="suggestions"
                 checked={suggestionsEnabled}
                 onCheckedChange={toggleSuggestions}
-                className="ml-auto data-[state=checked]:bg-primary"
+                className="ml-auto"
               />
             </div>
           </div>

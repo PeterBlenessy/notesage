@@ -77,11 +77,8 @@ export function PromptsSettings() {
       {/* Header */}
       <div className="space-y-3">
         <div>
-          <Label className="text-base font-semibold flex items-center gap-2">
-            <FileText className="h-4 w-4 text-primary" />
-            Custom Prompts
-          </Label>
-          <p className="text-sm text-muted-foreground mt-1">
+          <Label className="text-sm font-semibold">Custom Prompts</Label>
+          <p className="text-xs text-muted-foreground mt-1">
             Create reusable prompt templates for common AI tasks
           </p>
         </div>
@@ -114,7 +111,7 @@ export function PromptsSettings() {
             <DialogTrigger asChild>
               <Button
                 size="sm"
-                className="ml-auto hover:scale-105 active:scale-95 transition-transform"
+                className="ml-auto transition-colors"
               >
                 <Plus className="h-4 w-4 mr-1" />
                 Create Prompt

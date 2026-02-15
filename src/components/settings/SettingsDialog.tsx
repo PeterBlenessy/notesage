@@ -20,182 +20,162 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useState } from 'react';
+import { cn } from '@/lib/utils';
 
 interface SettingsDialogProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
 
+type SettingsTab = 'ai' | 'personas' | 'prompts' | 'editor';
+
+const TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
+  { id: 'ai', label: 'AI Providers', icon: Sparkles },
+  { id: 'personas', label: 'AI Personas', icon: UserCircle2 },
+  { id: 'prompts', label: 'Custom Prompts', icon: FileText },
+  { id: 'editor', label: 'Editor', icon: Sliders },
+];
+
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { theme, setTheme, showFloatingToolbar, setShowFloatingToolbar, contentWidth, setContentWidth } = useSettingsStore();
-  const [activeTab, setActiveTab] = useState<'ai' | 'personas' | 'prompts' | 'editor'>('ai');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('ai');
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[80vw] lg:max-w-4xl max-h-[85vh] p-0 gap-0 overflow-hidden flex flex-col">
         {/* Header */}
-        <DialogHeader className="p-6 pb-4 border-b bg-card/50 shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10">
-                <Settings className="h-10 w-10 text-primary" />
-              </div>
-              <div>
-                <DialogTitle className="text-2xl">Settings</DialogTitle>
-                <DialogDescription className="mt-1">
-                  Configure your Notesage experience
-                </DialogDescription>
-              </div>
+        <DialogHeader className="px-6 py-4 border-b shrink-0" style={{ backgroundColor: 'var(--color-card)' }}>
+          <div className="flex items-center gap-3">
+            <Settings className="h-10 w-10" style={{ color: 'var(--color-foreground)' }} />
+            <div>
+              <DialogTitle className="text-xl">Settings</DialogTitle>
+              <DialogDescription className="text-xs">
+                Configure your Notesage experience
+              </DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
         <div className="flex flex-1 overflow-hidden min-h-0">
           {/* Sidebar Navigation */}
-          <div className="w-52 border-r bg-muted/30 p-4">
-            <nav className="space-y-1">
-              <button
-                onClick={() => setActiveTab('ai')}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                  activeTab === 'ai'
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'hover:bg-accent text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <Sparkles className="h-4 w-4" />
-                AI Providers
-              </button>
-              <button
-                onClick={() => setActiveTab('personas')}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                  activeTab === 'personas'
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'hover:bg-accent text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <UserCircle2 className="h-4 w-4" />
-                AI Personas
-              </button>
-              <button
-                onClick={() => setActiveTab('prompts')}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                  activeTab === 'prompts'
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'hover:bg-accent text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <FileText className="h-4 w-4" />
-                Custom Prompts
-              </button>
-              <button
-                onClick={() => setActiveTab('editor')}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                  activeTab === 'editor'
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'hover:bg-accent text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <Sliders className="h-4 w-4" />
-                Editor
-              </button>
+          <div
+            className="w-52 border-r p-3 shrink-0"
+            style={{ backgroundColor: 'var(--color-card)' }}
+          >
+            <nav className="space-y-0.5">
+              {TABS.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={cn(
+                      'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] font-medium transition-colors',
+                      isActive
+                        ? 'text-foreground'
+                        : 'text-muted-foreground'
+                    )}
+                    style={{
+                      backgroundColor: isActive ? 'var(--color-accent)' : undefined,
+                    }}
+                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
+                    onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = ''; }}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    {tab.label}
+                  </button>
+                );
+              })}
             </nav>
           </div>
 
           {/* Content Area */}
           <div className="flex-1 overflow-y-auto">
             {activeTab === 'ai' && (
-              <div className="p-6 animate-in fade-in-50 duration-300">
+              <div className="p-6">
                 <AISettings />
               </div>
             )}
 
             {activeTab === 'personas' && (
-              <div className="p-6 animate-in fade-in-50 duration-300">
+              <div className="p-6">
                 <PersonasSettings />
               </div>
             )}
 
             {activeTab === 'prompts' && (
-              <div className="p-6 animate-in fade-in-50 duration-300">
+              <div className="p-6">
                 <PromptsSettings />
               </div>
             )}
 
             {activeTab === 'editor' && (
-              <div className="p-6 space-y-6 animate-in fade-in-50 duration-300">
+              <div className="p-6 space-y-6">
                 {/* Theme Selection */}
                 <div className="space-y-4">
                   <div>
-                    <Label className="text-base font-semibold flex items-center gap-2">
-                      <Sun className="h-4 w-4 text-primary" />
-                      Appearance
-                    </Label>
-                    <p className="text-sm text-muted-foreground mt-1">
+                    <Label className="text-sm font-semibold">Appearance</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
                       Customize how Notesage looks
                     </p>
                   </div>
 
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">Theme</Label>
-                    <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { value: 'light' as const, label: 'Light', Icon: Sun },
+                      { value: 'dark' as const, label: 'Dark', Icon: Moon },
+                      { value: 'system' as const, label: 'System', Icon: Monitor },
+                    ]).map(({ value, label, Icon }) => (
                       <button
-                        onClick={() => setTheme('light')}
-                        className={`flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all hover:scale-105 active:scale-95 ${
-                          theme === 'light'
-                            ? 'border-primary bg-primary/5'
-                            : 'border-border hover:border-primary/50'
-                        }`}
+                        key={value}
+                        onClick={() => setTheme(value)}
+                        className={cn(
+                          'flex flex-col items-center gap-2 py-3 rounded-lg border transition-colors',
+                          theme === value
+                            ? 'text-foreground font-medium'
+                            : 'text-muted-foreground'
+                        )}
+                        style={{
+                          borderColor: theme === value ? 'var(--color-foreground)' : 'var(--color-border)',
+                          backgroundColor: theme === value ? 'var(--color-accent)' : undefined,
+                        }}
+                        onMouseEnter={(e) => { if (theme !== value) e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
+                        onMouseLeave={(e) => { if (theme !== value) e.currentTarget.style.backgroundColor = ''; }}
                       >
-                        <Sun className="h-5 w-5" />
-                        <span className="text-sm font-medium">Light</span>
+                        <Icon className="h-5 w-5" />
+                        <span className="text-xs">{label}</span>
                       </button>
-                      <button
-                        onClick={() => setTheme('dark')}
-                        className={`flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all hover:scale-105 active:scale-95 ${
-                          theme === 'dark'
-                            ? 'border-primary bg-primary/5'
-                            : 'border-border hover:border-primary/50'
-                        }`}
-                      >
-                        <Moon className="h-5 w-5" />
-                        <span className="text-sm font-medium">Dark</span>
-                      </button>
-                      <button
-                        onClick={() => setTheme('system')}
-                        className={`flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all hover:scale-105 active:scale-95 ${
-                          theme === 'system'
-                            ? 'border-primary bg-primary/5'
-                            : 'border-border hover:border-primary/50'
-                        }`}
-                      >
-                        <Monitor className="h-5 w-5" />
-                        <span className="text-sm font-medium">System</span>
-                      </button>
-                    </div>
+                    ))}
                   </div>
                 </div>
 
-                <div className="h-px bg-border" />
+                <div className="h-px" style={{ backgroundColor: 'var(--color-border)' }} />
 
                 {/* Editor Options */}
                 <div className="space-y-4">
                   <div>
-                    <Label className="text-base font-semibold">Editor Options</Label>
-                    <p className="text-sm text-muted-foreground mt-1">
+                    <Label className="text-sm font-semibold">Editor Options</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
                       Configure your editing experience
                     </p>
                   </div>
 
-                  <div className="space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg border border-border hover:border-primary/50 transition-all bg-card/50">
+                  <div className="space-y-2">
+                    <div
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border transition-colors"
+                      style={{ borderColor: 'var(--color-border)' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                    >
                       <div>
                         <Label
                           htmlFor="floating-toolbar"
-                          className="text-sm font-medium cursor-pointer"
+                          className="text-[13px] font-medium cursor-pointer"
                         >
                           Floating Toolbar
                         </Label>
-                        <p className="text-xs text-muted-foreground mt-1">
+                        <p className="text-xs text-muted-foreground mt-0.5">
                           Show formatting toolbar when text is selected
                         </p>
                       </div>
@@ -203,14 +183,19 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         id="floating-toolbar"
                         checked={showFloatingToolbar}
                         onCheckedChange={setShowFloatingToolbar}
-                        className="ml-auto data-[state=checked]:bg-primary"
+                        className="ml-auto"
                       />
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg border border-border hover:border-primary/50 transition-all bg-card/50">
+                    <div
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border transition-colors"
+                      style={{ borderColor: 'var(--color-border)' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                    >
                       <div>
-                        <Label className="text-sm font-medium">Content Width</Label>
-                        <p className="text-xs text-muted-foreground mt-1">
+                        <Label className="text-[13px] font-medium">Content Width</Label>
+                        <p className="text-xs text-muted-foreground mt-0.5">
                           Maximum width of your document
                         </p>
                       </div>
