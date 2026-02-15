@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Sparkles, Check, X, Loader2, AlertCircle } from 'lucide-react';
+import { Sparkles, Check, X, Loader2, Eye, EyeOff } from 'lucide-react';
 import type { AIProviderType } from '@/lib/ai/types';
 
 export function AISettings() {
@@ -34,28 +34,32 @@ export function AISettings() {
     message: string;
   }>({ type: null, message: '' });
   const [isTesting, setIsTesting] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  const flashSaved = () => {
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 2000);
+  };
 
   const handleSaveAnthropicKey = () => {
     if (anthropicKey.trim()) {
       setApiKey('anthropic', anthropicKey.trim());
-      setTestStatus({ type: 'success', message: 'API key saved successfully' });
-      setTimeout(() => setTestStatus({ type: null, message: '' }), 3000);
+      flashSaved();
     }
   };
 
   const handleSaveOpenAIKey = () => {
     if (openaiKey.trim()) {
       setApiKey('openai', openaiKey.trim());
-      setTestStatus({ type: 'success', message: 'API key saved successfully' });
-      setTimeout(() => setTestStatus({ type: null, message: '' }), 3000);
+      flashSaved();
     }
   };
 
   const handleSaveOllamaUrl = () => {
     if (localOllamaUrl.trim()) {
       setOllamaUrl(localOllamaUrl.trim());
-      setTestStatus({ type: 'success', message: 'Ollama URL saved successfully' });
-      setTimeout(() => setTestStatus({ type: null, message: '' }), 3000);
+      flashSaved();
     }
   };
 
@@ -66,7 +70,7 @@ export function AISettings() {
     }
 
     setIsTesting(true);
-    setTestStatus({ type: 'info', message: 'Testing connection...' });
+    setTestStatus({ type: null, message: '' });
 
     try {
       const { getAIProvider } = await import('@/lib/ai');
@@ -84,7 +88,7 @@ export function AISettings() {
     } catch (error) {
       setTestStatus({
         type: 'error',
-        message: error instanceof Error ? error.message : 'Connection failed',
+        message: 'Connection failed',
       });
     } finally {
       setIsTesting(false);
@@ -202,20 +206,32 @@ export function AISettings() {
                   </a>
                 </p>
                 <div className="flex gap-2">
-                  <Input
-                    id="anthropic-key"
-                    type="password"
-                    placeholder="sk-ant-..."
-                    value={anthropicKey}
-                    onChange={(e) => setAnthropicKey(e.target.value)}
-                    className="font-mono text-sm transition-all hover:border-primary/50 focus:border-primary"
-                  />
+                  <div className="relative flex-1">
+                    <Input
+                      id="anthropic-key"
+                      type={showKey ? 'text' : 'password'}
+                      placeholder="sk-ant-..."
+                      value={anthropicKey}
+                      onChange={(e) => setAnthropicKey(e.target.value)}
+                      className="font-mono text-sm pr-9 transition-all hover:border-primary/50 focus:border-primary"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full w-9 text-muted-foreground hover:text-foreground"
+                      onClick={() => setShowKey(!showKey)}
+                      tabIndex={-1}
+                    >
+                      {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
                   <Button
                     onClick={handleSaveAnthropicKey}
                     size="sm"
                     className="hover:bg-primary/90 transition-all hover:scale-105"
                   >
-                    <Check className="h-4 w-4 mr-1" />
+                    <Check className={`h-4 w-4 mr-1 transition-colors ${savedFlash ? 'text-green-500' : ''}`} />
                     Save
                   </Button>
                 </div>
@@ -242,20 +258,32 @@ export function AISettings() {
                   </a>
                 </p>
                 <div className="flex gap-2">
-                  <Input
-                    id="openai-key"
-                    type="password"
-                    placeholder="sk-..."
-                    value={openaiKey}
-                    onChange={(e) => setOpenaiKey(e.target.value)}
-                    className="font-mono text-sm transition-all hover:border-primary/50 focus:border-primary"
-                  />
+                  <div className="relative flex-1">
+                    <Input
+                      id="openai-key"
+                      type={showKey ? 'text' : 'password'}
+                      placeholder="sk-..."
+                      value={openaiKey}
+                      onChange={(e) => setOpenaiKey(e.target.value)}
+                      className="font-mono text-sm pr-9 transition-all hover:border-primary/50 focus:border-primary"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full w-9 text-muted-foreground hover:text-foreground"
+                      onClick={() => setShowKey(!showKey)}
+                      tabIndex={-1}
+                    >
+                      {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
                   <Button
                     onClick={handleSaveOpenAIKey}
                     size="sm"
                     className="hover:bg-primary/90 transition-all hover:scale-105"
                   >
-                    <Check className="h-4 w-4 mr-1" />
+                    <Check className={`h-4 w-4 mr-1 transition-colors ${savedFlash ? 'text-green-500' : ''}`} />
                     Save
                   </Button>
                 </div>
@@ -296,7 +324,7 @@ export function AISettings() {
                     size="sm"
                     className="hover:bg-primary/90 transition-all hover:scale-105"
                   >
-                    <Check className="h-4 w-4 mr-1" />
+                    <Check className={`h-4 w-4 mr-1 transition-colors ${savedFlash ? 'text-green-500' : ''}`} />
                     Save
                   </Button>
                 </div>
@@ -309,13 +337,23 @@ export function AISettings() {
             <Button
               onClick={handleTestConnection}
               disabled={isTesting}
-              className="w-full h-11 hover:bg-primary/90 transition-all hover:scale-[1.02] active:scale-[0.98]"
+              className="w-full h-11 transition-all hover:scale-[1.02] active:scale-[0.98] hover:bg-primary/90"
               variant="default"
             >
               {isTesting ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Testing Connection...
+                </>
+              ) : testStatus.type === 'success' ? (
+                <>
+                  <Check className="h-4 w-4 mr-2 text-green-500" />
+                  Connection Successful
+                </>
+              ) : testStatus.type === 'error' ? (
+                <>
+                  <X className="h-4 w-4 mr-2 text-red-500" />
+                  {testStatus.message}
                 </>
               ) : (
                 <>
@@ -324,33 +362,12 @@ export function AISettings() {
                 </>
               )}
             </Button>
-
-            {testStatus.message && (
-              <div
-                className={`mt-3 p-3 rounded-lg flex items-center gap-2 text-sm animate-in fade-in-50 slide-in-from-top-2 ${
-                  testStatus.type === 'success'
-                    ? 'bg-primary/10 text-primary border border-primary/20'
-                    : testStatus.type === 'error'
-                    ? 'bg-destructive/10 text-destructive border border-destructive/20'
-                    : 'bg-accent text-accent-foreground border border-border'
-                }`}
-              >
-                {testStatus.type === 'success' && (
-                  <Check className="h-4 w-4 shrink-0" />
-                )}
-                {testStatus.type === 'error' && <X className="h-4 w-4 shrink-0" />}
-                {testStatus.type === 'info' && (
-                  <AlertCircle className="h-4 w-4 shrink-0" />
-                )}
-                <span>{testStatus.message}</span>
-              </div>
-            )}
           </div>
 
           {/* Additional Options */}
           <div className="pt-2">
             <div className="h-px bg-border mb-4" />
-            <div className="flex items-center justify-between p-4 rounded-lg border border-border hover:border-primary/50 transition-colors bg-card/50">
+            <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg border border-border hover:border-primary/50 transition-colors bg-card/50">
               <div>
                 <Label
                   htmlFor="suggestions"
@@ -366,7 +383,7 @@ export function AISettings() {
                 id="suggestions"
                 checked={suggestionsEnabled}
                 onCheckedChange={toggleSuggestions}
-                className="data-[state=checked]:bg-primary"
+                className="ml-auto data-[state=checked]:bg-primary"
               />
             </div>
           </div>

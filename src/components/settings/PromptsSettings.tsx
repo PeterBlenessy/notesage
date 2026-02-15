@@ -103,13 +103,18 @@ export function PromptsSettings() {
 
       {/* Custom Prompts List */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium">Your Prompts</Label>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <Label className="text-sm font-medium">Your Prompts</Label>
+            <p className="text-xs text-muted-foreground mt-1">
+              Reusable templates that appear in the AI actions menu
+            </p>
+          </div>
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button
                 size="sm"
-                className="hover:scale-105 active:scale-95 transition-transform"
+                className="ml-auto hover:scale-105 active:scale-95 transition-transform"
               >
                 <Plus className="h-4 w-4 mr-1" />
                 Create Prompt

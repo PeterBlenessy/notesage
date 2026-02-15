@@ -169,13 +169,18 @@ export function PersonasSettings() {
 
       {/* Custom Personas */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium">Custom Personas</Label>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <Label className="text-sm font-medium">Custom Personas</Label>
+            <p className="text-xs text-muted-foreground mt-1">
+              Create your own personas with custom system messages
+            </p>
+          </div>
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button
                 size="sm"
-                className="hover:scale-105 active:scale-95 transition-transform"
+                className="ml-auto hover:scale-105 active:scale-95 transition-transform"
               >
                 <Plus className="h-4 w-4 mr-1" />
                 Create Persona
@@ -234,6 +239,7 @@ export function PersonasSettings() {
             </DialogContent>
           </Dialog>
         </div>
+
 
         {customPersonas.length > 0 ? (
           <div className="space-y-2">

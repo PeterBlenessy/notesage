@@ -187,7 +187,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </div>
 
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-border hover:border-primary/50 transition-all bg-card/50">
+                    <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg border border-border hover:border-primary/50 transition-all bg-card/50">
                       <div>
                         <Label
                           htmlFor="floating-toolbar"
@@ -203,55 +203,30 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         id="floating-toolbar"
                         checked={showFloatingToolbar}
                         onCheckedChange={setShowFloatingToolbar}
-                        className="data-[state=checked]:bg-primary"
+                        className="ml-auto data-[state=checked]:bg-primary"
                       />
                     </div>
 
-                    <div className="flex items-center justify-between p-4 rounded-lg border border-border hover:border-primary/50 transition-all bg-card/50">
+                    <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg border border-border hover:border-primary/50 transition-all bg-card/50">
                       <div>
                         <Label className="text-sm font-medium">Content Width</Label>
                         <p className="text-xs text-muted-foreground mt-1">
-                          Set the maximum width of your document
+                          Maximum width of your document
                         </p>
                       </div>
                       <Select
                         value={contentWidth}
                         onValueChange={setContentWidth}
                       >
-                        <SelectTrigger className="w-40 text-left">
+                        <SelectTrigger className="ml-auto w-44 text-left">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="full">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">Full Width</span>
-                              <span className="text-xs text-muted-foreground">Use all available space</span>
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="auto">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">Auto</span>
-                              <span className="text-xs text-muted-foreground">720px reading width</span>
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="a4">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">A4</span>
-                              <span className="text-xs text-muted-foreground">210mm (794px)</span>
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="a5">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">A5</span>
-                              <span className="text-xs text-muted-foreground">148mm (559px)</span>
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="letter">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">Letter</span>
-                              <span className="text-xs text-muted-foreground">8.5" (816px)</span>
-                            </div>
-                          </SelectItem>
+                          <SelectItem value="full">Full Width</SelectItem>
+                          <SelectItem value="auto">Auto (720px)</SelectItem>
+                          <SelectItem value="a4">A4 (794px)</SelectItem>
+                          <SelectItem value="a5">A5 (559px)</SelectItem>
+                          <SelectItem value="letter">Letter (816px)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
