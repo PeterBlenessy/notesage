@@ -9,6 +9,7 @@ import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useProjectStore } from "@/stores/project-store";
+import { useEditorStore } from "@/stores/editor-store";
 import { tauriApi } from "@/lib/tauri";
 import { Button } from "@/components/ui/button";
 import {
@@ -117,11 +118,37 @@ function App() {
         e.preventDefault();
         setSettingsOpen(true);
       }
+
+      // Cmd+N for new file
+      if ((e.metaKey || e.ctrlKey) && e.key === "n") {
+        e.preventDefault();
+        const { rootPath } = useProjectStore.getState();
+        if (rootPath) {
+          const fileName = window.prompt("Enter file name:", "untitled.md");
+          if (fileName) {
+            const filePath = `${rootPath}/${fileName}`;
+            tauriApi.createFile(filePath).then(() => {
+              tauriApi.listDirectory(rootPath).then((tree) => {
+                setFileTree(tree);
+              });
+              tauriApi.readFile(filePath).then((content) => {
+                useEditorStore.getState().openTab(filePath, fileName, content);
+              });
+            }).catch((err) => alert(`Failed to create file: ${err}`));
+          }
+        }
+      }
+
+      // Cmd+O for open folder
+      if ((e.metaKey || e.ctrlKey) && e.key === "o") {
+        e.preventDefault();
+        handleOpenFolder();
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [handleOpenFolder, setFileTree]);
 
   return (
     <ThemeProvider>

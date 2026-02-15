@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef } from "react";
 import { EditorContent } from "@tiptap/react";
+import { FileText, FolderOpen, Command } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore, type ContentWidth } from "@/stores/settings-store";
 import { useEditor } from "@/hooks/useEditor";
@@ -94,10 +95,27 @@ export function Editor() {
 
   if (!activeTab) {
     return (
-      <div className="flex h-full items-center justify-center text-muted-foreground">
-        <div className="text-center">
-          <h2 className="text-xl font-medium mb-2">No file open</h2>
-          <p className="text-sm">Select a file from the sidebar to start editing</p>
+      <div className="flex h-full items-center justify-center" style={{ backgroundColor: 'var(--color-background)' }}>
+        <div className="text-center space-y-6">
+          <FileText className="h-12 w-12 mx-auto text-muted-foreground/30" strokeWidth={1} />
+          <div className="space-y-1.5">
+            <h2 className="text-lg font-medium text-foreground/70">No file open</h2>
+            <p className="text-sm text-muted-foreground">Select a file from the sidebar to start editing</p>
+          </div>
+          <div className="flex flex-col items-center gap-2 text-xs text-muted-foreground/60">
+            <div className="flex items-center gap-2">
+              <kbd className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[11px]" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
+                <Command className="h-2.5 w-2.5" />N
+              </kbd>
+              <span>New file</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[11px]" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
+                <Command className="h-2.5 w-2.5" />O
+              </kbd>
+              <span>Open file</span>
+            </div>
+          </div>
         </div>
       </div>
     );
