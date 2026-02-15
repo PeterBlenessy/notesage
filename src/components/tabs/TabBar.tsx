@@ -1,5 +1,4 @@
 import { useEditorStore } from "@/stores/editor-store";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -28,38 +27,55 @@ export function TabBar() {
   }
 
   return (
-    <div className="h-10 border-b border-border flex items-center justify-between shrink-0" style={{ backgroundColor: 'var(--color-background)' }}>
-      <Tabs value={activeTabId || undefined} className="flex-1">
-        <TabsList className="w-full justify-start rounded-none bg-transparent h-10 p-0 overflow-x-auto overflow-y-hidden">
-          {tabs.map((tab) => (
-            <TabsTrigger
-              key={tab.id}
-              value={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+    <div
+      className="h-9 border-b border-border flex items-end shrink-0 overflow-x-auto overflow-y-hidden gap-0.5 px-2"
+      style={{ backgroundColor: 'var(--color-background)' }}
+    >
+      {tabs.map((tab) => {
+        const isActive = activeTabId === tab.id;
+
+        return (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={cn(
+              "group relative flex items-center gap-1.5 px-3 h-8 text-sm rounded-t-md transition-colors shrink-0 max-w-[200px]",
+              isActive
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+            )}
+            style={isActive ? { backgroundColor: 'var(--color-muted)' } : undefined}
+          >
+            {/* Active indicator */}
+            {isActive && (
+              <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-primary rounded-full" />
+            )}
+
+            {/* Dirty dot */}
+            {tab.isDirty && (
+              <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+            )}
+
+            {/* File name */}
+            <span className="truncate">{tab.fileName}</span>
+
+            {/* Close button */}
+            <span
+              onClick={(e) => handleCloseTab(e, tab.id, tab.isDirty)}
               className={cn(
-                "relative rounded-none border-r border-border px-4 py-2",
-                "data-[state=active]:bg-background data-[state=active]:shadow-none",
-                "hover:bg-accent/50 transition-colors"
+                "shrink-0 rounded-sm p-0.5 transition-all cursor-pointer inline-flex items-center justify-center",
+                isActive
+                  ? "opacity-60 hover:opacity-100 hover:bg-foreground/10"
+                  : "opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-foreground/10"
               )}
+              role="button"
+              aria-label="Close tab"
             >
-              <span className="flex items-center gap-2">
-                {tab.isDirty && (
-                  <span className="h-2 w-2 rounded-full bg-primary" />
-                )}
-                <span className="max-w-[150px] truncate">{tab.fileName}</span>
-                <span
-                  onClick={(e) => handleCloseTab(e, tab.id, tab.isDirty)}
-                  className="ml-2 hover:bg-accent rounded-sm p-0.5 transition-colors cursor-pointer inline-flex items-center justify-center"
-                  role="button"
-                  aria-label="Close tab"
-                >
-                  <X className="h-3 w-3" />
-                </span>
-              </span>
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+              <X className="h-3 w-3" />
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
