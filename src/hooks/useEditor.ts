@@ -16,6 +16,7 @@ import { common, createLowlight } from "lowlight";
 import { Markdown } from "tiptap-markdown";
 import { SlashCommand } from "@/components/editor/extensions/slash-command";
 import { AISuggestion } from "@/components/editor/extensions";
+import { PageBreaks } from "@/components/editor/extensions/page-breaks";
 import { getMarkdownFromEditor } from "@/lib/markdown";
 
 const lowlight = createLowlight(common);
@@ -98,6 +99,7 @@ export function useEditor({ content, onUpdate, editable = true }: UseEditorOptio
       }),
       SlashCommand,
       AISuggestion,
+      PageBreaks,
     ],
     content,
     editable,

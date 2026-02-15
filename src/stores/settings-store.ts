@@ -3,19 +3,27 @@ import { persist } from "zustand/middleware";
 
 type Theme = "light" | "dark" | "system";
 export type ContentWidth = "full" | "auto" | "a4" | "a5" | "letter";
-export type ContentMargin = "small" | "medium" | "large";
+export type MeasurementUnit = "cm" | "inch";
 
 interface SettingsStore {
   theme: Theme;
   showFloatingToolbar: boolean;
   contentWidth: ContentWidth;
-  contentMargin: ContentMargin;
+  measurementUnit: MeasurementUnit;
+  marginTop: number;
+  marginBottom: number;
+  marginLeft: number;
+  marginRight: number;
   sidebarOpen: boolean;
   chatPanelOpen: boolean;
   setTheme: (theme: Theme) => void;
   setShowFloatingToolbar: (show: boolean) => void;
   setContentWidth: (width: ContentWidth) => void;
-  setContentMargin: (margin: ContentMargin) => void;
+  setMeasurementUnit: (unit: MeasurementUnit) => void;
+  setMarginTop: (margin: number) => void;
+  setMarginBottom: (margin: number) => void;
+  setMarginLeft: (margin: number) => void;
+  setMarginRight: (margin: number) => void;
   setSidebarOpen: (open: boolean) => void;
   setChatPanelOpen: (open: boolean) => void;
 }
@@ -26,7 +34,11 @@ export const useSettingsStore = create<SettingsStore>()(
       theme: "system",
       showFloatingToolbar: true,
       contentWidth: "auto",
-      contentMargin: "large",
+      measurementUnit: "cm",
+      marginTop: 2.54,
+      marginBottom: 2.54,
+      marginLeft: 2.54,
+      marginRight: 2.54,
       sidebarOpen: true,
       chatPanelOpen: false,
 
@@ -42,8 +54,24 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ contentWidth: width });
       },
 
-      setContentMargin: (margin: ContentMargin) => {
-        set({ contentMargin: margin });
+      setMeasurementUnit: (unit: MeasurementUnit) => {
+        set({ measurementUnit: unit });
+      },
+
+      setMarginTop: (margin: number) => {
+        set({ marginTop: margin });
+      },
+
+      setMarginBottom: (margin: number) => {
+        set({ marginBottom: margin });
+      },
+
+      setMarginLeft: (margin: number) => {
+        set({ marginLeft: margin });
+      },
+
+      setMarginRight: (margin: number) => {
+        set({ marginRight: margin });
       },
 
       setSidebarOpen: (open: boolean) => {

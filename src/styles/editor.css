@@ -3,13 +3,48 @@
 .ProseMirror {
   outline: none;
   min-height: 400px;
-  padding: 2rem var(--editor-margin, 6rem);
+  padding-top: var(--editor-padding-top, 2rem);
+  padding-bottom: var(--editor-padding-bottom, 2rem);
+  padding-left: var(--editor-padding-left, 6rem);
+  padding-right: var(--editor-padding-right, 6rem);
   background-color: var(--color-background);
   color: var(--color-foreground);
   font-size: 16px;
   line-height: 1.7;
   letter-spacing: -0.01em;
   caret-color: var(--color-primary);
+}
+
+/* Visual page break gap between pages in paper modes */
+.page-break-gap {
+  --gap-strip: 32px;
+  height: calc(var(--editor-padding-bottom, 2rem) + var(--gap-strip) + var(--editor-padding-top, 2rem));
+  margin-left: calc(-1 * var(--editor-padding-left, 6rem));
+  margin-right: calc(-1 * var(--editor-padding-right, 6rem));
+  background: linear-gradient(
+    to bottom,
+    var(--color-background) 0,
+    var(--color-background) var(--editor-padding-bottom, 2rem),
+    var(--color-muted) var(--editor-padding-bottom, 2rem),
+    var(--color-muted) calc(var(--editor-padding-bottom, 2rem) + var(--gap-strip)),
+    var(--color-background) calc(var(--editor-padding-bottom, 2rem) + var(--gap-strip)),
+    var(--color-background) 100%
+  );
+  position: relative;
+  user-select: none;
+  pointer-events: none;
+}
+
+.page-break-gap::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--editor-padding-bottom, 2rem);
+  height: var(--gap-strip);
+  box-shadow:
+    inset 0 6px 4px -4px rgb(0 0 0 / 0.06),
+    inset 0 -6px 4px -4px rgb(0 0 0 / 0.06);
 }
 
 /* Placeholder */

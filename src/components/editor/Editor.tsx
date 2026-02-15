@@ -2,13 +2,16 @@ import { useEffect, useCallback, useRef, useState } from "react";
 import { EditorContent } from "@tiptap/react";
 import { FileText, Command } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
-import { useSettingsStore, type ContentWidth, type ContentMargin } from "@/stores/settings-store";
+import { useSettingsStore, type ContentWidth } from "@/stores/settings-store";
 import { useEditor } from "@/hooks/useEditor";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { Toolbar } from "./Toolbar";
 import { BubbleMenu } from "./BubbleMenu";
 import { StatusBar } from "./StatusBar";
 import "@/styles/editor.css";
+
+// 1 CSS px = 1/96 inch, 1 inch = 2.54 cm
+const PX_PER_CM = 96 / 2.54;
 
 // Full page widths at 96 CSS DPI (1 CSS px = 1/96 inch)
 // ProseMirror padding acts as page margins
@@ -20,22 +23,30 @@ const CONTENT_WIDTHS: Record<ContentWidth, number | undefined> = {
   letter: 816,
 };
 
-const CONTENT_MARGINS: Record<ContentMargin, string> = {
-  small: '2rem',
-  medium: '4rem',
-  large: '6rem',
+// Full page heights at 96 CSS DPI (1 CSS px = 1/96 inch)
+const CONTENT_HEIGHTS: Record<string, number> = {
+  a4: 1123,
+  a5: 794,
+  letter: 1056,
 };
 
 export function Editor() {
   const { tabs, activeTabId, updateTabContent } = useEditorStore();
-  const { showFloatingToolbar, contentWidth, contentMargin } = useSettingsStore();
+  const { showFloatingToolbar, contentWidth, marginTop, marginBottom, marginLeft, marginRight } = useSettingsStore();
   const { saveFile } = useFileOperations();
   const maxWidth = CONTENT_WIDTHS[contentWidth];
-  const editorMargin = CONTENT_MARGINS[contentMargin];
+  const isPaperMode = contentWidth === 'a4' || contentWidth === 'a5' || contentWidth === 'letter';
+  const pageHeight = isPaperMode ? CONTENT_HEIGHTS[contentWidth] : undefined;
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
   const lastLoadedTabId = useRef<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [renderedWidth, setRenderedWidth] = useState<number | null>(null);
+
+  // Convert cm margins to px
+  const paddingTop = `${marginTop * PX_PER_CM}px`;
+  const paddingBottom = `${marginBottom * PX_PER_CM}px`;
+  const paddingLeft = `${marginLeft * PX_PER_CM}px`;
+  const paddingRight = `${marginRight * PX_PER_CM}px`;
 
   // Observe rendered width of the content container
   useEffect(() => {
@@ -165,10 +176,14 @@ export function Editor() {
         >
           <div
             ref={contentRef}
-            className="w-full"
+            className={`w-full ${isPaperMode ? 'paper-mode' : ''}`}
             style={{
               maxWidth: maxWidth ? `${maxWidth}px` : undefined,
-              '--editor-margin': editorMargin,
+              '--editor-padding-top': paddingTop,
+              '--editor-padding-bottom': paddingBottom,
+              '--editor-padding-left': paddingLeft,
+              '--editor-padding-right': paddingRight,
+              ...(pageHeight ? { '--page-height': `${pageHeight}px` } : {}),
             } as React.CSSProperties}
           >
             <EditorContent editor={editor} />
