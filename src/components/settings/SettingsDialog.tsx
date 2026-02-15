@@ -6,13 +6,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { AISettings } from './AISettings';
 import { PersonasSettings } from './PersonasSettings';
 import { PromptsSettings } from './PromptsSettings';
 import { useSettingsStore } from '@/stores/settings-store';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useState } from 'react';
 
 interface SettingsDialogProps {
@@ -21,7 +27,7 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const { theme, setTheme, showFloatingToolbar, setShowFloatingToolbar } = useSettingsStore();
+  const { theme, setTheme, showFloatingToolbar, setShowFloatingToolbar, contentWidth, setContentWidth } = useSettingsStore();
   const [activeTab, setActiveTab] = useState<'ai' | 'personas' | 'prompts' | 'editor'>('ai');
 
   return (
@@ -199,6 +205,55 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         onCheckedChange={setShowFloatingToolbar}
                         className="data-[state=checked]:bg-primary"
                       />
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 rounded-lg border border-border hover:border-primary/50 transition-all bg-card/50">
+                      <div>
+                        <Label className="text-sm font-medium">Content Width</Label>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Set the maximum width of your document
+                        </p>
+                      </div>
+                      <Select
+                        value={contentWidth}
+                        onValueChange={setContentWidth}
+                      >
+                        <SelectTrigger className="w-40 text-left">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="full">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Full Width</span>
+                              <span className="text-xs text-muted-foreground">Use all available space</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="auto">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Auto</span>
+                              <span className="text-xs text-muted-foreground">720px reading width</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="a4">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">A4</span>
+                              <span className="text-xs text-muted-foreground">210mm (794px)</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="a5">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">A5</span>
+                              <span className="text-xs text-muted-foreground">148mm (559px)</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="letter">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Letter</span>
+                              <span className="text-xs text-muted-foreground">8.5" (816px)</span>
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                 </div>

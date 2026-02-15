@@ -43,8 +43,8 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
   };
 
   return (
-    <div className="w-80 border-l bg-background flex flex-col h-full">
-      <div className="p-4 border-b bg-card">
+    <div className="h-full w-full border-l border-border bg-card flex flex-col">
+      <div className="p-4 border-b border-border bg-card">
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-semibold text-lg">AI Chat</h2>
           <div className="flex gap-1">

@@ -19,7 +19,7 @@ export function StatusBar({ editor }: StatusBarProps) {
   const readingTimeMinutes = Math.ceil(words / 200);
 
   return (
-    <div className="border-t border-border bg-card px-4 py-1.5 flex items-center gap-4 text-xs text-muted-foreground">
+    <div className="h-7 border-t border-border px-4 flex items-center gap-4 text-xs text-muted-foreground shrink-0 overflow-x-auto overflow-y-hidden whitespace-nowrap" style={{ backgroundColor: 'var(--color-background)' }}>
       <div className="flex items-center gap-1">
         <span className="font-medium">{words}</span>
         <span>{words === 1 ? "word" : "words"}</span>

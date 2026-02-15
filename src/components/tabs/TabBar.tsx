@@ -24,10 +24,10 @@ export function TabBar() {
   };
 
   return (
-    <div className="border-b border-border bg-card flex items-center justify-between">
+    <div className="h-10 border-b border-border flex items-center justify-between shrink-0" style={{ backgroundColor: 'var(--color-background)' }}>
       {tabs.length > 0 ? (
         <Tabs value={activeTabId || undefined} className="flex-1">
-          <TabsList className="w-full justify-start rounded-none bg-transparent h-auto p-0">
+          <TabsList className="w-full justify-start rounded-none bg-transparent h-10 p-0 overflow-x-auto overflow-y-hidden">
             {tabs.map((tab) => (
               <TabsTrigger
                 key={tab.id}

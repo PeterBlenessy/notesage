@@ -38,7 +38,7 @@ export function Sidebar() {
   };
 
   return (
-    <div className="w-64 border-r border-border bg-card flex flex-col h-full">
+    <div className="h-full w-full border-r border-border bg-card flex flex-col">
       <div className="p-4 border-b border-border">
         <Button
           onClick={handleOpenFolder}

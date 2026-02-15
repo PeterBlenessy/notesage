@@ -45,7 +45,7 @@ export function Toolbar({ editor }: ToolbarProps) {
   };
 
   return (
-    <div className="border-b border-border bg-card p-2 flex flex-wrap items-center gap-1">
+    <div className="h-10 border-b border-border px-2 flex items-center gap-1 overflow-x-auto overflow-y-hidden shrink-0" style={{ backgroundColor: 'var(--color-background)' }}>
       <Button
         size="sm"
         variant="ghost"

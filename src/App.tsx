@@ -8,15 +8,45 @@ import { ChatPanel } from "@/components/chat/ChatPanel";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { Button } from "@/components/ui/button";
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/resizable";
 import { PanelLeft, MessageSquare, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const BREAKPOINT_WIDE = 1200; // px
+const SIDEBAR_FLOAT_WIDTH = 280; // px - sidebar width in narrow/floating mode
+
+// Editor area with document-style presentation
+function EditorArea() {
+  return (
+    <div className="flex flex-col h-full overflow-hidden" style={{ backgroundColor: 'var(--color-muted)' }}>
+      <TabBar />
+      <Editor />
+    </div>
+  );
+}
 
 function App() {
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [chatPanelOpen, setChatPanelOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isWideMode, setIsWideMode] = useState(window.innerWidth >= BREAKPOINT_WIDE);
+
   useKeyboardShortcuts();
+
+  // Track window width for responsive behavior
+  useEffect(() => {
+    const handleResize = () => {
+      setIsWideMode(window.innerWidth >= BREAKPOINT_WIDE);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -89,15 +119,73 @@ function App() {
         </div>
 
         {/* Main Content Area */}
-        <div className="flex flex-1 overflow-hidden">
-          {sidebarOpen && <Sidebar />}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <TabBar />
-            <div className="flex-1 overflow-hidden">
-              <Editor />
-            </div>
-          </div>
-          {chatPanelOpen && <ChatPanel onClose={() => setChatPanelOpen(false)} />}
+        <div className="flex flex-1 overflow-hidden relative">
+          {isWideMode ? (
+            // WIDE MODE: All panels docked and resizable
+            <ResizablePanelGroup direction="horizontal" className="flex h-full w-full">
+              {sidebarOpen && (
+                <>
+                  <ResizablePanel defaultSize={20} minSize={200} maxSize={400}>
+                    <Sidebar />
+                  </ResizablePanel>
+                  <ResizableHandle withHandle />
+                </>
+              )}
+
+              <ResizablePanel defaultSize={sidebarOpen && chatPanelOpen ? 50 : 70} minSize={300}>
+                <EditorArea />
+              </ResizablePanel>
+
+              {chatPanelOpen && (
+                <>
+                  <ResizableHandle withHandle />
+                  <ResizablePanel defaultSize={30} minSize={280} maxSize={500}>
+                    <ChatPanel onClose={() => setChatPanelOpen(false)} />
+                  </ResizablePanel>
+                </>
+              )}
+            </ResizablePanelGroup>
+          ) : (
+            // NARROW MODE: Sidebar floats, content + chat are docked
+            <>
+              {/* Backdrop overlay - click to close sidebar */}
+              {sidebarOpen && (
+                <div
+                  className="absolute inset-0 bg-black/20 z-[9]"
+                  onClick={() => setSidebarOpen(false)}
+                />
+              )}
+
+              {/* Floating Sidebar Overlay */}
+              {sidebarOpen && (
+                <div
+                  className="absolute left-0 top-0 bottom-0 z-10 shadow-2xl"
+                  style={{ width: `${SIDEBAR_FLOAT_WIDTH}px` }}
+                >
+                  <Sidebar />
+                </div>
+              )}
+
+              {/* Content + Chat (always docked) */}
+              <ResizablePanelGroup
+                direction="horizontal"
+                className="flex h-full w-full"
+              >
+                <ResizablePanel minSize={300}>
+                  <EditorArea />
+                </ResizablePanel>
+
+                {chatPanelOpen && (
+                  <>
+                    <ResizableHandle withHandle />
+                    <ResizablePanel defaultSize={35} minSize={280} maxSize={500}>
+                      <ChatPanel onClose={() => setChatPanelOpen(false)} />
+                    </ResizablePanel>
+                  </>
+                )}
+              </ResizablePanelGroup>
+            </>
+          )}
         </div>
 
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
