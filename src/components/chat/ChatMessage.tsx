@@ -24,18 +24,18 @@ export function ChatMessage({ message }: ChatMessageProps) {
   };
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}>
       <div
-        className={`max-w-[80%] rounded-lg px-4 py-3 ${
+        className={`max-w-[85%] rounded-lg px-3 py-2 ${
           isUser
             ? 'bg-primary text-primary-foreground'
             : 'bg-card border border-border text-card-foreground'
         }`}
       >
         <div className="flex items-start justify-between gap-2">
-          <div className="prose prose-sm dark:prose-invert max-w-none flex-1">
+          <div className="prose prose-xs dark:prose-invert max-w-none flex-1 text-sm">
             {isUser ? (
-              <p className="m-0 whitespace-pre-wrap">{message.content}</p>
+              <p className="m-0 whitespace-pre-wrap text-sm">{message.content}</p>
             ) : isStreaming ? (
               <div className="flex items-center gap-1">
                 <div className="h-2 w-2 rounded-full bg-current animate-pulse" />
