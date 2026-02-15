@@ -114,10 +114,10 @@ export function Editor() {
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <Toolbar editor={editor} />
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto editor-scroll-area">
         <div
           className={`min-h-full flex justify-center ${
-            contentWidth === "full" ? "py-4 px-4" : "py-8 px-6"
+            contentWidth === "full" ? "py-4 px-4" : "py-10 px-8"
           }`}
         >
           <div
