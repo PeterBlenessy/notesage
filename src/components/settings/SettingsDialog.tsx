@@ -37,7 +37,7 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
 ];
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const { theme, setTheme, showFloatingToolbar, setShowFloatingToolbar, contentWidth, setContentWidth } = useSettingsStore();
+  const { theme, setTheme, showFloatingToolbar, setShowFloatingToolbar, contentWidth, setContentWidth, contentMargin, setContentMargin } = useSettingsStore();
   const [activeTab, setActiveTab] = useState<SettingsTab>('ai');
 
   return (
@@ -212,6 +212,33 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           <SelectItem value="a4">A4 (794px)</SelectItem>
                           <SelectItem value="a5">A5 (559px)</SelectItem>
                           <SelectItem value="letter">Letter (816px)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border transition-colors"
+                      style={{ borderColor: 'var(--color-border)' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                    >
+                      <div>
+                        <Label className="text-[13px] font-medium">Page Margin</Label>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Horizontal margins inside the document
+                        </p>
+                      </div>
+                      <Select
+                        value={contentMargin}
+                        onValueChange={setContentMargin}
+                      >
+                        <SelectTrigger className="ml-auto w-44 text-left">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="small">Small (32px)</SelectItem>
+                          <SelectItem value="medium">Medium (64px)</SelectItem>
+                          <SelectItem value="large">Large (96px)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

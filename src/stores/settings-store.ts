@@ -3,16 +3,19 @@ import { persist } from "zustand/middleware";
 
 type Theme = "light" | "dark" | "system";
 export type ContentWidth = "full" | "auto" | "a4" | "a5" | "letter";
+export type ContentMargin = "small" | "medium" | "large";
 
 interface SettingsStore {
   theme: Theme;
   showFloatingToolbar: boolean;
   contentWidth: ContentWidth;
+  contentMargin: ContentMargin;
   sidebarOpen: boolean;
   chatPanelOpen: boolean;
   setTheme: (theme: Theme) => void;
   setShowFloatingToolbar: (show: boolean) => void;
   setContentWidth: (width: ContentWidth) => void;
+  setContentMargin: (margin: ContentMargin) => void;
   setSidebarOpen: (open: boolean) => void;
   setChatPanelOpen: (open: boolean) => void;
 }
@@ -23,6 +26,7 @@ export const useSettingsStore = create<SettingsStore>()(
       theme: "system",
       showFloatingToolbar: true,
       contentWidth: "auto",
+      contentMargin: "large",
       sidebarOpen: true,
       chatPanelOpen: false,
 
@@ -36,6 +40,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setContentWidth: (width: ContentWidth) => {
         set({ contentWidth: width });
+      },
+
+      setContentMargin: (margin: ContentMargin) => {
+        set({ contentMargin: margin });
       },
 
       setSidebarOpen: (open: boolean) => {

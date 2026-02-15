@@ -1,8 +1,8 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { EditorContent } from "@tiptap/react";
-import { FileText, FolderOpen, Command } from "lucide-react";
+import { FileText, Command } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
-import { useSettingsStore, type ContentWidth } from "@/stores/settings-store";
+import { useSettingsStore, type ContentWidth, type ContentMargin } from "@/stores/settings-store";
 import { useEditor } from "@/hooks/useEditor";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { Toolbar } from "./Toolbar";
@@ -10,6 +10,8 @@ import { BubbleMenu } from "./BubbleMenu";
 import { StatusBar } from "./StatusBar";
 import "@/styles/editor.css";
 
+// Full page widths at 96 CSS DPI (1 CSS px = 1/96 inch)
+// ProseMirror padding acts as page margins
 const CONTENT_WIDTHS: Record<ContentWidth, number | undefined> = {
   full: undefined,
   auto: 720,
@@ -18,13 +20,36 @@ const CONTENT_WIDTHS: Record<ContentWidth, number | undefined> = {
   letter: 816,
 };
 
+const CONTENT_MARGINS: Record<ContentMargin, string> = {
+  small: '2rem',
+  medium: '4rem',
+  large: '6rem',
+};
+
 export function Editor() {
   const { tabs, activeTabId, updateTabContent } = useEditorStore();
-  const { showFloatingToolbar, contentWidth } = useSettingsStore();
+  const { showFloatingToolbar, contentWidth, contentMargin } = useSettingsStore();
   const { saveFile } = useFileOperations();
   const maxWidth = CONTENT_WIDTHS[contentWidth];
+  const editorMargin = CONTENT_MARGINS[contentMargin];
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
   const lastLoadedTabId = useRef<string | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [renderedWidth, setRenderedWidth] = useState<number | null>(null);
+
+  // Observe rendered width of the content container
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setRenderedWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [activeTab]);
 
   const handleUpdate = useCallback(
     (content: string) => {
@@ -139,15 +164,19 @@ export function Editor() {
           }`}
         >
           <div
+            ref={contentRef}
             className="w-full"
-            style={maxWidth ? { maxWidth: `${maxWidth}px` } : undefined}
+            style={{
+              maxWidth: maxWidth ? `${maxWidth}px` : undefined,
+              '--editor-margin': editorMargin,
+            } as React.CSSProperties}
           >
             <EditorContent editor={editor} />
           </div>
         </div>
         {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}
       </div>
-      <StatusBar editor={editor} />
+      <StatusBar editor={editor} maxWidth={maxWidth} renderedWidth={renderedWidth} />
     </div>
   );
 }

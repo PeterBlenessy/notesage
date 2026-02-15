@@ -3,7 +3,7 @@
 .ProseMirror {
   outline: none;
   min-height: 400px;
-  padding: 2rem 2.5rem;
+  padding: 2rem var(--editor-margin, 6rem);
   background-color: var(--color-background);
   color: var(--color-foreground);
   font-size: 16px;
