@@ -1,9 +1,9 @@
 import { BubbleMenu as TiptapBubbleMenu } from "@tiptap/react/menus";
 import type { Editor } from "@tiptap/core";
-import { Button } from "@/components/ui/button";
 import {
   Sparkles,
   Loader2,
+  ChevronDown,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAIStore } from "@/stores/ai-store";
@@ -17,8 +17,37 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
+
 interface BubbleMenuProps {
   editor: Editor;
+}
+
+function BubbleButton({
+  onClick,
+  disabled,
+  title,
+  loading,
+  children,
+}: {
+  onClick: () => void;
+  disabled: boolean;
+  title: string;
+  loading: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className="h-7 px-2.5 rounded-md text-[12px] font-medium transition-colors disabled:opacity-40 disabled:pointer-events-none inline-flex items-center gap-1.5"
+      style={{ color: 'var(--color-foreground)' }}
+      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
+    >
+      {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : children}
+    </button>
+  );
 }
 
 export function BubbleMenu({ editor }: BubbleMenuProps) {
@@ -33,10 +62,8 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
       setHasSuggestion(hasActiveSuggestion(editor));
     };
 
-    // Initial check
     updateSuggestionState();
 
-    // Listen to editor updates
     editor.on('update', updateSuggestionState);
     editor.on('transaction', updateSuggestionState);
 
@@ -76,8 +103,6 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
       }
 
       const result = await generateText(prompt);
-
-      // Show suggestion with decorations instead of immediately replacing
       setSuggestion(editor, from, to, selectedText, result.trim());
     } catch (error) {
       console.error('AI action failed:', error);
@@ -103,11 +128,8 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
     setLoadingAction('custom');
 
     try {
-      // Replace {{selection}} placeholder with actual selected text
       const prompt = template.replace(/\{\{selection\}\}/g, selectedText);
       const result = await generateText(prompt);
-
-      // Show suggestion with decorations instead of immediately replacing
       setSuggestion(editor, from, to, selectedText, result.trim());
     } catch (error) {
       console.error('Custom prompt failed:', error);
@@ -120,113 +142,116 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
   return (
     <TiptapBubbleMenu
       editor={editor}
-      className="flex items-center gap-1 rounded-lg border border-border bg-background/95 backdrop-blur-md p-1.5 shadow-xl ring-1 ring-border/50"
+      className="flex items-center rounded-lg border shadow-lg backdrop-blur-sm overflow-hidden"
+      tippyOptions={{ duration: 150 }}
+      style={{
+        borderColor: 'var(--color-border)',
+        backgroundColor: 'var(--color-popover)',
+        padding: '3px',
+      }}
     >
       {provider && !hasSuggestion && (
         <>
-          <Button
-            size="sm"
-            variant="ghost"
+          <BubbleButton
             onClick={() => handleAIAction('improve')}
             disabled={loadingAction !== null}
-            className="h-8 px-2 text-sm"
             title="Improve with AI"
+            loading={loadingAction === 'improve'}
           >
-            {loadingAction === 'improve' ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <>
-                <Sparkles className="h-4 w-4 mr-1" />
-                Improve
-              </>
-            )}
-          </Button>
+            <Sparkles className="h-3 w-3" />
+            Improve
+          </BubbleButton>
 
-          <Button
-            size="sm"
-            variant="ghost"
+          <div className="w-px h-4 mx-0.5" style={{ backgroundColor: 'var(--color-border)' }} />
+
+          <BubbleButton
             onClick={() => handleAIAction('summarize')}
             disabled={loadingAction !== null}
-            className="h-8 px-2 text-sm"
             title="Summarize with AI"
+            loading={loadingAction === 'summarize'}
           >
-            {loadingAction === 'summarize' ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              'Summarize'
-            )}
-          </Button>
+            Summarize
+          </BubbleButton>
 
-          <Button
-            size="sm"
-            variant="ghost"
+          <div className="w-px h-4 mx-0.5" style={{ backgroundColor: 'var(--color-border)' }} />
+
+          <BubbleButton
             onClick={() => handleAIAction('expand')}
             disabled={loadingAction !== null}
-            className="h-8 px-2 text-sm"
             title="Expand with AI"
+            loading={loadingAction === 'expand'}
           >
-            {loadingAction === 'expand' ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              'Expand'
-            )}
-          </Button>
+            Expand
+          </BubbleButton>
 
           {customPrompts.length > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={loadingAction !== null}
-                  className="h-8 px-2 text-sm"
-                  title="Custom prompts"
-                >
-                  {loadingAction === 'custom' ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    'More'
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
-                  Custom Prompts
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {customPrompts.map((prompt) => (
-                  <DropdownMenuItem
-                    key={prompt.id}
-                    onClick={() => handleCustomPrompt(prompt.template)}
-                    className="cursor-pointer"
+            <>
+              <div className="w-px h-4 mx-0.5" style={{ backgroundColor: 'var(--color-border)' }} />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    disabled={loadingAction !== null}
+                    className="h-7 px-2 rounded-md text-[12px] font-medium transition-colors disabled:opacity-40 disabled:pointer-events-none inline-flex items-center gap-1"
+                    style={{ color: 'var(--color-muted-foreground)' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
+                    title="Custom prompts"
                   >
-                    <span className="mr-2">{prompt.icon}</span>
-                    {prompt.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                    {loadingAction === 'custom' ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <>
+                        More
+                        <ChevronDown className="h-3 w-3" />
+                      </>
+                    )}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                    Custom Prompts
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {customPrompts.map((prompt) => (
+                    <DropdownMenuItem
+                      key={prompt.id}
+                      onClick={() => handleCustomPrompt(prompt.template)}
+                      className="cursor-pointer text-[13px]"
+                    >
+                      <span className="mr-2">{prompt.icon}</span>
+                      {prompt.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
           )}
         </>
       )}
 
       {hasSuggestion && (
-        <>
-          <div className="flex items-center gap-2 px-2 text-xs">
-            <Sparkles className="h-3 w-3 text-green-600 dark:text-green-400" />
-            <span className="font-medium text-foreground">AI suggestion</span>
-            <span className="flex items-center gap-1 text-muted-foreground">
-              <kbd className="px-1.5 py-0.5 text-xs font-semibold border rounded bg-muted">⌘</kbd>
-              <span className="text-[10px]">+</span>
-              <kbd className="px-1.5 py-0.5 text-xs font-semibold border rounded bg-muted">↵</kbd>
-              <span className="text-[10px] ml-0.5">accept</span>
-              <kbd className="px-1.5 py-0.5 text-xs font-semibold border rounded bg-muted ml-2">⌘</kbd>
-              <span className="text-[10px]">+</span>
-              <kbd className="px-1.5 py-0.5 text-xs font-semibold border rounded bg-muted">⌫</kbd>
-              <span className="text-[10px] ml-0.5">reject</span>
-            </span>
+        <div className="flex items-center gap-2 px-2.5 py-1">
+          <Sparkles className="h-3 w-3" style={{ color: 'var(--color-primary)' }} />
+          <span className="text-[12px] font-medium" style={{ color: 'var(--color-foreground)' }}>
+            AI suggestion
+          </span>
+          <div className="flex items-center gap-1.5 ml-1" style={{ color: 'var(--color-muted-foreground)' }}>
+            <kbd
+              className="px-1 py-0.5 text-[10px] font-mono rounded"
+              style={{ backgroundColor: 'var(--color-muted)', border: '1px solid var(--color-border)' }}
+            >
+              ⌘↵
+            </kbd>
+            <span className="text-[10px]">accept</span>
+            <kbd
+              className="px-1 py-0.5 text-[10px] font-mono rounded ml-1"
+              style={{ backgroundColor: 'var(--color-muted)', border: '1px solid var(--color-border)' }}
+            >
+              ⌘⌫
+            </kbd>
+            <span className="text-[10px]">reject</span>
           </div>
-        </>
+        </div>
       )}
     </TiptapBubbleMenu>
   );
