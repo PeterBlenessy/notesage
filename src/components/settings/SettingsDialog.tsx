@@ -5,7 +5,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { AISettings } from './AISettings';
@@ -27,16 +26,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="hover:bg-accent transition-all hover:scale-110 active:scale-95"
-          title="Settings (Cmd+,)"
-        >
-          <Settings className="h-5 w-5" />
-        </Button>
-      </DialogTrigger>
       <DialogContent className="max-w-[80vw] lg:max-w-4xl max-h-[85vh] p-0 gap-0 overflow-hidden flex flex-col">
         {/* Header */}
         <DialogHeader className="p-6 pb-4 border-b bg-card/50 shrink-0">
