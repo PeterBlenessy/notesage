@@ -42,7 +42,6 @@ export function FileTreeItem({ entry, level, onFileClick }: FileTreeItemProps) {
     try {
       const parentPath = entry.is_directory ? entry.path : entry.path.substring(0, entry.path.lastIndexOf("/"));
       const newPath = await createFile(parentPath, fileName);
-      // Auto-open the new file
       await openFile(newPath, fileName);
     } catch (error) {
       alert(`Failed to create file: ${error}`);
@@ -89,7 +88,7 @@ export function FileTreeItem({ entry, level, onFileClick }: FileTreeItemProps) {
     }
   };
 
-  const paddingLeft = `${level * 12 + 8}px`;
+  const paddingLeft = `${level * 14 + 6}px`;
 
   return (
     <div>
@@ -97,29 +96,36 @@ export function FileTreeItem({ entry, level, onFileClick }: FileTreeItemProps) {
         <ContextMenuTrigger>
           <div
             className={cn(
-              "flex items-center gap-1 py-1 px-2 rounded-md cursor-pointer hover:bg-accent",
-              "text-sm transition-colors",
-              isActive && "bg-accent/50 border-l-2 border-primary"
+              "group flex items-center gap-1.5 h-7 px-1.5 rounded-md cursor-pointer transition-colors",
+              "text-[13px]",
+              isActive
+                ? "text-foreground font-medium"
+                : "text-muted-foreground hover:text-foreground"
             )}
-            style={{ paddingLeft }}
+            style={{
+              paddingLeft,
+              backgroundColor: isActive ? 'var(--color-accent)' : undefined,
+            }}
+            onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
+            onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = ''; }}
             onClick={handleClick}
           >
-            {entry.is_directory && (
-              <span className="flex-shrink-0">
+            {entry.is_directory ? (
+              <span className="shrink-0 text-muted-foreground">
                 {expanded ? (
-                  <ChevronDown className="h-4 w-4" />
+                  <ChevronDown className="h-3.5 w-3.5" />
                 ) : (
-                  <ChevronRight className="h-4 w-4" />
+                  <ChevronRight className="h-3.5 w-3.5" />
                 )}
               </span>
+            ) : (
+              <span className="w-3.5 shrink-0" />
             )}
 
-            {!entry.is_directory && <span className="w-4" />}
-
             {entry.is_directory ? (
-              <Folder className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+              <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
             ) : (
-              <File className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+              <File className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
             )}
 
             <span className="truncate flex-1">{entry.name}</span>
