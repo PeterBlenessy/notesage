@@ -8,13 +8,15 @@ import { ChatPanel } from "@/components/chat/ChatPanel";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useProjectStore } from "@/stores/project-store";
+import { tauriApi } from "@/lib/tauri";
 import { Button } from "@/components/ui/button";
 import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
-import { PanelLeft, MessageSquare, Settings } from "lucide-react";
+import { PanelLeft, MessageSquare, Settings, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BREAKPOINT_WIDE = 1200; // px
@@ -54,7 +56,22 @@ function App() {
   const [isWideMode, setIsWideMode] = useState(window.innerWidth >= BREAKPOINT_WIDE);
   const { sidebarOpen, setSidebarOpen, chatPanelOpen, setChatPanelOpen } = useSettingsStore();
 
+  const { setRootPath, setFileTree } = useProjectStore();
+
   useKeyboardShortcuts();
+
+  const handleOpenFolder = useCallback(async () => {
+    try {
+      const folderPath = await tauriApi.openFolderDialog();
+      if (folderPath) {
+        setRootPath(folderPath);
+        const tree = await tauriApi.listDirectory(folderPath);
+        setFileTree(tree);
+      }
+    } catch (error) {
+      console.error("Failed to open folder:", error);
+    }
+  }, [setRootPath, setFileTree]);
 
   const handleWideLayout = useCallback((layout: Record<string, number>) => {
     savePanelSizes("wide", layout);
@@ -148,6 +165,23 @@ function App() {
         <div className="flex flex-1 overflow-hidden relative">
           {isWideMode ? (
             // WIDE MODE: All panels docked and resizable
+            <>
+            {!sidebarOpen && (
+              <div
+                className="h-full shrink-0 border-r border-border flex flex-col items-center pt-3 gap-2"
+                style={{ width: '40px', backgroundColor: 'var(--color-card)' }}
+              >
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={handleOpenFolder}
+                  title="Open Folder"
+                >
+                  <FolderOpen className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
             <ResizablePanelGroup direction="horizontal" className="flex h-full w-full" onLayoutChanged={handleWideLayout}>
               {sidebarOpen && (
                 <>
@@ -171,6 +205,7 @@ function App() {
                 </>
               )}
             </ResizablePanelGroup>
+            </>
           ) : (
             // NARROW MODE: Sidebar floats, content + chat are docked
             <>
@@ -189,6 +224,24 @@ function App() {
                   style={{ width: `${SIDEBAR_FLOAT_WIDTH}px`, backgroundColor: 'var(--color-card)' }}
                 >
                   <Sidebar />
+                </div>
+              )}
+
+              {/* Collapsed sidebar strip */}
+              {!sidebarOpen && (
+                <div
+                  className="h-full shrink-0 border-r border-border flex flex-col items-center pt-3 gap-2"
+                  style={{ width: '40px', backgroundColor: 'var(--color-card)' }}
+                >
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={handleOpenFolder}
+                    title="Open Folder"
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                  </Button>
                 </div>
               )}
 
