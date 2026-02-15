@@ -95,8 +95,8 @@ function App() {
   // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd+P for quick open
-      if ((e.metaKey || e.ctrlKey) && e.key === "p") {
+      // Cmd+F for quick open
+      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
         e.preventDefault();
         setQuickOpenVisible(true);
       }

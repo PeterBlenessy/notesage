@@ -73,8 +73,7 @@ These shortcuts are planned but not yet implemented:
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Quick open | `Cmd+P` | Fuzzy file search and open |
-| Find in file | `Cmd+F` | Search within current document |
+| Quick open | `Cmd+F` | Fuzzy file search and open |
 | Find and replace | `Cmd+Shift+F` | Search and replace in current document |
 | Toggle sidebar | `Cmd+B` | Show/hide file sidebar |
 

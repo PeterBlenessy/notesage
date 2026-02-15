@@ -99,7 +99,7 @@ See @docs/tauri-commands.md for command signatures.
 ## Nice to Have (Phase 1 Stretch Goals)
 
 - Drag-and-drop files in sidebar to reorder/move
-- Cmd+P quick-open with fuzzy file search
+- Cmd+F quick-open with fuzzy file search
 - Word count in status bar
 - Outline/TOC panel (generated from headings)
 - Recent files list on empty state

@@ -47,7 +47,7 @@ pnpm tauri build
 - `Cmd+S` - Save file
 - `Cmd+N` - New file
 - `Cmd+W` - Close tab
-- `Cmd+P` - Quick open (fuzzy file search)
+- `Cmd+F` - Quick open (fuzzy file search)
 - `Cmd+,` - Settings
 - `Cmd+Shift+T` - Toggle theme
 - `Cmd+Shift+A` - Toggle AI chat panel

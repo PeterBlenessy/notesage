@@ -27,9 +27,9 @@ Beyond the core Phase 1 requirements, I've added several quality-of-life improve
 - Native prompts for simplicity
 - Full error handling
 
-### 2. Quick Open (Cmd+P) ✅
+### 2. Quick Open (Cmd+F) ✅
 
-**Press Cmd+P** to instantly search and open any file:
+**Press Cmd+F** to instantly search and open any file:
 
 **Features:**
 - Fuzzy search by filename or path
@@ -43,7 +43,7 @@ Beyond the core Phase 1 requirements, I've added several quality-of-life improve
 **Benefits:**
 - Navigate large projects without clicking
 - Faster than scrolling through file tree
-- Similar to VS Code's Cmd+P behavior
+- Similar to VS Code's Cmd+F behavior
 - Great for projects with deep folder structures
 
 **Implementation:**
@@ -89,7 +89,7 @@ Beyond the core Phase 1 requirements, I've added several quality-of-life improve
 
 | Shortcut | Action |
 |----------|--------|
-| **Cmd+P** | Quick Open file search |
+| **Cmd+F** | Quick Open file search |
 | Cmd+S | Save current file |
 | Cmd+W | Close active tab |
 | Cmd+B/I/U | Bold/Italic/Underline |
@@ -115,7 +115,7 @@ e0bc80f Initial commit: Notesage Phase 1 - Complete WYSIWYG Markdown Editor
 ### Modified Files
 - `src/components/sidebar/FileTreeItem.tsx` - Context menu + highlight
 - `src/components/editor/Editor.tsx` - StatusBar integration
-- `src/App.tsx` - QuickOpen + Cmd+P handler
+- `src/App.tsx` - QuickOpen + Cmd+F handler
 
 ## Phase 1 Quality Gates - Final Status
 
@@ -139,7 +139,7 @@ From CLAUDE.md exit criteria:
 - ✅ No console errors during normal operation
 
 **Plus additional nice-to-have features:**
-- ✅ Cmd+P quick file open
+- ✅ Cmd+F quick file open
 - ✅ Word count in status bar
 - ✅ Active file highlight in sidebar
 
@@ -148,7 +148,7 @@ From CLAUDE.md exit criteria:
 ## What You Can Now Do
 
 1. **Right-click files/folders** for quick operations
-2. **Press Cmd+P** to instantly jump to any file
+2. **Press Cmd+F** to instantly jump to any file
 3. **See word count** and reading time at a glance
 4. **Spot active file** easily in the sidebar
 5. All previous Phase 1 features (see PHASE1-COMPLETE.md)
