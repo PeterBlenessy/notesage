@@ -3,7 +3,7 @@ import { X, Trash2, Loader2, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useChatStore } from '@/stores/chat-store';
-import { useAIStore } from '@/stores/ai-store';
+import { useAIStore, getActivePersona } from '@/stores/ai-store';
 import { useAIOperations } from '@/hooks/useAIOperations';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
@@ -14,7 +14,9 @@ interface ChatPanelProps {
 
 export function ChatPanel({ onClose }: ChatPanelProps) {
   const { messages, isLoading, error, activeTool, clearMessages } = useChatStore();
-  const { provider } = useAIStore();
+  const aiStore = useAIStore();
+  const { provider } = aiStore;
+  const activePersona = getActivePersona(aiStore);
   const { sendChatMessage } = useAIOperations();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -42,20 +44,28 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
 
   return (
     <div className="w-80 border-l bg-background flex flex-col h-full">
-      <div className="p-4 border-b bg-card flex items-center justify-between">
-        <h2 className="font-semibold text-lg">AI Chat</h2>
-        <div className="flex gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleClear}
-            title="Clear chat history"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={onClose} title="Close chat">
-            <X className="h-4 w-4" />
-          </Button>
+      <div className="p-4 border-b bg-card">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="font-semibold text-lg">AI Chat</h2>
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleClear}
+              title="Clear chat history"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={onClose} title="Close chat">
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 px-2 py-1.5 bg-accent/50 rounded-md border border-border/50">
+          <span className="text-base">{activePersona.icon}</span>
+          <span className="text-xs text-muted-foreground font-medium">
+            {activePersona.name}
+          </span>
         </div>
       </div>
 

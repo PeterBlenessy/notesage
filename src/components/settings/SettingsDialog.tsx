@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, Monitor, Sparkles, Sliders } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, UserCircle2, FileText } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -9,6 +9,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { AISettings } from './AISettings';
+import { PersonasSettings } from './PersonasSettings';
+import { PromptsSettings } from './PromptsSettings';
 import { useSettingsStore } from '@/stores/settings-store';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -21,7 +23,7 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { theme, setTheme, showFloatingToolbar, setShowFloatingToolbar } = useSettingsStore();
-  const [activeTab, setActiveTab] = useState<'ai' | 'editor'>('ai');
+  const [activeTab, setActiveTab] = useState<'ai' | 'personas' | 'prompts' | 'editor'>('ai');
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -35,9 +37,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <Settings className="h-5 w-5" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-3xl max-h-[85vh] p-0 gap-0 overflow-hidden">
+      <DialogContent className="max-w-[80vw] lg:max-w-4xl max-h-[85vh] p-0 gap-0 overflow-hidden flex flex-col">
         {/* Header */}
-        <DialogHeader className="p-6 pb-4 border-b bg-card/50">
+        <DialogHeader className="p-6 pb-4 border-b bg-card/50 shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-primary/10">
@@ -53,7 +55,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </div>
         </DialogHeader>
 
-        <div className="flex h-full overflow-hidden">
+        <div className="flex flex-1 overflow-hidden min-h-0">
           {/* Sidebar Navigation */}
           <div className="w-48 border-r bg-muted/30 p-4">
             <nav className="space-y-1">
@@ -67,6 +69,28 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               >
                 <Sparkles className="h-4 w-4" />
                 AI Providers
+              </button>
+              <button
+                onClick={() => setActiveTab('personas')}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                  activeTab === 'personas'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'hover:bg-accent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <UserCircle2 className="h-4 w-4" />
+                AI Personas
+              </button>
+              <button
+                onClick={() => setActiveTab('prompts')}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                  activeTab === 'prompts'
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'hover:bg-accent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <FileText className="h-4 w-4" />
+                Custom Prompts
               </button>
               <button
                 onClick={() => setActiveTab('editor')}
@@ -87,6 +111,18 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             {activeTab === 'ai' && (
               <div className="p-6 animate-in fade-in-50 duration-300">
                 <AISettings />
+              </div>
+            )}
+
+            {activeTab === 'personas' && (
+              <div className="p-6 animate-in fade-in-50 duration-300">
+                <PersonasSettings />
+              </div>
+            )}
+
+            {activeTab === 'prompts' && (
+              <div className="p-6 animate-in fade-in-50 duration-300">
+                <PromptsSettings />
               </div>
             )}
 

@@ -39,15 +39,16 @@ export function useEditor({ content, onUpdate, editable = true }: UseEditorOptio
       Placeholder.configure({
         placeholder: "Start typing or press '/' for commands...",
       }),
-      Underline,
-      TextAlign.configure({
-        types: ["heading", "paragraph"],
-      }),
+      // Add Link and Underline before Markdown to establish priority
       Link.configure({
         openOnClick: false,
         HTMLAttributes: {
           class: "text-primary underline cursor-pointer",
         },
+      }),
+      Underline,
+      TextAlign.configure({
+        types: ["heading", "paragraph"],
       }),
       Image.configure({
         HTMLAttributes: {

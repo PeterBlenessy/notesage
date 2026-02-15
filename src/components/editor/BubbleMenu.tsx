@@ -24,6 +24,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
@@ -32,9 +34,9 @@ interface BubbleMenuProps {
 }
 
 export function BubbleMenu({ editor }: BubbleMenuProps) {
-  const [loadingAction, setLoadingAction] = useState<'improve' | 'summarize' | 'expand' | null>(null);
+  const [loadingAction, setLoadingAction] = useState<'improve' | 'summarize' | 'expand' | 'custom' | null>(null);
   const [hasSuggestion, setHasSuggestion] = useState(false);
-  const { provider } = useAIStore();
+  const { provider, customPrompts } = useAIStore();
   const { generateText } = useAIOperations();
 
   // Check for active suggestion on every editor update
@@ -108,6 +110,36 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
     } catch (error) {
       console.error('AI action failed:', error);
       alert(`AI ${action} failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleCustomPrompt = async (template: string) => {
+    if (!provider) {
+      alert('Please configure an AI provider in Settings first.');
+      return;
+    }
+
+    const { from, to } = editor.state.selection;
+    const selectedText = editor.state.doc.textBetween(from, to, '\n');
+
+    if (!selectedText.trim()) {
+      return;
+    }
+
+    setLoadingAction('custom');
+
+    try {
+      // Replace {{selection}} placeholder with actual selected text
+      const prompt = template.replace(/\{\{selection\}\}/g, selectedText);
+      const result = await generateText(prompt);
+
+      // Show suggestion with decorations instead of immediately replacing
+      setSuggestion(editor, from, to, selectedText, result.trim());
+    } catch (error) {
+      console.error('Custom prompt failed:', error);
+      alert(`Custom prompt failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoadingAction(null);
     }
@@ -338,6 +370,42 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
               'Expand'
             )}
           </Button>
+
+          {customPrompts.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={loadingAction !== null}
+                  className="h-8 px-2 text-sm"
+                  title="Custom prompts"
+                >
+                  {loadingAction === 'custom' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    'More'
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                  Custom Prompts
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {customPrompts.map((prompt) => (
+                  <DropdownMenuItem
+                    key={prompt.id}
+                    onClick={() => handleCustomPrompt(prompt.template)}
+                    className="cursor-pointer"
+                  >
+                    <span className="mr-2">{prompt.icon}</span>
+                    {prompt.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </>
       )}
 
