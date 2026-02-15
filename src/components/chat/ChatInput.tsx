@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -10,16 +10,11 @@ interface ChatInputProps {
 
 export function ChatInput({ onSend, disabled }: ChatInputProps) {
   const [message, setMessage] = useState('');
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSubmit = () => {
     if (message.trim() && !disabled) {
       onSend(message.trim());
       setMessage('');
-
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
-      }
     }
   };
 
@@ -30,24 +25,16 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
     }
   };
 
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
-  }, [message]);
-
   return (
-    <div className="flex gap-2">
+    <div className="flex gap-2 items-end">
       <Textarea
-        ref={textareaRef}
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Ask AI anything... (Cmd+Enter to send)"
+        placeholder="Ask AI anything... ⌘↵ to send"
         disabled={disabled}
-        className="min-h-[60px] max-h-[200px] resize-none"
-        rows={2}
+        className="max-h-[200px] resize-none"
+        rows={1}
       />
       <Button
         onClick={handleSubmit}

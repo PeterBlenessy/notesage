@@ -23,45 +23,43 @@ export function TabBar() {
     closeTab(tabId);
   };
 
+  if (tabs.length === 0) {
+    return null;
+  }
+
   return (
     <div className="h-10 border-b border-border flex items-center justify-between shrink-0" style={{ backgroundColor: 'var(--color-background)' }}>
-      {tabs.length > 0 ? (
-        <Tabs value={activeTabId || undefined} className="flex-1">
-          <TabsList className="w-full justify-start rounded-none bg-transparent h-10 p-0 overflow-x-auto overflow-y-hidden">
-            {tabs.map((tab) => (
-              <TabsTrigger
-                key={tab.id}
-                value={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "relative rounded-none border-r border-border px-4 py-2",
-                  "data-[state=active]:bg-background data-[state=active]:shadow-none",
-                  "hover:bg-accent/50 transition-colors"
+      <Tabs value={activeTabId || undefined} className="flex-1">
+        <TabsList className="w-full justify-start rounded-none bg-transparent h-10 p-0 overflow-x-auto overflow-y-hidden">
+          {tabs.map((tab) => (
+            <TabsTrigger
+              key={tab.id}
+              value={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "relative rounded-none border-r border-border px-4 py-2",
+                "data-[state=active]:bg-background data-[state=active]:shadow-none",
+                "hover:bg-accent/50 transition-colors"
+              )}
+            >
+              <span className="flex items-center gap-2">
+                {tab.isDirty && (
+                  <span className="h-2 w-2 rounded-full bg-primary" />
                 )}
-              >
-                <span className="flex items-center gap-2">
-                  {tab.isDirty && (
-                    <span className="h-2 w-2 rounded-full bg-primary" />
-                  )}
-                  <span className="max-w-[150px] truncate">{tab.fileName}</span>
-                  <span
-                    onClick={(e) => handleCloseTab(e, tab.id, tab.isDirty)}
-                    className="ml-2 hover:bg-accent rounded-sm p-0.5 transition-colors cursor-pointer inline-flex items-center justify-center"
-                    role="button"
-                    aria-label="Close tab"
-                  >
-                    <X className="h-3 w-3" />
-                  </span>
+                <span className="max-w-[150px] truncate">{tab.fileName}</span>
+                <span
+                  onClick={(e) => handleCloseTab(e, tab.id, tab.isDirty)}
+                  className="ml-2 hover:bg-accent rounded-sm p-0.5 transition-colors cursor-pointer inline-flex items-center justify-center"
+                  role="button"
+                  aria-label="Close tab"
+                >
+                  <X className="h-3 w-3" />
                 </span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-      ) : (
-        <div className="flex-1 px-4 py-2 text-sm text-muted-foreground">
-          No files open
-        </div>
-      )}
+              </span>
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
     </div>
   );
 }

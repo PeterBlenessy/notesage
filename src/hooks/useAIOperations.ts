@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useAIStore, getActivePersona } from '@/stores/ai-store';
 import { useChatStore } from '@/stores/chat-store';
 import { getAIProvider } from '@/lib/ai';
@@ -11,6 +11,7 @@ export function useAIOperations() {
   const { provider, apiKeys, ollamaUrl } = aiStore;
   const activePersona = getActivePersona(aiStore);
   const { addMessage, updateMessage, setLoading, setError, setActiveTool } = useChatStore();
+  const cleanupRef = useRef<(() => void) | null>(null);
 
   const generateText = useCallback(
     async (prompt: string): Promise<string> => {
@@ -43,14 +44,21 @@ export function useAIOperations() {
         throw new Error('No AI provider selected');
       }
 
+      // Clean up any stale listeners from a previous streaming call
+      if (cleanupRef.current) {
+        cleanupRef.current();
+        cleanupRef.current = null;
+      }
+
       setLoading(true);
       setError(null);
 
-      const userMessage: ChatMessage = { role: 'user', content };
+      const userTimestamp = Date.now();
+      const userMessage: ChatMessage = { role: 'user', content, timestamp: userTimestamp };
       addMessage(userMessage);
 
-      // Add placeholder message for streaming
-      const assistantMessageId = Date.now();
+      // Add placeholder message for streaming - ensure unique timestamp
+      const assistantMessageId = userTimestamp + 1;
       addMessage({ role: 'assistant', content: '', timestamp: assistantMessageId });
 
       try {
@@ -69,13 +77,21 @@ export function useAIOperations() {
           }
         });
 
-        // Listen for stream completion
-        const unlistenDone = await listen('ai-stream-done', () => {
+        const cleanup = () => {
           unlistenChunk();
           unlistenTool();
-          unlistenDone();
           setLoading(false);
           setActiveTool(null);
+          cleanupRef.current = null;
+        };
+
+        // Store cleanup so it can be called if a new message is sent before this finishes
+        cleanupRef.current = cleanup;
+
+        // Listen for stream completion
+        const unlistenDone = await listen('ai-stream-done', () => {
+          unlistenDone();
+          cleanup();
         });
 
         // Prepend system message from active persona
@@ -92,6 +108,10 @@ export function useAIOperations() {
           ollamaUrl,
         });
       } catch (error) {
+        // Clean up listeners on error
+        if (cleanupRef.current) {
+          cleanupRef.current();
+        }
         setError(error instanceof Error ? error.message : 'Unknown error');
         setLoading(false);
         setActiveTool(null);
