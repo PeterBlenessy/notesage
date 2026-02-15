@@ -181,30 +181,51 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(
     }));
 
     return (
-      <div className="z-50 min-w-[280px] rounded-lg border border-border bg-card p-2 shadow-lg">
+      <div
+        className="z-50 min-w-[240px] rounded-lg border p-1 shadow-lg"
+        style={{
+          borderColor: 'var(--color-border)',
+          backgroundColor: 'var(--color-popover)',
+        }}
+      >
         {items.length > 0 ? (
-          items.map((item, index) => (
-            <button
-              key={index}
-              onClick={() => command(item)}
-              className={cn(
-                "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors",
-                index === selectedIndex
-                  ? "bg-accent text-accent-foreground"
-                  : "hover:bg-accent/50"
-              )}
-            >
-              <item.icon className="h-4 w-4 flex-shrink-0" />
-              <div className="flex-1">
-                <div className="font-medium">{item.title}</div>
-                <div className="text-xs text-muted-foreground">
-                  {item.description}
+          items.map((item, index) => {
+            const isSelected = index === selectedIndex;
+            return (
+              <button
+                key={index}
+                onClick={() => command(item)}
+                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left transition-colors"
+                style={{
+                  backgroundColor: isSelected ? 'var(--color-accent)' : undefined,
+                }}
+                onMouseEnter={(e) => {
+                  setSelectedIndex(index);
+                  if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--color-accent)';
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSelected) e.currentTarget.style.backgroundColor = '';
+                }}
+              >
+                <div
+                  className="h-7 w-7 rounded-md flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: 'var(--color-muted)' }}
+                >
+                  <item.icon className="h-3.5 w-3.5" style={{ color: 'var(--color-muted-foreground)' }} />
                 </div>
-              </div>
-            </button>
-          ))
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-medium" style={{ color: 'var(--color-foreground)' }}>
+                    {item.title}
+                  </div>
+                  <div className="text-[11px]" style={{ color: 'var(--color-muted-foreground)' }}>
+                    {item.description}
+                  </div>
+                </div>
+              </button>
+            );
+          })
         ) : (
-          <div className="px-3 py-2 text-sm text-muted-foreground">
+          <div className="px-3 py-4 text-center text-[13px]" style={{ color: 'var(--color-muted-foreground)' }}>
             No results
           </div>
         )}
