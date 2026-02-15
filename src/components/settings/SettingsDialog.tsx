@@ -38,7 +38,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-primary/10">
-                <Settings className="h-5 w-5 text-primary" />
+                <Settings className="h-10 w-10 text-primary" />
               </div>
               <div>
                 <DialogTitle className="text-2xl">Settings</DialogTitle>
@@ -52,7 +52,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
         <div className="flex flex-1 overflow-hidden min-h-0">
           {/* Sidebar Navigation */}
-          <div className="w-48 border-r bg-muted/30 p-4">
+          <div className="w-52 border-r bg-muted/30 p-4">
             <nav className="space-y-1">
               <button
                 onClick={() => setActiveTab('ai')}
