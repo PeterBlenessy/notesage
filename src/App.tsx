@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { TabBar } from "@/components/tabs/TabBar";
 import { Editor } from "@/components/editor/Editor";
@@ -7,6 +7,7 @@ import { QuickOpen } from "@/components/QuickOpen";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useSettingsStore } from "@/stores/settings-store";
 import { Button } from "@/components/ui/button";
 import {
   ResizablePanelGroup,
@@ -18,6 +19,24 @@ import { cn } from "@/lib/utils";
 
 const BREAKPOINT_WIDE = 1200; // px
 const SIDEBAR_FLOAT_WIDTH = 280; // px - sidebar width in narrow/floating mode
+const PANEL_SIZES_KEY = "notesage-panel-sizes";
+
+function savePanelSizes(key: string, sizes: Record<string, number>) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(PANEL_SIZES_KEY) || "{}");
+    stored[key] = sizes;
+    localStorage.setItem(PANEL_SIZES_KEY, JSON.stringify(stored));
+  } catch {}
+}
+
+function loadPanelSize(key: string, panel: string, fallback: number): number {
+  try {
+    const stored = JSON.parse(localStorage.getItem(PANEL_SIZES_KEY) || "{}");
+    return stored[key]?.[panel] ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 // Editor area with document-style presentation
 function EditorArea() {
@@ -31,12 +50,19 @@ function EditorArea() {
 
 function App() {
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [chatPanelOpen, setChatPanelOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isWideMode, setIsWideMode] = useState(window.innerWidth >= BREAKPOINT_WIDE);
+  const { sidebarOpen, setSidebarOpen, chatPanelOpen, setChatPanelOpen } = useSettingsStore();
 
   useKeyboardShortcuts();
+
+  const handleWideLayout = useCallback((layout: Record<string, number>) => {
+    savePanelSizes("wide", layout);
+  }, []);
+
+  const handleNarrowLayout = useCallback((layout: Record<string, number>) => {
+    savePanelSizes("narrow", layout);
+  }, []);
 
   // Track window width for responsive behavior
   useEffect(() => {
@@ -60,13 +86,13 @@ function App() {
       // Cmd+B for sidebar toggle
       if ((e.metaKey || e.ctrlKey) && e.key === "b") {
         e.preventDefault();
-        setSidebarOpen((prev) => !prev);
+        setSidebarOpen(!useSettingsStore.getState().sidebarOpen);
       }
 
       // Cmd+Shift+A for AI chat toggle
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "a") {
         e.preventDefault();
-        setChatPanelOpen((prev) => !prev);
+        setChatPanelOpen(!useSettingsStore.getState().chatPanelOpen);
       }
 
       // Cmd+, for settings
@@ -92,7 +118,7 @@ function App() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setSidebarOpen((prev) => !prev)}
+              onClick={() => setSidebarOpen(!sidebarOpen)}
               className={cn(sidebarOpen && "bg-accent")}
               title={`${sidebarOpen ? "Hide" : "Show"} Sidebar (Cmd+B)`}
             >
@@ -101,7 +127,7 @@ function App() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setChatPanelOpen((prev) => !prev)}
+              onClick={() => setChatPanelOpen(!chatPanelOpen)}
               className={cn(chatPanelOpen && "bg-accent")}
               title={`${chatPanelOpen ? "Hide" : "Show"} AI Chat (Cmd+Shift+A)`}
             >
@@ -122,24 +148,24 @@ function App() {
         <div className="flex flex-1 overflow-hidden relative">
           {isWideMode ? (
             // WIDE MODE: All panels docked and resizable
-            <ResizablePanelGroup direction="horizontal" className="flex h-full w-full">
+            <ResizablePanelGroup direction="horizontal" className="flex h-full w-full" onLayoutChanged={handleWideLayout}>
               {sidebarOpen && (
                 <>
-                  <ResizablePanel defaultSize={20} minSize={200} maxSize={400}>
+                  <ResizablePanel id="sidebar" defaultSize={loadPanelSize("wide", "sidebar", 20)} minSize={200} maxSize={400}>
                     <Sidebar />
                   </ResizablePanel>
                   <ResizableHandle withHandle />
                 </>
               )}
 
-              <ResizablePanel defaultSize={sidebarOpen && chatPanelOpen ? 50 : 70} minSize={300}>
+              <ResizablePanel id="editor" defaultSize={loadPanelSize("wide", "editor", sidebarOpen && chatPanelOpen ? 50 : 70)} minSize={300}>
                 <EditorArea />
               </ResizablePanel>
 
               {chatPanelOpen && (
                 <>
                   <ResizableHandle withHandle />
-                  <ResizablePanel defaultSize={30} minSize={280} maxSize={500}>
+                  <ResizablePanel id="chat" defaultSize={loadPanelSize("wide", "chat", 30)} minSize={280} maxSize={500}>
                     <ChatPanel onClose={() => setChatPanelOpen(false)} />
                   </ResizablePanel>
                 </>
@@ -170,15 +196,16 @@ function App() {
               <ResizablePanelGroup
                 direction="horizontal"
                 className="flex h-full w-full"
+                onLayoutChanged={handleNarrowLayout}
               >
-                <ResizablePanel minSize={300}>
+                <ResizablePanel id="editor-narrow" minSize={300}>
                   <EditorArea />
                 </ResizablePanel>
 
                 {chatPanelOpen && (
                   <>
                     <ResizableHandle withHandle />
-                    <ResizablePanel defaultSize={35} minSize={280} maxSize={500}>
+                    <ResizablePanel id="chat-narrow" defaultSize={loadPanelSize("narrow", "chat-narrow", 35)} minSize={280} maxSize={500}>
                       <ChatPanel onClose={() => setChatPanelOpen(false)} />
                     </ResizablePanel>
                   </>

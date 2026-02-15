@@ -8,9 +8,13 @@ interface SettingsStore {
   theme: Theme;
   showFloatingToolbar: boolean;
   contentWidth: ContentWidth;
+  sidebarOpen: boolean;
+  chatPanelOpen: boolean;
   setTheme: (theme: Theme) => void;
   setShowFloatingToolbar: (show: boolean) => void;
   setContentWidth: (width: ContentWidth) => void;
+  setSidebarOpen: (open: boolean) => void;
+  setChatPanelOpen: (open: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -19,6 +23,8 @@ export const useSettingsStore = create<SettingsStore>()(
       theme: "system",
       showFloatingToolbar: true,
       contentWidth: "auto",
+      sidebarOpen: true,
+      chatPanelOpen: false,
 
       setTheme: (theme: Theme) => {
         set({ theme });
@@ -30,6 +36,14 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setContentWidth: (width: ContentWidth) => {
         set({ contentWidth: width });
+      },
+
+      setSidebarOpen: (open: boolean) => {
+        set({ sidebarOpen: open });
+      },
+
+      setChatPanelOpen: (open: boolean) => {
+        set({ chatPanelOpen: open });
       },
     }),
     {
