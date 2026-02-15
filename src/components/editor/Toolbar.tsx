@@ -1,6 +1,4 @@
 import type { Editor } from "@tiptap/react";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import {
   Bold,
   Italic,
@@ -24,6 +22,62 @@ interface ToolbarProps {
   editor: Editor | null;
 }
 
+function ToolbarButton({
+  onClick,
+  active,
+  disabled,
+  title,
+  children,
+}: {
+  onClick: () => void;
+  active?: boolean;
+  disabled?: boolean;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={cn(
+        "h-7 w-7 inline-flex items-center justify-center rounded-md transition-all duration-150",
+        "disabled:opacity-30 disabled:pointer-events-none",
+        active
+          ? "text-foreground"
+          : "text-muted-foreground"
+      )}
+      style={{
+        backgroundColor: active ? 'var(--color-accent)' : undefined,
+      }}
+      onMouseEnter={(e) => {
+        if (!active) {
+          e.currentTarget.style.backgroundColor = 'var(--color-accent)';
+          e.currentTarget.style.color = 'var(--color-foreground)';
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!active) {
+          e.currentTarget.style.backgroundColor = '';
+          e.currentTarget.style.color = '';
+        }
+      }}
+      onMouseDown={(e) => {
+        e.currentTarget.style.transform = 'scale(0.9)';
+      }}
+      onMouseUp={(e) => {
+        e.currentTarget.style.transform = '';
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ToolbarSeparator() {
+  return <div className="w-px h-4 bg-border/60 mx-0.5" />;
+}
+
 export function Toolbar({ editor }: ToolbarProps) {
   if (!editor) {
     return null;
@@ -45,199 +99,135 @@ export function Toolbar({ editor }: ToolbarProps) {
   };
 
   return (
-    <div className="h-10 border-b border-border px-2 flex items-center gap-1 overflow-x-auto overflow-y-hidden shrink-0" style={{ backgroundColor: 'var(--color-background)' }}>
-      <Button
-        size="sm"
-        variant="ghost"
+    <div
+      className="h-9 border-b border-border px-2 flex items-center gap-0.5 overflow-x-auto overflow-y-hidden shrink-0"
+      style={{ backgroundColor: 'var(--color-background)' }}
+    >
+      <ToolbarButton
         onClick={() => editor.chain().focus().undo().run()}
         disabled={!editor.can().undo()}
-        className="h-8 w-8 p-0"
         title="Undo (Cmd+Z)"
       >
-        <Undo className="h-4 w-4" />
-      </Button>
+        <Undo className="h-3.5 w-3.5" />
+      </ToolbarButton>
 
-      <Button
-        size="sm"
-        variant="ghost"
+      <ToolbarButton
         onClick={() => editor.chain().focus().redo().run()}
         disabled={!editor.can().redo()}
-        className="h-8 w-8 p-0"
         title="Redo (Cmd+Shift+Z)"
       >
-        <Redo className="h-4 w-4" />
-      </Button>
+        <Redo className="h-3.5 w-3.5" />
+      </ToolbarButton>
 
-      <Separator orientation="vertical" className="h-6 mx-1" />
+      <ToolbarSeparator />
 
-      <Button
-        size="sm"
-        variant="ghost"
+      <ToolbarButton
         onClick={() => editor.chain().focus().toggleBold().run()}
-        className={cn(
-          "h-8 w-8 p-0",
-          editor.isActive("bold") && "bg-accent"
-        )}
+        active={editor.isActive("bold")}
         title="Bold (Cmd+B)"
       >
-        <Bold className="h-4 w-4" />
-      </Button>
+        <Bold className="h-3.5 w-3.5" />
+      </ToolbarButton>
 
-      <Button
-        size="sm"
-        variant="ghost"
+      <ToolbarButton
         onClick={() => editor.chain().focus().toggleItalic().run()}
-        className={cn(
-          "h-8 w-8 p-0",
-          editor.isActive("italic") && "bg-accent"
-        )}
+        active={editor.isActive("italic")}
         title="Italic (Cmd+I)"
       >
-        <Italic className="h-4 w-4" />
-      </Button>
+        <Italic className="h-3.5 w-3.5" />
+      </ToolbarButton>
 
-      <Button
-        size="sm"
-        variant="ghost"
+      <ToolbarButton
         onClick={() => editor.chain().focus().toggleUnderline().run()}
-        className={cn(
-          "h-8 w-8 p-0",
-          editor.isActive("underline") && "bg-accent"
-        )}
+        active={editor.isActive("underline")}
         title="Underline (Cmd+U)"
       >
-        <Underline className="h-4 w-4" />
-      </Button>
+        <Underline className="h-3.5 w-3.5" />
+      </ToolbarButton>
 
-      <Button
-        size="sm"
-        variant="ghost"
+      <ToolbarButton
         onClick={() => editor.chain().focus().toggleStrike().run()}
-        className={cn(
-          "h-8 w-8 p-0",
-          editor.isActive("strike") && "bg-accent"
-        )}
+        active={editor.isActive("strike")}
         title="Strikethrough (Cmd+Shift+X)"
       >
-        <Strikethrough className="h-4 w-4" />
-      </Button>
+        <Strikethrough className="h-3.5 w-3.5" />
+      </ToolbarButton>
 
-      <Button
-        size="sm"
-        variant="ghost"
+      <ToolbarButton
         onClick={() => editor.chain().focus().toggleCode().run()}
-        className={cn(
-          "h-8 w-8 p-0",
-          editor.isActive("code") && "bg-accent"
-        )}
+        active={editor.isActive("code")}
         title="Code (Cmd+E)"
       >
-        <Code className="h-4 w-4" />
-      </Button>
+        <Code className="h-3.5 w-3.5" />
+      </ToolbarButton>
 
-      <Separator orientation="vertical" className="h-6 mx-1" />
+      <ToolbarSeparator />
 
-      <Button
-        size="sm"
-        variant="ghost"
+      <ToolbarButton
         onClick={() => editor.chain().focus().toggleBulletList().run()}
-        className={cn(
-          "h-8 w-8 p-0",
-          editor.isActive("bulletList") && "bg-accent"
-        )}
+        active={editor.isActive("bulletList")}
         title="Bullet List"
       >
-        <List className="h-4 w-4" />
-      </Button>
+        <List className="h-3.5 w-3.5" />
+      </ToolbarButton>
 
-      <Button
-        size="sm"
-        variant="ghost"
+      <ToolbarButton
         onClick={() => editor.chain().focus().toggleOrderedList().run()}
-        className={cn(
-          "h-8 w-8 p-0",
-          editor.isActive("orderedList") && "bg-accent"
-        )}
+        active={editor.isActive("orderedList")}
         title="Numbered List"
       >
-        <ListOrdered className="h-4 w-4" />
-      </Button>
+        <ListOrdered className="h-3.5 w-3.5" />
+      </ToolbarButton>
 
-      <Button
-        size="sm"
-        variant="ghost"
+      <ToolbarButton
         onClick={() => editor.chain().focus().toggleTaskList().run()}
-        className={cn(
-          "h-8 w-8 p-0",
-          editor.isActive("taskList") && "bg-accent"
-        )}
+        active={editor.isActive("taskList")}
         title="Task List"
       >
-        <ListChecks className="h-4 w-4" />
-      </Button>
+        <ListChecks className="h-3.5 w-3.5" />
+      </ToolbarButton>
 
-      <Separator orientation="vertical" className="h-6 mx-1" />
+      <ToolbarSeparator />
 
-      <Button
-        size="sm"
-        variant="ghost"
+      <ToolbarButton
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
-        className={cn(
-          "h-8 w-8 p-0",
-          editor.isActive("blockquote") && "bg-accent"
-        )}
+        active={editor.isActive("blockquote")}
         title="Blockquote"
       >
-        <Quote className="h-4 w-4" />
-      </Button>
+        <Quote className="h-3.5 w-3.5" />
+      </ToolbarButton>
 
-      <Button
-        size="sm"
-        variant="ghost"
+      <ToolbarButton
         onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-        className={cn(
-          "h-8 w-8 p-0",
-          editor.isActive("codeBlock") && "bg-accent"
-        )}
+        active={editor.isActive("codeBlock")}
         title="Code Block"
       >
-        <CodeSquare className="h-4 w-4" />
-      </Button>
+        <CodeSquare className="h-3.5 w-3.5" />
+      </ToolbarButton>
 
-      <Button
-        size="sm"
-        variant="ghost"
+      <ToolbarButton
         onClick={() => editor.chain().focus().setHorizontalRule().run()}
-        className="h-8 w-8 p-0"
         title="Horizontal Rule"
       >
-        <Minus className="h-4 w-4" />
-      </Button>
+        <Minus className="h-3.5 w-3.5" />
+      </ToolbarButton>
 
-      <Separator orientation="vertical" className="h-6 mx-1" />
+      <ToolbarSeparator />
 
-      <Button
-        size="sm"
-        variant="ghost"
+      <ToolbarButton
         onClick={insertTable}
-        className={cn(
-          "h-8 w-8 p-0",
-          editor.isActive("table") && "bg-accent"
-        )}
+        active={editor.isActive("table")}
         title="Insert Table"
       >
-        <Table className="h-4 w-4" />
-      </Button>
+        <Table className="h-3.5 w-3.5" />
+      </ToolbarButton>
 
-      <Button
-        size="sm"
-        variant="ghost"
+      <ToolbarButton
         onClick={addImage}
-        className="h-8 w-8 p-0"
         title="Insert Image"
       >
-        <ImageIcon className="h-4 w-4" />
-      </Button>
+        <ImageIcon className="h-3.5 w-3.5" />
+      </ToolbarButton>
     </div>
   );
 }
