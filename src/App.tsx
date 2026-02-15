@@ -186,7 +186,7 @@ function App() {
               {sidebarOpen && (
                 <div
                   className="absolute left-0 top-0 bottom-0 z-10 shadow-2xl"
-                  style={{ width: `${SIDEBAR_FLOAT_WIDTH}px` }}
+                  style={{ width: `${SIDEBAR_FLOAT_WIDTH}px`, backgroundColor: 'var(--color-card)' }}
                 >
                   <Sidebar />
                 </div>
