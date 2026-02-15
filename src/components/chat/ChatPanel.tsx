@@ -1,7 +1,5 @@
 import { useEffect, useRef } from 'react';
 import { X, Trash2, Loader2, Search } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { useChatStore } from '@/stores/chat-store';
 import { useAIStore, getActivePersona } from '@/stores/ai-store';
 import { useAIOperations } from '@/hooks/useAIOperations';
@@ -44,28 +42,31 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
 
   return (
     <div className="h-full w-full bg-card flex flex-col">
-      <div className="p-4 border-b border-border bg-card">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="font-semibold text-lg">AI Chat</h2>
-          <div className="flex gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleClear}
-              title="Clear chat history"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" onClick={onClose} title="Close chat">
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
+      <div className="h-11 px-3 border-b border-border flex items-center justify-between shrink-0" style={{ backgroundColor: 'var(--color-card)' }}>
+        <div className="flex items-center gap-2">
+          <span className="text-sm">{activePersona.icon}</span>
+          <h2 className="text-sm font-semibold tracking-tight">AI Chat</h2>
+          <span className="text-xs text-muted-foreground">· {activePersona.name}</span>
         </div>
-        <div className="flex items-center gap-2 px-2 py-1.5 bg-accent/50 rounded-md border border-border/50">
-          <span className="text-base">{activePersona.icon}</span>
-          <span className="text-xs text-muted-foreground font-medium">
-            {activePersona.name}
-          </span>
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={handleClear}
+            className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors text-muted-foreground hover:text-foreground"
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
+            title="Clear chat history"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={onClose}
+            className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors text-muted-foreground hover:text-foreground"
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
+            title="Close chat"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
 
@@ -117,9 +118,7 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
         </div>
       )}
 
-      <Separator />
-
-      <div className="p-4">
+      <div className="border-t border-border p-4">
         <ChatInput onSend={handleSend} disabled={isLoading || !provider} />
       </div>
     </div>
