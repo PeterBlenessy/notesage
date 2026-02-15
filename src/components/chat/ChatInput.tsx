@@ -1,7 +1,5 @@
 import { useState } from 'react';
-import { Send } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import { ArrowUp } from 'lucide-react';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -25,25 +23,38 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
     }
   };
 
+  const canSend = message.trim() && !disabled;
+
   return (
-    <div className="flex gap-2 items-end">
-      <Textarea
+    <div
+      className="flex items-end gap-2 rounded-xl border px-3 py-2 transition-colors"
+      style={{
+        borderColor: 'var(--color-border)',
+        backgroundColor: 'var(--color-background)',
+      }}
+    >
+      <textarea
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Ask AI anything... ⌘↵ to send"
+        placeholder="Ask anything..."
         disabled={disabled}
-        className="max-h-[200px] resize-none"
         rows={1}
+        className="flex-1 bg-transparent text-[13px] resize-none outline-none placeholder:text-muted-foreground/50 max-h-[120px] py-0.5 leading-relaxed"
+        style={{ color: 'var(--color-foreground)' }}
       />
-      <Button
+      <button
         onClick={handleSubmit}
-        disabled={!message.trim() || disabled}
-        size="icon"
-        className="shrink-0"
+        disabled={!canSend}
+        className="h-6 w-6 rounded-md flex items-center justify-center shrink-0 transition-colors disabled:opacity-30"
+        style={{
+          backgroundColor: canSend ? 'var(--color-foreground)' : 'var(--color-muted)',
+          color: canSend ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+        }}
+        title="Send (Cmd+Enter)"
       >
-        <Send className="h-4 w-4" />
-      </Button>
+        <ArrowUp className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }
