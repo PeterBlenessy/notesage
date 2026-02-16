@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react';
-import { useAIStore, getActivePersona } from '@/stores/ai-store';
+import { useAIStore, getAllPersonas, BUILT_IN_PERSONAS } from '@/stores/ai-store';
+import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { useChatStore } from '@/stores/chat-store';
 import { getAIProvider } from '@/lib/ai';
 import type { ChatMessage } from '@/lib/ai/types';
@@ -8,39 +9,51 @@ import { listen } from '@tauri-apps/api/event';
 
 export function useAIOperations() {
   const aiStore = useAIStore();
-  const { provider, apiKeys, ollamaUrl } = aiStore;
-  const activePersona = getActivePersona(aiStore);
+  const { apiKeys, ollamaUrl } = aiStore;
   const { addMessage, updateMessage, setLoading, setError, setActiveTool } = useChatStore();
   const cleanupRef = useRef<(() => void) | null>(null);
 
+  // Resolve effective provider: project override > global
+  const metadata = useProjectMetadataStore((s) => s.metadata);
+  const effectiveProvider = metadata?.ai.provider ?? aiStore.provider;
+
+  // Resolve effective persona: project override > global
+  const effectivePersonaId = metadata?.ai.personaId ?? aiStore.activePersonaId;
+  const allPersonas = getAllPersonas(aiStore);
+  const effectivePersona = allPersonas.find((p) => p.id === effectivePersonaId) || BUILT_IN_PERSONAS[0];
+
+  // Compose system message: project context + persona system message
+  const projectContext = metadata?.ai.projectContext || '';
+  const composedSystemMessage = projectContext
+    ? `${projectContext}\n\n${effectivePersona.systemMessage}`
+    : effectivePersona.systemMessage;
+
   const generateText = useCallback(
     async (prompt: string): Promise<string> => {
-      if (!provider) {
+      if (!effectiveProvider) {
         throw new Error('No AI provider selected');
       }
 
       try {
         const aiProvider = getAIProvider(
-          provider,
-          provider === 'ollama' ? undefined : apiKeys[provider],
+          effectiveProvider,
+          effectiveProvider === 'ollama' ? undefined : apiKeys[effectiveProvider],
           ollamaUrl
         );
 
-        // Prepend persona's system message to the prompt
-        const fullPrompt = `${activePersona.systemMessage}\n\n${prompt}`;
-
+        const fullPrompt = `${composedSystemMessage}\n\n${prompt}`;
         return await aiProvider.generateText(fullPrompt);
       } catch (error) {
         console.error('AI generation failed:', error);
         throw error;
       }
     },
-    [provider, apiKeys, ollamaUrl, activePersona]
+    [effectiveProvider, apiKeys, ollamaUrl, composedSystemMessage]
   );
 
   const sendChatMessage = useCallback(
     async (content: string, messages: ChatMessage[]) => {
-      if (!provider) {
+      if (!effectiveProvider) {
         throw new Error('No AI provider selected');
       }
 
@@ -94,17 +107,17 @@ export function useAIOperations() {
           cleanup();
         });
 
-        // Prepend system message from active persona
+        // System message with composed content (project context + persona)
         const systemMessage: ChatMessage = {
           role: 'system',
-          content: activePersona.systemMessage,
+          content: composedSystemMessage,
         };
 
         // Start streaming
         await invoke('ai_chat_stream', {
           messages: [systemMessage, ...messages, userMessage],
-          provider,
-          apiKey: provider === 'ollama' ? undefined : apiKeys[provider],
+          provider: effectiveProvider,
+          apiKey: effectiveProvider === 'ollama' ? undefined : apiKeys[effectiveProvider],
           ollamaUrl,
         });
       } catch (error) {
@@ -117,7 +130,7 @@ export function useAIOperations() {
         setActiveTool(null);
       }
     },
-    [provider, apiKeys, ollamaUrl, addMessage, updateMessage, setLoading, setError, setActiveTool]
+    [effectiveProvider, apiKeys, ollamaUrl, composedSystemMessage, addMessage, updateMessage, setLoading, setError, setActiveTool]
   );
 
   return { generateText, sendChatMessage };

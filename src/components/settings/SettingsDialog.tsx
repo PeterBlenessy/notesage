@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, UserCircle2, FileText } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, UserCircle2, FileText, FolderCog } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,9 @@ import {
 import { AISettings } from './AISettings';
 import { PersonasSettings } from './PersonasSettings';
 import { PromptsSettings } from './PromptsSettings';
+import { ProjectSettings } from './ProjectSettings';
 import { useSettingsStore, type MeasurementUnit } from '@/stores/settings-store';
+import { useProjectStore } from '@/stores/project-store';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
@@ -28,14 +30,18 @@ interface SettingsDialogProps {
   onOpenChange?: (open: boolean) => void;
 }
 
-type SettingsTab = 'ai' | 'personas' | 'prompts' | 'editor';
+type SettingsTab = 'ai' | 'personas' | 'prompts' | 'editor' | 'project';
 
-const TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
+const BASE_TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
   { id: 'ai', label: 'AI Providers', icon: Sparkles },
   { id: 'personas', label: 'AI Personas', icon: UserCircle2 },
   { id: 'prompts', label: 'Custom Prompts', icon: FileText },
   { id: 'editor', label: 'Editor', icon: Sliders },
 ];
+
+const PROJECT_TAB: { id: SettingsTab; label: string; icon: typeof Sparkles } = {
+  id: 'project', label: 'Project', icon: FolderCog,
+};
 
 // Page dimensions in cm
 const PAGE_DIMENSIONS: Record<string, { width: number; height: number }> = {
@@ -76,7 +82,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     marginLeft, setMarginLeft,
     marginRight, setMarginRight,
   } = useSettingsStore();
+  const rootPath = useProjectStore((s) => s.rootPath);
   const [activeTab, setActiveTab] = useState<SettingsTab>('ai');
+
+  const tabs = rootPath ? [PROJECT_TAB, ...BASE_TABS] : BASE_TABS;
 
   const unitLabel = measurementUnit === 'cm' ? 'cm' : 'in';
 
@@ -118,7 +127,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             style={{ backgroundColor: 'var(--color-card)' }}
           >
             <nav className="space-y-0.5">
-              {TABS.map((tab) => {
+              {tabs.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
                 return (
@@ -147,6 +156,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
           {/* Content Area */}
           <div className="flex-1 overflow-y-auto">
+            {activeTab === 'project' && (
+              <div className="p-6">
+                <ProjectSettings />
+              </div>
+            )}
+
             {activeTab === 'ai' && (
               <div className="p-6">
                 <AISettings />

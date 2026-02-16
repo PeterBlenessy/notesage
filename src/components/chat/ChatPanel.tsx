@@ -1,10 +1,17 @@
 import { useEffect, useRef } from 'react';
-import { X, Trash2, Loader2, Search } from 'lucide-react';
+import { X, Trash2, Loader2, Search, FileText } from 'lucide-react';
 import { useChatStore } from '@/stores/chat-store';
 import { useAIStore, getActivePersona } from '@/stores/ai-store';
+import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { useAIOperations } from '@/hooks/useAIOperations';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface ChatPanelProps {
   onClose: () => void;
@@ -15,6 +22,8 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
   const aiStore = useAIStore();
   const { provider } = aiStore;
   const activePersona = getActivePersona(aiStore);
+  const metadata = useProjectMetadataStore((s) => s.metadata);
+  const hasProjectContext = Boolean(metadata?.ai.projectContext);
   const { sendChatMessage } = useAIOperations();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -47,6 +56,21 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
           <span className="text-sm">{activePersona.icon}</span>
           <h2 className="text-sm font-semibold tracking-tight">AI Chat</h2>
           <span className="text-xs text-muted-foreground">· {activePersona.name}</span>
+          {hasProjectContext && (
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-muted-foreground" style={{ backgroundColor: 'var(--color-accent)' }}>
+                    <FileText className="h-3 w-3" />
+                    CTX
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-64">
+                  <p className="text-xs">Project context is active for this conversation</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </div>
         <div className="flex items-center gap-0.5">
           <button
