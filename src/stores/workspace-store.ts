@@ -7,6 +7,13 @@ export interface WorkspaceProject {
   fileTree: FileEntry[];
 }
 
+export interface RecentProject {
+  path: string;
+  name: string;
+}
+
+const MAX_RECENT_PROJECTS = 5;
+
 interface WorkspaceStore {
   // Explorer section
   explorerPath: string | null;
@@ -14,6 +21,9 @@ interface WorkspaceStore {
 
   // Projects section
   projects: WorkspaceProject[];
+
+  // Recent closed projects
+  recentProjects: RecentProject[];
 
   // Notes section
   notesTree: FileEntry[];
@@ -32,8 +42,12 @@ interface WorkspaceStore {
 
   // Project actions
   addProject: (path: string, tree: FileEntry[]) => void;
-  removeProject: (path: string) => void;
+  removeProject: (path: string, name?: string) => void;
   updateProjectTree: (path: string, tree: FileEntry[]) => void;
+
+  // Recent project actions
+  addRecentProject: (path: string, name: string) => void;
+  removeRecentProject: (path: string) => void;
 
   // Notes actions
   setNotesTree: (tree: FileEntry[]) => void;
@@ -57,6 +71,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       explorerPath: null,
       explorerTree: [],
       projects: [],
+      recentProjects: [],
       notesTree: [],
       expandedFolders: new Set<string>(),
       explorerCollapsed: false,
@@ -73,23 +88,52 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
 
       addProject: (path, tree) => {
         set((state) => {
+          // Remove from recent if re-opening
+          const newRecent = state.recentProjects.filter((r) => r.path !== path);
+
           // Don't add duplicates
           if (state.projects.some((p) => p.path === path)) {
             return {
               projects: state.projects.map((p) =>
                 p.path === path ? { ...p, fileTree: tree } : p
               ),
+              recentProjects: newRecent,
             };
           }
           return {
             projects: [...state.projects, { path, fileTree: tree }],
+            recentProjects: newRecent,
           };
         });
       },
 
-      removeProject: (path) => {
+      removeProject: (path, name) => {
+        set((state) => {
+          // Derive name from path if not provided
+          const projectName = name || path.split("/").pop() || path;
+          // Add to recent projects (deduplicate, cap at max)
+          const filtered = state.recentProjects.filter((r) => r.path !== path);
+          const newRecent = [{ path, name: projectName }, ...filtered].slice(0, MAX_RECENT_PROJECTS);
+
+          return {
+            projects: state.projects.filter((p) => p.path !== path),
+            recentProjects: newRecent,
+          };
+        });
+      },
+
+      addRecentProject: (path, name) => {
+        set((state) => {
+          const filtered = state.recentProjects.filter((r) => r.path !== path);
+          return {
+            recentProjects: [{ path, name }, ...filtered].slice(0, MAX_RECENT_PROJECTS),
+          };
+        });
+      },
+
+      removeRecentProject: (path) => {
         set((state) => ({
-          projects: state.projects.filter((p) => p.path !== path),
+          recentProjects: state.recentProjects.filter((r) => r.path !== path),
         }));
       },
 
@@ -134,6 +178,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       partialize: (state) => ({
         explorerPath: state.explorerPath,
         projects: state.projects.map((p) => ({ path: p.path, fileTree: [] })),
+        recentProjects: state.recentProjects,
         expandedFolders: Array.from(state.expandedFolders),
         explorerCollapsed: state.explorerCollapsed,
         projectsCollapsed: state.projectsCollapsed,
@@ -145,6 +190,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
           ...current,
           explorerPath: (p.explorerPath as string | null) ?? null,
           projects: (p.projects as WorkspaceProject[]) ?? [],
+          recentProjects: (p.recentProjects as RecentProject[]) ?? [],
           expandedFolders: new Set(
             (p.expandedFolders as string[]) ?? []
           ),

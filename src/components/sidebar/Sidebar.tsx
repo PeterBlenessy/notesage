@@ -2,6 +2,7 @@ import { useState } from "react";
 import { FolderOpen, FolderPlus, FilePlus, Loader2 } from "lucide-react";
 import { tauriApi } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { SidebarSection } from "./SidebarSection";
@@ -61,7 +62,9 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
   };
 
   const handleCloseProject = (projectPath: string) => {
-    removeProject(projectPath);
+    const metadata = useProjectMetadataStore.getState().getMetadata(projectPath);
+    const name = metadata?.name || projectPath.split("/").pop() || projectPath;
+    removeProject(projectPath, name);
   };
 
   const iconButton = (

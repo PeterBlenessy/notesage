@@ -12,6 +12,7 @@ import { NewProjectDialog } from "@/components/NewProjectDialog";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useProjectMetadata } from "@/hooks/useProjectMetadata";
 import { useActiveProject } from "@/hooks/useActiveProject";
+import { useFileOperations } from "@/hooks/useFileOperations";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -22,7 +23,7 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
-import { PanelLeft, MessageSquare, Settings, FolderOpen } from "lucide-react";
+import { PanelLeft, MessageSquare, Settings, FilePlus, FolderPlus, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BREAKPOINT_WIDE = 1200; // px
@@ -47,15 +48,17 @@ function loadPanelSize(key: string, panel: string, fallback: number): number {
 }
 
 // Editor area with document-style presentation
-function EditorArea({ onNewNote, onNewProject, onOpenFolder }: {
+function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile }: {
   onNewNote?: () => void;
   onNewProject?: () => void;
   onOpenFolder?: () => void;
+  onOpenProject?: (path: string) => void;
+  onOpenFile?: (path: string, name: string) => void;
 }) {
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ backgroundColor: 'var(--color-muted)' }}>
       <TabBar />
-      <Editor onNewNote={onNewNote} onNewProject={onNewProject} onOpenFolder={onOpenFolder} />
+      <Editor onNewNote={onNewNote} onNewProject={onNewProject} onOpenFolder={onOpenFolder} onOpenProject={onOpenProject} onOpenFile={onOpenFile} />
     </div>
   );
 }
@@ -154,6 +157,8 @@ function App() {
     }
   }, [setExplorerPath, setExplorerTree, addProject]);
 
+  const { openFile } = useFileOperations();
+
   const handleOpenProject = useCallback(async (projectPath: string) => {
     try {
       const tree = await tauriApi.listDirectory(projectPath);
@@ -162,6 +167,14 @@ function App() {
       console.error("Failed to open project:", error);
     }
   }, [addProject]);
+
+  const handleOpenFile = useCallback(async (filePath: string, fileName: string) => {
+    try {
+      await openFile(filePath, fileName);
+    } catch (error) {
+      console.error("Failed to open file:", error);
+    }
+  }, [openFile]);
 
   const handleBrowseForProject = useCallback(async () => {
     try {
@@ -388,7 +401,7 @@ function App() {
             <>
             {!sidebarOpen && (
               <div
-                className="h-full shrink-0 border-r border-border flex flex-col items-center pt-3 gap-2"
+                className="h-full shrink-0 border-r border-border flex flex-col items-center pt-3 gap-1"
                 style={{ width: '40px', backgroundColor: 'var(--color-card)' }}
               >
                 <Button
@@ -396,9 +409,27 @@ function App() {
                   size="icon"
                   className="h-8 w-8"
                   onClick={handleOpenFolder}
-                  title="Open Folder"
+                  title="Open Folder (Cmd+O)"
                 >
                   <FolderOpen className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={handleNewProject}
+                  title="New Project (Cmd+Shift+N)"
+                >
+                  <FolderPlus className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => handleNewNote()}
+                  title="New Note (Cmd+N)"
+                >
+                  <FilePlus className="h-4 w-4" />
                 </Button>
               </div>
             )}
@@ -419,7 +450,7 @@ function App() {
               )}
 
               <ResizablePanel id="editor" defaultSize={loadPanelSize("wide", "editor", sidebarOpen && chatPanelOpen ? 50 : 70)} minSize={300}>
-                <EditorArea onNewNote={handleNewNote} onNewProject={handleNewProject} onOpenFolder={handleOpenFolder} />
+                <EditorArea onNewNote={handleNewNote} onNewProject={handleNewProject} onOpenFolder={handleOpenFolder} onOpenProject={handleOpenProject} onOpenFile={handleOpenFile} />
               </ResizablePanel>
 
               {chatPanelOpen && (
@@ -462,7 +493,7 @@ function App() {
               {/* Collapsed sidebar strip */}
               {!sidebarOpen && (
                 <div
-                  className="h-full shrink-0 border-r border-border flex flex-col items-center pt-3 gap-2"
+                  className="h-full shrink-0 border-r border-border flex flex-col items-center pt-3 gap-1"
                   style={{ width: '40px', backgroundColor: 'var(--color-card)' }}
                 >
                   <Button
@@ -470,9 +501,27 @@ function App() {
                     size="icon"
                     className="h-8 w-8"
                     onClick={handleOpenFolder}
-                    title="Open Folder"
+                    title="Open Folder (Cmd+O)"
                   >
                     <FolderOpen className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={handleNewProject}
+                    title="New Project (Cmd+Shift+N)"
+                  >
+                    <FolderPlus className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => handleNewNote()}
+                    title="New Note (Cmd+N)"
+                  >
+                    <FilePlus className="h-4 w-4" />
                   </Button>
                 </div>
               )}
@@ -484,7 +533,7 @@ function App() {
                 onLayoutChanged={handleNarrowLayout}
               >
                 <ResizablePanel id="editor-narrow" minSize={300}>
-                  <EditorArea onNewNote={handleNewNote} onNewProject={handleNewProject} onOpenFolder={handleOpenFolder} />
+                  <EditorArea onNewNote={handleNewNote} onNewProject={handleNewProject} onOpenFolder={handleOpenFolder} onOpenProject={handleOpenProject} onOpenFile={handleOpenFile} />
                 </ResizablePanel>
 
                 {chatPanelOpen && (

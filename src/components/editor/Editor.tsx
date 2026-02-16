@@ -1,12 +1,13 @@
 import { useEffect, useCallback, useRef, useState } from "react";
 import { EditorContent } from "@tiptap/react";
-import { FileText, Command, FilePlus, FolderPlus, FolderOpen } from "lucide-react";
+import { Command, File, FolderDot, Folder, Clock } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore, type ContentWidth } from "@/stores/settings-store";
 import { useEditor } from "@/hooks/useEditor";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { Button } from "@/components/ui/button";
+import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Toolbar } from "./Toolbar";
 import { BubbleMenu } from "./BubbleMenu";
 import { StatusBar } from "./StatusBar";
@@ -36,13 +37,13 @@ interface EditorProps {
   onNewNote?: () => void;
   onNewProject?: () => void;
   onOpenFolder?: () => void;
+  onOpenProject?: (path: string) => void;
+  onOpenFile?: (path: string, name: string) => void;
 }
 
-export function Editor({ onNewNote, onNewProject, onOpenFolder }: EditorProps) {
-  const { tabs, activeTabId, updateTabContent } = useEditorStore();
-  const hasProjects = useWorkspaceStore((s) => s.projects.length > 0);
-  const hasExplorer = useWorkspaceStore((s) => !!s.explorerPath);
-  const hasContent = hasProjects || hasExplorer;
+export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile }: EditorProps) {
+  const { tabs, activeTabId, updateTabContent, recentFiles } = useEditorStore();
+  const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const { showFloatingToolbar, contentWidth, marginTop, marginBottom, marginLeft, marginRight } = useSettingsStore();
   const { saveFile } = useFileOperations();
   const maxWidth = CONTENT_WIDTHS[contentWidth];
@@ -143,56 +144,145 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder }: EditorProps) {
   if (!activeTab) {
     return (
       <div className="flex h-full items-center justify-center" style={{ backgroundColor: 'var(--color-background)' }}>
-        <div className="text-center space-y-6">
-          <FileText className="h-12 w-12 mx-auto text-muted-foreground/30" strokeWidth={1} />
-          <div className="space-y-1.5">
-            <h2 className="text-lg font-medium text-foreground/70">
-              {hasContent ? "No file open" : "Welcome to Notesage"}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {hasContent
-                ? "Select a file from the sidebar or create a new note"
-                : "Create a new project or open an existing folder to get started"}
+        <div className="text-center max-w-3xl px-6">
+          <div className="space-y-3 mb-12">
+            <img src="/app-icon.svg" alt="Notesage" className="h-14 w-14 mx-auto rounded-xl mb-2" />
+            <h2 className="text-xl font-semibold text-foreground">Notesage</h2>
+            <p className="text-sm text-muted-foreground max-w-lg mx-auto leading-relaxed">
+              Write in a rich markdown editor that feels native to your Mac. Organize your work into projects,
+              each with its own structure and settings. When you need a creative partner, bring in AI to improve
+              your writing, brainstorm ideas, or summarize long documents — right from the editor.
+            </p>
+            <p className="text-xs text-muted-foreground/70 max-w-md mx-auto">
+              Your files stay on your computer. Pick up where you left off anytime.
             </p>
           </div>
-          <div className="flex flex-col items-center gap-3">
-            {hasContent ? (
-              <Button variant="outline" size="sm" onClick={() => onNewNote?.()}>
-                <FilePlus className="h-4 w-4" />
-                New Note
-              </Button>
-            ) : (
-              <div className="flex flex-col items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => onNewProject?.()}>
-                  <FolderPlus className="h-4 w-4" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Card className="text-left flex flex-col">
+              <CardHeader className="pb-3 flex-1">
+                <CardTitle className="text-base font-semibold inline-flex items-center gap-2">
+                  <File className="h-5 w-5 text-foreground" strokeWidth={1.5} />
+                  New Note
+                </CardTitle>
+                <CardDescription className="text-xs">Quickly jot down an idea or start drafting something new in your notes folder</CardDescription>
+              </CardHeader>
+              <CardFooter className="pt-0">
+                <Button variant="outline" size="sm" className="w-full justify-between text-xs" onClick={() => onNewNote?.()}>
+                  <span>New Note</span>
+                  <span className="inline-flex items-center gap-0.5 shrink-0 ml-2">
+                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded border text-xs font-semibold text-foreground/50" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
+                      <Command className="h-3 w-3" />
+                    </kbd>
+                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded border text-xs font-semibold text-foreground/50" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
+                      N
+                    </kbd>
+                  </span>
+                </Button>
+              </CardFooter>
+            </Card>
+            <Card className="text-left flex flex-col">
+              <CardHeader className="pb-3 flex-1">
+                <CardTitle className="text-base font-semibold inline-flex items-center gap-2">
+                  <FolderDot className="h-5 w-5 text-foreground" strokeWidth={1.5} />
                   New Project
+                </CardTitle>
+                <CardDescription className="text-xs">Organize your work into a dedicated project with its own folder, settings, and AI context</CardDescription>
+              </CardHeader>
+              <CardFooter className="pt-0">
+                <Button variant="outline" size="sm" className="w-full justify-between text-xs" onClick={() => onNewProject?.()}>
+                  <span>New Project</span>
+                  <span className="inline-flex items-center gap-0.5 shrink-0 ml-2">
+                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded border text-xs font-semibold text-foreground/50" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
+                      <Command className="h-3 w-3" />
+                    </kbd>
+                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded border text-sm font-semibold text-foreground/50 leading-none" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
+                      ⇧
+                    </kbd>
+                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded border text-xs font-semibold text-foreground/50" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
+                      N
+                    </kbd>
+                  </span>
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => onOpenFolder?.()}>
-                  <FolderOpen className="h-4 w-4" />
+              </CardFooter>
+            </Card>
+            <Card className="text-left flex flex-col">
+              <CardHeader className="pb-3 flex-1">
+                <CardTitle className="text-base font-semibold inline-flex items-center gap-2">
+                  <Folder className="h-5 w-5 text-foreground" strokeWidth={1.5} />
                   Open Folder
+                </CardTitle>
+                <CardDescription className="text-xs">Browse and edit markdown files in any folder on your computer using the Explorer</CardDescription>
+              </CardHeader>
+              <CardFooter className="pt-0">
+                <Button variant="outline" size="sm" className="w-full justify-between text-xs" onClick={() => onOpenFolder?.()}>
+                  <span>Open Folder</span>
+                  <span className="inline-flex items-center gap-0.5 shrink-0 ml-2">
+                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded border text-xs font-semibold text-foreground/50" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
+                      <Command className="h-3 w-3" />
+                    </kbd>
+                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded border text-xs font-semibold text-foreground/50" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
+                      O
+                    </kbd>
+                  </span>
                 </Button>
-              </div>
-            )}
+              </CardFooter>
+            </Card>
           </div>
-          <div className="flex flex-col items-center gap-2 text-xs text-muted-foreground/60">
-            <div className="flex items-center gap-2">
-              <kbd className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[11px]" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
-                <Command className="h-2.5 w-2.5" />N
-              </kbd>
-              <span>New note</span>
+
+          {/* Recent sections */}
+          {(recentProjects.length > 0 || recentFiles.length > 0) && (
+            <div className="space-y-4 text-left mt-6">
+              {recentProjects.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Clock className="h-3 w-3" />
+                    Recent Projects
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    {recentProjects.map((project) => (
+                      <Button
+                        key={project.path}
+                        variant="outline"
+                        size="sm"
+                        className="text-xs gap-1.5"
+                        onClick={() => onOpenProject?.(project.path)}
+                      >
+                        <FolderDot className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+                        {project.name}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {recentFiles.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Clock className="h-3 w-3" />
+                    Recent Notes
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    {recentFiles.map((file) => (
+                      <Button
+                        key={file.path}
+                        variant="outline"
+                        size="sm"
+                        className="text-xs gap-1.5"
+                        onClick={() => onOpenFile?.(file.path, file.name)}
+                      >
+                        <File className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+                        {file.name}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-2">
-              <kbd className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[11px]" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
-                <Command className="h-2.5 w-2.5" /><span className="text-[9px]">Shift</span>N
-              </kbd>
-              <span>New project</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <kbd className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[11px]" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
-                <Command className="h-2.5 w-2.5" />O
-              </kbd>
-              <span>Open folder</span>
-            </div>
+          )}
+          {/* Privacy note */}
+          <div className="pt-[100px]">
+            <p className="text-xs text-muted-foreground/50 max-w-md mx-auto leading-relaxed">
+              Your files never leave your computer. Notesage reads and writes directly to your local filesystem — no cloud sync, no accounts, no tracking. AI features connect only when you provide an API key.
+            </p>
           </div>
         </div>
       </div>
