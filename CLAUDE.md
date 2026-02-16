@@ -4,6 +4,7 @@
 
 Notesage is a WYSIWYG markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
+**Current version:** 0.3.0
 **Current phase:** Phase 1 complete, Phase 2 (AI Collaboration) complete.
 
 ## Tech Stack
@@ -73,6 +74,12 @@ pnpm install        # Install dependencies
 pnpm tauri dev      # Run dev server
 pnpm tauri build    # Build for production
 ```
+
+## Versioning
+
+The app version is defined in `package.json`. The Tauri config (`src-tauri/tauri.conf.json`) references it via `"version": "../package.json"` — only bump `package.json` when releasing.
+
+`src-tauri/Cargo.toml` maintains its own independent crate version.
 
 ## Key Decisions
 
