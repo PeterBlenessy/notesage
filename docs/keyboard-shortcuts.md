@@ -9,7 +9,8 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | Save | `Cmd+S` | Save current file to disk |
 | Open file | `Cmd+O` | Open file picker dialog |
 | Close tab | `Cmd+W` | Close active tab (warns if unsaved) |
-| New file | `Cmd+N` | Create new untitled file |
+| New note | `Cmd+N` | Open new note dialog |
+| New project | `Cmd+Shift+N` | Open new project dialog |
 
 ## Editor Formatting
 
@@ -67,15 +68,20 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | `/hr` | Horizontal rule | Insert horizontal divider |
 | `/image` | Image | Insert image |
 
+## App Navigation
+
+| Action | Shortcut | Description |
+|--------|----------|-------------|
+| Quick open | `Cmd+F` | Fuzzy file search and open |
+| Toggle sidebar | `Cmd+B` | Show/hide file sidebar |
+
 ## Future Shortcuts (Planned)
 
 These shortcuts are planned but not yet implemented:
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Quick open | `Cmd+F` | Fuzzy file search and open |
 | Find and replace | `Cmd+Shift+F` | Search and replace in current document |
-| Toggle sidebar | `Cmd+B` | Show/hide file sidebar |
 
 ## Implementation Notes
 
