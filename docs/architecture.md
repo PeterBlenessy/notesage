@@ -3,7 +3,7 @@
 ## Tech Stack
 
 | Layer | Technology | Version |
-|-------|-----------|---------|
+| --- | --- | --- |
 | Desktop shell | Tauri | v2 (latest stable) |
 | Frontend framework | React | 19+ |
 | Language | TypeScript | 5+ |
@@ -155,12 +155,14 @@ interface AIProvider {
 ```
 
 **Why this design:**
+
 - Single interface for all providers
 - Easy to add new providers later
 - Type-safe with TypeScript
 - Secure: all API calls through Tauri backend (Rust)
 
 **Provider implementation:**
+
 - Anthropic: Claude Sonnet 4.5
 - OpenAI: GPT-4 Turbo
 - Ollama: Local AI models
@@ -168,12 +170,14 @@ interface AIProvider {
 ### Security Model
 
 **API Key Storage:**
+
 - Stored in localStorage via Zustand persist middleware
 - Keys stored in plaintext (browser developer tools visible)
 - **Trade-off**: Convenience vs security - documented limitation
 - All API calls go through Tauri backend (Rust) so keys never exposed in frontend console
 
 **File System Access:**
+
 - All file operations through Tauri IPC commands
 - Rust backend enforces filesystem boundaries
 - No direct frontend filesystem access

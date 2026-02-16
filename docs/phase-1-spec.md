@@ -9,6 +9,7 @@ Phase 1 focuses on building a beautiful, functional WYSIWYG markdown editor with
 ### 1. Tiptap WYSIWYG Editor
 
 Support these node types:
+
 - Headings (H1-H6)
 - Paragraphs
 - Bold, italic, underline, strikethrough, code (inline)
@@ -23,6 +24,7 @@ Support these node types:
 ### 2. Floating Toolbar
 
 Appears on text selection with:
+
 - Bold, italic, underline, strikethrough, code
 - Link creation
 - Heading level selector
@@ -33,6 +35,7 @@ Appears on text selection with:
 ### 3. Slash Commands
 
 Type `/` at start of line to insert:
+
 - Heading 1-3
 - Bullet list, numbered list, task list
 - Code block
@@ -53,6 +56,7 @@ Type `/` at start of line to insert:
 ### 5. File Operations
 
 Via Tauri commands:
+
 - Open folder (native dialog → reads directory tree)
 - Open file (click in sidebar or Cmd+O)
 - Save file (Cmd+S → serialize to markdown → write to disk)
@@ -123,20 +127,35 @@ Before Phase 1 is considered complete, ALL of these must pass:
 ### Functional Requirements
 
 - [ ] Can open a folder of .md files via native dialog
+
 - [ ] File tree displays all files and folders correctly
+
 - [ ] Clicking a .md file opens it in the WYSIWYG editor
+
 - [ ] All markdown syntax renders correctly in WYSIWYG mode
+
 - [ ] Saving serializes back to clean, valid markdown
+
 - [ ] **Round-trip test passes**: Open → edit nothing → save → file is identical (whitespace-normalized)
+
 - [ ] Multi-tab editing works (switch tabs preserves state)
+
 - [ ] Unsaved changes indicator works
+
 - [ ] Auto-save on tab switch works
+
 - [ ] Slash commands insert correct block types
+
 - [ ] Floating toolbar appears on selection and applies formatting
+
 - [ ] Create/rename/delete files from sidebar works
+
 - [ ] Light/dark theme works and follows system preference
+
 - [ ] App builds and runs on macOS without errors
+
 - [ ] App starts in under 1 second
+
 - [ ] No console errors during normal operation
 
 ### Design Quality (Equally Important)
@@ -144,15 +163,25 @@ Before Phase 1 is considered complete, ALL of these must pass:
 **These are NOT optional. The app must look production-ready.**
 
 - [ ] App looks like it belongs next to Linear, Bear, or Craft — not a hackathon project
+
 - [ ] Sidebar has smooth hover transitions and clear active state
+
 - [ ] Editor content area is max 720px wide and beautifully typeset
+
 - [ ] All interactive elements have hover, active, and focus states
+
 - [ ] Theme switching is smooth with color transitions
+
 - [ ] No default browser UI elements visible (checkboxes, scrollbars, selects)
+
 - [ ] Consistent border-radius, spacing, and color palette throughout
+
 - [ ] Code blocks have syntax highlighting with a tasteful theme
+
 - [ ] Floating toolbar has backdrop blur and smooth animation
+
 - [ ] Typography is polished: proper hierarchy, readable sizes, intentional weight usage
+
 - [ ] Looks great in BOTH light and dark mode
 
 ## Getting Started
@@ -205,6 +234,7 @@ pnpm tauri dev
 **Current Status:** Phase 1 complete, Phase 2 (AI Collaboration) implemented.
 
 Phase 2 additions (not in original Phase 1 scope):
+
 - AI provider abstraction (Anthropic, OpenAI, Ollama)
 - Settings dialog with AI configuration
 - Chat panel for AI conversations

@@ -9,6 +9,7 @@ Phase 1 of the Notesage editor has been successfully implemented. The applicatio
 ### ✅ 1. Tiptap WYSIWYG Editor
 
 **All required node types:**
+
 - Headings (H1-H6)
 - Paragraphs
 - Bold, italic, underline, strikethrough, code (inline)
@@ -21,6 +22,7 @@ Phase 1 of the Notesage editor has been successfully implemented. The applicatio
 - Tables (insert, add/remove rows/columns, resizable)
 
 **Extensions configured:**
+
 - StarterKit (paragraph, text, document, bold, italic, strike, etc.)
 - Placeholder text
 - Link
@@ -33,11 +35,12 @@ Phase 1 of the Notesage editor has been successfully implemented. The applicatio
 - Markdown (round-trip conversion)
 - SlashCommand (custom extension)
 
-**File: `/src/hooks/useEditor.ts`**
+**File:** `/src/hooks/useEditor.ts`
 
 ### ✅ 2. Floating Toolbar (BubbleMenu)
 
 **Appears on text selection with:**
+
 - Bold, Italic, Underline, Strikethrough, Code buttons
 - Link creation/editing
 - Heading level selector (H1, H2, H3, Paragraph)
@@ -45,11 +48,12 @@ Phase 1 of the Notesage editor has been successfully implemented. The applicatio
 - Active state indicators
 - Keyboard shortcut hints in titles
 
-**File: `/src/components/editor/BubbleMenu.tsx`**
+**File:** `/src/components/editor/BubbleMenu.tsx`
 
 ### ✅ 3. Main Toolbar
 
 **Fixed toolbar with:**
+
 - Undo/Redo
 - All formatting buttons (bold, italic, underline, strike, code)
 - List buttons (bullet, numbered, task list)
@@ -58,11 +62,12 @@ Phase 1 of the Notesage editor has been successfully implemented. The applicatio
 - Image insertion (from URL)
 - Disabled states for unavailable actions
 
-**File: `/src/components/editor/Toolbar.tsx`**
+**File:** `/src/components/editor/Toolbar.tsx`
 
 ### ✅ 4. Slash Commands
 
-**Type `/` at start of line to insert:**
+**Type** `/` **at start of line to insert:**
+
 - Heading 1, 2, 3
 - Bullet List
 - Numbered List
@@ -74,17 +79,19 @@ Phase 1 of the Notesage editor has been successfully implemented. The applicatio
 - Image
 
 **Features:**
+
 - Searchable/filterable menu
 - Keyboard navigation (arrow keys)
 - Enter to select, Escape to cancel
 - Icons and descriptions for each command
 - Auto-closes on selection
 
-**File: `/src/components/editor/extensions/slash-command.tsx`**
+**File:** `/src/components/editor/extensions/slash-command.tsx`
 
 ### ✅ 5. Markdown Round-Tripping
 
 **Implementation:**
+
 - Uses `tiptap-markdown` extension
 - Parser: Markdown → ProseMirror document
 - Serializer: ProseMirror document → Markdown
@@ -97,6 +104,7 @@ Phase 1 of the Notesage editor has been successfully implemented. The applicatio
 ### ✅ 6. File Operations
 
 **Complete file management:**
+
 - Open folder (native dialog)
 - Open file (click in sidebar → loads into editor)
 - Save file (Cmd+S → writes markdown to disk)
@@ -106,6 +114,7 @@ Phase 1 of the Notesage editor has been successfully implemented. The applicatio
 - Delete file/folder (backend ready)
 
 **Hooks:**
+
 - `useFileOperations.ts` - All file CRUD operations
 - Integrates with Zustand stores
 - Error handling with alerts
@@ -113,6 +122,7 @@ Phase 1 of the Notesage editor has been successfully implemented. The applicatio
 ### ✅ 7. Sidebar File Tree
 
 **Features:**
+
 - Shows all files/folders in project
 - Expandable/collapsible folders
 - File icons (folder, file)
@@ -122,6 +132,7 @@ Phase 1 of the Notesage editor has been successfully implemented. The applicatio
 - Sorted: directories first, then alphabetical
 
 **Files:**
+
 - `/src/components/sidebar/Sidebar.tsx`
 - `/src/components/sidebar/FileTree.tsx`
 - `/src/components/sidebar/FileTreeItem.tsx`
@@ -129,6 +140,7 @@ Phase 1 of the Notesage editor has been successfully implemented. The applicatio
 ### ✅ 8. Multi-Tab Editing
 
 **Tab features:**
+
 - Multiple files open simultaneously
 - Click tab to switch (preserves editor state)
 - Close tab (X button or Cmd+W)
@@ -136,11 +148,12 @@ Phase 1 of the Notesage editor has been successfully implemented. The applicatio
 - Unsaved changes warning on close
 - Middle-click to close (ready to implement)
 
-**File: `/src/components/tabs/TabBar.tsx`**
+**File:** `/src/components/tabs/TabBar.tsx`
 
 ### ✅ 9. Theme Support
 
 **Features:**
+
 - Light and dark mode
 - System preference detection
 - Manual toggle with Cmd+Shift+T
@@ -149,6 +162,7 @@ Phase 1 of the Notesage editor has been successfully implemented. The applicatio
 - Tailwind v4 CSS variables
 
 **Files:**
+
 - `/src/components/ThemeProvider.tsx`
 - `/src/stores/settings-store.ts`
 - `/src/styles/globals.css`
@@ -156,6 +170,7 @@ Phase 1 of the Notesage editor has been successfully implemented. The applicatio
 ### ✅ 10. Tauri Desktop Packaging
 
 **Configuration:**
+
 - App name: "Notesage"
 - Window: 1200x800 default
 - Min size: 800x600
@@ -166,7 +181,7 @@ Phase 1 of the Notesage editor has been successfully implemented. The applicatio
 ### ✅ 11. Keyboard Shortcuts
 
 | Shortcut | Action |
-|----------|--------|
+| --- | --- |
 | Cmd+S | Save current file |
 | Cmd+W | Close active tab |
 | Cmd+B | Bold |
@@ -179,24 +194,27 @@ Phase 1 of the Notesage editor has been successfully implemented. The applicatio
 | Cmd+Shift+Z | Redo |
 | Cmd+Shift+T | Toggle theme |
 
-**File: `/src/hooks/useKeyboardShortcuts.ts`**
+**File:** `/src/hooks/useKeyboardShortcuts.ts`
 
 ## Architecture
 
 ### State Management (Zustand)
 
 **Editor Store** (`/src/stores/editor-store.ts`):
+
 - Open tabs with file path, name, content, dirty state
 - Active tab ID
 - Actions: openTab, closeTab, setActiveTab, updateTabContent, markTabClean
 
 **Project Store** (`/src/stores/project-store.ts`):
+
 - Root project path
 - File tree structure
 - Expanded folders set
 - Actions: setRootPath, setFileTree, toggleFolder
 
 **Settings Store** (`/src/stores/settings-store.ts`):
+
 - Theme preference (light/dark/system)
 - Persisted to localStorage
 - Action: setTheme
@@ -229,10 +247,7 @@ components/
 
 ## Build Status
 
-✅ **TypeScript:** No errors
-✅ **Vite build:** Successful
-✅ **Rust compilation:** Successful
-✅ **Bundle size:** 1.1 MB (can be optimized with code splitting)
+✅ **TypeScript:** No errors ✅ **Vite build:** Successful ✅ **Rust compilation:** Successful ✅ **Bundle size:** 1.1 MB (can be optimized with code splitting)
 
 ## Testing the App
 
@@ -246,15 +261,15 @@ pnpm tauri build
 
 ## What Works
 
-1. ✅ Open a folder via "Open Folder" button
-2. ✅ Click any .md file to open it
-3. ✅ Edit content in WYSIWYG mode
-4. ✅ Use toolbar buttons or keyboard shortcuts for formatting
-5. ✅ Type `/` at start of line for slash commands
-6. ✅ Select text to see bubble menu
-7. ✅ Cmd+S to save (dirty indicator clears)
-8. ✅ Auto-save after 1 second
-9. ✅ Switch tabs (editor state preserved)
+ 1. ✅ Open a folder via "Open Folder" button
+ 2. ✅ Click any .md file to open it
+ 3. ✅ Edit content in WYSIWYG mode
+ 4. ✅ Use toolbar buttons or keyboard shortcuts for formatting
+ 5. ✅ Type `/` at start of line for slash commands
+ 6. ✅ Select text to see bubble menu
+ 7. ✅ Cmd+S to save (dirty indicator clears)
+ 8. ✅ Auto-save after 1 second
+ 9. ✅ Switch tabs (editor state preserved)
 10. ✅ Close tabs (warns if unsaved)
 11. ✅ Toggle theme with Cmd+Shift+T
 12. ✅ All markdown syntax renders correctly
@@ -283,6 +298,7 @@ These are documented in CLAUDE.md for future phases:
 ## Files Created/Modified
 
 ### New Files (Phase 1)
+
 - `/src/hooks/useEditor.ts`
 - `/src/hooks/useFileOperations.ts`
 - `/src/hooks/useKeyboardShortcuts.ts`
@@ -293,6 +309,7 @@ These are documented in CLAUDE.md for future phases:
 - `/src/lib/markdown.ts`
 
 ### Modified Files
+
 - `/src/components/editor/Editor.tsx` - Added Tiptap integration
 - `/src/components/sidebar/Sidebar.tsx` - Added file operations hook
 - `/src/App.tsx` - Added ThemeProvider and keyboard shortcuts
@@ -316,7 +333,7 @@ From CLAUDE.md Phase 1 exit criteria:
 - ⏳ Create/rename/delete files from sidebar (backend ready, UI pending)
 - ✅ Light/dark theme works and follows system preference
 - ✅ App builds and runs on macOS without errors
-- ✅ App starts quickly (< 1 second after compile)
+- ✅ App starts quickly (&lt; 1 second after compile)
 - ✅ No console errors during normal operation
 
 **Overall: 13/15 complete, 2 pending UI work**

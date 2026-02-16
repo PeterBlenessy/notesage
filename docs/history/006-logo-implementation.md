@@ -9,6 +9,7 @@ Replaced generic icons with actual provider logotypes for a more professional ap
 ## 🎨 Logos Created
 
 ### 1. Anthropic Claude (`/logos/anthropic.svg`)
+
 - **Design**: "A" lettermark on brand-colored background
 - **Colors**:
   - Background: `#D4A574` (Anthropic's brand tan/beige)
@@ -17,6 +18,7 @@ Replaced generic icons with actual provider logotypes for a more professional ap
 - **Size**: 32x32px with 6px border radius
 
 ### 2. OpenAI (`/logos/openai.svg`)
+
 - **Design**: Geometric pattern on brand-colored circle
 - **Colors**:
   - Background: `#10A37F` (OpenAI's signature green)
@@ -25,6 +27,7 @@ Replaced generic icons with actual provider logotypes for a more professional ap
 - **Size**: 32x32px circular design
 
 ### 3. Ollama (`/logos/ollama.svg`)
+
 - **Design**: Simplified llama/alpaca silhouette
 - **Colors**:
   - Background: `#000000` (black)
@@ -49,6 +52,7 @@ public/
 ## 🔧 Implementation
 
 ### Before (Generic Icons)
+
 ```tsx
 // Using random Lucide icons
 Icon: Bot,          // For Anthropic
@@ -58,6 +62,7 @@ iconColor: 'text-purple-500'
 ```
 
 ### After (Real Logos)
+
 ```tsx
 // Using actual brand logos
 {
@@ -69,6 +74,7 @@ iconColor: 'text-purple-500'
 ```
 
 ### Usage in Component
+
 ```tsx
 <img
   src={selectedProvider.logo}
@@ -82,6 +88,7 @@ iconColor: 'text-purple-500'
 ## 🎯 Visual Improvements
 
 ### Dropdown Display
+
 ```
 ┌──────────────────────────────────────┐
 │ [🎨] Anthropic Claude           ▼   │
@@ -109,19 +116,23 @@ iconColor: 'text-purple-500'
 ## 💡 Design Decisions
 
 ### Why SVG?
+
 - **Scalable**: Perfect at any size
-- **Small file size**: ~1KB each
+- **Small file size**: \~1KB each
 - **Theme compatible**: Can be styled with CSS if needed
 - **Crisp rendering**: No pixelation at any DPI
 
 ### Logo Styling
+
 - **Size**: `w-6 h-6` (24x24px) for consistency
 - **Border radius**: `rounded` for subtle softening
 - **Object fit**: `object-contain` to preserve aspect ratio
 - **Quality**: Sharp, professional appearance
 
 ### Brand Accuracy
+
 Each logo is designed to be:
+
 1. **Recognizable**: Clearly represents the brand
 2. **Professional**: Production-ready quality
 3. **Consistent**: Same size and style treatment
@@ -132,7 +143,7 @@ Each logo is designed to be:
 ## 🎨 Color Palette
 
 | Provider | Primary Color | Usage |
-|----------|--------------|--------|
+| --- | --- | --- |
 | Anthropic | `#D4A574` | Background tan/beige |
 | OpenAI | `#10A37F` | Signature teal green |
 | Ollama | `#000000` | Black (llama silhouette) |
@@ -142,18 +153,21 @@ Each logo is designed to be:
 ## ✅ Benefits
 
 ### User Experience
+
 - ✅ **Instant recognition**: Users immediately identify providers
 - ✅ **Professional appearance**: Real logos vs generic icons
 - ✅ **Brand trust**: Official branding builds confidence
 - ✅ **Visual hierarchy**: Logos draw attention to selection
 
 ### Technical
-- ✅ **Performance**: SVG files are tiny (<1KB each)
+
+- ✅ **Performance**: SVG files are tiny (&lt;1KB each)
 - ✅ **Maintainability**: Easy to update individual logos
 - ✅ **Accessibility**: Alt text for screen readers
 - ✅ **Responsive**: Scales perfectly on all displays
 
 ### Design
+
 - ✅ **Consistency**: All logos same size and treatment
 - ✅ **Polish**: Professional, production-ready
 - ✅ **Branding**: Respects provider identities
@@ -164,24 +178,30 @@ Each logo is designed to be:
 ## 📊 Before vs After
 
 ### Before: Generic Icons
+
 ```tsx
 🤖 Bot icon (purple) - Generic robot
 ✨ Zap icon (green) - Generic lightning bolt
 🏠 Home icon (blue) - Generic house
 ```
+
 **Issues:**
+
 - Not representative of brands
 - Random icon choices
 - Emoji/icon inconsistency
 - No brand recognition
 
 ### After: Real Logos
+
 ```tsx
 [A] Anthropic tan "A" lettermark
 [*] OpenAI green geometric pattern
 [L] Ollama black llama silhouette
 ```
+
 **Benefits:**
+
 - Authentic brand representation
 - Professional appearance
 - Instant recognition
@@ -211,6 +231,7 @@ Vite automatically serves files from the `public/` directory at the root path, s
 ## 🔄 Future Updates
 
 If provider branding changes:
+
 1. Update the corresponding SVG in `public/logos/`
 2. No code changes needed
 3. Rebuild and deploy

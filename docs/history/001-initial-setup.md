@@ -3,6 +3,7 @@
 ## What Was Installed
 
 ### Project Initialization
+
 - ✅ Tauri v2 project with React 19 + TypeScript
 - ✅ Project name: "Notesage"
 - ✅ Window configured: 1200x800 (min 800x600)
@@ -10,6 +11,7 @@
 ### Dependencies Installed
 
 **Frontend:**
+
 - React 19.2.4 + React DOM
 - TypeScript 5.8.3
 - Vite 7.3.1
@@ -21,6 +23,7 @@
 - class-variance-authority, clsx, tailwind-merge (utilities)
 
 **Backend (Rust):**
+
 - tauri v2.10.2
 - tauri-plugin-fs v2.4.5
 - tauri-plugin-dialog v2.6.0
@@ -71,6 +74,7 @@ note-sage/
 All Tauri commands are fully implemented and registered:
 
 **File Operations:**
+
 - `read_file(path: String) -> Result<String, String>`
 - `write_file(path: String, content: String) -> Result<(), String>`
 - `list_directory(path: String) -> Result<Vec<FileEntry>, String>` (recursive, filters hidden files)
@@ -81,16 +85,19 @@ All Tauri commands are fully implemented and registered:
 - `path_exists(path: String) -> Result<bool, String>`
 
 **Dialogs:**
+
 - `open_folder_dialog(app: AppHandle) -> Result<Option<String>, String>`
 
 ### Frontend Features Implemented
 
 **Zustand Stores:**
+
 - `editor-store.ts`: Tab management (open, close, switch, update content, dirty state)
 - `project-store.ts`: Root path, file tree, folder expansion state
 - `settings-store.ts`: Theme preference with localStorage persistence
 
 **Components:**
+
 - **Sidebar**: "Open Folder" button, displays file tree, handles folder selection
 - **FileTree**: Renders recursive file/folder structure with expand/collapse
 - **TabBar**: Shows open files as tabs, dirty indicators (•), close buttons
@@ -98,6 +105,7 @@ All Tauri commands are fully implemented and registered:
 - **App**: Main layout with sidebar + tabs + editor
 
 **Styling:**
+
 - Tailwind v4 with `@theme` directive
 - OKLCH color system for light/dark modes
 - Follows system theme preference
@@ -114,6 +122,7 @@ All Tauri commands are fully implemented and registered:
 ## Verification
 
 All checks passed:
+
 - ✅ Rust code compiles (`cargo check`)
 - ✅ Frontend builds (`pnpm build`)
 - ✅ App launches in development mode (`pnpm tauri dev`)

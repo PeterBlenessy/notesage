@@ -9,6 +9,7 @@ These are documented here so architectural decisions don't accidentally block fu
 Inline AI suggestions, chat panel, and provider abstraction.
 
 **Completed features:**
+
 - AI provider abstraction (Anthropic Claude, OpenAI, Ollama)
 - Settings UI for API key configuration
 - Chat panel as collapsible right sidebar (Cmd+Shift+A)
@@ -22,12 +23,14 @@ Inline AI suggestions, chat panel, and provider abstraction.
 - All AI calls through Tauri backend for security
 
 **Architecture:**
+
 - Provider interface: `AIProvider` with `generateText()` and `chat()` methods
 - Three implementations: AnthropicProvider, OpenAIProvider, OllamaProvider
 - State stores: ai-store (config), chat-store (messages)
 - Tauri commands: ai_generate_text, ai_chat, ai_chat_stream
 
 **Future Phase 2 enhancements:**
+
 - ProseMirror decorations for inline suggestions (green insert, red delete)
 - Context-aware suggestions (understand document structure)
 - Conversation branching/forking in chat
@@ -38,6 +41,7 @@ Inline AI suggestions, chat panel, and provider abstraction.
 **Goal:** Enhanced project management and version control integration.
 
 **Completed features:**
+
 - `.note-sage/` metadata directory auto-bootstrapped per project
   - Project settings (name, description)
   - AI context (provider, persona, project context overrides)
@@ -48,6 +52,7 @@ Inline AI suggestions, chat panel, and provider abstraction.
 - `useProjectMetadata` hook for auto-loading/saving metadata
 
 **Remaining features:**
+
 - `.note-sage/` extensions
   - Custom workflows
   - Search history
@@ -67,6 +72,7 @@ Inline AI suggestions, chat panel, and provider abstraction.
   - Progress tracking
 
 **Architecture considerations:**
+
 - New Tauri commands: `git_status`, `git_commit`, `git_diff`
 - Extend file tree to show Git status icons
 - Search results in dedicated panel
@@ -76,6 +82,7 @@ Inline AI suggestions, chat panel, and provider abstraction.
 **Goal:** Export notes to professional document formats.
 
 **Features:**
+
 - PDF export
   - Professional typesetting
   - Custom themes/templates
@@ -96,6 +103,7 @@ Inline AI suggestions, chat panel, and provider abstraction.
   - Template marketplace (future)
 
 **Architecture considerations:**
+
 - New Tauri commands: `export_pdf`, `export_docx`, `export_pptx`
 - Rust libraries: `printpdf`, `docx-rs`, or similar
 - Template files in `templates/` directory
@@ -106,6 +114,7 @@ Inline AI suggestions, chat panel, and provider abstraction.
 **Goal:** Automation, advanced AI features, and local AI support.
 
 **Features:**
+
 - YAML-defined workflows
   - Multi-step AI operations
   - Conditional logic
@@ -128,9 +137,10 @@ Inline AI suggestions, chat panel, and provider abstraction.
   - Knowledge graph visualization
 
 **Architecture considerations:**
+
 - Workflow engine in Rust backend
 - Ship llama.cpp binaries with app
-- Model files (~4GB) optional download
+- Model files (\~4GB) optional download
 - New store: `workflow-store`
 - WebSocket or SSE for streaming responses
 
@@ -139,29 +149,34 @@ Inline AI suggestions, chat panel, and provider abstraction.
 Not committed, but potential future features:
 
 - **Collaboration:**
+
   - Real-time collaborative editing (CRDT-based)
   - Comments and annotations
   - Version history with visual diff
   - Share notes via link
 
 - **Mobile apps:**
+
   - iOS app (Swift + Tauri Mobile)
   - Android app
   - Sync across devices (self-hosted or cloud)
 
 - **Plugins:**
+
   - Plugin API (Rust or WASM)
   - Community plugin marketplace
   - Custom AI providers
   - Custom export formats
 
 - **Advanced editor:**
+
   - Canvas mode (infinite whiteboard)
   - Mermaid diagram support
   - Math equations (KaTeX/MathJax)
   - Excalidraw integration
 
 - **Knowledge base:**
+
   - Backlinks (notes linking to this note)
   - Tag system
   - Daily notes
@@ -173,30 +188,36 @@ Not committed, but potential future features:
 These architectural choices enable future phases:
 
 1. **ProseMirror over simpler editors**
+
    - Decoration system critical for Phase 2 AI suggestions
    - Plugin system allows extensions without rewrite
    - Collaborative editing support (CRDT-friendly)
 
 2. **Tauri commands for all file operations**
+
    - Pattern extends to Git operations (Phase 3)
    - Allows filesystem sandboxing
    - Security boundary for AI operations
 
 3. **Zustand stores with clear boundaries**
+
    - Easy to add new stores (ai-store, project-store, project-metadata-store added; workflow-store planned)
    - Persist middleware supports offline-first approach
    - Redux DevTools support for debugging
 
 4. **No hardcoded paths**
+
    - `.note-sage/` metadata directory now implemented and auto-bootstrapped
    - Project-relative paths support workspace features
 
 5. **Component modularity**
+
    - Sidebar, editor, and tabs are separate
    - Easy to add new panels (chat panel, search panel, graph view)
    - shadcn/ui components are composable
 
 6. **CSS variables for theming**
+
    - Easy to add custom themes
    - Template system can override colors
    - Export maintains theme styling

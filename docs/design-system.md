@@ -11,7 +11,7 @@
 shadcn/ui components to install and use (not an exhaustive list — check docs for more):
 
 | Need | shadcn/ui component | DON'T build custom |
-|------|---------------------|-------------------|
+| --- | --- | --- |
 | Buttons | `button` | ❌ custom `<MyButton>` |
 | Dropdowns | `dropdown-menu` | ❌ custom dropdown |
 | Right-click menus | `context-menu` | ❌ custom context menu |
@@ -34,11 +34,13 @@ shadcn/ui components to install and use (not an exhaustive list — check docs f
 | Breadcrumbs | `breadcrumb` | ❌ custom breadcrumb |
 
 **Install components as needed:**
+
 ```bash
 pnpm dlx shadcn@latest add button dropdown-menu context-menu dialog alert-dialog tabs tooltip sonner input command switch select separator scroll-area resizable popover progress skeleton collapsible breadcrumb
 ```
 
 **Rules:**
+
 1. Before writing ANY UI component, ask: "Does shadcn/ui have this?" If yes, use it.
 2. Only build custom components for app-specific things that shadcn/ui doesn't cover (the editor itself, AI diff decorations, etc.)
 3. When extending shadcn/ui components, compose them — don't fork and rewrite.
@@ -69,9 +71,10 @@ Notesage should feel like a premium native macOS application. Think: Linear, Ray
 
 The entire palette is black, white, and greys. No blue, indigo, teal, or any hue. All CSS variables in globals.css use `oklch(L% 0 0)` — zero chroma, zero hue. This gives a polished, monochrome aesthetic similar to Linear or Things 3.
 
-Define the palette using CSS variables in globals.css. All colors must come from this palette — no hardcoded hex values in components. **No color with chroma > 0 except destructive (red).**
+Define the palette using CSS variables in globals.css. All colors must come from this palette — no hardcoded hex values in components. **No color with chroma &gt; 0 except destructive (red).**
 
 **Light mode:**
+
 - Background: white `oklch(100% 0 0)`
 - Text/foreground: near-black `oklch(14% 0 0)`
 - Primary (buttons, active states): dark grey `oklch(20% 0 0)`
@@ -81,6 +84,7 @@ Define the palette using CSS variables in globals.css. All colors must come from
 - Hover states: gentle background shifts, not color changes
 
 **Dark mode:**
+
 - Background: dark grey `oklch(18% 0 0)` — not pure black
 - Text/foreground: near-white `oklch(98% 0 0)`
 - Primary (buttons, active states): light grey `oklch(90% 0 0)`
@@ -89,6 +93,7 @@ Define the palette using CSS variables in globals.css. All colors must come from
 - Focus ring: `oklch(60% 0 0)` — never blue
 
 **Forbidden colors:**
+
 - No blue, indigo, teal, violet, or any chromatic accent anywhere in the UI
 - The only non-grey color allowed is destructive red for errors/deletions
 - Links in the editor use `--color-primary` (grey) with underline on hover for distinction
@@ -195,7 +200,7 @@ Define the palette using CSS variables in globals.css. All colors must come from
 - ❌ Default focus rings — replace with custom, on-brand focus indicators
 - ❌ Any blue, indigo, teal, violet, or chromatic accent colors — the palette is strictly neutral greyscale
 - ❌ Using `text-blue-*`, `bg-blue-*`, `border-blue-*`, or any Tailwind color class with a hue
-- ❌ CSS variables with chroma > 0 (except `--color-destructive` red)
+- ❌ CSS variables with chroma &gt; 0 (except `--color-destructive` red)
 
 ## Quality Check — Ask Yourself Before Every Component
 

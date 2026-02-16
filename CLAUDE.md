@@ -66,6 +66,22 @@ Only build custom for app-specific features (editor, AI decorations).
 | Tauri command signatures, IPC patterns | @docs/tauri-commands.md |
 | All keyboard shortcuts | @docs/keyboard-shortcuts.md |
 | Future phases (context only, don't build) | @docs/future-phases.md |
+| Implementation history | @docs/history/ |
+| Product requirements | @docs/prds/ |
+
+## Development Lifecycle
+
+| Command | Purpose |
+|---------|---------|
+| `/prd <feature>` | Create a Product Requirements Document |
+| `/plan-tasks <prd-or-feature>` | Break down into implementation tasks |
+| `/impl <task>` | Implementation guidance with relevant context |
+| `/verify <prd-or-feature>` | Verify against PRD and quality gates |
+| `/release <patch\|minor\|major>` | Version bump, changelog, release prep |
+| `/review-code` | Code review against conventions |
+| `/review-ui` | Design review against design system |
+| `/test` | Run full test suite |
+| `/new-component <Name>` | Scaffold a new UI component |
 
 ## Quick Start
 

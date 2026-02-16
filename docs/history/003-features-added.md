@@ -16,12 +16,14 @@ Beyond the core Phase 1 requirements, I've added several quality-of-life improve
 - **Delete** - Delete files/folders with confirmation
 
 **Benefits:**
+
 - No need to use external file manager
 - All file operations within the app
 - Confirmation dialogs prevent accidental deletions
 - New files automatically open in editor
 
 **Implementation:**
+
 - Uses shadcn/ui ContextMenu component
 - Wired to existing Tauri backend commands
 - Native prompts for simplicity
@@ -32,6 +34,7 @@ Beyond the core Phase 1 requirements, I've added several quality-of-life improve
 **Press Cmd+F** to instantly search and open any file:
 
 **Features:**
+
 - Fuzzy search by filename or path
 - Keyboard navigation (↑↓ arrows)
 - Enter to open selected file
@@ -41,12 +44,14 @@ Beyond the core Phase 1 requirements, I've added several quality-of-life improve
 - Displays total file count
 
 **Benefits:**
+
 - Navigate large projects without clicking
 - Faster than scrolling through file tree
 - Similar to VS Code's Cmd+F behavior
 - Great for projects with deep folder structures
 
 **Implementation:**
+
 - Modal dialog with search input
 - Flattens file tree for searching
 - Case-insensitive filtering
@@ -62,12 +67,14 @@ Beyond the core Phase 1 requirements, I've added several quality-of-life improve
 - **Reading time** - Estimated minutes (200 wpm)
 
 **Benefits:**
+
 - Track document length while writing
 - Useful for meeting word count requirements
 - See progress on writing goals
 - Professional writing tool feature
 
 **Updates:**
+
 - Real-time as you type
 - No performance impact
 - Clean, compact UI
@@ -81,6 +88,7 @@ Beyond the core Phase 1 requirements, I've added several quality-of-life improve
 - Visible at a glance
 
 **Benefits:**
+
 - Never lose track of what file you're editing
 - Quick orientation in large projects
 - Professional IDE feel
@@ -88,7 +96,7 @@ Beyond the core Phase 1 requirements, I've added several quality-of-life improve
 ## Keyboard Shortcuts
 
 | Shortcut | Action |
-|----------|--------|
+| --- | --- |
 | **Cmd+F** | Quick Open file search |
 | Cmd+S | Save current file |
 | Cmd+W | Close active tab |
@@ -109,10 +117,12 @@ e0bc80f Initial commit: Notesage Phase 1 - Complete WYSIWYG Markdown Editor
 ## Files Added/Modified
 
 ### New Files
+
 - `src/components/QuickOpen.tsx` - Quick file search dialog
 - `src/components/editor/StatusBar.tsx` - Word count and stats
 
 ### Modified Files
+
 - `src/components/sidebar/FileTreeItem.tsx` - Context menu + highlight
 - `src/components/editor/Editor.tsx` - StatusBar integration
 - `src/App.tsx` - QuickOpen + Cmd+F handler
@@ -135,10 +145,11 @@ From CLAUDE.md exit criteria:
 - ✅ **Create/rename/delete files from sidebar** ← NEW
 - ✅ Light/dark theme works and follows system preference
 - ✅ App builds and runs on macOS without errors
-- ✅ App starts quickly (< 1 second after compile)
+- ✅ App starts quickly (&lt; 1 second after compile)
 - ✅ No console errors during normal operation
 
 **Plus additional nice-to-have features:**
+
 - ✅ Cmd+F quick file open
 - ✅ Word count in status bar
 - ✅ Active file highlight in sidebar
@@ -158,6 +169,7 @@ From CLAUDE.md exit criteria:
 Phase 1 is now **fully complete** with all MVP features plus quality-of-life improvements!
 
 ### Possible Future Enhancements
+
 (Not in current plan, just ideas)
 
 - File tree drag & drop to move files
@@ -169,6 +181,7 @@ Phase 1 is now **fully complete** with all MVP features plus quality-of-life imp
 - Custom keybinding editor
 
 ### Phase 2 Preview
+
 (From CLAUDE.md - not yet started)
 
 - AI collaboration features
@@ -178,8 +191,6 @@ Phase 1 is now **fully complete** with all MVP features plus quality-of-life imp
 
 ---
 
-**Build Status:** ✅ Clean build, no errors
-**Git Status:** ✅ All changes committed
-**Ready to Use:** ✅ Yes!
+**Build Status:** ✅ Clean build, no errors **Git Status:** ✅ All changes committed **Ready to Use:** ✅ Yes!
 
 Run `pnpm tauri dev` to start the app and try all the new features!
