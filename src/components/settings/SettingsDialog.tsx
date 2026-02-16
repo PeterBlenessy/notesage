@@ -106,7 +106,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[80vw] lg:max-w-4xl max-h-[85vh] p-0 gap-0 overflow-hidden flex flex-col">
+      <DialogContent className="max-w-[80vw] lg:max-w-2xl max-h-[85vh] p-0 gap-0 overflow-hidden flex flex-col">
         {/* Header */}
         <DialogHeader className="px-6 py-4 border-b shrink-0" style={{ backgroundColor: 'var(--color-card)' }}>
           <div className="flex items-center gap-3">
