@@ -3,9 +3,10 @@ import { FileTreeItem } from "./FileTreeItem";
 
 interface FileTreeProps {
   onFileClick: (filePath: string, fileName: string) => void;
+  onNewNote?: (parentPath?: string) => void;
 }
 
-export function FileTree({ onFileClick }: FileTreeProps) {
+export function FileTree({ onFileClick, onNewNote }: FileTreeProps) {
   const { fileTree } = useProjectStore();
 
   return (
@@ -16,6 +17,7 @@ export function FileTree({ onFileClick }: FileTreeProps) {
           entry={entry}
           level={0}
           onFileClick={onFileClick}
+          onNewNote={onNewNote}
         />
       ))}
     </div>

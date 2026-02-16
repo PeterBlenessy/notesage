@@ -142,8 +142,7 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
   return (
     <TiptapBubbleMenu
       editor={editor}
-      className="flex items-center rounded-lg border shadow-lg backdrop-blur-sm overflow-hidden"
-      tippyOptions={{ duration: 150 }}
+      className="flex items-center rounded-lg border shadow-lg backdrop-blur-sm overflow-hidden animate-in fade-in-0 zoom-in-95 duration-150"
       style={{
         borderColor: 'var(--color-border)',
         backgroundColor: 'var(--color-popover)',

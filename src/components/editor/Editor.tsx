@@ -1,10 +1,12 @@
 import { useEffect, useCallback, useRef, useState } from "react";
 import { EditorContent } from "@tiptap/react";
-import { FileText, Command } from "lucide-react";
+import { FileText, Command, FilePlus, FolderPlus, FolderOpen } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
+import { useProjectStore } from "@/stores/project-store";
 import { useSettingsStore, type ContentWidth } from "@/stores/settings-store";
 import { useEditor } from "@/hooks/useEditor";
 import { useFileOperations } from "@/hooks/useFileOperations";
+import { Button } from "@/components/ui/button";
 import { Toolbar } from "./Toolbar";
 import { BubbleMenu } from "./BubbleMenu";
 import { StatusBar } from "./StatusBar";
@@ -30,8 +32,15 @@ const CONTENT_HEIGHTS: Record<string, number> = {
   letter: 1056,
 };
 
-export function Editor() {
+interface EditorProps {
+  onNewNote?: () => void;
+  onNewProject?: () => void;
+  onOpenFolder?: () => void;
+}
+
+export function Editor({ onNewNote, onNewProject, onOpenFolder }: EditorProps) {
   const { tabs, activeTabId, updateTabContent } = useEditorStore();
+  const rootPath = useProjectStore((s) => s.rootPath);
   const { showFloatingToolbar, contentWidth, marginTop, marginBottom, marginLeft, marginRight } = useSettingsStore();
   const { saveFile } = useFileOperations();
   const maxWidth = CONTENT_WIDTHS[contentWidth];
@@ -135,21 +144,52 @@ export function Editor() {
         <div className="text-center space-y-6">
           <FileText className="h-12 w-12 mx-auto text-muted-foreground/30" strokeWidth={1} />
           <div className="space-y-1.5">
-            <h2 className="text-lg font-medium text-foreground/70">No file open</h2>
-            <p className="text-sm text-muted-foreground">Select a file from the sidebar to start editing</p>
+            <h2 className="text-lg font-medium text-foreground/70">
+              {rootPath ? "No file open" : "Welcome to Notesage"}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {rootPath
+                ? "Select a file from the sidebar or create a new note"
+                : "Create a new project or open an existing folder to get started"}
+            </p>
+          </div>
+          <div className="flex flex-col items-center gap-3">
+            {rootPath ? (
+              <Button variant="outline" size="sm" onClick={() => onNewNote?.()}>
+                <FilePlus className="h-4 w-4" />
+                New Note
+              </Button>
+            ) : (
+              <div className="flex flex-col items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => onNewProject?.()}>
+                  <FolderPlus className="h-4 w-4" />
+                  New Project
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => onOpenFolder?.()}>
+                  <FolderOpen className="h-4 w-4" />
+                  Open Folder
+                </Button>
+              </div>
+            )}
           </div>
           <div className="flex flex-col items-center gap-2 text-xs text-muted-foreground/60">
             <div className="flex items-center gap-2">
               <kbd className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[11px]" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
                 <Command className="h-2.5 w-2.5" />N
               </kbd>
-              <span>New file</span>
+              <span>New note</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[11px]" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
+                <Command className="h-2.5 w-2.5" /><span className="text-[9px]">Shift</span>N
+              </kbd>
+              <span>New project</span>
             </div>
             <div className="flex items-center gap-2">
               <kbd className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[11px]" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
                 <Command className="h-2.5 w-2.5" />O
               </kbd>
-              <span>Open file</span>
+              <span>Open folder</span>
             </div>
           </div>
         </div>

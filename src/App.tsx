@@ -6,7 +6,11 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { QuickOpen } from "@/components/QuickOpen";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
+import { NewNoteDialog } from "@/components/NewNoteDialog";
+import { NewProjectDialog } from "@/components/NewProjectDialog";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useProjectMetadata } from "@/hooks/useProjectMetadata";
+import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useProjectStore } from "@/stores/project-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -42,11 +46,15 @@ function loadPanelSize(key: string, panel: string, fallback: number): number {
 }
 
 // Editor area with document-style presentation
-function EditorArea() {
+function EditorArea({ onNewNote, onNewProject, onOpenFolder }: {
+  onNewNote?: () => void;
+  onNewProject?: () => void;
+  onOpenFolder?: () => void;
+}) {
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ backgroundColor: 'var(--color-muted)' }}>
       <TabBar />
-      <Editor />
+      <Editor onNewNote={onNewNote} onNewProject={onNewProject} onOpenFolder={onOpenFolder} />
     </div>
   );
 }
@@ -54,17 +62,22 @@ function EditorArea() {
 function App() {
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [newNoteOpen, setNewNoteOpen] = useState(false);
+  const [newNoteParentPath, setNewNoteParentPath] = useState("");
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [isWideMode, setIsWideMode] = useState(window.innerWidth >= BREAKPOINT_WIDE);
   const { sidebarOpen, setSidebarOpen, chatPanelOpen, setChatPanelOpen } = useSettingsStore();
 
   const { setRootPath, setFileTree } = useProjectStore();
 
   useKeyboardShortcuts();
+  useProjectMetadata();
 
   const handleOpenFolder = useCallback(async () => {
     try {
       const folderPath = await tauriApi.openFolderDialog();
       if (folderPath) {
+        useProjectMetadataStore.getState().reset();
         setRootPath(folderPath);
         const tree = await tauriApi.listDirectory(folderPath);
         setFileTree(tree);
@@ -73,6 +86,44 @@ function App() {
       console.error("Failed to open folder:", error);
     }
   }, [setRootPath, setFileTree]);
+
+  const handleOpenProject = useCallback(async (projectPath: string) => {
+    try {
+      useProjectMetadataStore.getState().reset();
+      setRootPath(projectPath);
+      const tree = await tauriApi.listDirectory(projectPath);
+      setFileTree(tree);
+    } catch (error) {
+      console.error("Failed to open project:", error);
+    }
+  }, [setRootPath, setFileTree]);
+
+  const handleNoteCreated = useCallback(async (filePath: string, fileName: string) => {
+    try {
+      await tauriApi.createFile(filePath);
+      const currentRoot = useProjectStore.getState().rootPath;
+      if (currentRoot) {
+        const tree = await tauriApi.listDirectory(currentRoot);
+        setFileTree(tree);
+      }
+      const content = await tauriApi.readFile(filePath);
+      useEditorStore.getState().openTab(filePath, fileName, content);
+    } catch (err) {
+      console.error("Failed to create note:", err);
+    }
+  }, [setFileTree]);
+
+  const handleNewNote = useCallback((parentPath?: string) => {
+    const target = parentPath || useProjectStore.getState().rootPath;
+    if (target) {
+      setNewNoteParentPath(target);
+      setNewNoteOpen(true);
+    }
+  }, []);
+
+  const handleNewProject = useCallback(() => {
+    setNewProjectOpen(true);
+  }, []);
 
   const handleWideLayout = useCallback((layout: Record<string, number>) => {
     savePanelSizes("wide", layout);
@@ -119,23 +170,20 @@ function App() {
         setSettingsOpen(true);
       }
 
-      // Cmd+N for new file
+      // Cmd+Shift+N for new project
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "n") {
+        e.preventDefault();
+        setNewProjectOpen(true);
+        return;
+      }
+
+      // Cmd+N for new note
       if ((e.metaKey || e.ctrlKey) && e.key === "n") {
         e.preventDefault();
-        const { rootPath } = useProjectStore.getState();
-        if (rootPath) {
-          const fileName = window.prompt("Enter file name:", "untitled.md");
-          if (fileName) {
-            const filePath = `${rootPath}/${fileName}`;
-            tauriApi.createFile(filePath).then(() => {
-              tauriApi.listDirectory(rootPath).then((tree) => {
-                setFileTree(tree);
-              });
-              tauriApi.readFile(filePath).then((content) => {
-                useEditorStore.getState().openTab(filePath, fileName, content);
-              });
-            }).catch((err) => alert(`Failed to create file: ${err}`));
-          }
+        const { rootPath: currentRoot } = useProjectStore.getState();
+        if (currentRoot) {
+          setNewNoteParentPath(currentRoot);
+          setNewNoteOpen(true);
         }
       }
 
@@ -148,7 +196,7 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleOpenFolder, setFileTree]);
+  }, [handleOpenFolder]);
 
   return (
     <ThemeProvider>
@@ -223,14 +271,14 @@ function App() {
               {sidebarOpen && (
                 <>
                   <ResizablePanel id="sidebar" defaultSize={loadPanelSize("wide", "sidebar", 20)} minSize={200} maxSize={400}>
-                    <Sidebar />
+                    <Sidebar onNewNote={handleNewNote} onNewProject={handleNewProject} />
                   </ResizablePanel>
                   <ResizableHandle withHandle />
                 </>
               )}
 
               <ResizablePanel id="editor" defaultSize={loadPanelSize("wide", "editor", sidebarOpen && chatPanelOpen ? 50 : 70)} minSize={300}>
-                <EditorArea />
+                <EditorArea onNewNote={handleNewNote} onNewProject={handleNewProject} onOpenFolder={handleOpenFolder} />
               </ResizablePanel>
 
               {chatPanelOpen && (
@@ -289,7 +337,7 @@ function App() {
                 onLayoutChanged={handleNarrowLayout}
               >
                 <ResizablePanel id="editor-narrow" minSize={300}>
-                  <EditorArea />
+                  <EditorArea onNewNote={handleNewNote} onNewProject={handleNewProject} onOpenFolder={handleOpenFolder} />
                 </ResizablePanel>
 
                 {chatPanelOpen && (
@@ -307,6 +355,17 @@ function App() {
 
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
         <QuickOpen open={quickOpenVisible} onOpenChange={setQuickOpenVisible} />
+        <NewNoteDialog
+          open={newNoteOpen}
+          onOpenChange={setNewNoteOpen}
+          parentPath={newNoteParentPath}
+          onCreated={handleNoteCreated}
+        />
+        <NewProjectDialog
+          open={newProjectOpen}
+          onOpenChange={setNewProjectOpen}
+          onCreated={handleOpenProject}
+        />
       </div>
     </ThemeProvider>
   );

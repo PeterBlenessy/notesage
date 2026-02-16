@@ -16,12 +16,13 @@ interface FileTreeItemProps {
   entry: FileEntry;
   level: number;
   onFileClick: (filePath: string, fileName: string) => void;
+  onNewNote?: (parentPath?: string) => void;
 }
 
-export function FileTreeItem({ entry, level, onFileClick }: FileTreeItemProps) {
+export function FileTreeItem({ entry, level, onFileClick, onNewNote }: FileTreeItemProps) {
   const { isExpanded, toggleFolder } = useProjectStore();
   const { tabs, activeTabId } = useEditorStore();
-  const { createFile, createFolder, renamePath, deletePath, openFile } = useFileOperations();
+  const { createFolder, renamePath, deletePath } = useFileOperations();
   const expanded = isExpanded(entry.path);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
@@ -35,16 +36,10 @@ export function FileTreeItem({ entry, level, onFileClick }: FileTreeItemProps) {
     }
   };
 
-  const handleNewFile = async () => {
-    const fileName = window.prompt("Enter file name:", "untitled.md");
-    if (!fileName) return;
-
-    try {
-      const parentPath = entry.is_directory ? entry.path : entry.path.substring(0, entry.path.lastIndexOf("/"));
-      const newPath = await createFile(parentPath, fileName);
-      await openFile(newPath, fileName);
-    } catch (error) {
-      alert(`Failed to create file: ${error}`);
+  const handleNewFile = () => {
+    const parentPath = entry.is_directory ? entry.path : entry.path.substring(0, entry.path.lastIndexOf("/"));
+    if (onNewNote) {
+      onNewNote(parentPath);
     }
   };
 
@@ -162,6 +157,7 @@ export function FileTreeItem({ entry, level, onFileClick }: FileTreeItemProps) {
               entry={child}
               level={level + 1}
               onFileClick={onFileClick}
+              onNewNote={onNewNote}
             />
           ))}
         </div>
