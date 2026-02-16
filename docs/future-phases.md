@@ -11,8 +11,12 @@ Inline AI suggestions, chat panel, and provider abstraction.
 **Completed features:**
 - AI provider abstraction (Anthropic Claude, OpenAI, Ollama)
 - Settings UI for API key configuration
-- Chat panel as collapsible right sidebar
+- Chat panel as collapsible right sidebar (Cmd+Shift+A)
 - Inline AI actions via BubbleMenu (Improve, Summarize, Expand)
+- AI personas with configurable system messages
+- Custom prompts/templates for AI actions
+- Streaming responses for real-time chat
+- Project-scoped AI context (provider, persona, and context overrides per project)
 - Provider logos with dark mode support
 - Secure API key storage in localStorage
 - All AI calls through Tauri backend for security
@@ -21,24 +25,30 @@ Inline AI suggestions, chat panel, and provider abstraction.
 - Provider interface: `AIProvider` with `generateText()` and `chat()` methods
 - Three implementations: AnthropicProvider, OpenAIProvider, OllamaProvider
 - State stores: ai-store (config), chat-store (messages)
-- Tauri commands: ai_generate_text, ai_chat
+- Tauri commands: ai_generate_text, ai_chat, ai_chat_stream
 
 **Future Phase 2 enhancements:**
 - ProseMirror decorations for inline suggestions (green insert, red delete)
-- Streaming responses for real-time chat
 - Context-aware suggestions (understand document structure)
-- Custom prompts/templates for AI actions
 - Conversation branching/forking in chat
 - AI-powered autocomplete while typing
 
-## Phase 3 — Project Workspace
+## Phase 3 — Project Workspace (Partially Complete)
 
 **Goal:** Enhanced project management and version control integration.
 
-**Features:**
-- `.note-sage/` metadata directory in project root
-  - Project settings (name, description, goals)
-  - AI context (system prompts, preferred provider)
+**Completed features:**
+- `.note-sage/` metadata directory auto-bootstrapped per project
+  - Project settings (name, description)
+  - AI context (provider, persona, project context overrides)
+- New Project dialog (Cmd+Shift+N) — creates folder + metadata
+- New Note dialog (Cmd+N) — replaces browser prompts, duplicate detection
+- Project Settings tab in settings dialog
+- `project-metadata-store` for project-level state
+- `useProjectMetadata` hook for auto-loading/saving metadata
+
+**Remaining features:**
+- `.note-sage/` extensions
   - Custom workflows
   - Search history
 - Git integration
@@ -57,7 +67,6 @@ Inline AI suggestions, chat panel, and provider abstraction.
   - Progress tracking
 
 **Architecture considerations:**
-- New store: `project-metadata-store`
 - New Tauri commands: `git_status`, `git_commit`, `git_diff`
 - Extend file tree to show Git status icons
 - Search results in dedicated panel
@@ -174,12 +183,12 @@ These architectural choices enable future phases:
    - Security boundary for AI operations
 
 3. **Zustand stores with clear boundaries**
-   - Easy to add new stores (ai-store, project-store, workflow-store)
+   - Easy to add new stores (ai-store, project-store, project-metadata-store added; workflow-store planned)
    - Persist middleware supports offline-first approach
    - Redux DevTools support for debugging
 
 4. **No hardcoded paths**
-   - `.note-sage/` metadata directory can be added without refactor
+   - `.note-sage/` metadata directory now implemented and auto-bootstrapped
    - Project-relative paths support workspace features
 
 5. **Component modularity**
