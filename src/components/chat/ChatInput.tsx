@@ -1,18 +1,34 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { ArrowUp } from 'lucide-react';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
   disabled?: boolean;
+  footer?: React.ReactNode;
 }
 
-export function ChatInput({ onSend, disabled }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, footer }: ChatInputProps) {
   const [message, setMessage] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const autoResize = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
 
   const handleSubmit = () => {
     if (message.trim() && !disabled) {
       onSend(message.trim());
       setMessage('');
+      // Reset height after clearing
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.style.height = 'auto';
+        }
+      });
     }
   };
 
@@ -27,34 +43,66 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
 
   return (
     <div
-      className="flex items-end gap-2 rounded-xl border px-3 py-2 transition-colors"
+      className="rounded-xl border transition-colors"
       style={{
         borderColor: 'var(--color-border)',
         backgroundColor: 'var(--color-background)',
       }}
     >
-      <textarea
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="Ask anything..."
-        disabled={disabled}
-        rows={1}
-        className="flex-1 bg-transparent text-[13px] resize-none outline-none placeholder:text-muted-foreground/50 max-h-[120px] py-0.5 leading-relaxed"
-        style={{ color: 'var(--color-foreground)' }}
-      />
-      <button
-        onClick={handleSubmit}
-        disabled={!canSend}
-        className="h-6 w-6 rounded-md flex items-center justify-center shrink-0 transition-colors disabled:opacity-30"
-        style={{
-          backgroundColor: canSend ? 'var(--color-foreground)' : 'var(--color-muted)',
-          color: canSend ? 'var(--color-background)' : 'var(--color-muted-foreground)',
-        }}
-        title="Send (Cmd+Enter)"
-      >
-        <ArrowUp className="h-3.5 w-3.5" />
-      </button>
+      <div className="flex items-end gap-2 px-3 py-2">
+        <textarea
+          ref={textareaRef}
+          value={message}
+          onChange={(e) => {
+            setMessage(e.target.value);
+            autoResize();
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder="Ask anything..."
+          disabled={disabled}
+          rows={1}
+          className="flex-1 bg-transparent text-[13px] resize-none outline-none placeholder:text-muted-foreground/50 max-h-[120px] py-0.5 leading-relaxed overflow-y-auto"
+          style={{ color: 'var(--color-foreground)' }}
+        />
+      </div>
+      {footer && (
+        <>
+          <div className="mx-3 border-t" style={{ borderColor: 'var(--color-border)' }} />
+          <div className="flex items-center justify-between px-3 py-1.5">
+            <div className="flex items-center gap-2">
+              {footer}
+            </div>
+            <button
+              onClick={handleSubmit}
+              disabled={!canSend}
+              className="h-6 w-6 rounded-md flex items-center justify-center shrink-0 transition-colors disabled:opacity-30"
+              style={{
+                backgroundColor: canSend ? 'var(--color-foreground)' : 'var(--color-muted)',
+                color: canSend ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+              }}
+              title="Send (Cmd+Enter)"
+            >
+              <ArrowUp className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </>
+      )}
+      {!footer && (
+        <div className="flex justify-end px-3 pb-2">
+          <button
+            onClick={handleSubmit}
+            disabled={!canSend}
+            className="h-6 w-6 rounded-md flex items-center justify-center shrink-0 transition-colors disabled:opacity-30"
+            style={{
+              backgroundColor: canSend ? 'var(--color-foreground)' : 'var(--color-muted)',
+              color: canSend ? 'var(--color-background)' : 'var(--color-muted-foreground)',
+            }}
+            title="Send (Cmd+Enter)"
+          >
+            <ArrowUp className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

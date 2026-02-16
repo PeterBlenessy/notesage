@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react';
-import { X, Trash2, Loader2, Search, FileText } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { X, Trash2, Loader2, Search, FileText, ChevronUp } from 'lucide-react';
 import { useChatStore } from '@/stores/chat-store';
-import { useAIStore, getActivePersona } from '@/stores/ai-store';
+import { useAIStore, getActivePersona, getAllPersonas } from '@/stores/ai-store';
 import { useActiveProject } from '@/hooks/useActiveProject';
 import { useAIOperations } from '@/hooks/useAIOperations';
 import { ChatMessage } from './ChatMessage';
@@ -12,6 +12,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 
 interface ChatPanelProps {
   onClose: () => void;
@@ -20,12 +25,14 @@ interface ChatPanelProps {
 export function ChatPanel({ onClose }: ChatPanelProps) {
   const { messages, isLoading, error, activeTool, clearMessages } = useChatStore();
   const aiStore = useAIStore();
-  const { provider } = aiStore;
+  const { provider, setActivePersona } = aiStore;
   const activePersona = getActivePersona(aiStore);
+  const allPersonas = getAllPersonas(aiStore);
   const { metadata } = useActiveProject();
   const hasProjectContext = Boolean(metadata?.ai.projectContext);
   const { sendChatMessage } = useAIOperations();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [personaOpen, setPersonaOpen] = useState(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -51,27 +58,8 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
 
   return (
     <div className="h-full w-full bg-card flex flex-col">
-      <div className="h-11 px-3 border-b border-border flex items-center justify-between shrink-0" style={{ backgroundColor: 'var(--color-card)' }}>
-        <div className="flex items-center gap-2">
-          <span className="text-sm">{activePersona.icon}</span>
-          <h2 className="text-sm font-semibold tracking-tight">AI Chat</h2>
-          <span className="text-xs text-muted-foreground">· {activePersona.name}</span>
-          {hasProjectContext && (
-            <TooltipProvider delayDuration={200}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-muted-foreground" style={{ backgroundColor: 'var(--color-accent)' }}>
-                    <FileText className="h-3 w-3" />
-                    CTX
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="max-w-64">
-                  <p className="text-xs">Project context is active for this conversation</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-        </div>
+      <div className="h-9 px-3 flex items-center justify-between shrink-0" style={{ backgroundColor: 'var(--color-card)' }}>
+        <h2 className="text-sm font-semibold tracking-tight">AI Chat</h2>
         <div className="flex items-center gap-0.5">
           <button
             onClick={handleClear}
@@ -123,11 +111,10 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
               </div>
             )}
             {activeTool && (
-              <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 rounded-lg px-3 py-2">
-                <Search className="h-4 w-4 animate-pulse" />
-                <span className="text-sm font-medium">
-                  {activeTool === 'web_search' && 'Searching the web...'}
-                  {activeTool !== 'web_search' && `Using ${activeTool}...`}
+              <div className="flex items-center gap-2 text-muted-foreground px-1 py-1">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span className="text-xs">
+                  {activeTool === 'web_search' ? 'Searching the web...' : `Using ${activeTool}...`}
                 </span>
               </div>
             )}
@@ -143,7 +130,57 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
       )}
 
       <div className="border-t border-border px-3 py-3">
-        <ChatInput onSend={handleSend} disabled={isLoading || !provider} />
+        <ChatInput
+          onSend={handleSend}
+          disabled={isLoading || !provider}
+          footer={
+            <>
+              <Popover open={personaOpen} onOpenChange={setPersonaOpen}>
+                <PopoverTrigger asChild>
+                  <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent/50">
+                    <span>{activePersona.icon}</span>
+                    <span>{activePersona.name}</span>
+                    <ChevronUp className="h-3 w-3 opacity-50" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent side="top" align="start" className="w-48 p-1">
+                  {allPersonas.map((persona) => (
+                    <button
+                      key={persona.id}
+                      onClick={() => {
+                        setActivePersona(persona.id);
+                        setPersonaOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${
+                        persona.id === activePersona.id
+                          ? 'bg-accent text-accent-foreground'
+                          : 'text-foreground hover:bg-accent/50'
+                      }`}
+                    >
+                      <span>{persona.icon}</span>
+                      <span>{persona.name}</span>
+                    </button>
+                  ))}
+                </PopoverContent>
+              </Popover>
+              {hasProjectContext && (
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex items-center gap-0.5 px-1 py-px rounded text-[10px] font-medium text-muted-foreground" style={{ backgroundColor: 'var(--color-accent)' }}>
+                        <FileText className="h-2.5 w-2.5" />
+                        CTX
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-64">
+                      <p className="text-xs">Project context is active for this conversation</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </>
+          }
+        />
       </div>
     </div>
   );

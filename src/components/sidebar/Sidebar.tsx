@@ -95,7 +95,7 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
       style={{ backgroundColor: "var(--color-card)" }}
     >
       {/* Sidebar header */}
-      <div className="h-11 px-3 border-b border-border flex items-center shrink-0">
+      <div className="h-11 px-3 flex items-center shrink-0">
         <h2 className="text-sm font-semibold tracking-tight">Workspace</h2>
       </div>
 
