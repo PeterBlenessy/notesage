@@ -143,8 +143,9 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
   if (!activeTab) {
     return (
-      <div className="flex h-full items-center justify-center" style={{ backgroundColor: 'var(--color-background)' }}>
-        <div className="text-center max-w-3xl px-6">
+      <div className="h-full overflow-y-auto @container" style={{ backgroundColor: 'var(--color-background)' }}>
+        <div className="flex min-h-full items-center justify-center">
+        <div className="text-center max-w-3xl px-6 py-8">
           <div className="space-y-3 mb-12">
             <img src="/app-icon.svg" alt="Notesage" className="h-14 w-14 mx-auto rounded-xl mb-2" />
             <h2 className="text-xl font-semibold text-foreground">Notesage</h2>
@@ -157,7 +158,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
               Your files stay on your computer. Pick up where you left off anytime.
             </p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 @[768px]:grid-cols-3 gap-3">
             <Card className="text-left flex flex-col">
               <CardHeader className="pb-3 flex-1">
                 <CardTitle className="text-base font-semibold inline-flex items-center gap-2">
@@ -284,6 +285,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
               Your files never leave your computer. Notesage reads and writes directly to your local filesystem — no cloud sync, no accounts, no tracking. AI features connect only when you provide an API key.
             </p>
           </div>
+        </div>
         </div>
       </div>
     );
