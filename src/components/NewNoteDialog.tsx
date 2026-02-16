@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { tauriApi } from "@/lib/tauri";
-import { Loader2 } from "lucide-react";
+import { Loader2, Info } from "lucide-react";
 
 interface NewNoteDialogProps {
   open: boolean;
@@ -113,7 +113,12 @@ export function NewNoteDialog({
             placeholder="untitled.md"
           />
           {error && (
-            <p className="text-sm text-destructive">{error}</p>
+            <div className="flex items-start gap-2 rounded-md border px-3 py-2.5 text-sm"
+              style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}
+            >
+              <Info className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground" />
+              <span className="text-muted-foreground">{error}</span>
+            </div>
           )}
         </div>
         <DialogFooter>

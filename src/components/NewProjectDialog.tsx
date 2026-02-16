@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { tauriApi } from "@/lib/tauri";
-import { FolderOpen, Loader2 } from "lucide-react";
+import { FolderOpen, Loader2, Info } from "lucide-react";
 
 interface NewProjectDialogProps {
   open: boolean;
@@ -66,7 +66,7 @@ export function NewProjectDialog({
     try {
       const exists = await tauriApi.pathExists(projectPath);
       if (exists) {
-        setError("A folder with this name already exists at that location.");
+        setError("A folder with this name already exists at that location. Choose a different name.");
         setIsCreating(false);
         return;
       }
@@ -134,7 +134,12 @@ export function NewProjectDialog({
             </div>
           </div>
           {error && (
-            <p className="text-sm text-destructive">{error}</p>
+            <div className="flex items-start gap-2 rounded-md border px-3 py-2.5 text-sm"
+              style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}
+            >
+              <Info className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground" />
+              <span className="text-muted-foreground">{error}</span>
+            </div>
           )}
         </div>
         <DialogFooter>
