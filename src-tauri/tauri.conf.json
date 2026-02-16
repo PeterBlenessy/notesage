@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Notesage",
-  "version": "0.1.0",
+  "version": "../package.json",
   "identifier": "com.notesage.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
