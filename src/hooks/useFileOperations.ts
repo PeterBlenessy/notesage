@@ -147,6 +147,7 @@ export function useFileOperations() {
       try {
         await tauriApi.renamePath(oldPath, newPath);
         await refreshFileTree(oldPath);
+        await refreshFileTree(newPath);
         return true;
       } catch (error) {
         console.error("Failed to rename:", error);

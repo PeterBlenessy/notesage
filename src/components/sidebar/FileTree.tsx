@@ -6,10 +6,11 @@ interface FileTreeProps {
   onFileClick: (filePath: string, fileName: string) => void;
   onNewNote?: (parentPath?: string) => void;
   onMakeProject?: (path: string) => void;
+  showMoveToProject?: boolean;
   expandKeyPrefix?: string;
 }
 
-export function FileTree({ tree, onFileClick, onNewNote, onMakeProject, expandKeyPrefix }: FileTreeProps) {
+export function FileTree({ tree, onFileClick, onNewNote, onMakeProject, showMoveToProject, expandKeyPrefix }: FileTreeProps) {
   return (
     <div className="space-y-0.5">
       {tree.map((entry) => (
@@ -20,6 +21,7 @@ export function FileTree({ tree, onFileClick, onNewNote, onMakeProject, expandKe
           onFileClick={onFileClick}
           onNewNote={onNewNote}
           onMakeProject={onMakeProject}
+          showMoveToProject={showMoveToProject}
           expandKeyPrefix={expandKeyPrefix}
         />
       ))}

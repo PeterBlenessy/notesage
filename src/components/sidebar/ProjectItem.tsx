@@ -1,4 +1,5 @@
-import { ChevronRight, Folder, FolderOpen, Settings, X } from "lucide-react";
+import { ChevronRight, Folder, FolderOpen, Settings, X, ExternalLink } from "lucide-react";
+import { tauriApi } from "@/lib/tauri";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { FileTree } from "./FileTree";
@@ -96,6 +97,11 @@ export function ProjectItem({
         <ContextMenuItem onClick={() => onOpenProjectSettings?.(projectPath)}>
           <Settings className="mr-2 h-4 w-4" />
           Project Settings
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => tauriApi.revealInFinder(projectPath)}>
+          <ExternalLink className="mr-2 h-4 w-4" />
+          Reveal in Finder
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => onCloseProject?.(projectPath)}>

@@ -47,4 +47,8 @@ export const tauriApi = {
   async getHomeDir(): Promise<string> {
     return await invoke<string>("get_home_dir");
   },
+
+  async revealInFinder(path: string): Promise<void> {
+    await invoke("reveal_in_finder", { path });
+  },
 };

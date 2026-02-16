@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from "react";
-import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderCog, Pencil, Trash2 } from "lucide-react";
-import { FileEntry } from "@/lib/tauri";
+import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink } from "lucide-react";
+import { FileEntry, tauriApi } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { cn } from "@/lib/utils";
@@ -10,6 +11,9 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 
@@ -19,10 +23,11 @@ interface FileTreeItemProps {
   onFileClick: (filePath: string, fileName: string) => void;
   onNewNote?: (parentPath?: string) => void;
   onMakeProject?: (path: string) => void;
+  showMoveToProject?: boolean;
   expandKeyPrefix?: string;
 }
 
-export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProject, expandKeyPrefix = "" }: FileTreeItemProps) {
+export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProject, showMoveToProject, expandKeyPrefix = "" }: FileTreeItemProps) {
   const { isExpanded, toggleFolder } = useWorkspaceStore();
   const { tabs, activeTabId } = useEditorStore();
   const { createFolder, renamePath, deletePath } = useFileOperations();
@@ -33,6 +38,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   const projects = useWorkspaceStore((s) => s.projects);
+  const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const isActive = activeTab?.filePath === entry.path;
@@ -124,6 +130,23 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
     }
   };
 
+  const handleMoveToProject = async (destProjectPath: string) => {
+    const destPath = `${destProjectPath}/${entry.name}`;
+    try {
+      await renamePath(entry.path, destPath);
+    } catch (error) {
+      console.error("Failed to move to project:", error);
+    }
+  };
+
+  const handleRevealInFinder = async () => {
+    try {
+      await tauriApi.revealInFinder(entry.path);
+    } catch (error) {
+      console.error("Failed to reveal in Finder:", error);
+    }
+  };
+
   const paddingLeft = `${level * 14 + 6}px`;
 
   return (
@@ -212,11 +235,42 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
             <>
               <ContextMenuSeparator />
               <ContextMenuItem onClick={() => onMakeProject(entry.path)}>
-                <FolderCog className="mr-2 h-4 w-4" />
+                <FolderDot className="mr-2 h-4 w-4" />
                 {isProjectFolder ? "Open as Project" : "Make Project"}
               </ContextMenuItem>
             </>
           )}
+          {showMoveToProject && projects.length > 0 && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuSub>
+                <ContextMenuSubTrigger>
+                  <FolderInput className="mr-2 h-4 w-4" />
+                  Move to Project
+                </ContextMenuSubTrigger>
+                <ContextMenuSubContent>
+                  {projects.map((p) => {
+                    const projectName = metadataMap[p.path]?.name || p.path.split("/").filter(Boolean).pop() || "Project";
+                    const isCurrentProject = entry.path.startsWith(p.path + "/");
+                    return (
+                      <ContextMenuItem
+                        key={p.path}
+                        disabled={isCurrentProject}
+                        onClick={() => handleMoveToProject(p.path)}
+                      >
+                        {projectName}
+                      </ContextMenuItem>
+                    );
+                  })}
+                </ContextMenuSubContent>
+              </ContextMenuSub>
+            </>
+          )}
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={handleRevealInFinder}>
+            <ExternalLink className="mr-2 h-4 w-4" />
+            Reveal in Finder
+          </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem onClick={startRename}>
             <Pencil className="mr-2 h-4 w-4" />
@@ -239,6 +293,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
               onFileClick={onFileClick}
               onNewNote={onNewNote}
               onMakeProject={onMakeProject}
+              showMoveToProject={showMoveToProject}
               expandKeyPrefix={expandKeyPrefix}
             />
           ))}

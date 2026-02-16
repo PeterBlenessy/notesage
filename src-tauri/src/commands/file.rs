@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use tauri_plugin_opener::OpenerExt;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct FileEntry {
@@ -134,4 +135,11 @@ pub async fn get_home_dir() -> Result<String, String> {
     dirs::home_dir()
         .map(|p| p.to_string_lossy().to_string())
         .ok_or_else(|| "Could not determine home directory".to_string())
+}
+
+#[tauri::command]
+pub async fn reveal_in_finder(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    app.opener()
+        .reveal_item_in_dir(&path)
+        .map_err(|e| e.to_string())
 }
