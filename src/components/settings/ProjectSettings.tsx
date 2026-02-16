@@ -81,7 +81,7 @@ export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
               value={metadata.name}
               onChange={(e) => updateMetadata(projectPath, { name: e.target.value })}
               placeholder="My Project"
-              className="text-sm transition-all hover:border-primary/50 focus:border-primary"
+              className="text-sm transition-all hover:border-foreground/20 focus:border-foreground/40"
             />
           </div>
 
@@ -102,7 +102,7 @@ export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
               value={metadata.description}
               onChange={(e) => updateMetadata(projectPath, { description: e.target.value })}
               placeholder="Optional project description"
-              className="text-sm transition-all hover:border-primary/50 focus:border-primary"
+              className="text-sm transition-all hover:border-foreground/20 focus:border-foreground/40"
             />
           </div>
         </div>
@@ -238,7 +238,7 @@ export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
               onChange={(e) => updateAI(projectPath, { projectContext: e.target.value })}
               placeholder="e.g., This is a Rust systems programming project. Use technical language and provide code examples in Rust."
               rows={4}
-              className="text-sm resize-none transition-all hover:border-primary/50 focus:border-primary"
+              className="text-sm resize-none transition-all hover:border-foreground/20 focus:border-foreground/40"
             />
           </div>
         </div>

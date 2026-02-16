@@ -38,7 +38,7 @@ Only build custom for app-specific features (editor, AI decorations).
 - **Reference apps:** Linear (polish), Bear (warmth), Craft (document feel), Things 3 (sidebar)
 - **First impression:** "This looks premium"
 - **Typography:** SF Pro for UI, serif/sans-serif for editor content, JetBrains Mono for code
-- **Colors:** CSS variables only, no hardcoded hex. Warm whites, not pure #FFF. No pure black.
+- **Colors:** CSS variables only, no hardcoded hex. Strictly neutral greyscale (no blue/indigo/chromatic accents). No pure black or pure white.
 - **Spacing:** Generous whitespace, consistent Tailwind scale
 - **Transitions:** Everything interactive must transition (150ms default)
 - **Dark mode:** All components must work in both themes
@@ -129,6 +129,7 @@ Implemented:
 
 - ❌ Custom components when shadcn/ui has one
 - ❌ Hardcoded colors (use CSS variables)
+- ❌ Any blue, indigo, or chromatic accent colors — palette is strictly neutral greyscale
 - ❌ Pure black/white backgrounds
 - ❌ No transitions on interactive elements
 - ❌ Inconsistent spacing or border-radius

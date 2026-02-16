@@ -6,52 +6,71 @@
   --radius: 0.5rem;
 
   /* Light mode colors (default) — registered as Tailwind theme tokens */
+  /* Neutral palette: no chromatic accent, polished black/white/grey */
   --color-background: oklch(100% 0 0);
-  --color-foreground: oklch(13.85% 0.004 285.82);
+  --color-foreground: oklch(14% 0 0);
   --color-card: oklch(100% 0 0);
-  --color-card-foreground: oklch(13.85% 0.004 285.82);
+  --color-card-foreground: oklch(14% 0 0);
   --color-popover: oklch(100% 0 0);
-  --color-popover-foreground: oklch(13.85% 0.004 285.82);
-  --color-primary: oklch(45% 0.15 265);
-  --color-primary-foreground: oklch(98.04% 0 0);
-  --color-secondary: oklch(96.48% 0.001 286.38);
-  --color-secondary-foreground: oklch(25.35% 0.015 285.88);
-  --color-muted: oklch(95.5% 0.002 286.38);
-  --color-muted-foreground: oklch(45.39% 0.008 286.07);
-  --color-accent: oklch(96.48% 0.001 286.38);
-  --color-accent-foreground: oklch(25.35% 0.015 285.88);
+  --color-popover-foreground: oklch(14% 0 0);
+  --color-primary: oklch(20% 0 0);
+  --color-primary-foreground: oklch(98% 0 0);
+  --color-secondary: oklch(96% 0 0);
+  --color-secondary-foreground: oklch(25% 0 0);
+  --color-muted: oklch(95.5% 0 0);
+  --color-muted-foreground: oklch(45% 0 0);
+  --color-accent: oklch(96% 0 0);
+  --color-accent-foreground: oklch(25% 0 0);
   --color-destructive: oklch(55.62% 0.227 27.33);
-  --color-destructive-foreground: oklch(98.04% 0 0);
-  --color-border: oklch(89.84% 0.002 286.32);
-  --color-input: oklch(89.84% 0.002 286.32);
-  --color-ring: oklch(45% 0.15 265);
+  --color-destructive-foreground: oklch(98% 0 0);
+  --color-border: oklch(90% 0 0);
+  --color-input: oklch(90% 0 0);
+  --color-ring: oklch(50% 0 0);
 }
 
-/* Dark mode colors - improved contrast */
+/* Dark mode colors — neutral palette */
 .dark {
-  --color-background: oklch(18% 0.004 285.82);
+  --color-background: oklch(18% 0 0);
   --color-foreground: oklch(98% 0 0);
-  --color-card: oklch(22% 0.006 285.86);
+  --color-card: oklch(22% 0 0);
   --color-card-foreground: oklch(98% 0 0);
-  --color-popover: oklch(22% 0.006 285.86);
+  --color-popover: oklch(22% 0 0);
   --color-popover-foreground: oklch(98% 0 0);
-  --color-primary: oklch(70% 0.15 265);
-  --color-primary-foreground: oklch(20% 0.015 285.88);
-  --color-secondary: oklch(28% 0.006 285.86);
+  --color-primary: oklch(90% 0 0);
+  --color-primary-foreground: oklch(14% 0 0);
+  --color-secondary: oklch(28% 0 0);
   --color-secondary-foreground: oklch(98% 0 0);
-  --color-muted: oklch(28% 0.006 285.86);
-  --color-muted-foreground: oklch(70% 0.013 286.27);
-  --color-accent: oklch(32% 0.006 285.86);
+  --color-muted: oklch(28% 0 0);
+  --color-muted-foreground: oklch(70% 0 0);
+  --color-accent: oklch(32% 0 0);
   --color-accent-foreground: oklch(98% 0 0);
   --color-destructive: oklch(55.62% 0.227 27.33);
   --color-destructive-foreground: oklch(98% 0 0);
-  --color-border: oklch(32% 0.006 285.86);
-  --color-input: oklch(28% 0.006 285.86);
-  --color-ring: oklch(70% 0.15 265);
+  --color-border: oklch(32% 0 0);
+  --color-input: oklch(28% 0 0);
+  --color-ring: oklch(60% 0 0);
 }
 
 * {
   border-color: var(--color-border);
+}
+
+/* Suppress WebKit's native focus ring — we use border-color changes instead */
+input:focus,
+textarea:focus,
+select:focus,
+button:focus,
+[data-slot="select-trigger"]:focus {
+  outline: none !important;
+  -webkit-focus-ring-color: transparent;
+  box-shadow: none;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[data-slot="select-trigger"]:focus-visible {
+  border-color: oklch(40% 0 0);
 }
 
 body {

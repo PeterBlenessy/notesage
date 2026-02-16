@@ -65,21 +65,33 @@ Notesage should feel like a premium native macOS application. Think: Linear, Ray
 
 ## Color Palette
 
-Define a cohesive palette using CSS variables in globals.css. All colors must come from this palette — no hardcoded hex values in components.
+**STRICTLY NEUTRAL — NO CHROMATIC ACCENT COLOR.**
+
+The entire palette is black, white, and greys. No blue, indigo, teal, or any hue. All CSS variables in globals.css use `oklch(L% 0 0)` — zero chroma, zero hue. This gives a polished, monochrome aesthetic similar to Linear or Things 3.
+
+Define the palette using CSS variables in globals.css. All colors must come from this palette — no hardcoded hex values in components. **No color with chroma > 0 except destructive (red).**
 
 **Light mode:**
-- Background: warm white, not pure #FFFFFF (use something like #FAFAF8 or #F8F8F6)
-- Sidebar: slightly darker/cooler than main content area
-- Text: not pure black — use #1A1A1A or #2D2D2D
-- Accent: a single, distinctive accent color (muted teal, warm indigo, or sage green — pick ONE)
-- Borders: subtle, use opacity (border-black/5 or border-black/8), not solid gray lines
-- Hover states: gentle background shifts, not harsh color changes
+- Background: white `oklch(100% 0 0)`
+- Text/foreground: near-black `oklch(14% 0 0)`
+- Primary (buttons, active states): dark grey `oklch(20% 0 0)`
+- Muted: light grey `oklch(95.5% 0 0)`
+- Borders: subtle grey `oklch(90% 0 0)`
+- Focus ring: medium grey `oklch(50% 0 0)` — never blue
+- Hover states: gentle background shifts, not color changes
 
 **Dark mode:**
-- Not pure black backgrounds — use #1A1A1A or #1E1E1E
-- Reduce contrast slightly compared to light mode
-- Accent color should be the same hue but adjusted for dark backgrounds
-- Borders: use border-white/5 or border-white/8
+- Background: dark grey `oklch(18% 0 0)` — not pure black
+- Text/foreground: near-white `oklch(98% 0 0)`
+- Primary (buttons, active states): light grey `oklch(90% 0 0)`
+- Muted: `oklch(28% 0 0)`
+- Borders: `oklch(32% 0 0)`
+- Focus ring: `oklch(60% 0 0)` — never blue
+
+**Forbidden colors:**
+- No blue, indigo, teal, violet, or any chromatic accent anywhere in the UI
+- The only non-grey color allowed is destructive red for errors/deletions
+- Links in the editor use `--color-primary` (grey) with underline on hover for distinction
 
 ## Spacing & Layout
 
@@ -181,6 +193,9 @@ Define a cohesive palette using CSS variables in globals.css. All colors must co
 - ❌ Placeholder content or "Lorem ipsum" left in the UI
 - ❌ Unaligned elements — everything should snap to a consistent grid
 - ❌ Default focus rings — replace with custom, on-brand focus indicators
+- ❌ Any blue, indigo, teal, violet, or chromatic accent colors — the palette is strictly neutral greyscale
+- ❌ Using `text-blue-*`, `bg-blue-*`, `border-blue-*`, or any Tailwind color class with a hue
+- ❌ CSS variables with chroma > 0 (except `--color-destructive` red)
 
 ## Quality Check — Ask Yourself Before Every Component
 

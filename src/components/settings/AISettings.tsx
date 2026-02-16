@@ -210,7 +210,7 @@ export function AISettings() {
                       placeholder="sk-ant-..."
                       value={anthropicKey}
                       onChange={(e) => setAnthropicKey(e.target.value)}
-                      className="font-mono text-sm pr-9 transition-all hover:border-primary/50 focus:border-primary"
+                      className="font-mono text-sm pr-9 transition-all hover:border-foreground/20 focus:border-foreground/40"
                     />
                     <Button
                       type="button"
@@ -262,7 +262,7 @@ export function AISettings() {
                       placeholder="sk-..."
                       value={openaiKey}
                       onChange={(e) => setOpenaiKey(e.target.value)}
-                      className="font-mono text-sm pr-9 transition-all hover:border-primary/50 focus:border-primary"
+                      className="font-mono text-sm pr-9 transition-all hover:border-foreground/20 focus:border-foreground/40"
                     />
                     <Button
                       type="button"
@@ -314,7 +314,7 @@ export function AISettings() {
                     placeholder="http://localhost:11434"
                     value={localOllamaUrl}
                     onChange={(e) => setLocalOllamaUrl(e.target.value)}
-                    className="font-mono text-sm transition-all hover:border-primary/50 focus:border-primary"
+                    className="font-mono text-sm transition-all hover:border-foreground/20 focus:border-foreground/40"
                   />
                   <Button
                     onClick={handleSaveOllamaUrl}
