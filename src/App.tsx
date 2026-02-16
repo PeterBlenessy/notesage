@@ -30,18 +30,24 @@ const BREAKPOINT_WIDE = 1200; // px
 const SIDEBAR_FLOAT_WIDTH = 280; // px - sidebar width in narrow/floating mode
 const PANEL_SIZES_KEY = "notesage-panel-sizes";
 
-function savePanelSizes(key: string, sizes: Record<string, number>) {
+/** Derive a storage key from mode + which panel IDs are in the layout. */
+function layoutConfigKey(mode: string, panelIds: string[]): string {
+  return `${mode}:${[...panelIds].sort().join(",")}`;
+}
+
+function savePanelSizes(layout: Record<string, number>, mode: string) {
   try {
+    const key = layoutConfigKey(mode, Object.keys(layout));
     const stored = JSON.parse(localStorage.getItem(PANEL_SIZES_KEY) || "{}");
-    stored[key] = sizes;
+    stored[key] = layout;
     localStorage.setItem(PANEL_SIZES_KEY, JSON.stringify(stored));
   } catch {}
 }
 
-function loadPanelSize(key: string, panel: string, fallback: number): number {
+function loadPanelSize(configKey: string, panel: string, fallback: number): number {
   try {
     const stored = JSON.parse(localStorage.getItem(PANEL_SIZES_KEY) || "{}");
-    return stored[key]?.[panel] ?? fallback;
+    return stored[configKey]?.[panel] ?? fallback;
   } catch {
     return fallback;
   }
@@ -278,12 +284,23 @@ function App() {
   }, []);
 
   const handleWideLayout = useCallback((layout: Record<string, number>) => {
-    savePanelSizes("wide", layout);
+    savePanelSizes(layout, "wide");
   }, []);
 
   const handleNarrowLayout = useCallback((layout: Record<string, number>) => {
-    savePanelSizes("narrow", layout);
+    savePanelSizes(layout, "narrow");
   }, []);
+
+  // Compute config-specific storage keys for the current panel configuration
+  const wideConfigKey = layoutConfigKey("wide", [
+    ...(sidebarOpen ? ["sidebar"] : []),
+    "editor",
+    ...(chatPanelOpen ? ["chat"] : []),
+  ]);
+  const narrowConfigKey = layoutConfigKey("narrow", [
+    "editor-narrow",
+    ...(chatPanelOpen ? ["chat-narrow"] : []),
+  ]);
 
   // Track window width for responsive behavior
   useEffect(() => {
@@ -436,7 +453,7 @@ function App() {
             <ResizablePanelGroup direction="horizontal" className="flex h-full w-full" onLayoutChanged={handleWideLayout}>
               {sidebarOpen && (
                 <>
-                  <ResizablePanel id="sidebar" defaultSize={loadPanelSize("wide", "sidebar", 20)} minSize={200} maxSize={400}>
+                  <ResizablePanel id="sidebar" defaultSize={loadPanelSize(wideConfigKey, "sidebar", 20)} minSize={200} maxSize={400}>
                     <Sidebar
                       onNewNote={handleNewNote}
                       onNewProject={handleNewProject}
@@ -449,14 +466,14 @@ function App() {
                 </>
               )}
 
-              <ResizablePanel id="editor" defaultSize={loadPanelSize("wide", "editor", sidebarOpen && chatPanelOpen ? 50 : 70)} minSize={300}>
+              <ResizablePanel id="editor" defaultSize={loadPanelSize(wideConfigKey, "editor", sidebarOpen && chatPanelOpen ? 50 : 70)} minSize={300}>
                 <EditorArea onNewNote={handleNewNote} onNewProject={handleNewProject} onOpenFolder={handleOpenFolder} onOpenProject={handleOpenProject} onOpenFile={handleOpenFile} />
               </ResizablePanel>
 
               {chatPanelOpen && (
                 <>
                   <ResizableHandle withHandle />
-                  <ResizablePanel id="chat" defaultSize={loadPanelSize("wide", "chat", 30)} minSize={280} maxSize={500}>
+                  <ResizablePanel id="chat" defaultSize={loadPanelSize(wideConfigKey, "chat", 30)} minSize={280} maxSize={500}>
                     <ChatPanel onClose={() => setChatPanelOpen(false)} />
                   </ResizablePanel>
                 </>
@@ -539,7 +556,7 @@ function App() {
                 {chatPanelOpen && (
                   <>
                     <ResizableHandle withHandle />
-                    <ResizablePanel id="chat-narrow" defaultSize={loadPanelSize("narrow", "chat-narrow", 35)} minSize={280} maxSize={500}>
+                    <ResizablePanel id="chat-narrow" defaultSize={loadPanelSize(narrowConfigKey, "chat-narrow", 35)} minSize={280} maxSize={500}>
                       <ChatPanel onClose={() => setChatPanelOpen(false)} />
                     </ResizablePanel>
                   </>
