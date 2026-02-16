@@ -450,7 +450,7 @@ function App() {
                 </Button>
               </div>
             )}
-            <ResizablePanelGroup direction="horizontal" className="flex h-full w-full" onLayoutChanged={handleWideLayout}>
+            <ResizablePanelGroup orientation="horizontal" className="flex h-full w-full" onLayoutChanged={handleWideLayout}>
               {sidebarOpen && (
                 <>
                   <ResizablePanel id="sidebar" defaultSize={loadPanelSize(wideConfigKey, "sidebar", 20)} minSize={200} maxSize={400}>
@@ -545,7 +545,7 @@ function App() {
 
               {/* Content + Chat (always docked) */}
               <ResizablePanelGroup
-                direction="horizontal"
+                orientation="horizontal"
                 className="flex h-full w-full"
                 onLayoutChanged={handleNarrowLayout}
               >

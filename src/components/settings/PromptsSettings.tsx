@@ -13,7 +13,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { FileText, Plus, Pencil, Trash2, Sparkles } from 'lucide-react';
+import { Plus, Pencil, Trash2, Sparkles } from 'lucide-react';
 
 export function PromptsSettings() {
   const { customPrompts, addCustomPrompt, updateCustomPrompt, deleteCustomPrompt } =

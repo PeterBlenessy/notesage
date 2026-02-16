@@ -3,7 +3,6 @@ import { ReactRenderer } from "@tiptap/react";
 import Suggestion from "@tiptap/suggestion";
 import tippy from "tippy.js";
 import { ComponentType, forwardRef, useEffect, useImperativeHandle, useState } from "react";
-import { cn } from "@/lib/utils";
 import {
   Heading1,
   Heading2,
@@ -211,7 +210,7 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(
                   className="h-7 w-7 rounded-md flex items-center justify-center shrink-0"
                   style={{ backgroundColor: 'var(--color-muted)' }}
                 >
-                  <item.icon className="h-3.5 w-3.5" style={{ color: 'var(--color-muted-foreground)' }} />
+                  {<item.icon className="h-3.5 w-3.5" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-[13px] font-medium" style={{ color: 'var(--color-foreground)' }}>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAIStore, BUILT_IN_PERSONAS, getAllPersonas, type AIPersona } from '@/stores/ai-store';
+import { useAIStore, BUILT_IN_PERSONAS, type AIPersona } from '@/stores/ai-store';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -41,8 +41,7 @@ export function PersonasSettings() {
     systemMessage: '',
   });
 
-  const allPersonas = getAllPersonas({ customPersonas } as any);
-  const selectedPersona = allPersonas.find((p) => p.id === activePersonaId) || BUILT_IN_PERSONAS[0];
+
 
   const handleCreatePersona = () => {
     if (formData.name.trim() && formData.systemMessage.trim()) {
