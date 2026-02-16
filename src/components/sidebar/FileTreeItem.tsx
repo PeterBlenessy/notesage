@@ -1,6 +1,7 @@
-import { ChevronRight, ChevronDown, File, Folder, FilePlus, FolderPlus, Pencil, Trash2 } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderCog, Pencil, Trash2 } from "lucide-react";
 import { FileEntry } from "@/lib/tauri";
-import { useProjectStore } from "@/stores/project-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { cn } from "@/lib/utils";
@@ -17,20 +18,48 @@ interface FileTreeItemProps {
   level: number;
   onFileClick: (filePath: string, fileName: string) => void;
   onNewNote?: (parentPath?: string) => void;
+  onMakeProject?: (path: string) => void;
+  expandKeyPrefix?: string;
 }
 
-export function FileTreeItem({ entry, level, onFileClick, onNewNote }: FileTreeItemProps) {
-  const { isExpanded, toggleFolder } = useProjectStore();
+export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProject, expandKeyPrefix = "" }: FileTreeItemProps) {
+  const { isExpanded, toggleFolder } = useWorkspaceStore();
   const { tabs, activeTabId } = useEditorStore();
   const { createFolder, renamePath, deletePath } = useFileOperations();
-  const expanded = isExpanded(entry.path);
+  const expandKey = expandKeyPrefix + entry.path;
+  const expanded = isExpanded(expandKey);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(entry.name);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  const projects = useWorkspaceStore((s) => s.projects);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const isActive = activeTab?.filePath === entry.path;
 
+  // Detect if this directory is a project (in workspace or has .note-sage/ child)
+  const isProjectFolder = entry.is_directory && (
+    projects.some((p) => p.path === entry.path) ||
+    entry.children?.some((c) => c.name === ".note-sage" && c.is_directory)
+  );
+
+  useEffect(() => {
+    if (isRenaming && renameInputRef.current) {
+      renameInputRef.current.focus();
+      // Select the name part without extension for files
+      const dotIndex = entry.name.lastIndexOf(".");
+      if (!entry.is_directory && dotIndex > 0) {
+        renameInputRef.current.setSelectionRange(0, dotIndex);
+      } else {
+        renameInputRef.current.select();
+      }
+    }
+  }, [isRenaming, entry.name, entry.is_directory]);
+
   const handleClick = () => {
+    if (isRenaming) return;
     if (entry.is_directory) {
-      toggleFolder(entry.path);
+      toggleFolder(expandKey);
     } else {
       onFileClick(entry.path, entry.name);
     }
@@ -56,8 +85,15 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote }: FileTreeI
     }
   };
 
-  const handleRename = async () => {
-    const newName = window.prompt("Enter new name:", entry.name);
+  const startRename = () => {
+    setRenameValue(entry.name);
+    setIsRenaming(true);
+  };
+
+  const commitRename = async () => {
+    const newName = renameValue.trim();
+    setIsRenaming(false);
+
     if (!newName || newName === entry.name) return;
 
     try {
@@ -65,8 +101,13 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote }: FileTreeI
       const newPath = `${parentPath}/${newName}`;
       await renamePath(entry.path, newPath);
     } catch (error) {
-      alert(`Failed to rename: ${error}`);
+      console.error("Failed to rename:", error);
     }
+  };
+
+  const cancelRename = () => {
+    setIsRenaming(false);
+    setRenameValue(entry.name);
   };
 
   const handleDelete = async () => {
@@ -118,12 +159,42 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote }: FileTreeI
             )}
 
             {entry.is_directory ? (
-              <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+              isProjectFolder ? (
+                <FolderDot className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+              ) : (
+                <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+              )
             ) : (
               <File className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
             )}
 
-            <span className="truncate flex-1">{entry.name}</span>
+            {isRenaming ? (
+              <input
+                ref={renameInputRef}
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitRename();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    cancelRename();
+                  }
+                  e.stopPropagation();
+                }}
+                onBlur={commitRename}
+                onClick={(e) => e.stopPropagation()}
+                className="flex-1 min-w-0 h-5 px-1 text-[13px] rounded border outline-none"
+                style={{
+                  backgroundColor: "var(--color-background)",
+                  borderColor: "var(--color-primary)",
+                  color: "var(--color-foreground)",
+                }}
+              />
+            ) : (
+              <span className="truncate flex-1">{entry.name}</span>
+            )}
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
@@ -137,13 +208,22 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote }: FileTreeI
               New Folder
             </ContextMenuItem>
           )}
+          {entry.is_directory && onMakeProject && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem onClick={() => onMakeProject(entry.path)}>
+                <FolderCog className="mr-2 h-4 w-4" />
+                {isProjectFolder ? "Open as Project" : "Make Project"}
+              </ContextMenuItem>
+            </>
+          )}
           <ContextMenuSeparator />
-          <ContextMenuItem onClick={handleRename}>
+          <ContextMenuItem onClick={startRename}>
             <Pencil className="mr-2 h-4 w-4" />
             Rename
           </ContextMenuItem>
-          <ContextMenuItem onClick={handleDelete} className="text-destructive">
-            <Trash2 className="mr-2 h-4 w-4" />
+          <ContextMenuItem onClick={handleDelete}>
+            <Trash2 className="mr-2 h-4 w-4 text-destructive" />
             Delete
           </ContextMenuItem>
         </ContextMenuContent>
@@ -158,6 +238,8 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote }: FileTreeI
               level={level + 1}
               onFileClick={onFileClick}
               onNewNote={onNewNote}
+              onMakeProject={onMakeProject}
+              expandKeyPrefix={expandKeyPrefix}
             />
           ))}
         </div>

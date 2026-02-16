@@ -143,6 +143,14 @@
   margin-bottom: 0.75em;
 }
 
+.ProseMirror ul {
+  list-style-type: disc;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal;
+}
+
 .ProseMirror ul li,
 .ProseMirror ol li {
   margin-bottom: 0.15em;

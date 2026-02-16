@@ -1,22 +1,89 @@
 import { useCallback } from "react";
 import { tauriApi } from "@/lib/tauri";
 import { useEditorStore } from "@/stores/editor-store";
-import { useProjectStore } from "@/stores/project-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useSettingsStore } from "@/stores/settings-store";
 
 export function useFileOperations() {
   const { openTab, markTabClean } = useEditorStore();
-  const { rootPath, setFileTree } = useProjectStore();
 
-  const refreshFileTree = useCallback(async () => {
-    if (rootPath) {
+  const refreshFileTree = useCallback(async (targetPath?: string) => {
+    const ws = useWorkspaceStore.getState();
+    const settings = useSettingsStore.getState();
+
+    // If a specific path is given, determine which section to refresh
+    if (targetPath) {
+      // Check explorer
+      if (ws.explorerPath && targetPath.startsWith(ws.explorerPath)) {
+        try {
+          const tree = await tauriApi.listDirectory(ws.explorerPath);
+          ws.setExplorerTree(tree);
+        } catch (error) {
+          console.error("Failed to refresh explorer tree:", error);
+        }
+      }
+
+      // Check projects
+      for (const project of ws.projects) {
+        if (targetPath.startsWith(project.path)) {
+          try {
+            const tree = await tauriApi.listDirectory(project.path);
+            ws.updateProjectTree(project.path, tree);
+          } catch (error) {
+            console.error("Failed to refresh project tree:", error);
+          }
+        }
+      }
+
+      // Check notes root
+      const notesRoot = settings.notesRootPath;
+      if (notesRoot && targetPath.startsWith(notesRoot)) {
+        try {
+          const exists = await tauriApi.pathExists(notesRoot);
+          if (exists) {
+            const tree = await tauriApi.listDirectory(notesRoot);
+            ws.setNotesTree(tree);
+          }
+        } catch (error) {
+          console.error("Failed to refresh notes tree:", error);
+        }
+      }
+
+      return;
+    }
+
+    // No target path: refresh everything that's open
+    if (ws.explorerPath) {
       try {
-        const tree = await tauriApi.listDirectory(rootPath);
-        setFileTree(tree);
+        const tree = await tauriApi.listDirectory(ws.explorerPath);
+        ws.setExplorerTree(tree);
       } catch (error) {
-        console.error("Failed to refresh file tree:", error);
+        console.error("Failed to refresh explorer tree:", error);
       }
     }
-  }, [rootPath, setFileTree]);
+
+    for (const project of ws.projects) {
+      try {
+        const tree = await tauriApi.listDirectory(project.path);
+        ws.updateProjectTree(project.path, tree);
+      } catch (error) {
+        console.error("Failed to refresh project tree:", error);
+      }
+    }
+
+    const notesRoot = settings.notesRootPath;
+    if (notesRoot) {
+      try {
+        const exists = await tauriApi.pathExists(notesRoot);
+        if (exists) {
+          const tree = await tauriApi.listDirectory(notesRoot);
+          ws.setNotesTree(tree);
+        }
+      } catch (error) {
+        console.error("Failed to refresh notes tree:", error);
+      }
+    }
+  }, []);
 
   const openFile = useCallback(
     async (filePath: string, fileName: string) => {
@@ -50,7 +117,7 @@ export function useFileOperations() {
       const filePath = `${parentPath}/${fileName}`;
       try {
         await tauriApi.createFile(filePath);
-        await refreshFileTree();
+        await refreshFileTree(parentPath);
         return filePath;
       } catch (error) {
         console.error("Failed to create file:", error);
@@ -65,7 +132,7 @@ export function useFileOperations() {
       const folderPath = `${parentPath}/${folderName}`;
       try {
         await tauriApi.createDirectory(folderPath);
-        await refreshFileTree();
+        await refreshFileTree(parentPath);
         return folderPath;
       } catch (error) {
         console.error("Failed to create folder:", error);
@@ -79,7 +146,7 @@ export function useFileOperations() {
     async (oldPath: string, newPath: string) => {
       try {
         await tauriApi.renamePath(oldPath, newPath);
-        await refreshFileTree();
+        await refreshFileTree(oldPath);
         return true;
       } catch (error) {
         console.error("Failed to rename:", error);
@@ -93,7 +160,7 @@ export function useFileOperations() {
     async (path: string) => {
       try {
         await tauriApi.deletePath(path);
-        await refreshFileTree();
+        await refreshFileTree(path);
         return true;
       } catch (error) {
         console.error("Failed to delete:", error);

@@ -2,7 +2,7 @@ import { useEffect, useCallback, useRef, useState } from "react";
 import { EditorContent } from "@tiptap/react";
 import { FileText, Command, FilePlus, FolderPlus, FolderOpen } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
-import { useProjectStore } from "@/stores/project-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore, type ContentWidth } from "@/stores/settings-store";
 import { useEditor } from "@/hooks/useEditor";
 import { useFileOperations } from "@/hooks/useFileOperations";
@@ -40,7 +40,9 @@ interface EditorProps {
 
 export function Editor({ onNewNote, onNewProject, onOpenFolder }: EditorProps) {
   const { tabs, activeTabId, updateTabContent } = useEditorStore();
-  const rootPath = useProjectStore((s) => s.rootPath);
+  const hasProjects = useWorkspaceStore((s) => s.projects.length > 0);
+  const hasExplorer = useWorkspaceStore((s) => !!s.explorerPath);
+  const hasContent = hasProjects || hasExplorer;
   const { showFloatingToolbar, contentWidth, marginTop, marginBottom, marginLeft, marginRight } = useSettingsStore();
   const { saveFile } = useFileOperations();
   const maxWidth = CONTENT_WIDTHS[contentWidth];
@@ -145,16 +147,16 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder }: EditorProps) {
           <FileText className="h-12 w-12 mx-auto text-muted-foreground/30" strokeWidth={1} />
           <div className="space-y-1.5">
             <h2 className="text-lg font-medium text-foreground/70">
-              {rootPath ? "No file open" : "Welcome to Notesage"}
+              {hasContent ? "No file open" : "Welcome to Notesage"}
             </h2>
             <p className="text-sm text-muted-foreground">
-              {rootPath
+              {hasContent
                 ? "Select a file from the sidebar or create a new note"
                 : "Create a new project or open an existing folder to get started"}
             </p>
           </div>
           <div className="flex flex-col items-center gap-3">
-            {rootPath ? (
+            {hasContent ? (
               <Button variant="outline" size="sm" onClick={() => onNewNote?.()}>
                 <FilePlus className="h-4 w-4" />
                 New Note

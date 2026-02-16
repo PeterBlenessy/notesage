@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { useAIStore, getAllPersonas, BUILT_IN_PERSONAS } from '@/stores/ai-store';
-import { useProjectMetadataStore } from '@/stores/project-metadata-store';
+import { useActiveProject } from '@/hooks/useActiveProject';
 import { useChatStore } from '@/stores/chat-store';
 import { getAIProvider } from '@/lib/ai';
 import type { ChatMessage } from '@/lib/ai/types';
@@ -13,8 +13,8 @@ export function useAIOperations() {
   const { addMessage, updateMessage, setLoading, setError, setActiveTool } = useChatStore();
   const cleanupRef = useRef<(() => void) | null>(null);
 
-  // Resolve effective provider: project override > global
-  const metadata = useProjectMetadataStore((s) => s.metadata);
+  // Resolve effective provider: active project override > global
+  const { metadata } = useActiveProject();
   const effectiveProvider = metadata?.ai.provider ?? aiStore.provider;
 
   // Resolve effective persona: project override > global

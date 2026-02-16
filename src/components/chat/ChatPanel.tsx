@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { X, Trash2, Loader2, Search, FileText } from 'lucide-react';
 import { useChatStore } from '@/stores/chat-store';
 import { useAIStore, getActivePersona } from '@/stores/ai-store';
-import { useProjectMetadataStore } from '@/stores/project-metadata-store';
+import { useActiveProject } from '@/hooks/useActiveProject';
 import { useAIOperations } from '@/hooks/useAIOperations';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
@@ -22,7 +22,7 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
   const aiStore = useAIStore();
   const { provider } = aiStore;
   const activePersona = getActivePersona(aiStore);
-  const metadata = useProjectMetadataStore((s) => s.metadata);
+  const { metadata } = useActiveProject();
   const hasProjectContext = Boolean(metadata?.ai.projectContext);
   const { sendChatMessage } = useAIOperations();
   const messagesEndRef = useRef<HTMLDivElement>(null);

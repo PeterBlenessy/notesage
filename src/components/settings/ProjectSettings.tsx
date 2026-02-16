@@ -30,8 +30,13 @@ const PROVIDERS = [
   },
 ];
 
-export function ProjectSettings() {
-  const { metadata, updateMetadata, updateAI } = useProjectMetadataStore();
+interface ProjectSettingsProps {
+  projectPath: string;
+}
+
+export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
+  const metadata = useProjectMetadataStore((s) => s.metadataMap[projectPath]);
+  const { updateMetadata, updateAI } = useProjectMetadataStore();
   const aiStore = useAIStore();
 
   if (!metadata) {
@@ -74,7 +79,7 @@ export function ProjectSettings() {
             <Input
               id="project-name"
               value={metadata.name}
-              onChange={(e) => updateMetadata({ name: e.target.value })}
+              onChange={(e) => updateMetadata(projectPath, { name: e.target.value })}
               placeholder="My Project"
               className="text-sm transition-all hover:border-primary/50 focus:border-primary"
             />
@@ -95,7 +100,7 @@ export function ProjectSettings() {
             <Input
               id="project-description"
               value={metadata.description}
-              onChange={(e) => updateMetadata({ description: e.target.value })}
+              onChange={(e) => updateMetadata(projectPath, { description: e.target.value })}
               placeholder="Optional project description"
               className="text-sm transition-all hover:border-primary/50 focus:border-primary"
             />
@@ -131,7 +136,7 @@ export function ProjectSettings() {
             <Select
               value={metadata.ai.provider || '_global'}
               onValueChange={(value) =>
-                updateAI({ provider: value === '_global' ? null : (value as AIProviderType) })
+                updateAI(projectPath, { provider: value === '_global' ? null : (value as AIProviderType) })
               }
             >
               <SelectTrigger className="ml-auto w-56 text-left">
@@ -186,7 +191,7 @@ export function ProjectSettings() {
             <Select
               value={metadata.ai.personaId || '_global'}
               onValueChange={(value) =>
-                updateAI({ personaId: value === '_global' ? null : value })
+                updateAI(projectPath, { personaId: value === '_global' ? null : value })
               }
             >
               <SelectTrigger className="ml-auto w-56 text-left">
@@ -230,7 +235,7 @@ export function ProjectSettings() {
             <Textarea
               id="project-context"
               value={metadata.ai.projectContext}
-              onChange={(e) => updateAI({ projectContext: e.target.value })}
+              onChange={(e) => updateAI(projectPath, { projectContext: e.target.value })}
               placeholder="e.g., This is a Rust systems programming project. Use technical language and provide code examples in Rust."
               rows={4}
               className="text-sm resize-none transition-all hover:border-primary/50 focus:border-primary"

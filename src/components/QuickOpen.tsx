@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Search, File } from "lucide-react";
-import { useProjectStore } from "@/stores/project-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { FileEntry } from "@/lib/tauri";
 
@@ -13,10 +13,10 @@ interface QuickOpenProps {
 export function QuickOpen({ open, onOpenChange }: QuickOpenProps) {
   const [search, setSearch] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const { fileTree, rootPath } = useProjectStore();
+  const { explorerTree, projects, notesTree } = useWorkspaceStore();
   const { openFile } = useFileOperations();
 
-  // Flatten the file tree to get all files
+  // Flatten all file trees to get all files
   const allFiles = useMemo(() => {
     const files: FileEntry[] = [];
 
@@ -31,9 +31,20 @@ export function QuickOpen({ open, onOpenChange }: QuickOpenProps) {
       }
     };
 
-    flatten(fileTree);
-    return files;
-  }, [fileTree]);
+    flatten(explorerTree);
+    for (const project of projects) {
+      flatten(project.fileTree);
+    }
+    flatten(notesTree);
+
+    // Deduplicate by path (a file might appear in both explorer and a project)
+    const seen = new Set<string>();
+    return files.filter((f) => {
+      if (seen.has(f.path)) return false;
+      seen.add(f.path);
+      return true;
+    });
+  }, [explorerTree, projects, notesTree]);
 
   // Filter files based on search
   const filteredFiles = useMemo(() => {
@@ -86,11 +97,6 @@ export function QuickOpen({ open, onOpenChange }: QuickOpenProps) {
     }
   };
 
-  const getRelativePath = (path: string) => {
-    if (!rootPath) return path;
-    return path.replace(rootPath + "/", "");
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl p-0 gap-0 overflow-hidden">
@@ -122,7 +128,7 @@ export function QuickOpen({ open, onOpenChange }: QuickOpenProps) {
             <div className="py-8 text-center">
               <p className="text-[13px]" style={{ color: 'var(--color-muted-foreground)' }}>
                 {allFiles.length === 0
-                  ? "No files in project"
+                  ? "No files in workspace"
                   : "No files match your search"}
               </p>
             </div>
@@ -149,11 +155,11 @@ export function QuickOpen({ open, onOpenChange }: QuickOpenProps) {
                 >
                   <File className="h-3.5 w-3.5 shrink-0" style={{ color: 'var(--color-muted-foreground)' }} />
                   <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-medium truncate" style={{ color: isSelected ? 'var(--color-foreground)' : 'var(--color-foreground)' }}>
+                    <div className="text-[13px] font-medium truncate" style={{ color: 'var(--color-foreground)' }}>
                       {file.name}
                     </div>
                     <div className="text-[11px] truncate" style={{ color: 'var(--color-muted-foreground)' }}>
-                      {getRelativePath(file.path)}
+                      {file.path}
                     </div>
                   </div>
                 </button>

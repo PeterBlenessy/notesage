@@ -6,13 +6,14 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { QuickOpen } from "@/components/QuickOpen";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
+import { ProjectSettingsDialog } from "@/components/settings/ProjectSettingsDialog";
 import { NewNoteDialog } from "@/components/NewNoteDialog";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useProjectMetadata } from "@/hooks/useProjectMetadata";
-import { useProjectMetadataStore } from "@/stores/project-metadata-store";
+import { useActiveProject } from "@/hooks/useActiveProject";
 import { useSettingsStore } from "@/stores/settings-store";
-import { useProjectStore } from "@/stores/project-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { tauriApi } from "@/lib/tauri";
 import { Button } from "@/components/ui/button";
@@ -62,67 +63,205 @@ function EditorArea({ onNewNote, onNewProject, onOpenFolder }: {
 function App() {
   const [quickOpenVisible, setQuickOpenVisible] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
+  const [projectSettingsPath, setProjectSettingsPath] = useState("");
   const [newNoteOpen, setNewNoteOpen] = useState(false);
   const [newNoteParentPath, setNewNoteParentPath] = useState("");
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [isWideMode, setIsWideMode] = useState(window.innerWidth >= BREAKPOINT_WIDE);
   const { sidebarOpen, setSidebarOpen, chatPanelOpen, setChatPanelOpen } = useSettingsStore();
 
-  const { setRootPath, setFileTree } = useProjectStore();
+  const { addProject, setExplorerPath, setExplorerTree } = useWorkspaceStore();
+  const { projectPath: activeProjectPath } = useActiveProject();
 
   useKeyboardShortcuts();
   useProjectMetadata();
+
+  // Reload file trees for all persisted projects on startup
+  useEffect(() => {
+    async function reloadTrees() {
+      const ws = useWorkspaceStore.getState();
+      const settings = useSettingsStore.getState();
+
+      // Resolve ~ in notes root path
+      let notesRoot = settings.notesRootPath;
+      if (notesRoot.startsWith("~")) {
+        try {
+          const homeDir = await tauriApi.getHomeDir();
+          notesRoot = notesRoot.replace("~", homeDir);
+          settings.setNotesRootPath(notesRoot);
+        } catch {
+          console.error("Failed to resolve home directory");
+        }
+      }
+
+      // Reload explorer tree
+      if (ws.explorerPath) {
+        try {
+          const tree = await tauriApi.listDirectory(ws.explorerPath);
+          ws.setExplorerTree(tree);
+        } catch {
+          ws.setExplorerPath(null);
+          ws.setExplorerTree([]);
+        }
+      }
+
+      // Reload all project trees
+      for (const project of ws.projects) {
+        try {
+          const tree = await tauriApi.listDirectory(project.path);
+          ws.updateProjectTree(project.path, tree);
+        } catch {
+          ws.removeProject(project.path);
+        }
+      }
+
+      // Auto-create and load notes directory
+      if (notesRoot) {
+        try {
+          const exists = await tauriApi.pathExists(notesRoot);
+          if (!exists) {
+            await tauriApi.createDirectory(notesRoot);
+          }
+          const tree = await tauriApi.listDirectory(notesRoot);
+          ws.setNotesTree(tree);
+        } catch {
+          // Notes root creation failed, that's fine on first launch
+        }
+      }
+    }
+
+    reloadTrees();
+  }, []);
 
   const handleOpenFolder = useCallback(async () => {
     try {
       const folderPath = await tauriApi.openFolderDialog();
       if (folderPath) {
-        useProjectMetadataStore.getState().reset();
-        setRootPath(folderPath);
-        const tree = await tauriApi.listDirectory(folderPath);
-        setFileTree(tree);
+        // Auto-detect project folders: if .note-sage/ exists, add to Projects instead
+        const isProject = await tauriApi.pathExists(`${folderPath}/.note-sage`);
+        if (isProject) {
+          const tree = await tauriApi.listDirectory(folderPath);
+          addProject(folderPath, tree);
+        } else {
+          setExplorerPath(folderPath);
+          const tree = await tauriApi.listDirectory(folderPath);
+          setExplorerTree(tree);
+        }
       }
     } catch (error) {
       console.error("Failed to open folder:", error);
     }
-  }, [setRootPath, setFileTree]);
+  }, [setExplorerPath, setExplorerTree, addProject]);
 
   const handleOpenProject = useCallback(async (projectPath: string) => {
     try {
-      useProjectMetadataStore.getState().reset();
-      setRootPath(projectPath);
       const tree = await tauriApi.listDirectory(projectPath);
-      setFileTree(tree);
+      addProject(projectPath, tree);
     } catch (error) {
       console.error("Failed to open project:", error);
     }
-  }, [setRootPath, setFileTree]);
+  }, [addProject]);
+
+  const handleBrowseForProject = useCallback(async () => {
+    try {
+      const folderPath = await tauriApi.openFolderDialog();
+      if (folderPath) {
+        // Bootstrap .note-sage/ if it doesn't exist
+        const metaDir = `${folderPath}/.note-sage`;
+        const dirExists = await tauriApi.pathExists(metaDir);
+        if (!dirExists) {
+          await tauriApi.createDirectory(metaDir);
+        }
+        const tree = await tauriApi.listDirectory(folderPath);
+        addProject(folderPath, tree);
+      }
+    } catch (error) {
+      console.error("Failed to open project:", error);
+    }
+  }, [addProject]);
+
+  const handleMakeProject = useCallback(async (path: string) => {
+    try {
+      // Bootstrap .note-sage/ directory
+      const metaDir = `${path}/.note-sage`;
+      const dirExists = await tauriApi.pathExists(metaDir);
+      if (!dirExists) {
+        await tauriApi.createDirectory(metaDir);
+      }
+      // Add as project (metadata will be auto-loaded by useProjectMetadata)
+      const tree = await tauriApi.listDirectory(path);
+      addProject(path, tree);
+    } catch (error) {
+      console.error("Failed to make project:", error);
+    }
+  }, [addProject]);
 
   const handleNoteCreated = useCallback(async (filePath: string, fileName: string) => {
     try {
       await tauriApi.createFile(filePath);
-      const currentRoot = useProjectStore.getState().rootPath;
-      if (currentRoot) {
-        const tree = await tauriApi.listDirectory(currentRoot);
-        setFileTree(tree);
+
+      // Refresh the relevant file tree
+      const ws = useWorkspaceStore.getState();
+      // Check which section this belongs to
+      for (const project of ws.projects) {
+        if (filePath.startsWith(project.path + "/")) {
+          const tree = await tauriApi.listDirectory(project.path);
+          ws.updateProjectTree(project.path, tree);
+          break;
+        }
       }
+      if (ws.explorerPath && filePath.startsWith(ws.explorerPath)) {
+        const tree = await tauriApi.listDirectory(ws.explorerPath);
+        ws.setExplorerTree(tree);
+      }
+      // Check notes root
+      const settings = useSettingsStore.getState();
+      const notesRoot = settings.notesRootPath;
+      if (notesRoot && filePath.startsWith(notesRoot)) {
+        try {
+          const tree = await tauriApi.listDirectory(notesRoot);
+          ws.setNotesTree(tree);
+        } catch {}
+      }
+
       const content = await tauriApi.readFile(filePath);
       useEditorStore.getState().openTab(filePath, fileName, content);
     } catch (err) {
       console.error("Failed to create note:", err);
     }
-  }, [setFileTree]);
+  }, []);
 
   const handleNewNote = useCallback((parentPath?: string) => {
-    const target = parentPath || useProjectStore.getState().rootPath;
+    // Determine target: explicit parent > active project root > first project > notes root
+    let target = parentPath;
+    if (!target) {
+      const activeProject = activeProjectPath;
+      if (activeProject) {
+        target = activeProject;
+      } else {
+        const ws = useWorkspaceStore.getState();
+        if (ws.projects.length > 0) {
+          target = ws.projects[0].path;
+        } else {
+          const settings = useSettingsStore.getState();
+          target = settings.notesRootPath;
+        }
+      }
+    }
     if (target) {
       setNewNoteParentPath(target);
       setNewNoteOpen(true);
     }
-  }, []);
+  }, [activeProjectPath]);
 
   const handleNewProject = useCallback(() => {
     setNewProjectOpen(true);
+  }, []);
+
+  const handleOpenProjectSettings = useCallback((projectPath: string) => {
+    setProjectSettingsPath(projectPath);
+    setProjectSettingsOpen(true);
   }, []);
 
   const handleWideLayout = useCallback((layout: Record<string, number>) => {
@@ -180,11 +319,7 @@ function App() {
       // Cmd+N for new note
       if ((e.metaKey || e.ctrlKey) && e.key === "n") {
         e.preventDefault();
-        const { rootPath: currentRoot } = useProjectStore.getState();
-        if (currentRoot) {
-          setNewNoteParentPath(currentRoot);
-          setNewNoteOpen(true);
-        }
+        handleNewNote();
       }
 
       // Cmd+O for open folder
@@ -196,7 +331,7 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleOpenFolder]);
+  }, [handleOpenFolder, handleNewNote]);
 
   return (
     <ThemeProvider>
@@ -271,7 +406,13 @@ function App() {
               {sidebarOpen && (
                 <>
                   <ResizablePanel id="sidebar" defaultSize={loadPanelSize("wide", "sidebar", 20)} minSize={200} maxSize={400}>
-                    <Sidebar onNewNote={handleNewNote} onNewProject={handleNewProject} />
+                    <Sidebar
+                      onNewNote={handleNewNote}
+                      onNewProject={handleNewProject}
+                      onOpenExistingProject={handleBrowseForProject}
+                      onOpenProjectSettings={handleOpenProjectSettings}
+                      onMakeProject={handleMakeProject}
+                    />
                   </ResizablePanel>
                   <ResizableHandle withHandle />
                 </>
@@ -308,7 +449,13 @@ function App() {
                   className="absolute left-0 top-0 bottom-0 z-10 shadow-2xl"
                   style={{ width: `${SIDEBAR_FLOAT_WIDTH}px`, backgroundColor: 'var(--color-card)' }}
                 >
-                  <Sidebar />
+                  <Sidebar
+                    onNewNote={handleNewNote}
+                    onNewProject={handleNewProject}
+                    onOpenExistingProject={handleBrowseForProject}
+                    onOpenProjectSettings={handleOpenProjectSettings}
+                    onMakeProject={handleMakeProject}
+                  />
                 </div>
               )}
 
@@ -354,6 +501,13 @@ function App() {
         </div>
 
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+        {projectSettingsPath && (
+          <ProjectSettingsDialog
+            open={projectSettingsOpen}
+            onOpenChange={setProjectSettingsOpen}
+            projectPath={projectSettingsPath}
+          />
+        )}
         <QuickOpen open={quickOpenVisible} onOpenChange={setQuickOpenVisible} />
         <NewNoteDialog
           open={newNoteOpen}

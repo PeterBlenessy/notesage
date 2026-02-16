@@ -146,7 +146,7 @@ export function NewProjectDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={!canCreate}>
+          <Button variant="outline" onClick={handleSubmit} disabled={!canCreate}>
             {isCreating ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />

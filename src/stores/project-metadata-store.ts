@@ -26,46 +26,88 @@ export function createDefaultMetadata(folderName: string): ProjectMetadata {
 }
 
 interface ProjectMetadataStore {
-  metadata: ProjectMetadata | null;
-  isLoaded: boolean;
-  isDirty: boolean;
+  metadataMap: Record<string, ProjectMetadata>;
+  dirtyPaths: Set<string>;
 
-  setMetadata: (metadata: ProjectMetadata) => void;
-  updateMetadata: (updates: Partial<Pick<ProjectMetadata, 'name' | 'description'>>) => void;
-  updateAI: (updates: Partial<ProjectMetadata['ai']>) => void;
-  setDirty: (dirty: boolean) => void;
-  reset: () => void;
+  setMetadata: (projectPath: string, metadata: ProjectMetadata) => void;
+  updateMetadata: (projectPath: string, updates: Partial<Pick<ProjectMetadata, 'name' | 'description'>>) => void;
+  updateAI: (projectPath: string, updates: Partial<ProjectMetadata['ai']>) => void;
+  removeMetadata: (projectPath: string) => void;
+  getMetadata: (projectPath: string) => ProjectMetadata | undefined;
+  isDirty: (projectPath: string) => boolean;
+  setClean: (projectPath: string) => void;
 }
 
-export const useProjectMetadataStore = create<ProjectMetadataStore>((set) => ({
-  metadata: null,
-  isLoaded: false,
-  isDirty: false,
+export const useProjectMetadataStore = create<ProjectMetadataStore>((set, get) => ({
+  metadataMap: {},
+  dirtyPaths: new Set<string>(),
 
-  setMetadata: (metadata) => set({ metadata, isLoaded: true, isDirty: false }),
-
-  updateMetadata: (updates) =>
+  setMetadata: (projectPath, metadata) =>
     set((state) => {
-      if (!state.metadata) return state;
+      const newDirty = new Set(state.dirtyPaths);
+      newDirty.delete(projectPath);
       return {
-        metadata: { ...state.metadata, ...updates },
-        isDirty: true,
+        metadataMap: { ...state.metadataMap, [projectPath]: metadata },
+        dirtyPaths: newDirty,
       };
     }),
 
-  updateAI: (updates) =>
+  updateMetadata: (projectPath, updates) =>
     set((state) => {
-      if (!state.metadata) return state;
+      const existing = state.metadataMap[projectPath];
+      if (!existing) return state;
+      const newDirty = new Set(state.dirtyPaths);
+      newDirty.add(projectPath);
       return {
-        metadata: {
-          ...state.metadata,
-          ai: { ...state.metadata.ai, ...updates },
+        metadataMap: {
+          ...state.metadataMap,
+          [projectPath]: { ...existing, ...updates },
         },
-        isDirty: true,
+        dirtyPaths: newDirty,
       };
     }),
 
-  setDirty: (dirty) => set({ isDirty: dirty }),
+  updateAI: (projectPath, updates) =>
+    set((state) => {
+      const existing = state.metadataMap[projectPath];
+      if (!existing) return state;
+      const newDirty = new Set(state.dirtyPaths);
+      newDirty.add(projectPath);
+      return {
+        metadataMap: {
+          ...state.metadataMap,
+          [projectPath]: {
+            ...existing,
+            ai: { ...existing.ai, ...updates },
+          },
+        },
+        dirtyPaths: newDirty,
+      };
+    }),
 
-  reset: () => set({ metadata: null, isLoaded: false, isDirty: false }),
+  removeMetadata: (projectPath) =>
+    set((state) => {
+      const { [projectPath]: _, ...rest } = state.metadataMap;
+      const newDirty = new Set(state.dirtyPaths);
+      newDirty.delete(projectPath);
+      return {
+        metadataMap: rest,
+        dirtyPaths: newDirty,
+      };
+    }),
+
+  getMetadata: (projectPath) => {
+    return get().metadataMap[projectPath];
+  },
+
+  isDirty: (projectPath) => {
+    return get().dirtyPaths.has(projectPath);
+  },
+
+  setClean: (projectPath) =>
+    set((state) => {
+      const newDirty = new Set(state.dirtyPaths);
+      newDirty.delete(projectPath);
+      return { dirtyPaths: newDirty };
+    }),
 }));

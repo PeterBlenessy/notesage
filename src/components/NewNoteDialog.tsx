@@ -125,7 +125,7 @@ export function NewNoteDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={!fileName.trim() || isCreating}>
+          <Button variant="outline" onClick={handleSubmit} disabled={!fileName.trim() || isCreating}>
             {isCreating ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />

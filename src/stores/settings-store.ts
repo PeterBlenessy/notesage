@@ -16,6 +16,7 @@ interface SettingsStore {
   marginRight: number;
   sidebarOpen: boolean;
   chatPanelOpen: boolean;
+  notesRootPath: string;
   setTheme: (theme: Theme) => void;
   setShowFloatingToolbar: (show: boolean) => void;
   setContentWidth: (width: ContentWidth) => void;
@@ -26,6 +27,7 @@ interface SettingsStore {
   setMarginRight: (margin: number) => void;
   setSidebarOpen: (open: boolean) => void;
   setChatPanelOpen: (open: boolean) => void;
+  setNotesRootPath: (path: string) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -41,6 +43,7 @@ export const useSettingsStore = create<SettingsStore>()(
       marginRight: 2.54,
       sidebarOpen: true,
       chatPanelOpen: false,
+      notesRootPath: "~/Notesage",
 
       setTheme: (theme: Theme) => {
         set({ theme });
@@ -80,6 +83,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setChatPanelOpen: (open: boolean) => {
         set({ chatPanelOpen: open });
+      },
+
+      setNotesRootPath: (path: string) => {
+        set({ notesRootPath: path });
       },
     }),
     {

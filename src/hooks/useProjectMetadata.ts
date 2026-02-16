@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useProjectStore } from '@/stores/project-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 import {
   useProjectMetadataStore,
   createDefaultMetadata,
@@ -22,85 +22,97 @@ function folderNameFromPath(path: string): string {
   return path.split('/').filter(Boolean).pop() || 'Untitled';
 }
 
+async function loadProjectMetadata(
+  projectPath: string,
+  setMetadata: (path: string, metadata: ProjectMetadata) => void,
+): Promise<void> {
+  const dirPath = getMetadataDir(projectPath);
+  const filePath = getMetadataPath(projectPath);
+
+  try {
+    const dirExists = await tauriApi.pathExists(dirPath);
+    if (!dirExists) {
+      await tauriApi.createDirectory(dirPath);
+    }
+
+    const fileExists = await tauriApi.pathExists(filePath);
+    if (!fileExists) {
+      const defaults = createDefaultMetadata(folderNameFromPath(projectPath));
+      await tauriApi.writeFile(filePath, JSON.stringify(defaults, null, 2));
+      setMetadata(projectPath, defaults);
+    } else {
+      const raw = await tauriApi.readFile(filePath);
+      const parsed = JSON.parse(raw) as ProjectMetadata;
+      setMetadata(projectPath, parsed);
+    }
+  } catch (error) {
+    console.error(`Failed to load project metadata for ${projectPath}:`, error);
+  }
+}
+
+async function saveProjectMetadata(
+  projectPath: string,
+  metadata: ProjectMetadata,
+  setClean: (path: string) => void,
+): Promise<void> {
+  const filePath = getMetadataPath(projectPath);
+  try {
+    await tauriApi.writeFile(filePath, JSON.stringify(metadata, null, 2));
+    setClean(projectPath);
+  } catch (error) {
+    console.error(`Failed to save project metadata for ${projectPath}:`, error);
+  }
+}
+
 export function useProjectMetadata() {
-  const rootPath = useProjectStore((s) => s.rootPath);
-  const { metadata, isDirty, setMetadata, setDirty } = useProjectMetadataStore();
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rootPathRef = useRef(rootPath);
+  const projects = useWorkspaceStore((s) => s.projects);
+  const { metadataMap, dirtyPaths, setMetadata, setClean } = useProjectMetadataStore();
+  const saveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const loadedPathsRef = useRef<Set<string>>(new Set());
 
-  // Keep rootPathRef in sync
-  rootPathRef.current = rootPath;
-
-  // Load metadata when rootPath changes
+  // Load metadata for newly added projects
   useEffect(() => {
-    if (!rootPath) return;
+    const currentPaths = new Set(projects.map((p) => p.path));
 
-    let cancelled = false;
-
-    async function loadMetadata() {
-      const dirPath = getMetadataDir(rootPath!);
-      const filePath = getMetadataPath(rootPath!);
-
-      try {
-        const dirExists = await tauriApi.pathExists(dirPath);
-        if (cancelled) return;
-
-        if (!dirExists) {
-          await tauriApi.createDirectory(dirPath);
-          if (cancelled) return;
-        }
-
-        const fileExists = await tauriApi.pathExists(filePath);
-        if (cancelled) return;
-
-        if (!fileExists) {
-          const defaults = createDefaultMetadata(folderNameFromPath(rootPath!));
-          await tauriApi.writeFile(filePath, JSON.stringify(defaults, null, 2));
-          if (cancelled) return;
-          setMetadata(defaults);
-        } else {
-          const raw = await tauriApi.readFile(filePath);
-          if (cancelled) return;
-          const parsed = JSON.parse(raw) as ProjectMetadata;
-          setMetadata(parsed);
-        }
-      } catch (error) {
-        console.error('Failed to load project metadata:', error);
+    // Load metadata for new projects
+    for (const project of projects) {
+      if (!loadedPathsRef.current.has(project.path)) {
+        loadedPathsRef.current.add(project.path);
+        loadProjectMetadata(project.path, setMetadata);
       }
     }
 
-    loadMetadata();
+    // Clean up removed projects
+    for (const loaded of loadedPathsRef.current) {
+      if (!currentPaths.has(loaded)) {
+        loadedPathsRef.current.delete(loaded);
+      }
+    }
+  }, [projects, setMetadata]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [rootPath, setMetadata]);
-
-  // Debounced auto-save when isDirty
+  // Debounced auto-save for dirty projects
   useEffect(() => {
-    if (!isDirty || !metadata || !rootPath) return;
+    for (const dirtyPath of dirtyPaths) {
+      const metadata = metadataMap[dirtyPath];
+      if (!metadata) continue;
 
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
+      // Clear existing timer for this path
+      const existing = saveTimersRef.current.get(dirtyPath);
+      if (existing) clearTimeout(existing);
+
+      const timer = setTimeout(() => {
+        saveProjectMetadata(dirtyPath, metadata, setClean);
+        saveTimersRef.current.delete(dirtyPath);
+      }, 1000);
+
+      saveTimersRef.current.set(dirtyPath, timer);
     }
 
-    saveTimerRef.current = setTimeout(async () => {
-      const currentRootPath = rootPathRef.current;
-      if (!currentRootPath) return;
-
-      const filePath = getMetadataPath(currentRootPath);
-      try {
-        await tauriApi.writeFile(filePath, JSON.stringify(metadata, null, 2));
-        setDirty(false);
-      } catch (error) {
-        console.error('Failed to save project metadata:', error);
-      }
-    }, 1000);
-
     return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
+      // Clean up timers on unmount
+      for (const timer of saveTimersRef.current.values()) {
+        clearTimeout(timer);
       }
     };
-  }, [isDirty, metadata, rootPath, setDirty]);
+  }, [dirtyPaths, metadataMap, setClean]);
 }

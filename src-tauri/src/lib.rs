@@ -21,6 +21,7 @@ pub fn run() {
             ai_generate_text,
             ai_chat,
             ai_chat_stream,
+            get_home_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

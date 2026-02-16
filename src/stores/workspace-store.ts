@@ -1,0 +1,158 @@
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import { FileEntry } from "@/lib/tauri";
+
+export interface WorkspaceProject {
+  path: string;
+  fileTree: FileEntry[];
+}
+
+interface WorkspaceStore {
+  // Explorer section
+  explorerPath: string | null;
+  explorerTree: FileEntry[];
+
+  // Projects section
+  projects: WorkspaceProject[];
+
+  // Notes section
+  notesTree: FileEntry[];
+
+  // Shared
+  expandedFolders: Set<string>;
+
+  // Section collapse state
+  explorerCollapsed: boolean;
+  projectsCollapsed: boolean;
+  notesCollapsed: boolean;
+
+  // Explorer actions
+  setExplorerPath: (path: string | null) => void;
+  setExplorerTree: (tree: FileEntry[]) => void;
+
+  // Project actions
+  addProject: (path: string, tree: FileEntry[]) => void;
+  removeProject: (path: string) => void;
+  updateProjectTree: (path: string, tree: FileEntry[]) => void;
+
+  // Notes actions
+  setNotesTree: (tree: FileEntry[]) => void;
+
+  // Folder expansion
+  toggleFolder: (path: string) => void;
+  isExpanded: (path: string) => boolean;
+
+  // Section collapse
+  setExplorerCollapsed: (collapsed: boolean) => void;
+  setProjectsCollapsed: (collapsed: boolean) => void;
+  setNotesCollapsed: (collapsed: boolean) => void;
+
+  // Utility: find which section a file path belongs to
+  findOwningProject: (filePath: string) => WorkspaceProject | undefined;
+}
+
+export const useWorkspaceStore = create<WorkspaceStore>()(
+  persist(
+    (set, get) => ({
+      explorerPath: null,
+      explorerTree: [],
+      projects: [],
+      notesTree: [],
+      expandedFolders: new Set<string>(),
+      explorerCollapsed: false,
+      projectsCollapsed: false,
+      notesCollapsed: false,
+
+      setExplorerPath: (path) => {
+        set({ explorerPath: path });
+      },
+
+      setExplorerTree: (tree) => {
+        set({ explorerTree: tree });
+      },
+
+      addProject: (path, tree) => {
+        set((state) => {
+          // Don't add duplicates
+          if (state.projects.some((p) => p.path === path)) {
+            return {
+              projects: state.projects.map((p) =>
+                p.path === path ? { ...p, fileTree: tree } : p
+              ),
+            };
+          }
+          return {
+            projects: [...state.projects, { path, fileTree: tree }],
+          };
+        });
+      },
+
+      removeProject: (path) => {
+        set((state) => ({
+          projects: state.projects.filter((p) => p.path !== path),
+        }));
+      },
+
+      updateProjectTree: (path, tree) => {
+        set((state) => ({
+          projects: state.projects.map((p) =>
+            p.path === path ? { ...p, fileTree: tree } : p
+          ),
+        }));
+      },
+
+      setNotesTree: (tree) => {
+        set({ notesTree: tree });
+      },
+
+      toggleFolder: (path) => {
+        set((state) => {
+          const newExpanded = new Set(state.expandedFolders);
+          if (newExpanded.has(path)) {
+            newExpanded.delete(path);
+          } else {
+            newExpanded.add(path);
+          }
+          return { expandedFolders: newExpanded };
+        });
+      },
+
+      isExpanded: (path) => {
+        return get().expandedFolders.has(path);
+      },
+
+      setExplorerCollapsed: (collapsed) => set({ explorerCollapsed: collapsed }),
+      setProjectsCollapsed: (collapsed) => set({ projectsCollapsed: collapsed }),
+      setNotesCollapsed: (collapsed) => set({ notesCollapsed: collapsed }),
+
+      findOwningProject: (filePath) => {
+        return get().projects.find((p) => filePath.startsWith(p.path + "/"));
+      },
+    }),
+    {
+      name: "notesage-workspace",
+      partialize: (state) => ({
+        explorerPath: state.explorerPath,
+        projects: state.projects.map((p) => ({ path: p.path, fileTree: [] })),
+        expandedFolders: Array.from(state.expandedFolders),
+        explorerCollapsed: state.explorerCollapsed,
+        projectsCollapsed: state.projectsCollapsed,
+        notesCollapsed: state.notesCollapsed,
+      }),
+      merge: (persisted, current) => {
+        const p = persisted as Record<string, unknown>;
+        return {
+          ...current,
+          explorerPath: (p.explorerPath as string | null) ?? null,
+          projects: (p.projects as WorkspaceProject[]) ?? [],
+          expandedFolders: new Set(
+            (p.expandedFolders as string[]) ?? []
+          ),
+          explorerCollapsed: (p.explorerCollapsed as boolean) ?? false,
+          projectsCollapsed: (p.projectsCollapsed as boolean) ?? false,
+          notesCollapsed: (p.notesCollapsed as boolean) ?? false,
+        };
+      },
+    }
+  )
+);

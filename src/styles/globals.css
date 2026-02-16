@@ -4,10 +4,8 @@
   --font-family-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --font-family-mono: ui-monospace, "SFMono-Regular", "SF Mono", "Menlo", "Consolas", "Liberation Mono", monospace;
   --radius: 0.5rem;
-}
 
-/* Light mode colors */
-:root {
+  /* Light mode colors (default) — registered as Tailwind theme tokens */
   --color-background: oklch(100% 0 0);
   --color-foreground: oklch(13.85% 0.004 285.82);
   --color-card: oklch(100% 0 0);
