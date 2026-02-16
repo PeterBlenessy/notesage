@@ -121,8 +121,8 @@ export function PersonasSettings() {
                   className={cn(
                     'rounded-md border transition-all overflow-hidden',
                     isActive
-                      ? 'border-primary/60 bg-primary/5'
-                      : 'border-border/50 hover:border-primary/40'
+                      ? 'border-foreground/30 bg-accent'
+                      : 'border-border hover:border-foreground/20 hover:bg-accent/50'
                   )}
                 >
                   <div className="flex items-center gap-3 px-3 py-2">
