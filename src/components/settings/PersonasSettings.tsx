@@ -18,7 +18,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { UserCircle2, Plus, Pencil, Trash2, Check, Sparkles, ChevronDown } from 'lucide-react';
+import { Plus, Pencil, Trash2, Check, Sparkles, ChevronDown } from 'lucide-react';
+import { PersonaIcon } from '@/components/PersonaIcon';
 import { cn } from '@/lib/utils';
 
 export function PersonasSettings() {
@@ -130,7 +131,7 @@ export function PersonasSettings() {
                       onClick={() => setActivePersona(persona.id)}
                       className="flex items-center gap-3 flex-1 text-left"
                     >
-                      <span className="text-2xl shrink-0">{persona.icon}</span>
+                      <PersonaIcon persona={persona} size={24} className="shrink-0" />
                       <span className="font-medium text-sm flex-1">{persona.name}</span>
                       {isActive && (
                         <Check className="h-4 w-4 text-primary shrink-0" />
@@ -263,7 +264,7 @@ export function PersonasSettings() {
                         onClick={() => setActivePersona(persona.id)}
                         className="flex items-center gap-3 flex-1 text-left"
                       >
-                        <span className="text-2xl shrink-0">{persona.icon}</span>
+                        <PersonaIcon persona={persona} size={24} className="shrink-0" />
                         <span className="font-medium text-sm flex-1">{persona.name}</span>
                         {isActive && (
                           <Check className="h-4 w-4 text-primary shrink-0" />

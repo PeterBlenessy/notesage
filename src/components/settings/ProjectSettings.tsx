@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { AIProviderType } from '@/lib/ai/types';
+import { PersonaIcon } from '@/components/PersonaIcon';
 
 const PROVIDERS = [
   {
@@ -198,12 +199,15 @@ export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
                 <SelectValue>
                   {metadata.ai.personaId === null ? (
                     <span className="text-muted-foreground">Use Global Default</span>
-                  ) : (
-                    <span>
-                      {allPersonas.find((p) => p.id === metadata.ai.personaId)?.icon}{' '}
-                      {allPersonas.find((p) => p.id === metadata.ai.personaId)?.name}
-                    </span>
-                  )}
+                  ) : (() => {
+                    const p = allPersonas.find((p) => p.id === metadata.ai.personaId);
+                    return p ? (
+                      <span className="flex items-center gap-2">
+                        <PersonaIcon persona={p} size={14} />
+                        {p.name}
+                      </span>
+                    ) : null;
+                  })()}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
@@ -212,7 +216,10 @@ export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
                 </SelectItem>
                 {allPersonas.map((persona) => (
                   <SelectItem key={persona.id} value={persona.id}>
-                    <span>{persona.icon} {persona.name}</span>
+                    <span className="flex items-center gap-2">
+                      <PersonaIcon persona={persona} size={14} />
+                      {persona.name}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>

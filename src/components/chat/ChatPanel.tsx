@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, Trash2, Loader2, Search, FileText, ChevronUp } from 'lucide-react';
+import { X, Trash2, Loader2, FileText, ChevronUp } from 'lucide-react';
+import { PersonaIcon } from '@/components/PersonaIcon';
 import { useChatStore } from '@/stores/chat-store';
 import { useAIStore, getActivePersona, getAllPersonas } from '@/stores/ai-store';
 import { useActiveProject } from '@/hooks/useActiveProject';
@@ -138,7 +139,7 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
               <Popover open={personaOpen} onOpenChange={setPersonaOpen}>
                 <PopoverTrigger asChild>
                   <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent/50">
-                    <span>{activePersona.icon}</span>
+                    <PersonaIcon persona={activePersona} size={14} />
                     <span>{activePersona.name}</span>
                     <ChevronUp className="h-3 w-3 opacity-50" />
                   </button>
@@ -157,7 +158,7 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
                           : 'text-foreground hover:bg-accent/50'
                       }`}
                     >
-                      <span>{persona.icon}</span>
+                      <PersonaIcon persona={persona} size={14} />
                       <span>{persona.name}</span>
                     </button>
                   ))}
