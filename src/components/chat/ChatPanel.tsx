@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { X, Trash2, Loader2, FileText, Target, ChevronUp } from 'lucide-react';
+import { X, Trash2, Loader2, Target, ChevronUp, FolderOpen, Check } from 'lucide-react';
 import { PersonaIcon } from '@/components/PersonaIcon';
 import { useChatStore } from '@/stores/chat-store';
 import { useAIStore, getActivePersona, getAllPersonas } from '@/stores/ai-store';
-import { useActiveProject } from '@/hooks/useActiveProject';
+import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { useAIOperations } from '@/hooks/useAIOperations';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { ChatMessage } from './ChatMessage';
@@ -25,24 +26,43 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ onClose }: ChatPanelProps) {
-  const { messages, isLoading, error, activeTool, clearMessages } = useChatStore();
+  const { messages, isLoading, error, activeTool, clearMessages, selectedProjectPaths, setSelectedProjectPaths, toggleProjectPath } = useChatStore();
   const aiStore = useAIStore();
   const { provider, setActivePersona } = aiStore;
   const activePersona = getActivePersona(aiStore);
   const allPersonas = getAllPersonas(aiStore);
-  const { metadata, projectPath } = useActiveProject();
-  const hasProjectContext = Boolean(metadata?.ai.projectContext);
-  const { goalFiles } = useGoalsDiscovery(projectPath);
+  const projects = useWorkspaceStore((s) => s.projects);
+  const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
+
+  // Goals discovery for single-project selection only
+  const singleProjectPath = selectedProjectPaths.length === 1 ? selectedProjectPaths[0] : null;
+  const { goalFiles } = useGoalsDiscovery(singleProjectPath);
   const { sendChatMessage } = useAIOperations();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [personaOpen, setPersonaOpen] = useState(false);
+  const [projectOpen, setProjectOpen] = useState(false);
+
+  // Derive display label for the project selector trigger
+  const projectLabel = useMemo(() => {
+    if (selectedProjectPaths.length === 0) return 'No projects';
+    if (selectedProjectPaths.length === 1) {
+      const meta = metadataMap[selectedProjectPaths[0]];
+      return meta?.name || selectedProjectPaths[0].split('/').pop() || 'Project';
+    }
+    const allSelected = projects.length > 0 && selectedProjectPaths.length === projects.length;
+    if (allSelected) return 'All projects';
+    return `${selectedProjectPaths.length} projects`;
+  }, [selectedProjectPaths, metadataMap, projects.length]);
 
   const chatPlaceholder = useMemo(() => {
     if (goalFiles.length > 0) {
       return 'Ask about your project goals, or type a message...';
     }
+    if (selectedProjectPaths.length > 0) {
+      return 'Ask about your projects, or type a message...';
+    }
     return 'Ask anything...';
-  }, [goalFiles.length]);
+  }, [goalFiles.length, selectedProjectPaths.length]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -63,6 +83,16 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
   const handleClear = () => {
     if (confirm('Clear all chat history?')) {
       clearMessages();
+    }
+  };
+
+  const allSelected = projects.length > 0 && selectedProjectPaths.length === projects.length;
+
+  const handleToggleAll = () => {
+    if (allSelected) {
+      setSelectedProjectPaths([]);
+    } else {
+      setSelectedProjectPaths(projects.map((p) => p.path));
     }
   };
 
@@ -174,21 +204,49 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
                   ))}
                 </PopoverContent>
               </Popover>
-              {hasProjectContext && (
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex items-center gap-0.5 px-1 py-px rounded text-[10px] font-medium text-muted-foreground" style={{ backgroundColor: 'var(--color-accent)' }}>
-                        <FileText className="h-2.5 w-2.5" />
-                        CTX
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-64">
-                      <p className="text-xs">Project context is active for this conversation</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
+              <Popover open={projectOpen} onOpenChange={setProjectOpen}>
+                <PopoverTrigger asChild>
+                  <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent/50">
+                    <FolderOpen className="h-3 w-3" strokeWidth={1.5} />
+                    <span className="max-w-[100px] truncate">{projectLabel}</span>
+                    <ChevronUp className="h-3 w-3 opacity-50" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent side="top" align="start" className="w-52 p-1">
+                  {projects.length > 1 && (
+                    <>
+                      <button
+                        onClick={handleToggleAll}
+                        className="w-full flex items-center justify-between px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50"
+                      >
+                        <span>{allSelected ? 'Deselect all' : 'Select all'}</span>
+                        {allSelected && <Check className="h-3 w-3 text-muted-foreground" />}
+                      </button>
+                      <div className="mx-2 my-1 border-t" style={{ borderColor: 'var(--color-border)' }} />
+                    </>
+                  )}
+                  {projects.map((project) => {
+                    const meta = metadataMap[project.path];
+                    const name = meta?.name || project.path.split('/').pop() || 'Project';
+                    const isChecked = selectedProjectPaths.includes(project.path);
+                    return (
+                      <button
+                        key={project.path}
+                        onClick={() => toggleProjectPath(project.path)}
+                        className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50"
+                      >
+                        <span className="truncate">{name}</span>
+                        {isChecked && <Check className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                      </button>
+                    );
+                  })}
+                  {projects.length === 0 && (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                      No projects open
+                    </div>
+                  )}
+                </PopoverContent>
+              </Popover>
               {goalFiles.length > 0 && (
                 <TooltipProvider delayDuration={200}>
                   <Tooltip>

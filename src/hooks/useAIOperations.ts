@@ -1,8 +1,8 @@
 import { useCallback, useRef, useMemo } from 'react';
 import { useAIStore, getAllPersonas, BUILT_IN_PERSONAS } from '@/stores/ai-store';
-import { useActiveProject } from '@/hooks/useActiveProject';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { useChatStore } from '@/stores/chat-store';
+import { useProjectMetadataStore, type ProjectMetadata } from '@/stores/project-metadata-store';
 import { getAIProvider } from '@/lib/ai';
 import type { ChatMessage } from '@/lib/ai/types';
 import { invoke } from '@tauri-apps/api/core';
@@ -10,7 +10,6 @@ import { listen } from '@tauri-apps/api/event';
 
 /**
  * Build a context string from discovered goal files.
- * Returns empty string if no goals exist.
  */
 function buildGoalsContext(goalFiles: { name: string; content: string }[]): string {
   if (goalFiles.length === 0) return '';
@@ -22,31 +21,71 @@ function buildGoalsContext(goalFiles: { name: string; content: string }[]): stri
   return `## Project Goals\n\nThe following goal files exist in this project:\n\n${sections}`;
 }
 
+/**
+ * Build a context block for a single project (name, description, custom context).
+ */
+function buildProjectHeader(metadata: ProjectMetadata): string {
+  const lines: string[] = [];
+  if (metadata.name) lines.push(`Project: ${metadata.name}`);
+  if (metadata.description) lines.push(`Description: ${metadata.description}`);
+  if (metadata.ai.projectContext) lines.push(`Project context: ${metadata.ai.projectContext}`);
+  return lines.join('\n');
+}
+
 export function useAIOperations() {
   const aiStore = useAIStore();
   const { apiKeys, ollamaUrl } = aiStore;
-  const { addMessage, updateMessage, setLoading, setError, setActiveTool } = useChatStore();
+  const { addMessage, updateMessage, setLoading, setError, setActiveTool, selectedProjectPaths } = useChatStore();
   const cleanupRef = useRef<(() => void) | null>(null);
 
-  // Resolve effective provider: active project override > global
-  const { projectPath, metadata } = useActiveProject();
-  const effectiveProvider = metadata?.ai.provider ?? aiStore.provider;
+  const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
 
-  // Resolve effective persona: project override > global
-  const effectivePersonaId = metadata?.ai.personaId ?? aiStore.activePersonaId;
+  // Provider/persona overrides only apply when exactly one project is selected
+  const singleProjectPath = selectedProjectPaths.length === 1 ? selectedProjectPaths[0] : null;
+  const singleMetadata = singleProjectPath ? metadataMap[singleProjectPath] ?? null : null;
+
+  const effectiveProvider = singleMetadata?.ai.provider ?? aiStore.provider;
+  const effectivePersonaId = singleMetadata?.ai.personaId ?? aiStore.activePersonaId;
   const allPersonas = getAllPersonas(aiStore);
   const effectivePersona = allPersonas.find((p) => p.id === effectivePersonaId) || BUILT_IN_PERSONAS[0];
 
-  // Discover goal files for the active project
-  const { goalFiles } = useGoalsDiscovery(projectPath);
+  // Discover goal files (only when exactly one project is selected)
+  const { goalFiles } = useGoalsDiscovery(singleProjectPath);
   const goalsContext = useMemo(() => buildGoalsContext(goalFiles), [goalFiles]);
 
-  // Compose system message: project context + goals + persona system message
-  const projectContext = metadata?.ai.projectContext || '';
-  const contextParts = [projectContext, goalsContext].filter(Boolean).join('\n\n');
-  const composedSystemMessage = contextParts
-    ? `${contextParts}\n\n${effectivePersona.systemMessage}`
-    : effectivePersona.systemMessage;
+  // Compose system message based on selected projects
+  const composedSystemMessage = useMemo(() => {
+    const parts: string[] = [];
+
+    if (selectedProjectPaths.length === 1) {
+      // Single project — full context + goals
+      if (singleMetadata) {
+        const header = buildProjectHeader(singleMetadata);
+        if (header) parts.push(header);
+      }
+      if (goalsContext) parts.push(goalsContext);
+    } else if (selectedProjectPaths.length > 1) {
+      // Multiple projects — include each project's summary
+      const summaries: string[] = [];
+      for (const path of selectedProjectPaths) {
+        const meta = metadataMap[path];
+        if (meta) {
+          summaries.push(buildProjectHeader(meta));
+        } else {
+          const name = path.split('/').pop() || path;
+          summaries.push(`Project: ${name}`);
+        }
+      }
+      parts.push(`The user has the following projects selected:\n\n${summaries.join('\n\n')}`);
+    }
+    // selectedProjectPaths.length === 0 → no project context
+
+    if (parts.length > 0) {
+      return `${parts.join('\n\n')}\n\n${effectivePersona.systemMessage}`;
+    }
+
+    return effectivePersona.systemMessage;
+  }, [selectedProjectPaths, singleMetadata, goalsContext, metadataMap, effectivePersona.systemMessage]);
 
   const generateText = useCallback(
     async (prompt: string): Promise<string> => {

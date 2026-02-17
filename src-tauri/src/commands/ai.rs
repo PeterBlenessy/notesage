@@ -114,6 +114,12 @@ async fn anthropic_chat(messages: &[ChatMessage], api_key: &Option<String>) -> R
 
     let client = reqwest::Client::new();
 
+    // Extract system message for Anthropic's top-level "system" parameter
+    let system_content: Option<String> = messages
+        .iter()
+        .find(|m| m.role == "system")
+        .map(|m| m.content.clone());
+
     let api_messages: Vec<serde_json::Value> = messages
         .iter()
         .filter(|m| m.role != "system")
@@ -125,16 +131,22 @@ async fn anthropic_chat(messages: &[ChatMessage], api_key: &Option<String>) -> R
         })
         .collect();
 
+    let mut body = serde_json::json!({
+        "model": "claude-sonnet-4-5-20250929",
+        "max_tokens": 4096,
+        "messages": api_messages
+    });
+
+    if let Some(ref system) = system_content {
+        body["system"] = serde_json::json!(system);
+    }
+
     let response = client
         .post("https://api.anthropic.com/v1/messages")
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
         .header("content-type", "application/json")
-        .json(&serde_json::json!({
-            "model": "claude-sonnet-4-5-20250929",
-            "max_tokens": 4096,
-            "messages": api_messages
-        }))
+        .json(&body)
         .send()
         .await
         .map_err(|e| format!("Anthropic API request failed: {}", e))?;

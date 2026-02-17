@@ -153,7 +153,7 @@ export function GoalTemplateDialog({
           {/* Template cards */}
           <div className="space-y-2">
             <Label>Template</Label>
-            <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
+            <div className="space-y-2">
               {GOAL_TEMPLATES.map((template) => {
                 const isSelected = selectedTemplate?.id === template.id;
                 return (

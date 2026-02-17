@@ -69,8 +69,8 @@ export function ChatInput({ onSend, disabled, placeholder = 'Ask anything...', f
       {footer && (
         <>
           <div className="mx-3 border-t" style={{ borderColor: 'var(--color-border)' }} />
-          <div className="flex items-center justify-between px-3 py-1.5">
-            <div className="flex items-center gap-2">
+          <div className="flex items-end justify-between px-3 py-1.5 gap-2">
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
               {footer}
             </div>
             <button

@@ -7,6 +7,8 @@ interface ChatStore {
   isLoading: boolean;
   error: string | null;
   activeTool: string | null;
+  /** Selected project paths for AI context. Empty array = no project context. */
+  selectedProjectPaths: string[];
 
   addMessage: (message: ChatMessage) => void;
   updateMessage: (timestamp: number, content: string) => void;
@@ -14,6 +16,8 @@ interface ChatStore {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   setActiveTool: (tool: string | null) => void;
+  setSelectedProjectPaths: (paths: string[]) => void;
+  toggleProjectPath: (path: string) => void;
 }
 
 export const useChatStore = create<ChatStore>()(
@@ -23,6 +27,7 @@ export const useChatStore = create<ChatStore>()(
       isLoading: false,
       error: null,
       activeTool: null,
+      selectedProjectPaths: [],
 
       addMessage: (message) =>
         set((state) => ({
@@ -40,6 +45,16 @@ export const useChatStore = create<ChatStore>()(
       setLoading: (loading) => set({ isLoading: loading }),
       setError: (error) => set({ error }),
       setActiveTool: (tool) => set({ activeTool: tool }),
+      setSelectedProjectPaths: (paths) => set({ selectedProjectPaths: paths }),
+      toggleProjectPath: (path) =>
+        set((state) => {
+          const has = state.selectedProjectPaths.includes(path);
+          return {
+            selectedProjectPaths: has
+              ? state.selectedProjectPaths.filter((p) => p !== path)
+              : [...state.selectedProjectPaths, path],
+          };
+        }),
     }),
     { name: 'notesage-chat-history' }
   )

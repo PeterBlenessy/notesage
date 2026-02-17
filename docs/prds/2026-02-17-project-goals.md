@@ -238,7 +238,7 @@ A small dialog for adding goals to existing projects:
 ### New Project dialog (updated)
 
 - Existing fields: project name, location
-- **New:** Project template selector below location picker
+- **New:** Project template selector above location picker
   - Horizontal cards or radio list showing template options (Default, Research, Writing, Blank)
   - Each shows name, short description, and folder/file preview
   - Default template is pre-selected
@@ -263,7 +263,8 @@ Goals files appear in the normal file tree. No special icons or sections — the
 ### Chat panel hints
 
 - When a project has goals files, the chat input placeholder changes to: "Ask about your goals, or type a message..."
-- No other visible changes to the chat UI
+- A project selector popover in the chat footer (next to persona selector) lets users explicitly choose which project provides context. Options: "No project" (default when no tab is active), or any open project. The selected project determines which goals and project context are injected into the AI system message.
+- A goals badge shows the count of discovered goal files when a project with goals is selected
 
 ## Data Model
 
