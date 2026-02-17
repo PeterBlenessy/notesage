@@ -42,7 +42,7 @@ Inline AI suggestions, chat panel, and provider abstraction.
 
 **Completed features:**
 
-- `.note-sage/` metadata directory auto-bootstrapped per project
+- `.notesage/` metadata directory auto-bootstrapped per project
   - Project settings (name, description)
   - AI context (provider, persona, project context overrides)
 - New Project dialog (Cmd+Shift+N) — creates folder + metadata
@@ -61,7 +61,7 @@ Inline AI suggestions, chat panel, and provider abstraction.
 
 **Remaining features:**
 
-- `.note-sage/` extensions
+- `.notesage/` extensions
   - Custom workflows
   - Search history
 - Git enhancements
@@ -210,7 +210,7 @@ These architectural choices enable future phases:
 
 4. **No hardcoded paths**
 
-   - `.note-sage/` metadata directory now implemented and auto-bootstrapped
+   - `.notesage/` metadata directory now implemented and auto-bootstrapped
    - Project-relative paths support workspace features
 
 5. **Component modularity**

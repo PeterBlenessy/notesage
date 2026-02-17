@@ -7,7 +7,7 @@ import {
 } from '@/stores/project-metadata-store';
 import { tauriApi } from '@/lib/tauri';
 
-const METADATA_DIR = '.note-sage';
+const METADATA_DIR = '.notesage';
 const METADATA_FILE = 'project.json';
 
 function getMetadataDir(rootPath: string): string {
@@ -30,6 +30,19 @@ async function loadProjectMetadata(
   const filePath = getMetadataPath(projectPath);
 
   try {
+    // Migration: .note-sage -> .notesage
+    const oldDirPath = `${projectPath}/.note-sage`;
+    try {
+      const oldExists = await tauriApi.pathExists(oldDirPath);
+      const newExists = await tauriApi.pathExists(dirPath);
+      if (oldExists && !newExists) {
+        await tauriApi.renamePath(oldDirPath, dirPath);
+        console.log(`Migrated .note-sage to .notesage for ${projectPath}`);
+      }
+    } catch (error) {
+      console.warn(`Failed to migrate .note-sage to .notesage:`, error);
+    }
+
     const dirExists = await tauriApi.pathExists(dirPath);
     if (!dirExists) {
       await tauriApi.createDirectory(dirPath);

@@ -63,12 +63,12 @@ note-sage/
 │   ├── hooks/
 │   │   ├── useEditor.ts            # Tiptap editor instance hook
 │   │   ├── useFileOperations.ts    # File create/open/save/delete operations
-│   │   ├── useProjectMetadata.ts   # Auto-bootstrap .note-sage/project.json
+│   │   ├── useProjectMetadata.ts   # Auto-bootstrap .notesage/project.json
 │   │   └── useAIOperations.ts      # AI generation and chat operations
 │   ├── stores/
 │   │   ├── editor-store.ts         # Open tabs, active file
 │   │   ├── project-store.ts        # Project folder, file tree
-│   │   ├── project-metadata-store.ts # Project metadata (.note-sage/project.json)
+│   │   ├── project-metadata-store.ts # Project metadata (.notesage/project.json)
 │   │   ├── settings-store.ts       # App settings, theme
 │   │   ├── ai-store.ts             # AI provider configuration
 │   │   └── chat-store.ts           # Chat conversation state
@@ -129,7 +129,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 
 - **editor-store**: Open tabs (file path + dirty state), active tab index
 - **project-store**: Root folder path, file tree structure, expanded folders
-- **project-metadata-store**: Project metadata from `.note-sage/project.json` (name, description, AI overrides)
+- **project-metadata-store**: Project metadata from `.notesage/project.json` (name, description, AI overrides)
 - **settings-store**: Theme, window state, recent projects, UI preferences (floating toolbar toggle)
 - **ai-store**: AI provider selection, API keys, Ollama URL, suggestions enabled
 - **chat-store**: Chat conversation messages, loading state, errors
@@ -226,4 +226,4 @@ These architectural choices enable future phases:
 - **Tauri commands**: Pattern established for file operations extends to Git operations (Phase 3)
 - **Zustand stores**: Clean boundaries allow adding new stores (ai-store, project-store added in Phase 2)
 - **Provider abstraction**: Easy to add new AI providers (Gemini, local models, etc.)
-- **No hardcoded paths**: `.note-sage/` metadata directory auto-bootstrapped per project
+- **No hardcoded paths**: `.notesage/` metadata directory auto-bootstrapped per project

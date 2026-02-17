@@ -64,10 +64,10 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const isActive = activeTab?.filePath === entry.path;
 
-  // Detect if this directory is a project (in workspace or has .note-sage/ child)
+  // Detect if this directory is a project (in workspace or has .notesage/ child)
   const isProjectFolder = entry.is_directory && (
     projects.some((p) => p.path === entry.path) ||
-    entry.children?.some((c) => c.name === ".note-sage" && c.is_directory)
+    entry.children?.some((c) => c.name === ".notesage" && c.is_directory)
   );
 
   // Git status — paths from the backend are absolute, so we match directly.

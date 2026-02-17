@@ -113,7 +113,7 @@ See @docs/tauri-commands.md for command signatures.
 **These are in Phase 2+ (see @docs/future-phases.md):**
 
 - AI features (no AI provider integration, no inline suggestions, no chat) — **NOW IN PHASE 2**
-- Project management (.note-sage/ directory, goals, workflows)
+- Project management (.notesage/ directory, goals, workflows)
 - Document generation (PDF, DOCX, PPTX export)
 - GitHub/Git integration
 - Web search

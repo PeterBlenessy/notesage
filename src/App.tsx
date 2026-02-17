@@ -148,8 +148,8 @@ function App() {
     try {
       const folderPath = await tauriApi.openFolderDialog();
       if (folderPath) {
-        // Auto-detect project folders: if .note-sage/ exists, add to Projects instead
-        const isProject = await tauriApi.pathExists(`${folderPath}/.note-sage`);
+        // Auto-detect project folders: if .notesage/ exists, add to Projects instead
+        const isProject = await tauriApi.pathExists(`${folderPath}/.notesage`);
         if (isProject) {
           const tree = await tauriApi.listDirectory(folderPath);
           addProject(folderPath, tree);
@@ -187,8 +187,8 @@ function App() {
     try {
       const folderPath = await tauriApi.openFolderDialog();
       if (folderPath) {
-        // Bootstrap .note-sage/ if it doesn't exist
-        const metaDir = `${folderPath}/.note-sage`;
+        // Bootstrap .notesage/ if it doesn't exist
+        const metaDir = `${folderPath}/.notesage`;
         const dirExists = await tauriApi.pathExists(metaDir);
         if (!dirExists) {
           await tauriApi.createDirectory(metaDir);
@@ -203,8 +203,8 @@ function App() {
 
   const handleMakeProject = useCallback(async (path: string) => {
     try {
-      // Bootstrap .note-sage/ directory
-      const metaDir = `${path}/.note-sage`;
+      // Bootstrap .notesage/ directory
+      const metaDir = `${path}/.notesage`;
       const dirExists = await tauriApi.pathExists(metaDir);
       if (!dirExists) {
         await tauriApi.createDirectory(metaDir);
