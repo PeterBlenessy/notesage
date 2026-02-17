@@ -16,3 +16,4 @@ Chronological log of major implementation milestones and changes.
 | 010 | [Release v0.5.1](010-release-v0.5.1.md) | Per-document scroll positions, tab visibility fix |
 | 011 | [Release v0.5.2](011-release-v0.5.2.md) | Toast notifications for git operations, PRD updates |
 | 012 | [Release v0.6.0](012-release-v0.6.0.md) | Project goals, frontmatter support, AI context improvements |
+| 013 | [Release v0.6.1](013-release-v0.6.1.md) | Fix scroll position on window resize and layout breakpoint |

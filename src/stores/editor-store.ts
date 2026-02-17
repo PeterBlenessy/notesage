@@ -22,6 +22,8 @@ interface EditorStore {
   tabs: Tab[];
   activeTabId: string | null;
   recentFiles: RecentFile[];
+  /** Scroll position ratios (0–1) keyed by file path, persisted across restarts. */
+  scrollPositions: Record<string, number>;
 
   openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null) => void;
   closeTab: (tabId: string) => void;
@@ -30,6 +32,7 @@ interface EditorStore {
   markTabClean: (tabId: string) => void;
   setFrontmatter: (tabId: string, frontmatter: Frontmatter | null) => void;
   updateFrontmatter: (tabId: string, updates: Partial<Frontmatter>) => void;
+  setScrollPosition: (filePath: string, ratio: number) => void;
 }
 
 export const useEditorStore = create<EditorStore>()(
@@ -38,6 +41,7 @@ export const useEditorStore = create<EditorStore>()(
       tabs: [],
       activeTabId: null,
       recentFiles: [],
+      scrollPositions: {},
 
       openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null) => {
         set((state) => {
@@ -130,11 +134,18 @@ export const useEditorStore = create<EditorStore>()(
           ),
         }));
       },
+
+      setScrollPosition: (filePath: string, ratio: number) => {
+        set((state) => ({
+          scrollPositions: { ...state.scrollPositions, [filePath]: ratio },
+        }));
+      },
     }),
     {
       name: "notesage-editor",
       partialize: (state) => ({
         recentFiles: state.recentFiles,
+        scrollPositions: state.scrollPositions,
       }),
     }
   )

@@ -43,7 +43,7 @@ interface EditorProps {
 }
 
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile }: EditorProps) {
-  const { tabs, activeTabId, updateTabContent, recentFiles } = useEditorStore();
+  const { tabs, activeTabId, updateTabContent, recentFiles, scrollPositions, setScrollPosition } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const { showFloatingToolbar, contentWidth, marginTop, marginBottom, marginLeft, marginRight } = useSettingsStore();
   const { saveFile } = useFileOperations();
@@ -54,7 +54,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const lastLoadedTabId = useRef<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const scrollPositions = useRef<Map<string, number>>(new Map());
+  const isResizing = useRef(false);
+  const resizeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [renderedWidth, setRenderedWidth] = useState<number | null>(null);
 
   // Convert cm margins to px
@@ -63,11 +64,52 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const paddingLeft = `${marginLeft * PX_PER_CM}px`;
   const paddingRight = `${marginRight * PX_PER_CM}px`;
 
-  // Observe rendered width of the content container
+  // Save current scroll position as a ratio (0–1) keyed by file path
+  const saveScrollRatio = useCallback(() => {
+    const el = scrollAreaRef.current;
+    // Skip save during resize or before first tab load (prevents saving 0 on remount)
+    if (!el || !activeTab || isResizing.current || !lastLoadedTabId.current) return;
+    const maxScroll = el.scrollHeight - el.clientHeight;
+    const ratio = maxScroll > 0 ? el.scrollTop / maxScroll : 0;
+    setScrollPosition(activeTab.filePath, ratio);
+  }, [activeTab, setScrollPosition]);
+
+  // Restore scroll position from the persisted ratio
+  const restoreScrollRatio = useCallback((filePath: string, onComplete?: () => void) => {
+    const el = scrollAreaRef.current;
+    if (!el) return;
+    const ratio = scrollPositions[filePath] ?? 0;
+    // Double-RAF: first waits for ProseMirror DOM update, second for layout
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!scrollAreaRef.current) return;
+        const maxScroll = scrollAreaRef.current.scrollHeight - scrollAreaRef.current.clientHeight;
+        scrollAreaRef.current.scrollTop = ratio * maxScroll;
+        onComplete?.();
+      });
+    });
+  }, [scrollPositions]);
+
+  // Save scroll position on scroll events (debounced)
+  useEffect(() => {
+    const el = scrollAreaRef.current;
+    if (!el || !activeTab) return;
+    let timeout: ReturnType<typeof setTimeout>;
+    const onScroll = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(saveScrollRatio, 150);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      clearTimeout(timeout);
+    };
+  }, [activeTab, saveScrollRatio]);
+
+  // Observe rendered width of content container
   useEffect(() => {
     const el = contentRef.current;
     if (!el) return;
-
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         setRenderedWidth(entry.contentRect.width);
@@ -76,6 +118,30 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     observer.observe(el);
     return () => observer.disconnect();
   }, [activeTab]);
+
+  // Observe scroll container for resize — suppress scroll saves and restore after settling
+  useEffect(() => {
+    const el = scrollAreaRef.current;
+    if (!el || !activeTab) return;
+    const observer = new ResizeObserver(() => {
+      isResizing.current = true;
+      clearTimeout(resizeTimer.current);
+      resizeTimer.current = setTimeout(() => {
+        restoreScrollRatio(activeTab.filePath);
+        // Allow saves again after restore has been fully applied (matches double-RAF in restore)
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            isResizing.current = false;
+          });
+        });
+      }, 100);
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      clearTimeout(resizeTimer.current);
+    };
+  }, [activeTab, restoreScrollRatio]);
 
   const handleUpdate = useCallback(
     (content: string) => {
@@ -97,25 +163,25 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   // Update editor content when switching tabs, saving/restoring scroll position
   useEffect(() => {
     if (editor && activeTab && activeTab.id !== lastLoadedTabId.current) {
-      const scrollEl = scrollAreaRef.current;
-
       // Save scroll position of the tab we're leaving
-      if (lastLoadedTabId.current && scrollEl) {
-        scrollPositions.current.set(lastLoadedTabId.current, scrollEl.scrollTop);
+      saveScrollRatio();
+
+      // Hide scroll area to prevent flicker (content renders at top before scroll restores)
+      if (scrollAreaRef.current) {
+        scrollAreaRef.current.style.opacity = '0';
       }
 
       lastLoadedTabId.current = activeTab.id;
       editor.commands.setContent(activeTab.content);
 
-      // Restore scroll position of the tab we're switching to
-      if (scrollEl) {
-        const saved = scrollPositions.current.get(activeTab.id) ?? 0;
-        requestAnimationFrame(() => {
-          scrollEl.scrollTop = saved;
-        });
-      }
+      // Restore scroll position then reveal
+      restoreScrollRatio(activeTab.filePath, () => {
+        if (scrollAreaRef.current) {
+          scrollAreaRef.current.style.opacity = '1';
+        }
+      });
     }
-  }, [activeTab?.id, editor, activeTab]);
+  }, [activeTab?.id, editor, activeTab, saveScrollRatio, restoreScrollRatio]);
 
   // Handle Cmd+S to save
   useEffect(() => {
