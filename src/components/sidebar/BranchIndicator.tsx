@@ -3,6 +3,7 @@ import { GitBranch, Check } from "lucide-react";
 import { useGitStore } from "@/stores/git-store";
 import { useGitOperations } from "@/hooks/useGitOperations";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,7 +31,7 @@ export function BranchIndicator({ projectPath }: BranchIndicatorProps) {
         const list = await listBranches();
         setBranches(list);
       } catch (error) {
-        console.error("Failed to list branches:", error);
+        toast.error(`Failed to list branches: ${error}`);
       }
     }
   };
@@ -40,7 +41,7 @@ export function BranchIndicator({ projectPath }: BranchIndicatorProps) {
     try {
       await switchBranch(branch);
     } catch (error) {
-      console.error("Failed to switch branch:", error);
+      toast.error(`Failed to switch branch: ${error}`);
     }
     setIsOpen(false);
   };

@@ -22,6 +22,7 @@ import { useGitStore } from "@/stores/git-store";
 import { useGitOperations } from "@/hooks/useGitOperations";
 import { tauriApi } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import type { GitStatus } from "@/lib/tauri";
 
 const STATUS_CONFIG: Record<GitStatus, { label: string; color: string; tooltip: string }> = {
@@ -166,8 +167,8 @@ export function CommitDialog({ open, onOpenChange, repoPath, preSelectedFiles }:
         : message.trim();
 
       const hash = await commit(fullMessage);
-      console.log(`Committed: ${hash}`);
       onOpenChange(false);
+      toast.success(`Committed ${hash}`);
     } catch (err) {
       setError(String(err));
     } finally {

@@ -24,6 +24,7 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable";
 import { PanelLeft, MessageSquare, Settings, FilePlus, FolderPlus, FolderOpen } from "lucide-react";
+import { Toaster } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 
 const BREAKPOINT_WIDE = 1200; // px
@@ -587,6 +588,7 @@ function App() {
           onCreated={handleOpenProject}
         />
       </div>
+      <Toaster position="bottom-right" />
     </ThemeProvider>
   );
 }
