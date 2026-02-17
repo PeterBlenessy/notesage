@@ -14,3 +14,4 @@ Chronological log of major implementation milestones and changes.
 | 008 | [Phase 2 Complete](008-phase2-complete.md) | AI collaboration — providers, chat, inline actions |
 | 009 | [Release v0.5.0](009-release-v0.5.0.md) | Git integration, window state persistence, settings reorder |
 | 010 | [Release v0.5.1](010-release-v0.5.1.md) | Per-document scroll positions, tab visibility fix |
+| 011 | [Release v0.5.2](011-release-v0.5.2.md) | Toast notifications for git operations, PRD updates |

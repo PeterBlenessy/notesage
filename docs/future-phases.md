@@ -50,17 +50,22 @@ Inline AI suggestions, chat panel, and provider abstraction.
 - Project Settings tab in settings dialog
 - `project-metadata-store` for project-level state
 - `useProjectMetadata` hook for auto-loading/saving metadata
+- Git integration (core)
+  - File status indicators in sidebar (modified, staged, untracked, deleted, renamed, conflicted)
+  - Commit dialog with file selection, staging/unstaging, and message input
+  - Branch display and switching via dropdown
+  - Auto-detection of git repos, git availability check
+  - Git identity configuration UI when `user.name`/`user.email` missing
+  - Toast notifications for commit success and git errors
+  - Status refresh on save, commit, branch switch, and window focus
 
 **Remaining features:**
 
 - `.note-sage/` extensions
   - Custom workflows
   - Search history
-- Git integration
-  - Show file status in sidebar (modified, staged, untracked)
-  - Commit from within app
+- Git enhancements
   - View diff in editor
-  - Branch management UI
   - Conflict resolution helpers
 - Web search integration
   - Search web from within app
@@ -73,8 +78,6 @@ Inline AI suggestions, chat panel, and provider abstraction.
 
 **Architecture considerations:**
 
-- New Tauri commands: `git_status`, `git_commit`, `git_diff`
-- Extend file tree to show Git status icons
 - Search results in dedicated panel
 
 ## Phase 4 — Document Generation
