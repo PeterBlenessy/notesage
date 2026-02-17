@@ -4,6 +4,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useGitStore } from "@/stores/git-store";
+import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
 
 /** Debounced git status refresh per repo. Each repo gets its own timer. */
 const repoRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -128,8 +129,9 @@ export function useFileOperations() {
   const openFile = useCallback(
     async (filePath: string, fileName: string) => {
       try {
-        const content = await tauriApi.readFile(filePath);
-        openTab(filePath, fileName, content);
+        const raw = await tauriApi.readFile(filePath);
+        const { frontmatter, content } = parseFrontmatter(raw);
+        openTab(filePath, fileName, content, frontmatter);
       } catch (error) {
         console.error("Failed to read file:", error);
         throw error;
@@ -141,7 +143,10 @@ export function useFileOperations() {
   const saveFile = useCallback(
     async (filePath: string, content: string, tabId: string) => {
       try {
-        await tauriApi.writeFile(filePath, content);
+        const tab = useEditorStore.getState().tabs.find((t) => t.id === tabId);
+        const frontmatter = tab?.frontmatter ?? null;
+        const raw = serializeFrontmatter(frontmatter, content);
+        await tauriApi.writeFile(filePath, raw);
         markTabClean(tabId);
         refreshGitForPath(filePath);
         return true;

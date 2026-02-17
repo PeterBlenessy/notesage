@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { Frontmatter } from "@/lib/frontmatter";
 
 export interface Tab {
   id: string;
@@ -7,6 +8,7 @@ export interface Tab {
   fileName: string;
   isDirty: boolean;
   content: string;
+  frontmatter: Frontmatter | null;
 }
 
 export interface RecentFile {
@@ -21,11 +23,13 @@ interface EditorStore {
   activeTabId: string | null;
   recentFiles: RecentFile[];
 
-  openTab: (filePath: string, fileName: string, content: string) => void;
+  openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   updateTabContent: (tabId: string, content: string, isDirty: boolean) => void;
   markTabClean: (tabId: string) => void;
+  setFrontmatter: (tabId: string, frontmatter: Frontmatter | null) => void;
+  updateFrontmatter: (tabId: string, updates: Partial<Frontmatter>) => void;
 }
 
 export const useEditorStore = create<EditorStore>()(
@@ -35,7 +39,7 @@ export const useEditorStore = create<EditorStore>()(
       activeTabId: null,
       recentFiles: [],
 
-      openTab: (filePath: string, fileName: string, content: string) => {
+      openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null) => {
         set((state) => {
           // Track in recent files (deduplicate, cap)
           const filteredRecent = state.recentFiles.filter((r) => r.path !== filePath);
@@ -55,6 +59,7 @@ export const useEditorStore = create<EditorStore>()(
             fileName,
             isDirty: false,
             content,
+            frontmatter: frontmatter ?? null,
           };
 
           return {
@@ -104,6 +109,24 @@ export const useEditorStore = create<EditorStore>()(
         set((state) => ({
           tabs: state.tabs.map((tab) =>
             tab.id === tabId ? { ...tab, isDirty: false } : tab
+          ),
+        }));
+      },
+
+      setFrontmatter: (tabId: string, frontmatter: Frontmatter | null) => {
+        set((state) => ({
+          tabs: state.tabs.map((tab) =>
+            tab.id === tabId ? { ...tab, frontmatter, isDirty: true } : tab
+          ),
+        }));
+      },
+
+      updateFrontmatter: (tabId: string, updates: Partial<Frontmatter>) => {
+        set((state) => ({
+          tabs: state.tabs.map((tab) =>
+            tab.id === tabId
+              ? { ...tab, frontmatter: { ...tab.frontmatter, ...updates }, isDirty: true }
+              : tab
           ),
         }));
       },
