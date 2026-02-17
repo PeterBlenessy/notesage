@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
-import { ChevronRight, Folder, FolderOpen, Settings, X, ExternalLink, GitCommitVertical, GitBranch } from "lucide-react";
+import { ChevronRight, Folder, FolderOpen, Settings, X, ExternalLink, GitCommitVertical, GitBranch, Target } from "lucide-react";
 import { tauriApi } from "@/lib/tauri";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useGitOperations } from "@/hooks/useGitOperations";
+import { useFileOperations } from "@/hooks/useFileOperations";
 import { FileTree } from "./FileTree";
 import { BranchIndicator } from "./BranchIndicator";
 import { CommitDialog } from "@/components/git/CommitDialog";
+import { GoalTemplateDialog } from "@/components/goals/GoalTemplateDialog";
 import { cn } from "@/lib/utils";
 import {
   ContextMenu,
@@ -49,6 +51,8 @@ export function ProjectItem({
 
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
   const [commitPreSelected, setCommitPreSelected] = useState<string[]>([]);
+  const [goalsDialogOpen, setGoalsDialogOpen] = useState(false);
+  const { refreshFileTree, openFile } = useFileOperations();
 
   // Determine if this project has active git data
   const isGitActive = gitEnabled && isGitRepo;
@@ -125,6 +129,10 @@ export function ProjectItem({
           <Settings className="mr-2 h-4 w-4" />
           Project Settings
         </ContextMenuItem>
+        <ContextMenuItem onClick={() => setGoalsDialogOpen(true)}>
+          <Target className="mr-2 h-4 w-4" />
+          New Goals File...
+        </ContextMenuItem>
         {gitEnabled && !isGitActive && (
           <>
             <ContextMenuSeparator />
@@ -173,6 +181,17 @@ export function ProjectItem({
         preSelectedFiles={commitPreSelected}
       />
     )}
+
+    <GoalTemplateDialog
+      open={goalsDialogOpen}
+      onOpenChange={setGoalsDialogOpen}
+      projectPath={projectPath}
+      onCreated={(filePath) => {
+        refreshFileTree(projectPath);
+        const fileName = filePath.split("/").pop() || filePath;
+        openFile(filePath, fileName);
+      }}
+    />
     </>
   );
 }
