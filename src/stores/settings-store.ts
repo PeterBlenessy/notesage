@@ -17,6 +17,7 @@ interface SettingsStore {
   sidebarOpen: boolean;
   chatPanelOpen: boolean;
   notesRootPath: string;
+  gitEnabled: boolean;
   setTheme: (theme: Theme) => void;
   setShowFloatingToolbar: (show: boolean) => void;
   setContentWidth: (width: ContentWidth) => void;
@@ -28,6 +29,7 @@ interface SettingsStore {
   setSidebarOpen: (open: boolean) => void;
   setChatPanelOpen: (open: boolean) => void;
   setNotesRootPath: (path: string) => void;
+  setGitEnabled: (enabled: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -44,6 +46,7 @@ export const useSettingsStore = create<SettingsStore>()(
       sidebarOpen: true,
       chatPanelOpen: false,
       notesRootPath: "~/Notesage",
+      gitEnabled: false,
 
       setTheme: (theme: Theme) => {
         set({ theme });
@@ -87,6 +90,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setNotesRootPath: (path: string) => {
         set({ notesRootPath: path });
+      },
+
+      setGitEnabled: (enabled: boolean) => {
+        set({ gitEnabled: enabled });
       },
     }),
     {

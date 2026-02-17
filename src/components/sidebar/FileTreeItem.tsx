@@ -1,9 +1,12 @@
-import { useState, useRef, useEffect } from "react";
-import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink } from "lucide-react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical } from "lucide-react";
 import { FileEntry, tauriApi } from "@/lib/tauri";
+import type { GitStatus } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { useSettingsStore } from "@/stores/settings-store";
+import { useGitStore } from "@/stores/git-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { cn } from "@/lib/utils";
 import {
@@ -16,6 +19,22 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
+const GIT_STATUS_CONFIG: Record<GitStatus, { label: string; color: string; tooltip: string }> = {
+  modified: { label: "M", color: "text-muted-foreground/50", tooltip: "Modified" },
+  added: { label: "A", color: "text-muted-foreground/50", tooltip: "Added — new file staged for commit" },
+  staged: { label: "S", color: "text-muted-foreground/50", tooltip: "Staged" },
+  untracked: { label: "U", color: "text-muted-foreground/50", tooltip: "Untracked — not yet tracked by git" },
+  deleted: { label: "D", color: "text-muted-foreground/50", tooltip: "Deleted" },
+  renamed: { label: "R", color: "text-muted-foreground/50", tooltip: "Renamed" },
+  conflicted: { label: "C", color: "text-muted-foreground/50", tooltip: "Conflicted — merge conflict" },
+};
 
 interface FileTreeItemProps {
   entry: FileEntry;
@@ -25,9 +44,11 @@ interface FileTreeItemProps {
   onMakeProject?: (path: string) => void;
   showMoveToProject?: boolean;
   expandKeyPrefix?: string;
+  gitRepoRoot?: string;
+  onCommitFile?: (filePath: string) => void;
 }
 
-export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProject, showMoveToProject, expandKeyPrefix = "" }: FileTreeItemProps) {
+export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProject, showMoveToProject, expandKeyPrefix = "", gitRepoRoot, onCommitFile }: FileTreeItemProps) {
   const { isExpanded, toggleFolder } = useWorkspaceStore();
   const { tabs, activeTabId } = useEditorStore();
   const { createFolder, renamePath, deletePath } = useFileOperations();
@@ -48,6 +69,29 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
     projects.some((p) => p.path === entry.path) ||
     entry.children?.some((c) => c.name === ".note-sage" && c.is_directory)
   );
+
+  // Git status — paths from the backend are absolute, so we match directly.
+  const gitEnabled = useSettingsStore((s) => s.gitEnabled);
+  const repo = useGitStore((s) => gitRepoRoot ? s.repos[gitRepoRoot] : undefined);
+  const fileStatuses = repo?.fileStatuses ?? [];
+  const gitInfo = useMemo(() => {
+    if (!gitEnabled || !gitRepoRoot || fileStatuses.length === 0) return null;
+
+    if (!entry.is_directory) {
+      // Direct lookup by absolute path (prefer unstaged over staged for display)
+      const unstaged = fileStatuses.find((s) => s.path === entry.path && !s.staged);
+      const staged = fileStatuses.find((s) => s.path === entry.path && s.staged);
+      if (unstaged) return GIT_STATUS_CONFIG[unstaged.status];
+      if (staged) return GIT_STATUS_CONFIG[staged.status];
+      return null;
+    }
+
+    // For directories: check if any status path is inside this directory
+    const dirPrefix = entry.path + "/";
+    const hasChanges = fileStatuses.some((s) => s.path.startsWith(dirPrefix));
+    if (hasChanges) return { label: "●", color: "text-muted-foreground/50", tooltip: "Contains changes" };
+    return null;
+  }, [gitEnabled, gitRepoRoot, entry.path, entry.is_directory, fileStatuses]);
 
   useEffect(() => {
     if (isRenaming && renameInputRef.current) {
@@ -218,6 +262,26 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
             ) : (
               <span className="truncate flex-1">{entry.name}</span>
             )}
+
+            {gitInfo && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className={cn(
+                        "shrink-0 font-mono text-[10px] leading-none transition-opacity duration-150",
+                        gitInfo.color
+                      )}
+                    >
+                      {gitInfo.label}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">
+                    {gitInfo.tooltip}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
@@ -271,6 +335,15 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
             <ExternalLink className="mr-2 h-4 w-4" />
             Reveal in Finder
           </ContextMenuItem>
+          {gitInfo && onCommitFile && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem onClick={() => onCommitFile(entry.path)}>
+                <GitCommitVertical className="mr-2 h-4 w-4" />
+                Commit...
+              </ContextMenuItem>
+            </>
+          )}
           <ContextMenuSeparator />
           <ContextMenuItem onClick={startRename}>
             <Pencil className="mr-2 h-4 w-4" />
@@ -295,6 +368,8 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
               onMakeProject={onMakeProject}
               showMoveToProject={showMoveToProject}
               expandKeyPrefix={expandKeyPrefix}
+              gitRepoRoot={gitRepoRoot}
+              onCommitFile={onCommitFile}
             />
           ))}
         </div>

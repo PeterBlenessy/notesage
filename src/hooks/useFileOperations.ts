@@ -3,6 +3,46 @@ import { tauriApi } from "@/lib/tauri";
 import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useGitStore } from "@/stores/git-store";
+
+/** Debounced git status refresh per repo. Each repo gets its own timer. */
+const repoRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function refreshGitForPath(filePath: string) {
+  if (!useSettingsStore.getState().gitEnabled) return;
+
+  const repos = useGitStore.getState().repos;
+  const { setFileStatuses, setCurrentBranch } = useGitStore.getState();
+
+  // Find repos whose path is a prefix of the affected file
+  const affectedRepoPaths = Object.keys(repos).filter(
+    (repoPath) => repos[repoPath].isGitRepo && filePath.startsWith(repoPath)
+  );
+
+  if (affectedRepoPaths.length === 0) return;
+
+  for (const repoPath of affectedRepoPaths) {
+    const existing = repoRefreshTimers.get(repoPath);
+    if (existing) clearTimeout(existing);
+
+    repoRefreshTimers.set(
+      repoPath,
+      setTimeout(async () => {
+        repoRefreshTimers.delete(repoPath);
+        try {
+          const [statuses, branch] = await Promise.all([
+            tauriApi.gitStatus(repoPath),
+            tauriApi.gitBranchCurrent(repoPath),
+          ]);
+          setFileStatuses(repoPath, statuses);
+          setCurrentBranch(repoPath, branch);
+        } catch (error) {
+          console.error("Failed to refresh git status:", error);
+        }
+      }, 300)
+    );
+  }
+}
 
 export function useFileOperations() {
   const { openTab, markTabClean } = useEditorStore();
@@ -103,6 +143,7 @@ export function useFileOperations() {
       try {
         await tauriApi.writeFile(filePath, content);
         markTabClean(tabId);
+        refreshGitForPath(filePath);
         return true;
       } catch (error) {
         console.error("Failed to save file:", error);
@@ -118,6 +159,7 @@ export function useFileOperations() {
       try {
         await tauriApi.createFile(filePath);
         await refreshFileTree(parentPath);
+        refreshGitForPath(filePath);
         return filePath;
       } catch (error) {
         console.error("Failed to create file:", error);
@@ -133,6 +175,7 @@ export function useFileOperations() {
       try {
         await tauriApi.createDirectory(folderPath);
         await refreshFileTree(parentPath);
+        refreshGitForPath(folderPath);
         return folderPath;
       } catch (error) {
         console.error("Failed to create folder:", error);
@@ -148,6 +191,8 @@ export function useFileOperations() {
         await tauriApi.renamePath(oldPath, newPath);
         await refreshFileTree(oldPath);
         await refreshFileTree(newPath);
+        refreshGitForPath(oldPath);
+        refreshGitForPath(newPath);
         return true;
       } catch (error) {
         console.error("Failed to rename:", error);
@@ -162,6 +207,7 @@ export function useFileOperations() {
       try {
         await tauriApi.deletePath(path);
         await refreshFileTree(path);
+        refreshGitForPath(path);
         return true;
       } catch (error) {
         console.error("Failed to delete:", error);

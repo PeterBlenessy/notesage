@@ -7,6 +7,14 @@ export interface FileEntry {
   children?: FileEntry[];
 }
 
+export type GitStatus = 'modified' | 'added' | 'staged' | 'untracked' | 'deleted' | 'renamed' | 'conflicted';
+
+export interface GitFileStatus {
+  path: string;
+  status: GitStatus;
+  staged: boolean;
+}
+
 export const tauriApi = {
   async readFile(path: string): Promise<string> {
     return await invoke<string>("read_file", { path });
@@ -50,5 +58,54 @@ export const tauriApi = {
 
   async revealInFinder(path: string): Promise<void> {
     await invoke("reveal_in_finder", { path });
+  },
+
+  // Git operations
+  async gitCheckAvailable(): Promise<boolean> {
+    return await invoke<boolean>("git_check_available");
+  },
+
+  async gitIsRepo(path: string): Promise<boolean> {
+    return await invoke<boolean>("git_is_repo", { path });
+  },
+
+  async gitInit(path: string): Promise<void> {
+    await invoke("git_init", { path });
+  },
+
+  async gitGetConfig(key: string): Promise<string | null> {
+    return await invoke<string | null>("git_get_config", { key });
+  },
+
+  async gitSetConfig(key: string, value: string): Promise<void> {
+    await invoke("git_set_config", { key, value });
+  },
+
+  async gitStatus(path: string): Promise<GitFileStatus[]> {
+    return await invoke<GitFileStatus[]>("git_status", { path });
+  },
+
+  async gitBranchCurrent(path: string): Promise<string> {
+    return await invoke<string>("git_branch_current", { path });
+  },
+
+  async gitBranchList(path: string): Promise<string[]> {
+    return await invoke<string[]>("git_branch_list", { path });
+  },
+
+  async gitBranchSwitch(path: string, branch: string): Promise<void> {
+    await invoke("git_branch_switch", { path, branch });
+  },
+
+  async gitStage(path: string, files: string[]): Promise<void> {
+    await invoke("git_stage", { path, files });
+  },
+
+  async gitUnstage(path: string, files: string[]): Promise<void> {
+    await invoke("git_unstage", { path, files });
+  },
+
+  async gitCommit(path: string, message: string): Promise<string> {
+    return await invoke<string>("git_commit", { path, message });
   },
 };

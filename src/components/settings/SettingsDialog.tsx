@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, UserCircle2, FileText } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, UserCircle2, FileText, GitBranch, Info } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -20,21 +20,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
+import { tauriApi } from '@/lib/tauri';
 
 interface SettingsDialogProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
 
-type SettingsTab = 'ai' | 'personas' | 'prompts' | 'editor';
+type SettingsTab = 'ai' | 'personas' | 'prompts' | 'editor' | 'git';
 
 const TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
   { id: 'ai', label: 'AI Providers', icon: Sparkles },
   { id: 'personas', label: 'AI Personas', icon: UserCircle2 },
   { id: 'prompts', label: 'Custom Prompts', icon: FileText },
   { id: 'editor', label: 'Editor', icon: Sliders },
+  { id: 'git', label: 'Version Control', icon: GitBranch },
 ];
 
 // Page dimensions in cm
@@ -75,8 +77,30 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     marginBottom, setMarginBottom,
     marginLeft, setMarginLeft,
     marginRight, setMarginRight,
+    gitEnabled, setGitEnabled,
   } = useSettingsStore();
   const [activeTab, setActiveTab] = useState<SettingsTab>('ai');
+  const [gitNotAvailable, setGitNotAvailable] = useState(false);
+
+  const handleGitToggle = useCallback(async (checked: boolean) => {
+    if (!checked) {
+      setGitEnabled(false);
+      setGitNotAvailable(false);
+      return;
+    }
+
+    try {
+      const available = await tauriApi.gitCheckAvailable();
+      if (available) {
+        setGitEnabled(true);
+        setGitNotAvailable(false);
+      } else {
+        setGitNotAvailable(true);
+      }
+    } catch {
+      setGitNotAvailable(true);
+    }
+  }, [setGitEnabled]);
 
   const unitLabel = measurementUnit === 'cm' ? 'cm' : 'in';
 
@@ -362,6 +386,62 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         ))}
                       </div>
                     </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            {activeTab === 'git' && (
+              <div className="p-6 space-y-6">
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-semibold">Git Integration</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Version control settings
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border transition-colors"
+                      style={{ borderColor: 'var(--color-border)' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                    >
+                      <div>
+                        <Label
+                          htmlFor="git-integration"
+                          className="text-[13px] font-medium cursor-pointer"
+                        >
+                          Enable Git
+                        </Label>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Track file changes, view status indicators, switch branches, and commit from within the app
+                        </p>
+                      </div>
+                      <Switch
+                        id="git-integration"
+                        checked={gitEnabled}
+                        onCheckedChange={handleGitToggle}
+                        className="ml-auto"
+                      />
+                    </div>
+
+                    {gitNotAvailable && (
+                      <div className="flex gap-2.5 rounded-md border border-border bg-muted/50 p-3">
+                        <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
+                        <div className="space-y-1 text-xs text-muted-foreground">
+                          <p className="font-medium text-foreground">Git is not installed on this system</p>
+                          <p>
+                            Install it from{' '}
+                            <span className="font-medium text-foreground">git-scm.com</span>
+                            {' '}or via Homebrew:
+                          </p>
+                          <pre className="rounded bg-muted px-2 py-1.5 font-mono text-[11px] select-all">
+                            brew install git
+                          </pre>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

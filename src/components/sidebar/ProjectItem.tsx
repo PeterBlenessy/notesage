@@ -1,8 +1,13 @@
-import { ChevronRight, Folder, FolderOpen, Settings, X, ExternalLink } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronRight, Folder, FolderOpen, Settings, X, ExternalLink, GitCommitVertical, GitBranch } from "lucide-react";
 import { tauriApi } from "@/lib/tauri";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useSettingsStore } from "@/stores/settings-store";
+import { useGitOperations } from "@/hooks/useGitOperations";
 import { FileTree } from "./FileTree";
+import { BranchIndicator } from "./BranchIndicator";
+import { CommitDialog } from "@/components/git/CommitDialog";
 import { cn } from "@/lib/utils";
 import {
   ContextMenu,
@@ -32,6 +37,21 @@ export function ProjectItem({
   );
   const metadata = useProjectMetadataStore((s) => s.metadataMap[projectPath]);
   const { isExpanded, toggleFolder } = useWorkspaceStore();
+  const gitEnabled = useSettingsStore((s) => s.gitEnabled);
+  const { isGitRepo, initGit, initRepo } = useGitOperations(projectPath);
+
+  // Initialize git when this project is first rendered (only if git is enabled)
+  useEffect(() => {
+    if (gitEnabled) {
+      initGit();
+    }
+  }, [projectPath, initGit, gitEnabled]);
+
+  const [commitDialogOpen, setCommitDialogOpen] = useState(false);
+  const [commitPreSelected, setCommitPreSelected] = useState<string[]>([]);
+
+  // Determine if this project has active git data
+  const isGitActive = gitEnabled && isGitRepo;
 
   const folderName = projectPath.split("/").filter(Boolean).pop() || "Project";
   const displayName = metadata?.name || folderName;
@@ -41,6 +61,7 @@ export function ProjectItem({
   if (!project) return null;
 
   return (
+    <>
     <ContextMenu>
       <ContextMenuTrigger>
         <div>
@@ -88,7 +109,13 @@ export function ProjectItem({
                 onFileClick={onFileClick}
                 onNewNote={onNewNote}
                 expandKeyPrefix="project:"
+                gitRepoRoot={isGitActive ? projectPath : undefined}
+                onCommitFile={isGitActive ? (filePath) => {
+                  setCommitPreSelected([filePath]);
+                  setCommitDialogOpen(true);
+                } : undefined}
               />
+              {isGitActive && <BranchIndicator projectPath={projectPath} />}
             </div>
           )}
         </div>
@@ -98,6 +125,33 @@ export function ProjectItem({
           <Settings className="mr-2 h-4 w-4" />
           Project Settings
         </ContextMenuItem>
+        {gitEnabled && !isGitActive && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem onClick={async () => {
+              try {
+                await initRepo();
+              } catch (error) {
+                console.error("Failed to initialize git repository:", error);
+              }
+            }}>
+              <GitBranch className="mr-2 h-4 w-4" />
+              Initialize Git Repository
+            </ContextMenuItem>
+          </>
+        )}
+        {isGitActive && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem onClick={() => {
+              setCommitPreSelected([]);
+              setCommitDialogOpen(true);
+            }}>
+              <GitCommitVertical className="mr-2 h-4 w-4" />
+              Commit...
+            </ContextMenuItem>
+          </>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => tauriApi.revealInFinder(projectPath)}>
           <ExternalLink className="mr-2 h-4 w-4" />
@@ -110,5 +164,15 @@ export function ProjectItem({
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
+
+    {isGitActive && (
+      <CommitDialog
+        open={commitDialogOpen}
+        onOpenChange={setCommitDialogOpen}
+        repoPath={projectPath}
+        preSelectedFiles={commitPreSelected}
+      />
+    )}
+    </>
   );
 }

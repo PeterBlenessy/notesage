@@ -16,13 +16,16 @@ async fn read_file(path: String) -> Result<String, String>
 ```
 
 **Parameters:**
+
 - `path`: Absolute path to the file
 
 **Returns:**
+
 - `Ok(String)`: File contents as UTF-8 string
 - `Err(String)`: Error message if file cannot be read
 
 **Frontend usage:**
+
 ```typescript
 import { invoke } from '@tauri-apps/api/core';
 
@@ -39,14 +42,17 @@ async fn write_file(path: String, content: String) -> Result<(), String>
 ```
 
 **Parameters:**
+
 - `path`: Absolute path to the file
 - `content`: File contents to write
 
 **Returns:**
+
 - `Ok(())`: Success
 - `Err(String)`: Error message if file cannot be written
 
 **Frontend usage:**
+
 ```typescript
 await invoke('write_file', { path: '/path/to/file.md', content: '# Hello' });
 ```
@@ -61,13 +67,16 @@ async fn list_directory(path: String) -> Result<Vec<FileEntry>, String>
 ```
 
 **Parameters:**
+
 - `path`: Absolute path to the directory
 
 **Returns:**
+
 - `Ok(Vec<FileEntry>)`: Array of file entries with nested children
 - `Err(String)`: Error message if directory cannot be read
 
 **Frontend usage:**
+
 ```typescript
 const entries = await invoke<FileEntry[]>('list_directory', { path: '/path/to/project' });
 ```
@@ -82,9 +91,11 @@ async fn create_file(path: String) -> Result<(), String>
 ```
 
 **Parameters:**
+
 - `path`: Absolute path to the new file
 
 **Returns:**
+
 - `Ok(())`: Success
 - `Err(String)`: Error message if file cannot be created
 
@@ -98,9 +109,11 @@ async fn create_directory(path: String) -> Result<(), String>
 ```
 
 **Parameters:**
+
 - `path`: Absolute path to the new directory
 
 **Returns:**
+
 - `Ok(())`: Success
 - `Err(String)`: Error message if directory cannot be created
 
@@ -114,10 +127,12 @@ async fn rename_path(old_path: String, new_path: String) -> Result<(), String>
 ```
 
 **Parameters:**
+
 - `old_path`: Current absolute path
 - `new_path`: New absolute path
 
 **Returns:**
+
 - `Ok(())`: Success
 - `Err(String)`: Error message if path cannot be renamed
 
@@ -131,9 +146,11 @@ async fn delete_path(path: String) -> Result<(), String>
 ```
 
 **Parameters:**
+
 - `path`: Absolute path to delete
 
 **Returns:**
+
 - `Ok(())`: Success
 - `Err(String)`: Error message if path cannot be deleted
 
@@ -149,9 +166,11 @@ async fn path_exists(path: String) -> Result<bool, String>
 ```
 
 **Parameters:**
+
 - `path`: Absolute path to check
 
 **Returns:**
+
 - `Ok(true)`: Path exists
 - `Ok(false)`: Path does not exist
 - `Err(String)`: Error message if check fails
@@ -171,12 +190,14 @@ pub struct FileEntry {
 ```
 
 **Fields:**
+
 - `name`: Filename or directory name (not full path)
 - `path`: Absolute path to the file/directory
 - `is_directory`: `true` if this is a directory, `false` if file
 - `children`: For directories, contains nested FileEntry array. For files, this is `None`.
 
 **TypeScript interface:**
+
 ```typescript
 interface FileEntry {
   name: string;
@@ -200,14 +221,17 @@ async fn open_folder_dialog(app: tauri::AppHandle) -> Result<Option<String>, Str
 ```
 
 **Parameters:**
+
 - `app`: Tauri AppHandle (automatically injected by Tauri)
 
 **Returns:**
+
 - `Ok(Some(String))`: User selected a folder, returns absolute path
 - `Ok(None)`: User cancelled the dialog
 - `Err(String)`: Error message if dialog fails
 
 **Frontend usage:**
+
 ```typescript
 const folderPath = await invoke<string | null>('open_folder_dialog');
 if (folderPath) {
@@ -229,9 +253,11 @@ pub async fn ai_generate_text(request: AIRequest) -> Result<String, String>
 ```
 
 **Parameters:**
+
 - `request`: AIRequest struct (see below)
 
 **Returns:**
+
 - `Ok(String)`: Generated text from AI
 - `Err(String)`: Error message if generation fails
 
@@ -250,12 +276,14 @@ pub async fn ai_chat(
 ```
 
 **Parameters:**
+
 - `messages`: Array of ChatMessage structs
 - `provider`: "anthropic", "openai", or "ollama"
 - `api_key`: API key for Anthropic/OpenAI (None for Ollama)
 - `ollama_url`: Ollama server URL (None for Anthropic/OpenAI)
 
 **Returns:**
+
 - `Ok(String)`: AI response message
 - `Err(String)`: Error message if chat fails
 
@@ -291,6 +319,7 @@ All Tauri commands return `Result<T, String>`. The frontend should:
 3. Log errors to console for debugging
 
 **Example:**
+
 ```typescript
 try {
   await invoke('write_file', { path, content });
@@ -311,6 +340,6 @@ try {
 ## IPC Performance
 
 - Commands are async and non-blocking
-- Large file operations (>1MB) may take time - show loading indicators in UI
+- Large file operations (&gt;1MB) may take time - show loading indicators in UI
 - Consider debouncing rapid file operations (e.g., auto-save)
 - Use batch operations where possible (e.g., read multiple files in one call)

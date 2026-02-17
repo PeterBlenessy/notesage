@@ -4,13 +4,12 @@
 
 Notesage is a WYSIWYG markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
-**Current version:** 0.3.0
-**Current phase:** Phase 1 complete, Phase 2 (AI Collaboration) complete.
+**Current version:** 0.3.0 **Current phase:** Phase 1 complete, Phase 2 (AI Collaboration) complete.
 
 ## Tech Stack
 
 | Layer | Technology | Version |
-|-------|-----------|---------|
+| --- | --- | --- |
 | Desktop shell | Tauri | v2 (latest stable) |
 | Frontend | React 19+ + TypeScript 5+ | Latest |
 | Editor | Tiptap v2 (wraps ProseMirror) | Latest |
@@ -27,6 +26,7 @@ Notesage is a WYSIWYG markdown editor with AI collaboration capabilities, packag
 **NEVER build a custom component if shadcn/ui already has one.** Check shadcn/ui docs before creating anything.
 
 Install as needed:
+
 ```bash
 pnpm dlx shadcn@latest add button dropdown-menu dialog tabs tooltip input select switch
 ```
@@ -59,7 +59,7 @@ Only build custom for app-specific features (editor, AI decorations).
 **Before building anything, read the relevant docs:**
 
 | Need | Read |
-|------|------|
+| --- | --- |
 | Architecture, project structure, data flow | @docs/architecture.md |
 | UI/UX requirements, typography, colors, component specs | @docs/design-system.md |
 | Current phase scope, requirements, quality gates | @docs/phase-1-spec.md |
@@ -72,12 +72,12 @@ Only build custom for app-specific features (editor, AI decorations).
 ## Development Lifecycle
 
 | Command | Purpose |
-|---------|---------|
+| --- | --- |
 | `/prd <feature>` | Create a Product Requirements Document |
 | `/plan-tasks <prd-or-feature>` | Break down into implementation tasks |
 | `/impl <task>` | Implementation guidance with relevant context |
 | `/verify <prd-or-feature>` | Verify against PRD and quality gates |
-| `/release <patch\|minor\|major>` | Version bump, changelog, release prep |
+| \`/release &lt;patch | minor |
 | `/review-code` | Code review against conventions |
 | `/review-ui` | Design review against design system |
 | `/test` | Run full test suite |
@@ -110,19 +110,31 @@ The app version is defined in `package.json`. The Tauri config (`src-tauri/tauri
 Phase 1 must pass ALL of these:
 
 **Functional:**
+
 - [ ] Open folder, display file tree
+
 - [ ] Click file → opens in WYSIWYG editor
+
 - [ ] All markdown syntax renders correctly
+
 - [ ] Round-trip test: parse → serialize → identical markdown
+
 - [ ] Multi-tab editing, unsaved changes indicator
+
 - [ ] Save (Cmd+S), auto-save, create/rename/delete files
+
 - [ ] Light/dark theme with smooth transitions
 
 **Design (equally important):**
+
 - [ ] Looks like Linear/Bear/Craft, not a hackathon project
+
 - [ ] All interactive elements have hover/active/focus states
+
 - [ ] Consistent spacing, colors, typography
+
 - [ ] Works perfectly in both light and dark mode
+
 - [ ] No default browser UI (checkboxes, scrollbars)
 
 **See @docs/phase-1-spec.md for complete quality gates.**
@@ -132,6 +144,7 @@ Phase 1 must pass ALL of these:
 **Status:** ✅ Complete
 
 Implemented:
+
 - AI provider abstraction (Anthropic, OpenAI, Ollama)
 - Settings dialog with provider configuration
 - Chat panel (Cmd+Shift+A to toggle)
