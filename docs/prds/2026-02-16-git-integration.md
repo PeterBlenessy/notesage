@@ -1,6 +1,6 @@
 # PRD: Git Integration (Core)
 
-**Date:** 2026-02-16 **Phase:** 3 (Project Workspace) **Status:** Draft
+**Date:** 2026-02-16 **Phase:** 3 (Project Workspace) **Status:** Implemented
 
 ---
 
@@ -37,11 +37,11 @@ Notesage users working in git repositories have no visibility into file status (
 
 ## Technical Approach
 
-### Backend — Rust with `git2` crate
+### Backend — Rust with git CLI
 
 All git operations go through Tauri IPC commands in a new `src-tauri/src/commands/git.rs` module. This follows the established pattern in `commands/file.rs` and `commands/ai.rs`.
 
-Use the `git2` crate (libgit2 Rust bindings) for all git operations. No dependency on the git CLI.
+Uses the system `git` CLI via `std::process::Command` for all git operations. The PRD originally specified the `git2` crate (libgit2 bindings), but the CLI approach was chosen instead to avoid the build complexity of linking libgit2 (C library cross-compilation, OpenSSL/libssh2 dependencies). The trade-off is a runtime dependency on git being installed — the implementation includes a `git_check_available()` command that detects this and surfaces a warning in settings if git is missing.
 
 **New Tauri commands:**
 
@@ -76,7 +76,7 @@ git-store:
 - On project open: check `git_is_repo`, if true fetch status + branch
 - After every file save (`write_file`): refresh git status
 - After stage/unstage/commit/branch switch: refresh git status
-- Debounce rapid saves (500ms) to avoid hammering `git2`
+- Debounce rapid saves (300ms) to keep status responsive
 
 ### Sidebar Integration
 
@@ -84,16 +84,16 @@ Extend `FileTreeItem` to display git status indicators next to file names:
 
 | Status | Indicator | Color |
 | --- | --- | --- |
-| Modified (unstaged) | `M` | `text-yellow-600 dark:text-yellow-500` |
-| Staged | `S` | `text-green-600 dark:text-green-500` |
-| Untracked | `U` | `text-muted-foreground` |
-| Conflicted | `C` | `text-destructive` |
-| Deleted | `D` | `text-destructive` |
-| Renamed | `R` | `text-green-600 dark:text-green-500` |
+| Modified (unstaged) | `M` | `text-muted-foreground/50` |
+| Staged | `S` | `text-muted-foreground/50` |
+| Untracked | `U` | `text-muted-foreground/50` |
+| Conflicted | `C` | `text-muted-foreground/50` |
+| Deleted | `D` | `text-muted-foreground/50` |
+| Renamed | `R` | `text-muted-foreground/50` |
 
-Indicators are small monospace badges (text-xs, font-mono) right-aligned in the file tree row. Directories show a summary indicator if any child has changes.
+Indicators are small monospace badges (`font-mono text-[10px]`) right-aligned in the file tree row. Directories show a summary `●` dot indicator if any child has changes.
 
-**Note on color exception:** Git status indicators use semantic colors (yellow for modified, green for staged, red for deleted/conflict) as an exception to the greyscale palette. These are functional status colors, not accent/brand colors, similar to how `--color-destructive` red is already permitted.
+All status indicators use the same muted greyscale color, consistent with the design system's strictly neutral palette. The letter itself (M, S, U, C, D, R) conveys the status rather than color differentiation. This keeps the sidebar visually calm and avoids introducing chromatic accent colors.
 
 ### Branch Indicator
 
@@ -119,8 +119,9 @@ The commit flow:
    - Commit button
 2. User checks files to stage, writes message, clicks commit
 3. Calls `git_stage` for checked files, then `git_commit`
-4. Success toast with short commit hash
-5. Dialog closes, git status refreshes
+4. Dialog closes, git status refreshes
+
+**Toast notifications:** The commit dialog handles feedback inline — errors are shown within the dialog itself, and success is implicit (the dialog closes and the status indicators update). A toast with the short commit hash after successful commit would be a nice polish addition but is not currently implemented. Similarly, git errors outside the commit dialog (e.g., branch switch failures, status fetch failures) are logged to console rather than surfaced as toasts. Adding `sonner` toasts for these cases would improve discoverability of errors.
 
 ## UI/UX
 
@@ -154,7 +155,8 @@ The commit flow:
 
 - Not a git repo: git features completely hidden, no empty state needed
 - No changes: commit dialog shows "No changes to commit" with muted text
-- Git error: toast with error message (e.g., "Failed to read git status: ...")
+- Git error: errors shown inline in commit dialog; other git errors logged to console
+- Git identity missing: commit dialog shows inline form to configure `user.name` and `user.email`
 
 ## Data Model
 
@@ -205,11 +207,9 @@ async gitCommit(path: string, message: string): Promise<string>;
 
 ## Dependencies
 
-### Rust (add to `src-tauri/Cargo.toml`)
+### Rust
 
-```toml
-git2 = "0.19"  # libgit2 bindings — check latest version at build time
-```
+No additional crate dependencies. Git operations use the system `git` CLI via `std::process::Command`.
 
 No new frontend dependencies. Uses existing shadcn/ui components (`dialog`, `dropdown-menu`, `checkbox`, `input`, `button`).
 
@@ -255,7 +255,7 @@ No new frontend dependencies. Uses existing shadcn/ui components (`dialog`, `dro
 
 - [ ] Works in both light and dark mode
 
-- [ ] No chromatic accent colors beyond the semantic status colors
+- [ ] No chromatic accent colors — all status indicators use greyscale
 
 ## Out of Scope
 
@@ -263,7 +263,7 @@ No new frontend dependencies. Uses existing shadcn/ui components (`dialog`, `dro
 - **Conflict resolution** — Merge conflict UI. Future enhancement.
 - **Remote operations** — Push, pull, fetch. Users use terminal for this.
 - **Git log / history** — Viewing commit history. Future enhancement.
-- **Git init** — Creating new repos from within the app.
+- **~~Git init~~** ~~— Creating new repos from within the app.~~ *(Implemented:* `git_init` *command added as a bonus.)*
 - **Stashing** — Git stash operations.
 - **Staging hunks** — Partial file staging (only whole-file staging).
 - **Commit amend** — Only new commits supported initially.
