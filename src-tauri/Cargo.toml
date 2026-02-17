@@ -30,4 +30,5 @@ futures = "0.3"
 bytes = "1"
 urlencoding = "2"
 dirs = "5"
+tauri-plugin-window-state = "2.4.1"
 

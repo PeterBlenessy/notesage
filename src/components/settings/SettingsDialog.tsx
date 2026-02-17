@@ -32,10 +32,10 @@ interface SettingsDialogProps {
 type SettingsTab = 'ai' | 'personas' | 'prompts' | 'editor' | 'git';
 
 const TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
+  { id: 'editor', label: 'Editor', icon: Sliders },
   { id: 'ai', label: 'AI Providers', icon: Sparkles },
   { id: 'personas', label: 'AI Personas', icon: UserCircle2 },
   { id: 'prompts', label: 'Custom Prompts', icon: FileText },
-  { id: 'editor', label: 'Editor', icon: Sliders },
   { id: 'git', label: 'Version Control', icon: GitBranch },
 ];
 
@@ -79,7 +79,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     marginRight, setMarginRight,
     gitEnabled, setGitEnabled,
   } = useSettingsStore();
-  const [activeTab, setActiveTab] = useState<SettingsTab>('ai');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('editor');
   const [gitNotAvailable, setGitNotAvailable] = useState(false);
 
   const handleGitToggle = useCallback(async (checked: boolean) => {
