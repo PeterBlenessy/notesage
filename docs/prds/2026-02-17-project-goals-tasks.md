@@ -6,7 +6,7 @@
 
 ## Summary
 
-**14 tasks: 3S, 7M, 4L**
+**14 tasks: 3S, 7M, 4L — All complete**
 
 Three distinct layers of work:
 
@@ -25,7 +25,7 @@ Tasks are ordered so each builds on the previous. The frontmatter work (#2–#5)
 
 ## Tasks
 
-### #1 — Rename `.note-sage` to `.notesage` across codebase
+### #1 ✅ — Rename `.note-sage` to `.notesage` across codebase
 
 | Field | Value |
 | --- | --- |
@@ -53,7 +53,7 @@ Add migration logic in `useProjectMetadata.ts`: when loading a project, if `.not
 
 ---
 
-### #2 — Install YAML parser and create frontmatter utility
+### #2 ✅ — Install YAML parser and create frontmatter utility
 
 | Field | Value |
 | --- | --- |
@@ -87,7 +87,7 @@ Export `Frontmatter`, `GoalFrontmatter`, `NoteFrontmatter` types.
 
 ---
 
-### #3 — Add frontmatter to editor store and file operations pipeline
+### #3 ✅ — Add frontmatter to editor store and file operations pipeline
 
 | Field | Value |
 | --- | --- |
@@ -127,7 +127,7 @@ Modify the file open/save pipeline:
 
 ---
 
-### #4 — Build frontmatter indicator and editor UI
+### #4 ✅ — Build frontmatter indicator and editor UI
 
 | Field | Value |
 | --- | --- |
@@ -172,7 +172,7 @@ Mount this component above the Tiptap editor content in `Editor.tsx` or `EditorC
 
 ---
 
-### #5 — Frontmatter round-trip tests
+### #5 ✅ — Frontmatter round-trip tests
 
 | Field | Value |
 | --- | --- |
@@ -201,7 +201,7 @@ Write unit tests for `parseFrontmatter` and `serializeFrontmatter`:
 
 ---
 
-### #6 — Create goal template definitions
+### #6 ✅ — Create goal template definitions
 
 | Field | Value |
 | --- | --- |
@@ -231,7 +231,7 @@ Export `GOAL_TEMPLATES` array and `GoalTemplate` interface.
 
 ---
 
-### #7 — Create project template definitions
+### #7 ✅ — Create project template definitions
 
 | Field | Value |
 | --- | --- |
@@ -258,7 +258,7 @@ Export `PROJECT_TEMPLATES` array and `ProjectTemplate` interface.
 
 ---
 
-### #8 — Update New Project dialog with template picker
+### #8 ✅ — Update New Project dialog with template picker
 
 | Field | Value |
 | --- | --- |
@@ -299,7 +299,7 @@ Follow existing patterns in the dialog (shadcn/ui `Dialog`, `Input`, `Button`). 
 
 ---
 
-### #9 — Build goal template picker dialog
+### #9 ✅ — Build goal template picker dialog
 
 | Field | Value |
 | --- | --- |
@@ -338,7 +338,7 @@ Create a dialog for adding goal files to existing projects:
 
 ---
 
-### #10 — Add "New Goals File..." to project context menu
+### #10 ✅ — Add "New Goals File..." to project context menu
 
 | Field | Value |
 | --- | --- |
@@ -366,7 +366,7 @@ Wire up the `GoalTemplateDialog` with the project path and file tree refresh cal
 
 ---
 
-### #11 — Goals discovery hook
+### #11 ✅ — Goals discovery hook
 
 | Field | Value |
 | --- | --- |
@@ -407,7 +407,7 @@ The hook should be called from the project context where AI operations happen.
 
 ---
 
-### #12 — Inject goals into AI chat context
+### #12 ✅ — Inject goals into AI chat context
 
 | Field | Value |
 | --- | --- |
@@ -447,7 +447,7 @@ Follow the existing pattern where `projectContext` is read from `project-metadat
 
 ---
 
-### #13 — Update chat placeholder when goals exist
+### #13 ✅ — Update chat placeholder when goals exist
 
 | Field | Value |
 | --- | --- |
@@ -473,7 +473,7 @@ This requires either passing the goals state down as a prop or accessing it from
 
 ---
 
-### #14 — End-to-end verification
+### #14 ✅ — End-to-end verification
 
 | Field | Value |
 | --- | --- |

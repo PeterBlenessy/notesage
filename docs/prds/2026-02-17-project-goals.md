@@ -1,6 +1,6 @@
 # PRD: Project Goals
 
-**Date:** 2026-02-17 **Phase:** 3 (Project Workspace) **Status:** Draft
+**Date:** 2026-02-17 **Phase:** 3 (Project Workspace) **Status:** Complete
 
 ---
 
@@ -357,57 +357,57 @@ pnpm add yaml  # Lightweight YAML parser for frontmatter
 
 ### Functional
 
-- [ ] `.note-sage` renamed to `.notesage` across entire codebase
+- [x] `.note-sage` renamed to `.notesage` across entire codebase
 
-- [ ] Migration: existing projects with `.note-sage` are auto-renamed on load
+- [x] Migration: existing projects with `.note-sage` are auto-renamed on load
 
-- [ ] Frontmatter parsed on file open and preserved on save (round-trip)
+- [x] Frontmatter parsed on file open and preserved on save (round-trip)
 
-- [ ] Frontmatter indicator visible at top of editor when frontmatter exists
+- [x] Frontmatter indicator visible at top of editor when frontmatter exists
 
-- [ ] Frontmatter block expandable/collapsible with inline editing
+- [x] Frontmatter block expandable/collapsible with inline editing
 
-- [ ] Files without frontmatter show no indicator and work unchanged
+- [x] Files without frontmatter show no indicator and work unchanged
 
-- [ ] New Project dialog shows project template picker
+- [x] New Project dialog shows project template picker
 
-- [ ] Creating a project with a template scaffolds correct folders and goals file with frontmatter
+- [x] Creating a project with a template scaffolds correct folders and goals file with frontmatter
 
-- [ ] Goals file has `type: goal` frontmatter with template, created date, and title
+- [x] Goals file has `type: goal` frontmatter with template, created date, and title
 
-- [ ] Goals file opens in the WYSIWYG editor and round-trips correctly (including frontmatter)
+- [x] Goals file opens in the WYSIWYG editor and round-trips correctly (including frontmatter)
 
-- [ ] Can add goals files to existing projects via context menu
+- [x] Can add goals files to existing projects via context menu
 
-- [ ] AI context loader discovers goals files by scanning for `type: goal` frontmatter
+- [x] AI context loader discovers goals files by scanning for `type: goal` frontmatter
 
-- [ ] AI chat includes goals content in system prompt when goals exist
+- [x] AI chat includes goals content in system prompt when goals exist
 
-- [ ] AI chat works normally when no goals files exist (no errors)
+- [x] AI chat works normally when no goals files exist (no errors)
 
-- [ ] Goal template picker shows all templates with descriptions
+- [x] Goal template picker shows all templates with descriptions
 
-- [ ] Multiple goals files per project are supported
+- [x] Multiple goals files per project are supported
 
-- [ ] "Blank" project template creates no goals or extra folders
+- [x] "Blank" project template creates no goals or extra folders
 
 ### Design
 
-- [ ] Frontmatter indicator is subtle and fits the editor aesthetic (not jarring)
+- [x] Frontmatter indicator is subtle and fits the editor aesthetic (not jarring)
 
-- [ ] Frontmatter block expand/collapse has smooth transition
+- [x] Frontmatter block expand/collapse has smooth transition
 
-- [ ] Project template selector in New Project dialog is clean and intuitive
+- [x] Project template selector in New Project dialog is clean and intuitive
 
-- [ ] Goal template picker dialog is polished (proper spacing, selection states)
+- [x] Goal template picker dialog is polished (proper spacing, selection states)
 
-- [ ] All interactive elements have hover/active/focus states
+- [x] All interactive elements have hover/active/focus states
 
-- [ ] Works in both light and dark mode
+- [x] Works in both light and dark mode
 
-- [ ] No chromatic accent colors
+- [x] No chromatic accent colors
 
-- [ ] Transitions on dialog open/close
+- [x] Transitions on dialog open/close
 
 ## Out of Scope
 
