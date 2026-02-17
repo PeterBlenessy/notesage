@@ -4,10 +4,11 @@ import { ArrowUp } from 'lucide-react';
 interface ChatInputProps {
   onSend: (message: string) => void;
   disabled?: boolean;
+  placeholder?: string;
   footer?: React.ReactNode;
 }
 
-export function ChatInput({ onSend, disabled, footer }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, placeholder = 'Ask anything...', footer }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -58,7 +59,7 @@ export function ChatInput({ onSend, disabled, footer }: ChatInputProps) {
             autoResize();
           }}
           onKeyDown={handleKeyDown}
-          placeholder="Ask anything..."
+          placeholder={placeholder}
           disabled={disabled}
           rows={1}
           className="flex-1 bg-transparent text-[13px] resize-none outline-none placeholder:text-muted-foreground/50 max-h-[120px] py-0.5 leading-relaxed overflow-y-auto"

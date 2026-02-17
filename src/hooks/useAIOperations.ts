@@ -1,11 +1,26 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useMemo } from 'react';
 import { useAIStore, getAllPersonas, BUILT_IN_PERSONAS } from '@/stores/ai-store';
 import { useActiveProject } from '@/hooks/useActiveProject';
+import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { useChatStore } from '@/stores/chat-store';
 import { getAIProvider } from '@/lib/ai';
 import type { ChatMessage } from '@/lib/ai/types';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+
+/**
+ * Build a context string from discovered goal files.
+ * Returns empty string if no goals exist.
+ */
+function buildGoalsContext(goalFiles: { name: string; content: string }[]): string {
+  if (goalFiles.length === 0) return '';
+
+  const sections = goalFiles
+    .map((g) => `### ${g.name}\n${g.content}`)
+    .join('\n\n');
+
+  return `## Project Goals\n\nThe following goal files exist in this project:\n\n${sections}`;
+}
 
 export function useAIOperations() {
   const aiStore = useAIStore();
@@ -14,7 +29,7 @@ export function useAIOperations() {
   const cleanupRef = useRef<(() => void) | null>(null);
 
   // Resolve effective provider: active project override > global
-  const { metadata } = useActiveProject();
+  const { projectPath, metadata } = useActiveProject();
   const effectiveProvider = metadata?.ai.provider ?? aiStore.provider;
 
   // Resolve effective persona: project override > global
@@ -22,10 +37,15 @@ export function useAIOperations() {
   const allPersonas = getAllPersonas(aiStore);
   const effectivePersona = allPersonas.find((p) => p.id === effectivePersonaId) || BUILT_IN_PERSONAS[0];
 
-  // Compose system message: project context + persona system message
+  // Discover goal files for the active project
+  const { goalFiles } = useGoalsDiscovery(projectPath);
+  const goalsContext = useMemo(() => buildGoalsContext(goalFiles), [goalFiles]);
+
+  // Compose system message: project context + goals + persona system message
   const projectContext = metadata?.ai.projectContext || '';
-  const composedSystemMessage = projectContext
-    ? `${projectContext}\n\n${effectivePersona.systemMessage}`
+  const contextParts = [projectContext, goalsContext].filter(Boolean).join('\n\n');
+  const composedSystemMessage = contextParts
+    ? `${contextParts}\n\n${effectivePersona.systemMessage}`
     : effectivePersona.systemMessage;
 
   const generateText = useCallback(
@@ -107,7 +127,7 @@ export function useAIOperations() {
           cleanup();
         });
 
-        // System message with composed content (project context + persona)
+        // System message with composed content (project context + goals + persona)
         const systemMessage: ChatMessage = {
           role: 'system',
           content: composedSystemMessage,

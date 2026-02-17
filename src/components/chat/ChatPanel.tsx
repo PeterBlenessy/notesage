@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import { X, Trash2, Loader2, FileText, ChevronUp } from 'lucide-react';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { X, Trash2, Loader2, FileText, Target, ChevronUp } from 'lucide-react';
 import { PersonaIcon } from '@/components/PersonaIcon';
 import { useChatStore } from '@/stores/chat-store';
 import { useAIStore, getActivePersona, getAllPersonas } from '@/stores/ai-store';
 import { useActiveProject } from '@/hooks/useActiveProject';
 import { useAIOperations } from '@/hooks/useAIOperations';
+import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import {
@@ -29,11 +30,19 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
   const { provider, setActivePersona } = aiStore;
   const activePersona = getActivePersona(aiStore);
   const allPersonas = getAllPersonas(aiStore);
-  const { metadata } = useActiveProject();
+  const { metadata, projectPath } = useActiveProject();
   const hasProjectContext = Boolean(metadata?.ai.projectContext);
+  const { goalFiles } = useGoalsDiscovery(projectPath);
   const { sendChatMessage } = useAIOperations();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [personaOpen, setPersonaOpen] = useState(false);
+
+  const chatPlaceholder = useMemo(() => {
+    if (goalFiles.length > 0) {
+      return 'Ask about your project goals, or type a message...';
+    }
+    return 'Ask anything...';
+  }, [goalFiles.length]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -134,6 +143,7 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
         <ChatInput
           onSend={handleSend}
           disabled={isLoading || !provider}
+          placeholder={chatPlaceholder}
           footer={
             <>
               <Popover open={personaOpen} onOpenChange={setPersonaOpen}>
@@ -175,6 +185,23 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-64">
                       <p className="text-xs">Project context is active for this conversation</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              {goalFiles.length > 0 && (
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex items-center gap-0.5 px-1 py-px rounded text-[10px] font-medium text-muted-foreground" style={{ backgroundColor: 'var(--color-accent)' }}>
+                        <Target className="h-2.5 w-2.5" />
+                        {goalFiles.length} {goalFiles.length === 1 ? 'goal' : 'goals'}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-64">
+                      <p className="text-xs">
+                        {goalFiles.length} project {goalFiles.length === 1 ? 'goal is' : 'goals are'} included as AI context
+                      </p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>

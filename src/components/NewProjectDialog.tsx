@@ -11,6 +11,9 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { tauriApi } from "@/lib/tauri";
+import { serializeFrontmatter } from "@/lib/frontmatter";
+import { PROJECT_TEMPLATES, type ProjectTemplate } from "@/lib/project-templates";
+import { getGoalTemplate } from "@/lib/goal-templates";
 import { FolderOpen, Loader2, Info } from "lucide-react";
 
 interface NewProjectDialogProps {
@@ -26,6 +29,7 @@ export function NewProjectDialog({
 }: NewProjectDialogProps) {
   const [projectName, setProjectName] = useState("");
   const [location, setLocation] = useState("");
+  const [selectedTemplate, setSelectedTemplate] = useState<ProjectTemplate>(PROJECT_TEMPLATES[0]);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -34,6 +38,7 @@ export function NewProjectDialog({
     if (open) {
       setProjectName("");
       setLocation("");
+      setSelectedTemplate(PROJECT_TEMPLATES[0]);
       setError("");
       setIsCreating(false);
       requestAnimationFrame(() => {
@@ -56,7 +61,7 @@ export function NewProjectDialog({
 
   const handleSubmit = async () => {
     const trimmedName = projectName.trim();
-    if (!trimmedName || !location) return;
+    if (!trimmedName || !location || isCreating) return;
 
     setIsCreating(true);
     setError("");
@@ -71,7 +76,40 @@ export function NewProjectDialog({
         return;
       }
 
+      // Create project directory
       await tauriApi.createDirectory(projectPath);
+
+      // Create template folders
+      for (const folder of selectedTemplate.folders) {
+        await tauriApi.createDirectory(`${projectPath}/${folder}`);
+      }
+
+      // Create goal file if template specifies one
+      if (selectedTemplate.goalTemplate && selectedTemplate.goalFilename) {
+        const goalTemplate = getGoalTemplate(selectedTemplate.goalTemplate);
+        if (goalTemplate) {
+          const frontmatter = {
+            type: "goal" as const,
+            template: goalTemplate.id,
+            created: new Date().toISOString().split("T")[0],
+            title: goalTemplate.name,
+          };
+
+          // If goal filename includes a directory, ensure it exists
+          const goalDir = selectedTemplate.goalFilename.split("/").slice(0, -1).join("/");
+          if (goalDir) {
+            const goalDirPath = `${projectPath}/${goalDir}`;
+            const dirExists = await tauriApi.pathExists(goalDirPath);
+            if (!dirExists) {
+              await tauriApi.createDirectory(goalDirPath);
+            }
+          }
+
+          const fileContent = serializeFrontmatter(frontmatter, goalTemplate.content);
+          await tauriApi.writeFile(`${projectPath}/${selectedTemplate.goalFilename}`, fileContent);
+        }
+      }
+
       onCreated(projectPath);
       onOpenChange(false);
     } catch (err) {
@@ -91,7 +129,7 @@ export function NewProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[460px]">
+      <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
           <DialogTitle>New Project</DialogTitle>
           <DialogDescription>
@@ -113,6 +151,34 @@ export function NewProjectDialog({
               placeholder="My Notes"
             />
           </div>
+
+          {/* Template picker */}
+          <div className="space-y-2">
+            <Label>Template</Label>
+            <div className="space-y-2">
+              {PROJECT_TEMPLATES.map((template) => {
+                const isSelected = selectedTemplate.id === template.id;
+                return (
+                  <button
+                    key={template.id}
+                    type="button"
+                    onClick={() => setSelectedTemplate(template)}
+                    className={`w-full text-left rounded-md border px-3 py-2.5 transition-all duration-150 ease-in-out cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                      isSelected
+                        ? "border-foreground/30 bg-muted"
+                        : "border-border hover:bg-muted/50 hover:border-border"
+                    }`}
+                  >
+                    <div className="text-sm font-medium">{template.name}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {template.description}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="project-location">Location</Label>
             <div className="flex gap-2">
