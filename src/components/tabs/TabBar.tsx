@@ -42,9 +42,13 @@ export function TabBar() {
               "group relative flex items-center gap-1.5 px-3 h-8 text-sm rounded-t-md transition-colors shrink-0 max-w-[200px]",
               isActive
                 ? "text-foreground"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                : "text-muted-foreground hover:text-foreground"
             )}
-            style={isActive ? { backgroundColor: 'var(--color-muted)' } : undefined}
+            style={{
+              backgroundColor: isActive ? 'var(--color-muted)' : 'var(--color-accent)',
+            }}
+            onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-muted)'; }}
+            onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
           >
             {/* Active indicator */}
             {isActive && (

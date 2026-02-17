@@ -52,6 +52,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
   const lastLoadedTabId = useRef<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const scrollPositions = useRef<Map<string, number>>(new Map());
   const [renderedWidth, setRenderedWidth] = useState<number | null>(null);
 
   // Convert cm margins to px
@@ -91,12 +93,26 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     editable: true,
   });
 
-  // Update editor content when switching tabs
+  // Update editor content when switching tabs, saving/restoring scroll position
   useEffect(() => {
     if (editor && activeTab && activeTab.id !== lastLoadedTabId.current) {
-      console.log('Switching to tab:', activeTab.id, 'content length:', activeTab.content.length);
+      const scrollEl = scrollAreaRef.current;
+
+      // Save scroll position of the tab we're leaving
+      if (lastLoadedTabId.current && scrollEl) {
+        scrollPositions.current.set(lastLoadedTabId.current, scrollEl.scrollTop);
+      }
+
       lastLoadedTabId.current = activeTab.id;
       editor.commands.setContent(activeTab.content);
+
+      // Restore scroll position of the tab we're switching to
+      if (scrollEl) {
+        const saved = scrollPositions.current.get(activeTab.id) ?? 0;
+        requestAnimationFrame(() => {
+          scrollEl.scrollTop = saved;
+        });
+      }
     }
   }, [activeTab?.id, editor, activeTab]);
 
@@ -302,7 +318,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <Toolbar editor={editor} />
-      <div className="flex-1 overflow-y-auto editor-scroll-area">
+      <div ref={scrollAreaRef} className="flex-1 overflow-y-auto editor-scroll-area">
         <div
           className={`min-h-full flex justify-center ${
             contentWidth === "full" ? "py-4 px-4" : "py-10 px-8"
