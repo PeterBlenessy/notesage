@@ -58,6 +58,14 @@ Inline AI suggestions, chat panel, and provider abstraction.
   - Git identity configuration UI when `user.name`/`user.email` missing
   - Toast notifications for commit success and git errors
   - Status refresh on save, commit, branch switch, and window focus
+- Project goals (v0.6.0)
+  - YAML frontmatter support (parse, preserve, edit)
+  - Goal templates (OKR, Simple Checklist, SMART Goals, Milestone Tracker)
+  - Project templates in New Project dialog (Default, Research, Writing, Blank)
+  - Goal template picker via sidebar context menu
+  - Goals discovery by scanning for `type: goal` frontmatter
+  - AI context injection — goals included in chat system prompt
+  - Multi-select project selector in chat footer
 
 **Remaining features:**
 
@@ -71,10 +79,6 @@ Inline AI suggestions, chat panel, and provider abstraction.
   - Search web from within app
   - Insert search results as references
   - Auto-cite sources
-- Project goals tracking
-  - Define project objectives
-  - AI suggestions based on goals
-  - Progress tracking
 
 **Architecture considerations:**
 
