@@ -11,6 +11,7 @@ import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/comp
 import { Toolbar } from "./Toolbar";
 import { BubbleMenu } from "./BubbleMenu";
 import { StatusBar } from "./StatusBar";
+import { FrontmatterBlock } from "./FrontmatterBlock";
 import "@/styles/editor.css";
 
 // 1 CSS px = 1/96 inch, 1 inch = 2.54 cm
@@ -336,6 +337,9 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
               ...(pageHeight ? { '--page-height': `${pageHeight}px` } : {}),
             } as React.CSSProperties}
           >
+            {activeTab && (
+              <FrontmatterBlock tabId={activeTab.id} frontmatter={activeTab.frontmatter} />
+            )}
             <EditorContent editor={editor} />
           </div>
         </div>
