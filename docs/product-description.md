@@ -2,7 +2,7 @@
 
 Notesage is a WYSIWYG markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
-**Current version:** 0.7.0
+**Current version:** 0.8.0
 
 ## Current Features
 
@@ -36,7 +36,7 @@ Tiptap-powered WYSIWYG editor with full markdown round-tripping.
 
 **Markdown round-tripping:**
 
-- Open .md file -> parse to ProseMirror -> edit in WYSIWYG -> serialize back to clean markdown
+- Open .md file -&gt; parse to ProseMirror -&gt; edit in WYSIWYG -&gt; serialize back to clean markdown
 - Lossless: markdown in must equal markdown out (modulo whitespace normalization)
 - Test fixtures in `tests/fixtures/*.md` covering all syntax
 
@@ -117,39 +117,48 @@ Project management, goals, git integration, and web search.
 - User-configurable search toggle in chat input footer
 - Citation display in chat messages with clickable source URLs
 
+### Document Generation (PDF Export)
+
+Export notes to professionally typeset PDFs using the embedded Typst engine.
+
+**Export triggers:**
+
+- Cmd+Shift+E keyboard shortcut
+- Export button in app toolbar (top right)
+- Right-click sidebar context menu on .md files → "Export as PDF"
+
+**Templates:**
+
+- **Clean** — Sans-serif (Inter), generous whitespace, minimal headers/footers
+- **Academic** — Serif (Source Serif 4), numbered headings, justified text, header with title and page number
+- **Report** — Title page with document title and date, header/footer throughout, table of contents
+
+**Export options:**
+
+- Template selection (Clean, Academic, Report)
+- Include table of contents (on/off)
+- Include page numbers (on/off)
+- Page size (A4, Letter, A5)
+- Settings remembered between exports
+
+**Architecture:**
+
+- Typst 0.14 embedded compiler with custom `World` trait implementation (`NotesageWorld`)
+- Markdown → Typst markup conversion via comrak GFM parser (`markdown_to_typst`)
+- Bundled fonts: Inter (sans-serif), Source Serif 4 (serif), JetBrains Mono (code) — all OFL-licensed, \~2.7MB total
+- Template `.typ` files loaded via `include_str!` with parameterized `#show` rules
+- Tauri commands: `export_pdf` (compile), `save_binary_file` (write to disk)
+- Native save dialog via `@tauri-apps/plugin-dialog`
+- Export settings persisted in settings-store
+
+**Future enhancements (not yet built):**
+
+- DOCX export (preserve formatting, embedded images, Word styles mapping)
+- PPTX export (headings → slides, lists → bullet points, images → slide images)
+- Custom template editor
+- Template marketplace
+
 ## Roadmap
-
-### Phase 4 — Document Generation
-
-**Goal:** Export notes to professional document formats.
-
-**Features:**
-
-- PDF export
-  - Professional typesetting
-  - Custom themes/templates
-  - Table of contents
-  - Page numbers, headers/footers
-- DOCX export
-  - Preserve formatting (headings, lists, tables)
-  - Embedded images
-  - Styles mapping (markdown -> Word styles)
-- PPTX export
-  - Headings -> slides
-  - Lists -> bullet points
-  - Images -> slide images
-  - Speaker notes from blockquotes
-- Template system
-  - Predefined templates (report, article, presentation)
-  - Custom template editor
-  - Template marketplace (future)
-
-**Architecture considerations:**
-
-- New Tauri commands: `export_pdf`, `export_docx`, `export_pptx`
-- Rust libraries: `printpdf`, `docx-rs`, or similar
-- Template files in `templates/` directory
-- Export settings in project metadata
 
 ### Phase 5 — Comments & Change Detection
 
@@ -162,7 +171,7 @@ Project management, goals, git integration, and web search.
   - Comment panel (sidebar or popover) for viewing and managing comments
   - Comments stored as sidecar JSON in `.notesage/comments/{uuid}.json`
   - Lazy document UUID — auto-generated in frontmatter (`id` field) only when first comment or cross-reference is created
-  - Document index (`.notesage/doc-index.json`) mapping UUID -> current file path, rebuilt on project open by scanning frontmatter
+  - Document index (`.notesage/doc-index.json`) mapping UUID -&gt; current file path, rebuilt on project open by scanning frontmatter
   - Comments survive file renames/moves via UUID identity
 - External file change detection
   - Tauri filesystem watcher for open files
@@ -194,7 +203,7 @@ Project management, goals, git integration, and web search.
   - User marks comments as "delegate to AI"
   - AI agent reads delegated comments, makes changes to files on disk
   - App detects changes (Phase 5 infrastructure), shows diffs for review
-  - User accepts/rejects/adds follow-up comments -> iterative collaboration loop
+  - User accepts/rejects/adds follow-up comments -&gt; iterative collaboration loop
 - AI-driven git workflows
   - Smart commit messages generated from diffs
   - PR description drafting
@@ -266,7 +275,7 @@ Project management, goals, git integration, and web search.
 **Architecture considerations:**
 
 - Ship llama.cpp binaries with app
-- Model files (~4GB) as optional download
+- Model files (\~4GB) as optional download
 - Extends existing provider abstraction (`AIProvider` interface)
 
 ### Beyond — Ideas
@@ -287,9 +296,9 @@ These choices from earlier work enable the roadmap ahead:
 1. **ProseMirror over simpler editors** — Decoration system enables inline diffs and AI suggestion overlays. Plugin system allows comment marks without rewriting the editor. CRDT-friendly for future real-time collaboration.
 2. **Tauri commands for all I/O** — Pattern established for file/git operations extends to filesystem watching, agent task management, and web page fetching. Security boundary for AI and agent operations.
 3. **Zustand stores with clear boundaries** — Easy to add new stores (comment-store, workflow-store). Persist middleware supports offline-first approach.
-4. **`.notesage/` metadata directory** — Supports sidecar comments, research storage, workflow definitions, agent task queues. Project-relative paths keep everything portable.
+4. `.notesage/` **metadata directory** — Supports sidecar comments, research storage, workflow definitions, agent task queues. Project-relative paths keep everything portable.
 5. **YAML frontmatter with lazy document UUID** — Stable document identity enables comments that survive renames, cross-document references, and AI task assignments.
-6. **Provider abstraction (`AIProvider` interface)** — Extends to Anthropic Agent SDK, local AI. Web search already implemented as provider-native tools.
+6. **Provider abstraction (**`AIProvider` **interface)** — Extends to Anthropic Agent SDK, local AI. Web search already implemented as provider-native tools.
 7. **Component modularity** — Sidebar, editor, tabs, chat panel are separate — easy to add comment panel, research panel. shadcn/ui components are composable.
 
 ## Implementation Philosophy
@@ -308,32 +317,57 @@ Before any release, ALL of these must pass:
 ### Functional
 
 - [ ] Can open a folder of .md files via native dialog
+
 - [ ] File tree displays all files and folders correctly
+
 - [ ] Clicking a .md file opens it in the WYSIWYG editor
+
 - [ ] All markdown syntax renders correctly in WYSIWYG mode
+
 - [ ] Saving serializes back to clean, valid markdown
-- [ ] **Round-trip test passes**: Open -> edit nothing -> save -> file is identical (whitespace-normalized)
+
+- [ ] **Round-trip test passes**: Open -&gt; edit nothing -&gt; save -&gt; file is identical (whitespace-normalized)
+
 - [ ] Multi-tab editing works (switch tabs preserves state)
+
 - [ ] Unsaved changes indicator works
+
 - [ ] Auto-save on tab switch works
+
 - [ ] Slash commands insert correct block types
+
 - [ ] Top toolbar applies formatting; bubble menu appears on selection with AI actions
+
 - [ ] Create/rename/delete files from sidebar works
+
 - [ ] Light/dark theme works and follows system preference
+
 - [ ] App builds and runs on macOS without errors
+
 - [ ] App starts in under 1 second
+
 - [ ] No console errors during normal operation
 
 ### Design
 
 - [ ] App looks like it belongs next to Linear, Bear, or Craft
+
 - [ ] Sidebar has smooth hover transitions and clear active state
+
 - [ ] Editor content area is max 720px wide and beautifully typeset
+
 - [ ] All interactive elements have hover, active, and focus states
+
 - [ ] Theme switching is smooth with color transitions
+
 - [ ] No default browser UI elements visible (checkboxes, scrollbars, selects)
+
 - [ ] Consistent border-radius, spacing, and color palette throughout
+
 - [ ] Code blocks have syntax highlighting with a tasteful theme
+
 - [ ] Bubble menu has backdrop blur and smooth animation
+
 - [ ] Typography is polished: proper hierarchy, readable sizes, intentional weight usage
+
 - [ ] Looks great in BOTH light and dark mode

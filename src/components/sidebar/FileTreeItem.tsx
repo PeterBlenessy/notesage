@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical } from "lucide-react";
+import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown } from "lucide-react";
 import { FileEntry, tauriApi } from "@/lib/tauri";
 import type { GitStatus } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -46,9 +46,10 @@ interface FileTreeItemProps {
   expandKeyPrefix?: string;
   gitRepoRoot?: string;
   onCommitFile?: (filePath: string) => void;
+  onExportFile?: (filePath: string, fileName: string) => void;
 }
 
-export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProject, showMoveToProject, expandKeyPrefix = "", gitRepoRoot, onCommitFile }: FileTreeItemProps) {
+export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProject, showMoveToProject, expandKeyPrefix = "", gitRepoRoot, onCommitFile, onExportFile }: FileTreeItemProps) {
   const { isExpanded, toggleFolder } = useWorkspaceStore();
   const { tabs, activeTabId } = useEditorStore();
   const { createFolder, renamePath, deletePath } = useFileOperations();
@@ -335,6 +336,15 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
             <ExternalLink className="mr-2 h-4 w-4" />
             Reveal in Finder
           </ContextMenuItem>
+          {!entry.is_directory && entry.name.endsWith(".md") && onExportFile && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem onClick={() => onExportFile(entry.path, entry.name)}>
+                <FileDown className="mr-2 h-4 w-4" />
+                Export as PDF
+              </ContextMenuItem>
+            </>
+          )}
           {gitInfo && onCommitFile && (
             <>
               <ContextMenuSeparator />
@@ -370,6 +380,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
               expandKeyPrefix={expandKeyPrefix}
               gitRepoRoot={gitRepoRoot}
               onCommitFile={onCommitFile}
+              onExportFile={onExportFile}
             />
           ))}
         </div>

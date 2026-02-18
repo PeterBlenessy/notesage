@@ -108,4 +108,20 @@ export const tauriApi = {
   async gitCommit(path: string, message: string): Promise<string> {
     return await invoke<string>("git_commit", { path, message });
   },
+
+  // Export operations
+  async exportPdf(options: {
+    markdown: string;
+    title: string;
+    template: string;
+    includeToc: boolean;
+    includePageNumbers: boolean;
+    pageSize: string;
+  }): Promise<number[]> {
+    return await invoke<number[]>("export_pdf", options);
+  },
+
+  async saveBinaryFile(path: string, data: number[]): Promise<void> {
+    await invoke("save_binary_file", { path, data });
+  },
 };

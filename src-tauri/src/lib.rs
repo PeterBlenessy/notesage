@@ -1,4 +1,5 @@
 mod commands;
+mod export;
 
 use commands::*;
 
@@ -36,6 +37,8 @@ pub fn run() {
             git_stage,
             git_unstage,
             git_commit,
+            export_pdf,
+            save_binary_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -4,6 +4,8 @@ import { persist } from "zustand/middleware";
 type Theme = "light" | "dark" | "system";
 export type ContentWidth = "full" | "auto" | "a4" | "a5" | "letter";
 export type MeasurementUnit = "cm" | "inch";
+export type ExportTemplate = "clean" | "academic" | "report";
+export type ExportPageSize = "a4" | "letter" | "a5";
 
 interface SettingsStore {
   theme: Theme;
@@ -18,6 +20,10 @@ interface SettingsStore {
   chatPanelOpen: boolean;
   notesRootPath: string;
   gitEnabled: boolean;
+  lastExportTemplate: ExportTemplate;
+  lastExportPageSize: ExportPageSize;
+  lastExportIncludeToC: boolean;
+  lastExportIncludePageNumbers: boolean;
   setTheme: (theme: Theme) => void;
   setShowFloatingToolbar: (show: boolean) => void;
   setContentWidth: (width: ContentWidth) => void;
@@ -30,6 +36,10 @@ interface SettingsStore {
   setChatPanelOpen: (open: boolean) => void;
   setNotesRootPath: (path: string) => void;
   setGitEnabled: (enabled: boolean) => void;
+  setLastExportTemplate: (template: ExportTemplate) => void;
+  setLastExportPageSize: (pageSize: ExportPageSize) => void;
+  setLastExportIncludeToC: (include: boolean) => void;
+  setLastExportIncludePageNumbers: (include: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -47,6 +57,10 @@ export const useSettingsStore = create<SettingsStore>()(
       chatPanelOpen: false,
       notesRootPath: "~/Notesage",
       gitEnabled: false,
+      lastExportTemplate: "clean",
+      lastExportPageSize: "a4",
+      lastExportIncludeToC: false,
+      lastExportIncludePageNumbers: false,
 
       setTheme: (theme: Theme) => {
         set({ theme });
@@ -94,6 +108,22 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setGitEnabled: (enabled: boolean) => {
         set({ gitEnabled: enabled });
+      },
+
+      setLastExportTemplate: (template: ExportTemplate) => {
+        set({ lastExportTemplate: template });
+      },
+
+      setLastExportPageSize: (pageSize: ExportPageSize) => {
+        set({ lastExportPageSize: pageSize });
+      },
+
+      setLastExportIncludeToC: (include: boolean) => {
+        set({ lastExportIncludeToC: include });
+      },
+
+      setLastExportIncludePageNumbers: (include: boolean) => {
+        set({ lastExportIncludePageNumbers: include });
       },
     }),
     {

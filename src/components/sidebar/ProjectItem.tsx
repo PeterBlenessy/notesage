@@ -25,6 +25,7 @@ interface ProjectItemProps {
   onNewNote?: (parentPath?: string) => void;
   onOpenProjectSettings?: (projectPath: string) => void;
   onCloseProject?: (projectPath: string) => void;
+  onExportFile?: (filePath: string, fileName: string) => void;
 }
 
 export function ProjectItem({
@@ -33,6 +34,7 @@ export function ProjectItem({
   onNewNote,
   onOpenProjectSettings,
   onCloseProject,
+  onExportFile,
 }: ProjectItemProps) {
   const project = useWorkspaceStore((s) =>
     s.projects.find((p) => p.path === projectPath)
@@ -114,6 +116,7 @@ export function ProjectItem({
                 onNewNote={onNewNote}
                 expandKeyPrefix="project:"
                 gitRepoRoot={isGitActive ? projectPath : undefined}
+                onExportFile={onExportFile}
                 onCommitFile={isGitActive ? (filePath) => {
                   setCommitPreSelected([filePath]);
                   setCommitDialogOpen(true);

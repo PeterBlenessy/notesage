@@ -6,8 +6,10 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore, type ContentWidth } from "@/stores/settings-store";
 import { useEditor } from "@/hooks/useEditor";
 import { useFileOperations } from "@/hooks/useFileOperations";
+import { useExportOperations } from "@/hooks/useExportOperations";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { ExportDialog } from "@/components/ExportDialog";
 import { Toolbar } from "./Toolbar";
 import { BubbleMenu } from "./BubbleMenu";
 import { StatusBar } from "./StatusBar";
@@ -40,9 +42,11 @@ interface EditorProps {
   onOpenFolder?: () => void;
   onOpenProject?: (path: string) => void;
   onOpenFile?: (path: string, name: string) => void;
+  exportOpen?: boolean;
+  onExportOpenChange?: (open: boolean) => void;
 }
 
-export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile }: EditorProps) {
+export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange }: EditorProps) {
   const { tabs, activeTabId, updateTabContent, recentFiles, scrollPositions, setScrollPosition } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const { showFloatingToolbar, contentWidth, marginTop, marginBottom, marginLeft, marginRight } = useSettingsStore();
@@ -159,6 +163,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     onUpdate: handleUpdate,
     editable: true,
   });
+
+  const { exportPdf, isExporting } = useExportOperations(editor);
 
   // Update editor content when switching tabs, saving/restoring scroll position
   useEffect(() => {
@@ -412,6 +418,15 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}
       </div>
       <StatusBar editor={editor} maxWidth={maxWidth} renderedWidth={renderedWidth} />
+      <ExportDialog
+        open={exportOpen ?? false}
+        onOpenChange={(open) => onExportOpenChange?.(open)}
+        onExport={async (options) => {
+          await exportPdf(options);
+          onExportOpenChange?.(false);
+        }}
+        isExporting={isExporting}
+      />
     </div>
   );
 }

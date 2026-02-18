@@ -21,11 +21,20 @@ note-sage/
 │   ├── src/
 │   │   ├── main.rs
 │   │   ├── lib.rs
-│   │   └── commands/       # Tauri IPC commands
+│   │   ├── commands/       # Tauri IPC commands
+│   │   │   ├── mod.rs
+│   │   │   ├── file.rs     # File read/write/list operations
+│   │   │   ├── dialog.rs   # Native file/folder dialogs
+│   │   │   ├── ai.rs       # AI provider commands
+│   │   │   ├── export.rs   # PDF export commands
+│   │   │   └── git.rs      # Git operations
+│   │   └── export/         # PDF export engine
 │   │       ├── mod.rs
-│   │       ├── file.rs     # File read/write/list operations
-│   │       ├── dialog.rs   # Native file/folder dialogs
-│   │       └── ai.rs       # AI provider commands
+│   │       ├── typst_world.rs      # Typst World trait implementation
+│   │       ├── markdown_to_typst.rs # Markdown → Typst markup converter
+│   │       └── templates.rs        # Template loading and parameterization
+│   ├── fonts/              # Bundled fonts (Inter, Source Serif 4, JetBrains Mono)
+│   ├── templates/          # Typst template presets (clean.typ, academic.typ, report.typ)
 │   ├── Cargo.toml
 │   ├── tauri.conf.json
 │   └── capabilities/
@@ -49,6 +58,7 @@ note-sage/
 │   │   ├── tabs/
 │   │   │   ├── TabBar.tsx          # Tab bar for open files
 │   │   │   └── Tab.tsx             # Single tab
+│   │   ├── ExportDialog.tsx          # PDF export options dialog
 │   │   ├── NewNoteDialog.tsx        # New note creation dialog
 │   │   ├── NewProjectDialog.tsx     # New project creation dialog
 │   │   ├── settings/
@@ -63,6 +73,7 @@ note-sage/
 │   ├── hooks/
 │   │   ├── useEditor.ts            # Tiptap editor instance hook
 │   │   ├── useFileOperations.ts    # File create/open/save/delete operations
+│   │   ├── useExportOperations.ts  # PDF export flow orchestration
 │   │   ├── useProjectMetadata.ts   # Auto-bootstrap .notesage/project.json
 │   │   └── useAIOperations.ts      # AI generation and chat operations
 │   ├── stores/

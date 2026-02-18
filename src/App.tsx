@@ -23,7 +23,7 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
-import { PanelLeft, MessageSquare, Settings, FilePlus, FolderPlus, FolderOpen } from "lucide-react";
+import { PanelLeft, MessageSquare, Settings, FilePlus, FolderPlus, FolderOpen, FileDown } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 
@@ -55,17 +55,19 @@ function loadPanelSize(configKey: string, panel: string, fallback: number): numb
 }
 
 // Editor area with document-style presentation
-function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile }: {
+function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange }: {
   onNewNote?: () => void;
   onNewProject?: () => void;
   onOpenFolder?: () => void;
   onOpenProject?: (path: string) => void;
   onOpenFile?: (path: string, name: string) => void;
+  exportOpen?: boolean;
+  onExportOpenChange?: (open: boolean) => void;
 }) {
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ backgroundColor: 'var(--color-muted)' }}>
       <TabBar />
-      <Editor onNewNote={onNewNote} onNewProject={onNewProject} onOpenFolder={onOpenFolder} onOpenProject={onOpenProject} onOpenFile={onOpenFile} />
+      <Editor onNewNote={onNewNote} onNewProject={onNewProject} onOpenFolder={onOpenFolder} onOpenProject={onOpenProject} onOpenFile={onOpenFile} exportOpen={exportOpen} onExportOpenChange={onExportOpenChange} />
     </div>
   );
 }
@@ -78,9 +80,11 @@ function App() {
   const [newNoteOpen, setNewNoteOpen] = useState(false);
   const [newNoteParentPath, setNewNoteParentPath] = useState("");
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [isWideMode, setIsWideMode] = useState(window.innerWidth >= BREAKPOINT_WIDE);
   const { sidebarOpen, setSidebarOpen, chatPanelOpen, setChatPanelOpen } = useSettingsStore();
 
+  const activeTabId = useEditorStore((s) => s.activeTabId);
   const { addProject, setExplorerPath, setExplorerTree } = useWorkspaceStore();
   const { projectPath: activeProjectPath } = useActiveProject();
 
@@ -279,6 +283,16 @@ function App() {
     setNewProjectOpen(true);
   }, []);
 
+  const handleExportFile = useCallback(async (filePath: string, fileName: string) => {
+    // Open the file if it's not already the active tab
+    const { tabs, activeTabId } = useEditorStore.getState();
+    const activeTab = tabs.find((t) => t.id === activeTabId);
+    if (!activeTab || activeTab.filePath !== filePath) {
+      await openFile(filePath, fileName);
+    }
+    setExportOpen(true);
+  }, [openFile]);
+
   const handleOpenProjectSettings = useCallback((projectPath: string) => {
     setProjectSettingsPath(projectPath);
     setProjectSettingsOpen(true);
@@ -338,6 +352,16 @@ function App() {
       if ((e.metaKey || e.ctrlKey) && e.key === ",") {
         e.preventDefault();
         setSettingsOpen(true);
+      }
+
+      // Cmd+Shift+E for export PDF
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "e") {
+        e.preventDefault();
+        // Only open if there's an active tab
+        if (useEditorStore.getState().activeTabId) {
+          setExportOpen(true);
+        }
+        return;
       }
 
       // Cmd+Shift+N for new project
@@ -401,6 +425,22 @@ function App() {
               <MessageSquare className="h-3.5 w-3.5" />
             </button>
             <button
+              onClick={() => {
+                if (activeTabId) {
+                  setExportOpen(true);
+                }
+              }}
+              className={cn(
+                "h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors text-muted-foreground",
+                activeTabId ? "hover:text-foreground" : "opacity-40 pointer-events-none"
+              )}
+              onMouseEnter={(e) => { if (activeTabId) e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
+              title="Export as PDF (Cmd+Shift+E)"
+            >
+              <FileDown className="h-3.5 w-3.5" />
+            </button>
+            <button
               onClick={() => setSettingsOpen(true)}
               className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors text-muted-foreground hover:text-foreground"
               onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
@@ -461,6 +501,7 @@ function App() {
                       onOpenExistingProject={handleBrowseForProject}
                       onOpenProjectSettings={handleOpenProjectSettings}
                       onMakeProject={handleMakeProject}
+                      onExportFile={handleExportFile}
                     />
                   </ResizablePanel>
                   <ResizableHandle withHandle />
@@ -468,7 +509,7 @@ function App() {
               )}
 
               <ResizablePanel id="editor" defaultSize={loadPanelSize(wideConfigKey, "editor", sidebarOpen && chatPanelOpen ? 50 : 70)} minSize={300}>
-                <EditorArea onNewNote={handleNewNote} onNewProject={handleNewProject} onOpenFolder={handleOpenFolder} onOpenProject={handleOpenProject} onOpenFile={handleOpenFile} />
+                <EditorArea onNewNote={handleNewNote} onNewProject={handleNewProject} onOpenFolder={handleOpenFolder} onOpenProject={handleOpenProject} onOpenFile={handleOpenFile} exportOpen={exportOpen} onExportOpenChange={setExportOpen} />
               </ResizablePanel>
 
               {chatPanelOpen && (
@@ -504,6 +545,7 @@ function App() {
                     onOpenExistingProject={handleBrowseForProject}
                     onOpenProjectSettings={handleOpenProjectSettings}
                     onMakeProject={handleMakeProject}
+                    onExportFile={handleExportFile}
                   />
                 </div>
               )}
@@ -551,7 +593,7 @@ function App() {
                 onLayoutChanged={handleNarrowLayout}
               >
                 <ResizablePanel id="editor-narrow" minSize={300}>
-                  <EditorArea onNewNote={handleNewNote} onNewProject={handleNewProject} onOpenFolder={handleOpenFolder} onOpenProject={handleOpenProject} onOpenFile={handleOpenFile} />
+                  <EditorArea onNewNote={handleNewNote} onNewProject={handleNewProject} onOpenFolder={handleOpenFolder} onOpenProject={handleOpenProject} onOpenFile={handleOpenFile} exportOpen={exportOpen} onExportOpenChange={setExportOpen} />
                 </ResizablePanel>
 
                 {chatPanelOpen && (

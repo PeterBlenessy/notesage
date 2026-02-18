@@ -10,9 +10,10 @@ interface FileTreeProps {
   expandKeyPrefix?: string;
   gitRepoRoot?: string;
   onCommitFile?: (filePath: string) => void;
+  onExportFile?: (filePath: string, fileName: string) => void;
 }
 
-export function FileTree({ tree, onFileClick, onNewNote, onMakeProject, showMoveToProject, expandKeyPrefix, gitRepoRoot, onCommitFile }: FileTreeProps) {
+export function FileTree({ tree, onFileClick, onNewNote, onMakeProject, showMoveToProject, expandKeyPrefix, gitRepoRoot, onCommitFile, onExportFile }: FileTreeProps) {
   return (
     <div className="space-y-0.5">
       {tree.map((entry) => (
@@ -27,6 +28,7 @@ export function FileTree({ tree, onFileClick, onNewNote, onMakeProject, showMove
           expandKeyPrefix={expandKeyPrefix}
           gitRepoRoot={gitRepoRoot}
           onCommitFile={onCommitFile}
+          onExportFile={onExportFile}
         />
       ))}
     </div>

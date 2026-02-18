@@ -11,6 +11,7 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | Close tab | `Cmd+W` | Close active tab (warns if unsaved) |
 | New note | `Cmd+N` | Open new note dialog |
 | New project | `Cmd+Shift+N` | Open new project dialog |
+| Export as PDF | `Cmd+Shift+E` | Open PDF export dialog (requires active file) |
 
 ## Editor Formatting
 

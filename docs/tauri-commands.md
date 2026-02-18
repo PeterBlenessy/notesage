@@ -347,6 +347,80 @@ pub struct ChatMessage {
 }
 ```
 
+## Export Operations
+
+Located in `src-tauri/src/commands/export.rs`
+
+### export_pdf
+
+Converts markdown to a styled PDF using the embedded Typst typesetting engine.
+
+```rust
+#[tauri::command]
+pub async fn export_pdf(
+    markdown: String,
+    title: String,
+    template: String,
+    include_toc: bool,
+    include_page_numbers: bool,
+    page_size: String,
+) -> Result<Vec<u8>, String>
+```
+
+**Parameters:**
+
+- `markdown`: Full markdown content (including frontmatter if present)
+- `title`: Document title (used in headers/footers and title pages)
+- `template`: Template preset — `"clean"`, `"academic"`, or `"report"`
+- `include_toc`: Whether to generate a table of contents
+- `include_page_numbers`: Whether to show page numbers
+- `page_size`: Page dimensions — `"a4"`, `"letter"`, or `"a5"`
+
+**Returns:**
+
+- `Ok(Vec<u8>)`: PDF file as raw bytes
+- `Err(String)`: Error message if compilation fails
+
+**Pipeline:** markdown → `markdown_to_typst()` → Typst markup → `apply_template()` → Typst compiler (`NotesageWorld`) → `typst_pdf::pdf()` → PDF bytes.
+
+**Frontend usage:**
+
+```typescript
+const pdfBytes = await invoke<number[]>('export_pdf', {
+  markdown: '# Hello\n\nWorld',
+  title: 'Hello',
+  template: 'clean',
+  includeToc: false,
+  includePageNumbers: false,
+  pageSize: 'a4',
+});
+```
+
+### save_binary_file
+
+Writes raw bytes to a file on disk. Used for saving generated PDFs (the existing `write_file` command only handles UTF-8 strings).
+
+```rust
+#[tauri::command]
+pub async fn save_binary_file(path: String, data: Vec<u8>) -> Result<(), String>
+```
+
+**Parameters:**
+
+- `path`: Absolute path to the output file
+- `data`: File contents as raw bytes
+
+**Returns:**
+
+- `Ok(())`: Success
+- `Err(String)`: Error message if file cannot be written
+
+**Frontend usage:**
+
+```typescript
+await invoke('save_binary_file', { path: '/path/to/output.pdf', data: pdfBytes });
+```
+
 ## Error Handling
 
 All Tauri commands return `Result<T, String>`. The frontend should:

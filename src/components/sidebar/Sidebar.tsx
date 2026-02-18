@@ -15,9 +15,10 @@ interface SidebarProps {
   onOpenExistingProject?: () => void;
   onOpenProjectSettings?: (projectPath: string) => void;
   onMakeProject?: (path: string) => void;
+  onExportFile?: (filePath: string, fileName: string) => void;
 }
 
-export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpenProjectSettings, onMakeProject }: SidebarProps) {
+export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpenProjectSettings, onMakeProject, onExportFile }: SidebarProps) {
   const [isLoading, setIsLoading] = useState(false);
   const {
     explorerPath,
@@ -126,6 +127,7 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
                 onFileClick={handleFileClick}
                 onNewNote={onNewNote}
                 onMakeProject={onMakeProject}
+                onExportFile={onExportFile}
                 expandKeyPrefix="explorer:"
               />
             </div>
@@ -168,6 +170,7 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
                   onNewNote={onNewNote}
                   onOpenProjectSettings={onOpenProjectSettings}
                   onCloseProject={handleCloseProject}
+                  onExportFile={onExportFile}
                 />
               ))}
             </div>
@@ -202,6 +205,7 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
                 onFileClick={handleFileClick}
                 onNewNote={onNewNote}
                 showMoveToProject
+                onExportFile={onExportFile}
                 expandKeyPrefix="notes:"
               />
             </div>
