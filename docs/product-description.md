@@ -6,7 +6,7 @@ id: ""
 
 Notesage is a WYSIWYG markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
-**Current version:** 0.8.0
+**Current version:** 0.9.0
 
 ## Current Features
 
@@ -30,6 +30,7 @@ Tiptap-powered WYSIWYG editor with full markdown round-tripping.
 - Bubble menu on text selection with AI actions (Improve, Summarize, Expand) — toggleable in settings
 - Slash commands (`/` at start of line) for inserting headings, lists, code blocks, blockquotes, tables, horizontal rules, images
 - Multi-tab editing with dirty indicator, auto-save on blur/tab switch (debounced 1s)
+- Open tabs restored on app restart (persisted file paths, re-opened from disk)
 - Cmd+F quick-open with file search
 
 **File management:**
@@ -162,37 +163,46 @@ Export notes to professionally typeset PDFs using the embedded Typst engine.
 - Custom template editor
 - Template marketplace
 
+### Comments & Change Detection
+
+Document comments and external change tracking — foundational infrastructure for human-AI collaboration.
+
+**Comments:**
+
+- Inline comments attached to text ranges via Tiptap ProseMirror decorations
+- Comment popover for creating, editing, and deleting comments
+- Orange highlight with underline accent for commented text ranges
+- Keyboard shortcut: Cmd+Shift+M to create comment on selection
+- Comment button in bubble menu on text selection
+- Two comment storage strategies:
+  - **Project files:** Comments keyed by UUID (frontmatter `id` field, auto-generated when first comment is created). Survives file renames/moves. Stored in `.notesage/comments/{uuid}.json`
+  - **Non-project files (Explorer):** Comments keyed by a hash of the file path. No frontmatter modification — external files are never altered. Stored in `~/Notesage/.notesage/comments/path-{hash}.json`. Comments lost if file is renamed while app is closed.
+- Document index (`.notesage/doc-index.json`) mapping UUID → current file path for project files
+
+**External change detection:**
+
+- Tauri filesystem watcher (via `notify` crate) for open files
+- Banner prompt to reload when file changes on disk (e.g., from external editor or AI agent)
+
+**Git branch diff review:**
+
+- Compare current branch against any other branch
+- ProseMirror decorations showing additions (green) and deletions (red)
+- Accept all / reject all controls in review banner
+
+**Architecture:**
+
+- Tiptap extension (`CommentMark`) with ProseMirror plugin state for decorations
+- `comment-store` (Zustand) with sidecar JSON persistence
+- `notify`-based filesystem watcher with Tauri event bridge
+- Comment key strategy: UUID for project files, deterministic path hash for non-project files
+
+**Future enhancements (not yet built):**
+
+- Inline diff display for external changes (currently shows reload prompt only)
+- Per-change accept/reject controls (Track Changes style)
+
 ## Roadmap
-
-### Phase 5 — Comments & Change Detection
-
-**Goal:** Document comments and external change tracking — foundational infrastructure for human-AI collaboration.
-
-**Features:**
-
-- Document comments and annotations
-  - Inline comments attached to text ranges via Tiptap marks/decorations
-  - Comment panel (sidebar or popover) for viewing and managing comments
-  - Comments stored as sidecar JSON in `.notesage/comments/{uuid}.json`
-  - Lazy document UUID — auto-generated in frontmatter (`id` field) only when first comment or cross-reference is created
-  - Document index (`.notesage/doc-index.json`) mapping UUID -&gt; current file path, rebuilt on project open by scanning frontmatter
-  - Comments survive file renames/moves via UUID identity
-- External file change detection
-  - Tauri filesystem watcher for open files
-  - Prompt to reload when file changes on disk (e.g., from external editor or AI agent)
-  - Option to show inline diff instead of auto-reloading
-- Inline diff display
-  - ProseMirror decorations showing additions (green) and deletions (red) when file changes externally
-  - Accept/reject per-change controls (Track Changes style)
-  - Git-based diff for version-controlled projects
-
-**Architecture considerations:**
-
-- Tiptap extension for comment marks with metadata (author, timestamp, text)
-- New store: `comment-store` with sidecar JSON persistence
-- Tauri filesystem watcher via `tauri-plugin-fs` or `notify` crate
-- UUID generation: `uuid` crate in Rust or `crypto.randomUUID()` in frontend
-- Document index enables stable cross-document references for future features (backlinks, research references, AI task assignments)
 
 ### Phase 5.5 — Notesage Library & iCloud Sync
 
