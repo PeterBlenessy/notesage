@@ -24,6 +24,8 @@ interface EditorStore {
   recentFiles: RecentFile[];
   /** Scroll position ratios (0–1) keyed by file path, persisted across restarts. */
   scrollPositions: Record<string, number>;
+  /** Ephemeral: paths with pending external changes → disk content. Not persisted. */
+  externalChanges: Record<string, string>;
 
   openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null) => void;
   closeTab: (tabId: string) => void;
@@ -33,6 +35,8 @@ interface EditorStore {
   setFrontmatter: (tabId: string, frontmatter: Frontmatter | null) => void;
   updateFrontmatter: (tabId: string, updates: Partial<Frontmatter>) => void;
   setScrollPosition: (filePath: string, ratio: number) => void;
+  setExternalChange: (filePath: string, diskContent: string) => void;
+  clearExternalChange: (filePath: string) => void;
 }
 
 export const useEditorStore = create<EditorStore>()(
@@ -42,6 +46,7 @@ export const useEditorStore = create<EditorStore>()(
       activeTabId: null,
       recentFiles: [],
       scrollPositions: {},
+      externalChanges: {},
 
       openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null) => {
         set((state) => {
@@ -139,6 +144,19 @@ export const useEditorStore = create<EditorStore>()(
         set((state) => ({
           scrollPositions: { ...state.scrollPositions, [filePath]: ratio },
         }));
+      },
+
+      setExternalChange: (filePath: string, diskContent: string) => {
+        set((state) => ({
+          externalChanges: { ...state.externalChanges, [filePath]: diskContent },
+        }));
+      },
+
+      clearExternalChange: (filePath: string) => {
+        set((state) => {
+          const { [filePath]: _, ...rest } = state.externalChanges;
+          return { externalChanges: rest };
+        });
       },
     }),
     {

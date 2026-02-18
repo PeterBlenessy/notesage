@@ -146,11 +146,14 @@ export function useFileOperations() {
         const tab = useEditorStore.getState().tabs.find((t) => t.id === tabId);
         const frontmatter = tab?.frontmatter ?? null;
         const raw = serializeFrontmatter(frontmatter, content);
+        await tauriApi.markSelfWrite(filePath);
         await tauriApi.writeFile(filePath, raw);
         markTabClean(tabId);
+        useEditorStore.getState().clearExternalChange(filePath);
         refreshGitForPath(filePath);
         return true;
       } catch (error) {
+        await tauriApi.clearSelfWrite(filePath).catch(() => {});
         console.error("Failed to save file:", error);
         throw error;
       }

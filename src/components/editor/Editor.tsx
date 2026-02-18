@@ -8,6 +8,7 @@ import { useEditor } from "@/hooks/useEditor";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { useExportOperations } from "@/hooks/useExportOperations";
 import { useDiffReview } from "@/hooks/useDiffReview";
+import { useFileWatcher } from "@/hooks/useFileWatcher";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { useGitStore } from "@/stores/git-store";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import { ExportDialog } from "@/components/ExportDialog";
 import { Toolbar } from "./Toolbar";
 import { BubbleMenu } from "./BubbleMenu";
 import { DiffReviewBanner } from "./DiffReviewBanner";
+import { ExternalChangeBanner } from "./ExternalChangeBanner";
 import { BranchDiffSelector } from "./BranchDiffSelector";
 import { StatusBar } from "./StatusBar";
 import { FrontmatterBlock } from "./FrontmatterBlock";
@@ -52,7 +54,7 @@ interface EditorProps {
 }
 
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange }: EditorProps) {
-  const { tabs, activeTabId, updateTabContent, recentFiles, scrollPositions, setScrollPosition } = useEditorStore();
+  const { tabs, activeTabId, updateTabContent, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const { showFloatingToolbar, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled } = useSettingsStore();
   const { projectPath } = useActiveProject();
@@ -174,6 +176,22 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
   const { exportPdf, isExporting } = useExportOperations(editor);
   const { reviewActive, compareBranch, handleAcceptAll, handleRejectAll } = useDiffReview(editor);
+  useFileWatcher();
+
+  // External change detection — check if the active tab has a pending external change
+  const activeExternalContent = activeTab ? externalChanges[activeTab.filePath] : undefined;
+
+  const handleExternalReload = useCallback(() => {
+    if (!editor || !activeTab || activeExternalContent === undefined) return;
+    editor.commands.setContent(activeExternalContent);
+    updateTabContent(activeTab.id, activeExternalContent, false);
+    clearExternalChange(activeTab.filePath);
+  }, [editor, activeTab, activeExternalContent, updateTabContent, clearExternalChange]);
+
+  const handleExternalKeep = useCallback(() => {
+    if (!activeTab) return;
+    clearExternalChange(activeTab.filePath);
+  }, [activeTab, clearExternalChange]);
 
   // Update editor content when switching tabs, saving/restoring scroll position
   useEffect(() => {
@@ -414,6 +432,9 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           onAcceptAll={handleAcceptAll}
           onRejectAll={handleRejectAll}
         />
+      )}
+      {activeExternalContent !== undefined && (
+        <ExternalChangeBanner onReload={handleExternalReload} onKeep={handleExternalKeep} />
       )}
       <div ref={scrollAreaRef} className="flex-1 overflow-y-auto editor-scroll-area">
         <div

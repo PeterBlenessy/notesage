@@ -10,6 +10,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
+        .manage(WatcherState::new())
         .invoke_handler(tauri::generate_handler![
             read_file,
             write_file,
@@ -42,6 +43,10 @@ pub fn run() {
             git_worktree_list,
             export_pdf,
             save_binary_file,
+            watch_directory,
+            unwatch_directory,
+            mark_self_write,
+            clear_self_write,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -40,3 +40,7 @@ typst-utils = "0.14.2"
 chrono = { version = "0.4", default-features = false, features = ["now", "clock"] }
 comrak = { version = "0.50.0", default-features = false, features = ["syntect"] }
 
+# Filesystem watcher (Phase 5)
+notify = { version = "7", features = ["macos_fsevent"] }
+notify-debouncer-full = "0.4"
+

@@ -137,6 +137,23 @@ export const tauriApi = {
     return await invoke<WorktreeInfo[]>("git_worktree_list", { repoPath });
   },
 
+  // Filesystem watcher operations
+  async watchDirectory(path: string): Promise<void> {
+    await invoke("watch_directory", { path });
+  },
+
+  async unwatchDirectory(): Promise<void> {
+    await invoke("unwatch_directory");
+  },
+
+  async markSelfWrite(path: string): Promise<void> {
+    await invoke("mark_self_write", { path });
+  },
+
+  async clearSelfWrite(path: string): Promise<void> {
+    await invoke("clear_self_write", { path });
+  },
+
   // Export operations
   async exportPdf(options: {
     markdown: string;

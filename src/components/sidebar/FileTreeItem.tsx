@@ -62,6 +62,9 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
   const projects = useWorkspaceStore((s) => s.projects);
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
 
+  const externalChanges = useEditorStore((s) => s.externalChanges);
+  const hasExternalChange = !entry.is_directory && entry.path in externalChanges;
+
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const isActive = activeTab?.filePath === entry.path;
 
@@ -264,6 +267,20 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
               <span className="truncate flex-1">{entry.name}</span>
             )}
 
+            {hasExternalChange && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="shrink-0 text-[10px] leading-none text-muted-foreground/70">
+                      ●
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">
+                    Modified externally
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
             {gitInfo && (
               <TooltipProvider>
                 <Tooltip>
