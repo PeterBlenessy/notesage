@@ -40,7 +40,7 @@ Runs:
 pnpm test:roundtrip
 ```
 
-**Critical for Phase 1 quality gates.**
+**Critical for quality gates.**
 
 Tests markdown parsing and serialization:
 
@@ -82,7 +82,7 @@ Input and output must be equivalent (whitespace-normalized).
 
 ## Quality Gates
 
-Phase 1 cannot be considered complete unless:
+A release cannot ship unless:
 
 - All TypeScript type checks pass
 - All unit tests pass
@@ -91,6 +91,6 @@ Phase 1 cannot be considered complete unless:
 
 ## Reference
 
-- @docs/phase-1-spec.md — Complete quality gate requirements
+- @docs/product-description.md — Quality gates and feature requirements
 - @docs/architecture.md — Testing strategy and patterns
 - Use the `markdown-roundtrip` skill for detailed markdown testing guidance

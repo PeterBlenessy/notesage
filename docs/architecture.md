@@ -235,8 +235,9 @@ When web search is enabled (toggle in chat footer):
 
 These architectural choices enable future phases:
 
-- **ProseMirror decorations**: Core reason for choosing ProseMirror - enables Phase 2 AI suggestions shown as inline decorations (green insert, red delete)
-- **Tauri commands**: Pattern established for file operations extends to Git operations (Phase 3)
-- **Zustand stores**: Clean boundaries allow adding new stores (ai-store, project-store added in Phase 2)
-- **Provider abstraction**: Easy to add new AI providers (Gemini, local models, etc.)
-- **No hardcoded paths**: `.notesage/` metadata directory auto-bootstrapped per project
+- **ProseMirror decorations**: Enables inline diff display (Phase 5) and AI suggestion decorations
+- **Tauri commands**: Pattern established for file/git operations extends to filesystem watching (Phase 5) and agent task management (Phase 6)
+- **Zustand stores**: Clean boundaries allow adding new stores (comment-store for Phase 5, workflow-store for Phase 8)
+- **Provider abstraction**: Easy to add new providers — local AI (Phase 9), Anthropic Agent SDK (Phase 6)
+- **No hardcoded paths**: `.notesage/` metadata directory supports sidecar comments (Phase 5), research storage (Phase 7), workflow definitions (Phase 8)
+- **YAML frontmatter**: Document identity via lazy UUID enables stable cross-document references for comments, research, and AI task assignments

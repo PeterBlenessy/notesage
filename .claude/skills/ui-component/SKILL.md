@@ -1,6 +1,6 @@
 ---
 name: ui-component
-description: Use when creating, modifying, or styling any UI component. Ensures shadcn/ui is used first, design system compliance, proper theming, and polished visual quality.
+description: Use when creating, scaffolding, modifying, or styling any UI component. Ensures shadcn/ui is used first, design system compliance, proper theming, and polished visual quality.
 ---
 
 # UI Component Development
@@ -100,6 +100,40 @@ Ask yourself these 7 questions:
 5. **Does it look good in BOTH light and dark mode?**
 6. **Are transitions smooth and intentional?**
 7. **Would a designer approve this, or say "it works but it's ugly"?**
+
+## Scaffolding a New Component
+
+### File Location
+
+```
+src/components/<category>/<ComponentName>.tsx
+```
+
+**Categories:**
+- `editor/` — Tiptap editor components
+- `sidebar/` — File tree and sidebar
+- `tabs/` — Tab bar
+- `settings/` — Settings UI
+- `chat/` — AI chat panel
+- Generic: `src/components/<ComponentName>.tsx`
+
+### Props Interface
+
+```typescript
+interface ComponentProps {
+  title: string;        // Required props first
+  description?: string; // Optional props after
+  onClick?: () => void; // Event handlers
+  className?: string;   // Style override
+}
+```
+
+### Export
+
+```typescript
+// src/components/<category>/index.ts
+export { ComponentName } from './ComponentName';
+```
 
 ## Component Structure Example
 

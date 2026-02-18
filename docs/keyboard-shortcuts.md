@@ -37,7 +37,7 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | Toggle theme | `Cmd+Shift+T` | Switch between light and dark mode |
 | Open settings | `Cmd+,` | Open settings dialog |
 
-## AI Features (Phase 2)
+## AI Features
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|

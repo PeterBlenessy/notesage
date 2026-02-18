@@ -13,7 +13,7 @@ Write a Product Requirements Document for the given feature or initiative and sa
 
 1. **Read project context** to understand what already exists:
    - `docs/architecture.md` — current tech stack, project structure, data flow
-   - `docs/future-phases.md` — planned features and architectural considerations
+   - `docs/product-description.md` — current features, roadmap, and architectural considerations
    - `CLAUDE.md` — conventions, quality gates, anti-patterns
 
 2. **Ask clarifying questions** if the feature scope is ambiguous. Use AskUserQuestion to confirm:

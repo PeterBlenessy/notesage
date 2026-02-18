@@ -332,7 +332,7 @@ useEffect(() => {
 
 ## Reference
 
-Read @docs/phase-1-spec.md for:
+Read @docs/product-description.md for:
 - Complete list of required markdown features
 - Quality gates for markdown support
 - Testing requirements

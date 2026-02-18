@@ -221,7 +221,7 @@ Custom extensions go in:
 src/components/editor/extensions/
 ├── index.ts                    # Re-export all extensions
 ├── slash-command.ts           # Slash command menu
-├── ai-decoration.ts           # AI suggestion decorations (Phase 2)
+├── ai-decoration.ts           # AI suggestion decorations
 └── custom-extension.ts        # Your custom extension
 ```
 
@@ -259,7 +259,7 @@ const editor = useEditor({
 Always use `editor.chain()` or dispatch transactions.
 
 ### 2. Keep Decorations Namespace Clean
-Decorations will be used for AI suggestions in Phase 2. Use unique PluginKeys:
+Decorations are used for AI suggestions and inline diffs (Phase 5). Use unique PluginKeys:
 
 ```typescript
 new PluginKey('myFeature') // ✅ Specific
@@ -328,13 +328,19 @@ addInputRules() {
 }
 ```
 
-## Future-Proofing for Phase 2
+## Decoration Use Cases
 
-**AI Decorations** will be used for inline AI suggestions:
+**AI Decorations** are used for inline AI suggestions:
 - Green decorations for insertions
 - Red decorations for deletions
 - Accept with Cmd+Enter
 - Reject with Cmd+Backspace
+
+**Inline Diffs (Phase 5)** will use decorations for external change tracking:
+- Show additions/deletions when files change on disk (e.g., from agentic AI)
+- Accept/reject per-change controls (Track Changes style)
+
+**Comments (Phase 5)** will use Tiptap marks for inline comment anchors.
 
 When creating decorations:
 - Use unique decoration types

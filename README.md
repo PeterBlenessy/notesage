@@ -4,21 +4,24 @@ A WYSIWYG markdown editor with AI collaboration capabilities, built with Tauri v
 
 ## Features
 
-### Phase 1: The Editor ✅
-- Full-featured Tiptap WYSIWYG editor
-- Markdown round-tripping (open .md files, edit in WYSIWYG, save as clean markdown)
-- Multi-tab editing
-- File tree sidebar with folder navigation
-- Slash commands for quick formatting
-- Floating toolbar on text selection
-- Light/dark theme support
+### Editor
+- Full-featured Tiptap WYSIWYG editor with markdown round-tripping
+- Multi-tab editing with file tree sidebar
+- Slash commands, floating toolbar, light/dark theme
 
-### Phase 2: AI Collaboration ✅
+### AI Collaboration
 - **Multi-Provider Support**: Anthropic Claude, OpenAI, and Ollama (local)
 - **AI Chat Panel**: Right sidebar with conversation history (Cmd+Shift+A)
 - **Inline AI Actions**: Improve, summarize, or expand selected text via bubble menu
+- **AI Web Search**: Provider-native web search with citation display
+- **AI Personas**: Configurable system prompts and per-project AI context
 - **Settings UI**: Configure API keys and provider preferences (Cmd+,)
-- **Persistent History**: Chat conversations saved across sessions
+
+### Project Workspace
+- **Git Integration**: File status indicators, commit dialog, branch switching
+- **Project Goals**: YAML frontmatter-based goals with templates (OKR, SMART, etc.)
+- **Project Metadata**: `.notesage/` directory with per-project settings and AI context
+- **Multi-Project**: Select multiple projects as AI context in chat
 
 ## Getting Started
 
@@ -114,12 +117,19 @@ note-sage/
 │   ├── hooks/               # React hooks
 │   └── lib/
 │       └── ai/              # AI provider abstraction
-└── src-tauri/               # Rust backend
-    └── src/
-        └── commands/
-            ├── file.rs      # File operations
-            ├── dialog.rs    # Native dialogs
-            └── ai.rs        # AI API calls
+├── src-tauri/               # Rust backend
+│   └── src/
+│       └── commands/
+│           ├── file.rs      # File operations
+│           ├── dialog.rs    # Native dialogs
+│           ├── ai.rs        # AI API calls
+│           ├── ai_streaming.rs  # SSE streaming (Anthropic, OpenAI, Ollama)
+│           └── git.rs       # Git operations
+└── docs/                    # Documentation
+    ├── architecture.md
+    ├── product-description.md
+    ├── prds/                # Product requirements
+    └── history/             # Release history
 ```
 
 ## Security Notes
@@ -130,9 +140,13 @@ note-sage/
 
 - ✅ Phase 1: The Editor
 - ✅ Phase 2: AI Collaboration
-- 🔜 Phase 3: Project Workspace (Git integration, metadata)
+- ✅ Phase 3: Project Workspace
 - 🔜 Phase 4: Document Generation (PDF/DOCX/PPTX export)
-- 🔜 Phase 5: Workflows & Advanced AI
+- 🔜 Phase 5: Comments & Change Detection
+- 🔜 Phase 6: Agentic AI Collaboration
+- 🔜 Phase 7: AI-Assisted Research
+- 🔜 Phase 8: Workflows & Automation
+- 🔜 Phase 9: Local AI
 
 ## License
 
