@@ -16,6 +16,8 @@ import {
   Undo,
   Redo,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
 interface ToolbarProps {
@@ -36,46 +38,26 @@ function ToolbarButton({
   children: React.ReactNode;
 }) {
   return (
-    <button
+    <Button
+      variant="ghost"
+      size="icon-xs"
       onClick={onClick}
       disabled={disabled}
       title={title}
       className={cn(
-        "h-7 w-7 inline-flex items-center justify-center rounded-md transition-all duration-150",
-        "disabled:opacity-30 disabled:pointer-events-none",
+        "disabled:opacity-30 active:scale-90",
         active
-          ? "text-foreground"
+          ? "bg-accent text-foreground"
           : "text-muted-foreground"
       )}
-      style={{
-        backgroundColor: active ? 'var(--color-accent)' : undefined,
-      }}
-      onMouseEnter={(e) => {
-        if (!active) {
-          e.currentTarget.style.backgroundColor = 'var(--color-accent)';
-          e.currentTarget.style.color = 'var(--color-foreground)';
-        }
-      }}
-      onMouseLeave={(e) => {
-        if (!active) {
-          e.currentTarget.style.backgroundColor = '';
-          e.currentTarget.style.color = '';
-        }
-      }}
-      onMouseDown={(e) => {
-        e.currentTarget.style.transform = 'scale(0.9)';
-      }}
-      onMouseUp={(e) => {
-        e.currentTarget.style.transform = '';
-      }}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
 function ToolbarSeparator() {
-  return <div className="w-px h-4 bg-border/60 mx-0.5" />;
+  return <Separator orientation="vertical" className="h-4 mx-0.5" />;
 }
 
 export function Toolbar({ editor }: ToolbarProps) {
@@ -107,7 +89,7 @@ export function Toolbar({ editor }: ToolbarProps) {
         disabled={!editor.can().undo()}
         title="Undo (Cmd+Z)"
       >
-        <Undo className="h-3.5 w-3.5" />
+        <Undo className="h-3.5 w-3.5" strokeWidth={1.5} />
       </ToolbarButton>
 
       <ToolbarButton
@@ -115,7 +97,7 @@ export function Toolbar({ editor }: ToolbarProps) {
         disabled={!editor.can().redo()}
         title="Redo (Cmd+Shift+Z)"
       >
-        <Redo className="h-3.5 w-3.5" />
+        <Redo className="h-3.5 w-3.5" strokeWidth={1.5} />
       </ToolbarButton>
 
       <ToolbarSeparator />
@@ -125,7 +107,7 @@ export function Toolbar({ editor }: ToolbarProps) {
         active={editor.isActive("bold")}
         title="Bold (Cmd+B)"
       >
-        <Bold className="h-3.5 w-3.5" />
+        <Bold className="h-3.5 w-3.5" strokeWidth={1.5} />
       </ToolbarButton>
 
       <ToolbarButton
@@ -133,7 +115,7 @@ export function Toolbar({ editor }: ToolbarProps) {
         active={editor.isActive("italic")}
         title="Italic (Cmd+I)"
       >
-        <Italic className="h-3.5 w-3.5" />
+        <Italic className="h-3.5 w-3.5" strokeWidth={1.5} />
       </ToolbarButton>
 
       <ToolbarButton
@@ -141,7 +123,7 @@ export function Toolbar({ editor }: ToolbarProps) {
         active={editor.isActive("underline")}
         title="Underline (Cmd+U)"
       >
-        <Underline className="h-3.5 w-3.5" />
+        <Underline className="h-3.5 w-3.5" strokeWidth={1.5} />
       </ToolbarButton>
 
       <ToolbarButton
@@ -149,7 +131,7 @@ export function Toolbar({ editor }: ToolbarProps) {
         active={editor.isActive("strike")}
         title="Strikethrough (Cmd+Shift+X)"
       >
-        <Strikethrough className="h-3.5 w-3.5" />
+        <Strikethrough className="h-3.5 w-3.5" strokeWidth={1.5} />
       </ToolbarButton>
 
       <ToolbarButton
@@ -157,7 +139,7 @@ export function Toolbar({ editor }: ToolbarProps) {
         active={editor.isActive("code")}
         title="Code (Cmd+E)"
       >
-        <Code className="h-3.5 w-3.5" />
+        <Code className="h-3.5 w-3.5" strokeWidth={1.5} />
       </ToolbarButton>
 
       <ToolbarSeparator />
@@ -167,7 +149,7 @@ export function Toolbar({ editor }: ToolbarProps) {
         active={editor.isActive("bulletList")}
         title="Bullet List"
       >
-        <List className="h-3.5 w-3.5" />
+        <List className="h-3.5 w-3.5" strokeWidth={1.5} />
       </ToolbarButton>
 
       <ToolbarButton
@@ -175,7 +157,7 @@ export function Toolbar({ editor }: ToolbarProps) {
         active={editor.isActive("orderedList")}
         title="Numbered List"
       >
-        <ListOrdered className="h-3.5 w-3.5" />
+        <ListOrdered className="h-3.5 w-3.5" strokeWidth={1.5} />
       </ToolbarButton>
 
       <ToolbarButton
@@ -183,7 +165,7 @@ export function Toolbar({ editor }: ToolbarProps) {
         active={editor.isActive("taskList")}
         title="Task List"
       >
-        <ListChecks className="h-3.5 w-3.5" />
+        <ListChecks className="h-3.5 w-3.5" strokeWidth={1.5} />
       </ToolbarButton>
 
       <ToolbarSeparator />
@@ -193,7 +175,7 @@ export function Toolbar({ editor }: ToolbarProps) {
         active={editor.isActive("blockquote")}
         title="Blockquote"
       >
-        <Quote className="h-3.5 w-3.5" />
+        <Quote className="h-3.5 w-3.5" strokeWidth={1.5} />
       </ToolbarButton>
 
       <ToolbarButton
@@ -201,14 +183,14 @@ export function Toolbar({ editor }: ToolbarProps) {
         active={editor.isActive("codeBlock")}
         title="Code Block"
       >
-        <CodeSquare className="h-3.5 w-3.5" />
+        <CodeSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
       </ToolbarButton>
 
       <ToolbarButton
         onClick={() => editor.chain().focus().setHorizontalRule().run()}
         title="Horizontal Rule"
       >
-        <Minus className="h-3.5 w-3.5" />
+        <Minus className="h-3.5 w-3.5" strokeWidth={1.5} />
       </ToolbarButton>
 
       <ToolbarSeparator />
@@ -218,14 +200,14 @@ export function Toolbar({ editor }: ToolbarProps) {
         active={editor.isActive("table")}
         title="Insert Table"
       >
-        <Table className="h-3.5 w-3.5" />
+        <Table className="h-3.5 w-3.5" strokeWidth={1.5} />
       </ToolbarButton>
 
       <ToolbarButton
         onClick={addImage}
         title="Insert Image"
       >
-        <ImageIcon className="h-3.5 w-3.5" />
+        <ImageIcon className="h-3.5 w-3.5" strokeWidth={1.5} />
       </ToolbarButton>
     </div>
   );

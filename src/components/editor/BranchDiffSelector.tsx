@@ -85,10 +85,7 @@ export function BranchDiffSelector({ projectPath }: BranchDiffSelectorProps) {
       >
         <GitCompareArrows className="h-3 w-3" strokeWidth={1.5} />
         <span className="truncate max-w-[120px]">{compareBranch}</span>
-        <span
-          className="text-[10px] px-1 py-0.5 rounded"
-          style={{ backgroundColor: "var(--color-muted)" }}
-        >
+        <span className="text-[10px] px-1 py-0.5 rounded bg-muted">
           End
         </span>
       </Button>

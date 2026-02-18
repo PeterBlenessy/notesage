@@ -58,42 +58,30 @@ export function DiffReviewBanner({
 
   return (
     <div
-      className="overflow-hidden transition-all duration-200 ease-in-out"
+      className="overflow-hidden transition-[max-height,opacity] duration-200 ease-in-out"
       style={{
         maxHeight: visible ? "48px" : "0px",
         opacity: visible ? 1 : 0,
       }}
     >
-      <div
-        className="flex items-center justify-between px-4 py-2 border-b"
-        style={{
-          backgroundColor: "var(--color-muted)",
-          borderColor: "var(--color-border)",
-        }}
-      >
-        <div className="flex items-center gap-2 text-sm" style={{ color: "var(--color-foreground)" }}>
-          <GitBranch className="h-4 w-4" style={{ color: "var(--color-muted-foreground)" }} strokeWidth={1.5} />
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-muted">
+        <div className="flex items-center gap-2 text-sm text-foreground">
+          <GitBranch className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
           <span>
             Reviewing changes from{" "}
             <span className="font-medium">&ldquo;{branchName}&rdquo;</span>
           </span>
-          <span
-            className="text-xs px-1.5 py-0.5 rounded"
-            style={{
-              backgroundColor: "var(--color-background)",
-              color: "var(--color-muted-foreground)",
-            }}
-          >
+          <span className="text-xs px-1.5 py-0.5 rounded bg-background text-muted-foreground">
             {hunkCount} {hunkCount === 1 ? "change" : "changes"}
           </span>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="xs" onClick={handleRejectAll}>
-            <X className="h-3 w-3" strokeWidth={2} />
+            <X className="h-3 w-3" strokeWidth={1.5} />
             Reject All
           </Button>
           <Button variant="default" size="xs" onClick={handleAcceptAll}>
-            <Check className="h-3 w-3" strokeWidth={2} />
+            <Check className="h-3 w-3" strokeWidth={1.5} />
             Accept All
           </Button>
         </div>

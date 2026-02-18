@@ -150,11 +150,10 @@ export function CommentPopover({
             <div className="p-3 space-y-2">
               <div className="flex items-center gap-2 mb-1">
                 <MessageSquarePlus
-                  className="h-3.5 w-3.5 shrink-0"
-                  style={{ color: 'var(--color-muted-foreground)' }}
+                  className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
                   strokeWidth={1.5}
                 />
-                <span className="text-xs font-medium" style={{ color: 'var(--color-muted-foreground)' }}>
+                <span className="text-xs font-medium text-muted-foreground">
                   {mode === 'create' ? 'Add comment' : 'Edit comment'}
                 </span>
               </div>
@@ -165,15 +164,10 @@ export function CommentPopover({
                 onKeyDown={handleKeyDown}
                 placeholder="Write a comment..."
                 rows={3}
-                className="w-full resize-none rounded-md border px-3 py-2 text-sm outline-none transition-colors focus:border-foreground/30"
-                style={{
-                  backgroundColor: 'var(--color-background)',
-                  borderColor: 'var(--color-border)',
-                  color: 'var(--color-foreground)',
-                }}
+                className="w-full resize-none rounded-md border border-border bg-background text-foreground px-3 py-2 text-sm outline-none transition-colors duration-150 focus:border-foreground/30"
               />
               <div className="flex justify-between items-center">
-                <span className="text-[10px]" style={{ color: 'var(--color-muted-foreground)' }}>
+                <span className="text-[10px] text-muted-foreground">
                   {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Enter to submit
                 </span>
                 <div className="flex gap-1.5">
@@ -204,51 +198,48 @@ export function CommentPopover({
             <div className="p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-medium" style={{ color: 'var(--color-foreground)' }}>
+                  <span className="text-xs font-medium text-foreground">
                     {comment.author || 'You'}
                   </span>
-                  <span className="text-[10px]" style={{ color: 'var(--color-muted-foreground)' }}>
+                  <span className="text-[10px] text-muted-foreground">
                     {formatRelativeTime(comment.createdAt)}
                   </span>
                 </div>
                 <div className="flex items-center gap-0.5">
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
                     onClick={() => { setMode('edit'); setBody(comment.body); }}
-                    className="h-6 w-6 rounded-md flex items-center justify-center transition-colors"
-                    style={{ color: 'var(--color-muted-foreground)' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
                     title="Edit"
+                    className="text-muted-foreground"
                   >
                     <Pencil className="h-3 w-3" strokeWidth={1.5} />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
                     onClick={() => setDeleteDialogOpen(true)}
-                    className="h-6 w-6 rounded-md flex items-center justify-center transition-colors"
-                    style={{ color: 'var(--color-destructive)' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
                     title="Delete"
+                    className="text-destructive hover:text-destructive"
                   >
                     <Trash2 className="h-3 w-3" strokeWidth={1.5} />
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
                     onClick={() => onOpenChange(false)}
-                    className="h-6 w-6 rounded-md flex items-center justify-center transition-colors"
-                    style={{ color: 'var(--color-muted-foreground)' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
                     title="Close"
+                    className="text-muted-foreground"
                   >
                     <X className="h-3 w-3" strokeWidth={1.5} />
-                  </button>
+                  </Button>
                 </div>
               </div>
-              <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--color-foreground)' }}>
+              <p className="text-sm whitespace-pre-wrap text-foreground">
                 {comment.body}
               </p>
               {comment.updatedAt > comment.createdAt && (
-                <span className="text-[10px]" style={{ color: 'var(--color-muted-foreground)' }}>
+                <span className="text-[10px] text-muted-foreground">
                   edited {formatRelativeTime(comment.updatedAt)}
                 </span>
               )}

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown } from "lucide-react";
+import { toast } from "sonner";
 import { FileEntry, tauriApi } from "@/lib/tauri";
 import type { GitStatus } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -33,7 +34,7 @@ const GIT_STATUS_CONFIG: Record<GitStatus, { label: string; color: string; toolt
   untracked: { label: "U", color: "text-muted-foreground/50", tooltip: "Untracked — not yet tracked by git" },
   deleted: { label: "D", color: "text-muted-foreground/50", tooltip: "Deleted" },
   renamed: { label: "R", color: "text-muted-foreground/50", tooltip: "Renamed" },
-  conflicted: { label: "C", color: "text-muted-foreground/50", tooltip: "Conflicted — merge conflict" },
+  conflicted: { label: "C", color: "text-destructive", tooltip: "Conflicted — merge conflict" },
 };
 
 interface FileTreeItemProps {
@@ -135,7 +136,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
     try {
       await createFolder(entry.path, folderName);
     } catch (error) {
-      alert(`Failed to create folder: ${error}`);
+      toast.error(`Failed to create folder: ${error}`);
     }
   };
 
@@ -174,7 +175,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
     try {
       await deletePath(entry.path);
     } catch (error) {
-      alert(`Failed to delete: ${error}`);
+      toast.error(`Failed to delete: ${error}`);
     }
   };
 
@@ -203,26 +204,24 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
         <ContextMenuTrigger>
           <div
             className={cn(
-              "group flex items-center gap-1.5 h-7 px-1.5 rounded-md cursor-pointer transition-colors",
-              "text-[13px]",
+              "group flex items-center gap-1.5 h-7 px-1.5 rounded-md cursor-pointer transition-colors duration-150",
+              "text-sm",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
               isActive
-                ? "text-foreground font-medium"
-                : "text-muted-foreground hover:text-foreground"
+                ? "bg-accent text-foreground font-medium"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
             )}
-            style={{
-              paddingLeft,
-              backgroundColor: isActive ? 'var(--color-accent)' : undefined,
-            }}
-            onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
-            onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = ''; }}
+            style={{ paddingLeft }}
             onClick={handleClick}
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(); } }}
           >
             {entry.is_directory ? (
               <span className="shrink-0 text-muted-foreground">
                 {expanded ? (
-                  <ChevronDown className="h-3.5 w-3.5" />
+                  <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.5} />
                 ) : (
-                  <ChevronRight className="h-3.5 w-3.5" />
+                  <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.5} />
                 )}
               </span>
             ) : (
@@ -231,12 +230,12 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
 
             {entry.is_directory ? (
               isProjectFolder ? (
-                <FolderDot className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+                <FolderDot className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" strokeWidth={1.5} />
               ) : (
-                <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+                <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" strokeWidth={1.5} />
               )
             ) : (
-              <File className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+              <File className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" strokeWidth={1.5} />
             )}
 
             {isRenaming ? (
@@ -256,12 +255,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
                 }}
                 onBlur={commitRename}
                 onClick={(e) => e.stopPropagation()}
-                className="flex-1 min-w-0 h-5 px-1 text-[13px] rounded border outline-none"
-                style={{
-                  backgroundColor: "var(--color-background)",
-                  borderColor: "var(--color-primary)",
-                  color: "var(--color-foreground)",
-                }}
+                className="flex-1 min-w-0 h-5 px-1 text-sm rounded border border-primary bg-background text-foreground outline-none transition-colors duration-150"
               />
             ) : (
               <span className="truncate flex-1">{entry.name}</span>
@@ -304,12 +298,12 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
         </ContextMenuTrigger>
         <ContextMenuContent>
           <ContextMenuItem onClick={handleNewFile}>
-            <FilePlus className="mr-2 h-4 w-4" />
+            <FilePlus className="mr-2 h-4 w-4" strokeWidth={1.5} />
             New File
           </ContextMenuItem>
           {entry.is_directory && (
             <ContextMenuItem onClick={handleNewFolder}>
-              <FolderPlus className="mr-2 h-4 w-4" />
+              <FolderPlus className="mr-2 h-4 w-4" strokeWidth={1.5} />
               New Folder
             </ContextMenuItem>
           )}
@@ -317,7 +311,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
             <>
               <ContextMenuSeparator />
               <ContextMenuItem onClick={() => onMakeProject(entry.path)}>
-                <FolderDot className="mr-2 h-4 w-4" />
+                <FolderDot className="mr-2 h-4 w-4" strokeWidth={1.5} />
                 {isProjectFolder ? "Open as Project" : "Make Project"}
               </ContextMenuItem>
             </>
@@ -327,7 +321,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
               <ContextMenuSeparator />
               <ContextMenuSub>
                 <ContextMenuSubTrigger>
-                  <FolderInput className="mr-2 h-4 w-4" />
+                  <FolderInput className="mr-2 h-4 w-4" strokeWidth={1.5} />
                   Move to Project
                 </ContextMenuSubTrigger>
                 <ContextMenuSubContent>
@@ -350,14 +344,14 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
           )}
           <ContextMenuSeparator />
           <ContextMenuItem onClick={handleRevealInFinder}>
-            <ExternalLink className="mr-2 h-4 w-4" />
+            <ExternalLink className="mr-2 h-4 w-4" strokeWidth={1.5} />
             Reveal in Finder
           </ContextMenuItem>
           {!entry.is_directory && entry.name.endsWith(".md") && onExportFile && (
             <>
               <ContextMenuSeparator />
               <ContextMenuItem onClick={() => onExportFile(entry.path, entry.name)}>
-                <FileDown className="mr-2 h-4 w-4" />
+                <FileDown className="mr-2 h-4 w-4" strokeWidth={1.5} />
                 Export as PDF
               </ContextMenuItem>
             </>
@@ -366,18 +360,18 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
             <>
               <ContextMenuSeparator />
               <ContextMenuItem onClick={() => onCommitFile(entry.path)}>
-                <GitCommitVertical className="mr-2 h-4 w-4" />
+                <GitCommitVertical className="mr-2 h-4 w-4" strokeWidth={1.5} />
                 Commit...
               </ContextMenuItem>
             </>
           )}
           <ContextMenuSeparator />
           <ContextMenuItem onClick={startRename}>
-            <Pencil className="mr-2 h-4 w-4" />
+            <Pencil className="mr-2 h-4 w-4" strokeWidth={1.5} />
             Rename
           </ContextMenuItem>
           <ContextMenuItem onClick={handleDelete}>
-            <Trash2 className="mr-2 h-4 w-4 text-destructive" />
+            <Trash2 className="mr-2 h-4 w-4 text-destructive" strokeWidth={1.5} />
             Delete
           </ContextMenuItem>
         </ContextMenuContent>
