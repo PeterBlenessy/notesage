@@ -37,6 +37,9 @@ pub fn run() {
             git_stage,
             git_unstage,
             git_commit,
+            git_diff_files,
+            git_diff_file,
+            git_worktree_list,
             export_pdf,
             save_binary_file,
         ])

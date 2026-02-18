@@ -9,6 +9,32 @@ pub struct GitFileStatus {
     pub staged: bool,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct DiffHunk {
+    /// Starting line in the base branch (1-indexed)
+    pub old_start: u32,
+    /// Number of lines in the base range
+    pub old_lines: u32,
+    /// Starting line in the compare branch (1-indexed)
+    pub new_start: u32,
+    /// Number of lines in the compare range
+    pub new_lines: u32,
+    /// Text deleted from base (lines joined with newlines)
+    pub delete_text: String,
+    /// Text inserted in compare (lines joined with newlines)
+    pub insert_text: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct WorktreeInfo {
+    /// Absolute path to the worktree
+    pub path: String,
+    /// Branch name (empty if detached HEAD)
+    pub branch: String,
+    /// Whether this is the main (bare) worktree
+    pub is_main: bool,
+}
+
 /// Run a git command in the given directory, returning stdout on success.
 fn git(dir: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
@@ -281,4 +307,180 @@ pub async fn git_commit(path: String, message: String) -> Result<String, String>
 
     let hash = git(&path, &["rev-parse", "--short", "HEAD"])?;
     Ok(hash)
+}
+
+// ---------------------------------------------------------------------------
+// Branch diff commands
+// ---------------------------------------------------------------------------
+
+/// List files changed between two branches.
+#[tauri::command]
+pub async fn git_diff_files(
+    repo_path: String,
+    base_branch: String,
+    compare_branch: String,
+) -> Result<Vec<String>, String> {
+    let range = format!("{}...{}", base_branch, compare_branch);
+    let output = git(&repo_path, &["diff", "--name-only", &range])?;
+    Ok(output
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|l| l.to_string())
+        .collect())
+}
+
+/// Get structured diff hunks for a single file between two branches.
+#[tauri::command]
+pub async fn git_diff_file(
+    repo_path: String,
+    base_branch: String,
+    compare_branch: String,
+    file_path: String,
+) -> Result<Vec<DiffHunk>, String> {
+    let range = format!("{}...{}", base_branch, compare_branch);
+    let output = git(&repo_path, &["diff", "--no-color", &range, "--", &file_path])?;
+    Ok(parse_unified_diff(&output))
+}
+
+/// List active worktrees and their branches.
+#[tauri::command]
+pub async fn git_worktree_list(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
+    let output = git(&repo_path, &["worktree", "list", "--porcelain"])?;
+    Ok(parse_worktree_list(&output))
+}
+
+// ---------------------------------------------------------------------------
+// Diff parsing helpers
+// ---------------------------------------------------------------------------
+
+/// Parse unified diff output into structured DiffHunk structs.
+fn parse_unified_diff(diff: &str) -> Vec<DiffHunk> {
+    let mut hunks = Vec::new();
+    let lines: Vec<&str> = diff.lines().collect();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let line = lines[i];
+
+        // Look for hunk headers: @@ -oldStart,oldLines +newStart,newLines @@
+        if line.starts_with("@@") {
+            if let Some(hunk_header) = parse_hunk_header(line) {
+                let (old_start, old_lines, new_start, new_lines) = hunk_header;
+                let mut delete_lines: Vec<String> = Vec::new();
+                let mut insert_lines: Vec<String> = Vec::new();
+
+                i += 1;
+
+                // Collect hunk body lines until we hit another hunk header,
+                // a diff header, or end of input.
+                while i < lines.len() {
+                    let body_line = lines[i];
+                    if body_line.starts_with("@@")
+                        || body_line.starts_with("diff --git")
+                        || body_line.starts_with("--- ")
+                        || body_line.starts_with("+++ ")
+                    {
+                        break;
+                    }
+
+                    if let Some(rest) = body_line.strip_prefix('-') {
+                        delete_lines.push(rest.to_string());
+                    } else if let Some(rest) = body_line.strip_prefix('+') {
+                        insert_lines.push(rest.to_string());
+                    }
+                    // Context lines (starting with ' ') and '\' lines are skipped
+
+                    i += 1;
+                }
+
+                hunks.push(DiffHunk {
+                    old_start,
+                    old_lines,
+                    new_start,
+                    new_lines,
+                    delete_text: delete_lines.join("\n"),
+                    insert_text: insert_lines.join("\n"),
+                });
+
+                continue; // Don't increment i — we already advanced past the body
+            }
+        }
+
+        i += 1;
+    }
+
+    hunks
+}
+
+/// Parse a hunk header like `@@ -10,5 +12,8 @@` or `@@ -10 +12,3 @@`.
+/// Returns (old_start, old_lines, new_start, new_lines).
+fn parse_hunk_header(line: &str) -> Option<(u32, u32, u32, u32)> {
+    // Strip leading "@@ " and trailing " @@..."
+    let trimmed = line.strip_prefix("@@ ")?;
+    let range_part = trimmed.split(" @@").next()?;
+
+    let parts: Vec<&str> = range_part.split_whitespace().collect();
+    if parts.len() < 2 {
+        return None;
+    }
+
+    let (old_start, old_lines) = parse_range(parts[0].strip_prefix('-')?)?;
+    let (new_start, new_lines) = parse_range(parts[1].strip_prefix('+')?)?;
+
+    Some((old_start, old_lines, new_start, new_lines))
+}
+
+/// Parse a range like "10,5" or "10" into (start, lines).
+/// A bare number like "10" means (10, 1).
+fn parse_range(s: &str) -> Option<(u32, u32)> {
+    if let Some((start, lines)) = s.split_once(',') {
+        Some((start.parse().ok()?, lines.parse().ok()?))
+    } else {
+        Some((s.parse().ok()?, 1))
+    }
+}
+
+/// Parse `git worktree list --porcelain` output.
+fn parse_worktree_list(output: &str) -> Vec<WorktreeInfo> {
+    let mut worktrees = Vec::new();
+    let mut current_path = String::new();
+    let mut current_branch = String::new();
+    let mut is_main = false;
+
+    for line in output.lines() {
+        if let Some(path) = line.strip_prefix("worktree ") {
+            // Save previous worktree if we have one
+            if !current_path.is_empty() {
+                worktrees.push(WorktreeInfo {
+                    path: current_path.clone(),
+                    branch: current_branch.clone(),
+                    is_main,
+                });
+            }
+            current_path = path.to_string();
+            current_branch = String::new();
+            is_main = false;
+        } else if let Some(branch_ref) = line.strip_prefix("branch ") {
+            // Branch ref like "refs/heads/main" -> "main"
+            current_branch = branch_ref
+                .strip_prefix("refs/heads/")
+                .unwrap_or(branch_ref)
+                .to_string();
+        } else if line == "bare" {
+            is_main = true;
+        } else if line.is_empty() {
+            // Blank line separates worktree entries — handled by next "worktree " prefix
+        }
+    }
+
+    // Don't forget the last entry
+    if !current_path.is_empty() {
+        worktrees.push(WorktreeInfo {
+            path: current_path,
+            branch: current_branch,
+            is_main,
+        });
+    }
+
+    worktrees
 }

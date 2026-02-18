@@ -100,8 +100,7 @@ export function Toolbar({ editor }: ToolbarProps) {
 
   return (
     <div
-      className="h-9 border-b border-border px-2 flex items-center gap-0.5 overflow-x-auto overflow-y-hidden shrink-0"
-      style={{ backgroundColor: 'var(--color-background)' }}
+      className="h-9 px-2 flex items-center gap-0.5 overflow-x-auto overflow-y-hidden flex-1 min-w-0"
     >
       <ToolbarButton
         onClick={() => editor.chain().focus().undo().run()}

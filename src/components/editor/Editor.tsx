@@ -7,11 +7,16 @@ import { useSettingsStore, type ContentWidth } from "@/stores/settings-store";
 import { useEditor } from "@/hooks/useEditor";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { useExportOperations } from "@/hooks/useExportOperations";
+import { useDiffReview } from "@/hooks/useDiffReview";
+import { useActiveProject } from "@/hooks/useActiveProject";
+import { useGitStore } from "@/stores/git-store";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ExportDialog } from "@/components/ExportDialog";
 import { Toolbar } from "./Toolbar";
 import { BubbleMenu } from "./BubbleMenu";
+import { DiffReviewBanner } from "./DiffReviewBanner";
+import { BranchDiffSelector } from "./BranchDiffSelector";
 import { StatusBar } from "./StatusBar";
 import { FrontmatterBlock } from "./FrontmatterBlock";
 import "@/styles/editor.css";
@@ -49,7 +54,10 @@ interface EditorProps {
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange }: EditorProps) {
   const { tabs, activeTabId, updateTabContent, recentFiles, scrollPositions, setScrollPosition } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
-  const { showFloatingToolbar, contentWidth, marginTop, marginBottom, marginLeft, marginRight } = useSettingsStore();
+  const { showFloatingToolbar, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled } = useSettingsStore();
+  const { projectPath } = useActiveProject();
+  const repo = useGitStore((s) => projectPath ? s.repos[projectPath] : undefined);
+  const isGitRepo = repo?.isGitRepo ?? false;
   const { saveFile } = useFileOperations();
   const maxWidth = CONTENT_WIDTHS[contentWidth];
   const isPaperMode = contentWidth === 'a4' || contentWidth === 'a5' || contentWidth === 'letter';
@@ -165,6 +173,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   });
 
   const { exportPdf, isExporting } = useExportOperations(editor);
+  const { reviewActive, compareBranch, handleAcceptAll, handleRejectAll } = useDiffReview(editor);
 
   // Update editor content when switching tabs, saving/restoring scroll position
   useEffect(() => {
@@ -390,7 +399,22 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <Toolbar editor={editor} />
+      <div className="flex items-center border-b border-border shrink-0" style={{ backgroundColor: 'var(--color-background)' }}>
+        <Toolbar editor={editor} />
+        {gitEnabled && isGitRepo && projectPath && !reviewActive && (
+          <div className="shrink-0 pr-2">
+            <BranchDiffSelector projectPath={projectPath} />
+          </div>
+        )}
+      </div>
+      {reviewActive && compareBranch && (
+        <DiffReviewBanner
+          editor={editor}
+          branchName={compareBranch}
+          onAcceptAll={handleAcceptAll}
+          onRejectAll={handleRejectAll}
+        />
+      )}
       <div ref={scrollAreaRef} className="flex-1 overflow-y-auto editor-scroll-area">
         <div
           className={`min-h-full flex justify-center ${

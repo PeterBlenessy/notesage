@@ -15,6 +15,21 @@ export interface GitFileStatus {
   staged: boolean;
 }
 
+export interface DiffHunk {
+  old_start: number;
+  old_lines: number;
+  new_start: number;
+  new_lines: number;
+  delete_text: string;
+  insert_text: string;
+}
+
+export interface WorktreeInfo {
+  path: string;
+  branch: string;
+  is_main: boolean;
+}
+
 export const tauriApi = {
   async readFile(path: string): Promise<string> {
     return await invoke<string>("read_file", { path });
@@ -107,6 +122,19 @@ export const tauriApi = {
 
   async gitCommit(path: string, message: string): Promise<string> {
     return await invoke<string>("git_commit", { path, message });
+  },
+
+  // Git diff operations
+  async gitDiffFiles(repoPath: string, baseBranch: string, compareBranch: string): Promise<string[]> {
+    return await invoke<string[]>("git_diff_files", { repoPath, baseBranch, compareBranch });
+  },
+
+  async gitDiffFile(repoPath: string, baseBranch: string, compareBranch: string, filePath: string): Promise<DiffHunk[]> {
+    return await invoke<DiffHunk[]>("git_diff_file", { repoPath, baseBranch, compareBranch, filePath });
+  },
+
+  async gitWorktreeList(repoPath: string): Promise<WorktreeInfo[]> {
+    return await invoke<WorktreeInfo[]>("git_worktree_list", { repoPath });
   },
 
   // Export operations
