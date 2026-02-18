@@ -237,16 +237,28 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   // Update editor content when switching tabs, saving/restoring scroll position
   useEffect(() => {
     if (editor && activeTab && activeTab.id !== lastLoadedTabId.current) {
-      // Save scroll position of the tab we're leaving
-      saveScrollRatio();
+      // Save scroll position of the tab we're LEAVING.
+      // Cannot use saveScrollRatio() here because activeTab already points to the
+      // new tab in this render.  Instead, look up the previous tab by its id.
+      const el = scrollAreaRef.current;
+      const prevTabId = lastLoadedTabId.current;
+      if (el && prevTabId && !isResizing.current) {
+        const prevTab = tabs.find((t) => t.id === prevTabId);
+        if (prevTab) {
+          const maxScroll = el.scrollHeight - el.clientHeight;
+          const ratio = maxScroll > 0 ? el.scrollTop / maxScroll : 0;
+          setScrollPosition(prevTab.filePath, ratio);
+        }
+      }
 
       // Hide scroll area to prevent flicker (content renders at top before scroll restores)
-      if (scrollAreaRef.current) {
-        scrollAreaRef.current.style.opacity = '0';
+      if (el) {
+        el.style.opacity = '0';
       }
 
       lastLoadedTabId.current = activeTab.id;
       editor.commands.setContent(activeTab.content);
+      editor.commands.blur();
 
       // Restore scroll position then reveal
       restoreScrollRatio(activeTab.filePath, () => {
@@ -255,7 +267,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         }
       });
     }
-  }, [activeTab?.id, editor, activeTab, saveScrollRatio, restoreScrollRatio]);
+  }, [activeTab?.id, editor, activeTab, tabs, setScrollPosition, restoreScrollRatio]);
 
   // Handle Cmd+S to save
   useEffect(() => {
