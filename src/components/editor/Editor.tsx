@@ -9,6 +9,8 @@ import { useFileOperations } from "@/hooks/useFileOperations";
 import { useExportOperations } from "@/hooks/useExportOperations";
 import { useDiffReview } from "@/hooks/useDiffReview";
 import { useFileWatcher } from "@/hooks/useFileWatcher";
+import { useCommentOperations } from "@/hooks/useCommentOperations";
+import { setPendingCommentRange as setPendingRangeDecoration } from "@/components/editor/extensions";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { useGitStore } from "@/stores/git-store";
 import { Button } from "@/components/ui/button";
@@ -19,6 +21,7 @@ import { BubbleMenu } from "./BubbleMenu";
 import { DiffReviewBanner } from "./DiffReviewBanner";
 import { ExternalChangeBanner } from "./ExternalChangeBanner";
 import { BranchDiffSelector } from "./BranchDiffSelector";
+import { CommentPopover } from "./CommentPopover";
 import { StatusBar } from "./StatusBar";
 import { FrontmatterBlock } from "./FrontmatterBlock";
 import "@/styles/editor.css";
@@ -177,6 +180,44 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const { exportPdf, isExporting } = useExportOperations(editor);
   const { reviewActive, compareBranch, handleAcceptAll, handleRejectAll } = useDiffReview(editor);
   useFileWatcher();
+
+  // Comments
+  const commentOps = useCommentOperations(editor);
+  const [commentPopoverOpen, setCommentPopoverOpen] = useState(false);
+  const [pendingCommentRange, setPendingCommentRange] = useState<{ from: number; to: number } | null>(null);
+  const [commentAnchorPos, setCommentAnchorPos] = useState<{ top: number; left: number } | null>(null);
+
+  // Listen for comment creation requests (Cmd+Shift+M or bubble menu)
+  useEffect(() => {
+    if (!editor) return;
+    const check = () => {
+      const pending = commentOps.consumePendingCreate();
+      if (pending) {
+        setPendingCommentRange(pending);
+        commentOps.setActiveComment(null);
+        // Show pending range decoration in the editor
+        setPendingRangeDecoration(editor, pending);
+        // Position popover at the selection
+        const coords = editor.view.coordsAtPos(pending.from);
+        setCommentAnchorPos({ top: coords.bottom, left: coords.left });
+        setCommentPopoverOpen(true);
+      }
+    };
+    editor.on('transaction', check);
+    return () => { editor.off('transaction', check); };
+  }, [editor, commentOps]);
+
+  // Listen for comment click (active comment changed)
+  useEffect(() => {
+    if (commentOps.activeCommentId && commentOps.activeComment && editor) {
+      setPendingCommentRange(null);
+      setPendingRangeDecoration(editor, null);
+      // Position popover at the comment's start
+      const coords = editor.view.coordsAtPos(commentOps.activeComment.from);
+      setCommentAnchorPos({ top: coords.bottom, left: coords.left });
+      setCommentPopoverOpen(true);
+    }
+  }, [commentOps.activeCommentId, commentOps.activeComment, editor]);
 
   // External change detection — check if the active tab has a pending external change
   const activeExternalContent = activeTab ? externalChanges[activeTab.filePath] : undefined;
@@ -471,6 +512,34 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           onExportOpenChange?.(false);
         }}
         isExporting={isExporting}
+      />
+      <CommentPopover
+        comment={commentOps.activeComment}
+        open={commentPopoverOpen}
+        anchorPosition={commentAnchorPos}
+        onOpenChange={(open) => {
+          setCommentPopoverOpen(open);
+          if (!open) {
+            commentOps.setActiveComment(null);
+            if (pendingCommentRange && editor) {
+              setPendingRangeDecoration(editor, null);
+            }
+            setPendingCommentRange(null);
+          }
+        }}
+        onCreate={async (body) => {
+          if (pendingCommentRange) {
+            await commentOps.createComment(body, pendingCommentRange.from, pendingCommentRange.to);
+            if (editor) setPendingRangeDecoration(editor, null);
+            setPendingCommentRange(null);
+          }
+        }}
+        onEdit={async (commentId, body) => {
+          await commentOps.editComment(commentId, body);
+        }}
+        onDelete={async (commentId) => {
+          await commentOps.removeComment(commentId);
+        }}
       />
     </div>
   );

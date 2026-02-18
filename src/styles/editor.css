@@ -425,6 +425,38 @@
   background-color: var(--color-background);
 }
 
+/* Comment highlight decorations */
+.comment-highlight {
+  background-color: oklch(88% 0.11 80 / 0.5);
+  border-bottom: 2px solid oklch(79% 0.15 68);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.comment-highlight:hover {
+  background-color: oklch(88% 0.11 80 / 0.7);
+}
+
+.comment-highlight-active {
+  background-color: oklch(88% 0.11 80 / 0.75);
+  border-bottom-color: oklch(79% 0.15 68);
+}
+
+:root.dark .comment-highlight {
+  background-color: oklch(79% 0.15 68 / 0.2);
+  border-bottom-color: oklch(79% 0.15 68 / 0.6);
+}
+
+:root.dark .comment-highlight:hover {
+  background-color: oklch(79% 0.15 68 / 0.3);
+}
+
+:root.dark .comment-highlight-active {
+  background-color: oklch(79% 0.15 68 / 0.35);
+  border-bottom-color: oklch(79% 0.15 68 / 0.8);
+}
+
 /* Inline diff decorations */
 .inline-diff-delete {
   background-color: rgba(239, 68, 68, 0.15);

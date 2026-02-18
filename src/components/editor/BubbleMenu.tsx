@@ -4,11 +4,12 @@ import {
   Sparkles,
   Loader2,
   ChevronDown,
+  MessageSquare,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAIStore } from "@/stores/ai-store";
 import { useAIOperations } from "@/hooks/useAIOperations";
-import { setSuggestion, hasActiveSuggestion } from "@/components/editor/extensions";
+import { setSuggestion, hasActiveSuggestion, CommentMarkPluginKey } from "@/components/editor/extensions";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -149,82 +150,106 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
         padding: '3px',
       }}
     >
-      {provider && !hasSuggestion && (
+      {!hasSuggestion && (
         <>
-          <BubbleButton
-            onClick={() => handleAIAction('improve')}
-            disabled={loadingAction !== null}
-            title="Improve with AI"
-            loading={loadingAction === 'improve'}
-          >
-            <Sparkles className="h-3 w-3" />
-            Improve
-          </BubbleButton>
-
-          <div className="w-px h-4 mx-0.5" style={{ backgroundColor: 'var(--color-border)' }} />
-
-          <BubbleButton
-            onClick={() => handleAIAction('summarize')}
-            disabled={loadingAction !== null}
-            title="Summarize with AI"
-            loading={loadingAction === 'summarize'}
-          >
-            Summarize
-          </BubbleButton>
-
-          <div className="w-px h-4 mx-0.5" style={{ backgroundColor: 'var(--color-border)' }} />
-
-          <BubbleButton
-            onClick={() => handleAIAction('expand')}
-            disabled={loadingAction !== null}
-            title="Expand with AI"
-            loading={loadingAction === 'expand'}
-          >
-            Expand
-          </BubbleButton>
-
-          {customPrompts.length > 0 && (
+          {provider && (
             <>
+              <BubbleButton
+                onClick={() => handleAIAction('improve')}
+                disabled={loadingAction !== null}
+                title="Improve with AI"
+                loading={loadingAction === 'improve'}
+              >
+                <Sparkles className="h-3 w-3" />
+                Improve
+              </BubbleButton>
+
               <div className="w-px h-4 mx-0.5" style={{ backgroundColor: 'var(--color-border)' }} />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    disabled={loadingAction !== null}
-                    className="h-7 px-2 rounded-md text-[12px] font-medium transition-colors disabled:opacity-40 disabled:pointer-events-none inline-flex items-center gap-1"
-                    style={{ color: 'var(--color-muted-foreground)' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
-                    title="Custom prompts"
-                  >
-                    {loadingAction === 'custom' ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <>
-                        More
-                        <ChevronDown className="h-3 w-3" />
-                      </>
-                    )}
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
-                    Custom Prompts
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {customPrompts.map((prompt) => (
-                    <DropdownMenuItem
-                      key={prompt.id}
-                      onClick={() => handleCustomPrompt(prompt.template)}
-                      className="cursor-pointer text-[13px]"
-                    >
-                      <span className="mr-2">{prompt.icon}</span>
-                      {prompt.name}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+
+              <BubbleButton
+                onClick={() => handleAIAction('summarize')}
+                disabled={loadingAction !== null}
+                title="Summarize with AI"
+                loading={loadingAction === 'summarize'}
+              >
+                Summarize
+              </BubbleButton>
+
+              <div className="w-px h-4 mx-0.5" style={{ backgroundColor: 'var(--color-border)' }} />
+
+              <BubbleButton
+                onClick={() => handleAIAction('expand')}
+                disabled={loadingAction !== null}
+                title="Expand with AI"
+                loading={loadingAction === 'expand'}
+              >
+                Expand
+              </BubbleButton>
+
+              {customPrompts.length > 0 && (
+                <>
+                  <div className="w-px h-4 mx-0.5" style={{ backgroundColor: 'var(--color-border)' }} />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        disabled={loadingAction !== null}
+                        className="h-7 px-2 rounded-md text-[12px] font-medium transition-colors disabled:opacity-40 disabled:pointer-events-none inline-flex items-center gap-1"
+                        style={{ color: 'var(--color-muted-foreground)' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
+                        title="Custom prompts"
+                      >
+                        {loadingAction === 'custom' ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <>
+                            More
+                            <ChevronDown className="h-3 w-3" />
+                          </>
+                        )}
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                        Custom Prompts
+                      </DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {customPrompts.map((prompt) => (
+                        <DropdownMenuItem
+                          key={prompt.id}
+                          onClick={() => handleCustomPrompt(prompt.template)}
+                          className="cursor-pointer text-[13px]"
+                        >
+                          <span className="mr-2">{prompt.icon}</span>
+                          {prompt.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </>
+              )}
+
+              <div className="w-px h-4 mx-0.5" style={{ backgroundColor: 'var(--color-border)' }} />
             </>
           )}
+
+          <BubbleButton
+            onClick={() => {
+              const { from, to } = editor.state.selection;
+              if (from === to) return;
+              editor.view.dispatch(
+                editor.state.tr.setMeta(CommentMarkPluginKey, {
+                  requestCreateComment: { from, to },
+                })
+              );
+            }}
+            disabled={loadingAction !== null}
+            title="Add comment (⌘⇧M)"
+            loading={false}
+          >
+            <MessageSquare className="h-3 w-3" />
+            Comment
+          </BubbleButton>
         </>
       )}
 

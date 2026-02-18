@@ -24,6 +24,22 @@ interface ParseResult {
 }
 
 /**
+ * Ensure a document has a UUID in its frontmatter.
+ * If the frontmatter already has an `id`, it's returned unchanged.
+ * Otherwise a new UUID is generated via `crypto.randomUUID()`.
+ * If frontmatter is null, a new object with just `{ id }` is created.
+ */
+export function ensureDocumentId(frontmatter: Frontmatter | null): { frontmatter: Frontmatter; id: string } {
+  if (frontmatter?.id && typeof frontmatter.id === 'string') {
+    return { frontmatter, id: frontmatter.id };
+  }
+
+  const id = crypto.randomUUID();
+  const updated = { ...frontmatter, id };
+  return { frontmatter: updated, id };
+}
+
+/**
  * Parse frontmatter from a raw markdown string.
  *
  * Frontmatter must start at position 0 with `---` followed by a newline,

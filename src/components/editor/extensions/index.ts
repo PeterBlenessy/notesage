@@ -12,3 +12,13 @@ export {
   getInlineDiffHunks,
 } from './inline-diff';
 export type { InlineDiffHunk } from './inline-diff';
+export {
+  CommentMark,
+  setCommentDecorations,
+  clearCommentDecorations,
+  setActiveCommentDecoration,
+  setPendingCommentRange,
+  getCommentAtPos,
+  getCommentMarkState,
+  CommentMarkPluginKey,
+} from './comment-mark';

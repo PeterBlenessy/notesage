@@ -6,9 +6,18 @@ import {
   type ProjectMetadata,
 } from '@/stores/project-metadata-store';
 import { tauriApi } from '@/lib/tauri';
+import { buildDocumentIndex, type DocumentIndex } from '@/lib/document-index';
 
 const METADATA_DIR = '.notesage';
 const METADATA_FILE = 'project.json';
+
+/** In-memory document index cache per project root. */
+const documentIndexCache = new Map<string, DocumentIndex>();
+
+/** Get the cached document index for a project, or an empty one. */
+export function getDocumentIndex(projectRoot: string): DocumentIndex {
+  return documentIndexCache.get(projectRoot) ?? { entries: {} };
+}
 
 function getMetadataDir(rootPath: string): string {
   return `${rootPath}/${METADATA_DIR}`;
@@ -92,6 +101,10 @@ export function useProjectMetadata() {
       if (!loadedPathsRef.current.has(project.path)) {
         loadedPathsRef.current.add(project.path);
         loadProjectMetadata(project.path, setMetadata);
+        // Build document index in background (non-blocking)
+        buildDocumentIndex(project.path)
+          .then((index) => documentIndexCache.set(project.path, index))
+          .catch((err) => console.error('Failed to build document index:', err));
       }
     }
 
@@ -99,6 +112,7 @@ export function useProjectMetadata() {
     for (const loaded of loadedPathsRef.current) {
       if (!currentPaths.has(loaded)) {
         loadedPathsRef.current.delete(loaded);
+        documentIndexCache.delete(loaded);
       }
     }
   }, [projects, setMetadata]);

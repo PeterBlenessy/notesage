@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseFrontmatter, serializeFrontmatter } from '../frontmatter';
+import { parseFrontmatter, serializeFrontmatter, ensureDocumentId } from '../frontmatter';
 
 describe('parseFrontmatter', () => {
   it('extracts YAML object and content from valid frontmatter', () => {
@@ -306,5 +306,48 @@ Blockers: none.`;
 
     expect(parsed.frontmatter).toEqual({});
     expect(parsed.content).toBe(content);
+  });
+});
+
+describe('ensureDocumentId', () => {
+  it('generates a new UUID when frontmatter is null', () => {
+    const result = ensureDocumentId(null);
+
+    expect(result.frontmatter).toHaveProperty('id');
+    expect(typeof result.id).toBe('string');
+    expect(result.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(result.frontmatter.id).toBe(result.id);
+  });
+
+  it('generates a new UUID when frontmatter has no id field', () => {
+    const result = ensureDocumentId({ title: 'foo' });
+
+    expect(result.frontmatter.title).toBe('foo');
+    expect(typeof result.id).toBe('string');
+    expect(result.id.length).toBeGreaterThan(0);
+    expect(result.frontmatter.id).toBe(result.id);
+  });
+
+  it('preserves existing UUID when frontmatter already has an id', () => {
+    const result = ensureDocumentId({ id: 'existing-uuid-123' });
+
+    expect(result.id).toBe('existing-uuid-123');
+    expect(result.frontmatter.id).toBe('existing-uuid-123');
+  });
+
+  it('preserves other frontmatter fields when generating a new id', () => {
+    const result = ensureDocumentId({ title: 'My Doc', type: 'note', tags: ['a', 'b'] });
+
+    expect(result.frontmatter.title).toBe('My Doc');
+    expect(result.frontmatter.type).toBe('note');
+    expect(result.frontmatter.tags).toEqual(['a', 'b']);
+    expect(typeof result.frontmatter.id).toBe('string');
+  });
+
+  it('generates unique UUIDs on each call', () => {
+    const a = ensureDocumentId(null);
+    const b = ensureDocumentId(null);
+
+    expect(a.id).not.toBe(b.id);
   });
 });
