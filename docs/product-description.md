@@ -17,15 +17,16 @@ Tiptap-powered WYSIWYG editor with full markdown round-tripping.
 - Bullet lists, ordered lists, task lists (checkboxes)
 - Blockquotes, horizontal rules
 - Code blocks with syntax highlighting (lowlight)
-- Links (with URL editing popup), images (local path, clipboard paste)
+- Links (rendered inline, clickable), images (via URL prompt)
 - Tables (insert, add/remove rows/columns)
 
 **Editing features:**
 
-- Floating toolbar on text selection (bold, italic, underline, strikethrough, code, link, heading selector, alignment) — toggleable in settings
+- Top toolbar with formatting controls: undo/redo, bold, italic, underline, strikethrough, code, bullet list, ordered list, task list, blockquote, code block, horizontal rule, table, image
+- Bubble menu on text selection with AI actions (Improve, Summarize, Expand) — toggleable in settings
 - Slash commands (`/` at start of line) for inserting headings, lists, code blocks, blockquotes, tables, horizontal rules, images
 - Multi-tab editing with dirty indicator, auto-save on blur/tab switch (debounced 1s)
-- Cmd+F quick-open with fuzzy file search
+- Cmd+F quick-open with file search
 
 **File management:**
 
@@ -42,7 +43,7 @@ Tiptap-powered WYSIWYG editor with full markdown round-tripping.
 **Desktop packaging:**
 
 - macOS primary (arm64 + x86_64), window 1200x800 default, min 800x600
-- Native title bar, remembers window position/size between launches
+- Native title bar, resizable
 - Light/dark mode following system preference (Cmd+Shift+T to toggle)
 
 ### AI Collaboration
@@ -316,7 +317,7 @@ Before any release, ALL of these must pass:
 - [ ] Unsaved changes indicator works
 - [ ] Auto-save on tab switch works
 - [ ] Slash commands insert correct block types
-- [ ] Floating toolbar appears on selection and applies formatting
+- [ ] Top toolbar applies formatting; bubble menu appears on selection with AI actions
 - [ ] Create/rename/delete files from sidebar works
 - [ ] Light/dark theme works and follows system preference
 - [ ] App builds and runs on macOS without errors
@@ -333,6 +334,6 @@ Before any release, ALL of these must pass:
 - [ ] No default browser UI elements visible (checkboxes, scrollbars, selects)
 - [ ] Consistent border-radius, spacing, and color palette throughout
 - [ ] Code blocks have syntax highlighting with a tasteful theme
-- [ ] Floating toolbar has backdrop blur and smooth animation
+- [ ] Bubble menu has backdrop blur and smooth animation
 - [ ] Typography is polished: proper hierarchy, readable sizes, intentional weight usage
 - [ ] Looks great in BOTH light and dark mode
