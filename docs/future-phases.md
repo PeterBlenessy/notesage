@@ -43,14 +43,22 @@ Inline AI suggestions, chat panel, and provider abstraction.
 **Completed features:**
 
 - `.notesage/` metadata directory auto-bootstrapped per project
+
   - Project settings (name, description)
   - AI context (provider, persona, project context overrides)
+
 - New Project dialog (Cmd+Shift+N) — creates folder + metadata
+
 - New Note dialog (Cmd+N) — replaces browser prompts, duplicate detection
+
 - Project Settings tab in settings dialog
+
 - `project-metadata-store` for project-level state
+
 - `useProjectMetadata` hook for auto-loading/saving metadata
+
 - Git integration (core)
+
   - File status indicators in sidebar (modified, staged, untracked, deleted, renamed, conflicted)
   - Commit dialog with file selection, staging/unstaging, and message input
   - Branch display and switching via dropdown
@@ -58,7 +66,9 @@ Inline AI suggestions, chat panel, and provider abstraction.
   - Git identity configuration UI when `user.name`/`user.email` missing
   - Toast notifications for commit success and git errors
   - Status refresh on save, commit, branch switch, and window focus
+
 - Project goals (v0.6.0)
+
   - YAML frontmatter support (parse, preserve, edit)
   - Goal templates (OKR, Simple Checklist, SMART Goals, Milestone Tracker)
   - Project templates in New Project dialog (Default, Research, Writing, Blank)
@@ -66,6 +76,15 @@ Inline AI suggestions, chat panel, and provider abstraction.
   - Goals discovery by scanning for `type: goal` frontmatter
   - AI context injection — goals included in chat system prompt
   - Multi-select project selector in chat footer
+
+- AI web search integration
+
+  - Anthropic server-side web search (`web_search_20250305`)
+  - OpenAI web search via Responses API (`web_search_preview`)
+  - Ollama search deferred (toggle disabled with toast)
+  - User-configurable search toggle in chat input footer
+  - Citation display in chat messages with clickable source URLs
+  - OpenAI migrated from Chat Completions to Responses API (`/v1/responses`)
 
 **Remaining features:**
 
@@ -75,14 +94,6 @@ Inline AI suggestions, chat panel, and provider abstraction.
 - Git enhancements
   - View diff in editor
   - Conflict resolution helpers
-- Web search integration
-  - Search web from within app
-  - Insert search results as references
-  - Auto-cite sources
-
-**Architecture considerations:**
-
-- Search results in dedicated panel
 
 ## Phase 4 — Document Generation
 

@@ -263,7 +263,7 @@ pub async fn ai_generate_text(request: AIRequest) -> Result<String, String>
 
 ### ai_chat
 
-Multi-turn chat with an AI provider.
+Multi-turn chat with an AI provider (non-streaming).
 
 ```rust
 #[tauri::command]
@@ -286,6 +286,43 @@ pub async fn ai_chat(
 
 - `Ok(String)`: AI response message
 - `Err(String)`: Error message if chat fails
+
+### ai_chat_stream
+
+Streaming multi-turn chat with an AI provider. Emits events: `ai-stream-chunk` (text delta), `ai-stream-done` (completion), `ai-tool-use` (tool status), `ai-citation` (web search citations).
+
+```rust
+#[tauri::command]
+pub async fn ai_chat_stream(
+    window: tauri::Window,
+    messages: Vec<ChatMessage>,
+    provider: String,
+    api_key: Option<String>,
+    ollama_url: Option<String>,
+    web_search_enabled: Option<bool>,
+) -> Result<(), String>
+```
+
+**Parameters:**
+
+- `window`: Tauri window handle (injected automatically)
+- `messages`: Array of ChatMessage structs
+- `provider`: "anthropic", "openai", or "ollama"
+- `api_key`: API key for Anthropic/OpenAI (None for Ollama)
+- `ollama_url`: Ollama server URL (None for Anthropic/OpenAI)
+- `web_search_enabled`: Enable server-side web search (Anthropic/OpenAI only, ignored for Ollama)
+
+**Returns:**
+
+- `Ok(())`: Stream completed successfully (content delivered via events)
+- `Err(String)`: Error message if streaming fails
+
+**Events emitted:**
+
+- `ai-stream-chunk` (String): Text delta to append
+- `ai-stream-done` (()): Stream completed
+- `ai-tool-use` ({ tool: string, status: string }): Tool usage (e.g., web_search started)
+- `ai-citation` ({ url: string, title: string, cited_text: string }): Citation from web search
 
 ### AIRequest Struct
 

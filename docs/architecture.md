@@ -163,9 +163,9 @@ interface AIProvider {
 
 **Provider implementation:**
 
-- Anthropic: Claude Sonnet 4.5
-- OpenAI: GPT-4 Turbo
-- Ollama: Local AI models
+- Anthropic: Claude Sonnet 4.5 (Messages API with server-side web search via `web_search_20250305`)
+- OpenAI: GPT-4o (Responses API `/v1/responses` with `web_search_preview` tool)
+- Ollama: Local AI models (no web search support)
 
 ### Security Model
 
@@ -212,11 +212,24 @@ interface AIProvider {
 1. User types message in ChatInput
 2. Frontend calls `useChatStore.addMessage(userMessage)`
 3. Frontend calls `useAIOperations.sendChatMessage(content, messages)`
-4. Hook calls Tauri command `ai_chat(messages, provider, apiKey)`
-5. Rust makes HTTP request to AI provider API
-6. AI response streamed back to frontend
-7. Frontend calls `useChatStore.addMessage(aiResponse)`
-8. Chat history persisted to localStorage
+4. Hook calls Tauri command `ai_chat_stream(messages, provider, apiKey, webSearchEnabled)`
+5. Rust makes streaming HTTP request to AI provider API (SSE)
+6. Text deltas emitted via `ai-stream-chunk` events, citations via `ai-citation` events
+7. Frontend accumulates content and updates assistant message via `useChatStore.updateMessage`
+8. On stream completion (`ai-stream-done`), citations attached to final message
+9. Chat history persisted to localStorage
+
+### Web Search
+
+When web search is enabled (toggle in chat footer):
+
+1. `webSearchEnabled` flag read from chat-store, passed to `ai_chat_stream`
+2. Anthropic: `web_search_20250305` server tool added to request — Anthropic executes search server-side
+3. OpenAI: `web_search_preview` tool added to Responses API request — OpenAI executes search server-side
+4. Ollama: Search toggle disabled in UI (toast notification)
+5. Search status emitted via `ai-tool-use` event ("Searching the web..." indicator)
+6. Citations extracted from provider-specific response formats, emitted via `ai-citation` events
+7. Citations displayed as numbered "Sources" section below assistant messages
 
 ## Future-Proofing Decisions
 

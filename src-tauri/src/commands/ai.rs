@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChatMessage {
@@ -48,12 +47,15 @@ pub async fn ai_chat_stream(
     provider: String,
     api_key: Option<String>,
     ollama_url: Option<String>,
+    web_search_enabled: Option<bool>,
 ) -> Result<(), String> {
     use crate::commands::ai_streaming::*;
 
+    let search = web_search_enabled.unwrap_or(false);
+
     match provider.as_str() {
-        "anthropic" => anthropic_chat_stream(&window, &messages, &api_key).await,
-        "openai" => openai_chat_stream(&window, &messages, &api_key).await,
+        "anthropic" => anthropic_chat_stream(&window, &messages, &api_key, search).await,
+        "openai" => openai_chat_stream(&window, &messages, &api_key, search).await,
         "ollama" => ollama_chat_stream(&window, &messages, &ollama_url).await,
         _ => Err(format!("Unknown provider: {}", provider)),
     }
@@ -68,15 +70,6 @@ async fn anthropic_generate(request: &AIRequest) -> Result<String, String> {
 
     let client = reqwest::Client::new();
 
-    let mut body = HashMap::new();
-    body.insert("model", "claude-sonnet-4-5-20250929");
-    body.insert("max_tokens", "4096");
-
-    let messages_array = vec![HashMap::from([
-        ("role", "user"),
-        ("content", request.prompt.as_str()),
-    ])];
-
     let response = client
         .post("https://api.anthropic.com/v1/messages")
         .header("x-api-key", api_key)
@@ -85,7 +78,10 @@ async fn anthropic_generate(request: &AIRequest) -> Result<String, String> {
         .json(&serde_json::json!({
             "model": "claude-sonnet-4-5-20250929",
             "max_tokens": 4096,
-            "messages": messages_array
+            "messages": [{
+                "role": "user",
+                "content": request.prompt
+            }]
         }))
         .send()
         .await
@@ -169,25 +165,20 @@ async fn anthropic_chat(messages: &[ChatMessage], api_key: &Option<String>) -> R
     Ok(content)
 }
 
-// OpenAI API implementation
+// OpenAI Responses API implementation
 async fn openai_generate(request: &AIRequest) -> Result<String, String> {
     let api_key = request.api_key.as_ref().ok_or("OpenAI API key is required")?;
 
     let client = reqwest::Client::new();
 
     let response = client
-        .post("https://api.openai.com/v1/chat/completions")
+        .post("https://api.openai.com/v1/responses")
         .header("Authorization", format!("Bearer {}", api_key))
         .header("content-type", "application/json")
         .json(&serde_json::json!({
-            "model": "gpt-4-turbo-preview",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": request.prompt
-                }
-            ],
-            "max_tokens": 4096
+            "model": "gpt-4o",
+            "input": request.prompt,
+            "store": false,
         }))
         .send()
         .await
@@ -203,7 +194,8 @@ async fn openai_generate(request: &AIRequest) -> Result<String, String> {
         .await
         .map_err(|e| format!("Failed to parse OpenAI response: {}", e))?;
 
-    let content = json["choices"][0]["message"]["content"]
+    // Responses API: output[0].content[0].text
+    let content = json["output"][0]["content"][0]["text"]
         .as_str()
         .ok_or("Invalid response format from OpenAI")?
         .to_string();
@@ -216,25 +208,51 @@ async fn openai_chat(messages: &[ChatMessage], api_key: &Option<String>) -> Resu
 
     let client = reqwest::Client::new();
 
-    let api_messages: Vec<serde_json::Value> = messages
+    // Extract system message as top-level `instructions`
+    let instructions: Option<String> = messages
         .iter()
+        .find(|m| m.role == "system")
+        .map(|m| m.content.clone());
+
+    // Build input array for Responses API
+    let input: Vec<serde_json::Value> = messages
+        .iter()
+        .filter(|m| m.role != "system")
         .map(|m| {
-            serde_json::json!({
-                "role": m.role,
-                "content": m.content
-            })
+            if m.role == "assistant" {
+                serde_json::json!({
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{
+                        "type": "output_text",
+                        "text": m.content
+                    }]
+                })
+            } else {
+                serde_json::json!({
+                    "type": "message",
+                    "role": "user",
+                    "content": m.content
+                })
+            }
         })
         .collect();
 
+    let mut body = serde_json::json!({
+        "model": "gpt-4o",
+        "input": input,
+        "store": false,
+    });
+
+    if let Some(ref inst) = instructions {
+        body["instructions"] = serde_json::json!(inst);
+    }
+
     let response = client
-        .post("https://api.openai.com/v1/chat/completions")
+        .post("https://api.openai.com/v1/responses")
         .header("Authorization", format!("Bearer {}", api_key))
         .header("content-type", "application/json")
-        .json(&serde_json::json!({
-            "model": "gpt-4-turbo-preview",
-            "messages": api_messages,
-            "max_tokens": 4096
-        }))
+        .json(&body)
         .send()
         .await
         .map_err(|e| format!("OpenAI API request failed: {}", e))?;
@@ -249,7 +267,8 @@ async fn openai_chat(messages: &[ChatMessage], api_key: &Option<String>) -> Resu
         .await
         .map_err(|e| format!("Failed to parse OpenAI response: {}", e))?;
 
-    let content = json["choices"][0]["message"]["content"]
+    // Responses API: output[0].content[0].text
+    let content = json["output"][0]["content"][0]["text"]
         .as_str()
         .ok_or("Invalid response format from OpenAI")?
         .to_string();

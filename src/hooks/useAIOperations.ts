@@ -4,7 +4,7 @@ import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { useChatStore } from '@/stores/chat-store';
 import { useProjectMetadataStore, type ProjectMetadata } from '@/stores/project-metadata-store';
 import { getAIProvider } from '@/lib/ai';
-import type { ChatMessage } from '@/lib/ai/types';
+import type { ChatMessage, Citation } from '@/lib/ai/types';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
@@ -35,7 +35,7 @@ function buildProjectHeader(metadata: ProjectMetadata): string {
 export function useAIOperations() {
   const aiStore = useAIStore();
   const { apiKeys, ollamaUrl } = aiStore;
-  const { addMessage, updateMessage, setLoading, setError, setActiveTool, selectedProjectPaths } = useChatStore();
+  const { addMessage, updateMessage, setLoading, setError, setActiveTool, selectedProjectPaths, webSearchEnabled } = useChatStore();
   const cleanupRef = useRef<(() => void) | null>(null);
 
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
@@ -135,6 +135,7 @@ export function useAIOperations() {
 
       try {
         let streamedContent = '';
+        const collectedCitations: Citation[] = [];
 
         // Listen for stream chunks
         const unlistenChunk = await listen<string>('ai-stream-chunk', (event) => {
@@ -149,9 +150,22 @@ export function useAIOperations() {
           }
         });
 
+        // Listen for citation events from web search
+        const unlistenCitation = await listen<{ url: string; title: string; cited_text: string }>('ai-citation', (event) => {
+          const { url, title, cited_text } = event.payload;
+          if (!collectedCitations.some((c) => c.url === url)) {
+            collectedCitations.push({ url, title, citedText: cited_text });
+          }
+        });
+
         const cleanup = () => {
           unlistenChunk();
           unlistenTool();
+          unlistenCitation();
+          // Attach collected citations to the final message
+          if (collectedCitations.length > 0) {
+            updateMessage(assistantMessageId, streamedContent, collectedCitations);
+          }
           setLoading(false);
           setActiveTool(null);
           cleanupRef.current = null;
@@ -178,6 +192,7 @@ export function useAIOperations() {
           provider: effectiveProvider,
           apiKey: effectiveProvider === 'ollama' ? undefined : apiKeys[effectiveProvider],
           ollamaUrl,
+          webSearchEnabled: webSearchEnabled && effectiveProvider !== 'ollama',
         });
       } catch (error) {
         // Clean up listeners on error
@@ -189,7 +204,7 @@ export function useAIOperations() {
         setActiveTool(null);
       }
     },
-    [effectiveProvider, apiKeys, ollamaUrl, composedSystemMessage, addMessage, updateMessage, setLoading, setError, setActiveTool]
+    [effectiveProvider, apiKeys, ollamaUrl, composedSystemMessage, webSearchEnabled, addMessage, updateMessage, setLoading, setError, setActiveTool]
   );
 
   return { generateText, sendChatMessage };

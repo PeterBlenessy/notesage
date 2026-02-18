@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { X, Trash2, Loader2, Target, ChevronUp, FolderOpen, Check } from 'lucide-react';
+import { X, Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe } from 'lucide-react';
+import { toast } from 'sonner';
 import { PersonaIcon } from '@/components/PersonaIcon';
 import { useChatStore } from '@/stores/chat-store';
 import { useAIStore, getActivePersona, getAllPersonas } from '@/stores/ai-store';
@@ -26,7 +27,7 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ onClose }: ChatPanelProps) {
-  const { messages, isLoading, error, activeTool, clearMessages, selectedProjectPaths, setSelectedProjectPaths, toggleProjectPath } = useChatStore();
+  const { messages, isLoading, error, activeTool, clearMessages, selectedProjectPaths, setSelectedProjectPaths, toggleProjectPath, webSearchEnabled, setWebSearchEnabled } = useChatStore();
   const aiStore = useAIStore();
   const { provider, setActivePersona } = aiStore;
   const activePersona = getActivePersona(aiStore);
@@ -247,6 +248,43 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
                   )}
                 </PopoverContent>
               </Popover>
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => {
+                        if (!provider) return;
+                        if (provider === 'ollama') {
+                          toast.info('Web search is not yet available for Ollama. Please use Anthropic or OpenAI for search.');
+                          return;
+                        }
+                        setWebSearchEnabled(!webSearchEnabled);
+                      }}
+                      disabled={!provider}
+                      className="flex items-center gap-1 text-xs transition-colors rounded px-1 py-0.5 hover:bg-accent/50 disabled:opacity-30 disabled:cursor-not-allowed"
+                      style={{
+                        color: webSearchEnabled && provider && provider !== 'ollama'
+                          ? 'var(--color-foreground)'
+                          : 'var(--color-muted-foreground)',
+                      }}
+                    >
+                      <Globe className="h-3 w-3" strokeWidth={1.5} />
+                      <span>Search</span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-64">
+                    <p className="text-xs">
+                      {!provider
+                        ? 'Configure an AI provider to use search'
+                        : provider === 'ollama'
+                          ? 'Web search is not available for Ollama'
+                          : webSearchEnabled
+                            ? 'Web search enabled — AI can search the internet'
+                            : 'Click to enable web search'}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               {goalFiles.length > 0 && (
                 <TooltipProvider delayDuration={200}>
                   <Tooltip>

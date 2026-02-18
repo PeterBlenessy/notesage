@@ -1,7 +1,8 @@
-import { Copy, Check, User, Sparkles } from 'lucide-react';
+import { Copy, Check, User, Sparkles, ExternalLink } from 'lucide-react';
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { useChatStore } from '@/stores/chat-store';
 import type { ChatMessage as ChatMessageType } from '@/lib/ai/types';
 
@@ -15,11 +16,21 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
   const isUser = message.role === 'user';
   const isStreaming = !isUser && isLoading && message.content.length === 0;
+  const hasCitations = !isUser && message.citations && message.citations.length > 0;
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(message.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleOpenUrl = async (url: string) => {
+    try {
+      await openUrl(url);
+    } catch {
+      // Fallback: open in webview if opener fails
+      window.open(url, '_blank');
+    }
   };
 
   return (
@@ -67,6 +78,35 @@ export function ChatMessage({ message }: ChatMessageProps) {
             {isLoading && (
               <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse" style={{ backgroundColor: 'var(--color-muted-foreground)' }} />
             )}
+          </div>
+        )}
+
+        {/* Citations / Sources */}
+        {hasCitations && (
+          <div className="mt-2.5 pt-2 border-t" style={{ borderColor: 'var(--color-border)' }}>
+            <p className="text-[10px] font-medium uppercase tracking-wider mb-1.5" style={{ color: 'var(--color-muted-foreground)' }}>
+              Sources
+            </p>
+            <ol className="list-none m-0 p-0 flex flex-col gap-1">
+              {message.citations!.map((citation, i) => (
+                <li key={`${citation.url}-${i}`} className="flex items-start gap-1.5">
+                  <span className="text-[10px] font-medium shrink-0 mt-px" style={{ color: 'var(--color-muted-foreground)' }}>
+                    {i + 1}.
+                  </span>
+                  <button
+                    onClick={() => handleOpenUrl(citation.url)}
+                    className="text-[11px] leading-snug text-left transition-colors hover:underline truncate"
+                    style={{ color: 'var(--color-foreground)' }}
+                    title={citation.url}
+                  >
+                    <span className="flex items-center gap-1">
+                      <span className="truncate">{citation.title || citation.url}</span>
+                      <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-50" />
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ol>
           </div>
         )}
 

@@ -2,7 +2,6 @@ pub mod file;
 pub mod dialog;
 pub mod ai;
 pub mod ai_streaming;
-pub mod tools;
 pub mod git;
 
 pub use file::*;
