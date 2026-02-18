@@ -1,3 +1,7 @@
+---
+id: 6bf76acc-37c9-4635-a5ea-be66c2020ff9
+---
+
 # Notesage — Product Description
 
 Notesage is a WYSIWYG markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
@@ -189,6 +193,28 @@ Export notes to professionally typeset PDFs using the embedded Typst engine.
 - Tauri filesystem watcher via `tauri-plugin-fs` or `notify` crate
 - UUID generation: `uuid` crate in Rust or `crypto.randomUUID()` in frontend
 - Document index enables stable cross-document references for future features (backlinks, research references, AI task assignments)
+
+### Phase 5.5 — Notesage Library & iCloud Sync
+
+**Goal:** Establish \~/Notesage as the central library folder and add selective iCloud sync per project.
+
+**Features:**
+
+- \~/Notesage as the default library folder for notes, new projects, and global metadata
+- Selective iCloud sync per project (not all-or-nothing)
+  - Setting to enable iCloud sync on Mac
+  - When enabled, user chooses which projects to sync — those folders move to iCloud/Notesage
+  - New project creation: checkbox for iCloud sync; if selected, folder defaults to iCloud/Notesage (not user-selectable); if not, defaults to \~/Notesage with option to choose another folder
+  - Non-project folders (Explorer) cannot be synced
+- Sync-aware project creation and folder management
+- Cross-platform home directory resolution (macOS, Windows, Linux)
+
+**Architecture considerations:**
+
+- Requires a dedicated PRD before implementation
+- iCloud folder detection on macOS (`~/Library/Mobile Documents/com~apple~CloudDocs/`)
+- Settings-store for sync preferences per project
+- Migration logic for moving existing project folders to/from iCloud
 
 ### Phase 6 — Agentic AI Collaboration
 
