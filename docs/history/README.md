@@ -18,3 +18,4 @@ Chronological log of major implementation milestones and changes.
 | 012 | [Release v0.6.0](012-release-v0.6.0.md) | Project goals, frontmatter support, AI context improvements |
 | 013 | [Release v0.6.1](013-release-v0.6.1.md) | Fix scroll position on window resize and layout breakpoint |
 | 014 | [Release v0.6.2](014-release-v0.6.2.md) | Remove duplicate Tiptap extension warnings |
+| 015 | [Release v0.7.0](015-release-v0.7.0.md) | AI web search with Anthropic and OpenAI provider-native search |
