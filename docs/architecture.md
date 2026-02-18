@@ -251,4 +251,4 @@ These architectural choices enable future phases:
 - **Zustand stores**: Clean boundaries allow adding new stores (comment-store for Phase 5, workflow-store for Phase 8)
 - **Provider abstraction**: Easy to add new providers — local AI (Phase 9), Anthropic Agent SDK (Phase 6)
 - **No hardcoded paths**: `.notesage/` metadata directory supports sidecar comments (Phase 5), research storage (Phase 7), workflow definitions (Phase 8)
-- **YAML frontmatter**: Document identity via lazy UUID enables stable cross-document references for comments, research, and AI task assignments
+- **YAML frontmatter**: Document identity via lazy UUID enables stable cross-document references for comments, research, and AI task assignments (project files only — non-project files use path-based comment keys to avoid modifying external files)

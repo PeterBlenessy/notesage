@@ -2,26 +2,39 @@ import { useEffect, useCallback, useRef } from 'react';
 import type { Editor } from '@tiptap/core';
 import { useEditorStore } from '@/stores/editor-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useCommentStore, type Comment } from '@/stores/comment-store';
+import { useCommentStore } from '@/stores/comment-store';
+import type { Comment } from '@/stores/comment-store';
 import { useActiveProject } from '@/hooks/useActiveProject';
 import { ensureDocumentId } from '@/lib/frontmatter';
 import { updateDocumentIndex } from '@/lib/document-index';
 import {
   setCommentDecorations,
   clearCommentDecorations,
-  setActiveCommentDecoration,
   CommentMarkPluginKey,
 } from '@/components/editor/extensions';
+
+/** Simple deterministic hash of a string → hex string (for filename-safe comment keys). */
+function hashPath(path: string): string {
+  let h = 0;
+  for (let i = 0; i < path.length; i++) {
+    h = ((h << 5) - h + path.charCodeAt(i)) | 0;
+  }
+  return 'path-' + (h >>> 0).toString(16);
+}
 
 /**
  * Orchestrates the full comment lifecycle: load, create, edit, delete, save.
  * Connects comment-store ↔ editor decorations ↔ sidecar JSON persistence.
+ *
+ * Project files use a UUID (from frontmatter) as the comment key — survives renames.
+ * Non-project files use a hash of the file path — no frontmatter modification.
  */
 export function useCommentOperations(editor: Editor | null) {
   const { projectPath } = useActiveProject();
   const notesRootPath = useSettingsStore((s) => s.notesRootPath);
   // Project-scoped storage if file is in a project, otherwise fall back to the Notesage library
   const storageRoot = projectPath ?? (notesRootPath && !notesRootPath.startsWith('~') ? notesRootPath : null);
+  const isProjectFile = !!projectPath;
   const activeTab = useEditorStore((s) => {
     const tab = s.tabs.find((t) => t.id === s.activeTabId);
     return tab ?? null;
@@ -40,40 +53,37 @@ export function useCommentOperations(editor: Editor | null) {
     clearDocument,
   } = useCommentStore();
 
-  const lastLoadedDocRef = useRef<string | null>(null);
+  const lastLoadedKeyRef = useRef<string | null>(null);
 
-  // Get document ID from current tab's frontmatter (if it has one)
+  // Get document ID from current tab's frontmatter (project files only)
   const documentId = (activeTab?.frontmatter?.id as string) ?? null;
 
-  // Load comments when opening a file with a UUID
+  // Comment key: UUID for project files, path hash for non-project files
+  const commentKey = isProjectFile ? documentId : (activeTab?.filePath ? hashPath(activeTab.filePath) : null);
+
+  // Load comments when opening a file
   useEffect(() => {
-    if (!documentId || !storageRoot) {
-      // Clear decorations if no document ID
-      if (editor && lastLoadedDocRef.current) {
+    if (!commentKey || !storageRoot) {
+      // Clear decorations if no comment key
+      if (editor && lastLoadedKeyRef.current) {
         clearCommentDecorations(editor);
-        lastLoadedDocRef.current = null;
+        lastLoadedKeyRef.current = null;
       }
       return;
     }
 
-    if (documentId === lastLoadedDocRef.current) return;
-    lastLoadedDocRef.current = documentId;
+    if (commentKey === lastLoadedKeyRef.current) return;
+    lastLoadedKeyRef.current = commentKey;
 
-    loadComments(documentId, storageRoot);
-  }, [documentId, storageRoot, editor, loadComments]);
+    loadComments(commentKey, storageRoot);
+  }, [commentKey, storageRoot, editor, loadComments]);
 
   // Sync decorations when comments change
   useEffect(() => {
-    if (!editor || !documentId) return;
-    const comments = commentsByDocument[documentId] ?? [];
+    if (!editor || !commentKey) return;
+    const comments = commentsByDocument[commentKey] ?? [];
     setCommentDecorations(editor, comments, activeCommentId);
-  }, [editor, documentId, commentsByDocument, activeCommentId]);
-
-  // Sync active comment decoration
-  useEffect(() => {
-    if (!editor) return;
-    setActiveCommentDecoration(editor, activeCommentId);
-  }, [editor, activeCommentId]);
+  }, [editor, commentKey, commentsByDocument, activeCommentId]);
 
   // Listen for comment creation requests and click-to-select from the ProseMirror plugin
   useEffect(() => {
@@ -84,8 +94,6 @@ export function useCommentOperations(editor: Editor | null) {
       if (!meta) return;
 
       if (meta.requestCreateComment) {
-        // Signal to the UI that a comment creation was requested
-        // We store the range in a ref so the popover can pick it up
         pendingCreateRef.current = meta.requestCreateComment;
       }
 
@@ -103,29 +111,25 @@ export function useCommentOperations(editor: Editor | null) {
 
   const pendingCreateRef = useRef<{ from: number; to: number } | null>(null);
 
-  /** Create a comment on a text range. Handles lazy UUID generation. */
+  /** Ensure a project file has a UUID in frontmatter. No-op for non-project files. */
+  const ensureUUID = useCallback(() => {
+    if (!isProjectFile || documentId || !activeTab || !storageRoot) return;
+    const { frontmatter: updatedFm, id } = ensureDocumentId(activeTab.frontmatter);
+    updateFrontmatter(activeTab.id, updatedFm);
+    updateDocumentIndex(storageRoot, id, activeTab.filePath).catch((err) =>
+      console.error('Failed to update document index:', err)
+    );
+  }, [isProjectFile, documentId, activeTab, storageRoot, updateFrontmatter]);
+
+  /** Create a comment on a text range. For project files, call ensureUUID first. */
   const createComment = useCallback(
     async (body: string, from: number, to: number) => {
-      if (!editor || !activeTab || !storageRoot) return null;
+      if (!editor || !commentKey || !storageRoot) return null;
 
-      let docId = documentId;
-
-      // Lazy UUID generation
-      if (!docId) {
-        const { frontmatter: updatedFm, id } = ensureDocumentId(activeTab.frontmatter);
-        docId = id;
-        updateFrontmatter(activeTab.id, updatedFm);
-        // Update document index
-        updateDocumentIndex(storageRoot, id, activeTab.filePath).catch((err) =>
-          console.error('Failed to update document index:', err)
-        );
-      }
-
-      // Get anchor text
       const anchorText = editor.state.doc.textBetween(from, to, '\n');
 
       const comment = addComment({
-        documentId: docId,
+        documentId: commentKey,
         anchorText,
         from,
         to,
@@ -133,41 +137,40 @@ export function useCommentOperations(editor: Editor | null) {
         author: 'You',
       });
 
-      // Persist
-      await saveComments(docId, storageRoot);
+      await saveComments(commentKey, storageRoot);
       setActiveComment(comment.id);
 
       return comment;
     },
-    [editor, activeTab, documentId, storageRoot, addComment, saveComments, setActiveComment, updateFrontmatter]
+    [editor, commentKey, storageRoot, addComment, saveComments, setActiveComment]
   );
 
   /** Edit a comment's body. */
   const editComment = useCallback(
     async (commentId: string, body: string) => {
-      if (!documentId || !storageRoot) return;
-      updateComment(documentId, commentId, body);
-      await saveComments(documentId, storageRoot);
+      if (!commentKey || !storageRoot) return;
+      updateComment(commentKey, commentId, body);
+      await saveComments(commentKey, storageRoot);
     },
-    [documentId, storageRoot, updateComment, saveComments]
+    [commentKey, storageRoot, updateComment, saveComments]
   );
 
   /** Delete a comment. */
   const removeComment = useCallback(
     async (commentId: string) => {
-      if (!documentId || !storageRoot) return;
-      deleteComment(documentId, commentId);
-      await saveComments(documentId, storageRoot);
+      if (!commentKey || !storageRoot) return;
+      deleteComment(commentKey, commentId);
+      await saveComments(commentKey, storageRoot);
     },
-    [documentId, storageRoot, deleteComment, saveComments]
+    [commentKey, storageRoot, deleteComment, saveComments]
   );
 
   /** Get the active comment object. */
   const getActiveComment = useCallback((): Comment | null => {
-    if (!activeCommentId || !documentId) return null;
-    const comments = commentsByDocument[documentId] ?? [];
+    if (!activeCommentId || !commentKey) return null;
+    const comments = commentsByDocument[commentKey] ?? [];
     return comments.find((c) => c.id === activeCommentId) ?? null;
-  }, [activeCommentId, documentId, commentsByDocument]);
+  }, [activeCommentId, commentKey, commentsByDocument]);
 
   /** Get the pending create request (from Cmd+Shift+M or bubble menu click). */
   const consumePendingCreate = useCallback((): { from: number; to: number } | null => {
@@ -178,9 +181,12 @@ export function useCommentOperations(editor: Editor | null) {
 
   return {
     documentId,
-    comments: documentId ? (commentsByDocument[documentId] ?? []) : [],
+    commentKey,
+    isProjectFile,
+    comments: commentKey ? (commentsByDocument[commentKey] ?? []) : [],
     activeCommentId,
     activeComment: getActiveComment(),
+    ensureUUID,
     createComment,
     editComment,
     removeComment,

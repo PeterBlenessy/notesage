@@ -57,7 +57,7 @@ interface EditorProps {
 }
 
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange }: EditorProps) {
-  const { tabs, activeTabId, updateTabContent, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange } = useEditorStore();
+  const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const { showFloatingToolbar, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled } = useSettingsStore();
   const { projectPath } = useActiveProject();
@@ -186,6 +186,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const [commentPopoverOpen, setCommentPopoverOpen] = useState(false);
   const [pendingCommentRange, setPendingCommentRange] = useState<{ from: number; to: number } | null>(null);
   const [commentAnchorPos, setCommentAnchorPos] = useState<{ top: number; left: number } | null>(null);
+  // Track if we generated a UUID for this popover session (to revert on cancel)
+  const generatedUUIDRef = useRef(false);
 
   // Listen for comment creation requests (Cmd+Shift+M or bubble menu)
   useEffect(() => {
@@ -195,6 +197,12 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       if (pending) {
         setPendingCommentRange(pending);
         commentOps.setActiveComment(null);
+        // For project files, ensure document has a UUID before the popover opens.
+        // Non-project files use a path hash — no frontmatter modification needed.
+        if (commentOps.isProjectFile) {
+          generatedUUIDRef.current = !commentOps.documentId;
+          commentOps.ensureUUID();
+        }
         // Show pending range decoration in the editor
         setPendingRangeDecoration(editor, pending);
         // Position popover at the selection
@@ -536,11 +544,18 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             if (pendingCommentRange && editor) {
               setPendingRangeDecoration(editor, null);
             }
+            // If we generated a UUID for this popover but the user cancelled, revert it
+            if (pendingCommentRange && generatedUUIDRef.current && activeTab) {
+              const { id: _id, ...rest } = activeTab.frontmatter ?? {};
+              setFrontmatter(activeTab.id, Object.keys(rest).length > 0 ? rest : null);
+            }
+            generatedUUIDRef.current = false;
             setPendingCommentRange(null);
           }
         }}
         onCreate={async (body) => {
           if (pendingCommentRange) {
+            generatedUUIDRef.current = false;
             await commentOps.createComment(body, pendingCommentRange.from, pendingCommentRange.to);
             if (editor) setPendingRangeDecoration(editor, null);
             setPendingCommentRange(null);
