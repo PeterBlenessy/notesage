@@ -17,6 +17,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { tauriApi } from "@/lib/tauri";
+import { parseFrontmatter } from "@/lib/frontmatter";
 import { Button } from "@/components/ui/button";
 import {
   ResizablePanelGroup,
@@ -137,15 +138,47 @@ function App() {
           if (!exists) {
             await tauriApi.createDirectory(notesRoot);
           }
+          // Ensure .notesage/ exists for global comment storage
+          const metaDir = `${notesRoot}/.notesage`;
+          const metaDirExists = await tauriApi.pathExists(metaDir);
+          if (!metaDirExists) {
+            await tauriApi.createDirectory(metaDir);
+          }
           const tree = await tauriApi.listDirectory(notesRoot);
           ws.setNotesTree(tree);
         } catch {
           // Notes root creation failed, that's fine on first launch
         }
       }
+
     }
 
     reloadTrees();
+
+    // Re-open persisted tabs (same as clicking each file in the sidebar)
+    const { persistedTabs, persistedActiveFilePath } = useEditorStore.getState();
+    for (const pt of persistedTabs) {
+      tauriApi.readFile(pt.filePath).then((raw) => {
+        const { frontmatter, content } = parseFrontmatter(raw);
+        useEditorStore.getState().openTab(pt.filePath, pt.fileName, content, frontmatter);
+      }).catch(() => {
+        // File no longer exists — skip it
+      });
+    }
+    // Re-activate the previously active file once it's opened
+    if (persistedActiveFilePath) {
+      const waitForActive = () => {
+        const { tabs } = useEditorStore.getState();
+        const match = tabs.find((t) => t.filePath === persistedActiveFilePath);
+        if (match) {
+          useEditorStore.getState().setActiveTab(match.id);
+        } else if (persistedTabs.some((p) => p.filePath === persistedActiveFilePath)) {
+          // Not loaded yet, try again next tick
+          requestAnimationFrame(waitForActive);
+        }
+      };
+      requestAnimationFrame(waitForActive);
+    }
   }, []);
 
   const handleOpenFolder = useCallback(async () => {

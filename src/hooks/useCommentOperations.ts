@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import type { Editor } from '@tiptap/core';
 import { useEditorStore } from '@/stores/editor-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { useCommentStore, type Comment } from '@/stores/comment-store';
 import { useActiveProject } from '@/hooks/useActiveProject';
 import { ensureDocumentId } from '@/lib/frontmatter';
@@ -18,6 +19,9 @@ import {
  */
 export function useCommentOperations(editor: Editor | null) {
   const { projectPath } = useActiveProject();
+  const notesRootPath = useSettingsStore((s) => s.notesRootPath);
+  // Project-scoped storage if file is in a project, otherwise fall back to the Notesage library
+  const storageRoot = projectPath ?? (notesRootPath && !notesRootPath.startsWith('~') ? notesRootPath : null);
   const activeTab = useEditorStore((s) => {
     const tab = s.tabs.find((t) => t.id === s.activeTabId);
     return tab ?? null;
@@ -43,7 +47,7 @@ export function useCommentOperations(editor: Editor | null) {
 
   // Load comments when opening a file with a UUID
   useEffect(() => {
-    if (!documentId || !projectPath) {
+    if (!documentId || !storageRoot) {
       // Clear decorations if no document ID
       if (editor && lastLoadedDocRef.current) {
         clearCommentDecorations(editor);
@@ -55,8 +59,8 @@ export function useCommentOperations(editor: Editor | null) {
     if (documentId === lastLoadedDocRef.current) return;
     lastLoadedDocRef.current = documentId;
 
-    loadComments(documentId, projectPath);
-  }, [documentId, projectPath, editor, loadComments]);
+    loadComments(documentId, storageRoot);
+  }, [documentId, storageRoot, editor, loadComments]);
 
   // Sync decorations when comments change
   useEffect(() => {
@@ -102,7 +106,7 @@ export function useCommentOperations(editor: Editor | null) {
   /** Create a comment on a text range. Handles lazy UUID generation. */
   const createComment = useCallback(
     async (body: string, from: number, to: number) => {
-      if (!editor || !activeTab || !projectPath) return null;
+      if (!editor || !activeTab || !storageRoot) return null;
 
       let docId = documentId;
 
@@ -112,7 +116,7 @@ export function useCommentOperations(editor: Editor | null) {
         docId = id;
         updateFrontmatter(activeTab.id, updatedFm);
         // Update document index
-        updateDocumentIndex(projectPath, id, activeTab.filePath).catch((err) =>
+        updateDocumentIndex(storageRoot, id, activeTab.filePath).catch((err) =>
           console.error('Failed to update document index:', err)
         );
       }
@@ -130,32 +134,32 @@ export function useCommentOperations(editor: Editor | null) {
       });
 
       // Persist
-      await saveComments(docId, projectPath);
+      await saveComments(docId, storageRoot);
       setActiveComment(comment.id);
 
       return comment;
     },
-    [editor, activeTab, documentId, projectPath, addComment, saveComments, setActiveComment, updateFrontmatter]
+    [editor, activeTab, documentId, storageRoot, addComment, saveComments, setActiveComment, updateFrontmatter]
   );
 
   /** Edit a comment's body. */
   const editComment = useCallback(
     async (commentId: string, body: string) => {
-      if (!documentId || !projectPath) return;
+      if (!documentId || !storageRoot) return;
       updateComment(documentId, commentId, body);
-      await saveComments(documentId, projectPath);
+      await saveComments(documentId, storageRoot);
     },
-    [documentId, projectPath, updateComment, saveComments]
+    [documentId, storageRoot, updateComment, saveComments]
   );
 
   /** Delete a comment. */
   const removeComment = useCallback(
     async (commentId: string) => {
-      if (!documentId || !projectPath) return;
+      if (!documentId || !storageRoot) return;
       deleteComment(documentId, commentId);
-      await saveComments(documentId, projectPath);
+      await saveComments(documentId, storageRoot);
     },
-    [documentId, projectPath, deleteComment, saveComments]
+    [documentId, storageRoot, deleteComment, saveComments]
   );
 
   /** Get the active comment object. */

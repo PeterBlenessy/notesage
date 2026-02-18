@@ -16,6 +16,12 @@ export interface RecentFile {
   name: string;
 }
 
+/** Lightweight record of an open file, persisted to localStorage. */
+export interface PersistedTab {
+  filePath: string;
+  fileName: string;
+}
+
 const MAX_RECENT_FILES = 5;
 
 interface EditorStore {
@@ -26,6 +32,10 @@ interface EditorStore {
   scrollPositions: Record<string, number>;
   /** Ephemeral: paths with pending external changes → disk content. Not persisted. */
   externalChanges: Record<string, string>;
+  /** Persisted list of open file paths so we can re-open them on restart. */
+  persistedTabs: PersistedTab[];
+  /** Persisted: which file was active, so we can re-activate it on restart. */
+  persistedActiveFilePath: string | null;
 
   openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null) => void;
   closeTab: (tabId: string) => void;
@@ -47,6 +57,8 @@ export const useEditorStore = create<EditorStore>()(
       recentFiles: [],
       scrollPositions: {},
       externalChanges: {},
+      persistedTabs: [],
+      persistedActiveFilePath: null,
 
       openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null) => {
         set((state) => {
@@ -58,7 +70,11 @@ export const useEditorStore = create<EditorStore>()(
           const existingTab = state.tabs.find((tab) => tab.filePath === filePath);
 
           if (existingTab) {
-            return { activeTabId: existingTab.id, recentFiles: newRecent };
+            // Sync persisted state
+            const newPersistedTabs = state.persistedTabs.some((p) => p.filePath === filePath)
+              ? state.persistedTabs
+              : [...state.persistedTabs, { filePath, fileName }];
+            return { activeTabId: existingTab.id, recentFiles: newRecent, persistedTabs: newPersistedTabs, persistedActiveFilePath: filePath };
           }
 
           // Create new tab
@@ -71,16 +87,21 @@ export const useEditorStore = create<EditorStore>()(
             frontmatter: frontmatter ?? null,
           };
 
+          const newPersistedTabs = [...state.persistedTabs.filter((p) => p.filePath !== filePath), { filePath, fileName }];
+
           return {
             tabs: [...state.tabs, newTab],
             activeTabId: newTab.id,
             recentFiles: newRecent,
+            persistedTabs: newPersistedTabs,
+            persistedActiveFilePath: filePath,
           };
         });
       },
 
       closeTab: (tabId: string) => {
         set((state) => {
+          const closedTab = state.tabs.find((tab) => tab.id === tabId);
           const newTabs = state.tabs.filter((tab) => tab.id !== tabId);
           let newActiveTabId = state.activeTabId;
 
@@ -95,15 +116,25 @@ export const useEditorStore = create<EditorStore>()(
             }
           }
 
+          const newPersistedTabs = closedTab
+            ? state.persistedTabs.filter((p) => p.filePath !== closedTab.filePath)
+            : state.persistedTabs;
+          const activeTab = newActiveTabId ? newTabs.find((t) => t.id === newActiveTabId) : null;
+
           return {
             tabs: newTabs,
             activeTabId: newActiveTabId,
+            persistedTabs: newPersistedTabs,
+            persistedActiveFilePath: activeTab?.filePath ?? null,
           };
         });
       },
 
       setActiveTab: (tabId: string) => {
-        set({ activeTabId: tabId });
+        set((state) => {
+          const tab = state.tabs.find((t) => t.id === tabId);
+          return { activeTabId: tabId, persistedActiveFilePath: tab?.filePath ?? state.persistedActiveFilePath };
+        });
       },
 
       updateTabContent: (tabId: string, content: string, isDirty: boolean) => {
@@ -164,6 +195,8 @@ export const useEditorStore = create<EditorStore>()(
       partialize: (state) => ({
         recentFiles: state.recentFiles,
         scrollPositions: state.scrollPositions,
+        persistedTabs: state.persistedTabs,
+        persistedActiveFilePath: state.persistedActiveFilePath,
       }),
     }
   )
