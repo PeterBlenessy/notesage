@@ -44,11 +44,7 @@ export function ChatInput({ onSend, disabled, placeholder = 'Ask anything...', f
 
   return (
     <div
-      className="rounded-xl border transition-colors"
-      style={{
-        borderColor: 'var(--color-border)',
-        backgroundColor: 'var(--color-background)',
-      }}
+      className="rounded-xl border border-border bg-background transition-colors"
     >
       <div className="flex items-end gap-2 px-3 py-2">
         <textarea
@@ -75,14 +71,10 @@ export function ChatInput({ onSend, disabled, placeholder = 'Ask anything...', f
             <button
               onClick={handleSubmit}
               disabled={!canSend}
-              className="h-6 w-6 rounded-md flex items-center justify-center shrink-0 transition-colors disabled:opacity-30"
-              style={{
-                backgroundColor: canSend ? 'var(--color-foreground)' : 'var(--color-muted)',
-                color: canSend ? 'var(--color-background)' : 'var(--color-muted-foreground)',
-              }}
+              className={`h-6 w-6 rounded-md flex items-center justify-center shrink-0 transition-colors disabled:opacity-30 ${canSend ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`}
               title="Send (Cmd+Enter)"
             >
-              <ArrowUp className="h-3.5 w-3.5" />
+              <ArrowUp className="h-3.5 w-3.5" strokeWidth={1.5} />
             </button>
           </div>
         </>
@@ -92,14 +84,10 @@ export function ChatInput({ onSend, disabled, placeholder = 'Ask anything...', f
           <button
             onClick={handleSubmit}
             disabled={!canSend}
-            className="h-6 w-6 rounded-md flex items-center justify-center shrink-0 transition-colors disabled:opacity-30"
-            style={{
-              backgroundColor: canSend ? 'var(--color-foreground)' : 'var(--color-muted)',
-              color: canSend ? 'var(--color-background)' : 'var(--color-muted-foreground)',
-            }}
+            className={`h-6 w-6 rounded-md flex items-center justify-center shrink-0 transition-colors disabled:opacity-30 ${canSend ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`}
             title="Send (Cmd+Enter)"
           >
-            <ArrowUp className="h-3.5 w-3.5" />
+            <ArrowUp className="h-3.5 w-3.5" strokeWidth={1.5} />
           </button>
         </div>
       )}

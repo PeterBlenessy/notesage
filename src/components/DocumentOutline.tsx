@@ -81,11 +81,8 @@ export function DocumentOutline({ open, onOpenChange, editor }: DocumentOutlineP
                 <button
                   key={`${heading.pos}-${index}`}
                   onClick={() => handleSelect(heading.pos)}
-                  className="text-left py-1.5 pr-3 flex items-center gap-2 transition-colors duration-150 mx-1 rounded-md hover:bg-accent"
-                  style={{
-                    width: "calc(100% - 8px)",
-                    paddingLeft: `${12 + indent}px`,
-                  }}
+                  className="w-[calc(100%-8px)] text-left py-1.5 pr-3 flex items-center gap-2 transition-colors duration-150 mx-1 rounded-md hover:bg-accent"
+                  style={{ paddingLeft: `${12 + indent}px` }}
                 >
                   <span className="text-xs font-mono shrink-0 w-5 text-center text-muted-foreground">
                     H{heading.level}

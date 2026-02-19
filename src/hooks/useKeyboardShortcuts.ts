@@ -1,16 +1,37 @@
 import { useEffect } from "react";
 import { useEditorStore } from "@/stores/editor-store";
-import { useFileOperations } from "./useFileOperations";
+import { useSettingsStore } from "@/stores/settings-store";
 
-export function useKeyboardShortcuts() {
+interface KeyboardShortcutCallbacks {
+  onCommandPaletteOpen: () => void;
+  onFileSearchOpen: () => void;
+  onToggleFocusMode: () => void;
+  onExitFocusMode: () => void;
+  onOutlineOpen: () => void;
+  onSettingsOpen: () => void;
+  onExportOpen: () => void;
+  onNewProject: () => void;
+  onNewNote: () => void;
+  onOpenFolder: () => void;
+  focusMode: boolean;
+}
+
+export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
   const { tabs, activeTabId, closeTab } = useEditorStore();
-  const { saveFile } = useFileOperations();
+  const { setSidebarPinned, setChatPanelOpen } = useSettingsStore();
 
   useEffect(() => {
-    const handleKeyDown = async (e: KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey;
 
-      // Cmd+W - Close active tab
+      // Esc — exit focus mode
+      if (e.key === "Escape" && callbacks.focusMode) {
+        e.preventDefault();
+        callbacks.onExitFocusMode();
+        return;
+      }
+
+      // Cmd+W — close active tab
       if (isMod && e.key === "w") {
         e.preventDefault();
         if (activeTabId) {
@@ -23,6 +44,100 @@ export function useKeyboardShortcuts() {
           }
           closeTab(activeTabId);
         }
+        return;
+      }
+
+      // Cmd+K — command palette (only when no text selected in editor)
+      if (isMod && e.key === "k") {
+        const active = document.activeElement;
+        const pmView = active?.closest(".ProseMirror");
+        if (pmView) {
+          const sel = window.getSelection();
+          if (sel && sel.toString().length > 0) {
+            // Let Tiptap handle Cmd+K for link insertion
+            return;
+          }
+        }
+        e.preventDefault();
+        callbacks.onCommandPaletteOpen();
+        return;
+      }
+
+      // Cmd+Shift+F — project file search
+      if (isMod && e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        callbacks.onFileSearchOpen();
+        return;
+      }
+
+      // Cmd+. — focus mode toggle
+      if (isMod && e.key === ".") {
+        e.preventDefault();
+        callbacks.onToggleFocusMode();
+        return;
+      }
+
+      // Cmd+T — toggle theme
+      if (isMod && !e.shiftKey && e.key === "t") {
+        e.preventDefault();
+        const settings = useSettingsStore.getState();
+        settings.setTheme(settings.theme === "dark" ? "light" : "dark");
+        return;
+      }
+
+      // Cmd+Shift+O — document outline (check before Cmd+O)
+      if (isMod && e.shiftKey && e.key.toLowerCase() === "o") {
+        e.preventDefault();
+        if (useEditorStore.getState().activeTabId) {
+          callbacks.onOutlineOpen();
+        }
+        return;
+      }
+
+      // Cmd+B — sidebar pin toggle
+      if (isMod && e.key === "b") {
+        e.preventDefault();
+        setSidebarPinned(!useSettingsStore.getState().sidebarPinned);
+      }
+
+      // Cmd+Shift+A — AI chat toggle
+      if (isMod && e.shiftKey && e.key === "a") {
+        e.preventDefault();
+        setChatPanelOpen(!useSettingsStore.getState().chatPanelOpen);
+      }
+
+      // Cmd+, — settings
+      if (isMod && e.key === ",") {
+        e.preventDefault();
+        callbacks.onSettingsOpen();
+      }
+
+      // Cmd+Shift+E — export PDF
+      if (isMod && e.shiftKey && e.key === "e") {
+        e.preventDefault();
+        if (useEditorStore.getState().activeTabId) {
+          callbacks.onExportOpen();
+        }
+        return;
+      }
+
+      // Cmd+Shift+N — new project
+      if (isMod && e.shiftKey && e.key === "n") {
+        e.preventDefault();
+        callbacks.onNewProject();
+        return;
+      }
+
+      // Cmd+N — new note
+      if (isMod && e.key === "n") {
+        e.preventDefault();
+        callbacks.onNewNote();
+      }
+
+      // Cmd+O — open folder
+      if (isMod && e.key === "o") {
+        e.preventDefault();
+        callbacks.onOpenFolder();
       }
 
       // Cmd+S is handled in the Editor component for context-aware saving
@@ -30,5 +145,5 @@ export function useKeyboardShortcuts() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeTabId, tabs, closeTab, saveFile]);
+  }, [activeTabId, tabs, closeTab, setSidebarPinned, setChatPanelOpen, callbacks]);
 }

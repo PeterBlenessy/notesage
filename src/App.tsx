@@ -25,6 +25,7 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
+import { toast } from "sonner";
 
 const PANEL_SIZES_KEY = "notesage-panel-sizes";
 
@@ -85,12 +86,11 @@ function App() {
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [focusHintVisible, setFocusHintVisible] = useState(false);
 
-  const { setSidebarPinned, chatPanelOpen, setChatPanelOpen } = useSettingsStore();
+  const { chatPanelOpen, setChatPanelOpen } = useSettingsStore();
 
   const { addProject, setExplorerPath, setExplorerTree } = useWorkspaceStore();
   const { projectPath: activeProjectPath } = useActiveProject();
 
-  useKeyboardShortcuts();
   useProjectMetadata();
 
   // Reload file trees for all persisted projects on startup
@@ -194,6 +194,7 @@ function App() {
       }
     } catch (error) {
       console.error("Failed to open folder:", error);
+      toast.error(`Failed to open folder: ${error}`);
     }
   }, [setExplorerPath, setExplorerTree, addProject]);
 
@@ -205,6 +206,7 @@ function App() {
       addProject(projectPath, tree);
     } catch (error) {
       console.error("Failed to open project:", error);
+      toast.error(`Failed to open project: ${error}`);
     }
   }, [addProject]);
 
@@ -213,6 +215,7 @@ function App() {
       await openFile(filePath, fileName);
     } catch (error) {
       console.error("Failed to open file:", error);
+      toast.error(`Failed to open file: ${error}`);
     }
   }, [openFile]);
 
@@ -230,6 +233,7 @@ function App() {
       }
     } catch (error) {
       console.error("Failed to open project:", error);
+      toast.error(`Failed to open project: ${error}`);
     }
   }, [addProject]);
 
@@ -244,6 +248,7 @@ function App() {
       addProject(path, tree);
     } catch (error) {
       console.error("Failed to make project:", error);
+      toast.error(`Failed to create project: ${error}`);
     }
   }, [addProject]);
 
@@ -276,6 +281,7 @@ function App() {
       useEditorStore.getState().openTab(filePath, fileName, content);
     } catch (err) {
       console.error("Failed to create note:", err);
+      toast.error(`Failed to create note: ${err}`);
     }
   }, []);
 
@@ -340,118 +346,22 @@ function App() {
     }
   }, [focusMode]);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const isMod = e.metaKey || e.ctrlKey;
-
-      // Esc — exit focus mode
-      if (e.key === "Escape" && focusMode) {
-        e.preventDefault();
-        setFocusMode(false);
-        return;
-      }
-
-      // Cmd+K — command palette (only when no text selected in editor)
-      if (isMod && e.key === "k") {
-        // Check if the active element is a ProseMirror editor with a non-empty selection
-        const active = document.activeElement;
-        const pmView = active?.closest(".ProseMirror");
-        if (pmView) {
-          // Get the editor's selection state from the DOM
-          const sel = window.getSelection();
-          if (sel && sel.toString().length > 0) {
-            // Let Tiptap handle Cmd+K for link insertion
-            return;
-          }
-        }
-        e.preventDefault();
-        setCommandPaletteOpen(true);
-        return;
-      }
-
-      // Cmd+Shift+F for project file search
-      if (isMod && e.shiftKey && e.key.toLowerCase() === "f") {
-        e.preventDefault();
-        setCommandPaletteFilesOnly(true);
-        setCommandPaletteOpen(true);
-        return;
-      }
-
-      // Cmd+. for focus mode toggle
-      if (isMod && e.key === ".") {
-        e.preventDefault();
-        setFocusMode((prev) => !prev);
-        return;
-      }
-
-      // Cmd+T for toggle theme
-      if (isMod && !e.shiftKey && e.key === "t") {
-        e.preventDefault();
-        const settings = useSettingsStore.getState();
-        settings.setTheme(settings.theme === "dark" ? "light" : "dark");
-        return;
-      }
-
-      // Cmd+Shift+O for document outline (check before Cmd+O)
-      if (isMod && e.shiftKey && e.key.toLowerCase() === "o") {
-        e.preventDefault();
-        if (useEditorStore.getState().activeTabId) {
-          setOutlineOpen(true);
-        }
-        return;
-      }
-
-      // Cmd+B for sidebar pin toggle
-      if (isMod && e.key === "b") {
-        e.preventDefault();
-        setSidebarPinned(!useSettingsStore.getState().sidebarPinned);
-      }
-
-      // Cmd+Shift+A for AI chat toggle
-      if (isMod && e.shiftKey && e.key === "a") {
-        e.preventDefault();
-        setChatPanelOpen(!useSettingsStore.getState().chatPanelOpen);
-      }
-
-      // Cmd+, for settings
-      if (isMod && e.key === ",") {
-        e.preventDefault();
-        setSettingsOpen(true);
-      }
-
-      // Cmd+Shift+E for export PDF
-      if (isMod && e.shiftKey && e.key === "e") {
-        e.preventDefault();
-        if (useEditorStore.getState().activeTabId) {
-          setExportOpen(true);
-        }
-        return;
-      }
-
-      // Cmd+Shift+N for new project
-      if (isMod && e.shiftKey && e.key === "n") {
-        e.preventDefault();
-        setNewProjectOpen(true);
-        return;
-      }
-
-      // Cmd+N for new note
-      if (isMod && e.key === "n") {
-        e.preventDefault();
-        handleNewNote();
-      }
-
-      // Cmd+O for open folder
-      if (isMod && e.key === "o") {
-        e.preventDefault();
-        handleOpenFolder();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleOpenFolder, handleNewNote, setSidebarPinned, setChatPanelOpen, focusMode]);
+  useKeyboardShortcuts({
+    onCommandPaletteOpen: () => setCommandPaletteOpen(true),
+    onFileSearchOpen: () => {
+      setCommandPaletteFilesOnly(true);
+      setCommandPaletteOpen(true);
+    },
+    onToggleFocusMode: () => setFocusMode((prev) => !prev),
+    onExitFocusMode: () => setFocusMode(false),
+    onOutlineOpen: () => setOutlineOpen(true),
+    onSettingsOpen: () => setSettingsOpen(true),
+    onExportOpen: () => setExportOpen(true),
+    onNewProject: handleNewProject,
+    onNewNote: handleNewNote,
+    onOpenFolder: handleOpenFolder,
+    focusMode,
+  });
 
   return (
     <ThemeProvider>
