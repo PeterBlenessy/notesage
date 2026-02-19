@@ -33,12 +33,19 @@ export function DocumentOutline({ open, onOpenChange, editor }: DocumentOutlineP
 
   const handleSelect = (pos: number) => {
     if (!editor) return;
-    // Set selection to the heading position + 1 (inside the heading node)
     editor.commands.setTextSelection(pos + 1);
-    editor.commands.scrollIntoView();
     onOpenChange(false);
-    // Focus the editor after navigation
-    requestAnimationFrame(() => editor.commands.focus());
+    requestAnimationFrame(() => {
+      editor.commands.focus();
+      // Scroll the heading to the top of the visible editor area
+      const coords = editor.view.coordsAtPos(pos + 1);
+      const editorEl = editor.view.dom.closest(".overflow-y-auto") ?? editor.view.dom.parentElement;
+      if (editorEl) {
+        const editorRect = editorEl.getBoundingClientRect();
+        const scrollOffset = coords.top - editorRect.top - 80;
+        editorEl.scrollBy({ top: scrollOffset, behavior: "smooth" });
+      }
+    });
   };
 
   return (
@@ -49,15 +56,12 @@ export function DocumentOutline({ open, onOpenChange, editor }: DocumentOutlineP
       </DialogHeader>
       <DialogContent className="max-w-md p-0 gap-0 overflow-hidden" showCloseButton={false}>
         {/* Header */}
-        <div
-          className="flex items-center gap-3 px-4 h-12 border-b"
-          style={{ borderColor: "var(--color-border)" }}
-        >
-          <List className="h-4 w-4 shrink-0" style={{ color: "var(--color-muted-foreground)" }} />
-          <span className="text-[13px] font-medium" style={{ color: "var(--color-foreground)" }}>
+        <div className="flex items-center gap-3 px-4 h-12 border-b border-border">
+          <List className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+          <span className="text-sm font-medium text-foreground">
             Document Outline
           </span>
-          <span className="text-[11px] ml-auto" style={{ color: "var(--color-muted-foreground)" }}>
+          <span className="text-xs ml-auto text-muted-foreground">
             {headings.length} {headings.length === 1 ? "heading" : "headings"}
           </span>
         </div>
@@ -66,7 +70,7 @@ export function DocumentOutline({ open, onOpenChange, editor }: DocumentOutlineP
         <div className="max-h-[360px] overflow-y-auto py-1">
           {headings.length === 0 ? (
             <div className="py-8 text-center">
-              <p className="text-[13px]" style={{ color: "var(--color-muted-foreground)" }}>
+              <p className="text-sm text-muted-foreground">
                 No headings in this document
               </p>
             </div>
@@ -77,27 +81,16 @@ export function DocumentOutline({ open, onOpenChange, editor }: DocumentOutlineP
                 <button
                   key={`${heading.pos}-${index}`}
                   onClick={() => handleSelect(heading.pos)}
-                  className="w-full text-left py-1.5 flex items-center gap-2 transition-colors mx-1 hover:bg-accent"
+                  className="text-left py-1.5 pr-3 flex items-center gap-2 transition-colors duration-150 mx-1 rounded-md hover:bg-accent"
                   style={{
                     width: "calc(100% - 8px)",
-                    borderRadius: "6px",
                     paddingLeft: `${12 + indent}px`,
-                    paddingRight: "12px",
                   }}
                 >
-                  <span
-                    className="text-[11px] font-mono shrink-0 w-5 text-center"
-                    style={{ color: "var(--color-muted-foreground)" }}
-                  >
+                  <span className="text-xs font-mono shrink-0 w-5 text-center text-muted-foreground">
                     H{heading.level}
                   </span>
-                  <span
-                    className="text-[13px] truncate"
-                    style={{
-                      color: "var(--color-foreground)",
-                      fontWeight: heading.level <= 2 ? 500 : 400,
-                    }}
-                  >
+                  <span className={`text-sm truncate text-foreground ${heading.level <= 2 ? "font-medium" : ""}`}>
                     {heading.text || "Untitled"}
                   </span>
                 </button>
@@ -107,14 +100,7 @@ export function DocumentOutline({ open, onOpenChange, editor }: DocumentOutlineP
         </div>
 
         {/* Footer hints */}
-        <div
-          className="flex items-center px-4 h-8 border-t text-[11px]"
-          style={{
-            borderColor: "var(--color-border)",
-            backgroundColor: "var(--color-muted)",
-            color: "var(--color-muted-foreground)",
-          }}
-        >
+        <div className="flex items-center px-4 h-8 border-t border-border bg-muted text-muted-foreground text-[11px]">
           <span>Click a heading to navigate</span>
         </div>
       </DialogContent>

@@ -47,10 +47,11 @@ export function SidebarSection({
               "h-3 w-3 shrink-0 transition-transform duration-150",
               open ? "rotate-90 text-foreground/60" : "text-muted-foreground"
             )}
+            strokeWidth={1.5}
           />
           <span
             className={cn(
-              "text-[11px] font-semibold tracking-wider uppercase whitespace-nowrap transition-colors duration-150",
+              "text-xs font-semibold tracking-wider uppercase whitespace-nowrap transition-colors duration-150",
               open ? "text-foreground/70" : "text-muted-foreground"
             )}
           >

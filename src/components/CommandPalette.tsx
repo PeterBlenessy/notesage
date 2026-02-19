@@ -282,23 +282,16 @@ export function CommandPalette({
       </CommandList>
 
       {/* Footer hints */}
-      <div
-        className="flex items-center justify-between px-3 h-8 border-t text-[11px]"
-        style={{
-          borderColor: "var(--color-border)",
-          backgroundColor: "var(--color-muted)",
-          color: "var(--color-muted-foreground)",
-        }}
-      >
+      <div className="flex items-center justify-between px-3 h-8 border-t border-border bg-muted text-muted-foreground text-[11px]">
         <div className="flex items-center gap-3">
-          <span>
-            <kbd className="font-mono">&#8593;&#8595;</kbd> navigate
+          <span className="flex items-center gap-1">
+            <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-[10px] shadow-[0_1px_0_0_var(--color-border)]">&#8593;&#8595;</kbd> navigate
           </span>
-          <span>
-            <kbd className="font-mono">&#8629;</kbd> select
+          <span className="flex items-center gap-1">
+            <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-[10px] shadow-[0_1px_0_0_var(--color-border)]">&#8629;</kbd> select
           </span>
-          <span>
-            <kbd className="font-mono">esc</kbd> close
+          <span className="flex items-center gap-1">
+            <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-[10px] shadow-[0_1px_0_0_var(--color-border)]">esc</kbd> close
           </span>
         </div>
       </div>

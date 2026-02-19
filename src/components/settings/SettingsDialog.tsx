@@ -124,9 +124,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[80vw] lg:max-w-2xl max-h-[85vh] p-0 gap-0 overflow-hidden flex flex-col">
         {/* Header */}
-        <DialogHeader className="px-6 py-4 border-b shrink-0" style={{ backgroundColor: 'var(--color-card)' }}>
+        <DialogHeader className="px-6 py-4 border-b shrink-0 bg-card">
           <div className="flex items-center gap-3">
-            <Settings className="h-10 w-10" style={{ color: 'var(--color-foreground)' }} />
+            <Settings className="h-10 w-10 text-foreground" strokeWidth={1.5} />
             <div>
               <DialogTitle className="text-xl">Settings</DialogTitle>
               <DialogDescription className="text-xs">
@@ -138,10 +138,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
         <div className="flex flex-1 overflow-hidden min-h-0">
           {/* Sidebar Navigation */}
-          <div
-            className="w-52 border-r p-3 shrink-0"
-            style={{ backgroundColor: 'var(--color-card)' }}
-          >
+          <div className="w-52 border-r p-3 shrink-0 bg-card">
             <nav className="space-y-0.5">
               {TABS.map((tab) => {
                 const Icon = tab.icon;
@@ -151,18 +148,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
                     className={cn(
-                      'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] font-medium transition-colors',
+                      'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors duration-150 hover:bg-accent',
                       isActive
-                        ? 'text-foreground'
+                        ? 'bg-accent text-foreground'
                         : 'text-muted-foreground'
                     )}
-                    style={{
-                      backgroundColor: isActive ? 'var(--color-accent)' : undefined,
-                    }}
-                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
-                    onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = ''; }}
                   >
-                    <Icon className="h-4 w-4 shrink-0" />
+                    <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5} />
                     {tab.label}
                   </button>
                 );
@@ -211,26 +203,20 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         key={value}
                         onClick={() => setTheme(value)}
                         className={cn(
-                          'flex flex-col items-center gap-2 py-3 rounded-lg border transition-colors',
+                          'flex flex-col items-center gap-2 py-3 rounded-lg border transition-colors duration-150 hover:bg-accent',
                           theme === value
-                            ? 'text-foreground font-medium'
-                            : 'text-muted-foreground'
+                            ? 'border-foreground bg-accent text-foreground font-medium'
+                            : 'border-border text-muted-foreground'
                         )}
-                        style={{
-                          borderColor: theme === value ? 'var(--color-foreground)' : 'var(--color-border)',
-                          backgroundColor: theme === value ? 'var(--color-accent)' : undefined,
-                        }}
-                        onMouseEnter={(e) => { if (theme !== value) e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
-                        onMouseLeave={(e) => { if (theme !== value) e.currentTarget.style.backgroundColor = ''; }}
                       >
-                        <Icon className="h-5 w-5" />
+                        <Icon className="h-5 w-5" strokeWidth={1.5} />
                         <span className="text-xs">{label}</span>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <div className="h-px" style={{ backgroundColor: 'var(--color-border)' }} />
+                <div className="h-px bg-border" />
 
                 {/* Editor Options */}
                 <div className="space-y-4">
@@ -243,15 +229,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
                   <div className="space-y-2">
                     <div
-                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border transition-colors"
-                      style={{ borderColor: 'var(--color-border)' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
                     >
                       <div>
                         <Label
                           htmlFor="toolbar-visible"
-                          className="text-[13px] font-medium cursor-pointer"
+                          className="text-sm font-medium cursor-pointer"
                         >
                           Top Toolbar
                         </Label>
@@ -267,15 +250,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       />
                     </div>
                     <div
-                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border transition-colors"
-                      style={{ borderColor: 'var(--color-border)' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
                     >
                       <div>
                         <Label
                           htmlFor="floating-toolbar"
-                          className="text-[13px] font-medium cursor-pointer"
+                          className="text-sm font-medium cursor-pointer"
                         >
                           Floating Toolbar
                         </Label>
@@ -293,7 +273,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </div>
                 </div>
 
-                <div className="h-px" style={{ backgroundColor: 'var(--color-border)' }} />
+                <div className="h-px bg-border" />
 
                 {/* Page Layout */}
                 <div className="space-y-4">
@@ -307,36 +287,25 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   <div className="space-y-2">
                     {/* Units */}
                     <div
-                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border transition-colors"
-                      style={{ borderColor: 'var(--color-border)' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
                     >
                       <div>
-                        <Label className="text-[13px] font-medium">Units</Label>
+                        <Label className="text-sm font-medium">Units</Label>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           Measurement unit for dimensions
                         </p>
                       </div>
-                      <div
-                        className="ml-auto flex rounded-md overflow-hidden border"
-                        style={{ borderColor: 'var(--color-border)' }}
-                      >
+                      <div className="ml-auto flex rounded-md overflow-hidden border border-border">
                         {(['cm', 'inch'] as const).map((unit) => (
                           <button
                             key={unit}
                             onClick={() => setMeasurementUnit(unit)}
                             className={cn(
-                              'px-3.5 py-1.5 text-xs font-medium transition-colors',
+                              'px-3.5 py-1.5 text-xs font-medium transition-colors duration-150 hover:bg-accent',
                               measurementUnit === unit
-                                ? 'text-foreground'
+                                ? 'bg-accent text-foreground'
                                 : 'text-muted-foreground'
                             )}
-                            style={{
-                              backgroundColor: measurementUnit === unit ? 'var(--color-accent)' : undefined,
-                            }}
-                            onMouseEnter={(e) => { if (measurementUnit !== unit) e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
-                            onMouseLeave={(e) => { if (measurementUnit !== unit) e.currentTarget.style.backgroundColor = ''; }}
                           >
                             {unit === 'cm' ? 'cm' : 'in'}
                           </button>
@@ -346,13 +315,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
                     {/* Page Size */}
                     <div
-                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border transition-colors"
-                      style={{ borderColor: 'var(--color-border)' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
                     >
                       <div>
-                        <Label className="text-[13px] font-medium">Page Size</Label>
+                        <Label className="text-sm font-medium">Page Size</Label>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           Page format and dimensions
                         </p>
@@ -376,13 +342,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
                     {/* Page Margins */}
                     <div
-                      className="px-4 py-3 rounded-lg border transition-colors"
-                      style={{ borderColor: 'var(--color-border)' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                      className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
                     >
                       <div className="mb-3">
-                        <Label className="text-[13px] font-medium">Page Margins</Label>
+                        <Label className="text-sm font-medium">Page Margins</Label>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           Set margins for each side independently ({unitLabel})
                         </p>
@@ -427,15 +390,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
                   <div className="space-y-2">
                     <div
-                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border transition-colors"
-                      style={{ borderColor: 'var(--color-border)' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
                     >
                       <div>
                         <Label
                           htmlFor="git-integration"
-                          className="text-[13px] font-medium cursor-pointer"
+                          className="text-sm font-medium cursor-pointer"
                         >
                           Enable Git
                         </Label>
@@ -453,7 +413,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
                     {gitNotAvailable && (
                       <div className="flex gap-2.5 rounded-md border border-border bg-muted/50 p-3">
-                        <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
+                        <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" strokeWidth={1.5} />
                         <div className="space-y-1 text-xs text-muted-foreground">
                           <p className="font-medium text-foreground">Git is not installed on this system</p>
                           <p>

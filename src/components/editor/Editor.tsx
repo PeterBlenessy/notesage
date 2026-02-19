@@ -352,10 +352,10 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
                 <Button variant="outline" size="sm" className="w-full justify-between text-xs" onClick={() => onNewNote?.()}>
                   <span>New Note</span>
                   <span className="inline-flex items-center gap-0.5 shrink-0 ml-2">
-                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded border text-xs font-semibold text-foreground/50" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
+                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded-sm border border-border bg-muted text-xs font-semibold text-foreground/50">
                       <Command className="h-3 w-3" />
                     </kbd>
-                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded border text-xs font-semibold text-foreground/50" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
+                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded-sm border border-border bg-muted text-xs font-semibold text-foreground/50">
                       N
                     </kbd>
                   </span>
@@ -374,13 +374,13 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
                 <Button variant="outline" size="sm" className="w-full justify-between text-xs" onClick={() => onNewProject?.()}>
                   <span>New Project</span>
                   <span className="inline-flex items-center gap-0.5 shrink-0 ml-2">
-                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded border text-xs font-semibold text-foreground/50" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
+                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded-sm border border-border bg-muted text-xs font-semibold text-foreground/50">
                       <Command className="h-3 w-3" />
                     </kbd>
-                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded border text-sm font-semibold text-foreground/50 leading-none" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
+                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded-sm border border-border bg-muted text-sm font-semibold text-foreground/50 leading-none">
                       ⇧
                     </kbd>
-                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded border text-xs font-semibold text-foreground/50" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
+                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded-sm border border-border bg-muted text-xs font-semibold text-foreground/50">
                       N
                     </kbd>
                   </span>
@@ -399,10 +399,10 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
                 <Button variant="outline" size="sm" className="w-full justify-between text-xs" onClick={() => onOpenFolder?.()}>
                   <span>Open Folder</span>
                   <span className="inline-flex items-center gap-0.5 shrink-0 ml-2">
-                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded border text-xs font-semibold text-foreground/50" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
+                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded-sm border border-border bg-muted text-xs font-semibold text-foreground/50">
                       <Command className="h-3 w-3" />
                     </kbd>
-                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded border text-xs font-semibold text-foreground/50" style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}>
+                    <kbd className="inline-flex items-center justify-center h-[22px] min-w-[22px] px-1 rounded-sm border border-border bg-muted text-xs font-semibold text-foreground/50">
                       O
                     </kbd>
                   </span>
