@@ -25,6 +25,7 @@ import { CommentPopover } from "./CommentPopover";
 import { StatusBar } from "./StatusBar";
 import { FrontmatterBlock } from "./FrontmatterBlock";
 import { DocumentOutline } from "@/components/DocumentOutline";
+import { toast } from "sonner";
 import "@/styles/editor.css";
 
 // 1 CSS px = 1/96 inch, 1 inch = 2.54 cm
@@ -355,7 +356,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           try {
             await saveFile(activeTab.filePath, activeTab.content, activeTab.id);
           } catch (error) {
-            alert(`Failed to save file: ${error}`);
+            toast.error(`Failed to save file: ${error}`);
           }
         }
       }
@@ -372,7 +373,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         try {
           await saveFile(activeTab.filePath, activeTab.content, activeTab.id);
         } catch (error) {
-          console.error("Auto-save failed:", error);
+          toast.error(`Auto-save failed: ${error}`);
         }
       }
     };
@@ -585,7 +586,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
               '--editor-padding-left': paddingLeft,
               '--editor-padding-right': paddingRight,
               ...(pageHeight ? { '--page-height': `${pageHeight}px` } : {}),
-            } as React.CSSProperties}
+            } as React.CSSProperties & Record<`--${string}`, string | undefined>}
           >
             {activeTab && (
               <FrontmatterBlock tabId={activeTab.id} frontmatter={activeTab.frontmatter} />
