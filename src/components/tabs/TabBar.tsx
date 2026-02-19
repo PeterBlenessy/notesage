@@ -28,8 +28,7 @@ export function TabBar() {
 
   return (
     <div
-      className="h-9 border-b border-border flex items-end shrink-0 overflow-x-auto overflow-y-hidden gap-0.5 px-2"
-      style={{ backgroundColor: 'var(--color-background)' }}
+      className="h-9 border-b border-border flex items-end shrink-0 overflow-x-auto overflow-y-hidden gap-0.5 px-2 bg-background"
     >
       {tabs.map((tab) => {
         const isActive = activeTabId === tab.id;
@@ -39,16 +38,11 @@ export function TabBar() {
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={cn(
-              "group relative flex items-center gap-1.5 px-3 h-8 text-sm rounded-t-md transition-colors shrink-0 max-w-[200px]",
+              "group relative flex items-center gap-1.5 px-3 h-8 text-sm rounded-t-md transition-colors duration-150 shrink-0 max-w-[200px]",
               isActive
-                ? "text-foreground"
-                : "text-muted-foreground hover:text-foreground"
+                ? "bg-muted text-foreground"
+                : "bg-accent text-muted-foreground hover:text-foreground hover:bg-muted"
             )}
-            style={{
-              backgroundColor: isActive ? 'var(--color-muted)' : 'var(--color-accent)',
-            }}
-            onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-muted)'; }}
-            onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
           >
             {/* Active indicator */}
             {isActive && (

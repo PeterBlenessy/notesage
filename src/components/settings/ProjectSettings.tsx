@@ -66,12 +66,9 @@ export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
 
         <div className="space-y-2">
           <div
-            className="px-4 py-3 rounded-lg border transition-colors"
-            style={{ borderColor: 'var(--color-border)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+            className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
           >
-            <Label htmlFor="project-name" className="text-[13px] font-medium">
+            <Label htmlFor="project-name" className="text-sm font-medium">
               Project Name
             </Label>
             <p className="text-xs text-muted-foreground mt-0.5 mb-2">
@@ -87,12 +84,9 @@ export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
           </div>
 
           <div
-            className="px-4 py-3 rounded-lg border transition-colors"
-            style={{ borderColor: 'var(--color-border)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+            className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
           >
-            <Label htmlFor="project-description" className="text-[13px] font-medium">
+            <Label htmlFor="project-description" className="text-sm font-medium">
               Description
             </Label>
             <p className="text-xs text-muted-foreground mt-0.5 mb-2">
@@ -109,7 +103,7 @@ export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
         </div>
       </div>
 
-      <div className="h-px" style={{ backgroundColor: 'var(--color-border)' }} />
+      <div className="h-px bg-border" />
 
       {/* AI Overrides */}
       <div className="space-y-4">
@@ -123,13 +117,10 @@ export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
         <div className="space-y-2">
           {/* Provider Override */}
           <div
-            className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border transition-colors"
-            style={{ borderColor: 'var(--color-border)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+            className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
           >
             <div>
-              <Label className="text-[13px] font-medium">Provider</Label>
+              <Label className="text-sm font-medium">Provider</Label>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Override the global AI provider for this project
               </p>
@@ -178,13 +169,10 @@ export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
 
           {/* Persona Override */}
           <div
-            className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border transition-colors"
-            style={{ borderColor: 'var(--color-border)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+            className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
           >
             <div>
-              <Label className="text-[13px] font-medium">Persona</Label>
+              <Label className="text-sm font-medium">Persona</Label>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Override the global AI persona for this project
               </p>
@@ -228,12 +216,9 @@ export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
 
           {/* Project Context */}
           <div
-            className="px-4 py-3 rounded-lg border transition-colors"
-            style={{ borderColor: 'var(--color-border)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+            className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
           >
-            <Label htmlFor="project-context" className="text-[13px] font-medium">
+            <Label htmlFor="project-context" className="text-sm font-medium">
               Project Context
             </Label>
             <p className="text-xs text-muted-foreground mt-0.5 mb-2">

@@ -335,7 +335,7 @@ export function AISettings() {
               onClick={handleTestConnection}
               disabled={isTesting}
               className="w-full h-10 transition-colors"
-              variant="default"
+              variant="outline"
             >
               {isTesting ? (
                 <>
@@ -364,7 +364,7 @@ export function AISettings() {
           {/* Additional Options */}
           <div className="pt-2">
             <div className="h-px bg-border mb-4" />
-            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border transition-colors" style={{ borderColor: 'var(--color-border)' }} onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}>
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
               <div>
                 <Label
                   htmlFor="suggestions"

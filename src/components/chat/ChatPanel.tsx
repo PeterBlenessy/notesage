@@ -99,26 +99,22 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
 
   return (
     <div className="h-full w-full bg-card flex flex-col">
-      <div className="h-9 px-3 flex items-center justify-between shrink-0" style={{ backgroundColor: 'var(--color-card)' }}>
+      <div className="h-9 px-3 flex items-center justify-between shrink-0 bg-card">
         <h2 className="text-sm font-semibold tracking-tight">AI Chat</h2>
         <div className="flex items-center gap-0.5">
           <button
             onClick={handleClear}
-            className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors text-muted-foreground hover:text-foreground"
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
+            className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors duration-150 text-muted-foreground hover:text-foreground hover:bg-accent"
             title="Clear chat history"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
           </button>
           <button
             onClick={onClose}
-            className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors text-muted-foreground hover:text-foreground"
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
+            className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors duration-150 text-muted-foreground hover:text-foreground hover:bg-accent"
             title="Close chat"
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="h-3.5 w-3.5" strokeWidth={1.5} />
           </button>
         </div>
       </div>
@@ -223,7 +219,7 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
                         <span>{allSelected ? 'Deselect all' : 'Select all'}</span>
                         {allSelected && <Check className="h-3 w-3 text-muted-foreground" />}
                       </button>
-                      <div className="mx-2 my-1 border-t" style={{ borderColor: 'var(--color-border)' }} />
+                      <div className="mx-2 my-1 border-t border-border" />
                     </>
                   )}
                   {projects.map((project) => {
@@ -289,7 +285,7 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
                 <TooltipProvider delayDuration={200}>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span className="inline-flex items-center gap-0.5 px-1 py-px rounded text-[10px] font-medium text-muted-foreground" style={{ backgroundColor: 'var(--color-accent)' }}>
+                      <span className="inline-flex items-center gap-0.5 px-1 py-px rounded text-[10px] font-medium text-muted-foreground bg-accent">
                         <Target className="h-2.5 w-2.5" />
                         {goalFiles.length} {goalFiles.length === 1 ? 'goal' : 'goals'}
                       </span>

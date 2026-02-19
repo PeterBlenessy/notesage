@@ -25,13 +25,12 @@ export function StatusBar({ editor, maxWidth, renderedWidth }: StatusBarProps) {
 
   return (
     <div
-      className="h-6 border-t px-3 flex items-center gap-3 text-[11px] shrink-0 overflow-x-auto overflow-y-hidden whitespace-nowrap"
-      style={{ backgroundColor: 'var(--color-background)', borderColor: 'var(--color-border)', color: 'var(--color-muted-foreground)' }}
+      className="h-6 border-t border-border px-3 flex items-center gap-3 text-[11px] shrink-0 overflow-x-auto overflow-y-hidden whitespace-nowrap bg-background text-muted-foreground"
     >
       <span>{words} {words === 1 ? "word" : "words"}</span>
-      <span className="w-px h-2.5" style={{ backgroundColor: 'var(--color-border)' }} />
+      <span className="w-px h-2.5 bg-border" />
       <span>{characters} {characters === 1 ? "char" : "chars"}</span>
-      <span className="w-px h-2.5" style={{ backgroundColor: 'var(--color-border)' }} />
+      <span className="w-px h-2.5 bg-border" />
       <span>{readingTimeMinutes} min read</span>
       {scalePercent !== null && (
         <>

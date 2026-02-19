@@ -36,72 +36,61 @@ export function ChatMessage({ message }: ChatMessageProps) {
   return (
     <div className={`flex gap-2.5 ${isUser ? 'flex-row-reverse' : ''} mb-4`}>
       {/* Avatar */}
-      <div
-        className="h-6 w-6 rounded-full shrink-0 flex items-center justify-center mt-0.5"
-        style={{
-          backgroundColor: 'var(--color-muted)',
-        }}
-      >
+      <div className="h-6 w-6 rounded-full shrink-0 flex items-center justify-center mt-0.5 bg-muted">
         {isUser ? (
-          <User className="h-3 w-3" style={{ color: 'var(--color-muted-foreground)' }} />
+          <User className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
         ) : (
-          <Sparkles className="h-3 w-3" style={{ color: 'var(--color-muted-foreground)' }} />
+          <Sparkles className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
         )}
       </div>
 
       {/* Message bubble */}
       <div
-        className={`group relative max-w-[82%] rounded-xl px-3.5 py-2.5 ${
+        className={`group relative max-w-[82%] rounded-xl px-3.5 py-2.5 text-foreground ${
           isUser
-            ? 'rounded-tr-sm'
-            : 'rounded-tl-sm'
+            ? 'rounded-tr-sm bg-secondary border border-border'
+            : 'rounded-tl-sm bg-muted'
         }`}
-        style={{
-          backgroundColor: isUser ? 'var(--color-secondary)' : 'var(--color-muted)',
-          color: 'var(--color-foreground)',
-          border: isUser ? '1px solid var(--color-border)' : undefined,
-        }}
       >
         {isUser ? (
-          <p className="m-0 whitespace-pre-wrap text-[13px] leading-relaxed">{message.content}</p>
+          <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
         ) : isStreaming ? (
           <div className="flex items-center gap-1.5 py-1">
-            <div className="h-1.5 w-1.5 rounded-full animate-pulse" style={{ backgroundColor: 'var(--color-muted-foreground)' }} />
-            <div className="h-1.5 w-1.5 rounded-full animate-pulse [animation-delay:150ms]" style={{ backgroundColor: 'var(--color-muted-foreground)' }} />
-            <div className="h-1.5 w-1.5 rounded-full animate-pulse [animation-delay:300ms]" style={{ backgroundColor: 'var(--color-muted-foreground)' }} />
+            <div className="h-1.5 w-1.5 rounded-full animate-pulse bg-muted-foreground" />
+            <div className="h-1.5 w-1.5 rounded-full animate-pulse [animation-delay:150ms] bg-muted-foreground" />
+            <div className="h-1.5 w-1.5 rounded-full animate-pulse [animation-delay:300ms] bg-muted-foreground" />
           </div>
         ) : (
-          <div className="chat-markdown text-[13px] leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+          <div className="chat-markdown text-sm leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {message.content}
             </ReactMarkdown>
             {isLoading && (
-              <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse" style={{ backgroundColor: 'var(--color-muted-foreground)' }} />
+              <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse bg-muted-foreground" />
             )}
           </div>
         )}
 
         {/* Citations / Sources */}
         {hasCitations && (
-          <div className="mt-2.5 pt-2 border-t" style={{ borderColor: 'var(--color-border)' }}>
-            <p className="text-[10px] font-medium uppercase tracking-wider mb-1.5" style={{ color: 'var(--color-muted-foreground)' }}>
+          <div className="mt-2.5 pt-2 border-t border-border">
+            <p className="text-[10px] font-medium uppercase tracking-wider mb-1.5 text-muted-foreground">
               Sources
             </p>
             <ol className="list-none m-0 p-0 flex flex-col gap-1">
               {message.citations!.map((citation, i) => (
                 <li key={`${citation.url}-${i}`} className="flex items-start gap-1.5">
-                  <span className="text-[10px] font-medium shrink-0 mt-px" style={{ color: 'var(--color-muted-foreground)' }}>
+                  <span className="text-[10px] font-medium shrink-0 mt-px text-muted-foreground">
                     {i + 1}.
                   </span>
                   <button
                     onClick={() => handleOpenUrl(citation.url)}
-                    className="text-[11px] leading-snug text-left transition-colors hover:underline truncate"
-                    style={{ color: 'var(--color-foreground)' }}
+                    className="text-[11px] leading-snug text-left transition-colors duration-150 hover:underline truncate text-foreground"
                     title={citation.url}
                   >
                     <span className="flex items-center gap-1">
                       <span className="truncate">{citation.title || citation.url}</span>
-                      <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-50" />
+                      <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-50" strokeWidth={1.5} />
                     </span>
                   </button>
                 </li>
@@ -113,15 +102,14 @@ export function ChatMessage({ message }: ChatMessageProps) {
         {/* Copy button */}
         {!isUser && message.content && (
           <button
-            className="absolute -bottom-3 right-2 h-6 w-6 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ backgroundColor: 'var(--color-card)', border: '1px solid var(--color-border)' }}
+            className="absolute -bottom-3 right-2 h-6 w-6 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-card border border-border"
             onClick={handleCopy}
             title="Copy message"
           >
             {copied ? (
-              <Check className="h-3 w-3 text-green-500" />
+              <Check className="h-3 w-3 text-green-500" strokeWidth={1.5} />
             ) : (
-              <Copy className="h-3 w-3" style={{ color: 'var(--color-muted-foreground)' }} />
+              <Copy className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
             )}
           </button>
         )}

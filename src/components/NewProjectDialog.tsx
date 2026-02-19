@@ -200,9 +200,7 @@ export function NewProjectDialog({
             </div>
           </div>
           {error && (
-            <div className="flex items-start gap-2 rounded-md border px-3 py-2.5 text-sm"
-              style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-muted)' }}
-            >
+            <div className="flex items-start gap-2 rounded-md border border-border bg-muted px-3 py-2.5 text-sm">
               <Info className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground" />
               <span className="text-muted-foreground">{error}</span>
             </div>

@@ -62,13 +62,12 @@ export function ChatInput({ onSend, disabled, placeholder = 'Ask anything...', f
           placeholder={placeholder}
           disabled={disabled}
           rows={1}
-          className="flex-1 bg-transparent text-[13px] resize-none outline-none placeholder:text-muted-foreground/50 max-h-[120px] py-0.5 leading-relaxed overflow-y-auto"
-          style={{ color: 'var(--color-foreground)' }}
+          className="flex-1 bg-transparent text-sm resize-none outline-none placeholder:text-muted-foreground/50 max-h-[120px] py-0.5 leading-relaxed overflow-y-auto text-foreground"
         />
       </div>
       {footer && (
         <>
-          <div className="mx-3 border-t" style={{ borderColor: 'var(--color-border)' }} />
+          <div className="mx-3 border-t border-border" />
           <div className="flex items-end justify-between px-3 py-1.5 gap-2">
             <div className="flex items-center gap-2 flex-wrap min-w-0">
               {footer}

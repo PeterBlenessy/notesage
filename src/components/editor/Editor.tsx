@@ -324,7 +324,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
   if (!activeTab) {
     return (
-      <div className="h-full overflow-y-auto @container" style={{ backgroundColor: 'var(--color-background)' }}>
+      <div className="h-full overflow-y-auto @container bg-background">
         <div className="flex min-h-full items-center justify-center">
         <div className="text-center max-w-3xl px-6 py-8">
           <div className="space-y-3 mb-12">

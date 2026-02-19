@@ -20,9 +20,9 @@ export function ProjectSettingsDialog({ open, onOpenChange, projectPath }: Proje
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[80vw] lg:max-w-2xl max-h-[85vh] p-0 gap-0 overflow-hidden flex flex-col">
-        <DialogHeader className="px-6 py-4 border-b shrink-0" style={{ backgroundColor: 'var(--color-card)' }}>
+        <DialogHeader className="px-6 py-4 border-b shrink-0 bg-card">
           <div className="flex items-center gap-3">
-            <FolderCog className="h-8 w-8 shrink-0" style={{ color: 'var(--color-foreground)' }} />
+            <FolderCog className="h-8 w-8 shrink-0 text-foreground" strokeWidth={1.5} />
             <div>
               <DialogTitle className="text-lg">Project Settings</DialogTitle>
               <DialogDescription className="text-xs">
