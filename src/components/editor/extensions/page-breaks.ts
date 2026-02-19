@@ -2,7 +2,7 @@ import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 
-const pageBreaksKey = new PluginKey('pageBreaks')
+export const pageBreaksKey = new PluginKey('pageBreaks')
 
 export const PageBreaks = Extension.create({
   name: 'pageBreaks',

@@ -38,55 +38,50 @@ These limitations make the app feel like a functional prototype rather than a pr
 
 ## Technical Approach
 
-### 1. Custom Title Bar
+### 1. Title Bar (Native Overlay Style)
 
-Replace the native macOS title bar with a custom one using Tauri's `decorations: false` window configuration.
+Uses macOS native title bar with Tauri's overlay style — retaining native traffic lights and window chrome while embedding app controls in the title bar region.
 
-**Tauri config change:**
+**Tauri config:**
 
 ```json
 {
   "app": {
     "windows": [{
-      "decorations": false,
-      "title": "Notesage",
-      "width": 1200,
-      "height": 800,
-      "minWidth": 800,
-      "minHeight": 600,
-      "resizable": true
+      "decorations": true,
+      "hiddenTitle": true,
+      "titleBarStyle": "Overlay",
+      "trafficLightPosition": { "x": 12, "y": 20 }
     }]
   }
 }
 ```
 
-**Custom title bar layout:**
+**Title bar layout:**
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ ⦿ ⦿ ⦿  │  [≡ Sidebar]  [+ Note]    (title)    [AI ☐] [⚙] │
-│ traffic   │  ← sidebar-specific      center     right →     │
-│ lights    │    buttons (contextual)                          │
+│ ⦿ ⦿ ⦿  │  [sidebar controls]   (title)          [AI ☐]    │
+│ traffic   │  ← in sidebar header   center (drag)   right →  │
+│ lights    │                                                   │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 **Behavior:**
 
-- Height: 40px (slightly taller than native 28px to accommodate toolbar buttons comfortably — like Apple Notes)
-- macOS traffic lights (close/minimize/fullscreen) positioned at the left edge with standard macOS insets
-- **Left zone** (next to traffic lights): Sidebar toggle button. When sidebar is visible, this button appears right-aligned within the sidebar header area. When sidebar is hidden, it appears in the title bar after the traffic lights.
-- **Left-center zone** (visible when sidebar is open): "Add Note" button
-- **Center zone**: Document title (filename of active tab), clickable to rename. Falls back to "Notesage" when no file is open. This area also serves as a drag region for window movement.
-- **Right zone**: AI Chat toggle, Settings button
-- The Export button moves to the context menu / command palette (not the title bar — too niche for permanent placement)
+- Height: 36px (`h-9`), compact and elegant
+- macOS native traffic lights positioned at `(12, 20)` — standard insets
+- **Center zone**: Document title (filename of active tab), or "Notesage" when no file is open. Entire bar is a drag region for window movement via `data-tauri-drag-region`
+- **Right zone**: AI Chat toggle button (MessageSquare icon)
+- Sidebar toggle and "Add Note" buttons live in the sidebar header, not the title bar
+- Settings accessible via command palette (Cmd+,) — not in title bar
 
 **Implementation:**
 
-- Use `data-tauri-drag-region` on the title bar container to enable window dragging
-- Traffic light positioning via Tauri's `hiddenTitle` and CSS insets. On macOS, use `-webkit-app-region: drag` for the drag region and `-webkit-app-region: no-drag` for buttons.
-- The title bar uses `bg-card` background, matching the sidebar, with a bottom border
-
-**Vertical space savings:** \~28px reclaimed (native 28px removed, custom 40px added but absorbs the current title bar's 44px height — net gain depends on how much we consolidate)
+- `TitleBar.tsx` component with `data-tauri-drag-region` for window dragging
+- `hiddenTitle: true` hides the native window title text, replaced by the React component
+- `titleBarStyle: "Overlay"` keeps native window chrome while allowing content to extend into the title bar area
+- Clean, minimal design — no background color or border, blends with content
 
 ### 2. Strip Redesign (Minimized Sidebar)
 
@@ -403,7 +398,7 @@ Page break positions are calculated from:
 | Action | Shortcut | Notes |
 | --- | --- | --- |
 | Command palette | `Cmd+K` | When no text selection (otherwise: insert link) |
-| Focus mode | `Cmd+Shift+F` | Toggle. Reassign find-and-replace. |
+| Focus mode | `Cmd+.` | Toggle distraction-free writing mode |
 | Pin/unpin sidebar | `Cmd+B` | Existing, behavior unchanged |
 | Document outline | `Cmd+Shift+O` | Popover with heading navigation |
 
@@ -456,13 +451,16 @@ interface PaletteCommand {
 }
 ```
 
-### Tauri config change
+### Tauri config (as implemented)
 
 ```json
 {
   "app": {
     "windows": [{
-      "decorations": false
+      "decorations": true,
+      "hiddenTitle": true,
+      "titleBarStyle": "Overlay",
+      "trafficLightPosition": { "x": 12, "y": 20 }
     }]
   }
 }
@@ -482,89 +480,89 @@ No new npm or Cargo dependencies required. shadcn/ui `Command` component may nee
 
 This PRD covers a large surface area. Suggested implementation order:
 
-### Phase A (Layout Foundation)
+### Phase A (Layout Foundation) ✅ Complete
 
-1. Custom title bar (decorations: false, traffic lights, drag region, button layout)
+1. Title bar (native overlay style with `hiddenTitle`, traffic lights, drag region, chat toggle)
 2. Strip redesign (navigation icons, same visual language as sidebar)
 3. Sidebar overlay on strip hover/click
 4. Sidebar stays open on file select in overlay mode (no auto-hide — feels more natural)
 5. Editor content centering accounts for strip width
 6. Configurable toolbar visibility (on/off setting)
 
-### Phase B (Productivity Features)
+### Phase B (Productivity Features) ✅ Complete
 
 7. Command palette (Cmd+K, cmdk component, file search + commands + headings)
-8. Focus mode (Cmd+Shift+F, hide all chrome, optional typewriter scrolling)
+8. Focus mode (Cmd+., hide all chrome)
 9. Document outline popover (Cmd+Shift+O)
 
-### Phase C (Status Bar & Page Breaks)
+### Phase C (Status Bar & Page Breaks) ✅ Complete
 
 10. Contextual status bar (git branch, comment count, page position)
 11. Comment list popover (from status bar badge)
-12. Page break markers in editor
-13. Page position indicator in status bar
+12. Page break markers in editor (visible gaps + continuous margin ticks, togglable in Settings)
+13. Page position indicator in status bar (geometry-based, updates on scroll)
 
 ## Quality Gates
 
 ### Functional
 
-- [ ] App window has no native title bar; custom title bar shows traffic lights and buttons
+- [x] Title bar uses native overlay style with hidden title, traffic lights, and drag region
 
-- [ ] Window is draggable by the custom title bar
+- [x] Window is draggable by the title bar
 
-- [ ] Traffic lights (close, minimize, fullscreen) work correctly
+- [x] Traffic lights (close, minimize, fullscreen) work correctly
 
-- [ ] Strip shows Quick Notes, Projects, Folders icons
+- [x] Strip shows Quick Notes, Projects, Folders icons
 
-- [ ] Hovering strip reveals sidebar as overlay after 150ms
+- [x] Hovering strip reveals sidebar as overlay after 150ms
 
-- [ ] Clicking a file in overlay sidebar opens the file (sidebar stays open for continued browsing)
+- [x] Clicking a file in overlay sidebar opens the file (sidebar stays open for continued browsing)
 
-- [ ] Cmd+B pins/unpins sidebar (docked vs overlay mode)
+- [x] Cmd+B pins/unpins sidebar (docked vs overlay mode)
 
-- [ ] Editor content centering is stable when sidebar opens/closes (no horizontal shift)
+- [x] Editor content centering is stable when sidebar opens/closes (no horizontal shift)
 
-- [ ] Command palette opens with Cmd+K (when no text selection)
+- [x] Command palette opens with Cmd+K (when no text selection)
 
-- [ ] Command palette searches files, commands, and headings with fuzzy matching
+- [x] Command palette searches files, commands, and headings with fuzzy matching
 
-- [ ] Focus mode hides all chrome and shows only the editor
+- [x] Focus mode hides all chrome and shows only the editor
 
-- [ ] Escape exits focus mode
+- [x] Escape exits focus mode
 
-- [ ] Status bar shows git branch when in a repo
+- [x] Status bar shows git branch when in a repo
 
-- [ ] Status bar shows comment count when document has comments
+- [x] Status bar shows comment count when document has comments
 
-- [ ] Clicking comment count opens comment list popover
+- [x] Clicking comment count opens comment list popover
 
-- [ ] Clicking a comment in the list scrolls editor to that comment
+- [x] Clicking a comment in the list scrolls editor to that comment
 
-- [ ] Page break markers appear when paper size is set and setting is enabled
+- [x] Page break markers appear when paper size is set and setting is enabled
 
-- [ ] Page position indicator (p.X/Y) updates on scroll
+- [x] Page position indicator (page X/Y) updates on scroll
 
-- [ ] All existing keyboard shortcuts still work
+- [x] All existing keyboard shortcuts still work
 
-- [ ] App builds and runs on macOS without errors
+- [x] App builds and runs on macOS without errors
 
 ### Design
 
-- [ ] Custom title bar looks native and matches macOS conventions
+- [x] Title bar looks native and matches macOS conventions
 
-- [ ] Strip uses same icon style and padding as sidebar (no visual discontinuity)
+- [x] Strip uses same icon style and padding as sidebar (no visual discontinuity)
 
-- [ ] Sidebar overlay slides smoothly (200ms ease-out)
+- [x] Sidebar overlay slides smoothly (200ms ease-out)
 
-- [ ] Command palette has backdrop blur and smooth animation
+- [x] Command palette has backdrop blur and smooth animation
 
-- [ ] Focus mode transitions smoothly (200ms fade)
+- [x] Focus mode transitions smoothly (200ms fade)
 
-- [ ] Status bar items fade in/out contextually
+- [ ] Status bar items fade in/out contextually (deferred — instant show/hide for now)
 
-- [ ] Page break markers are subtle and don't interfere with reading
+- [x] Page break markers are subtle and don't interfere with reading
 
-- [ ] Looks great in both light and dark mode
+- [x] Looks great in both light and dark mode
 
 ## Out of Scope
 

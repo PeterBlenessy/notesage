@@ -22,3 +22,4 @@ export {
   getCommentMarkState,
   CommentMarkPluginKey,
 } from './comment-mark';
+export { pageBreaksKey } from './page-breaks';

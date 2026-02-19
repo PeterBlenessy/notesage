@@ -63,7 +63,7 @@ interface EditorProps {
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange }: EditorProps) {
   const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
-  const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled } = useSettingsStore();
+  const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, pageBreaks } = useSettingsStore();
   const { projectPath } = useActiveProject();
   const repo = useGitStore((s) => projectPath ? s.repos[projectPath] : undefined);
   const isGitRepo = repo?.isGitRepo ?? false;
@@ -78,6 +78,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const isResizing = useRef(false);
   const resizeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [renderedWidth, setRenderedWidth] = useState<number | null>(null);
+  const [pageInfo, setPageInfo] = useState<{ current: number; total: number } | null>(null);
+  const [commentListOpen, setCommentListOpen] = useState(false);
 
   // Convert cm margins to px
   const paddingTop = `${marginTop * PX_PER_CM}px`;
@@ -184,6 +186,69 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const { exportPdf, isExporting } = useExportOperations(editor);
   const { reviewActive, compareBranch, handleAcceptAll, handleRejectAll } = useDiffReview(editor);
   useFileWatcher();
+
+  // Page position: calculate from editor content height and page geometry
+  const marginTopPx = marginTop * PX_PER_CM;
+  const marginBottomPx = marginBottom * PX_PER_CM;
+  const usablePageHeight = pageHeight ? pageHeight - marginTopPx - marginBottomPx : 0;
+
+  useEffect(() => {
+    if (!editor || !isPaperMode || !usablePageHeight || !activeTab) {
+      setPageInfo(null);
+      return;
+    }
+
+    const updatePageInfo = () => {
+      const el = scrollAreaRef.current;
+      if (!el) return;
+
+      // Total content height from the ProseMirror DOM
+      const contentHeight = editor.view.dom.scrollHeight;
+      const totalPages = Math.max(1, Math.ceil(contentHeight / usablePageHeight));
+
+      // Current page: which page is at the viewport center
+      const viewportCenter = el.scrollTop + el.clientHeight / 2;
+      const contentOffsetTop =
+        editor.view.dom.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+      const posInContent = viewportCenter - contentOffsetTop;
+      const currentPage = Math.min(
+        totalPages,
+        Math.max(1, Math.ceil(posInContent / usablePageHeight))
+      );
+      setPageInfo({ current: currentPage, total: totalPages });
+    };
+
+    // Update on scroll
+    let timeout: ReturnType<typeof setTimeout>;
+    const onScroll = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(updatePageInfo, 100);
+    };
+
+    // Update when editor content changes
+    const onTransaction = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(updatePageInfo, 300);
+    };
+
+    const el = scrollAreaRef.current;
+    if (el) {
+      el.addEventListener('scroll', onScroll, { passive: true });
+    }
+    editor.on('transaction', onTransaction);
+
+    // Initial calculation — delay to ensure layout is complete
+    const initTimeout = setTimeout(updatePageInfo, 200);
+
+    return () => {
+      if (el) {
+        el.removeEventListener('scroll', onScroll);
+      }
+      editor.off('transaction', onTransaction);
+      clearTimeout(timeout);
+      clearTimeout(initTimeout);
+    };
+  }, [editor, isPaperMode, usablePageHeight, activeTab?.id]);
 
   // Comments
   const commentOps = useCommentOperations(editor);
@@ -512,6 +577,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           <div
             ref={contentRef}
             className={`w-full ${isPaperMode ? 'paper-mode' : ''}`}
+            data-page-breaks={isPaperMode ? pageBreaks : undefined}
             style={{
               maxWidth: maxWidth ? `${maxWidth}px` : undefined,
               '--editor-padding-top': paddingTop,
@@ -529,7 +595,33 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         </div>
         {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}
       </div>
-      {!focusMode && <StatusBar editor={editor} maxWidth={maxWidth} renderedWidth={renderedWidth} />}
+      {!focusMode && (
+        <StatusBar
+          editor={editor}
+          maxWidth={maxWidth}
+          renderedWidth={renderedWidth}
+          comments={commentOps.comments}
+          branchName={repo?.currentBranch ?? ""}
+          isGitRepo={gitEnabled && isGitRepo}
+          reviewActive={reviewActive}
+          compareBranch={compareBranch}
+          pageInfo={pageInfo}
+          commentListOpen={commentListOpen}
+          onCommentListOpenChange={setCommentListOpen}
+          onSelectComment={(comment) => {
+            if (editor) {
+              // Scroll comment into view, then activate it so the popover positions correctly
+              const dom = editor.view.domAtPos(comment.from);
+              const node = dom.node instanceof HTMLElement ? dom.node : dom.node.parentElement;
+              node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              // Delay activation so scroll completes and coordsAtPos returns correct position
+              setTimeout(() => commentOps.setActiveComment(comment.id), 300);
+            } else {
+              commentOps.setActiveComment(comment.id);
+            }
+          }}
+        />
+      )}
       <DocumentOutline open={outlineOpen ?? false} onOpenChange={(open) => onOutlineOpenChange?.(open)} editor={editor} />
       <ExportDialog
         open={exportOpen ?? false}

@@ -79,6 +79,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     marginLeft, setMarginLeft,
     marginRight, setMarginRight,
     gitEnabled, setGitEnabled,
+    pageBreaks, setPageBreaks,
   } = useSettingsStore();
   const [activeTab, setActiveTab] = useState<SettingsTab>('editor');
   const [gitNotAvailable, setGitNotAvailable] = useState(false);
@@ -339,6 +340,24 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         </SelectContent>
                       </Select>
                     </div>
+
+                    {/* Page Breaks — only shown for paper sizes */}
+                    {(contentWidth === 'a4' || contentWidth === 'a5' || contentWidth === 'letter') && (
+                      <div
+                        className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
+                      >
+                        <div>
+                          <Label className="text-sm font-medium">Page Break Gaps</Label>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Show visible gaps between pages
+                          </p>
+                        </div>
+                        <Switch
+                          checked={pageBreaks === 'visible'}
+                          onCheckedChange={(checked) => setPageBreaks(checked ? 'visible' : 'continuous')}
+                        />
+                      </div>
+                    )}
 
                     {/* Page Margins */}
                     <div
