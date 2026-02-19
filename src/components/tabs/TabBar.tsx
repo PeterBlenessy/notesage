@@ -69,7 +69,7 @@ export function TabBar() {
               role="button"
               aria-label="Close tab"
             >
-              <X className="h-3 w-3" />
+              <X className="h-3 w-3" strokeWidth={1.5} />
             </span>
           </button>
         );

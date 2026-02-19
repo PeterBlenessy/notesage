@@ -165,7 +165,7 @@ export function CommandPalette({
               >
                 <Clock className="h-4 w-4" strokeWidth={1.5} />
                 <span className="flex-1 truncate">{file.name}</span>
-                <span className="text-[11px] text-muted-foreground truncate max-w-[200px]">
+                <span className="text-xs text-muted-foreground truncate max-w-[200px]">
                   {file.path}
                 </span>
               </CommandItem>
@@ -270,7 +270,7 @@ export function CommandPalette({
                 >
                   <File className="h-4 w-4" strokeWidth={1.5} />
                   <span className="flex-1 truncate">{file.name}</span>
-                  <span className="text-[11px] text-muted-foreground truncate max-w-[200px]">
+                  <span className="text-xs text-muted-foreground truncate max-w-[200px]">
                     {file.path}
                   </span>
                 </CommandItem>
@@ -282,16 +282,16 @@ export function CommandPalette({
       </CommandList>
 
       {/* Footer hints */}
-      <div className="flex items-center justify-between px-3 h-8 border-t border-border bg-muted text-muted-foreground text-[11px]">
+      <div className="flex items-center justify-between px-3 h-8 border-t border-border bg-muted text-muted-foreground text-xs">
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1">
-            <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-[10px] shadow-[0_1px_0_0_var(--color-border)]">&#8593;&#8595;</kbd> navigate
+            <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">&#8593;&#8595;</kbd> navigate
           </span>
           <span className="flex items-center gap-1">
-            <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-[10px] shadow-[0_1px_0_0_var(--color-border)]">&#8629;</kbd> select
+            <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">&#8629;</kbd> select
           </span>
           <span className="flex items-center gap-1">
-            <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-[10px] shadow-[0_1px_0_0_var(--color-border)]">esc</kbd> close
+            <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">esc</kbd> close
           </span>
         </div>
       </div>

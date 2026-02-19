@@ -163,7 +163,7 @@ export function NewProjectDialog({
                     key={template.id}
                     type="button"
                     onClick={() => setSelectedTemplate(template)}
-                    className={`w-full text-left rounded-md border px-3 py-2.5 transition-all duration-150 ease-in-out cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                    className={`w-full text-left rounded-md border px-3 py-2.5 transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
                       isSelected
                         ? "border-foreground/30 bg-muted"
                         : "border-border hover:bg-muted/50 hover:border-border"

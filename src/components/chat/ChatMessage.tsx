@@ -74,18 +74,18 @@ export function ChatMessage({ message }: ChatMessageProps) {
         {/* Citations / Sources */}
         {hasCitations && (
           <div className="mt-2.5 pt-2 border-t border-border">
-            <p className="text-[10px] font-medium uppercase tracking-wider mb-1.5 text-muted-foreground">
+            <p className="text-xs font-medium uppercase tracking-wider mb-1.5 text-muted-foreground">
               Sources
             </p>
             <ol className="list-none m-0 p-0 flex flex-col gap-1">
               {message.citations!.map((citation, i) => (
                 <li key={`${citation.url}-${i}`} className="flex items-start gap-1.5">
-                  <span className="text-[10px] font-medium shrink-0 mt-px text-muted-foreground">
+                  <span className="text-xs font-medium shrink-0 mt-px text-muted-foreground">
                     {i + 1}.
                   </span>
                   <button
                     onClick={() => handleOpenUrl(citation.url)}
-                    className="text-[11px] leading-snug text-left transition-colors duration-150 hover:underline truncate text-foreground"
+                    className="text-xs leading-snug text-left transition-colors duration-150 hover:underline truncate text-foreground"
                     title={citation.url}
                   >
                     <span className="flex items-center gap-1">
