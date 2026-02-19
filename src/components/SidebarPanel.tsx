@@ -140,22 +140,18 @@ export function SidebarPanel({
             </div>
 
             {/* Bottom: Settings */}
-            <div className="shrink-0 flex items-center h-10">
+            <button
+              className="shrink-0 flex items-center h-10 w-full text-left hover:bg-accent transition-colors duration-150"
+              onClick={onOpenSettings}
+              title="Settings (⌘,)"
+            >
               <div className="w-10 shrink-0 flex items-center justify-center">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-muted-foreground hover:text-foreground transition-colors duration-150"
-                  onClick={onOpenSettings}
-                  title="Settings (⌘,)"
-                >
-                  <Settings className="h-4 w-4" strokeWidth={1.5} />
-                </Button>
+                <Settings className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
               </div>
               <span className="text-xs text-muted-foreground whitespace-nowrap select-none">
                 Settings
               </span>
-            </div>
+            </button>
           </div>
         </div>
       </div>

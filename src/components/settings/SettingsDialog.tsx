@@ -71,6 +71,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const {
     theme, setTheme,
     showFloatingToolbar, setShowFloatingToolbar,
+    toolbarVisible, setToolbarVisible,
     contentWidth, setContentWidth,
     measurementUnit, setMeasurementUnit,
     marginTop, setMarginTop,
@@ -241,6 +242,30 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </div>
 
                   <div className="space-y-2">
+                    <div
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border transition-colors"
+                      style={{ borderColor: 'var(--color-border)' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-muted-foreground)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                    >
+                      <div>
+                        <Label
+                          htmlFor="toolbar-visible"
+                          className="text-[13px] font-medium cursor-pointer"
+                        >
+                          Top Toolbar
+                        </Label>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Show the formatting toolbar above the editor
+                        </p>
+                      </div>
+                      <Switch
+                        id="toolbar-visible"
+                        checked={toolbarVisible}
+                        onCheckedChange={setToolbarVisible}
+                        className="ml-auto"
+                      />
+                    </div>
                     <div
                       className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border transition-colors"
                       style={{ borderColor: 'var(--color-border)' }}

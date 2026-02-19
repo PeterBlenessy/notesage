@@ -111,7 +111,7 @@ The strip transforms from a generic action bar into the **minimized state of the
 - Strip is always visible when the sidebar is closed (current behavior)
 - **Hover on strip**: Sidebar slides out as an overlay (280px) from the left edge, on top of the editor content. The sidebar shows the section corresponding to the hovered strip button (e.g., hover "Projects" → sidebar opens scrolled to the Projects section). A short delay (150ms) prevents accidental triggers.
 - **Click on strip button**: Same as hover — opens sidebar overlay showing that section. The clicked button gets an active background to indicate the current filter.
-- **Click a file in the overlay sidebar**: File opens in the editor, sidebar auto-hides (overlay dismisses)
+- **Click a file in the overlay sidebar**: File opens in the editor. The sidebar remains visible (no auto-hide) so the user can continue browsing.
 - **Cmd+B**: Pins the sidebar open (docked, resizable — current behavior). When pinned, the strip is not shown (sidebar replaces it). Cmd+B again unpins and returns to strip + overlay mode.
 - **Editor content centering**: The content area always accounts for 40px strip width when centering, regardless of whether the sidebar is docked or floating. This prevents the editor from shifting horizontally when the sidebar opens/closes.
 
@@ -487,7 +487,7 @@ This PRD covers a large surface area. Suggested implementation order:
 1. Custom title bar (decorations: false, traffic lights, drag region, button layout)
 2. Strip redesign (navigation icons, same visual language as sidebar)
 3. Sidebar overlay on strip hover/click
-4. Sidebar auto-hide on file select in overlay mode
+4. Sidebar stays open on file select in overlay mode (no auto-hide — feels more natural)
 5. Editor content centering accounts for strip width
 6. Configurable toolbar visibility (on/off setting)
 
@@ -518,7 +518,7 @@ This PRD covers a large surface area. Suggested implementation order:
 
 - [ ] Hovering strip reveals sidebar as overlay after 150ms
 
-- [ ] Clicking a file in overlay sidebar opens the file and hides the sidebar
+- [ ] Clicking a file in overlay sidebar opens the file (sidebar stays open for continued browsing)
 
 - [ ] Cmd+B pins/unpins sidebar (docked vs overlay mode)
 
