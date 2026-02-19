@@ -10,7 +10,7 @@ import {
   MessageSquare,
   Settings,
   Clock,
-  Search,
+  Focus,
 } from "lucide-react";
 import {
   CommandDialog,
@@ -38,6 +38,7 @@ interface CommandPaletteProps {
   onOpenFolder: () => void;
   onOpenSettings: () => void;
   onExportPdf: () => void;
+  onToggleFocusMode: () => void;
   /** When true, show only file search (no actions/recent). Used by ⌘⇧F. */
   filesOnly?: boolean;
 }
@@ -50,6 +51,7 @@ export function CommandPalette({
   onOpenFolder,
   onOpenSettings,
   onExportPdf,
+  onToggleFocusMode,
   filesOnly,
 }: CommandPaletteProps) {
   const [search, setSearch] = useState("");
@@ -139,7 +141,13 @@ export function CommandPalette({
       showCloseButton={false}
     >
       <CommandInput
-        placeholder={filesOnly ? "Search files..." : "Type a command or file name..."}
+        placeholder={
+          filesOnly
+            ? `Search ${allFiles.length.toLocaleString()} files...`
+            : allFiles.length > 0
+              ? `Type a command or search ${allFiles.length.toLocaleString()} files...`
+              : "Type a command or file name..."
+        }
         value={search}
         onValueChange={setSearch}
       />
@@ -232,6 +240,14 @@ export function CommandPalette({
             <CommandShortcut>&#8984;&#8679;A</CommandShortcut>
           </CommandItem>
           <CommandItem
+            value="toggle focus mode distraction free"
+            onSelect={() => runAndClose(onToggleFocusMode)}
+          >
+            <Focus className="h-4 w-4" strokeWidth={1.5} />
+            <span>Toggle Focus Mode</span>
+            <CommandShortcut>&#8984;.</CommandShortcut>
+          </CommandItem>
+          <CommandItem
             value="open settings preferences"
             onSelect={() => runAndClose(onOpenSettings)}
           >
@@ -263,16 +279,6 @@ export function CommandPalette({
           </>
         )}
 
-        {/* Hint to search for files when no query (only in full palette mode) */}
-        {!filesOnly && !search.trim() && allFiles.length > 0 && (
-          <>
-            <CommandSeparator />
-            <div className="py-3 px-4 text-[12px] text-muted-foreground flex items-center gap-2">
-              <Search className="h-3.5 w-3.5" strokeWidth={1.5} />
-              Type to search {allFiles.length} files...
-            </div>
-          </>
-        )}
       </CommandList>
 
       {/* Footer hints */}

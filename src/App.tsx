@@ -555,6 +555,7 @@ function App() {
           onOpenFolder={handleOpenFolder}
           onOpenSettings={() => setSettingsOpen(true)}
           onExportPdf={() => setExportOpen(true)}
+          onToggleFocusMode={() => setFocusMode((prev) => !prev)}
           filesOnly={commandPaletteFilesOnly}
         />
         <NewNoteDialog
