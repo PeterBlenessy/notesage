@@ -22,7 +22,7 @@ import {
 interface CommandItem {
   title: string;
   description: string;
-  icon: ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string; strokeWidth?: number }>;
   command: (props: { editor: Editor; range: Range }) => void;
 }
 
@@ -197,7 +197,7 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(
                 onMouseEnter={() => setSelectedIndex(index)}
               >
                 <div className="h-7 w-7 rounded-md flex items-center justify-center shrink-0 bg-muted">
-                  {<item.icon className="h-3.5 w-3.5" />}
+                  {<item.icon className="h-4 w-4" strokeWidth={1.5} />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-foreground">

@@ -39,7 +39,9 @@ function savePanelSizes(layout: Record<string, number>) {
     const stored = JSON.parse(localStorage.getItem(PANEL_SIZES_KEY) || "{}");
     stored[key] = layout;
     localStorage.setItem(PANEL_SIZES_KEY, JSON.stringify(stored));
-  } catch {}
+  } catch {
+    // localStorage may be full or unavailable
+  }
 }
 
 function loadPanelSize(configKey: string, panel: string, fallback: number): number {
@@ -274,7 +276,9 @@ function App() {
         try {
           const tree = await tauriApi.listDirectory(notesRoot);
           ws.setNotesTree(tree);
-        } catch {}
+        } catch {
+          // Non-critical — notes tree refresh can fail silently
+        }
       }
 
       const content = await tauriApi.readFile(filePath);
