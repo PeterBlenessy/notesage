@@ -24,6 +24,7 @@ import { BranchDiffSelector } from "./BranchDiffSelector";
 import { CommentPopover } from "./CommentPopover";
 import { StatusBar } from "./StatusBar";
 import { FrontmatterBlock } from "./FrontmatterBlock";
+import { DocumentOutline } from "@/components/DocumentOutline";
 import "@/styles/editor.css";
 
 // 1 CSS px = 1/96 inch, 1 inch = 2.54 cm
@@ -54,9 +55,12 @@ interface EditorProps {
   onOpenFile?: (path: string, name: string) => void;
   exportOpen?: boolean;
   onExportOpenChange?: (open: boolean) => void;
+  focusMode?: boolean;
+  outlineOpen?: boolean;
+  onOutlineOpenChange?: (open: boolean) => void;
 }
 
-export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange }: EditorProps) {
+export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange }: EditorProps) {
   const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled } = useSettingsStore();
@@ -478,7 +482,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {toolbarVisible && (
+      {toolbarVisible && !focusMode && (
         <div className="flex items-center border-b border-border shrink-0 bg-background">
           <Toolbar editor={editor} />
           {gitEnabled && isGitRepo && projectPath && !reviewActive && (
@@ -525,7 +529,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         </div>
         {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}
       </div>
-      <StatusBar editor={editor} maxWidth={maxWidth} renderedWidth={renderedWidth} />
+      {!focusMode && <StatusBar editor={editor} maxWidth={maxWidth} renderedWidth={renderedWidth} />}
+      <DocumentOutline open={outlineOpen ?? false} onOpenChange={(open) => onOutlineOpenChange?.(open)} editor={editor} />
       <ExportDialog
         open={exportOpen ?? false}
         onOpenChange={(open) => onExportOpenChange?.(open)}

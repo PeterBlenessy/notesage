@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { TabBar } from "@/components/tabs/TabBar";
 import { Editor } from "@/components/editor/Editor";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import { QuickOpen } from "@/components/QuickOpen";
+import { CommandPalette } from "@/components/CommandPalette";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { ProjectSettingsDialog } from "@/components/settings/ProjectSettingsDialog";
@@ -51,7 +51,7 @@ function loadPanelSize(configKey: string, panel: string, fallback: number): numb
 }
 
 // Editor area with document-style presentation
-function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange }: {
+function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange }: {
   onNewNote?: () => void;
   onNewProject?: () => void;
   onOpenFolder?: () => void;
@@ -59,17 +59,21 @@ function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOp
   onOpenFile?: (path: string, name: string) => void;
   exportOpen?: boolean;
   onExportOpenChange?: (open: boolean) => void;
+  focusMode?: boolean;
+  outlineOpen?: boolean;
+  onOutlineOpenChange?: (open: boolean) => void;
 }) {
   return (
     <div className="flex flex-col h-full overflow-hidden bg-muted">
-      <TabBar />
-      <Editor onNewNote={onNewNote} onNewProject={onNewProject} onOpenFolder={onOpenFolder} onOpenProject={onOpenProject} onOpenFile={onOpenFile} exportOpen={exportOpen} onExportOpenChange={onExportOpenChange} />
+      {!focusMode && <TabBar />}
+      <Editor onNewNote={onNewNote} onNewProject={onNewProject} onOpenFolder={onOpenFolder} onOpenProject={onOpenProject} onOpenFile={onOpenFile} exportOpen={exportOpen} onExportOpenChange={onExportOpenChange} focusMode={focusMode} outlineOpen={outlineOpen} onOutlineOpenChange={onOutlineOpenChange} />
     </div>
   );
 }
 
 function App() {
-  const [quickOpenVisible, setQuickOpenVisible] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [commandPaletteFilesOnly, setCommandPaletteFilesOnly] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [projectSettingsPath, setProjectSettingsPath] = useState("");
@@ -77,6 +81,9 @@ function App() {
   const [newNoteParentPath, setNewNoteParentPath] = useState("");
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [focusHintVisible, setFocusHintVisible] = useState(false);
 
   const { setSidebarPinned, chatPanelOpen, setChatPanelOpen } = useSettingsStore();
 
@@ -322,35 +329,99 @@ function App() {
     ...(chatPanelOpen ? ["chat"] : []),
   ]);
 
+  // Show and auto-fade focus mode hint
+  useEffect(() => {
+    if (focusMode) {
+      setFocusHintVisible(true);
+      const timer = setTimeout(() => setFocusHintVisible(false), 2000);
+      return () => clearTimeout(timer);
+    } else {
+      setFocusHintVisible(false);
+    }
+  }, [focusMode]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd+F for quick open
-      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+      const isMod = e.metaKey || e.ctrlKey;
+
+      // Esc — exit focus mode
+      if (e.key === "Escape" && focusMode) {
         e.preventDefault();
-        setQuickOpenVisible(true);
+        setFocusMode(false);
+        return;
+      }
+
+      // Cmd+K — command palette (only when no text selected in editor)
+      if (isMod && e.key === "k") {
+        // Check if the active element is a ProseMirror editor with a non-empty selection
+        const active = document.activeElement;
+        const pmView = active?.closest(".ProseMirror");
+        if (pmView) {
+          // Get the editor's selection state from the DOM
+          const sel = window.getSelection();
+          if (sel && sel.toString().length > 0) {
+            // Let Tiptap handle Cmd+K for link insertion
+            return;
+          }
+        }
+        e.preventDefault();
+        setCommandPaletteOpen(true);
+        return;
+      }
+
+      // Cmd+Shift+F for project file search
+      if (isMod && e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setCommandPaletteFilesOnly(true);
+        setCommandPaletteOpen(true);
+        return;
+      }
+
+      // Cmd+. for focus mode toggle
+      if (isMod && e.key === ".") {
+        e.preventDefault();
+        setFocusMode((prev) => !prev);
+        return;
+      }
+
+      // Cmd+T for toggle theme
+      if (isMod && !e.shiftKey && e.key === "t") {
+        e.preventDefault();
+        const settings = useSettingsStore.getState();
+        settings.setTheme(settings.theme === "dark" ? "light" : "dark");
+        return;
+      }
+
+      // Cmd+Shift+O for document outline (check before Cmd+O)
+      if (isMod && e.shiftKey && e.key.toLowerCase() === "o") {
+        e.preventDefault();
+        if (useEditorStore.getState().activeTabId) {
+          setOutlineOpen(true);
+        }
+        return;
       }
 
       // Cmd+B for sidebar pin toggle
-      if ((e.metaKey || e.ctrlKey) && e.key === "b") {
+      if (isMod && e.key === "b") {
         e.preventDefault();
         setSidebarPinned(!useSettingsStore.getState().sidebarPinned);
       }
 
       // Cmd+Shift+A for AI chat toggle
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "a") {
+      if (isMod && e.shiftKey && e.key === "a") {
         e.preventDefault();
         setChatPanelOpen(!useSettingsStore.getState().chatPanelOpen);
       }
 
       // Cmd+, for settings
-      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+      if (isMod && e.key === ",") {
         e.preventDefault();
         setSettingsOpen(true);
       }
 
       // Cmd+Shift+E for export PDF
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "e") {
+      if (isMod && e.shiftKey && e.key === "e") {
         e.preventDefault();
         if (useEditorStore.getState().activeTabId) {
           setExportOpen(true);
@@ -359,20 +430,20 @@ function App() {
       }
 
       // Cmd+Shift+N for new project
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "n") {
+      if (isMod && e.shiftKey && e.key === "n") {
         e.preventDefault();
         setNewProjectOpen(true);
         return;
       }
 
       // Cmd+N for new note
-      if ((e.metaKey || e.ctrlKey) && e.key === "n") {
+      if (isMod && e.key === "n") {
         e.preventDefault();
         handleNewNote();
       }
 
       // Cmd+O for open folder
-      if ((e.metaKey || e.ctrlKey) && e.key === "o") {
+      if (isMod && e.key === "o") {
         e.preventDefault();
         handleOpenFolder();
       }
@@ -380,27 +451,31 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleOpenFolder, handleNewNote, setSidebarPinned, setChatPanelOpen]);
+  }, [handleOpenFolder, handleNewNote, setSidebarPinned, setChatPanelOpen, focusMode]);
 
   return (
     <ThemeProvider>
       <div className="flex h-screen w-screen overflow-hidden">
-        {/* Left: SidebarPanel — full window height, rail + drawer */}
-        <SidebarPanel
-          onOpenSettings={() => setSettingsOpen(true)}
-          onNewNote={handleNewNote}
-          onNewProject={handleNewProject}
-          onOpenExistingProject={handleBrowseForProject}
-          onOpenProjectSettings={handleOpenProjectSettings}
-          onMakeProject={handleMakeProject}
-          onExportFile={handleExportFile}
-        />
+        {/* Left: SidebarPanel — full window height, rail + drawer (hidden in focus mode) */}
+        {!focusMode && (
+          <SidebarPanel
+            onOpenSettings={() => setSettingsOpen(true)}
+            onNewNote={handleNewNote}
+            onNewProject={handleNewProject}
+            onOpenExistingProject={handleBrowseForProject}
+            onOpenProjectSettings={handleOpenProjectSettings}
+            onMakeProject={handleMakeProject}
+            onExportFile={handleExportFile}
+          />
+        )}
 
         {/* Right: Title bar + editor + chat */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          <TitleBar
-            onToggleChat={() => setChatPanelOpen(!chatPanelOpen)}
-          />
+          {!focusMode && (
+            <TitleBar
+              onToggleChat={() => setChatPanelOpen(!chatPanelOpen)}
+            />
+          )}
 
           <ResizablePanelGroup
             orientation="horizontal"
@@ -420,10 +495,13 @@ function App() {
                 onOpenFile={handleOpenFile}
                 exportOpen={exportOpen}
                 onExportOpenChange={setExportOpen}
+                focusMode={focusMode}
+                outlineOpen={outlineOpen}
+                onOutlineOpenChange={setOutlineOpen}
               />
             </ResizablePanel>
 
-            {chatPanelOpen && (
+            {chatPanelOpen && !focusMode && (
               <>
                 <ResizableHandle withHandle />
                 <ResizablePanel
@@ -439,6 +517,25 @@ function App() {
           </ResizablePanelGroup>
         </div>
 
+        {/* Focus mode hint overlay */}
+        {focusMode && (
+          <div
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-opacity duration-500"
+            style={{ opacity: focusHintVisible ? 1 : 0 }}
+          >
+            <div
+              className="px-3 py-1.5 rounded-md text-xs"
+              style={{
+                backgroundColor: 'var(--color-muted)',
+                color: 'var(--color-muted-foreground)',
+                border: '1px solid var(--color-border)',
+              }}
+            >
+              Press <kbd className="font-mono font-semibold">Esc</kbd> to exit focus mode
+            </div>
+          </div>
+        )}
+
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
         {projectSettingsPath && (
           <ProjectSettingsDialog
@@ -447,7 +544,19 @@ function App() {
             projectPath={projectSettingsPath}
           />
         )}
-        <QuickOpen open={quickOpenVisible} onOpenChange={setQuickOpenVisible} />
+        <CommandPalette
+          open={commandPaletteOpen}
+          onOpenChange={(open) => {
+            setCommandPaletteOpen(open);
+            if (!open) setCommandPaletteFilesOnly(false);
+          }}
+          onNewNote={() => handleNewNote()}
+          onNewProject={handleNewProject}
+          onOpenFolder={handleOpenFolder}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onExportPdf={() => setExportOpen(true)}
+          filesOnly={commandPaletteFilesOnly}
+        />
         <NewNoteDialog
           open={newNoteOpen}
           onOpenChange={setNewNoteOpen}

@@ -22,7 +22,7 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | Underline | `Cmd+U` | Toggle underline on selection |
 | Strikethrough | `Cmd+Shift+X` | Toggle strikethrough on selection |
 | Code | `Cmd+E` | Toggle inline code on selection |
-| Link | `Cmd+K` | Insert/edit link on selection |
+| Link | `Cmd+K` | Insert/edit link (when text is selected) |
 
 ## Editor Navigation
 
@@ -30,12 +30,13 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 |--------|----------|-------------|
 | Undo | `Cmd+Z` | Undo last change |
 | Redo | `Cmd+Shift+Z` | Redo last undone change |
+| Find in document | `Cmd+F` | Native browser find in current document |
 
 ## App Settings
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Toggle theme | `Cmd+Shift+T` | Switch between light and dark mode |
+| Toggle theme | `Cmd+T` | Switch between light and dark mode |
 | Open settings | `Cmd+,` | Open settings dialog |
 
 ## AI Features
@@ -73,8 +74,12 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Quick open | `Cmd+F` | Fuzzy file search and open |
+| Command palette | `Cmd+K` | Open command palette (when no text selected) |
+| Search files | `Cmd+Shift+F` | Open command palette in file search mode |
 | Toggle sidebar | `Cmd+B` | Show/hide file sidebar |
+| Focus mode | `Cmd+.` | Toggle distraction-free focus mode |
+| Document outline | `Cmd+Shift+O` | Open document outline (requires active file) |
+| Exit focus mode | `Esc` | Exit focus mode (when active) |
 
 ## Future Shortcuts (Planned)
 
@@ -82,7 +87,7 @@ These shortcuts are planned but not yet implemented:
 
 | Action | Shortcut | Description |
 |--------|----------|-------------|
-| Find and replace | `Cmd+Shift+F` | Search and replace in current document |
+| Find and replace | `Cmd+Shift+H` | Search and replace in current document |
 
 ## Implementation Notes
 
