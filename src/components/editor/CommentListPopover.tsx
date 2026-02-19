@@ -42,7 +42,7 @@ export function CommentListPopover({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+          className="inline-flex items-center gap-1 rounded px-0.5 hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           <MessageSquare className="h-3 w-3" strokeWidth={1.5} />
           <span>{comments.length}</span>
@@ -72,13 +72,13 @@ export function CommentListPopover({
                   onSelectComment(comment);
                   onOpenChange(false);
                 }}
-                className="w-full text-left px-3 py-2 hover:bg-muted transition-colors"
+                className="w-full text-left px-3 py-2 hover:bg-muted transition-colors focus-visible:outline-none focus-visible:bg-muted"
               >
                 <div className="flex items-baseline justify-between gap-2 mb-0.5">
                   <span className="text-[11px] text-muted-foreground/70 italic truncate flex-1 min-w-0">
                     "{truncate(comment.anchorText, 40)}"
                   </span>
-                  <span className="text-[10px] text-muted-foreground/50 shrink-0">
+                  <span className="text-[11px] text-muted-foreground/50 shrink-0">
                     {relativeTime(comment.createdAt)}
                   </span>
                 </div>
