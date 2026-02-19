@@ -59,7 +59,7 @@ interface EditorProps {
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange }: EditorProps) {
   const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
-  const { showFloatingToolbar, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled } = useSettingsStore();
+  const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled } = useSettingsStore();
   const { projectPath } = useActiveProject();
   const repo = useGitStore((s) => projectPath ? s.repos[projectPath] : undefined);
   const isGitRepo = repo?.isGitRepo ?? false;
@@ -478,14 +478,16 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <div className="flex items-center border-b border-border shrink-0" style={{ backgroundColor: 'var(--color-background)' }}>
-        <Toolbar editor={editor} />
-        {gitEnabled && isGitRepo && projectPath && !reviewActive && (
-          <div className="shrink-0 pr-2">
-            <BranchDiffSelector projectPath={projectPath} />
-          </div>
-        )}
-      </div>
+      {toolbarVisible && (
+        <div className="flex items-center border-b border-border shrink-0 bg-background">
+          <Toolbar editor={editor} />
+          {gitEnabled && isGitRepo && projectPath && !reviewActive && (
+            <div className="shrink-0 pr-2">
+              <BranchDiffSelector projectPath={projectPath} />
+            </div>
+          )}
+        </div>
+      )}
       {reviewActive && compareBranch && (
         <DiffReviewBanner
           editor={editor}

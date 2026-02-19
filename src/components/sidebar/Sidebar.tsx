@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { FolderOpen, FolderPlus, FilePlus, Loader2 } from "lucide-react";
+import { StickyNote, FolderDot, FolderOpen, FolderPlus, FilePlus, Loader2 } from "lucide-react";
 import { tauriApi } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
+import { Button } from "@/components/ui/button";
 import { SidebarSection } from "./SidebarSection";
 import { ProjectItem } from "./ProjectItem";
 import { FileTree } from "./FileTree";
@@ -16,9 +17,10 @@ interface SidebarProps {
   onOpenProjectSettings?: (projectPath: string) => void;
   onMakeProject?: (path: string) => void;
   onExportFile?: (filePath: string, fileName: string) => void;
+  panelCollapsed?: boolean;
 }
 
-export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpenProjectSettings, onMakeProject, onExportFile }: SidebarProps) {
+export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpenProjectSettings, onMakeProject, onExportFile, panelCollapsed }: SidebarProps) {
   const [isLoading, setIsLoading] = useState(false);
   const {
     explorerPath,
@@ -58,7 +60,7 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
     try {
       await openFile(filePath, fileName);
     } catch (error) {
-      alert(`Error reading file: ${error}`);
+      console.error("Error reading file:", error);
     }
   };
 
@@ -68,100 +70,81 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
     removeProject(projectPath, name);
   };
 
-  const iconButton = (
-    onClick: () => void,
-    icon: React.ReactNode,
-    title: string,
-    disabled?: boolean
-  ) => (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className="h-5 w-5 inline-flex items-center justify-center rounded transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50"
-      onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = "var(--color-accent)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.backgroundColor = "";
-      }}
-      title={title}
-    >
-      {icon}
-    </button>
-  );
-
   return (
-    <div
-      className="h-full w-full flex flex-col overflow-hidden"
-      style={{ backgroundColor: "var(--color-card)" }}
-    >
-      {/* Sidebar header */}
-      <div className="h-11 px-3 flex items-center shrink-0">
-        <h2 className="text-sm font-semibold tracking-tight">Workspace</h2>
-      </div>
-
-      {/* Scrollable sections */}
-      <div className="flex-1 overflow-y-auto pt-0.5 pb-2">
-        {/* EXPLORER Section */}
+    <div className="h-full w-full flex flex-col overflow-hidden">
+      <div className="flex-1 overflow-y-auto py-1">
+        {/* QUICK NOTES */}
         <SidebarSection
-          title="Explorer"
-          open={!explorerCollapsed}
-          onOpenChange={(open) => setExplorerCollapsed(!open)}
+          icon={<StickyNote className="h-4 w-4" strokeWidth={1.5} />}
+          title="Quick Notes"
+          open={!notesCollapsed}
+          onOpenChange={(open) => setNotesCollapsed(!open)}
+          panelCollapsed={panelCollapsed}
           actions={
-            iconButton(
-              handleOpenFolder,
-              isLoading ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <FolderOpen className="h-3 w-3" />
-              ),
-              "Open Folder",
-              isLoading
-            )
+            onNewNote
+              ? (
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => onNewNote(notesRootPath)}
+                    title="New Note (Cmd+N)"
+                  >
+                    <FilePlus className="h-3 w-3" strokeWidth={1.5} />
+                  </Button>
+                )
+              : undefined
           }
         >
-          {explorerPath ? (
-            <div className="px-1 py-1">
-              <FileTree
-                tree={explorerTree}
-                onFileClick={handleFileClick}
-                onNewNote={onNewNote}
-                onMakeProject={onMakeProject}
-                onExportFile={onExportFile}
-                expandKeyPrefix="explorer:"
-              />
-            </div>
+          {notesTree.length > 0 ? (
+            <FileTree
+              tree={notesTree}
+              onFileClick={handleFileClick}
+              onNewNote={onNewNote}
+              showMoveToProject
+              onExportFile={onExportFile}
+              expandKeyPrefix="notes:"
+            />
           ) : (
-            <div className="px-3 py-2.5">
-              <p className="text-xs text-muted-foreground">
-                Open a folder to browse files
-              </p>
-            </div>
+            <p className="text-xs text-muted-foreground py-1.5">
+              Notes in {notesRootPath}
+            </p>
           )}
         </SidebarSection>
 
-        {/* PROJECTS Section */}
+        {/* PROJECTS */}
         <SidebarSection
+          icon={<FolderDot className="h-4 w-4" strokeWidth={1.5} />}
           title="Projects"
           open={!projectsCollapsed}
           onOpenChange={(open) => setProjectsCollapsed(!open)}
+          panelCollapsed={panelCollapsed}
           actions={
             <>
-              {onOpenExistingProject && iconButton(
-                onOpenExistingProject,
-                <FolderOpen className="h-3 w-3" />,
-                "Open Project"
+              {onOpenExistingProject && (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={onOpenExistingProject}
+                  title="Open Project"
+                >
+                  <FolderOpen className="h-3 w-3" strokeWidth={1.5} />
+                </Button>
               )}
-              {onNewProject && iconButton(
-                onNewProject,
-                <FolderPlus className="h-3 w-3" />,
-                "New Project (Cmd+Shift+N)"
+              {onNewProject && (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={onNewProject}
+                  title="New Project (Cmd+Shift+N)"
+                >
+                  <FolderPlus className="h-3 w-3" strokeWidth={1.5} />
+                </Button>
               )}
             </>
           }
         >
           {projects.length > 0 ? (
-            <div className="py-1">
+            <div className="py-0.5">
               {projects.map((project) => (
                 <ProjectItem
                   key={project.path}
@@ -175,46 +158,48 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
               ))}
             </div>
           ) : (
-            <div className="px-3 py-2.5">
-              <p className="text-xs text-muted-foreground">
-                No projects open
-              </p>
-            </div>
+            <p className="text-xs text-muted-foreground py-1.5">
+              No projects open
+            </p>
           )}
         </SidebarSection>
 
-        {/* NOTES Section */}
+        {/* FOLDERS */}
         <SidebarSection
-          title="Notes"
-          open={!notesCollapsed}
-          onOpenChange={(open) => setNotesCollapsed(!open)}
+          icon={<FolderOpen className="h-4 w-4" strokeWidth={1.5} />}
+          title="Folders"
+          open={!explorerCollapsed}
+          onOpenChange={(open) => setExplorerCollapsed(!open)}
+          panelCollapsed={panelCollapsed}
           actions={
-            onNewNote
-              ? iconButton(
-                  () => onNewNote(notesRootPath),
-                  <FilePlus className="h-3 w-3" />,
-                  "New Note (Cmd+N)"
-                )
-              : undefined
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={handleOpenFolder}
+              disabled={isLoading}
+              title="Open Folder"
+            >
+              {isLoading ? (
+                <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.5} />
+              ) : (
+                <FolderOpen className="h-3 w-3" strokeWidth={1.5} />
+              )}
+            </Button>
           }
         >
-          {notesTree.length > 0 ? (
-            <div className="px-1 py-1">
-              <FileTree
-                tree={notesTree}
-                onFileClick={handleFileClick}
-                onNewNote={onNewNote}
-                showMoveToProject
-                onExportFile={onExportFile}
-                expandKeyPrefix="notes:"
-              />
-            </div>
+          {explorerPath ? (
+            <FileTree
+              tree={explorerTree}
+              onFileClick={handleFileClick}
+              onNewNote={onNewNote}
+              onMakeProject={onMakeProject}
+              onExportFile={onExportFile}
+              expandKeyPrefix="explorer:"
+            />
           ) : (
-            <div className="px-3 py-2.5">
-              <p className="text-xs text-muted-foreground">
-                Notes in {notesRootPath}
-              </p>
-            </div>
+            <p className="text-xs text-muted-foreground py-1.5">
+              Open a folder to browse files
+            </p>
           )}
         </SidebarSection>
       </div>

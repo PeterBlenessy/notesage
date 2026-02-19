@@ -6,10 +6,12 @@ export type ContentWidth = "full" | "auto" | "a4" | "a5" | "letter";
 export type MeasurementUnit = "cm" | "inch";
 export type ExportTemplate = "clean" | "academic" | "report";
 export type ExportPageSize = "a4" | "letter" | "a5";
+export type PageBreaks = "continuous" | "visible";
 
 interface SettingsStore {
   theme: Theme;
   showFloatingToolbar: boolean;
+  toolbarVisible: boolean;
   contentWidth: ContentWidth;
   measurementUnit: MeasurementUnit;
   marginTop: number;
@@ -17,15 +19,19 @@ interface SettingsStore {
   marginLeft: number;
   marginRight: number;
   sidebarOpen: boolean;
+  sidebarPinned: boolean;
   chatPanelOpen: boolean;
   notesRootPath: string;
   gitEnabled: boolean;
+  pageBreaks: PageBreaks;
+  typewriterScrolling: boolean;
   lastExportTemplate: ExportTemplate;
   lastExportPageSize: ExportPageSize;
   lastExportIncludeToC: boolean;
   lastExportIncludePageNumbers: boolean;
   setTheme: (theme: Theme) => void;
   setShowFloatingToolbar: (show: boolean) => void;
+  setToolbarVisible: (visible: boolean) => void;
   setContentWidth: (width: ContentWidth) => void;
   setMeasurementUnit: (unit: MeasurementUnit) => void;
   setMarginTop: (margin: number) => void;
@@ -33,9 +39,12 @@ interface SettingsStore {
   setMarginLeft: (margin: number) => void;
   setMarginRight: (margin: number) => void;
   setSidebarOpen: (open: boolean) => void;
+  setSidebarPinned: (pinned: boolean) => void;
   setChatPanelOpen: (open: boolean) => void;
   setNotesRootPath: (path: string) => void;
   setGitEnabled: (enabled: boolean) => void;
+  setPageBreaks: (mode: PageBreaks) => void;
+  setTypewriterScrolling: (enabled: boolean) => void;
   setLastExportTemplate: (template: ExportTemplate) => void;
   setLastExportPageSize: (pageSize: ExportPageSize) => void;
   setLastExportIncludeToC: (include: boolean) => void;
@@ -47,6 +56,7 @@ export const useSettingsStore = create<SettingsStore>()(
     (set) => ({
       theme: "system",
       showFloatingToolbar: true,
+      toolbarVisible: true,
       contentWidth: "auto",
       measurementUnit: "cm",
       marginTop: 2.54,
@@ -54,9 +64,12 @@ export const useSettingsStore = create<SettingsStore>()(
       marginLeft: 2.54,
       marginRight: 2.54,
       sidebarOpen: true,
+      sidebarPinned: true,
       chatPanelOpen: false,
       notesRootPath: "~/Notesage",
       gitEnabled: false,
+      pageBreaks: "continuous",
+      typewriterScrolling: false,
       lastExportTemplate: "clean",
       lastExportPageSize: "a4",
       lastExportIncludeToC: false,
@@ -68,6 +81,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setShowFloatingToolbar: (show: boolean) => {
         set({ showFloatingToolbar: show });
+      },
+
+      setToolbarVisible: (visible: boolean) => {
+        set({ toolbarVisible: visible });
       },
 
       setContentWidth: (width: ContentWidth) => {
@@ -98,6 +115,10 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ sidebarOpen: open });
       },
 
+      setSidebarPinned: (pinned: boolean) => {
+        set({ sidebarPinned: pinned });
+      },
+
       setChatPanelOpen: (open: boolean) => {
         set({ chatPanelOpen: open });
       },
@@ -108,6 +129,14 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setGitEnabled: (enabled: boolean) => {
         set({ gitEnabled: enabled });
+      },
+
+      setPageBreaks: (mode: PageBreaks) => {
+        set({ pageBreaks: mode });
+      },
+
+      setTypewriterScrolling: (enabled: boolean) => {
+        set({ typewriterScrolling: enabled });
       },
 
       setLastExportTemplate: (template: ExportTemplate) => {

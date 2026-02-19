@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { Sidebar } from "@/components/sidebar/Sidebar";
 import { TabBar } from "@/components/tabs/TabBar";
 import { Editor } from "@/components/editor/Editor";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -9,6 +8,8 @@ import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { ProjectSettingsDialog } from "@/components/settings/ProjectSettingsDialog";
 import { NewNoteDialog } from "@/components/NewNoteDialog";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
+import { TitleBar } from "@/components/TitleBar";
+import { SidebarPanel } from "@/components/SidebarPanel";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useProjectMetadata } from "@/hooks/useProjectMetadata";
 import { useActiveProject } from "@/hooks/useActiveProject";
@@ -18,28 +19,22 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { tauriApi } from "@/lib/tauri";
 import { parseFrontmatter } from "@/lib/frontmatter";
-import { Button } from "@/components/ui/button";
 import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
-import { PanelLeft, MessageSquare, Settings, FilePlus, FolderPlus, FolderOpen, FileDown } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
-import { cn } from "@/lib/utils";
 
-const BREAKPOINT_WIDE = 1200; // px
-const SIDEBAR_FLOAT_WIDTH = 280; // px - sidebar width in narrow/floating mode
 const PANEL_SIZES_KEY = "notesage-panel-sizes";
 
-/** Derive a storage key from mode + which panel IDs are in the layout. */
-function layoutConfigKey(mode: string, panelIds: string[]): string {
-  return `${mode}:${[...panelIds].sort().join(",")}`;
+function layoutConfigKey(panelIds: string[]): string {
+  return `main:${[...panelIds].sort().join(",")}`;
 }
 
-function savePanelSizes(layout: Record<string, number>, mode: string) {
+function savePanelSizes(layout: Record<string, number>) {
   try {
-    const key = layoutConfigKey(mode, Object.keys(layout));
+    const key = layoutConfigKey(Object.keys(layout));
     const stored = JSON.parse(localStorage.getItem(PANEL_SIZES_KEY) || "{}");
     stored[key] = layout;
     localStorage.setItem(PANEL_SIZES_KEY, JSON.stringify(stored));
@@ -66,7 +61,7 @@ function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOp
   onExportOpenChange?: (open: boolean) => void;
 }) {
   return (
-    <div className="flex flex-col h-full overflow-hidden" style={{ backgroundColor: 'var(--color-muted)' }}>
+    <div className="flex flex-col h-full overflow-hidden bg-muted">
       <TabBar />
       <Editor onNewNote={onNewNote} onNewProject={onNewProject} onOpenFolder={onOpenFolder} onOpenProject={onOpenProject} onOpenFile={onOpenFile} exportOpen={exportOpen} onExportOpenChange={onExportOpenChange} />
     </div>
@@ -82,10 +77,9 @@ function App() {
   const [newNoteParentPath, setNewNoteParentPath] = useState("");
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const [isWideMode, setIsWideMode] = useState(window.innerWidth >= BREAKPOINT_WIDE);
-  const { sidebarOpen, setSidebarOpen, chatPanelOpen, setChatPanelOpen } = useSettingsStore();
 
-  const activeTabId = useEditorStore((s) => s.activeTabId);
+  const { setSidebarPinned, chatPanelOpen, setChatPanelOpen } = useSettingsStore();
+
   const { addProject, setExplorerPath, setExplorerTree } = useWorkspaceStore();
   const { projectPath: activeProjectPath } = useActiveProject();
 
@@ -138,7 +132,6 @@ function App() {
           if (!exists) {
             await tauriApi.createDirectory(notesRoot);
           }
-          // Ensure .notesage/ exists for global comment storage
           const metaDir = `${notesRoot}/.notesage`;
           const metaDirExists = await tauriApi.pathExists(metaDir);
           if (!metaDirExists) {
@@ -150,12 +143,11 @@ function App() {
           // Notes root creation failed, that's fine on first launch
         }
       }
-
     }
 
     reloadTrees();
 
-    // Re-open persisted tabs (same as clicking each file in the sidebar)
+    // Re-open persisted tabs
     const { persistedTabs, persistedActiveFilePath } = useEditorStore.getState();
     for (const pt of persistedTabs) {
       tauriApi.readFile(pt.filePath).then((raw) => {
@@ -165,7 +157,6 @@ function App() {
         // File no longer exists — skip it
       });
     }
-    // Re-activate the previously active file once it's opened
     if (persistedActiveFilePath) {
       const waitForActive = () => {
         const { tabs } = useEditorStore.getState();
@@ -173,7 +164,6 @@ function App() {
         if (match) {
           useEditorStore.getState().setActiveTab(match.id);
         } else if (persistedTabs.some((p) => p.filePath === persistedActiveFilePath)) {
-          // Not loaded yet, try again next tick
           requestAnimationFrame(waitForActive);
         }
       };
@@ -185,7 +175,6 @@ function App() {
     try {
       const folderPath = await tauriApi.openFolderDialog();
       if (folderPath) {
-        // Auto-detect project folders: if .notesage/ exists, add to Projects instead
         const isProject = await tauriApi.pathExists(`${folderPath}/.notesage`);
         if (isProject) {
           const tree = await tauriApi.listDirectory(folderPath);
@@ -224,7 +213,6 @@ function App() {
     try {
       const folderPath = await tauriApi.openFolderDialog();
       if (folderPath) {
-        // Bootstrap .notesage/ if it doesn't exist
         const metaDir = `${folderPath}/.notesage`;
         const dirExists = await tauriApi.pathExists(metaDir);
         if (!dirExists) {
@@ -240,13 +228,11 @@ function App() {
 
   const handleMakeProject = useCallback(async (path: string) => {
     try {
-      // Bootstrap .notesage/ directory
       const metaDir = `${path}/.notesage`;
       const dirExists = await tauriApi.pathExists(metaDir);
       if (!dirExists) {
         await tauriApi.createDirectory(metaDir);
       }
-      // Add as project (metadata will be auto-loaded by useProjectMetadata)
       const tree = await tauriApi.listDirectory(path);
       addProject(path, tree);
     } catch (error) {
@@ -258,9 +244,7 @@ function App() {
     try {
       await tauriApi.createFile(filePath);
 
-      // Refresh the relevant file tree
       const ws = useWorkspaceStore.getState();
-      // Check which section this belongs to
       for (const project of ws.projects) {
         if (filePath.startsWith(project.path + "/")) {
           const tree = await tauriApi.listDirectory(project.path);
@@ -272,7 +256,6 @@ function App() {
         const tree = await tauriApi.listDirectory(ws.explorerPath);
         ws.setExplorerTree(tree);
       }
-      // Check notes root
       const settings = useSettingsStore.getState();
       const notesRoot = settings.notesRootPath;
       if (notesRoot && filePath.startsWith(notesRoot)) {
@@ -290,7 +273,6 @@ function App() {
   }, []);
 
   const handleNewNote = useCallback((parentPath?: string) => {
-    // Determine target: explicit parent > active project root > first project > notes root
     let target = parentPath;
     if (!target) {
       const activeProject = activeProjectPath;
@@ -317,7 +299,6 @@ function App() {
   }, []);
 
   const handleExportFile = useCallback(async (filePath: string, fileName: string) => {
-    // Open the file if it's not already the active tab
     const { tabs, activeTabId } = useEditorStore.getState();
     const activeTab = tabs.find((t) => t.id === activeTabId);
     if (!activeTab || activeTab.filePath !== filePath) {
@@ -331,36 +312,17 @@ function App() {
     setProjectSettingsOpen(true);
   }, []);
 
-  const handleWideLayout = useCallback((layout: Record<string, number>) => {
-    savePanelSizes(layout, "wide");
+  const handlePanelLayout = useCallback((layout: Record<string, number>) => {
+    savePanelSizes(layout);
   }, []);
 
-  const handleNarrowLayout = useCallback((layout: Record<string, number>) => {
-    savePanelSizes(layout, "narrow");
-  }, []);
-
-  // Compute config-specific storage keys for the current panel configuration
-  const wideConfigKey = layoutConfigKey("wide", [
-    ...(sidebarOpen ? ["sidebar"] : []),
+  // Panel config key (editor + optional chat)
+  const configKey = layoutConfigKey([
     "editor",
     ...(chatPanelOpen ? ["chat"] : []),
   ]);
-  const narrowConfigKey = layoutConfigKey("narrow", [
-    "editor-narrow",
-    ...(chatPanelOpen ? ["chat-narrow"] : []),
-  ]);
 
-  // Track window width for responsive behavior
-  useEffect(() => {
-    const handleResize = () => {
-      setIsWideMode(window.innerWidth >= BREAKPOINT_WIDE);
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  // Handle keyboard shortcuts
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Cmd+F for quick open
@@ -369,10 +331,10 @@ function App() {
         setQuickOpenVisible(true);
       }
 
-      // Cmd+B for sidebar toggle
+      // Cmd+B for sidebar pin toggle
       if ((e.metaKey || e.ctrlKey) && e.key === "b") {
         e.preventDefault();
-        setSidebarOpen(!useSettingsStore.getState().sidebarOpen);
+        setSidebarPinned(!useSettingsStore.getState().sidebarPinned);
       }
 
       // Cmd+Shift+A for AI chat toggle
@@ -390,7 +352,6 @@ function App() {
       // Cmd+Shift+E for export PDF
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "e") {
         e.preventDefault();
-        // Only open if there's an active tab
         if (useEditorStore.getState().activeTabId) {
           setExportOpen(true);
         }
@@ -419,227 +380,63 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleOpenFolder, handleNewNote]);
+  }, [handleOpenFolder, handleNewNote, setSidebarPinned, setChatPanelOpen]);
 
   return (
     <ThemeProvider>
-      <div className="flex flex-col h-screen w-screen overflow-hidden">
-        {/* Title Bar */}
-        <div className="h-11 border-b border-border flex items-center justify-between px-4 shrink-0" style={{ backgroundColor: 'var(--color-card)' }}>
-          <div className="flex items-center gap-2.5">
-            <img src="/app-icon.svg" alt="Notesage" className="h-6 w-6 rounded-md" />
-            <h1 className="text-sm font-semibold tracking-tight text-foreground">Notesage</h1>
-          </div>
-          <div className="flex items-center gap-0.5">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className={cn(
-                "h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors text-muted-foreground hover:text-foreground",
-                sidebarOpen ? "text-foreground" : ""
-              )}
-              style={sidebarOpen ? { backgroundColor: 'var(--color-accent)' } : undefined}
-              onMouseEnter={(e) => { if (!sidebarOpen) e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
-              onMouseLeave={(e) => { if (!sidebarOpen) e.currentTarget.style.backgroundColor = ''; }}
-              title={`${sidebarOpen ? "Hide" : "Show"} Sidebar (Cmd+B)`}
+      <div className="flex h-screen w-screen overflow-hidden">
+        {/* Left: SidebarPanel — full window height, rail + drawer */}
+        <SidebarPanel
+          onOpenSettings={() => setSettingsOpen(true)}
+          onNewNote={handleNewNote}
+          onNewProject={handleNewProject}
+          onOpenExistingProject={handleBrowseForProject}
+          onOpenProjectSettings={handleOpenProjectSettings}
+          onMakeProject={handleMakeProject}
+          onExportFile={handleExportFile}
+        />
+
+        {/* Right: Title bar + editor + chat */}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <TitleBar
+            onToggleChat={() => setChatPanelOpen(!chatPanelOpen)}
+          />
+
+          <ResizablePanelGroup
+            orientation="horizontal"
+            className="flex h-full w-full"
+            onLayoutChanged={handlePanelLayout}
+          >
+            <ResizablePanel
+              id="editor"
+              defaultSize={loadPanelSize(configKey, "editor", chatPanelOpen ? 65 : 100)}
+              minSize={300}
             >
-              <PanelLeft className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={() => setChatPanelOpen(!chatPanelOpen)}
-              className={cn(
-                "h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors text-muted-foreground hover:text-foreground",
-                chatPanelOpen ? "text-foreground" : ""
-              )}
-              style={chatPanelOpen ? { backgroundColor: 'var(--color-accent)' } : undefined}
-              onMouseEnter={(e) => { if (!chatPanelOpen) e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
-              onMouseLeave={(e) => { if (!chatPanelOpen) e.currentTarget.style.backgroundColor = ''; }}
-              title={`${chatPanelOpen ? "Hide" : "Show"} AI Chat (Cmd+Shift+A)`}
-            >
-              <MessageSquare className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={() => {
-                if (activeTabId) {
-                  setExportOpen(true);
-                }
-              }}
-              className={cn(
-                "h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors text-muted-foreground",
-                activeTabId ? "hover:text-foreground" : "opacity-40 pointer-events-none"
-              )}
-              onMouseEnter={(e) => { if (activeTabId) e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
-              title="Export as PDF (Cmd+Shift+E)"
-            >
-              <FileDown className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={() => setSettingsOpen(true)}
-              className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors text-muted-foreground hover:text-foreground"
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-accent)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ''; }}
-              title="Settings (Cmd+,)"
-            >
-              <Settings className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
+              <EditorArea
+                onNewNote={handleNewNote}
+                onNewProject={handleNewProject}
+                onOpenFolder={handleOpenFolder}
+                onOpenProject={handleOpenProject}
+                onOpenFile={handleOpenFile}
+                exportOpen={exportOpen}
+                onExportOpenChange={setExportOpen}
+              />
+            </ResizablePanel>
 
-        {/* Main Content Area */}
-        <div className="flex flex-1 overflow-hidden relative">
-          {isWideMode ? (
-            // WIDE MODE: All panels docked and resizable
-            <>
-            {!sidebarOpen && (
-              <div
-                className="h-full shrink-0 border-r border-border flex flex-col items-center pt-3 gap-1"
-                style={{ width: '40px', backgroundColor: 'var(--color-card)' }}
-              >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={handleOpenFolder}
-                  title="Open Folder (Cmd+O)"
+            {chatPanelOpen && (
+              <>
+                <ResizableHandle withHandle />
+                <ResizablePanel
+                  id="chat"
+                  defaultSize={loadPanelSize(configKey, "chat", 35)}
+                  minSize={280}
+                  maxSize={500}
                 >
-                  <FolderOpen className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={handleNewProject}
-                  title="New Project (Cmd+Shift+N)"
-                >
-                  <FolderPlus className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => handleNewNote()}
-                  title="New Note (Cmd+N)"
-                >
-                  <FilePlus className="h-4 w-4" />
-                </Button>
-              </div>
-            )}
-            <ResizablePanelGroup orientation="horizontal" className="flex h-full w-full" onLayoutChanged={handleWideLayout}>
-              {sidebarOpen && (
-                <>
-                  <ResizablePanel id="sidebar" defaultSize={loadPanelSize(wideConfigKey, "sidebar", 20)} minSize={200} maxSize={400}>
-                    <Sidebar
-                      onNewNote={handleNewNote}
-                      onNewProject={handleNewProject}
-                      onOpenExistingProject={handleBrowseForProject}
-                      onOpenProjectSettings={handleOpenProjectSettings}
-                      onMakeProject={handleMakeProject}
-                      onExportFile={handleExportFile}
-                    />
-                  </ResizablePanel>
-                  <ResizableHandle withHandle />
-                </>
-              )}
-
-              <ResizablePanel id="editor" defaultSize={loadPanelSize(wideConfigKey, "editor", sidebarOpen && chatPanelOpen ? 50 : 70)} minSize={300}>
-                <EditorArea onNewNote={handleNewNote} onNewProject={handleNewProject} onOpenFolder={handleOpenFolder} onOpenProject={handleOpenProject} onOpenFile={handleOpenFile} exportOpen={exportOpen} onExportOpenChange={setExportOpen} />
-              </ResizablePanel>
-
-              {chatPanelOpen && (
-                <>
-                  <ResizableHandle withHandle />
-                  <ResizablePanel id="chat" defaultSize={loadPanelSize(wideConfigKey, "chat", 30)} minSize={280} maxSize={500}>
-                    <ChatPanel onClose={() => setChatPanelOpen(false)} />
-                  </ResizablePanel>
-                </>
-              )}
-            </ResizablePanelGroup>
-            </>
-          ) : (
-            // NARROW MODE: Sidebar floats, content + chat are docked
-            <>
-              {/* Backdrop overlay - click to close sidebar */}
-              {sidebarOpen && (
-                <div
-                  className="absolute inset-0 bg-black/20 z-[9]"
-                  onClick={() => setSidebarOpen(false)}
-                />
-              )}
-
-              {/* Floating Sidebar Overlay */}
-              {sidebarOpen && (
-                <div
-                  className="absolute left-0 top-0 bottom-0 z-10 shadow-2xl"
-                  style={{ width: `${SIDEBAR_FLOAT_WIDTH}px`, backgroundColor: 'var(--color-card)' }}
-                >
-                  <Sidebar
-                    onNewNote={handleNewNote}
-                    onNewProject={handleNewProject}
-                    onOpenExistingProject={handleBrowseForProject}
-                    onOpenProjectSettings={handleOpenProjectSettings}
-                    onMakeProject={handleMakeProject}
-                    onExportFile={handleExportFile}
-                  />
-                </div>
-              )}
-
-              {/* Collapsed sidebar strip */}
-              {!sidebarOpen && (
-                <div
-                  className="h-full shrink-0 border-r border-border flex flex-col items-center pt-3 gap-1"
-                  style={{ width: '40px', backgroundColor: 'var(--color-card)' }}
-                >
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={handleOpenFolder}
-                    title="Open Folder (Cmd+O)"
-                  >
-                    <FolderOpen className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={handleNewProject}
-                    title="New Project (Cmd+Shift+N)"
-                  >
-                    <FolderPlus className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => handleNewNote()}
-                    title="New Note (Cmd+N)"
-                  >
-                    <FilePlus className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-
-              {/* Content + Chat (always docked) */}
-              <ResizablePanelGroup
-                orientation="horizontal"
-                className="flex h-full w-full"
-                onLayoutChanged={handleNarrowLayout}
-              >
-                <ResizablePanel id="editor-narrow" minSize={300}>
-                  <EditorArea onNewNote={handleNewNote} onNewProject={handleNewProject} onOpenFolder={handleOpenFolder} onOpenProject={handleOpenProject} onOpenFile={handleOpenFile} exportOpen={exportOpen} onExportOpenChange={setExportOpen} />
+                  <ChatPanel onClose={() => setChatPanelOpen(false)} />
                 </ResizablePanel>
-
-                {chatPanelOpen && (
-                  <>
-                    <ResizableHandle withHandle />
-                    <ResizablePanel id="chat-narrow" defaultSize={loadPanelSize(narrowConfigKey, "chat-narrow", 35)} minSize={280} maxSize={500}>
-                      <ChatPanel onClose={() => setChatPanelOpen(false)} />
-                    </ResizablePanel>
-                  </>
-                )}
-              </ResizablePanelGroup>
-            </>
-          )}
+              </>
+            )}
+          </ResizablePanelGroup>
         </div>
 
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
