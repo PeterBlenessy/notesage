@@ -25,3 +25,4 @@ Chronological log of major implementation milestones and changes.
 | 019 | [Release v0.11.0](019-release-v0.11.0.md) | Notesage Library & iCloud Sync (Phase 5.5) |
 | 020 | [Release v0.11.1](020-release-v0.11.1.md) | Filesystem watcher fixes for explorer folders |
 | 021 | [Release v0.12.0](021-release-v0.12.0.md) | External Change Review — inline diffs, per-hunk controls, cross-file tracker |
+| 022 | [Release v0.12.1](022-release-v0.12.1.md) | CI fixes — cross-platform watcher type mismatch, release workflow JSON corruption |
