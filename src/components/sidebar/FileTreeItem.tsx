@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { ChevronRight, ChevronDown, Cloud, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown } from "lucide-react";
+import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown } from "lucide-react";
+import { SyncedIcon } from "./SyncedIcon";
 import { toast } from "sonner";
 import { FileEntry, tauriApi } from "@/lib/tauri";
 import type { GitStatus } from "@/lib/tauri";
@@ -233,13 +234,9 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
             )}
 
             {entry.is_directory ? (
-              isProjectFolder ? (
-                <FolderDot className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" strokeWidth={1.5} />
-              ) : (
-                <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" strokeWidth={1.5} />
-              )
+              <SyncedIcon icon={isProjectFolder ? FolderDot : Folder} synced={isCloudFile} />
             ) : (
-              <File className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" strokeWidth={1.5} />
+              <SyncedIcon icon={File} synced={isCloudFile} />
             )}
 
             {isRenaming ? (
@@ -297,11 +294,6 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-            )}
-            {isCloudFile && (
-              <span title="Synced to iCloud" className="shrink-0">
-                <Cloud className="h-2.5 w-2.5 text-muted-foreground/50" strokeWidth={1.5} />
-              </span>
             )}
           </div>
         </ContextMenuTrigger>

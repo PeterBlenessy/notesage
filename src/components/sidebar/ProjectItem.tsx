@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { ChevronRight, Cloud, Folder, FolderOpen, Settings, X, ExternalLink, GitCommitVertical, GitBranch, Target } from "lucide-react";
+import { ChevronRight, Folder, FolderOpen, Settings, X, ExternalLink, GitCommitVertical, GitBranch, Target } from "lucide-react";
+import { SyncedIcon } from "./SyncedIcon";
 import { tauriApi } from "@/lib/tauri";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -92,20 +93,8 @@ export function ProjectItem({
                 expanded && "rotate-90"
               )}
             />
-            {expanded ? (
-              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
-            ) : (
-              <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
-            )}
+            <SyncedIcon icon={expanded ? FolderOpen : Folder} synced={isSynced} />
             <span className="truncate flex-1">{displayName}</span>
-            {isSynced && (
-              <span title="Synced to iCloud">
-                <Cloud
-                  className="h-3 w-3 shrink-0 text-muted-foreground/60"
-                  strokeWidth={1.5}
-                />
-              </span>
-            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();
