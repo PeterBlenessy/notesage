@@ -5,6 +5,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useGitStore } from "@/stores/git-store";
 import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
+import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 
 /** Debounced git status refresh per repo. Each repo gets its own timer. */
 const repoRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -76,18 +77,14 @@ export function useFileOperations() {
         }
       }
 
-      // Check notes root
+      // Check notes root (and iCloud notes path)
       const notesRoot = settings.notesRootPath;
-      if (notesRoot && targetPath.startsWith(notesRoot)) {
-        try {
-          const exists = await tauriApi.pathExists(notesRoot);
-          if (exists) {
-            const tree = await tauriApi.listDirectory(notesRoot);
-            ws.setNotesTree(tree);
-          }
-        } catch (error) {
-          console.error("Failed to refresh notes tree:", error);
-        }
+      const icloudPath = settings.icloudNotesagePath;
+      if (
+        (notesRoot && targetPath.startsWith(notesRoot)) ||
+        (icloudPath && targetPath.startsWith(icloudPath))
+      ) {
+        await refreshNotesTree();
       }
 
       return;
@@ -112,18 +109,7 @@ export function useFileOperations() {
       }
     }
 
-    const notesRoot = settings.notesRootPath;
-    if (notesRoot) {
-      try {
-        const exists = await tauriApi.pathExists(notesRoot);
-        if (exists) {
-          const tree = await tauriApi.listDirectory(notesRoot);
-          ws.setNotesTree(tree);
-        }
-      } catch (error) {
-        console.error("Failed to refresh notes tree:", error);
-      }
-    }
+    await refreshNotesTree();
   }, []);
 
   const openFile = useCallback(

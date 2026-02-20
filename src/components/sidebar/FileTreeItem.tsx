@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown } from "lucide-react";
+import { ChevronRight, ChevronDown, Cloud, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown } from "lucide-react";
 import { toast } from "sonner";
 import { FileEntry, tauriApi } from "@/lib/tauri";
 import type { GitStatus } from "@/lib/tauri";
@@ -63,8 +63,12 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
   const projects = useWorkspaceStore((s) => s.projects);
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
 
+  const icloudNotesagePath = useSettingsStore((s) => s.icloudNotesagePath);
+
   const externalChanges = useEditorStore((s) => s.externalChanges);
   const hasExternalChange = !entry.is_directory && entry.path in externalChanges;
+
+  const isCloudFile = !!(icloudNotesagePath && entry.path.startsWith(icloudNotesagePath + "/"));
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const isActive = activeTab?.filePath === entry.path;
@@ -293,6 +297,11 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
+            )}
+            {isCloudFile && (
+              <span title="Synced to iCloud" className="shrink-0">
+                <Cloud className="h-2.5 w-2.5 text-muted-foreground/50" strokeWidth={1.5} />
+              </span>
             )}
           </div>
         </ContextMenuTrigger>

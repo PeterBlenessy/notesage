@@ -173,6 +173,71 @@ pub async fn migrate_from_icloud(
     migrate_directory(source, &dest).await
 }
 
+/// Move loose files (Quick Notes) between Notesage directories.
+/// Moves all non-directory entries from `from_path` to `to_path`, skipping `.notesage` and
+/// any directories (which are project folders). Returns the number of files moved.
+#[tauri::command]
+pub async fn migrate_quick_notes(
+    from_path: String,
+    to_path: String,
+) -> Result<u32, String> {
+    let from = Path::new(&from_path);
+    let to = Path::new(&to_path);
+
+    if !from.exists() {
+        return Err(format!("Source directory not found: {from_path}"));
+    }
+    if !to.exists() {
+        tokio::fs::create_dir_all(to)
+            .await
+            .map_err(|e| format!("Failed to create destination directory: {e}"))?;
+    }
+
+    let entries = std::fs::read_dir(from)
+        .map_err(|e| format!("Failed to read source directory: {e}"))?;
+
+    let mut moved = 0u32;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read entry: {e}"))?;
+        let file_type = entry.file_type().map_err(|e| format!("Failed to get file type: {e}"))?;
+
+        // Skip directories (projects) and .notesage metadata
+        if file_type.is_dir() {
+            continue;
+        }
+
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str == ".notesage" || name_str.starts_with('.') {
+            continue;
+        }
+
+        let dest = to.join(&name);
+        if dest.exists() {
+            // Skip files that already exist at destination to avoid data loss
+            continue;
+        }
+
+        let source = entry.path();
+        // Try rename first, fall back to copy+delete
+        match std::fs::rename(&source, &dest) {
+            Ok(()) => {
+                moved += 1;
+            }
+            Err(_) => {
+                // Cross-volume: copy then delete
+                std::fs::copy(&source, &dest)
+                    .map_err(|e| format!("Failed to copy {}: {e}", name_str))?;
+                std::fs::remove_file(&source)
+                    .map_err(|e| format!("Copied but failed to remove source {}: {e}", name_str))?;
+                moved += 1;
+            }
+        }
+    }
+
+    Ok(moved)
+}
+
 /// Core migration logic: try atomic rename, fall back to copy+verify+delete.
 async fn migrate_directory(source: &Path, dest: &Path) -> Result<String, String> {
     let dest_str = dest.to_string_lossy().to_string();

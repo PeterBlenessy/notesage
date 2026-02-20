@@ -50,6 +50,10 @@ export const tauriApi = {
     return await invoke<FileEntry[]>("list_directory", { path });
   },
 
+  async listFilesShallow(path: string): Promise<FileEntry[]> {
+    return await invoke<FileEntry[]>("list_files_shallow", { path });
+  },
+
   async createFile(path: string): Promise<void> {
     await invoke("create_file", { path });
   },
@@ -196,5 +200,9 @@ export const tauriApi = {
 
   async migrateFromICloud(projectPath: string, localNotesagePath: string): Promise<string> {
     return await invoke<string>("migrate_from_icloud", { projectPath, localNotesagePath });
+  },
+
+  async migrateQuickNotes(fromPath: string, toPath: string): Promise<number> {
+    return await invoke<number>("migrate_quick_notes", { fromPath, toPath });
   },
 };

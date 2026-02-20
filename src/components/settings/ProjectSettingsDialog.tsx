@@ -12,9 +12,10 @@ interface ProjectSettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectPath: string;
+  onPathChanged?: (newPath: string) => void;
 }
 
-export function ProjectSettingsDialog({ open, onOpenChange, projectPath }: ProjectSettingsDialogProps) {
+export function ProjectSettingsDialog({ open, onOpenChange, projectPath, onPathChanged }: ProjectSettingsDialogProps) {
   const folderName = projectPath.split('/').filter(Boolean).pop() || 'Project';
 
   return (
@@ -33,7 +34,7 @@ export function ProjectSettingsDialog({ open, onOpenChange, projectPath }: Proje
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto p-6">
-          <ProjectSettings projectPath={projectPath} />
+          <ProjectSettings projectPath={projectPath} onPathChanged={onPathChanged} />
         </div>
       </DialogContent>
     </Dialog>

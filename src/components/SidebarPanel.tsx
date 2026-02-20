@@ -59,13 +59,27 @@ export function SidebarPanel({
     }
   }, [sidebarPinned, overlayVisible]);
 
+  const scheduleCollapse = useCallback(() => {
+    clearTimeout(leaveTimerRef.current);
+    leaveTimerRef.current = setTimeout(() => {
+      // Don't collapse if a context menu or dropdown is open (rendered in a portal)
+      const hasOpenOverlay = document.querySelector(
+        '[data-state="open"][role="menu"], [data-state="open"][data-radix-menu-content]'
+      );
+      if (hasOpenOverlay) {
+        // Menu still open — re-check when it closes
+        scheduleCollapse();
+        return;
+      }
+      setOverlayVisible(false);
+    }, LEAVE_DELAY);
+  }, []);
+
   const handleMouseLeave = useCallback(() => {
     if (sidebarPinned) return;
     clearTimeout(hoverTimerRef.current);
-    leaveTimerRef.current = setTimeout(() => {
-      setOverlayVisible(false);
-    }, LEAVE_DELAY);
-  }, [sidebarPinned]);
+    scheduleCollapse();
+  }, [sidebarPinned, scheduleCollapse]);
 
   const dismissOverlay = useCallback(() => {
     clearTimeout(hoverTimerRef.current);

@@ -61,6 +61,20 @@ pnpm tauri dev      # Run dev server
 pnpm tauri build    # Build for production
 ```
 
+## Backend (Rust/Tauri)
+
+When modifying Rust files in `src-tauri/`, the running `pnpm tauri dev` process hot-reloads Rust changes automatically. However, if hot-reload fails or you see stale behavior after changing Tauri commands (adding/removing/renaming commands, changing signatures), run a clean rebuild:
+
+```bash
+cd src-tauri && cargo clean && cd .. && pnpm tauri dev
+```
+
+**When to clean rebuild:**
+- Added or removed a `#[tauri::command]` function
+- Changed command signatures or the `generate_handler![]` list in `lib.rs`
+- Changed Cargo dependencies
+- Unexplained "command not found" errors from the frontend
+
 ## Versioning
 
 The app version is defined in `package.json`. The Tauri config (`src-tauri/tauri.conf.json`) references it via `"version": "../package.json"` — only bump `package.json` when releasing.

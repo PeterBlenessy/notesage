@@ -169,8 +169,8 @@ export function NewProjectDialog({
   const locationLabel = isCustomLocation
     ? location
     : syncToICloud
-      ? "Notesage Library (iCloud)"
-      : "Notesage Library";
+      ? "iCloud Drive/Notesage"
+      : "~/Notesage";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

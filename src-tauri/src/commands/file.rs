@@ -79,6 +79,52 @@ pub async fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
     Ok(entries)
 }
 
+/// List only files (not directories) at the top level of a directory.
+/// No recursive descent — much faster than list_directory for flat file listings.
+#[tauri::command]
+pub async fn list_files_shallow(path: String) -> Result<Vec<FileEntry>, String> {
+    let dir_path = Path::new(&path);
+
+    if !dir_path.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+
+    if !dir_path.is_dir() {
+        return Err(format!("Path is not a directory: {}", path));
+    }
+
+    let mut entries = Vec::new();
+    let read_dir = fs::read_dir(dir_path).map_err(|e| e.to_string())?;
+
+    for entry in read_dir {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let entry_path = entry.path();
+        let file_name = entry.file_name().to_string_lossy().to_string();
+
+        // Skip hidden files and directories
+        if file_name.starts_with('.') {
+            continue;
+        }
+
+        // Skip directories entirely
+        if entry_path.is_dir() {
+            continue;
+        }
+
+        entries.push(FileEntry {
+            name: file_name,
+            path: entry_path.to_string_lossy().to_string(),
+            is_directory: false,
+            children: None,
+        });
+    }
+
+    // Sort alphabetically
+    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+    Ok(entries)
+}
+
 #[tauri::command]
 pub async fn create_file(path: String) -> Result<(), String> {
     if Path::new(&path).exists() {

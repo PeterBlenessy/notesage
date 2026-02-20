@@ -15,6 +15,7 @@ pub fn run() {
             read_file,
             write_file,
             list_directory,
+            list_files_shallow,
             create_file,
             create_directory,
             rename_path,
@@ -52,6 +53,7 @@ pub fn run() {
             write_sync_settings,
             migrate_to_icloud,
             migrate_from_icloud,
+            migrate_quick_notes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

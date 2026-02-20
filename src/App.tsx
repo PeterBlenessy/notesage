@@ -14,12 +14,14 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useProjectMetadata } from "@/hooks/useProjectMetadata";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { useFileOperations } from "@/hooks/useFileOperations";
+import { useStartWatchers } from "@/hooks/useStartWatchers";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSyncStore } from "@/stores/sync-store";
-import { tauriApi, type FileEntry } from "@/lib/tauri";
+import { tauriApi } from "@/lib/tauri";
 import { parseFrontmatter } from "@/lib/frontmatter";
+import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -52,13 +54,6 @@ function loadPanelSize(configKey: string, panel: string, fallback: number): numb
   } catch {
     return fallback;
   }
-}
-
-/** Merge two file trees, deduplicating by name. Local entries take priority. */
-function mergeFileTrees(local: FileEntry[], icloud: FileEntry[]): FileEntry[] {
-  const localNames = new Set(local.map((e) => e.name));
-  const icloudOnly = icloud.filter((e) => !localNames.has(e.name));
-  return [...local, ...icloudOnly];
 }
 
 // Editor area with document-style presentation
@@ -102,6 +97,7 @@ function App() {
   const { projectPath: activeProjectPath } = useActiveProject();
 
   useProjectMetadata();
+  useStartWatchers();
 
   // Reload file trees for all persisted projects on startup
   useEffect(() => {
@@ -142,7 +138,7 @@ function App() {
         }
       }
 
-      // Auto-create and load notes directory
+      // Ensure notes directory exists
       if (notesRoot) {
         try {
           const exists = await tauriApi.pathExists(notesRoot);
@@ -154,14 +150,12 @@ function App() {
           if (!metaDirExists) {
             await tauriApi.createDirectory(metaDir);
           }
-          const tree = await tauriApi.listDirectory(notesRoot);
-          ws.setNotesTree(tree);
         } catch {
           // Notes root creation failed, that's fine on first launch
         }
       }
 
-      // Detect iCloud availability and load sync settings
+      // Detect iCloud availability
       try {
         const icloudRoot = await tauriApi.getICloudPath();
         if (icloudRoot) {
@@ -198,27 +192,15 @@ function App() {
               }
             }
 
-            // Merge Quick Notes from iCloud if enabled
-            if (syncStore.syncQuickNotes) {
-              try {
-                const icloudExists = await tauriApi.pathExists(icloudNotesagePath);
-                if (icloudExists) {
-                  const icloudTree = await tauriApi.listDirectory(icloudNotesagePath);
-                  // Merge iCloud tree into notes tree (iCloud files alongside local)
-                  const currentNotes = ws.notesTree;
-                  const mergedTree = mergeFileTrees(currentNotes, icloudTree);
-                  ws.setNotesTree(mergedTree);
-                }
-              } catch {
-                // iCloud notes loading failed, local notes still available
-              }
-            }
-
             // Save any cleanup (removed stale projects)
             await syncStore.saveSettings(notesRoot);
           }
         }
       }
+
+      // Load Quick Notes tree (after iCloud + sync settings are known, so we
+      // get it right in one shot — no flash of local-only then merged content)
+      await refreshNotesTree();
     }
 
     reloadTrees();
@@ -339,13 +321,12 @@ function App() {
       }
       const settings = useSettingsStore.getState();
       const notesRoot = settings.notesRootPath;
-      if (notesRoot && filePath.startsWith(notesRoot)) {
-        try {
-          const tree = await tauriApi.listDirectory(notesRoot);
-          ws.setNotesTree(tree);
-        } catch {
-          // Non-critical — notes tree refresh can fail silently
-        }
+      const icloudPath = settings.icloudNotesagePath;
+      if (
+        (notesRoot && filePath.startsWith(notesRoot)) ||
+        (icloudPath && filePath.startsWith(icloudPath))
+      ) {
+        await refreshNotesTree();
       }
 
       const content = await tauriApi.readFile(filePath);
@@ -368,7 +349,12 @@ function App() {
           target = ws.projects[0].path;
         } else {
           const settings = useSettingsStore.getState();
-          target = settings.notesRootPath;
+          const sync = useSyncStore.getState();
+          if (sync.icloudEnabled && sync.syncQuickNotes && settings.icloudNotesagePath) {
+            target = settings.icloudNotesagePath;
+          } else {
+            target = settings.notesRootPath;
+          }
         }
       }
     }
@@ -515,6 +501,7 @@ function App() {
             open={projectSettingsOpen}
             onOpenChange={setProjectSettingsOpen}
             projectPath={projectSettingsPath}
+            onPathChanged={setProjectSettingsPath}
           />
         )}
         <CommandPalette

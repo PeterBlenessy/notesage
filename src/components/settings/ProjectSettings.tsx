@@ -50,9 +50,10 @@ const PROVIDERS = [
 
 interface ProjectSettingsProps {
   projectPath: string;
+  onPathChanged?: (newPath: string) => void;
 }
 
-export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
+export function ProjectSettings({ projectPath, onPathChanged }: ProjectSettingsProps) {
   const metadata = useProjectMetadataStore((s) => s.metadataMap[projectPath]);
   const { updateMetadata, updateAI } = useProjectMetadataStore();
   const aiStore = useAIStore();
@@ -68,6 +69,7 @@ export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
   } = useSyncStore();
 
   const [unsyncDialogOpen, setUnsyncDialogOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
 
   const isSynced = syncedProjectPaths.includes(projectPath);
 
@@ -76,6 +78,54 @@ export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
     (notesRootPath && projectPath.startsWith(notesRootPath + "/")) ||
     (icloudNotesagePath && projectPath.startsWith(icloudNotesagePath + "/"));
   const showSyncSection = icloudEnabled && icloudAvailable && isLibraryProject;
+
+  /** Rename the project folder on disk when the display name changes. */
+  const handleNameBlur = useCallback(async () => {
+    if (!metadata || renaming) return;
+    const newName = metadata.name.trim();
+    if (!newName) return;
+
+    const currentFolderName = projectPath.split('/').filter(Boolean).pop() || '';
+    if (newName === currentFolderName) return;
+
+    const parentDir = projectPath.substring(0, projectPath.lastIndexOf('/'));
+    const newPath = `${parentDir}/${newName}`;
+
+    // Check if destination already exists
+    try {
+      const exists = await tauriApi.pathExists(newPath);
+      if (exists) {
+        toast.error(`A folder named "${newName}" already exists`);
+        // Revert the name in metadata
+        updateMetadata(projectPath, { name: currentFolderName });
+        return;
+      }
+    } catch {
+      // If check fails, proceed cautiously
+    }
+
+    setRenaming(true);
+    try {
+      await tauriApi.renamePath(projectPath, newPath);
+      await migrateProjectPath(projectPath, newPath);
+
+      // Update synced project path if applicable
+      if (syncedProjectPaths.includes(projectPath)) {
+        const syncStore = useSyncStore.getState();
+        syncStore.updateProjectPath(projectPath, newPath);
+        await syncStore.saveSettings(notesRootPath!);
+      }
+
+      onPathChanged?.(newPath);
+      toast.success(`Project folder renamed to "${newName}"`);
+    } catch (err) {
+      toast.error(`Failed to rename folder: ${err}`);
+      // Revert the name
+      updateMetadata(projectPath, { name: currentFolderName });
+    } finally {
+      setRenaming(false);
+    }
+  }, [metadata, projectPath, renaming, updateMetadata, syncedProjectPaths, notesRootPath, onPathChanged]);
 
   const handleSyncToggle = useCallback(async (checked: boolean) => {
     if (checked) {
@@ -152,6 +202,8 @@ export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
               id="project-name"
               value={metadata.name}
               onChange={(e) => updateMetadata(projectPath, { name: e.target.value })}
+              onBlur={handleNameBlur}
+              disabled={renaming}
               placeholder="My Project"
               className="text-sm transition-all hover:border-foreground/20 focus:border-foreground/40"
             />
