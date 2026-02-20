@@ -119,7 +119,7 @@ export function PersonasSettings() {
               >
                 <div
                   className={cn(
-                    'rounded-md border transition-all overflow-hidden',
+                    'group rounded-md border transition-all overflow-hidden',
                     isActive
                       ? 'border-foreground/30 bg-accent'
                       : 'border-border hover:border-foreground/20 hover:bg-accent/50'
@@ -132,9 +132,14 @@ export function PersonasSettings() {
                     >
                       <PersonaIcon persona={persona} size={24} className="shrink-0" />
                       <span className="font-medium text-sm flex-1">{persona.name}</span>
-                      {isActive && (
-                        <Check className="h-4 w-4 text-primary shrink-0" />
-                      )}
+                      <Check
+                        className={cn(
+                          'h-4 w-4 shrink-0 transition-opacity duration-150',
+                          isActive
+                            ? 'text-primary opacity-100'
+                            : 'text-muted-foreground opacity-0 group-hover:opacity-40'
+                        )}
+                      />
                     </button>
                     <CollapsibleTrigger className="cursor-pointer">
                       <ChevronDown
@@ -252,7 +257,7 @@ export function PersonasSettings() {
                 >
                   <div
                     className={cn(
-                      'rounded-md border transition-all overflow-hidden',
+                      'group rounded-md border transition-all overflow-hidden',
                       isActive
                         ? 'border-primary/60 bg-primary/5'
                         : 'border-border/50 hover:border-primary/40'
@@ -265,9 +270,14 @@ export function PersonasSettings() {
                       >
                         <PersonaIcon persona={persona} size={24} className="shrink-0" />
                         <span className="font-medium text-sm flex-1">{persona.name}</span>
-                        {isActive && (
-                          <Check className="h-4 w-4 text-primary shrink-0" />
-                        )}
+                        <Check
+                          className={cn(
+                            'h-4 w-4 shrink-0 transition-opacity duration-150',
+                            isActive
+                              ? 'text-primary opacity-100'
+                              : 'text-muted-foreground opacity-0 group-hover:opacity-40'
+                          )}
+                        />
                       </button>
                       <div className="flex gap-1 shrink-0">
                         <Dialog

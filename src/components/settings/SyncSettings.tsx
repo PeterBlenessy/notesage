@@ -325,14 +325,21 @@ export function SyncSettings() {
                           </button>
 
                           <div className="flex items-center gap-1 shrink-0">
-                            <Check
-                              className={cn(
-                                "h-4 w-4 shrink-0 transition-opacity duration-150",
-                                isSelected
-                                  ? "text-primary opacity-100"
-                                  : "text-muted-foreground opacity-0 group-hover:opacity-40"
-                              )}
-                            />
+                            <button
+                              type="button"
+                              className="p-0.5"
+                              onClick={() => toggleSelection(project.path)}
+                              disabled={applying}
+                            >
+                              <Check
+                                className={cn(
+                                  "h-4 w-4 shrink-0 transition-opacity duration-150",
+                                  isSelected
+                                    ? "text-primary opacity-100"
+                                    : "text-muted-foreground opacity-0 group-hover:opacity-40"
+                                )}
+                              />
+                            </button>
                             <CollapsibleTrigger asChild>
                               <Button
                                 variant="ghost"
