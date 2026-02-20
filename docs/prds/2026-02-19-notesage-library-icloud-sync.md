@@ -1,5 +1,7 @@
 # PRD: Notesage Library & iCloud Sync (Phase 5.5)
 
+**Status: Implemented** (v0.10.0)
+
 ## Problem
 
 Notesage currently has no opinionated default location for projects. Users must manually pick a folder every time they create a project, leading to projects scattered across the filesystem. There is no way to sync notes or projects across Apple devices, which is a core expectation for a macOS-native writing app.
@@ -38,11 +40,11 @@ The `~/Notesage` library folder exists for Quick Notes but is underutilized — 
 ### Disabling sync
 
 - As a user, I want to deselect a project from iCloud sync in the sync settings (or in Project Settings), so it moves back to my local `~/Notesage` folder.
-- As a user, I want a confirmation dialog before disabling sync, so I don't accidentally move a project.
+- As a user, I want to preview the migration before it happens, so I understand what will change.
 
 ### Visual indicators
 
-- As a user, I want to see a cloud icon next to synced projects in the sidebar, so I know which projects are in iCloud.
+- As a user, I want to see a cloud badge on synced files and folders in the sidebar, so I know which content is in iCloud.
 
 ### New project creation
 
@@ -78,7 +80,7 @@ When iCloud sync is enabled, the app manages two library locations:
 
 ### iCloud folder detection
 
-New Tauri command to detect iCloud availability:
+Tauri command to detect iCloud availability:
 
 ```rust
 #[tauri::command]
@@ -106,7 +108,7 @@ This file lives in the local library (not in iCloud) so it's always accessible e
 
 ### Project migration commands
 
-New Tauri commands for moving projects between local and iCloud:
+Tauri commands for moving projects between local and iCloud:
 
 ```rust
 /// Move a project folder to iCloud Notesage directory.
@@ -136,11 +138,11 @@ When iCloud sync is enabled and `syncQuickNotes` is true:
 - The `notesRootPath` in settings-store points to the iCloud folder for Quick Notes
 - If iCloud is disabled, notes are migrated back to local `~/Notesage`
 
-Implementation: the app reads from both locations and merges the file tree. New notes go to whichever location is active.
+Implementation: `refreshNotesTree()` in `src/lib/refresh-notes-tree.ts` reads from both locations and merges the file lists. Local files take priority on filename collision. New notes go to whichever location is active based on the `syncQuickNotes` toggle. Migration of existing loose `.md` files is handled by a dedicated `migrate_quick_notes` Tauri command.
 
 ### State management
 
-**settings-store.ts** — add:
+**settings-store.ts** — added:
 
 ```typescript
 interface SettingsState {
@@ -151,7 +153,7 @@ interface SettingsState {
 }
 ```
 
-**New: sync-store.ts** — iCloud sync state:
+**New: sync-store.ts** — iCloud sync state (disk-persisted, not localStorage):
 
 ```typescript
 interface SyncState {
@@ -159,32 +161,52 @@ interface SyncState {
   syncQuickNotes: boolean;
   syncedProjectPaths: string[];   // projects currently in iCloud
   migrating: string | null;       // path of project currently being migrated
+  loaded: boolean;                // whether settings have been loaded from disk
+
+  // Persistence
+  loadSettings: (notesagePath: string) => Promise<void>;
+  saveSettings: (notesagePath?: string) => Promise<void>;
 
   // Actions
-  enableICloud: () => void;
-  disableICloud: () => void;
-  syncProject: (localPath: string) => Promise<void>;
-  unsyncProject: (icloudPath: string) => Promise<void>;
+  setICloudEnabled: (enabled: boolean) => void;
   setSyncQuickNotes: (enabled: boolean) => void;
+  addSyncedProject: (path: string) => void;
+  removeSyncedProject: (path: string) => void;
+  setSyncedProjectPaths: (paths: string[]) => void;
+  setMigrating: (path: string | null) => void;
+  updateProjectPath: (oldPath: string, newPath: string) => void;
+
+  // Queries
+  isProjectSynced: (path: string) => boolean;
+  isMigrating: () => boolean;
 }
 ```
 
-This store persists to `~/Notesage/.notesage/sync-settings.json` via a custom persist implementation (not localStorage — must survive app reinstalls and be tied to the library, not the browser context).
+This store persists to `~/Notesage/.notesage/sync-settings.json` via Tauri commands (`read_sync_settings` / `write_sync_settings`) — not localStorage. This ensures settings survive app reinstalls and are tied to the library, not the browser context.
 
 **workspace-store.ts** — modifications:
 
-- `addProject` updated to track whether the project is in the iCloud folder
-- `notesTree` merges trees from both local and iCloud when sync is enabled
-- New helper: `isProjectSynced(path: string): boolean`
+- `updateProjectPath(oldPath, newPath)` for path updates after migration
+- `setNotesTree()` accepts merged tree from `refreshNotesTree()`
+
+### Path migration utility
+
+`migrateProjectPath()` in `src/lib/migrate-project-path.ts` updates all store references after a project folder moves:
+
+- workspace-store: updates project path
+- editor-store: updates open tab paths and active file
+- project-metadata-store: re-keys metadata under new path
+- git-store: re-keys repo data under new path
 
 ### New project creation flow
 
 Updated `NewProjectDialog.tsx`:
 
-1. **Location defaults to** `~/Notesage` (shown as "Notesage Library" in UI)
+1. **Location defaults to** `~/Notesage` (shown as "\~/Notesage" in UI)
 2. User can click "Choose other location..." to override via folder picker
 3. If iCloud is enabled, a **"Sync to iCloud"** checkbox appears (checked by default)
-4. If checked, project is created directly in `iCloud/Notesage/` instead of `~/Notesage`
+4. If checked, project is created directly in `iCloud/Notesage/` instead of `~/Notesage` — location display shows "iCloud Drive/Notesage"
+5. Choosing a custom location disables the iCloud checkbox (custom locations can't sync)
 
 ### Startup flow
 
@@ -194,14 +216,25 @@ Updated `App.tsx` initialization:
 2. Call `get_icloud_path()` → store in settings
 3. Load `sync-settings.json` from `~/Notesage/.notesage/`
 4. If iCloud enabled:
-   - Verify iCloud folder still exists (user may have signed out)
-   - Load file trees from both local and iCloud locations
-   - Merge Quick Notes trees if `syncQuickNotes` is true
-5. Populate workspace-store with project list from both locations
+   - Verify iCloud folder still exists (if not, disable sync with toast notification)
+   - Load file trees from synced project paths, add each to workspace-store
+   - Remove stale synced paths (projects that no longer exist on disk)
+5. Call `refreshNotesTree()` to merge Quick Notes from both local and iCloud locations
 
 ## UI/UX
 
-### Settings Dialog — new "Sync" tab
+### Design decision: "configure then apply" pattern
+
+During implementation, the original design of immediate-action checkboxes with AlertDialog confirmations was replaced with a **"configure then apply" pattern**. This matches the persona selection UX elsewhere in the app and provides a less intrusive experience:
+
+1. User toggles projects on/off — changes are **pending**, no migration happens yet
+2. An info bar shows what will change (e.g., "2 to sync, 1 to unsync") with a visual path flow (from → to)
+3. User clicks **"Apply Changes"** to execute all migrations at once, or **"Discard"** to revert
+4. A spinner shows during migration with all controls disabled
+
+This pattern is used in both the Sync settings tab and the per-project settings.
+
+### Settings Dialog — "Sync" tab
 
 ```
 ┌─────────────────────────────────────┐
@@ -223,12 +256,16 @@ Updated `App.tsx` initialization:
 │  Projects                           │
 │  ┌─────────────────────────────┐    │
 │  │ ☑ My Research Project       │    │  ← Checkbox per project
+│  │   📁 ~/Notesage → ☁ iCloud │    │  ← Path flow (pending)
 │  │ ☑ Writing Portfolio         │    │
 │  │ ☐ Local Scratch Pad         │    │
 │  └─────────────────────────────┘    │
 │                                     │
-│  Only projects in your Notesage     │
-│  library can be synced.             │
+│  ┌─────────────────────────────┐    │
+│  │ 1 to sync  [Discard] [Apply]│    │  ← Apply bar (when changes pending)
+│  └─────────────────────────────┘    │
+│                                     │
+│  All workspace projects shown.      │
 │                                     │
 └─────────────────────────────────────┘
 ```
@@ -237,49 +274,45 @@ Updated `App.tsx` initialization:
 
 - **iCloud unavailable** (not macOS, or iCloud not signed in): Toggle disabled, helper text: "iCloud sync is available on macOS with iCloud Drive enabled."
 - **iCloud enabled, no projects**: Show "No projects in your library. Create a project to get started."
-- **Migration in progress**: Show progress indicator on the project being moved, disable its checkbox
+- **Pending changes**: Apply bar appears at bottom with summary, Discard and Apply Changes buttons
+- **Migration in progress**: Spinner with "Applying..." text, all controls disabled
 
-### Sidebar — cloud icon
+**Path display:** Raw filesystem paths are formatted for readability using `formatDisplayPath()` — iCloud paths show as "iCloud Drive/Notesage/..." and home-relative paths as "\~/Notesage/...". Path icons are clickable to reveal the folder in Finder.
 
-Synced projects show a small cloud icon (lucide `Cloud`, 14px, `text-muted-foreground`) to the right of the project name. Non-synced projects show no icon.
+**Project list:** Shows all workspace projects (both library and non-library), not just library projects. Non-library projects that aren't in `~/Notesage` or `iCloud/Notesage` can still be synced — they will be moved to the iCloud folder on sync.
 
-### Confirmation dialog — disable sync
+### Sidebar — cloud badge icon
 
-When unchecking a project from the sync list (or disabling in Project Settings):
+Synced files and folders show a **cloud badge** overlaid on the file/folder icon, rather than a separate trailing icon. The `SyncedIcon` component (`src/components/sidebar/SyncedIcon.tsx`) renders the base lucide icon with a small filled cloud badge in the bottom-right corner:
 
-```
-┌──────────────────────────────────────┐
-│  Stop syncing "My Project"?          │
-│                                      │
-│  This project will be copied to your │
-│  local Notesage library and removed  │
-│  from iCloud. It will no longer sync │
-│  across your devices.                │
-│                                      │
-│           [Cancel]  [Stop Syncing]   │
-└──────────────────────────────────────┘
-```
+- Badge: 9px cloud icon inside an 11px white circle
+- Color: `text-muted-foreground/70`, `fill-muted-foreground/70`, `strokeWidth={0}` (filled, not stroked)
+- Position: `-bottom-[2px]` for files, `-bottom-[1px]` for folders (slightly different to account for icon shapes)
+- Non-synced items render the plain icon without badge
 
-Uses shadcn/ui `AlertDialog`. "Stop Syncing" is the primary action (not destructive — data is preserved).
+Used in both `FileTreeItem` (individual files/folders) and `ProjectItem` (project root folders).
 
 ### Project Settings — sync toggle
 
-Add a "Sync" section to the existing Project Settings tab:
+The existing Project Settings dialog (opened via the cog icon on a project name in the sidebar) includes a "Sync" section:
 
-- Toggle: "Sync to iCloud" (on/off)
-- Only visible when iCloud is globally enabled
-- Only visible for projects inside `~/Notesage` or `iCloud/Notesage`
-- Toggling off triggers the confirmation dialog above
+- **Switch toggle:** "Sync to iCloud" (on/off)
+- **Visible when:** iCloud is globally enabled and iCloud is available on the system
+- **Available for all projects** — not restricted to library projects
+- **Pending state:** Toggling shows a preview of the migration with a visual path flow (from → to), "Discard" and "Enable/Disable Sync" buttons
+- **Migration:** On apply, project folder is moved and all store references updated via `migrateProjectPath()`
+- **Folder rename on disk:** If the project display name is changed in settings, the filesystem folder is also renamed on blur
 
 ### New Project Dialog — updated
 
-- Location field shows "Notesage Library" by default with a "Change..." link
-- When iCloud is enabled: checkbox "Sync to iCloud" (checked by default)
+- Location shows "\~/Notesage" by default
+- When iCloud is enabled: checkbox "Sync to iCloud" (checked by default) — location changes to "iCloud Drive/Notesage"
 - When iCloud is disabled or unavailable: no checkbox shown
+- Choosing a custom location via folder picker disables the iCloud checkbox
 
 ## Data Model
 
-### New Tauri commands
+### Tauri commands
 
 ```rust
 // src-tauri/src/commands/sync.rs
@@ -300,6 +333,12 @@ pub async fn migrate_from_icloud(
 ) -> Result<String, String>;
 
 #[tauri::command]
+pub async fn migrate_quick_notes(
+    from_path: String,
+    to_path: String,
+) -> Result<(), String>;
+
+#[tauri::command]
 pub async fn read_sync_settings(
     notesage_path: String,
 ) -> Result<Option<SyncSettings>, String>;
@@ -311,57 +350,42 @@ pub async fn write_sync_settings(
 ) -> Result<(), String>;
 ```
 
-### New TypeScript interfaces
+### TypeScript interfaces
 
 ```typescript
-// src/lib/types.ts
+// Defined inline in sync-store.ts (not a separate types file)
 
 interface SyncSettings {
-  version: 1;
-  icloudEnabled: boolean;
-  syncQuickNotes: boolean;
-  syncedProjects: string[];  // absolute paths of synced projects
+  version: number;
+  icloud_enabled: boolean;     // snake_case to match Rust serde
+  sync_quick_notes: boolean;
+  synced_projects: string[];
 }
 ```
 
-### New Zustand store
+### Stores
 
-```typescript
-// src/stores/sync-store.ts
-
-interface SyncState {
-  icloudEnabled: boolean;
-  syncQuickNotes: boolean;
-  syncedProjectPaths: string[];
-  migrating: string | null;
-
-  loadSettings: (notesagePath: string) => Promise<void>;
-  saveSettings: (notesagePath: string) => Promise<void>;
-  enableICloud: () => void;
-  disableICloud: () => void;
-  syncProject: (projectPath: string) => Promise<void>;
-  unsyncProject: (projectPath: string) => Promise<void>;
-  setSyncQuickNotes: (enabled: boolean) => void;
-  isMigrating: () => boolean;
-  isProjectSynced: (projectPath: string) => boolean;
-}
-```
-
-### Modified stores
+**sync-store.ts** — see State Management section above.
 
 **workspace-store.ts:**
 
-- `isProjectSynced(path)` helper using sync-store
-- Notes tree loading accounts for iCloud location
+- `updateProjectPath(oldPath, newPath)` — re-keys project entry after migration
+- Notes tree set via `setNotesTree()` from merged `refreshNotesTree()` output
 
 **settings-store.ts:**
 
-- `icloudAvailable: boolean`
-- `icloudNotesagePath: string | null`
+- `icloudAvailable: boolean` — detected on startup
+- `icloudNotesagePath: string | null` — resolved iCloud Notesage path
+
+### Utility modules
+
+- `src/lib/migrate-project-path.ts` — `migrateProjectPath()` updates all stores after folder move
+- `src/lib/refresh-notes-tree.ts` — `refreshNotesTree()` merges local + iCloud Quick Notes trees
+- `src/lib/utils.ts` — `formatDisplayPath()` converts raw paths to user-friendly display
 
 ## Dependencies
 
-### New Rust crates
+### Rust crates
 
 - `fs_extra` — recursive directory copy for cross-volume fallback (migration commands)
 
@@ -369,8 +393,8 @@ interface SyncState {
 
 - `dirs::home_dir()` — home directory resolution (already used)
 - `@tauri-apps/plugin-dialog` — folder picker (already used)
-- shadcn/ui `AlertDialog`, `Switch`, `Checkbox`, `Tabs` — all already installed
-- lucide-react `Cloud` icon — already available
+- shadcn/ui `Switch`, `Checkbox`, `Tooltip`, `Collapsible` — all already installed
+- lucide-react `Cloud`, `FolderOpen`, `ArrowRight`, `Loader2` icons — already available
 
 ### No new frontend dependencies required.
 
@@ -378,55 +402,83 @@ interface SyncState {
 
 ### Functional
 
-- [ ] `~/Notesage` is auto-created on first launch (existing — verify still works)
+- [x] `~/Notesage` is auto-created on first launch
 
-- [ ] New Project dialog defaults location to `~/Notesage`
+- [x] New Project dialog defaults location to `~/Notesage`
 
-- [ ] User can still choose a custom location for new projects
+- [x] User can still choose a custom location for new projects
 
-- [ ] iCloud path correctly detected on macOS (`~/Library/Mobile Documents/com~apple~CloudDocs/`)
+- [x] iCloud path correctly detected on macOS (`~/Library/Mobile Documents/com~apple~CloudDocs/`)
 
-- [ ] iCloud toggle disabled on non-macOS platforms with explanation text
+- [x] iCloud toggle disabled on non-macOS platforms with explanation text
 
-- [ ] Enabling iCloud creates `Notesage/` folder in iCloud Drive
+- [x] Enabling iCloud creates `Notesage/` folder in iCloud Drive
 
-- [ ] Selecting a project for sync moves it to iCloud/Notesage and updates all references (open tabs, metadata, workspace-store)
+- [x] Selecting a project for sync moves it to iCloud/Notesage and updates all references (open tabs, metadata, workspace-store)
 
-- [ ] Deselecting a project copies it back to local `~/Notesage` and deletes the iCloud copy
+- [x] Deselecting a project copies it back to local `~/Notesage` and deletes the iCloud copy
 
-- [ ] Confirmation dialog appears when disabling sync for a project
+- [x] Migration preview shown before applying changes (configure-then-apply pattern)
 
-- [ ] Quick Notes sync toggle moves loose files between local and iCloud
+- [x] Quick Notes sync toggle moves loose files between local and iCloud
 
-- [ ] Cloud icon appears in sidebar for synced projects
+- [x] Cloud badge appears on synced files and folders in sidebar
 
-- [ ] Migration handles errors gracefully (disk full, permissions, iCloud unavailable mid-migration)
+- [x] Migration handles errors gracefully (disk full, permissions, iCloud unavailable mid-migration)
 
-- [ ] App starts correctly when iCloud was enabled but is now unavailable (signed out)
+- [x] App starts correctly when iCloud was enabled but is now unavailable (disables sync with toast)
 
-- [ ] Sync settings persist across app restarts (stored in `sync-settings.json`, not localStorage)
+- [x] Sync settings persist across app restarts (stored in `sync-settings.json`, not localStorage)
 
-- [ ] Open tabs referencing a migrated project update their paths automatically
+- [x] Open tabs referencing a migrated project update their paths automatically
 
-- [ ] Project metadata (`.notesage/`) survives migration intact
+- [x] Project metadata (`.notesage/`) survives migration intact
 
-- [ ] Comments survive migration (keyed by UUID, not path)
+- [x] Comments survive migration (keyed by UUID, not path)
+
+- [x] Sync can be enabled/disabled from both Sync settings tab and per-project settings
+
+- [x] Project folder rename on disk when display name changes in Project Settings
 
 ### Design
 
-- [ ] Sync tab in Settings follows existing tab design pattern
+- [x] Sync tab in Settings follows existing tab design pattern
 
-- [ ] Cloud icon in sidebar is subtle (`text-muted-foreground`, 14px)
+- [x] Cloud badge on sidebar icons is subtle (filled `muted-foreground/70`, 9px, white circle background)
 
-- [ ] Confirmation dialog uses shadcn/ui AlertDialog with proper copy
+- [x] Migration preview uses inline path flow visualization (not intrusive AlertDialog)
 
-- [ ] Migration progress indicator is clear but non-intrusive
+- [x] Migration progress indicator is clear but non-intrusive (spinner + disabled controls)
 
-- [ ] iCloud unavailable state is clearly communicated (not just a disabled toggle)
+- [x] iCloud unavailable state is clearly communicated (disabled toggle + explanation text)
 
-- [ ] New Project dialog location field is clean and doesn't feel cluttered
+- [x] New Project dialog location field is clean — shows "\~/Notesage" or "iCloud Drive/Notesage"
 
-- [ ] All new UI works in both light and dark mode
+- [x] All new UI works in both light and dark mode
+
+- [x] Path display uses `formatDisplayPath()` for user-friendly labels throughout
+
+## Design Decisions Made During Implementation
+
+### "Configure then apply" over AlertDialog
+
+The PRD originally specified AlertDialog confirmation popups when toggling sync on/off for each project. During implementation, this was replaced with a **pending-state pattern**: toggles update local state only, changes are previewed with a path flow visualization, and an explicit "Apply Changes" button triggers the actual migration. This is less intrusive, lets users batch multiple changes, and matches the persona selection UX pattern used elsewhere in the app.
+
+### Cloud badge over trailing icon
+
+The PRD specified a small cloud icon to the right of the project name. During implementation, this was changed to a **cloud badge overlaid on the file/folder icon** — a small filled cloud in a white circle positioned at the bottom-right of the base icon. This is more compact, works for both files and folders at any nesting level, and avoids cluttering the text area.
+
+### All projects can sync, not just library projects
+
+The PRD originally restricted sync to projects inside `~/Notesage` or `iCloud/Notesage`. During implementation, the restriction was removed — any project can be synced to iCloud. Non-library projects are moved to the iCloud Notesage folder when synced. This provides more flexibility without added complexity.
+
+### Disk-based persistence for sync settings
+
+The sync-store uses Tauri commands to read/write `sync-settings.json` on disk rather than Zustand's localStorage persist middleware. This ensures settings are tied to the library folder (not the browser context) and survive app reinstalls.
+
+### Quick Notes merge strategy
+
+When both local and iCloud Quick Notes exist, `refreshNotesTree()` merges the file lists with local files taking priority on filename collision. This avoids duplicates while preserving content from both locations.
 
 ## Out of Scope
 
@@ -435,6 +487,5 @@ interface SyncState {
 - **Selective file sync within a project** — entire project syncs or doesn't
 - **Non-Apple cloud providers** — no Dropbox, Google Drive, OneDrive
 - **Mobile app** — no iOS/iPadOS companion app in this phase
-- **Syncing Explorer folders** — only Notesage library content can sync
 - **Offline indicator** — no UI for "iCloud is currently offline"
 - **Storage quota warnings** — no check for iCloud storage limits
