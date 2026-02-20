@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { tauriApi } from "@/lib/tauri";
 import { useEditorStore } from "@/stores/editor-store";
+import { useExternalChangeStore } from "@/stores/external-change-store";
+import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { useFileOperations, refreshGitForPath } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
 
@@ -36,9 +38,11 @@ export function useFileWatcher() {
   const { refreshFileTree } = useFileOperations();
   const refreshDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
   const gitDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Per-file debounce for modify events — macOS FSEvents often fires duplicates
+  const modifyDebounce = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {
-    const unlisten = listen<FileChangedPayload>("file-changed", async (event) => {
+    const unlisten = listen<FileChangedPayload>("file-changed", (event) => {
       const { path, kind } = event.payload;
 
       // For create/delete events, debounce file tree refresh
@@ -57,33 +61,14 @@ export function useFileWatcher() {
         refreshGitForPath(path);
       }, 500);
 
-      // For modify events, check if file is open in a tab
+      // For modify events, debounce per-file to collapse duplicate FSEvents
       if (kind === "modify") {
-        const state = useEditorStore.getState();
         const normalizedPath = normalizePath(path);
-        const tab = state.tabs.find(
-          (t) => normalizePath(t.filePath) === normalizedPath
-        );
-
-        if (!tab) return;
-
-        try {
-          const raw = await tauriApi.readFile(path);
-          const { content } = parseFrontmatter(raw);
-
-          // Skip if content matches tab or an already-pending external change
-          // (guards against self-writes and FSEvents re-reporting the same change)
-          const pendingExternal = state.externalChanges[tab.filePath];
-          if (content === tab.content || content === pendingExternal) {
-            return;
-          }
-          // Always use setExternalChange — the Editor component handles
-          // auto-reload for clean tabs and shows a banner for dirty tabs.
-          // (We can't push to Tiptap from here since we don't have the editor instance.)
-          state.setExternalChange(tab.filePath, content);
-        } catch (error) {
-          console.error("Failed to read externally changed file:", error);
-        }
+        clearTimeout(modifyDebounce.current[normalizedPath]);
+        modifyDebounce.current[normalizedPath] = setTimeout(async () => {
+          delete modifyDebounce.current[normalizedPath];
+          await handleModifyEvent(path, normalizedPath);
+        }, 200);
       }
     });
 
@@ -91,6 +76,54 @@ export function useFileWatcher() {
       unlisten.then((fn) => fn());
       clearTimeout(refreshDebounce.current);
       clearTimeout(gitDebounce.current);
+      for (const t of Object.values(modifyDebounce.current)) clearTimeout(t);
     };
   }, [refreshFileTree]);
+}
+
+/** Handle a debounced modify event for a single file. */
+async function handleModifyEvent(path: string, normalizedPath: string) {
+  // Self-write suppression is handled at the Rust/backend level:
+  // saveFile() calls tauriApi.markSelfWrite() before writing, and the
+  // backend file watcher skips events for recently self-written files.
+
+  const state = useEditorStore.getState();
+  const tab = state.tabs.find(
+    (t) => normalizePath(t.filePath) === normalizedPath
+  );
+
+  if (!tab) return;
+
+  try {
+    const raw = await tauriApi.readFile(path);
+    const { content } = parseFrontmatter(raw);
+
+    // Skip if content matches what's in the tab
+    if (content === tab.content) return;
+
+    // If a git branch diff review is active, auto-accept silently
+    if (useDiffReviewStore.getState().reviewActive) {
+      state.setExternalChange(tab.filePath, content);
+      return;
+    }
+
+    if (tab.isDirty) {
+      // Dirty tabs: use the old ExternalChangeBanner (reload/keep)
+      state.setExternalChange(tab.filePath, content);
+    } else {
+      // Clean tabs: compute diff and store in external-change-store
+      // Skip if we already have a pending change with the same new content
+      const existing = useExternalChangeStore.getState().getChange(tab.filePath);
+      if (existing && existing.newContent === content) return;
+
+      useExternalChangeStore.getState().addChange(
+        tab.filePath,
+        tab.fileName,
+        tab.content,
+        content,
+      );
+    }
+  } catch (error) {
+    console.error("Failed to read externally changed file:", error);
+  }
 }

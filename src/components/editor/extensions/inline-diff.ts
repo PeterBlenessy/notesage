@@ -193,7 +193,8 @@ function buildDiffDecorations(
 
 /**
  * Create the DOM widget for a single diff hunk.
- * Shows the inserted text (if any) plus accept/reject buttons.
+ * Shows the inserted text (if any) plus accept/reject buttons that
+ * appear above on click and dismiss on click outside.
  */
 function createHunkWidget(hunk: InlineDiffHunk, editor: Editor): HTMLElement {
   const container = document.createElement('span');
@@ -207,7 +208,7 @@ function createHunkWidget(hunk: InlineDiffHunk, editor: Editor): HTMLElement {
     container.appendChild(insertSpan);
   }
 
-  // Accept/reject controls
+  // Accept/reject controls — float above the diff on click
   const controls = document.createElement('span');
   controls.className = 'inline-diff-controls';
 
@@ -234,6 +235,44 @@ function createHunkWidget(hunk: InlineDiffHunk, editor: Editor): HTMLElement {
   controls.appendChild(acceptBtn);
   controls.appendChild(rejectBtn);
   container.appendChild(controls);
+
+  // Toggle controls on click — clicking the diff text shows buttons,
+  // clicking outside dismisses them.
+  const show = (e: Event) => {
+    e.stopPropagation();
+    // Dismiss any other open controls first
+    document.querySelectorAll('.inline-diff-controls.visible').forEach((el) => {
+      if (el !== controls) el.classList.remove('visible');
+    });
+    controls.classList.toggle('visible');
+  };
+
+  const dismiss = (e: Event) => {
+    // Don't dismiss if click was inside the controls
+    if (controls.contains(e.target as Node)) return;
+    controls.classList.remove('visible');
+  };
+
+  container.addEventListener('click', show);
+
+  // Also handle click on the adjacent delete decoration (previous sibling)
+  requestAnimationFrame(() => {
+    const prev = container.previousElementSibling;
+    if (prev?.classList.contains('inline-diff-delete')) {
+      prev.addEventListener('click', show);
+    }
+  });
+
+  // Dismiss on click outside
+  document.addEventListener('click', dismiss, true);
+  // Clean up when the widget is removed from the DOM
+  const observer = new MutationObserver(() => {
+    if (!container.isConnected) {
+      document.removeEventListener('click', dismiss, true);
+      observer.disconnect();
+    }
+  });
+  observer.observe(container.parentElement || document.body, { childList: true, subtree: true });
 
   return container;
 }

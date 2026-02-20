@@ -78,3 +78,30 @@ body {
   color: var(--color-foreground);
   font-family: var(--font-family-sans);
 }
+
+/* Sonner toast close button — top-right, flat X like a window close */
+[data-sonner-toast] [data-close-button] {
+  position: absolute !important;
+  left: unset !important;
+  right: 8px !important;
+  top: 8px !important;
+  transform: none !important;
+  border: none !important;
+  background: transparent !important;
+  color: var(--color-muted-foreground) !important;
+  border-radius: 4px !important;
+  height: 16px !important;
+  width: 16px !important;
+  padding: 0 !important;
+  transition: color 150ms ease;
+}
+
+[data-sonner-toast] [data-close-button]:hover {
+  background: transparent !important;
+  color: var(--color-foreground) !important;
+}
+
+/* Push cancel/action button down so it clears the close X */
+[data-sonner-toast] [data-cancel] {
+  margin-top: 8px !important;
+}

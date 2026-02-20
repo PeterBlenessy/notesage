@@ -6,7 +6,7 @@ id: ""
 
 Notesage is a WYSIWYG markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
-**Current version:** 0.11.1
+**Current version:** 0.12.0
 
 ## Current Features
 
@@ -17,29 +17,38 @@ Tiptap-powered WYSIWYG editor with full markdown round-tripping.
 **Supported content:**
 
 - Headings (H1-H6), paragraphs
-- Bold, italic, underline, strikethrough, code (inline)
-- Bullet lists, ordered lists, task lists (checkboxes)
-- Blockquotes, horizontal rules
-- Code blocks with syntax highlighting (lowlight)
-- Links (rendered inline, clickable), images (via URL prompt)
-- Tables (insert, add/remove rows/columns)
 
-**Editing features:**
+- Bold, italic, underline, strikethrough, code (inline)
+
+- Bullet lists, ordered lists, task lists (checkboxes)
+
+- Blockquotes, horizontal rules
+
+- Code blocks with syntax highlighting (lowlight)
+
+- Links (rendered inline, clickable), images (via URL prompt)
+
+- Tables (insert, add/remove rows/columns) testing **Editing features:**
 
 - Top toolbar with formatting controls: undo/redo, bold, italic, underline, strikethrough, code, bullet list, ordered list, task list, blockquote, code block, horizontal rule, table, image
-- Bubble menu on text selection with AI actions (Improve, Summarize, Expand) — toggleable in settings
-- Slash commands (`/` at start of line) for inserting headings, lists, code blocks, blockquotes, tables, horizontal rules, images
-- Multi-tab editing with dirty indicator, auto-save on blur/tab switch (debounced 1s)
-- Open tabs restored on app restart (persisted file paths, re-opened from disk)
-- Cmd+F quick-open with file search
 
-**File management:**
+- Bubble menu on text selection with AI actions (Improve, Summarize, Expand) — toggleable in settings
+
+- Slash commands (`/` at start of line) for inserting headings, lists, code blocks, blockquotes, tables, horizontal rules, images
+
+- Multi-tab editing with dirty indicator, auto-save on blur/tab switch (debounced 1s)
+
+- Open tabs restored on app restart (persisted file paths, re-opened from disk)
+
+- Cmd+F quick-open with file search change 2 **File management:**
 
 - Sidebar file tree with expand/collapse, file icons by extension, right-click context menu (new file, new folder, rename, delete)
+
 - File operations via Tauri commands: open folder (native dialog), open/save/create/rename/delete files
+
 - Hidden files/folders ignored by default
 
-**Markdown round-tripping:**
+**Markdown round-tripping**:
 
 - Open .md file -&gt; parse to ProseMirror -&gt; edit in WYSIWYG -&gt; serialize back to clean markdown
 - Lossless: markdown in must equal markdown out (modulo whitespace normalization)
@@ -179,17 +188,26 @@ Document comments and external change tracking — foundational infrastructure f
   - **Non-project files (Explorer):** Comments keyed by a hash of the file path. No frontmatter modification — external files are never altered. Stored in `~/Notesage/.notesage/comments/path-{hash}.json`. Comments lost if file is renamed while app is closed.
 - Document index (`.notesage/doc-index.json`) mapping UUID → current file path for project files
 
-**External change detection:**
+**External change detection & review:**
 
 - Tauri filesystem watcher (via `notify` crate with `notify_debouncer_full`) for watched directories
-- Self-write filtering with 5s TTL to suppress events from Notesage's own saves
+- Self-write filtering at the Rust backend level (`markSelfWrite` before writes, event suppression at source)
 - `.git/` and `.DS_Store` paths filtered to prevent iCloud-synced repo event floods
 - macOS FSEvents workaround: modify events for deleted paths reclassified as deletes
 - Path normalization for macOS `/private/` prefix (FSEvents canonicalization)
-- Clean tabs auto-reload from disk with "File updated from disk" toast notification
-- Dirty tabs show reload/keep banner for user decision
+- Clean tabs: inline diff review with word-level `diff-match-patch` diffing, mapped to ProseMirror positions
+  - Toast notification ("File changed externally") with Accept button and close X
+  - Inline diff decorations: red strikethrough for deletions, green for insertions
+  - Per-hunk accept/reject via inline click controls or keyboard shortcuts (`Cmd+Enter` / `Cmd+Backspace`)
+  - Status bar change tracker (`RefreshCw` icon + count) with `ChangeListPopover`
+  - Popover shows all pending changes across all open files: `[filename] : [change preview]  [✓] [✗]`
+  - Per-hunk accept/reject from popover (for the focused file), click-to-navigate for other files
+  - Accept All / Reject All bulk actions in popover header
+  - Toast auto-dismisses after 8 seconds; changes defer to status bar for later review
+- Dirty tabs show reload/keep banner for user decision (no auto-accept)
 - Sidebar tree auto-refreshes on external file creates and deletes
 - Git status auto-refreshes on any external file change
+- Git branch diff review takes priority — external changes auto-accept silently when active
 
 **Git branch diff review:**
 
@@ -199,15 +217,18 @@ Document comments and external change tracking — foundational infrastructure f
 
 **Architecture:**
 
-- Tiptap extension (`CommentMark`) with ProseMirror plugin state for decorations
+- `InlineDiff` ProseMirror plugin: singleton decoration layer shared by external change review and git branch diff review
+- `external-change-store` (Zustand, non-persisted): tracks pending changes per file with hunks, status (`pending` → `deferred`), old/new content
+- `diff-match-patch` for character-level diffing with semantic cleanup, mapped to PM positions via `buildTextWithPositions`
+- Tiptap extension (`CommentMark`) with ProseMirror plugin state for comment decorations
 - `comment-store` (Zustand) with sidecar JSON persistence
-- `notify`-based filesystem watcher with `notify_debouncer_full` (500ms debounce), self-write TTL filter (5s), `.git/` + `.DS_Store` path filtering, macOS FSEvents modify-to-delete reclassification
+- `notify`-based filesystem watcher with `notify_debouncer_full` (500ms debounce), backend self-write suppression, `.git/` + `.DS_Store` path filtering, macOS FSEvents modify-to-delete reclassification
 - Comment key strategy: UUID for project files, deterministic path hash for non-project files
 
 **Future enhancements (not yet built):**
 
-- Inline diff display for external changes (currently shows reload prompt only)
-- Per-change accept/reject controls (Track Changes style)
+- Per-hunk accept/reject from popover for non-focused files (currently navigates to file first)
+- Cross-file Accept All / Reject All (currently per-file only)
 
 ### Notesage Library & iCloud Sync
 

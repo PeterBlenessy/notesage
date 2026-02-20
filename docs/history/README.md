@@ -24,3 +24,4 @@ Chronological log of major implementation milestones and changes.
 | 018 | [Release v0.10.0](018-release-v0.10.0.md) | Layout redesign — title bar, sidebar, command palette, focus mode, status bar (Phases A-C) |
 | 019 | [Release v0.11.0](019-release-v0.11.0.md) | Notesage Library & iCloud Sync (Phase 5.5) |
 | 020 | [Release v0.11.1](020-release-v0.11.1.md) | Filesystem watcher fixes for explorer folders |
+| 021 | [Release v0.12.0](021-release-v0.12.0.md) | External Change Review — inline diffs, per-hunk controls, cross-file tracker |

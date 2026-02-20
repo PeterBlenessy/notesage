@@ -1,16 +1,27 @@
-import { useEffect, useCallback, useRef, useState } from "react";
+import { useEffect, useCallback, useRef, useState, useMemo } from "react";
 import { EditorContent } from "@tiptap/react";
 import { Command, File, FolderDot, Folder, Clock } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore, type ContentWidth } from "@/stores/settings-store";
+import { useExternalChangeStore } from "@/stores/external-change-store";
 import { useEditor } from "@/hooks/useEditor";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { useExportOperations } from "@/hooks/useExportOperations";
 import { useDiffReview } from "@/hooks/useDiffReview";
 import { useFileWatcher } from "@/hooks/useFileWatcher";
 import { useCommentOperations } from "@/hooks/useCommentOperations";
-import { setPendingCommentRange as setPendingRangeDecoration } from "@/components/editor/extensions";
+import {
+  setPendingCommentRange as setPendingRangeDecoration,
+  showInlineDiff,
+  clearInlineDiff,
+  acceptAllDiffHunks,
+  rejectAllDiffHunks,
+  acceptDiffHunk,
+  rejectDiffHunk,
+  getInlineDiffHunks,
+} from "@/components/editor/extensions";
+import { mapExternalChangeToPM } from "@/lib/external-diff";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { useGitStore } from "@/stores/git-store";
 import { Button } from "@/components/ui/button";
@@ -25,6 +36,7 @@ import { CommentPopover } from "./CommentPopover";
 import { StatusBar } from "./StatusBar";
 import { FrontmatterBlock } from "./FrontmatterBlock";
 import { DocumentOutline } from "@/components/DocumentOutline";
+import { getMarkdownFromEditor } from "@/lib/markdown";
 import { toast } from "sonner";
 import "@/styles/editor.css";
 
@@ -297,7 +309,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     }
   }, [commentOps.activeCommentId, commentOps.activeComment, editor]);
 
-  // External change detection — check if the active tab has a pending external change
+  // External change detection — dirty tabs use old banner (reload/keep)
   const activeExternalContent = activeTab ? externalChanges[activeTab.filePath] : undefined;
 
   const handleExternalReload = useCallback(() => {
@@ -312,8 +324,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     clearExternalChange(activeTab.filePath);
   }, [activeTab, clearExternalChange]);
 
-  // Auto-reload clean tabs when external changes are detected.
-  // Dirty tabs show the banner instead (handled in JSX below).
+  // Auto-reload clean tabs when external changes are detected via editor-store
+  // (only for git review auto-accept; normal clean tab changes go through external-change-store)
   useEffect(() => {
     if (editor && activeTab && !activeTab.isDirty && activeExternalContent !== undefined) {
       editor.commands.setContent(activeExternalContent);
@@ -322,6 +334,207 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       toast("File updated from disk", { id: "external-change", description: activeTab.fileName });
     }
   }, [editor, activeTab?.id, activeTab?.isDirty, activeExternalContent, updateTabContent, clearExternalChange]);
+
+  // --- External change review (clean tabs) ---
+  // Select the raw record and derive the array in a memo to avoid new-reference infinite loops
+  const externalChangesRecord = useExternalChangeStore((s) => s.changes);
+  const externalChangesAll = useMemo(() => Object.values(externalChangesRecord), [externalChangesRecord]);
+  const activeExternalChange = activeTab ? externalChangesRecord[activeTab.filePath] : undefined;
+  const [changeListOpen, setChangeListOpen] = useState(false);
+  const lastExternalDecoratedFile = useRef<string | null>(null);
+
+  // When a new external change arrives for the active tab, immediately show
+  // inline diffs (red/green decorations) and a toast with Accept / Review.
+  // On auto-dismiss the change defers to the status bar tracker.
+  //
+  // Uses rAF to ensure the editor content is loaded first — when switching tabs,
+  // this effect may fire BEFORE the tab-switch effect loads the correct content.
+  // Without rAF, mapExternalChangeToPM would diff the previous tab's content
+  // against the new file, producing a giant incorrect diff.
+  useEffect(() => {
+    if (!editor || !activeTab || !activeExternalChange) return;
+    if (activeExternalChange.status !== "pending") return;
+
+    const filePath = activeTab.filePath;
+    const tabId = activeTab.id;
+    const fileName = activeTab.fileName;
+
+    const rafId = requestAnimationFrame(() => {
+      // Re-check: the change may have been resolved during the rAF delay
+      const currentChange = useExternalChangeStore.getState().getChange(filePath);
+      if (!currentChange || currentChange.status !== "pending") return;
+
+      // Compute PM-level diff (this is the single source of truth for display)
+      const pmHunks = mapExternalChangeToPM(editor, currentChange.newContent);
+
+      if (pmHunks.length === 0) {
+        // Content renders identically at PM level — silently accept the new markdown
+        useExternalChangeStore.getState().resolveChange(filePath);
+        updateTabContent(tabId, currentChange.newContent, false);
+        return;
+      }
+
+      // Load decorations and sync store hunks to match PM-level hunks
+      showInlineDiff(editor, pmHunks);
+      lastExternalDecoratedFile.current = filePath;
+      useExternalChangeStore.getState().setHunks(filePath, pmHunks.map(h => ({
+        id: h.id,
+        charFrom: h.from,
+        charTo: h.to,
+        deleteText: h.deleteText,
+        insertText: h.insertText,
+      })));
+
+      // Set to deferred — decorations visible, no banner, tracked in status bar.
+      // This prevents the effect from re-firing and is the default resting state.
+      useExternalChangeStore.getState().setStatus(filePath, "deferred");
+
+      toast("File changed externally", {
+        id: `external-change-${filePath}`,
+        description: fileName,
+        duration: 8000,
+        closeButton: true,
+        cancel: {
+          label: "Accept",
+          onClick: () => {
+            const change = useExternalChangeStore.getState().getChange(filePath);
+            if (!change) return;
+            // Nullify ref and resolve BEFORE dispatching the accept transaction.
+            // acceptAllDiffHunks dispatches synchronously, which fires the sync
+            // effect's onTransaction listener. Without this guard, the sync effect
+            // would also resolve + save, causing a double-save race condition.
+            lastExternalDecoratedFile.current = null;
+            useExternalChangeStore.getState().resolveChange(filePath);
+            acceptAllDiffHunks(editor);
+            const markdown = getMarkdownFromEditor(editor);
+            updateTabContent(tabId, markdown, true);
+            saveFile(filePath, markdown, tabId).catch((err) =>
+              console.error("Failed to save after accepting:", err)
+            );
+          },
+        },
+      });
+    });
+
+    return () => cancelAnimationFrame(rafId);
+  }, [editor, activeTab?.filePath, activeExternalChange?.timestamp]);
+
+  // Load/unload external change decorations when switching tabs or editor changes
+  useEffect(() => {
+    if (!editor || !activeTab) return;
+
+    const change = useExternalChangeStore.getState().getChange(activeTab.filePath);
+
+    // Clear decorations from the previous file
+    if (lastExternalDecoratedFile.current && lastExternalDecoratedFile.current !== activeTab.filePath) {
+      clearInlineDiff(editor);
+      lastExternalDecoratedFile.current = null;
+    }
+
+    // Load decorations for the incoming tab if it has a pending change
+    if (change && change.status !== "pending") {
+      // Use rAF to ensure editor content is loaded first (tab-switch sets content synchronously)
+      requestAnimationFrame(() => {
+        const currentChange = useExternalChangeStore.getState().getChange(activeTab.filePath);
+        if (!currentChange) return;
+        const hunks = mapExternalChangeToPM(editor, currentChange.newContent);
+        if (hunks.length > 0) {
+          showInlineDiff(editor, hunks);
+          lastExternalDecoratedFile.current = activeTab.filePath;
+        }
+      });
+    }
+  }, [editor, activeTab?.id]);
+
+  // Handle accept all for external change review
+  const handleExternalAcceptAll = useCallback(async () => {
+    if (!editor || !activeTab) return;
+    // Nullify ref and resolve BEFORE dispatching — prevents sync effect double-save
+    lastExternalDecoratedFile.current = null;
+    useExternalChangeStore.getState().resolveChange(activeTab.filePath);
+    acceptAllDiffHunks(editor);
+    const markdown = getMarkdownFromEditor(editor);
+    updateTabContent(activeTab.id, markdown, true);
+    try {
+      await saveFile(activeTab.filePath, markdown, activeTab.id);
+    } catch (error) {
+      console.error("Failed to save after accepting external changes:", error);
+    }
+  }, [editor, activeTab, updateTabContent, saveFile]);
+
+  // Handle reject all for external change review
+  const handleExternalRejectAll = useCallback(() => {
+    if (!editor || !activeTab) return;
+    // Nullify ref and resolve BEFORE dispatching — prevents sync effect double-save
+    lastExternalDecoratedFile.current = null;
+    useExternalChangeStore.getState().resolveChange(activeTab.filePath);
+    rejectAllDiffHunks(editor);
+    // Save the old content to disk to overwrite the external change.
+    // Without this, the file watcher would re-detect the mismatch in a loop.
+    const markdown = getMarkdownFromEditor(editor);
+    saveFile(activeTab.filePath, markdown, activeTab.id).catch((err) =>
+      console.error("Failed to save after rejecting external changes:", err)
+    );
+  }, [editor, activeTab, saveFile]);
+
+  // Handle per-hunk accept/reject from the ChangeListPopover.
+  // Only works for the focused file (PM plugin dispatch).
+  const handleExternalAcceptHunk = useCallback((hunkId: string) => {
+    if (!editor || !activeTab) return;
+    acceptDiffHunk(editor, hunkId);
+  }, [editor, activeTab]);
+
+  const handleExternalRejectHunk = useCallback((hunkId: string) => {
+    if (!editor || !activeTab) return;
+    rejectDiffHunk(editor, hunkId);
+  }, [editor, activeTab]);
+
+  // Sync: keep the external-change-store's hunks in sync with the InlineDiff
+  // plugin state. When individual hunks are accepted/rejected via inline controls,
+  // only the plugin state updates — this effect mirrors those changes to the store
+  // so the ChangeListPopover stays accurate.
+  //
+  // When ALL hunks are resolved, resolves the change entry and saves.
+  //
+  // Guards against race conditions:
+  // 1. Only fires if we previously loaded decorations for this specific file
+  //    (prevents premature resolution before decorations exist)
+  // 2. Only fires if the change status is not "pending"
+  //    (prevents resolution during the window before the toast effect runs)
+  useEffect(() => {
+    if (!editor || !activeTab) return;
+    const onTransaction = () => {
+      const filePath = activeTab.filePath;
+      // Guard: only process if we actually loaded decorations for this file
+      if (lastExternalDecoratedFile.current !== filePath) return;
+      const change = useExternalChangeStore.getState().getChange(filePath);
+      if (!change || change.status === "pending") return;
+
+      const pluginHunks = getInlineDiffHunks(editor);
+
+      if (pluginHunks.length === 0) {
+        // All hunks resolved — clean up and save
+        lastExternalDecoratedFile.current = null;
+        useExternalChangeStore.getState().resolveChange(filePath);
+        const markdown = getMarkdownFromEditor(editor);
+        updateTabContent(activeTab.id, markdown, true);
+        saveFile(filePath, markdown, activeTab.id).catch((err) =>
+          console.error("Failed to save after resolving all hunks:", err)
+        );
+      } else if (pluginHunks.length !== change.hunks.length) {
+        // Some hunks resolved — update store to keep popover in sync
+        useExternalChangeStore.getState().setHunks(filePath, pluginHunks.map(h => ({
+          id: h.id,
+          charFrom: h.from,
+          charTo: h.to,
+          deleteText: h.deleteText,
+          insertText: h.insertText,
+        })));
+      }
+    };
+    editor.on('transaction', onTransaction);
+    return () => { editor.off('transaction', onTransaction); };
+  }, [editor, activeTab?.filePath, activeTab?.id, updateTabContent, saveFile]);
 
   // Update editor content when switching tabs, saving/restoring scroll position
   useEffect(() => {
@@ -347,8 +560,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
       lastLoadedTabId.current = activeTab.id;
 
-      // If the tab has a pending external change, load that content instead of the
-      // stale tab.content (which hasn't been updated yet in this render cycle).
+      // If the tab has a pending external change in the old store (dirty tab / git auto-accept),
+      // load that content instead of the stale tab.content.
       const pendingExternal = externalChanges[activeTab.filePath];
       if (pendingExternal !== undefined && !activeTab.isDirty) {
         editor.commands.setContent(pendingExternal);
@@ -588,7 +801,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           onRejectAll={handleRejectAll}
         />
       )}
-      {activeExternalContent !== undefined && (
+      {activeExternalContent !== undefined && activeTab?.isDirty && (
         <ExternalChangeBanner onReload={handleExternalReload} onKeep={handleExternalKeep} />
       )}
       <div ref={scrollAreaRef} className="flex-1 overflow-y-auto editor-scroll-area">
@@ -641,6 +854,40 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
               setTimeout(() => commentOps.setActiveComment(comment.id), 300);
             } else {
               commentOps.setActiveComment(comment.id);
+            }
+          }}
+          externalChanges={externalChangesAll}
+          activeFilePath={activeTab?.filePath ?? null}
+          changeListOpen={changeListOpen}
+          onChangeListOpenChange={setChangeListOpen}
+          onAcceptAllChanges={handleExternalAcceptAll}
+          onRejectAllChanges={handleExternalRejectAll}
+          onAcceptHunk={handleExternalAcceptHunk}
+          onRejectHunk={handleExternalRejectHunk}
+          onSelectChange={(change, hunkIndex) => {
+            // Switch to the tab that has this file open and scroll to the specific hunk
+            const matchingTab = tabs.find((t) => t.filePath === change.filePath);
+            if (matchingTab) {
+              if (matchingTab.id === activeTabId) {
+                // Already on this tab — scroll to the specific hunk
+                if (editor) {
+                  try {
+                    const pmHunks = getInlineDiffHunks(editor);
+                    const targetHunk = pmHunks[hunkIndex] ?? pmHunks[0];
+                    if (targetHunk) {
+                      const dom = editor.view.domAtPos(targetHunk.from);
+                      const node = dom.node instanceof HTMLElement ? dom.node : dom.node.parentElement;
+                      node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  } catch {
+                    // Ignore scroll errors
+                  }
+                }
+              } else {
+                useEditorStore.getState().setActiveTab(matchingTab.id);
+              }
+            } else if (onOpenFile) {
+              onOpenFile(change.filePath, change.fileName);
             }
           }}
         />

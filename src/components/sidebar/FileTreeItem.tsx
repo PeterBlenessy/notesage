@@ -7,6 +7,7 @@ import type { GitStatus } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { useExternalChangeStore } from "@/stores/external-change-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useGitStore } from "@/stores/git-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
@@ -66,8 +67,9 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
 
   const icloudNotesagePath = useSettingsStore((s) => s.icloudNotesagePath);
 
-  const externalChanges = useEditorStore((s) => s.externalChanges);
-  const hasExternalChange = !entry.is_directory && entry.path in externalChanges;
+  const externalChangesOld = useEditorStore((s) => s.externalChanges);
+  const externalChangeNew = useExternalChangeStore((s) => s.getChange(entry.path));
+  const hasExternalChange = !entry.is_directory && (entry.path in externalChangesOld || !!externalChangeNew);
 
   const isCloudFile = !!(icloudNotesagePath && entry.path.startsWith(icloudNotesagePath + "/"));
 

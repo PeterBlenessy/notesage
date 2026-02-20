@@ -1,7 +1,9 @@
 import type { Editor } from "@tiptap/core";
 import { GitBranch } from "lucide-react";
 import { CommentListPopover } from "./CommentListPopover";
+import { ChangeListPopover } from "./ChangeListPopover";
 import type { Comment } from "@/stores/comment-store";
+import type { ExternalChangeEntry } from "@/stores/external-change-store";
 
 /** Format number with localized thousand separators (uses host locale). */
 const fmt = new Intl.NumberFormat(navigator.languages as string[], { useGrouping: true });
@@ -22,6 +24,15 @@ interface StatusBarProps {
   commentListOpen?: boolean;
   onCommentListOpenChange?: (open: boolean) => void;
   onSelectComment?: (comment: Comment) => void;
+  externalChanges?: ExternalChangeEntry[];
+  activeFilePath?: string | null;
+  changeListOpen?: boolean;
+  onChangeListOpenChange?: (open: boolean) => void;
+  onAcceptAllChanges?: () => void;
+  onRejectAllChanges?: () => void;
+  onAcceptHunk?: (hunkId: string) => void;
+  onRejectHunk?: (hunkId: string) => void;
+  onSelectChange?: (change: ExternalChangeEntry, hunkIndex: number) => void;
 }
 
 export function StatusBar({
@@ -37,6 +48,15 @@ export function StatusBar({
   commentListOpen = false,
   onCommentListOpenChange,
   onSelectComment,
+  externalChanges = [],
+  activeFilePath = null,
+  changeListOpen = false,
+  onChangeListOpenChange,
+  onAcceptAllChanges,
+  onRejectAllChanges,
+  onAcceptHunk,
+  onRejectHunk,
+  onSelectChange,
 }: StatusBarProps) {
   if (!editor) {
     return null;
@@ -85,6 +105,22 @@ export function StatusBar({
               onOpenChange={onCommentListOpenChange}
               comments={comments}
               onSelectComment={onSelectComment}
+            />
+            <span className="w-px h-2.5 bg-border" />
+          </>
+        )}
+        {externalChanges.length > 0 && onChangeListOpenChange && onSelectChange && (
+          <>
+            <ChangeListPopover
+              open={changeListOpen}
+              onOpenChange={onChangeListOpenChange}
+              changes={externalChanges}
+              activeFilePath={activeFilePath}
+              onSelectChange={onSelectChange}
+              onAcceptAll={onAcceptAllChanges}
+              onRejectAll={onRejectAllChanges}
+              onAcceptHunk={onAcceptHunk}
+              onRejectHunk={onRejectHunk}
             />
             <span className="w-px h-2.5 bg-border" />
           </>
