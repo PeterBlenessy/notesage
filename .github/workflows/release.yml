@@ -92,10 +92,15 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "Building version $VERSION from tag $GITHUB_REF"
 
-          # Update package.json (tauri.conf.json reads version from here)
-          sed "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json > package.json.tmp && mv package.json.tmp package.json
+          # Update package.json using node (sed can corrupt JSON with special chars like ~)
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '$VERSION';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
 
-          # Update Cargo.toml
+          # Update Cargo.toml (^version anchored to line start is safe for TOML)
           sed "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml > src-tauri/Cargo.toml.tmp && mv src-tauri/Cargo.toml.tmp src-tauri/Cargo.toml
 
           echo "Updated config files to version $VERSION"
