@@ -1,5 +1,5 @@
 use notify::RecursiveMode;
-use notify_debouncer_full::{new_debouncer, DebouncedEvent, Debouncer, FileIdMap};
+use notify_debouncer_full::{new_debouncer, DebouncedEvent, Debouncer, RecommendedCache};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -23,7 +23,7 @@ const SELF_WRITE_TTL: Duration = Duration::from_secs(5);
 /// Managed state holding the active watcher and self-write filter.
 pub struct WatcherState {
     /// The debounced watcher handle — dropping it stops watching.
-    watcher: Mutex<Option<Debouncer<notify::RecommendedWatcher, FileIdMap>>>,
+    watcher: Mutex<Option<Debouncer<notify::RecommendedWatcher, RecommendedCache>>>,
     /// Directories currently being watched.
     watched_paths: Mutex<HashSet<PathBuf>>,
     /// Paths that Notesage itself just wrote — skip events for these.
