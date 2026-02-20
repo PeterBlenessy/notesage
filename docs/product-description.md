@@ -216,6 +216,7 @@ Document comments and external change tracking — foundational infrastructure f
   - When enabled, user chooses which projects to sync — those folders move to iCloud/Notesage
   - New project creation: checkbox for iCloud sync; if selected, folder defaults to iCloud/Notesage (not user-selectable); if not, defaults to \~/Notesage with option to choose another folder
   - Non-project folders (Explorer) cannot be synced
+  - Disable iCloud sync in Project Settings: project is copied to local \~/Notesage and deleted from iCloud/Notesage
 - Sync-aware project creation and folder management
 - Cross-platform home directory resolution (macOS, Windows, Linux)
 
