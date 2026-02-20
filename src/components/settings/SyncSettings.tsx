@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Cloud, Info, Loader2 } from "lucide-react";
+import { Cloud, Info, Loader2, FolderSymlink } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -21,6 +21,11 @@ import { tauriApi } from "@/lib/tauri";
 import { migrateProjectPath } from "@/lib/migrate-project-path";
 import { toast } from "sonner";
 
+type DialogState =
+  | { type: "sync"; path: string; name: string; fromLocation: string }
+  | { type: "unsync"; path: string; name: string }
+  | null;
+
 export function SyncSettings() {
   const { icloudAvailable, icloudNotesagePath, notesRootPath } = useSettingsStore();
   const {
@@ -38,20 +43,18 @@ export function SyncSettings() {
   const { projects } = useWorkspaceStore();
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
 
-  const [unsyncDialog, setUnsyncDialog] = useState<{ path: string; name: string } | null>(null);
+  const [dialog, setDialog] = useState<DialogState>(null);
 
-  // Filter to library projects only (in ~/Notesage or iCloud/Notesage)
-  const libraryProjects = projects.filter((p) => {
-    if (notesRootPath && p.path.startsWith(notesRootPath + "/")) return true;
-    if (icloudNotesagePath && p.path.startsWith(icloudNotesagePath + "/")) return true;
+  const isLibraryProject = (path: string) => {
+    if (notesRootPath && path.startsWith(notesRootPath + "/")) return true;
+    if (icloudNotesagePath && path.startsWith(icloudNotesagePath + "/")) return true;
     return false;
-  });
+  };
 
   const handleICloudToggle = useCallback(async (checked: boolean) => {
     setICloudEnabled(checked);
 
     if (checked && icloudNotesagePath) {
-      // Create iCloud Notesage folder if needed
       try {
         const exists = await tauriApi.pathExists(icloudNotesagePath);
         if (!exists) {
@@ -107,21 +110,29 @@ export function SyncSettings() {
   }, [notesRootPath, migrating, removeSyncedProject, setMigrating, saveSettings]);
 
   const handleProjectCheckboxChange = useCallback((projectPath: string, checked: boolean) => {
-    const projectName = projectPath.split("/").pop() || projectPath;
+    const projectName = getProjectName(projectPath);
     if (checked) {
-      handleSyncProject(projectPath);
+      if (!isLibraryProject(projectPath)) {
+        // Non-library project — show confirmation about moving
+        const parentDir = projectPath.split("/").slice(0, -1).join("/");
+        setDialog({ type: "sync", path: projectPath, name: projectName, fromLocation: parentDir });
+      } else {
+        handleSyncProject(projectPath);
+      }
     } else {
-      // Show confirmation dialog before unsyncing
-      setUnsyncDialog({ path: projectPath, name: projectName });
+      setDialog({ type: "unsync", path: projectPath, name: projectName });
     }
   }, [handleSyncProject]);
 
-  const confirmUnsync = useCallback(() => {
-    if (unsyncDialog) {
-      handleUnsyncProject(unsyncDialog.path);
-      setUnsyncDialog(null);
+  const confirmDialog = useCallback(() => {
+    if (!dialog) return;
+    if (dialog.type === "sync") {
+      handleSyncProject(dialog.path);
+    } else {
+      handleUnsyncProject(dialog.path);
     }
-  }, [unsyncDialog, handleUnsyncProject]);
+    setDialog(null);
+  }, [dialog, handleSyncProject, handleUnsyncProject]);
 
   const isProjectSynced = (path: string) => {
     return syncedProjectPaths.includes(path);
@@ -131,6 +142,19 @@ export function SyncSettings() {
     const meta = metadataMap[path];
     if (meta?.name) return meta.name;
     return path.split("/").pop() || path;
+  };
+
+  /** Friendly location label for a project path */
+  const getLocationLabel = (path: string) => {
+    if (icloudNotesagePath && path.startsWith(icloudNotesagePath + "/")) {
+      return "iCloud";
+    }
+    if (notesRootPath && path.startsWith(notesRootPath + "/")) {
+      return "Notesage Library";
+    }
+    // Show the parent folder for external projects
+    const parent = path.split("/").slice(0, -1).pop();
+    return parent || "External";
   };
 
   return (
@@ -221,19 +245,20 @@ export function SyncSettings() {
                 </p>
               </div>
 
-              {libraryProjects.length === 0 ? (
+              {projects.length === 0 ? (
                 <div className="flex gap-2.5 rounded-md border border-border bg-muted/50 p-3">
                   <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" strokeWidth={1.5} />
                   <div className="text-xs text-muted-foreground">
-                    <p>No projects in your Notesage library. Create a project to get started.</p>
+                    <p>No open projects. Open or create a project to sync it.</p>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-1">
-                  {libraryProjects.map((project) => {
+                  {projects.map((project) => {
                     const synced = isProjectSynced(project.path);
                     const isMigrating = migrating === project.path;
                     const projectName = getProjectName(project.path);
+                    const locationLabel = getLocationLabel(project.path);
 
                     return (
                       <div
@@ -257,6 +282,7 @@ export function SyncSettings() {
                             <Cloud className="h-3.5 w-3.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
                           )}
                         </div>
+                        <span className="text-xs text-muted-foreground shrink-0">{locationLabel}</span>
                       </div>
                     );
                   })}
@@ -264,26 +290,65 @@ export function SyncSettings() {
               )}
 
               <p className="text-xs text-muted-foreground">
-                Only projects in your Notesage library can be synced.
+                Syncing a project moves it to iCloud Drive. Unsyncing moves it back to your local Notesage library.
               </p>
             </div>
           </>
         )}
       </div>
 
-      {/* Unsync Confirmation Dialog */}
-      <AlertDialog open={unsyncDialog !== null} onOpenChange={(open) => !open && setUnsyncDialog(null)}>
+      {/* Sync Confirmation Dialog (for non-library projects being moved) */}
+      <AlertDialog open={dialog?.type === "sync"} onOpenChange={(open) => !open && setDialog(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Stop syncing &ldquo;{unsyncDialog?.name}&rdquo;?</AlertDialogTitle>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <FolderSymlink className="h-5 w-5" strokeWidth={1.5} />
+              Sync &ldquo;{dialog?.type === "sync" ? dialog.name : ""}&rdquo; to iCloud?
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This project will be copied to your local Notesage library and removed from iCloud.
-              It will no longer sync across your devices.
+              This project will be moved from its current location to iCloud Drive.
+              It will no longer be at its original folder.
+              {dialog?.type === "sync" && (
+                <>
+                  <br /><br />
+                  <span className="font-medium text-foreground">From:</span>{" "}
+                  <span className="font-mono text-xs">{dialog.fromLocation}</span>
+                  <br />
+                  <span className="font-medium text-foreground">To:</span>{" "}
+                  <span className="font-mono text-xs">{icloudNotesagePath}</span>
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmUnsync}>
+            <AlertDialogAction onClick={confirmDialog}>
+              Move &amp; Sync
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Unsync Confirmation Dialog */}
+      <AlertDialog open={dialog?.type === "unsync"} onOpenChange={(open) => !open && setDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Stop syncing &ldquo;{dialog?.type === "unsync" ? dialog.name : ""}&rdquo;?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This project will be moved to your local Notesage library and removed from iCloud.
+              It will no longer sync across your devices.
+              {notesRootPath && (
+                <>
+                  <br /><br />
+                  <span className="font-medium text-foreground">Moved to:</span>{" "}
+                  <span className="font-mono text-xs">{notesRootPath}</span>
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDialog}>
               Stop Syncing
             </AlertDialogAction>
           </AlertDialogFooter>
