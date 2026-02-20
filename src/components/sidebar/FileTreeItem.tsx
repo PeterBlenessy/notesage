@@ -234,7 +234,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
             )}
 
             {entry.is_directory ? (
-              <SyncedIcon icon={isProjectFolder ? FolderDot : Folder} synced={isCloudFile} />
+              <SyncedIcon icon={isProjectFolder ? FolderDot : Folder} synced={isCloudFile} folder />
             ) : (
               <SyncedIcon icon={File} synced={isCloudFile} />
             )}

@@ -93,7 +93,7 @@ export function ProjectItem({
                 expanded && "rotate-90"
               )}
             />
-            <SyncedIcon icon={expanded ? FolderOpen : Folder} synced={isSynced} />
+            <SyncedIcon icon={expanded ? FolderOpen : Folder} synced={isSynced} folder />
             <span className="truncate flex-1">{displayName}</span>
             <button
               onClick={(e) => {
