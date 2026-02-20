@@ -47,6 +47,8 @@ interface EditorStore {
   setScrollPosition: (filePath: string, ratio: number) => void;
   setExternalChange: (filePath: string, diskContent: string) => void;
   clearExternalChange: (filePath: string) => void;
+  /** Rewrite all file paths that start with oldPrefix to use newPrefix (used by project migration). */
+  updateFilePaths: (oldPrefix: string, newPrefix: string) => void;
 }
 
 export const useEditorStore = create<EditorStore>()(
@@ -187,6 +189,34 @@ export const useEditorStore = create<EditorStore>()(
         set((state) => {
           const { [filePath]: _, ...rest } = state.externalChanges;
           return { externalChanges: rest };
+        });
+      },
+
+      updateFilePaths: (oldPrefix: string, newPrefix: string) => {
+        set((state) => {
+          const rewrite = (p: string) =>
+            p.startsWith(oldPrefix) ? newPrefix + p.slice(oldPrefix.length) : p;
+
+          return {
+            tabs: state.tabs.map((tab) => ({
+              ...tab,
+              filePath: rewrite(tab.filePath),
+            })),
+            persistedTabs: state.persistedTabs.map((pt) => ({
+              ...pt,
+              filePath: rewrite(pt.filePath),
+            })),
+            persistedActiveFilePath: state.persistedActiveFilePath
+              ? rewrite(state.persistedActiveFilePath)
+              : null,
+            recentFiles: state.recentFiles.map((rf) => ({
+              ...rf,
+              path: rewrite(rf.path),
+            })),
+            scrollPositions: Object.fromEntries(
+              Object.entries(state.scrollPositions).map(([k, v]) => [rewrite(k), v])
+            ),
+          };
         });
       },
     }),

@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, UserCircle2, FileText, GitBranch, Info } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, UserCircle2, FileText, GitBranch, Cloud, Info } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -9,6 +9,7 @@ import {
 import { AISettings } from './AISettings';
 import { PersonasSettings } from './PersonasSettings';
 import { PromptsSettings } from './PromptsSettings';
+import { SyncSettings } from './SyncSettings';
 import { useSettingsStore, type MeasurementUnit } from '@/stores/settings-store';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -29,7 +30,7 @@ interface SettingsDialogProps {
   onOpenChange?: (open: boolean) => void;
 }
 
-type SettingsTab = 'ai' | 'personas' | 'prompts' | 'editor' | 'git';
+type SettingsTab = 'ai' | 'personas' | 'prompts' | 'editor' | 'git' | 'sync';
 
 const TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
   { id: 'editor', label: 'Editor', icon: Sliders },
@@ -37,6 +38,7 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
   { id: 'personas', label: 'AI Personas', icon: UserCircle2 },
   { id: 'prompts', label: 'Custom Prompts', icon: FileText },
   { id: 'git', label: 'Version Control', icon: GitBranch },
+  { id: 'sync', label: 'Sync', icon: Cloud },
 ];
 
 // Page dimensions in cm
@@ -448,6 +450,11 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     )}
                   </div>
                 </div>
+              </div>
+            )}
+            {activeTab === 'sync' && (
+              <div className="p-6">
+                <SyncSettings />
               </div>
             )}
           </div>

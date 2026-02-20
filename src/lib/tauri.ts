@@ -30,6 +30,13 @@ export interface WorktreeInfo {
   is_main: boolean;
 }
 
+export interface SyncSettings {
+  version: number;
+  icloudEnabled: boolean;
+  syncQuickNotes: boolean;
+  syncedProjects: string[];
+}
+
 export const tauriApi = {
   async readFile(path: string): Promise<string> {
     return await invoke<string>("read_file", { path });
@@ -168,5 +175,26 @@ export const tauriApi = {
 
   async saveBinaryFile(path: string, data: number[]): Promise<void> {
     await invoke("save_binary_file", { path, data });
+  },
+
+  // iCloud sync operations
+  async getICloudPath(): Promise<string | null> {
+    return await invoke<string | null>("get_icloud_path");
+  },
+
+  async readSyncSettings(notesagePath: string): Promise<SyncSettings | null> {
+    return await invoke<SyncSettings | null>("read_sync_settings", { notesagePath });
+  },
+
+  async writeSyncSettings(notesagePath: string, settings: SyncSettings): Promise<void> {
+    await invoke("write_sync_settings", { notesagePath, settings });
+  },
+
+  async migrateToICloud(projectPath: string, icloudNotesagePath: string): Promise<string> {
+    return await invoke<string>("migrate_to_icloud", { projectPath, icloudNotesagePath });
+  },
+
+  async migrateFromICloud(projectPath: string, localNotesagePath: string): Promise<string> {
+    return await invoke<string>("migrate_from_icloud", { projectPath, localNotesagePath });
   },
 };

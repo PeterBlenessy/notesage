@@ -47,6 +47,11 @@ pub fn run() {
             unwatch_directory,
             mark_self_write,
             clear_self_write,
+            get_icloud_path,
+            read_sync_settings,
+            write_sync_settings,
+            migrate_to_icloud,
+            migrate_from_icloud,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { ChevronRight, Folder, FolderOpen, Settings, X, ExternalLink, GitCommitVertical, GitBranch, Target } from "lucide-react";
+import { ChevronRight, Cloud, Folder, FolderOpen, Settings, X, ExternalLink, GitCommitVertical, GitBranch, Target } from "lucide-react";
 import { tauriApi } from "@/lib/tauri";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useSyncStore } from "@/stores/sync-store";
 import { useGitOperations } from "@/hooks/useGitOperations";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { FileTree } from "./FileTree";
@@ -42,6 +43,7 @@ export function ProjectItem({
   const metadata = useProjectMetadataStore((s) => s.metadataMap[projectPath]);
   const { isExpanded, toggleFolder } = useWorkspaceStore();
   const gitEnabled = useSettingsStore((s) => s.gitEnabled);
+  const isSynced = useSyncStore((s) => s.syncedProjectPaths.includes(projectPath));
   const { isGitRepo, initGit, initRepo } = useGitOperations(projectPath);
 
   // Initialize git when this project is first rendered (only if git is enabled)
@@ -96,6 +98,14 @@ export function ProjectItem({
               <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
             )}
             <span className="truncate flex-1">{displayName}</span>
+            {isSynced && (
+              <span title="Synced to iCloud">
+                <Cloud
+                  className="h-3 w-3 shrink-0 text-muted-foreground/60"
+                  strokeWidth={1.5}
+                />
+              </span>
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();

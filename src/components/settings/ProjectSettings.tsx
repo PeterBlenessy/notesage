@@ -1,8 +1,25 @@
+import { useState, useCallback } from 'react';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { useAIStore, getAllPersonas } from '@/stores/ai-store';
+import { useSettingsStore } from '@/stores/settings-store';
+import { useSyncStore } from '@/stores/sync-store';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { tauriApi } from '@/lib/tauri';
+import { migrateProjectPath } from '@/lib/migrate-project-path';
+import { toast } from 'sonner';
 import {
   Select,
   SelectContent,
@@ -39,6 +56,63 @@ export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
   const metadata = useProjectMetadataStore((s) => s.metadataMap[projectPath]);
   const { updateMetadata, updateAI } = useProjectMetadataStore();
   const aiStore = useAIStore();
+  const { icloudAvailable, icloudNotesagePath, notesRootPath } = useSettingsStore();
+  const {
+    icloudEnabled,
+    syncedProjectPaths,
+    migrating,
+    addSyncedProject,
+    removeSyncedProject,
+    setMigrating,
+    saveSettings,
+  } = useSyncStore();
+
+  const [unsyncDialogOpen, setUnsyncDialogOpen] = useState(false);
+
+  const isSynced = syncedProjectPaths.includes(projectPath);
+
+  // Only show sync section for library projects when iCloud is enabled
+  const isLibraryProject =
+    (notesRootPath && projectPath.startsWith(notesRootPath + "/")) ||
+    (icloudNotesagePath && projectPath.startsWith(icloudNotesagePath + "/"));
+  const showSyncSection = icloudEnabled && icloudAvailable && isLibraryProject;
+
+  const handleSyncToggle = useCallback(async (checked: boolean) => {
+    if (checked) {
+      if (!icloudNotesagePath || migrating) return;
+      setMigrating(projectPath);
+      try {
+        const newPath = await tauriApi.migrateToICloud(projectPath, icloudNotesagePath);
+        await migrateProjectPath(projectPath, newPath);
+        addSyncedProject(newPath);
+        await saveSettings(notesRootPath);
+        toast.success("Project synced to iCloud");
+      } catch (err) {
+        toast.error(`Failed to sync project: ${err}`);
+      } finally {
+        setMigrating(null);
+      }
+    } else {
+      setUnsyncDialogOpen(true);
+    }
+  }, [projectPath, icloudNotesagePath, notesRootPath, migrating, addSyncedProject, setMigrating, saveSettings]);
+
+  const confirmUnsync = useCallback(async () => {
+    if (!notesRootPath || migrating) return;
+    setUnsyncDialogOpen(false);
+    setMigrating(projectPath);
+    try {
+      const newPath = await tauriApi.migrateFromICloud(projectPath, notesRootPath);
+      await migrateProjectPath(projectPath, newPath);
+      removeSyncedProject(projectPath);
+      await saveSettings(notesRootPath);
+      toast.success("Project moved to local library");
+    } catch (err) {
+      toast.error(`Failed to unsync project: ${err}`);
+    } finally {
+      setMigrating(null);
+    }
+  }, [projectPath, notesRootPath, migrating, removeSyncedProject, setMigrating, saveSettings]);
 
   if (!metadata) {
     return (
@@ -235,6 +309,70 @@ export function ProjectSettings({ projectPath }: ProjectSettingsProps) {
           </div>
         </div>
       </div>
+
+      {/* Sync Section */}
+      {showSyncSection && (
+        <>
+          <div className="h-px bg-border" />
+
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-semibold">Sync</Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                iCloud sync for this project
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <div
+                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
+              >
+                <div>
+                  <Label
+                    htmlFor="project-sync"
+                    className="text-sm font-medium cursor-pointer"
+                  >
+                    Sync to iCloud
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {isSynced
+                      ? "This project syncs across your Apple devices"
+                      : "Enable to sync this project via iCloud Drive"
+                    }
+                  </p>
+                </div>
+                <Switch
+                  id="project-sync"
+                  checked={isSynced}
+                  onCheckedChange={handleSyncToggle}
+                  disabled={migrating !== null}
+                  className="ml-auto"
+                />
+              </div>
+            </div>
+          </div>
+
+          <AlertDialog open={unsyncDialogOpen} onOpenChange={setUnsyncDialogOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Stop syncing &ldquo;{metadata?.name || projectPath.split("/").pop()}&rdquo;?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  This project will be copied to your local Notesage library and removed from iCloud.
+                  It will no longer sync across your devices.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={confirmUnsync}>
+                  Stop Syncing
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      )}
     </div>
   );
 }

@@ -10,11 +10,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { tauriApi } from "@/lib/tauri";
 import { serializeFrontmatter } from "@/lib/frontmatter";
 import { PROJECT_TEMPLATES, type ProjectTemplate } from "@/lib/project-templates";
 import { getGoalTemplate } from "@/lib/goal-templates";
-import { FolderOpen, Loader2, Info } from "lucide-react";
+import { useSettingsStore } from "@/stores/settings-store";
+import { useSyncStore } from "@/stores/sync-store";
+import { FolderOpen, Loader2, Info, Cloud } from "lucide-react";
 
 interface NewProjectDialogProps {
   open: boolean;
@@ -29,15 +32,24 @@ export function NewProjectDialog({
 }: NewProjectDialogProps) {
   const [projectName, setProjectName] = useState("");
   const [location, setLocation] = useState("");
+  const [isCustomLocation, setIsCustomLocation] = useState(false);
+  const [syncToICloud, setSyncToICloud] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<ProjectTemplate>(PROJECT_TEMPLATES[0]);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const { notesRootPath, icloudAvailable, icloudNotesagePath } = useSettingsStore();
+  const { icloudEnabled, addSyncedProject, saveSettings } = useSyncStore();
+
+  const showICloudCheckbox = icloudEnabled && icloudAvailable && !isCustomLocation;
+
   useEffect(() => {
     if (open) {
       setProjectName("");
-      setLocation("");
+      setLocation(notesRootPath);
+      setIsCustomLocation(false);
+      setSyncToICloud(icloudEnabled && icloudAvailable);
       setSelectedTemplate(PROJECT_TEMPLATES[0]);
       setError("");
       setIsCreating(false);
@@ -45,18 +57,27 @@ export function NewProjectDialog({
         inputRef.current?.focus();
       });
     }
-  }, [open]);
+  }, [open, notesRootPath, icloudEnabled, icloudAvailable]);
 
   const handleChooseLocation = async () => {
     try {
       const folderPath = await tauriApi.openFolderDialog();
       if (folderPath) {
         setLocation(folderPath);
+        setIsCustomLocation(true);
+        setSyncToICloud(false);
         setError("");
       }
     } catch (err) {
       console.error("Failed to open folder dialog:", err);
     }
+  };
+
+  const handleResetLocation = () => {
+    setLocation(notesRootPath);
+    setIsCustomLocation(false);
+    setSyncToICloud(icloudEnabled && icloudAvailable);
+    setError("");
   };
 
   const handleSubmit = async () => {
@@ -66,9 +87,20 @@ export function NewProjectDialog({
     setIsCreating(true);
     setError("");
 
-    const projectPath = `${location}/${trimmedName}`;
+    // Determine actual creation location
+    const effectiveLocation = syncToICloud && icloudNotesagePath
+      ? icloudNotesagePath
+      : location;
+
+    const projectPath = `${effectiveLocation}/${trimmedName}`;
 
     try {
+      // Ensure the parent directory exists (e.g., iCloud/Notesage)
+      const parentExists = await tauriApi.pathExists(effectiveLocation);
+      if (!parentExists) {
+        await tauriApi.createDirectory(effectiveLocation);
+      }
+
       const exists = await tauriApi.pathExists(projectPath);
       if (exists) {
         setError("A folder with this name already exists at that location. Choose a different name.");
@@ -110,6 +142,12 @@ export function NewProjectDialog({
         }
       }
 
+      // Track as synced project if created in iCloud
+      if (syncToICloud && icloudNotesagePath) {
+        addSyncedProject(projectPath);
+        await saveSettings(notesRootPath);
+      }
+
       onCreated(projectPath);
       onOpenChange(false);
     } catch (err) {
@@ -126,6 +164,13 @@ export function NewProjectDialog({
   };
 
   const canCreate = projectName.trim() && location && !isCreating;
+
+  // Display-friendly location label
+  const locationLabel = isCustomLocation
+    ? location
+    : syncToICloud
+      ? "Notesage Library (iCloud)"
+      : "Notesage Library";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -179,29 +224,57 @@ export function NewProjectDialog({
             </div>
           </div>
 
+          {/* Location */}
           <div className="space-y-2">
             <Label htmlFor="project-location">Location</Label>
             <div className="flex gap-2">
-              <Input
-                id="project-location"
-                value={location}
-                readOnly
-                placeholder="Choose a folder..."
-                className="flex-1 cursor-default"
-              />
-              <Button
-                variant="outline"
-                onClick={handleChooseLocation}
-                className="shrink-0"
-              >
-                <FolderOpen className="h-4 w-4 mr-1.5" />
-                Choose...
-              </Button>
+              <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-md border border-border bg-background text-sm min-w-0">
+                {syncToICloud && (
+                  <Cloud className="h-3.5 w-3.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                )}
+                <span className="truncate text-muted-foreground">{locationLabel}</span>
+              </div>
+              {isCustomLocation ? (
+                <Button
+                  variant="outline"
+                  onClick={handleResetLocation}
+                  className="shrink-0"
+                >
+                  Reset
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  onClick={handleChooseLocation}
+                  className="shrink-0"
+                >
+                  <FolderOpen className="h-4 w-4 mr-1.5" strokeWidth={1.5} />
+                  Change...
+                </Button>
+              )}
             </div>
           </div>
+
+          {/* iCloud sync checkbox */}
+          {showICloudCheckbox && (
+            <div className="flex items-center gap-2.5 px-1">
+              <Checkbox
+                id="sync-to-icloud"
+                checked={syncToICloud}
+                onCheckedChange={(checked) => setSyncToICloud(checked === true)}
+              />
+              <Label
+                htmlFor="sync-to-icloud"
+                className="text-sm font-medium cursor-pointer"
+              >
+                Sync to iCloud
+              </Label>
+            </div>
+          )}
+
           {error && (
             <div className="flex items-start gap-2 rounded-md border border-border bg-muted px-3 py-2.5 text-sm">
-              <Info className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground" />
+              <Info className="h-4 w-4 shrink-0 mt-0.5 text-muted-foreground" strokeWidth={1.5} />
               <span className="text-muted-foreground">{error}</span>
             </div>
           )}

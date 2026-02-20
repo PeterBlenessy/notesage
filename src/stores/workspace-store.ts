@@ -61,6 +61,9 @@ interface WorkspaceStore {
   setProjectsCollapsed: (collapsed: boolean) => void;
   setNotesCollapsed: (collapsed: boolean) => void;
 
+  // Path migration (used by iCloud sync)
+  updateProjectPath: (oldPath: string, newPath: string, newTree: FileEntry[]) => void;
+
   // Utility: find which section a file path belongs to
   findOwningProject: (filePath: string) => WorkspaceProject | undefined;
 }
@@ -168,6 +171,14 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       setExplorerCollapsed: (collapsed) => set({ explorerCollapsed: collapsed }),
       setProjectsCollapsed: (collapsed) => set({ projectsCollapsed: collapsed }),
       setNotesCollapsed: (collapsed) => set({ notesCollapsed: collapsed }),
+
+      updateProjectPath: (oldPath, newPath, newTree) => {
+        set((state) => ({
+          projects: state.projects.map((p) =>
+            p.path === oldPath ? { path: newPath, fileTree: newTree } : p
+          ),
+        }));
+      },
 
       findOwningProject: (filePath) => {
         return get().projects.find((p) => filePath.startsWith(p.path + "/"));

@@ -17,7 +17,8 @@ import { useFileOperations } from "@/hooks/useFileOperations";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
-import { tauriApi } from "@/lib/tauri";
+import { useSyncStore } from "@/stores/sync-store";
+import { tauriApi, type FileEntry } from "@/lib/tauri";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import {
   ResizablePanelGroup,
@@ -51,6 +52,13 @@ function loadPanelSize(configKey: string, panel: string, fallback: number): numb
   } catch {
     return fallback;
   }
+}
+
+/** Merge two file trees, deduplicating by name. Local entries take priority. */
+function mergeFileTrees(local: FileEntry[], icloud: FileEntry[]): FileEntry[] {
+  const localNames = new Set(local.map((e) => e.name));
+  const icloudOnly = icloud.filter((e) => !localNames.has(e.name));
+  return [...local, ...icloudOnly];
 }
 
 // Editor area with document-style presentation
@@ -150,6 +158,65 @@ function App() {
           ws.setNotesTree(tree);
         } catch {
           // Notes root creation failed, that's fine on first launch
+        }
+      }
+
+      // Detect iCloud availability and load sync settings
+      try {
+        const icloudRoot = await tauriApi.getICloudPath();
+        if (icloudRoot) {
+          const icloudNotesagePath = `${icloudRoot}/Notesage`;
+          settings.setICloudAvailable(true);
+          settings.setICloudNotesagePath(icloudNotesagePath);
+        }
+      } catch {
+        // iCloud detection failed, that's fine
+      }
+
+      // Load sync settings from disk
+      if (notesRoot) {
+        const syncStore = useSyncStore.getState();
+        await syncStore.loadSettings(notesRoot);
+
+        // If iCloud sync is enabled, verify iCloud is still available and load synced content
+        if (syncStore.icloudEnabled) {
+          const icloudNotesagePath = settings.icloudNotesagePath;
+          if (!icloudNotesagePath || !settings.icloudAvailable) {
+            // iCloud was enabled but is now unavailable (user signed out)
+            syncStore.setICloudEnabled(false);
+            await syncStore.saveSettings(notesRoot);
+            toast.info("iCloud is no longer available. Sync has been disabled.");
+          } else {
+            // Load file trees for synced projects from iCloud
+            for (const syncedPath of syncStore.syncedProjectPaths) {
+              try {
+                const tree = await tauriApi.listDirectory(syncedPath);
+                ws.addProject(syncedPath, tree);
+              } catch {
+                // Synced project no longer exists in iCloud
+                syncStore.removeSyncedProject(syncedPath);
+              }
+            }
+
+            // Merge Quick Notes from iCloud if enabled
+            if (syncStore.syncQuickNotes) {
+              try {
+                const icloudExists = await tauriApi.pathExists(icloudNotesagePath);
+                if (icloudExists) {
+                  const icloudTree = await tauriApi.listDirectory(icloudNotesagePath);
+                  // Merge iCloud tree into notes tree (iCloud files alongside local)
+                  const currentNotes = ws.notesTree;
+                  const mergedTree = mergeFileTrees(currentNotes, icloudTree);
+                  ws.setNotesTree(mergedTree);
+                }
+              } catch {
+                // iCloud notes loading failed, local notes still available
+              }
+            }
+
+            // Save any cleanup (removed stale projects)
+            await syncStore.saveSettings(notesRoot);
+          }
         }
       }
     }

@@ -29,6 +29,9 @@ interface SettingsStore {
   lastExportPageSize: ExportPageSize;
   lastExportIncludeToC: boolean;
   lastExportIncludePageNumbers: boolean;
+  // Runtime-only (not persisted) — detected on startup
+  icloudAvailable: boolean;
+  icloudNotesagePath: string | null;
   setTheme: (theme: Theme) => void;
   setShowFloatingToolbar: (show: boolean) => void;
   setToolbarVisible: (visible: boolean) => void;
@@ -49,6 +52,8 @@ interface SettingsStore {
   setLastExportPageSize: (pageSize: ExportPageSize) => void;
   setLastExportIncludeToC: (include: boolean) => void;
   setLastExportIncludePageNumbers: (include: boolean) => void;
+  setICloudAvailable: (available: boolean) => void;
+  setICloudNotesagePath: (path: string | null) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -68,6 +73,8 @@ export const useSettingsStore = create<SettingsStore>()(
       chatPanelOpen: false,
       notesRootPath: "~/Notesage",
       gitEnabled: false,
+      icloudAvailable: false,
+      icloudNotesagePath: null,
       pageBreaks: "continuous",
       typewriterScrolling: false,
       lastExportTemplate: "clean",
@@ -154,9 +161,22 @@ export const useSettingsStore = create<SettingsStore>()(
       setLastExportIncludePageNumbers: (include: boolean) => {
         set({ lastExportIncludePageNumbers: include });
       },
+
+      setICloudAvailable: (available: boolean) => {
+        set({ icloudAvailable: available });
+      },
+
+      setICloudNotesagePath: (path: string | null) => {
+        set({ icloudNotesagePath: path });
+      },
     }),
     {
       name: "notesage-settings",
+      partialize: (state) => {
+        // Exclude runtime-only iCloud fields from persistence
+        const { icloudAvailable: _a, icloudNotesagePath: _b, ...persisted } = state;
+        return persisted;
+      },
     }
   )
 );
