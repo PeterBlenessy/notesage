@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { ArrowRight, Cloud, FolderOpen, Loader2 } from 'lucide-react';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { useAIStore, getAllPersonas } from '@/stores/ai-store';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -7,16 +8,13 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { tauriApi } from '@/lib/tauri';
 import { migrateProjectPath } from '@/lib/migrate-project-path';
 import { toast } from 'sonner';
@@ -29,6 +27,7 @@ import {
 } from '@/components/ui/select';
 import type { AIProviderType } from '@/lib/ai/types';
 import { PersonaIcon } from '@/components/PersonaIcon';
+import { formatDisplayPath } from '@/lib/utils';
 
 const PROVIDERS = [
   {
@@ -61,17 +60,18 @@ export function ProjectSettings({ projectPath, onPathChanged }: ProjectSettingsP
   const {
     icloudEnabled,
     syncedProjectPaths,
-    migrating,
     addSyncedProject,
     removeSyncedProject,
-    setMigrating,
     saveSettings,
   } = useSyncStore();
 
-  const [unsyncDialogOpen, setUnsyncDialogOpen] = useState(false);
+  const [pendingSync, setPendingSync] = useState<boolean | null>(null);
+  const [applying, setApplying] = useState(false);
   const [renaming, setRenaming] = useState(false);
 
   const isSynced = syncedProjectPaths.includes(projectPath);
+  const displaySynced = pendingSync ?? isSynced;
+  const syncChanged = pendingSync !== null && pendingSync !== isSynced;
 
   // Only show sync section for library projects when iCloud is enabled
   const isLibraryProject =
@@ -127,42 +127,39 @@ export function ProjectSettings({ projectPath, onPathChanged }: ProjectSettingsP
     }
   }, [metadata, projectPath, renaming, updateMetadata, syncedProjectPaths, notesRootPath, onPathChanged]);
 
-  const handleSyncToggle = useCallback(async (checked: boolean) => {
-    if (checked) {
-      if (!icloudNotesagePath || migrating) return;
-      setMigrating(projectPath);
-      try {
+  const handleSyncToggle = (checked: boolean) => {
+    setPendingSync(checked);
+  };
+
+  const applySyncToggle = useCallback(async () => {
+    if (pendingSync === null) return;
+
+    setApplying(true);
+    try {
+      if (pendingSync && icloudNotesagePath) {
+        // Enable sync: move to iCloud
         const newPath = await tauriApi.migrateToICloud(projectPath, icloudNotesagePath);
         await migrateProjectPath(projectPath, newPath);
         addSyncedProject(newPath);
         await saveSettings(notesRootPath);
+        onPathChanged?.(newPath);
         toast.success("Project synced to iCloud");
-      } catch (err) {
-        toast.error(`Failed to sync project: ${err}`);
-      } finally {
-        setMigrating(null);
+      } else if (!pendingSync && notesRootPath) {
+        // Disable sync: move back to local
+        const newPath = await tauriApi.migrateFromICloud(projectPath, notesRootPath);
+        await migrateProjectPath(projectPath, newPath);
+        removeSyncedProject(projectPath);
+        await saveSettings(notesRootPath);
+        onPathChanged?.(newPath);
+        toast.success("Project moved to local library");
       }
-    } else {
-      setUnsyncDialogOpen(true);
-    }
-  }, [projectPath, icloudNotesagePath, notesRootPath, migrating, addSyncedProject, setMigrating, saveSettings]);
-
-  const confirmUnsync = useCallback(async () => {
-    if (!notesRootPath || migrating) return;
-    setUnsyncDialogOpen(false);
-    setMigrating(projectPath);
-    try {
-      const newPath = await tauriApi.migrateFromICloud(projectPath, notesRootPath);
-      await migrateProjectPath(projectPath, newPath);
-      removeSyncedProject(projectPath);
-      await saveSettings(notesRootPath);
-      toast.success("Project moved to local library");
     } catch (err) {
-      toast.error(`Failed to unsync project: ${err}`);
+      toast.error(`Failed to ${pendingSync ? "sync" : "unsync"} project: ${err}`);
     } finally {
-      setMigrating(null);
+      setPendingSync(null);
+      setApplying(false);
     }
-  }, [projectPath, notesRootPath, migrating, removeSyncedProject, setMigrating, saveSettings]);
+  }, [pendingSync, projectPath, icloudNotesagePath, notesRootPath, addSyncedProject, removeSyncedProject, saveSettings, onPathChanged]);
 
   if (!metadata) {
     return (
@@ -387,7 +384,7 @@ export function ProjectSettings({ projectPath, onPathChanged }: ProjectSettingsP
                     Sync to iCloud
                   </Label>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {isSynced
+                    {displaySynced
                       ? "This project syncs across your Apple devices"
                       : "Enable to sync this project via iCloud Drive"
                     }
@@ -395,36 +392,117 @@ export function ProjectSettings({ projectPath, onPathChanged }: ProjectSettingsP
                 </div>
                 <Switch
                   id="project-sync"
-                  checked={isSynced}
+                  checked={displaySynced}
                   onCheckedChange={handleSyncToggle}
-                  disabled={migrating !== null}
+                  disabled={applying}
                   className="ml-auto"
                 />
               </div>
+
+              {syncChanged && (
+                <div className="px-4 py-3 rounded-lg border border-foreground/20 bg-accent/50 space-y-2.5">
+                  {applying ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Applying...</span>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        {pendingSync
+                          ? "This project will be moved to iCloud Drive/Notesage."
+                          : "This project will be moved back to ~/Notesage."
+                        }
+                      </p>
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="font-medium truncate">
+                          {metadata?.name || projectPath.split("/").pop()}
+                        </span>
+                        {pendingSync ? (
+                          <ProjectSyncPathFlow
+                            fromPath={projectPath.split("/").slice(0, -1).join("/")}
+                            fromIcon="folder"
+                            toPath={icloudNotesagePath || ""}
+                            toIcon="cloud"
+                          />
+                        ) : (
+                          <ProjectSyncPathFlow
+                            fromPath={projectPath.split("/").slice(0, -1).join("/")}
+                            fromIcon="cloud"
+                            toPath={notesRootPath || ""}
+                            toIcon="folder"
+                          />
+                        )}
+                      </div>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => setPendingSync(null)}
+                        >
+                          Discard
+                        </Button>
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={applySyncToggle}
+                        >
+                          {pendingSync ? "Enable Sync" : "Disable Sync"}
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
-
-          <AlertDialog open={unsyncDialogOpen} onOpenChange={setUnsyncDialogOpen}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  Stop syncing &ldquo;{metadata?.name || projectPath.split("/").pop()}&rdquo;?
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  This project will be copied to your local Notesage library and removed from iCloud.
-                  It will no longer sync across your devices.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={confirmUnsync}>
-                  Stop Syncing
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
         </>
       )}
     </div>
+  );
+}
+
+/** Clickable icon that reveals a folder in Finder, with tooltip showing display path */
+function ProjectSyncPathIcon({ path, icon }: { path: string; icon: "cloud" | "folder" }) {
+  const Icon = icon === "cloud" ? Cloud : FolderOpen;
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="p-1 rounded cursor-pointer hover:bg-foreground/10 transition-colors duration-150 text-muted-foreground hover:text-foreground"
+            onClick={() => tauriApi.revealInFinder(path)}
+          >
+            <Icon className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-xs">
+          <p className="font-mono text-xs break-all">{formatDisplayPath(path)}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+/** Compact from → to flow with clickable icons and tooltips */
+function ProjectSyncPathFlow({
+  fromPath,
+  fromIcon,
+  toPath,
+  toIcon,
+}: {
+  fromPath: string;
+  fromIcon: "cloud" | "folder";
+  toPath: string;
+  toIcon: "cloud" | "folder";
+}) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <ProjectSyncPathIcon path={fromPath} icon={fromIcon} />
+      <ArrowRight className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+      <ProjectSyncPathIcon path={toPath} icon={toIcon} />
+    </span>
   );
 }
