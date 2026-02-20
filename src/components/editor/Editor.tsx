@@ -346,7 +346,18 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       }
 
       lastLoadedTabId.current = activeTab.id;
-      editor.commands.setContent(activeTab.content);
+
+      // If the tab has a pending external change, load that content instead of the
+      // stale tab.content (which hasn't been updated yet in this render cycle).
+      const pendingExternal = externalChanges[activeTab.filePath];
+      if (pendingExternal !== undefined && !activeTab.isDirty) {
+        editor.commands.setContent(pendingExternal);
+        updateTabContent(activeTab.id, pendingExternal, false);
+        clearExternalChange(activeTab.filePath);
+        toast("File updated from disk", { id: "external-change", description: activeTab.fileName });
+      } else {
+        editor.commands.setContent(activeTab.content);
+      }
       editor.commands.blur();
 
       // Restore scroll position then reveal
@@ -356,7 +367,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         }
       });
     }
-  }, [activeTab?.id, editor, activeTab, tabs, setScrollPosition, restoreScrollRatio]);
+  }, [activeTab?.id, editor, activeTab, tabs, setScrollPosition, restoreScrollRatio, externalChanges, updateTabContent, clearExternalChange]);
 
   // Handle Cmd+S to save
   useEffect(() => {

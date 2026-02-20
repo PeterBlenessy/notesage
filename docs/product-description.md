@@ -209,30 +209,39 @@ Document comments and external change tracking — foundational infrastructure f
 - Inline diff display for external changes (currently shows reload prompt only)
 - Per-change accept/reject controls (Track Changes style)
 
-## Roadmap
+### Notesage Library & iCloud Sync
 
-### Phase 5.5 — Notesage Library & iCloud Sync
+Central library folder and selective iCloud sync for projects.
 
-**Goal:** Establish \~/Notesage as the central library folder and add selective iCloud sync per project.
+**Library:**
 
-**Features:**
-
-- \~/Notesage as the default library folder for notes, new projects, and global metadata
-- Selective iCloud sync per project (not all-or-nothing)
-  - Setting to enable iCloud sync on Mac
-  - When enabled, user chooses which projects to sync — those folders move to iCloud/Notesage
-  - New project creation: checkbox for iCloud sync; if selected, folder defaults to iCloud/Notesage (not user-selectable); if not, defaults to \~/Notesage with option to choose another folder
-  - Non-project folders (Explorer) cannot be synced
-  - Disable iCloud sync in Project Settings: project is copied to local \~/Notesage and deleted from iCloud/Notesage
-- Sync-aware project creation and folder management
+- `~/Notesage` as the default folder for new projects and Quick Notes
+- New Project dialog defaults to `~/Notesage` with option to choose another folder
 - Cross-platform home directory resolution (macOS, Windows, Linux)
 
-**Architecture considerations:**
+**iCloud sync:**
 
-- Requires a dedicated PRD before implementation
-- iCloud folder detection on macOS (`~/Library/Mobile Documents/com~apple~CloudDocs/`)
-- Settings-store for sync preferences per project
-- Migration logic for moving existing project folders to/from iCloud
+- Selective iCloud sync per project (not all-or-nothing) via Settings &gt; Sync tab
+- iCloud sync toggle in per-project settings (sidebar cog icon)
+- When enabled, project folders move to `~/Library/Mobile Documents/com~apple~CloudDocs/Notesage/`
+- Quick Notes sync to iCloud with file merge across local and cloud
+- Disable sync: project is copied back to local `~/Notesage` and removed from iCloud
+- Cloud badge icon on synced files and folders in sidebar
+- "Configure then apply" pattern: toggles update pending state, Apply button triggers migration
+
+**Architecture:**
+
+- `sync-store` with disk-based persistence (`sync-settings.json`)
+- Tauri commands: `migrate_to_icloud`, `migrate_from_icloud`, `migrate_quick_notes`
+- Atomic rename with copy fallback for project migration
+- `formatDisplayPath()` utility for user-friendly path labels (iCloud Drive/Notesage, \~/Notesage)
+
+**Future enhancements (not yet built):**
+
+- Sync progress/status monitoring from iCloud
+- Non-Apple cloud providers (Dropbox, Google Drive, OneDrive)
+
+## Roadmap
 
 ### Phase 6 — Agentic AI Collaboration
 
