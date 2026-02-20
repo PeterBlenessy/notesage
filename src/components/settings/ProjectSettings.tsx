@@ -73,11 +73,8 @@ export function ProjectSettings({ projectPath, onPathChanged }: ProjectSettingsP
   const displaySynced = pendingSync ?? isSynced;
   const syncChanged = pendingSync !== null && pendingSync !== isSynced;
 
-  // Only show sync section for library projects when iCloud is enabled
-  const isLibraryProject =
-    (notesRootPath && projectPath.startsWith(notesRootPath + "/")) ||
-    (icloudNotesagePath && projectPath.startsWith(icloudNotesagePath + "/"));
-  const showSyncSection = icloudEnabled && icloudAvailable && isLibraryProject;
+  // Show sync section for all projects when iCloud is enabled
+  const showSyncSection = icloudEnabled && icloudAvailable;
 
   /** Rename the project folder on disk when the display name changes. */
   const handleNameBlur = useCallback(async () => {
