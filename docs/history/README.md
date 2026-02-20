@@ -22,3 +22,4 @@ Chronological log of major implementation milestones and changes.
 | 016 | [Release v0.8.0](016-release-v0.8.0.md) | PDF export via embedded Typst engine with three templates |
 | 017 | [Release v0.9.0](017-release-v0.9.0.md) | Comments, change detection, tab persistence (Phase 5) |
 | 018 | [Release v0.10.0](018-release-v0.10.0.md) | Layout redesign — title bar, sidebar, command palette, focus mode, status bar (Phases A-C) |
+| 019 | [Release v0.11.0](019-release-v0.11.0.md) | Notesage Library & iCloud Sync (Phase 5.5) |

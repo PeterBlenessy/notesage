@@ -1,6 +1,6 @@
 # PRD: Notesage Library & iCloud Sync (Phase 5.5)
 
-**Status: Implemented** (v0.10.0)
+**Status: Implemented** (v0.11.0)
 
 ## Problem
 
