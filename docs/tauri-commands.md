@@ -421,6 +421,114 @@ pub async fn save_binary_file(path: String, data: Vec<u8>) -> Result<(), String>
 await invoke('save_binary_file', { path: '/path/to/output.pdf', data: pdfBytes });
 ```
 
+## Filesystem Watcher Operations
+
+Located in `src-tauri/src/commands/watcher.rs`
+
+### watch_directory
+
+Starts recursive filesystem watching on a directory. Can be called multiple times to watch additional directories. A single debounced watcher instance is shared across all watched paths.
+
+```rust
+#[tauri::command]
+pub async fn watch_directory(app: AppHandle, path: String) -> Result<(), String>
+```
+
+**Parameters:**
+
+- `app`: Tauri AppHandle (automatically injected)
+- `path`: Absolute path to a directory to watch
+
+**Returns:**
+
+- `Ok(())`: Watching started (or already watching this path)
+- `Err(String)`: Error if path is not a directory or watcher creation fails
+
+**Events emitted:**
+
+- `file-changed` (`{ path: String, kind: String }`): Emitted when a file is created, modified, or deleted. `kind` is one of `"create"`, `"modify"`, or `"delete"`.
+
+**Filtering applied before emission:**
+
+- `.git/` internals and `.DS_Store` files silently dropped
+- Self-written files suppressed (see `mark_self_write`)
+- Directory events skipped (except deletes)
+- macOS: `modify` events for paths that no longer exist reclassified as `delete`
+
+### unwatch_directory
+
+Stops all filesystem watching and clears all state.
+
+```rust
+#[tauri::command]
+pub async fn unwatch_directory(app: AppHandle) -> Result<(), String>
+```
+
+**Returns:**
+
+- `Ok(())`: All watchers stopped
+
+### mark_self_write
+
+Marks a file path as a self-write so change events for it are suppressed for 5 seconds. Call this **before** writing a file from the frontend to prevent the watcher from emitting a false external change event.
+
+```rust
+#[tauri::command]
+pub async fn mark_self_write(app: AppHandle, path: String) -> Result<(), String>
+```
+
+**Parameters:**
+
+- `path`: Absolute path to the file being written
+
+**Implementation notes:**
+
+- Path is canonicalized for consistent comparison with `notify` event paths
+- TTL is 5 seconds, covering: 500ms debounce window + macOS FSEvents re-reporting (~3s) + iCloud sync latency
+- Expired entries are pruned on each `is_self_write` check
+
+### clear_self_write
+
+Removes a file path from the self-write filter. Call this if a write was cancelled or failed.
+
+```rust
+#[tauri::command]
+pub async fn clear_self_write(app: AppHandle, path: String) -> Result<(), String>
+```
+
+### WatcherState (Managed State)
+
+```rust
+pub struct WatcherState {
+    watcher: Mutex<Option<Debouncer<RecommendedWatcher, FileIdMap>>>,
+    watched_paths: Mutex<HashSet<PathBuf>>,
+    self_writes: Mutex<HashMap<PathBuf, Instant>>,
+}
+```
+
+**Fields:**
+
+- `watcher`: Single debounced watcher instance (lazy-initialized on first `watch_directory` call)
+- `watched_paths`: Set of directories currently being watched (prevents duplicate watches)
+- `self_writes`: Map of recently-written file paths → timestamp (for self-write suppression)
+
+**Frontend usage:**
+
+```typescript
+// Start watching when a project or explorer folder is opened
+await invoke('watch_directory', { path: '/path/to/project' });
+
+// Before saving a file, mark it as self-write
+await invoke('mark_self_write', { path: '/path/to/file.md' });
+await invoke('write_file', { path: '/path/to/file.md', content });
+
+// Listen for external changes
+listen<{ path: string; kind: string }>('file-changed', (event) => {
+  const { path, kind } = event.payload;
+  // Handle create/modify/delete...
+});
+```
+
 ## Error Handling
 
 All Tauri commands return `Result<T, String>`. The frontend should:

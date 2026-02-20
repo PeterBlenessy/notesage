@@ -27,7 +27,8 @@ note-sage/
 │   │   │   ├── dialog.rs   # Native file/folder dialogs
 │   │   │   ├── ai.rs       # AI provider commands
 │   │   │   ├── export.rs   # PDF export commands
-│   │   │   └── git.rs      # Git operations
+│   │   │   ├── git.rs      # Git operations
+│   │   │   └── watcher.rs  # Filesystem watcher (notify crate)
 │   │   └── export/         # PDF export engine
 │   │       ├── mod.rs
 │   │       ├── typst_world.rs      # Typst World trait implementation
@@ -73,6 +74,7 @@ note-sage/
 │   ├── hooks/
 │   │   ├── useEditor.ts            # Tiptap editor instance hook
 │   │   ├── useFileOperations.ts    # File create/open/save/delete operations
+│   │   ├── useFileWatcher.ts       # Filesystem watcher event handler
 │   │   ├── useExportOperations.ts  # PDF export flow orchestration
 │   │   ├── useProjectMetadata.ts   # Auto-bootstrap .notesage/project.json
 │   │   └── useAIOperations.ts      # AI generation and chat operations
@@ -241,6 +243,40 @@ When web search is enabled (toggle in chat footer):
 5. Search status emitted via `ai-tool-use` event ("Searching the web..." indicator)
 6. Citations extracted from provider-specific response formats, emitted via `ai-citation` events
 7. Citations displayed as numbered "Sources" section below assistant messages
+
+### Filesystem Watcher (External Change Detection)
+
+Detects external file changes (from other editors, AI agents, terminal commands) and updates the sidebar tree and editor content.
+
+**Rust backend (`watcher.rs`):**
+
+1. `watch_directory(path)` starts recursive watching via `notify` crate with `notify_debouncer_full` (500ms debounce)
+2. Self-write filter: `mark_self_write(path)` records a timestamp for paths Notesage writes; events for these paths are suppressed for 5 seconds (covers debounce + macOS FSEvents re-reporting)
+3. Events filtered: `.git/` internals and `.DS_Store` are silently dropped (prevents iCloud-synced repo event floods)
+4. macOS FSEvents quirk: file deletions often arrive as `Modify` events — reclassified as `delete` when the path no longer exists on disk
+5. Directory events skipped (except deletes, since deleted paths return `is_dir() == false`)
+6. Surviving events emitted as `file-changed` Tauri events with `{ path, kind }` payload
+
+**Frontend event handler (`useFileWatcher.ts`):**
+
+7. `listen("file-changed")` receives events and normalizes paths (strips `/private/` prefix for macOS symlinks, trailing slashes)
+8. Create/delete: debounced `refreshFileTree()` (no target path — avoids canonicalization mismatches) + debounced git status refresh
+9. Modify: looks up open tab by normalized path comparison
+10. Content guard: reads file from disk, compares against both `tab.content` and any pending `externalChanges` entry — skips if identical (prevents self-write false positives)
+11. Sets external change via `editor-store.setExternalChange(filePath, content)`
+
+**Editor auto-reload (`Editor.tsx`):**
+
+12. `useEffect` watches for external changes on the active tab
+13. Clean tabs: auto-reloads via `editor.commands.setContent()` (Tiptap is the source of truth — must push content to ProseMirror, not just Zustand) + shows "File updated from disk" toast
+14. Dirty tabs: shows reload/keep banner for user decision
+
+**Critical implementation notes:**
+
+- **Tiptap is source of truth**: Updating `tab.content` in Zustand does NOT update the editor. Must use `editor.commands.setContent()` to visually reflect changes.
+- **Self-write TTL (5s)**: Covers the 500ms debounce window + macOS FSEvents re-reporting the same event multiple times over ~3 seconds + iCloud sync latency.
+- **Path normalization**: macOS FSEvents canonicalizes `/var` → `/private/var`, `/tmp` → `/private/tmp`. The frontend strips the `/private/` prefix for comparison.
+- **Toast dedup**: Uses stable `id: "external-change"` on toast to prevent duplicate notifications from FSEvents re-reporting.
 
 ## Future-Proofing Decisions
 

@@ -181,8 +181,15 @@ Document comments and external change tracking — foundational infrastructure f
 
 **External change detection:**
 
-- Tauri filesystem watcher (via `notify` crate) for open files
-- Banner prompt to reload when file changes on disk (e.g., from external editor or AI agent)
+- Tauri filesystem watcher (via `notify` crate with `notify_debouncer_full`) for watched directories
+- Self-write filtering with 5s TTL to suppress events from Notesage's own saves
+- `.git/` and `.DS_Store` paths filtered to prevent iCloud-synced repo event floods
+- macOS FSEvents workaround: modify events for deleted paths reclassified as deletes
+- Path normalization for macOS `/private/` prefix (FSEvents canonicalization)
+- Clean tabs auto-reload from disk with "File updated from disk" toast notification
+- Dirty tabs show reload/keep banner for user decision
+- Sidebar tree auto-refreshes on external file creates and deletes
+- Git status auto-refreshes on any external file change
 
 **Git branch diff review:**
 
@@ -194,7 +201,7 @@ Document comments and external change tracking — foundational infrastructure f
 
 - Tiptap extension (`CommentMark`) with ProseMirror plugin state for decorations
 - `comment-store` (Zustand) with sidecar JSON persistence
-- `notify`-based filesystem watcher with Tauri event bridge
+- `notify`-based filesystem watcher with `notify_debouncer_full` (500ms debounce), self-write TTL filter (5s), `.git/` + `.DS_Store` path filtering, macOS FSEvents modify-to-delete reclassification
 - Comment key strategy: UUID for project files, deterministic path hash for non-project files
 
 **Future enhancements (not yet built):**
