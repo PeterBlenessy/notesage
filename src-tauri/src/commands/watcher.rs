@@ -14,9 +14,11 @@ pub struct FileChangedEvent {
     pub kind: String,
 }
 
-/// How long a self-write mark stays active. Covers debounce window + multiple
-/// FS events that macOS can emit for a single write (create tmp, rename, modify).
-const SELF_WRITE_TTL: Duration = Duration::from_secs(2);
+/// How long a self-write mark stays active. Must cover:
+///  - 500ms debounce window
+///  - Multiple FSEvents re-reports on macOS (observed up to ~3s after write)
+///  - iCloud sync latency on cloud-synced directories
+const SELF_WRITE_TTL: Duration = Duration::from_secs(5);
 
 /// Managed state holding the active watcher and self-write filter.
 pub struct WatcherState {
@@ -106,21 +108,42 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
                 };
 
                 for path in &event.paths {
+                    // Skip .git/ internals — these are never user-facing files
+                    // and iCloud-synced repos flood the watcher with index.lock events.
+                    // Also skip .DS_Store (macOS Finder metadata).
+                    let path_str = path.to_string_lossy();
+                    if path_str.contains("/.git/")
+                        || path_str.ends_with("/.git")
+                        || path_str.ends_with("/.DS_Store")
+                    {
+                        continue;
+                    }
+
                     // Skip events for files Notesage itself wrote
                     if is_self_write(&mut self_writes, path) {
                         continue;
                     }
 
-                    // Only emit for files, not directories
-                    if path.is_dir() {
+                    // On macOS, FSEvents often reports file deletions as
+                    // "modify" on the parent directory or the deleted path.
+                    // Reclassify: if notify says "modify" but the path no
+                    // longer exists, treat it as a delete.
+                    let effective_kind = if kind_str == "modify" && !path.exists() {
+                        "delete"
+                    } else {
+                        kind_str
+                    };
+
+                    // Skip directories, but NOT for delete events (file is
+                    // already gone so is_dir() would return false anyway).
+                    if effective_kind != "delete" && path.is_dir() {
                         continue;
                     }
 
                     let payload = FileChangedEvent {
                         path: path.to_string_lossy().to_string(),
-                        kind: kind_str.to_string(),
+                        kind: effective_kind.to_string(),
                     };
-
                     if let Err(e) = app_handle.emit("file-changed", payload) {
                         eprintln!("Failed to emit file-changed event: {:?}", e);
                     }

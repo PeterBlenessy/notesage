@@ -10,7 +10,7 @@ import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 /** Debounced git status refresh per repo. Each repo gets its own timer. */
 const repoRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-function refreshGitForPath(filePath: string) {
+export function refreshGitForPath(filePath: string) {
   if (!useSettingsStore.getState().gitEnabled) return;
 
   const repos = useGitStore.getState().repos;
@@ -200,13 +200,17 @@ export function useFileOperations() {
     async (path: string) => {
       try {
         await tauriApi.deletePath(path);
-        await refreshFileTree(path);
-        refreshGitForPath(path);
-        return true;
       } catch (error) {
         console.error("Failed to delete:", error);
+        // Still refresh the tree — the file may already be gone externally,
+        // and we need to remove the stale entry from the sidebar.
+        await refreshFileTree(path);
+        refreshGitForPath(path);
         throw error;
       }
+      await refreshFileTree(path);
+      refreshGitForPath(path);
+      return true;
     },
     [refreshFileTree]
   );
