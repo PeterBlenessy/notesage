@@ -24,6 +24,9 @@ interface SyncStore {
   isProjectSynced: (path: string) => boolean;
   isMigrating: () => boolean;
 
+  // Batch update
+  setSyncedProjectPaths: (paths: string[]) => void;
+
   // Path update after migration
   updateProjectPath: (oldPath: string, newPath: string) => void;
 }
@@ -100,6 +103,10 @@ export const useSyncStore = create<SyncStore>()((set, get) => ({
 
   isMigrating: () => {
     return get().migrating !== null;
+  },
+
+  setSyncedProjectPaths: (paths: string[]) => {
+    set({ syncedProjectPaths: paths });
   },
 
   updateProjectPath: (oldPath: string, newPath: string) => {
