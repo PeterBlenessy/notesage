@@ -312,6 +312,17 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     clearExternalChange(activeTab.filePath);
   }, [activeTab, clearExternalChange]);
 
+  // Auto-reload clean tabs when external changes are detected.
+  // Dirty tabs show the banner instead (handled in JSX below).
+  useEffect(() => {
+    if (editor && activeTab && !activeTab.isDirty && activeExternalContent !== undefined) {
+      editor.commands.setContent(activeExternalContent);
+      updateTabContent(activeTab.id, activeExternalContent, false);
+      clearExternalChange(activeTab.filePath);
+      toast("File updated from disk", { id: "external-change", description: activeTab.fileName });
+    }
+  }, [editor, activeTab?.id, activeTab?.isDirty, activeExternalContent, updateTabContent, clearExternalChange]);
+
   // Update editor content when switching tabs, saving/restoring scroll position
   useEffect(() => {
     if (editor && activeTab && activeTab.id !== lastLoadedTabId.current) {

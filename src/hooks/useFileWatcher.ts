@@ -71,18 +71,16 @@ export function useFileWatcher() {
           const raw = await tauriApi.readFile(path);
           const { content } = parseFrontmatter(raw);
 
-          // Skip if content hasn't actually changed (guards against
-          // self-write events that slip through the Rust-side filter)
-          if (content === tab.content) {
+          // Skip if content matches tab or an already-pending external change
+          // (guards against self-writes and FSEvents re-reporting the same change)
+          const pendingExternal = state.externalChanges[tab.filePath];
+          if (content === tab.content || content === pendingExternal) {
             return;
           }
-          if (tab.isDirty) {
-            // Dirty tab: show banner, don't auto-reload
-            state.setExternalChange(tab.filePath, content);
-          } else {
-            // Clean tab: auto-reload silently
-            state.updateTabContent(tab.id, content, false);
-          }
+          // Always use setExternalChange — the Editor component handles
+          // auto-reload for clean tabs and shows a banner for dirty tabs.
+          // (We can't push to Tiptap from here since we don't have the editor instance.)
+          state.setExternalChange(tab.filePath, content);
         } catch (error) {
           console.error("Failed to read externally changed file:", error);
         }
