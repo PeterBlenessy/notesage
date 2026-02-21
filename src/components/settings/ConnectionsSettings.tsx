@@ -63,7 +63,7 @@ export function ConnectionsSettings() {
   );
 
   const handlePickProvider = useCallback((option: ProviderOption) => {
-    if (option.authMethod === 'agent_managed') {
+    if (option.lspBinary || option.authMethod === 'agent_managed') {
       setFlow({ step: 'connecting', option });
     } else {
       setFlow({ step: 'configure', option });
@@ -107,16 +107,20 @@ export function ConnectionsSettings() {
 
   const handleAgentConnected = useCallback(
     (option: ProviderOption) => {
+      const credentials = option.lspBinary
+        ? { type: 'agent_managed' as const, agentBinary: option.lspBinary }
+        : {
+            type: 'agent_managed' as const,
+            agentBinary: option.agentBinary!,
+            ...(option.agentArgs ? { agentArgs: option.agentArgs } : {}),
+          };
+
       const connectionId = addConnection({
         provider: option.provider,
         authMethod: 'agent_managed',
         status: 'connected',
         label: option.label,
-        credentials: {
-          type: 'agent_managed',
-          agentBinary: option.agentBinary!,
-          ...(option.agentArgs ? { agentArgs: option.agentArgs } : {}),
-        },
+        credentials,
       });
       autoAssign(connectionId);
       setTimeout(() => {
@@ -171,7 +175,14 @@ export function ConnectionsSettings() {
                 savedFlash={savedFlash}
               />
             )}
-            {flow.step === 'connecting' && (
+            {flow.step === 'connecting' && flow.option.lspBinary && (
+              <ConnectCopilotLsp
+                option={flow.option}
+                onBack={() => setFlow({ step: 'pick' })}
+                onConnected={handleAgentConnected}
+              />
+            )}
+            {flow.step === 'connecting' && !flow.option.lspBinary && (
               <ConnectAgent
                 option={flow.option}
                 onBack={() => setFlow({ step: 'pick' })}
@@ -396,6 +407,244 @@ function ConfigureForm({
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// --- Copilot LSP connection flow ---
+
+import { listen } from '@tauri-apps/api/event';
+
+type CopilotLspPhase = 'checking' | 'not_installed' | 'signing_in' | 'device_code' | 'connected' | 'error';
+
+function ConnectCopilotLsp({
+  option,
+  onBack,
+  onConnected,
+}: {
+  option: ProviderOption;
+  onBack: () => void;
+  onConnected: (option: ProviderOption) => void;
+}) {
+  const [phase, setPhase] = useState<CopilotLspPhase>('checking');
+  const [error, setError] = useState<string | null>(null);
+  const [deviceCode, setDeviceCode] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const onConnectedRef = useRef(onConnected);
+  onConnectedRef.current = onConnected;
+
+  // Check binary availability
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      setPhase('checking');
+      setError(null);
+
+      try {
+        const available = await invoke<boolean>('copilot_lsp_check_availability');
+        if (!active) return;
+
+        if (!available) {
+          setPhase('not_installed');
+          return;
+        }
+
+        // Binary found — start LSP and sign in
+        setPhase('signing_in');
+
+        await invoke('copilot_lsp_start', { workingDirectory: '/tmp' });
+        if (!active) return;
+
+        const result = await invoke<{ user_code: string; verification_uri: string }>(
+          'copilot_lsp_sign_in'
+        );
+        if (!active) return;
+
+        setDeviceCode(result.user_code);
+        setPhase('device_code');
+      } catch (err) {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : String(err));
+        setPhase('error');
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [retryCount]);
+
+  // Listen for auth completion via didChangeStatus
+  useEffect(() => {
+    if (phase !== 'device_code') return;
+
+    const unlisten = listen<{ message: string; kind: string }>(
+      'copilot-status-changed',
+      (event) => {
+        const { kind } = event.payload;
+        // When status becomes Normal after sign-in, auth succeeded
+        if (kind === 'Normal') {
+          setPhase('connected');
+          // Stop the temporary LSP used for auth
+          invoke('copilot_lsp_stop').catch(() => {});
+          onConnectedRef.current(option);
+        }
+      }
+    );
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [phase, option]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      invoke('copilot_lsp_stop').catch(() => {});
+    };
+  }, []);
+
+  const handleCopyCode = useCallback(() => {
+    if (deviceCode) {
+      navigator.clipboard.writeText(deviceCode).catch(() => {});
+    }
+  }, [deviceCode]);
+
+  return (
+    <div className="p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Github className="w-5 h-5 shrink-0" strokeWidth={1.5} />
+        <span className="text-sm font-medium">{option.label}</span>
+      </div>
+
+      {phase === 'checking' && (
+        <div className="flex items-center gap-2.5 py-3">
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" strokeWidth={1.5} />
+          <span className="text-sm text-muted-foreground">
+            Checking for copilot-language-server...
+          </span>
+        </div>
+      )}
+
+      {phase === 'not_installed' && (
+        <div className="space-y-3">
+          <div className="p-3 rounded-lg bg-muted/50 border border-border">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" strokeWidth={1.5} />
+              <div>
+                <p className="text-sm font-medium">
+                  copilot-language-server not found
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Run: npm install -g @github/copilot-language-server
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
+              Back
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRetryCount((c) => c + 1)}
+              className="flex-1"
+            >
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+              Retry
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {phase === 'signing_in' && (
+        <div className="flex items-center gap-2.5 py-3">
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" strokeWidth={1.5} />
+          <span className="text-sm text-muted-foreground">Starting Copilot...</span>
+        </div>
+      )}
+
+      {phase === 'device_code' && deviceCode && (
+        <div className="space-y-3">
+          <div className="p-3 rounded-lg bg-muted/50 border border-border text-center">
+            <p className="text-xs text-muted-foreground mb-2">
+              Enter this code on GitHub:
+            </p>
+            <button
+              onClick={handleCopyCode}
+              className="text-2xl font-mono font-bold tracking-widest cursor-pointer hover:opacity-70 transition-opacity"
+              title="Click to copy"
+            >
+              {deviceCode}
+            </button>
+            <p className="text-xs text-muted-foreground mt-2">
+              Click code to copy
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
+              Back
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                window.open('https://github.com/login/device', '_blank');
+              }}
+              className="flex-1"
+            >
+              <Github className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+              Open GitHub
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground text-center">
+            Waiting for authentication...
+          </p>
+        </div>
+      )}
+
+      {phase === 'connected' && (
+        <div className="flex items-center gap-2.5 py-3">
+          <Check className="h-4 w-4 text-green-500" strokeWidth={2} />
+          <span className="text-sm font-medium">Connected!</span>
+        </div>
+      )}
+
+      {phase === 'error' && (
+        <div className="space-y-3">
+          <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" strokeWidth={1.5} />
+              <div>
+                <p className="text-sm font-medium text-destructive">
+                  Connection failed
+                </p>
+                {error && (
+                  <p className="text-xs text-destructive/80 mt-1 break-words">
+                    {error}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
+              Back
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRetryCount((c) => c + 1)}
+              className="flex-1"
+            >
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+              Retry
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

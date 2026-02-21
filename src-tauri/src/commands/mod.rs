@@ -7,6 +7,7 @@ pub mod git;
 pub mod watcher;
 pub mod sync;
 pub mod acp;
+pub mod copilot_lsp;
 
 pub use file::*;
 pub use dialog::*;
@@ -16,3 +17,4 @@ pub use git::*;
 pub use watcher::*;
 pub use sync::*;
 pub use acp::*;
+pub use copilot_lsp::*;

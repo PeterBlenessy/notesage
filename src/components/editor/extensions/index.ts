@@ -23,3 +23,12 @@ export {
   CommentMarkPluginKey,
 } from './comment-mark';
 export { pageBreaksKey } from './page-breaks';
+export {
+  GhostText,
+  GhostTextPluginKey,
+  setGhostText,
+  clearGhostText,
+  acceptGhostText,
+  hasActiveGhostText,
+} from './ghost-text';
+export type { GhostTextCompletion } from './ghost-text';

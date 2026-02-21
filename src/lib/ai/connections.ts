@@ -99,8 +99,9 @@ export interface ProviderOption {
   label: string;
   description: string;
   capabilities: AICapability[];
-  agentBinary?: string;             // For agent_managed providers
+  agentBinary?: string;             // For agent_managed providers (ACP protocol)
   agentArgs?: string[];             // Additional CLI args (e.g., ["--acp"] for Copilot)
+  lspBinary?: string;               // For LSP-based providers (e.g., copilot-language-server)
 }
 
 /** Available provider options for the "Add Connection" picker */
@@ -139,10 +140,18 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     provider: 'github',
     authMethod: 'agent_managed',
     label: 'GitHub Copilot',
-    description: 'Free: 2,000 completions/month',
+    description: 'Chat, agents, and completions',
     capabilities: ['interactive', 'inline_completion', 'agent_tasks'],
     agentBinary: 'copilot',
     agentArgs: ['--acp'],
+  },
+  {
+    provider: 'github',
+    authMethod: 'agent_managed',
+    label: 'Copilot Completions',
+    description: 'Inline ghost text only (Language Server)',
+    capabilities: ['inline_completion'],
+    lspBinary: 'copilot-language-server',
   },
   {
     provider: 'ollama',

@@ -12,6 +12,7 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .manage(WatcherState::new())
         .manage(AcpState::new())
+        .manage(CopilotLspState::new())
         .invoke_handler(tauri::generate_handler![
             read_file,
             write_file,
@@ -64,6 +65,19 @@ pub fn run() {
             acp_session_prompt,
             acp_session_cancel,
             acp_permission_respond,
+            copilot_lsp_check_availability,
+            copilot_lsp_start,
+            copilot_lsp_stop,
+            copilot_lsp_status,
+            copilot_lsp_sign_in,
+            copilot_lsp_sign_out,
+            copilot_lsp_did_open,
+            copilot_lsp_did_change,
+            copilot_lsp_did_close,
+            copilot_lsp_did_focus,
+            copilot_lsp_request_completion,
+            copilot_lsp_did_show_completion,
+            copilot_lsp_accept_completion,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

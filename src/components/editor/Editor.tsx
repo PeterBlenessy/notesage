@@ -11,6 +11,7 @@ import { useExportOperations } from "@/hooks/useExportOperations";
 import { useDiffReview } from "@/hooks/useDiffReview";
 import { useFileWatcher } from "@/hooks/useFileWatcher";
 import { useCommentOperations } from "@/hooks/useCommentOperations";
+import { useCopilotCompletion } from "@/hooks/useCopilotCompletion";
 import {
   setPendingCommentRange as setPendingRangeDecoration,
   showInlineDiff,
@@ -199,6 +200,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const { exportPdf, isExporting } = useExportOperations(editor);
   const { reviewActive, compareBranch, handleAcceptAll, handleRejectAll } = useDiffReview(editor);
   useFileWatcher();
+  useCopilotCompletion(editor);
 
   // Page position: calculate from editor content height and page geometry
   const marginTopPx = marginTop * PX_PER_CM;
