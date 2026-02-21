@@ -27,6 +27,20 @@ pub struct SpawnResult {
     pub instance_id: String,
     pub agent_name: Option<String>,
     pub agent_version: Option<String>,
+    pub auth_methods: Vec<AuthMethodInfo>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AuthMethodInfo {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AuthStatus {
+    pub authenticated: bool,
+    pub method_id: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -63,11 +77,14 @@ struct AgentHandle {
 // ---------------------------------------------------------------------------
 
 enum AgentCmd {
+    Authenticate {
+        method_id: Option<String>,
+        reply: oneshot::Sender<Result<AuthStatus, String>>,
+    },
     Stop {
         reply: oneshot::Sender<Result<(), String>>,
     },
-    // Future tasks (14-15) will add:
-    // Authenticate { ... },
+    // Future task (15) will add:
     // NewSession { ... },
     // Prompt { ... },
     // Cancel { ... },
@@ -77,6 +94,7 @@ enum AgentCmd {
 struct InitInfo {
     agent_name: Option<String>,
     agent_version: Option<String>,
+    auth_methods: Vec<AuthMethodInfo>,
 }
 
 // ---------------------------------------------------------------------------
@@ -200,11 +218,34 @@ fn run_agent_thread(
             Implementation::new("Notesage", env!("CARGO_PKG_VERSION")),
         );
 
+        // Store auth methods from init response for later use
+        let auth_method_ids: Vec<(String, String, Option<String>)>;
+
         match conn.initialize(init_req).await {
             Ok(resp) => {
+                auth_method_ids = resp
+                    .auth_methods
+                    .iter()
+                    .map(|m| {
+                        (
+                            m.id.to_string(),
+                            m.name.clone(),
+                            m.description.clone(),
+                        )
+                    })
+                    .collect();
+
                 let info = InitInfo {
                     agent_name: resp.agent_info.as_ref().map(|i| i.name.clone()),
                     agent_version: resp.agent_info.as_ref().map(|i| i.version.clone()),
+                    auth_methods: auth_method_ids
+                        .iter()
+                        .map(|(id, name, desc)| AuthMethodInfo {
+                            id: id.clone(),
+                            name: name.clone(),
+                            description: desc.clone(),
+                        })
+                        .collect(),
                 };
                 let _ = init_tx.send(Ok(info));
             }
@@ -218,6 +259,51 @@ fn run_agent_thread(
         // Command loop — process commands from Tauri
         while let Some(cmd) = cmd_rx.recv().await {
             match cmd {
+                AgentCmd::Authenticate { method_id, reply } => {
+                    // Pick the method: explicit ID, or first available
+                    let selected_id = match &method_id {
+                        Some(id) => {
+                            if auth_method_ids.iter().any(|(mid, _, _)| mid == id) {
+                                id.clone()
+                            } else {
+                                let _ = reply.send(Err(format!(
+                                    "Unknown auth method: {}",
+                                    id
+                                )));
+                                continue;
+                            }
+                        }
+                        None => {
+                            match auth_method_ids.first() {
+                                Some((id, _, _)) => id.clone(),
+                                None => {
+                                    let _ = reply.send(Err(
+                                        "Agent has no authentication methods".to_string(),
+                                    ));
+                                    continue;
+                                }
+                            }
+                        }
+                    };
+
+                    let auth_req = AuthenticateRequest::new(AuthMethodId::new(
+                        selected_id.clone(),
+                    ));
+                    match conn.authenticate(auth_req).await {
+                        Ok(_) => {
+                            let _ = reply.send(Ok(AuthStatus {
+                                authenticated: true,
+                                method_id: Some(selected_id),
+                            }));
+                        }
+                        Err(e) => {
+                            let _ = reply.send(Err(format!(
+                                "Authentication failed: {}",
+                                e
+                            )));
+                        }
+                    }
+                }
                 AgentCmd::Stop { reply } => {
                     // Drop connection to trigger graceful shutdown
                     drop(conn);
@@ -347,7 +433,40 @@ pub async fn acp_agent_spawn(
         instance_id,
         agent_name: init_info.agent_name,
         agent_version: init_info.agent_version,
+        auth_methods: init_info.auth_methods,
     })
+}
+
+/// Authenticate with an ACP agent.
+/// If `method_id` is None, uses the first available auth method from the agent.
+#[tauri::command]
+pub async fn acp_agent_authenticate(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    method_id: Option<String>,
+) -> Result<AuthStatus, String> {
+    let agents = state.agents.lock().await;
+    let handle = agents
+        .get(&instance_id)
+        .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+
+    handle
+        .cmd_tx
+        .send(AgentCmd::Authenticate {
+            method_id,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    // Drop lock before awaiting reply to avoid holding it during auth
+    drop(agents);
+
+    reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to authenticate".to_string())?
 }
 
 /// Stop an ACP agent subprocess and clean up resources.

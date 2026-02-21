@@ -57,6 +57,7 @@ pub fn run() {
             migrate_quick_notes,
             acp_agent_check_availability,
             acp_agent_spawn,
+            acp_agent_authenticate,
             acp_agent_stop,
         ])
         .run(tauri::generate_context!())
