@@ -12,8 +12,14 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Plus, Check, Eye, EyeOff, Github, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import type { Connection, ProviderOption } from '@/lib/ai/connections';
-import { PROVIDER_OPTIONS, CAPABILITY_LABELS } from '@/lib/ai/connections';
+import { PROVIDER_OPTIONS, CAPABILITY_LABELS, ROUTING_SLOT_LABELS } from '@/lib/ai/connections';
 import { invoke } from '@tauri-apps/api/core';
 
 const PROVIDER_LOGOS: Record<string, string | null> = {
@@ -245,8 +251,8 @@ function ProviderPicker({ onPick }: { onPick: (option: ProviderOption) => void }
               Subscription
             </p>
           </div>
-          {subscriptionOptions.map((option, i) => (
-            <ProviderPickerItem key={`${option.provider}-${option.authMethod}`} option={option} onPick={onPick} isFirst={i === 0} />
+          {subscriptionOptions.map((option) => (
+            <ProviderPickerItem key={`${option.provider}-${option.authMethod}`} option={option} onPick={onPick} />
           ))}
         </>
       )}
@@ -270,11 +276,9 @@ function ProviderPicker({ onPick }: { onPick: (option: ProviderOption) => void }
 function ProviderPickerItem({
   option,
   onPick,
-  isFirst,
 }: {
   option: ProviderOption;
   onPick: (option: ProviderOption) => void;
-  isFirst?: boolean;
 }) {
   const isFreeAvailable = option.provider === 'github';
 
@@ -287,11 +291,6 @@ function ProviderPickerItem({
       <div className="flex-1 min-w-0">
         <span className="text-sm font-medium truncate block">
           {option.label}
-          {isFirst && (
-            <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-sm bg-muted text-muted-foreground align-middle">
-              Recommended
-            </span>
-          )}
         </span>
         <p className="text-xs text-muted-foreground mt-0.5">
           {option.description}
@@ -301,12 +300,20 @@ function ProviderPickerItem({
         </p>
         <div className="flex items-center gap-1.5 mt-1.5">
           {option.capabilities.map((cap) => (
-            <span
-              key={cap}
-              className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground"
-            >
-              {CAPABILITY_LABELS[cap]}
-            </span>
+            <TooltipProvider key={cap}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground cursor-default"
+                  >
+                    {CAPABILITY_LABELS[cap]}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-[200px] text-xs">
+                  {ROUTING_SLOT_LABELS[cap].description}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           ))}
         </div>
       </div>
@@ -652,7 +659,7 @@ function getInstallHint(binary: string): string {
     case 'codex':
       return 'Run: npm install -g @openai/codex';
     case 'copilot':
-      return 'Run: npm install -g @anthropic/copilot-cli or download from github.com/github/copilot-cli';
+      return 'Install GitHub Copilot CLI from github.com/github/copilot-cli';
     default:
       return `Install "${binary}" to continue.`;
   }

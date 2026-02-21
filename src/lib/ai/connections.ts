@@ -108,7 +108,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
   {
     provider: 'anthropic',
     authMethod: 'agent_managed',
-    label: 'Claude Code (Subscription)',
+    label: 'Claude Code',
     description: 'Requires Claude Pro or Max',
     capabilities: ['interactive', 'agent_tasks'],
     agentBinary: 'claude-agent-acp',
@@ -116,14 +116,14 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
   {
     provider: 'anthropic',
     authMethod: 'api_key',
-    label: 'Anthropic (API Key)',
+    label: 'Anthropic',
     description: 'Pay-per-use API key',
     capabilities: ['interactive', 'agent_tasks'],
   },
   {
     provider: 'openai',
     authMethod: 'agent_managed',
-    label: 'OpenAI Codex (Subscription)',
+    label: 'OpenAI Codex',
     description: 'Requires ChatGPT Plus/Pro',
     capabilities: ['interactive', 'agent_tasks'],
     agentBinary: 'codex-acp',
@@ -131,7 +131,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
   {
     provider: 'openai',
     authMethod: 'api_key',
-    label: 'OpenAI (API Key)',
+    label: 'OpenAI',
     description: 'Pay-per-use API key',
     capabilities: ['interactive', 'agent_tasks'],
   },
@@ -147,7 +147,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
   {
     provider: 'ollama',
     authMethod: 'local',
-    label: 'Ollama (Local)',
+    label: 'Ollama',
     description: 'Free, runs locally',
     capabilities: ['interactive'],
   },
