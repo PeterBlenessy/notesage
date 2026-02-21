@@ -1,9 +1,10 @@
 # Copilot Language Server Integration — Inline Completions (Phase 6e)
 
-**Status:** Draft
+**Status:** Implemented
 **Date:** 2026-02-21
 **Author:** Claude (with Peter)
 **Depends on:** Phase 6a-6d (AI Provider Architecture v2) — completed
+**Implemented:** 2026-02-21 (Tasks 1-10 complete, plus per-document toggle and status bar indicator)
 
 ## Problem
 

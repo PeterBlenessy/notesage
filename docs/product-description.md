@@ -93,7 +93,47 @@ Multi-provider AI integration with chat and inline actions.
 - ProseMirror decorations for inline suggestions (green insert, red delete)
 - Context-aware suggestions (understand document structure)
 - Conversation branching/forking in chat
-- AI-powered autocomplete while typing
+
+### Inline Completions (Copilot LSP)
+
+Ghost text autocomplete powered by the GitHub Copilot Language Server.
+
+**Connection & auth:**
+
+- Connects via `copilot-language-server` binary (npm global install)
+- OAuth device flow authentication — enter code on github.com/login/device
+- Works with personal Copilot subscriptions and Copilot for Business (IDE-extension-only plans)
+- Routed via `inline_completion` use case slot — can run alongside other providers for chat
+
+**Ghost text behavior:**
+
+- Inline suggestions appear as dimmed italic text ahead of the cursor
+- Tab to accept, Escape to dismiss, any other keystroke auto-dismisses
+- 150ms debounce after typing pause before requesting completions
+- Does not interfere with slash commands, bubble menu, or inline diff review
+- Completions suppressed when selection is active or editor is unfocused
+
+**Per-document toggle:**
+
+- Status bar shows GitHub icon when Copilot LSP is connected
+- Click icon → popover with toggle switch to disable completions for the current document
+- Session-only — resets when the tab is closed (not persisted)
+- Icon dims when disabled; green status dot in popover reflects state
+
+**Architecture:**
+
+- Rust backend: `commands/copilot_lsp.rs` — JSON-RPC 2.0 over stdio transport, LSP lifecycle, document sync, completion requests
+- Frontend: `GhostText` Tiptap extension (ProseMirror widget decorations), `useCopilotCompletion` hook (LSP lifecycle + document sync + debounced requests)
+- Tauri commands: `copilot_lsp_start`, `copilot_lsp_stop`, `copilot_lsp_sign_in`, `copilot_lsp_did_open`, `copilot_lsp_did_change`, `copilot_lsp_did_close`, `copilot_lsp_did_focus`, `copilot_lsp_request_completion`, `copilot_lsp_accept_completion`
+- Tab-scoped `copilotDisabled` flag in editor-store (non-persisted)
+
+**Future enhancements (not yet built):**
+
+- Multi-line panel completions (`copilotPanelCompletion`)
+- Inline edits / next edit suggestions (`copilotInlineEdit`)
+- Partial acceptance (accept word-by-word)
+- Free tier usage tracking indicator
+- GitHub Enterprise configuration
 
 ### Project Workspace
 
@@ -269,8 +309,9 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 **Connections & routing:**
 
 - Multi-provider connection system: users can connect multiple AI providers simultaneously
-- Three auth methods: API key (Anthropic, OpenAI), agent-managed subscription (Claude Code, Codex, Copilot via ACP), local (Ollama)
+- Three auth methods: API key (Anthropic, OpenAI), agent-managed subscription (Claude Code, Codex, Copilot via ACP/LSP), local (Ollama)
 - Per-use-case routing: separate provider assignment for interactive (chat + inline actions), agent tasks, and inline completion
+- GitHub Copilot split into two connections: CLI (ACP — chat/agents only) and LSP (inline completions + chat/agents)
 - Smart auto-assignment: first connection fills all compatible use case slots
 - One-time migration from v1 ai-store preserves existing API key configurations
 - Settings UI: Connections list with provider cards, Add Connection popover with capability guidance, Advanced Routing collapsible section
@@ -282,7 +323,8 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - ACP session management: create, prompt, cancel, load sessions
 - Streaming responses via Tauri events (`acp-session-update`)
 - Permission request handling: read-only tools auto-approved, write tools tracked in permission-store
-- Three supported ACP agents: Claude Code (`claude-agent-acp`), OpenAI Codex (`codex-acp`), GitHub Copilot (`copilot --acp`)
+- Three supported ACP agents: Claude Code (`claude-agent-acp`), OpenAI Codex (`codex-acp`), GitHub Copilot CLI (`copilot --acp` — chat/agents only, no inline completions)
+- Copilot Language Server (`copilot-language-server`) for inline completions via LSP protocol (separate from ACP)
 
 **Agent activity & tasks:**
 

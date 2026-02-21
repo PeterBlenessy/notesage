@@ -27,6 +27,7 @@ note-sage/
 │   │   │   ├── dialog.rs   # Native file/folder dialogs
 │   │   │   ├── ai.rs       # AI provider commands (direct API)
 │   │   │   ├── acp.rs      # ACP agent management (spawn, auth, sessions, permissions)
+│   │   │   ├── copilot_lsp.rs # Copilot Language Server (JSON-RPC, inline completions)
 │   │   │   ├── export.rs   # PDF export commands
 │   │   │   ├── git.rs      # Git operations
 │   │   │   └── watcher.rs  # Filesystem watcher (notify crate)
@@ -52,6 +53,7 @@ note-sage/
 │   │   │   ├── BubbleMenu.tsx      # Selection bubble menu
 │   │   │   └── extensions/         # Custom Tiptap extensions
 │   │   │       ├── index.ts
+│   │   │       ├── ghost-text.ts   # Copilot ghost text (ProseMirror widget decorations)
 │   │   │       └── slash-command.ts
 │   │   ├── sidebar/
 │   │   │   ├── Sidebar.tsx         # Main sidebar container
@@ -82,7 +84,8 @@ note-sage/
 │   │   ├── useExportOperations.ts  # PDF export flow orchestration
 │   │   ├── useProjectMetadata.ts   # Auto-bootstrap .notesage/project.json
 │   │   ├── useAIOperations.ts      # AI generation, chat, and ACP routing
-│   │   └── useAgentTaskOperations.ts # Background agent task management
+│   │   ├── useAgentTaskOperations.ts # Background agent task management
+│   │   └── useCopilotCompletion.ts # Copilot LSP lifecycle + ghost text completions
 │   ├── stores/
 │   │   ├── editor-store.ts         # Open tabs, active file
 │   │   ├── project-store.ts        # Project folder, file tree
@@ -147,7 +150,7 @@ note-sage/
 
 All state stores use Zustand with the persist middleware for localStorage:
 
-- **editor-store**: Open tabs (file path + dirty state), active tab index
+- **editor-store**: Open tabs (file path + dirty state + per-tab copilotDisabled flag), active tab index
 - **project-store**: Root folder path, file tree structure, expanded folders
 - **project-metadata-store**: Project metadata from `.notesage/project.json` (name, description, AI overrides)
 - **settings-store**: Theme, window state, recent projects, UI preferences (floating toolbar toggle)
@@ -167,7 +170,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 
 ### AI Provider Abstraction
 
-Two paths for AI operations, transparently routed based on the connection's auth method:
+Three paths for AI operations, transparently routed based on the connection's auth method and use case:
 
 **Path 1: Direct API** (for `api_key` and `local` connections)
 
@@ -190,7 +193,14 @@ interface AIProvider {
 - Prompts sent via `acp_session_prompt`, responses streamed as `acp-session-update` Tauri events
 - Three supported agents: Claude Code (`claude-agent-acp`), Codex (`codex-acp`), Copilot (`copilot --acp`)
 
-**Routing:** `useAIOperations` reads the `interactive` connection from `routing-store`. If the connection is `api_key`/`local`, it uses Path 1 (direct API). If `agent_managed`, it uses Path 2 (ACP). The rest of the app (chat panel, bubble menu) is unaware of which path is used.
+**Path 3: Copilot LSP** (for `inline_completion` use case)
+
+- Spawns `copilot-language-server --stdio` subprocess managed by `CopilotLspState`
+- JSON-RPC 2.0 transport for LSP document sync and `textDocument/inlineCompletion` requests
+- Ghost text rendered as ProseMirror widget decorations via `GhostText` Tiptap extension
+- Separate from ACP — the Copilot CLI (`copilot --acp`) handles chat/agents, the LSP handles completions
+
+**Routing:** `useAIOperations` reads the `interactive` connection from `routing-store`. If the connection is `api_key`/`local`, it uses Path 1 (direct API). If `agent_managed`, it uses Path 2 (ACP). `useCopilotCompletion` independently reads the `inline_completion` connection and manages the Copilot LSP. The rest of the app (chat panel, bubble menu) is unaware of which path is used.
 
 ### Security Model
 
@@ -279,6 +289,37 @@ When web search is enabled (toggle in chat footer):
 5. Search status emitted via `ai-tool-use` event ("Searching the web..." indicator)
 6. Citations extracted from provider-specific response formats, emitted via `ai-citation` events
 7. Citations displayed as numbered "Sources" section below assistant messages
+
+### Inline Completions (Copilot LSP)
+
+Ghost text completions via the Copilot Language Server, a separate path from both Direct API and ACP.
+
+**Path 3: LSP** (for `inline_completion` routing slot)
+
+1. `useCopilotCompletion` hook reads `inline_completion` connection from `routing-store`
+2. If connection exists and working directory is available, spawns `copilot-language-server --stdio` via `copilot_lsp_start`
+3. LSP completes `initialize` → `initialized` → `workspace/didChangeConfiguration` handshake
+4. On tab activation: sends `textDocument/didOpen` with ProseMirror plain text content
+5. On editor update: sends `textDocument/didChange` (full content replacement), debounces 150ms
+6. After debounce: sends `textDocument/inlineCompletion` request at cursor position (line/character)
+7. LSP returns `InlineCompletionItem[]` with `insertText`, `range`, and acceptance `command`
+8. Hook strips already-typed prefix from suggestion, dispatches `setGhostText` to ProseMirror plugin
+9. `GhostText` extension renders a `Decoration.widget()` span at cursor position (dimmed, italic)
+10. On Tab: inserts text, notifies LSP via `copilot_lsp_accept_completion`, clears decoration
+11. On Escape or any keystroke: clears decoration (auto-dismiss on `docChanged` transaction)
+
+**Per-document toggle:**
+
+- `copilotDisabled` boolean on the `Tab` interface (session-only, not persisted)
+- When disabled: completion requests suppressed, existing ghost text cleared, `didChange` still sent (LSP stays in sync)
+- Status bar shows GitHub icon with popover toggle; icon dims when disabled
+
+**Architecture:**
+
+- Rust: `CopilotLspState` managed state with `CopilotLspProcess` (child process, JSON-RPC transport, pending requests map, status)
+- JSON-RPC 2.0 over stdio: `Content-Length` header framing, async reader task dispatching responses and notifications
+- Auth: OAuth device flow via `signIn` command → user code → browser verification → `didChangeStatus` notification
+- Frontend: `GhostText` Tiptap extension (ProseMirror plugin with widget decoration state), `useCopilotCompletion` hook
 
 ### Filesystem Watcher (External Change Detection)
 

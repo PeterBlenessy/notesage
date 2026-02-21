@@ -1,21 +1,25 @@
 # Copilot Language Server Integration — Task Breakdown
 
-**PRD:** [2026-02-21-copilot-language-server.md](2026-02-21-copilot-language-server.md)**Total:** 10 tasks — 3S, 4M, 3L **Estimated phases:** Backend plumbing (Tasks 1-5) → Frontend integration (Tasks 6-10)
+**PRD:** [2026-02-21-copilot-language-server.md](2026-02-21-copilot-language-server.md)
+**Total:** 10 tasks — 3S, 4M, 3L + 1 bonus task
+**Status:** All tasks complete (2026-02-21)
+**Estimated phases:** Backend plumbing (Tasks 1-5) → Frontend integration (Tasks 6-10) → Polish (Task 11)
 
 ## Summary
 
-| \# | Title | Complexity | Category | Dependencies |
-| --- | --- | --- | --- | --- |
-| 1 | Add JSON-RPC transport layer | M | backend | — |
-| 2 | Add CopilotLspState and process lifecycle | L | backend | #1 |
-| 3 | Implement LSP initialization and auth commands | M | backend | #2 |
-| 4 | Implement document sync commands | S | backend | #2 |
-| 5 | Implement completion request/accept commands | M | backend | #2 |
-| 6 | Create GhostText Tiptap extension | L | frontend | — |
-| 7 | Create useCopilotCompletion hook | L | frontend | #5, #6 |
-| 8 | Add Copilot LSP auth flow to ConnectionsSettings | M | frontend | #3 |
-| 9 | Wire GhostText into Editor.tsx | S | frontend | #6, #7 |
-| 10 | Add ghost text styles and polish | S | frontend | #9 |
+| \# | Title | Complexity | Category | Dependencies | Status |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Add JSON-RPC transport layer | M | backend | — | Done |
+| 2 | Add CopilotLspState and process lifecycle | L | backend | #1 | Done |
+| 3 | Implement LSP initialization and auth commands | M | backend | #2 | Done |
+| 4 | Implement document sync commands | S | backend | #2 | Done |
+| 5 | Implement completion request/accept commands | M | backend | #2 | Done |
+| 6 | Create GhostText Tiptap extension | L | frontend | — | Done |
+| 7 | Create useCopilotCompletion hook | L | frontend | #5, #6 | Done |
+| 8 | Add Copilot LSP auth flow to ConnectionsSettings | M | frontend | #3 | Done |
+| 9 | Wire GhostText into Editor.tsx | S | frontend | #6, #7 | Done |
+| 10 | Add ghost text styles and polish | S | frontend | #9 | Done |
+| 11 | Status bar indicator and per-doc toggle | S | frontend | #9 | Done |
 
 ---
 
@@ -429,3 +433,41 @@ Add CSS styles for ghost text and polish the visual presentation.
 - Test with completions at end of line vs middle of line
 - Test in both themes
 - The widget decoration approach means ghost text is a separate DOM element — it won't affect the ProseMirror content model
+
+---
+
+## Task 11: Status bar indicator and per-document toggle
+
+**Complexity:** S | **Category:** frontend | **Dependencies:** #9
+
+### Description
+
+Add a clickable Copilot status indicator in the editor status bar with a popover to toggle completions on/off per document. Also rename "GitHub Copilot LS" → "GitHub Copilot LSP" throughout the UI, remove debug console.logs from ghost-text, and correct the Copilot CLI provider capabilities (remove `inline_completion` — only the LSP supports it, not the ACP CLI).
+
+### Files
+
+- `src/lib/ai/connections.ts` (rename label, fix Copilot CLI capabilities)
+- `src/components/editor/extensions/ghost-text.ts` (remove debug logs)
+- `src/stores/editor-store.ts` (add `copilotDisabled` tab field + toggle method)
+- `src/hooks/useCopilotCompletion.ts` (guard on disabled flag, clear ghost text)
+- `src/components/editor/StatusBar.tsx` (add Copilot indicator with popover)
+- `src/components/editor/Editor.tsx` (wire new StatusBar props)
+
+### Acceptance Criteria
+
+- "GitHub Copilot LS" renamed to "GitHub Copilot LSP" in provider options
+- Copilot CLI provider (`copilot --acp`) no longer claims `inline_completion` capability
+- Debug `console.log` statements removed from ghost-text extension (keep `console.warn` for errors)
+- Per-tab `copilotDisabled` boolean flag (session-only, not persisted, resets on tab close)
+- Completion requests and ghost text suppressed when `copilotDisabled` is true
+- Existing ghost text cleared immediately when toggle is switched off
+- Status bar shows GitHub icon when `inline_completion` connection is configured
+- Icon dims (40% opacity) when disabled for the current document
+- Popover shows connection name, green/grey status dot, toggle switch, and helper text
+- No icon shown when no inline completion connection is configured
+
+### Implementation Notes
+
+- `copilotDisabled` is on the `Tab` interface but NOT in `PersistedTab` or `partialize` — purely session-scoped
+- The toggle still sends `didChange` to keep the LSP in sync — only completion requests are suppressed
+- Uses shadcn/ui `Popover` and `Switch` components per design system rules
