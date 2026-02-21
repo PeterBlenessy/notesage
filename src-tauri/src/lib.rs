@@ -11,6 +11,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .manage(WatcherState::new())
+        .manage(AcpState::new())
         .invoke_handler(tauri::generate_handler![
             read_file,
             write_file,
@@ -55,6 +56,8 @@ pub fn run() {
             migrate_from_icloud,
             migrate_quick_notes,
             acp_agent_check_availability,
+            acp_agent_spawn,
+            acp_agent_stop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -51,4 +51,6 @@ libc = "0.2"
 # ACP - Agent Client Protocol (Phase 6)
 agent-client-protocol = "0.9"
 agent-client-protocol-schema = "0.10"
+async-trait = "0.1"
+tokio-util = { version = "0.7", features = ["compat"] }
 
