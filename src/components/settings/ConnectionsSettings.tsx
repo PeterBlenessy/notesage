@@ -263,7 +263,7 @@ function ProviderPicker({ onPick }: { onPick: (option: ProviderOption) => void }
             </p>
           </div>
           {subscriptionOptions.map((option) => (
-            <ProviderPickerItem key={`${option.provider}-${option.authMethod}`} option={option} onPick={onPick} />
+            <ProviderPickerItem key={`${option.provider}-${option.authMethod}-${option.label}`} option={option} onPick={onPick} />
           ))}
         </>
       )}
@@ -276,7 +276,7 @@ function ProviderPicker({ onPick }: { onPick: (option: ProviderOption) => void }
             </p>
           </div>
           {apiKeyOptions.map((option) => (
-            <ProviderPickerItem key={`${option.provider}-${option.authMethod}`} option={option} onPick={onPick} />
+            <ProviderPickerItem key={`${option.provider}-${option.authMethod}-${option.label}`} option={option} onPick={onPick} />
           ))}
         </>
       )}

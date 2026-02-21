@@ -572,9 +572,22 @@ pub async fn copilot_lsp_start(
 ) -> Result<(), String> {
     let mut guard = state.process.lock().await;
 
-    // Already running
-    if guard.is_some() {
-        return Ok(());
+    // Already running — but check if the process is still alive
+    if let Some(proc) = guard.as_mut() {
+        match proc.child.try_wait() {
+            Ok(Some(_)) => {
+                // Process exited — clear stale state and restart below
+                *guard = None;
+            }
+            Ok(None) => {
+                // Still running
+                return Ok(());
+            }
+            Err(_) => {
+                // Error checking status — clear and restart
+                *guard = None;
+            }
+        }
     }
 
     let binary_path = resolve_copilot_binary(&app)

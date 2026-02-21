@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -47,8 +47,8 @@ export function useCopilotCompletion(editor: Editor | null) {
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const workingDir = projects[0]?.path ?? null;
 
-  // Refs for tracking state across renders without re-triggering effects
-  const lspStarted = useRef(false);
+  // lspReady as state so dependent effects re-run when it changes
+  const [lspReady, setLspReady] = useState(false);
   const openDocUri = useRef<string | null>(null);
   const docVersion = useRef(0);
   const completionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -59,20 +59,22 @@ export function useCopilotCompletion(editor: Editor | null) {
   // -------------------------------------------------------------------------
 
   useEffect(() => {
+    let cancelled = false;
+
     if (!connection || !workingDir) {
       // No connection configured — stop LSP if running
-      if (lspStarted.current) {
+      if (lspReady) {
         invoke('copilot_lsp_stop').catch(() => {});
-        lspStarted.current = false;
+        setLspReady(false);
       }
       return;
     }
 
     // Start LSP
-    if (!lspStarted.current) {
+    if (!lspReady) {
       invoke('copilot_lsp_start', { workingDirectory: workingDir })
         .then(() => {
-          lspStarted.current = true;
+          if (!cancelled) setLspReady(true);
         })
         .catch((err) => {
           console.error('[copilot] Failed to start LSP:', err);
@@ -80,11 +82,13 @@ export function useCopilotCompletion(editor: Editor | null) {
     }
 
     return () => {
-      if (lspStarted.current) {
+      cancelled = true;
+      if (lspReady) {
         invoke('copilot_lsp_stop').catch(() => {});
-        lspStarted.current = false;
+        setLspReady(false);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connection?.id, workingDir]);
 
   // -------------------------------------------------------------------------
@@ -92,7 +96,7 @@ export function useCopilotCompletion(editor: Editor | null) {
   // -------------------------------------------------------------------------
 
   useEffect(() => {
-    if (!lspStarted.current || !activeTab) return;
+    if (!lspReady || !activeTab) return;
 
     const uri = activeTab.filePath;
 
@@ -119,12 +123,12 @@ export function useCopilotCompletion(editor: Editor | null) {
     if (editor && hasActiveGhostText(editor)) {
       clearGhostText(editor);
     }
-  }, [activeTab?.filePath, editor]);
+  }, [lspReady, activeTab?.filePath, editor]);
 
   // Cleanup: close doc on unmount
   useEffect(() => {
     return () => {
-      if (openDocUri.current && lspStarted.current) {
+      if (openDocUri.current) {
         invoke('copilot_lsp_did_close', { uri: openDocUri.current }).catch(() => {});
         openDocUri.current = null;
       }
@@ -137,7 +141,7 @@ export function useCopilotCompletion(editor: Editor | null) {
 
   const requestCompletion = useCallback(
     async (filePath: string, version: number) => {
-      if (!editor || !lspStarted.current) return;
+      if (!editor || !lspReady) return;
 
       // Don't request if selection is not collapsed, or inline diff is active
       const { selection } = editor.state;
@@ -146,7 +150,6 @@ export function useCopilotCompletion(editor: Editor | null) {
 
       // Convert ProseMirror position to line/character
       const pos = selection.$from.pos;
-      // Convert PM position to line/character for the LSP
       const text = editor.state.doc.textBetween(0, pos, '\n');
       const lines = text.split('\n');
       const line = lines.length - 1;
@@ -198,11 +201,11 @@ export function useCopilotCompletion(editor: Editor | null) {
         // Silently ignore completion errors (e.g., cancelled, LSP busy)
       }
     },
-    [editor]
+    [editor, lspReady]
   );
 
   useEffect(() => {
-    if (!editor || !connection || !lspStarted.current) return;
+    if (!editor || !connection || !lspReady) return;
 
     const handleUpdate = () => {
       if (!activeTab || !openDocUri.current) return;
@@ -233,7 +236,7 @@ export function useCopilotCompletion(editor: Editor | null) {
         clearTimeout(completionTimeout.current);
       }
     };
-  }, [editor, connection?.id, activeTab?.filePath, requestCompletion]);
+  }, [editor, connection?.id, lspReady, activeTab?.filePath, requestCompletion]);
 
   // -------------------------------------------------------------------------
   // Accept tracking: when ghost text is accepted via Tab, notify LSP
@@ -242,8 +245,9 @@ export function useCopilotCompletion(editor: Editor | null) {
   useEffect(() => {
     if (!editor || !connection) return;
 
-    const handleTransaction = ({ transaction }: { transaction: any }) => {
-      const meta = transaction.getMeta(GhostTextPluginKey);
+    const handleTransaction = ({ transaction }: { transaction: unknown }) => {
+      const tr = transaction as { getMeta: (key: unknown) => unknown };
+      const meta = tr.getMeta(GhostTextPluginKey) as { ghostTextAccept?: boolean } | undefined;
       if (meta?.ghostTextAccept) {
         // The ghost text was accepted — find the command to track acceptance
         const state = GhostTextPluginKey.getState(editor.state);
@@ -271,7 +275,6 @@ export function useCopilotCompletion(editor: Editor | null) {
     if (!connection) return;
 
     const unlisten = listen<{ message: string; kind: string }>('copilot-status-changed', (event) => {
-      // Future: update a status store or show toast
       const { message, kind } = event.payload;
       if (kind === 'Error') {
         console.error('[copilot] Status error:', message);
