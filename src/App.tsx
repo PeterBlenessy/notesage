@@ -22,6 +22,7 @@ import { useSyncStore } from "@/stores/sync-store";
 import { tauriApi } from "@/lib/tauri";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
+import { migrateV1AISettings } from "@/lib/ai/migration";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -98,6 +99,11 @@ function App() {
 
   useProjectMetadata();
   useStartWatchers();
+
+  // Migrate v1 AI settings to v2 connections/routing on first load
+  useEffect(() => {
+    migrateV1AISettings();
+  }, []);
 
   // Reload file trees for all persisted projects on startup
   useEffect(() => {
