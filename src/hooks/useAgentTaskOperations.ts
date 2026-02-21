@@ -72,9 +72,10 @@ async function ensureTaskAgent(connection: Connection, cwd: string): Promise<str
     return taskAgent.instanceId;
   }
 
-  const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string };
+  const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[] };
   const result = await invoke<AcpSpawnResult>('acp_agent_spawn', {
     agentBinary: creds.agentBinary,
+    agentArgs: creds.agentArgs ?? null,
     role: 'task',
     workingDirectory: cwd,
   });

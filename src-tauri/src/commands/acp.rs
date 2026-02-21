@@ -223,6 +223,7 @@ fn run_agent_thread(
     app: AppHandle,
     instance_id: String,
     agent_binary: String,
+    agent_args: Vec<String>,
     working_directory: String,
     env_vars: HashMap<String, String>,
     mut cmd_rx: mpsc::Receiver<AgentCmd>,
@@ -252,6 +253,7 @@ fn run_agent_thread(
 
         // Spawn agent process
         let mut child = match tokio::process::Command::new(&agent_binary)
+            .args(&agent_args)
             .current_dir(&working_directory)
             .envs(&env_vars)
             .stdin(std::process::Stdio::piped())
@@ -536,20 +538,38 @@ fn resolve_agent_binary(agent_id: &str, app: &AppHandle) -> Option<String> {
 /// uses Claude Code's stored credentials internally.
 fn check_agent_auth(agent_id: &str) -> Option<bool> {
     // Map agent adapter binary → underlying CLI that manages auth
-    let auth_cli = match agent_id {
-        "claude-agent-acp" => "claude",
-        "codex" => "codex",
-        _ => return None, // Unknown agent, can't check
-    };
-
-    match Command::new(auth_cli)
-        .args(["auth", "status"])
-        .output()
-    {
-        Ok(output) if output.status.success() => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
+    match agent_id {
+        "claude-agent-acp" => {
             // claude auth status returns JSON with "loggedIn": true/false
-            Some(stdout.contains("\"loggedIn\": true") || stdout.contains("\"loggedIn\":true"))
+            match Command::new("claude").args(["auth", "status"]).output() {
+                Ok(output) if output.status.success() => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    Some(stdout.contains("\"loggedIn\": true") || stdout.contains("\"loggedIn\":true"))
+                }
+                _ => None,
+            }
+        }
+        "codex-acp" | "codex" => {
+            // codex auth status — check if codex CLI is authenticated
+            match Command::new("codex").args(["auth", "status"]).output() {
+                Ok(output) if output.status.success() => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    Some(stdout.contains("\"loggedIn\": true") || stdout.contains("\"loggedIn\":true")
+                        || stdout.contains("authenticated"))
+                }
+                _ => None,
+            }
+        }
+        "copilot" => {
+            // copilot auth status
+            match Command::new("copilot").args(["auth", "status"]).output() {
+                Ok(output) if output.status.success() => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    Some(stdout.contains("Logged in") || stdout.contains("authenticated")
+                        || stdout.contains("\"loggedIn\": true") || stdout.contains("\"loggedIn\":true"))
+                }
+                _ => None,
+            }
         }
         _ => None,
     }
@@ -603,11 +623,13 @@ pub async fn acp_agent_spawn(
     app: AppHandle,
     state: State<'_, AcpState>,
     agent_binary: String,
+    agent_args: Option<Vec<String>>,
     role: AgentRole,
     working_directory: String,
     env_vars: Option<HashMap<String, String>>,
 ) -> Result<SpawnResult, String> {
     let env = env_vars.unwrap_or_default();
+    let args = agent_args.unwrap_or_default();
 
     // Resolve the actual binary path (system PATH or bundled node_modules)
     let resolved_binary = resolve_agent_binary(&agent_binary, &app)
@@ -630,11 +652,12 @@ pub async fn acp_agent_spawn(
     let binary = resolved_binary;
     let cwd = working_directory.clone();
     let iid = instance_id.clone();
+    let spawn_args = args;
 
     let thread_handle = std::thread::Builder::new()
         .name(format!("acp-{}", &binary))
         .spawn(move || {
-            run_agent_thread(app, iid, binary, cwd, env, cmd_rx, init_tx);
+            run_agent_thread(app, iid, binary, spawn_args, cwd, env, cmd_rx, init_tx);
         })
         .map_err(|e| format!("Failed to spawn agent thread: {}", e))?;
 

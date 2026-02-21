@@ -20,7 +20,7 @@ export type ConnectionProvider =
 
 export type ConnectionCredentials =
   | { type: 'api_key'; key: string }
-  | { type: 'agent_managed'; agentBinary: string }  // e.g., "claude-agent-acp"
+  | { type: 'agent_managed'; agentBinary: string; agentArgs?: string[] }  // e.g., "claude-agent-acp"
   | { type: 'local'; url: string };
 
 // --- Capabilities ---
@@ -100,6 +100,7 @@ export interface ProviderOption {
   description: string;
   capabilities: AICapability[];
   agentBinary?: string;             // For agent_managed providers
+  agentArgs?: string[];             // Additional CLI args (e.g., ["--acp"] for Copilot)
 }
 
 /** Available provider options for the "Add Connection" picker */
@@ -125,7 +126,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     label: 'OpenAI Codex (Subscription)',
     description: 'Requires ChatGPT Plus/Pro',
     capabilities: ['interactive', 'agent_tasks'],
-    agentBinary: 'codex',
+    agentBinary: 'codex-acp',
   },
   {
     provider: 'openai',
@@ -141,6 +142,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     description: 'Free: 2,000 completions/month',
     capabilities: ['interactive', 'inline_completion', 'agent_tasks'],
     agentBinary: 'copilot',
+    agentArgs: ['--acp'],
   },
   {
     provider: 'ollama',

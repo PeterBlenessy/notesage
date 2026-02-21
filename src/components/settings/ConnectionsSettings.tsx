@@ -106,7 +106,11 @@ export function ConnectionsSettings() {
         authMethod: 'agent_managed',
         status: 'connected',
         label: option.label,
-        credentials: { type: 'agent_managed', agentBinary: option.agentBinary! },
+        credentials: {
+          type: 'agent_managed',
+          agentBinary: option.agentBinary!,
+          ...(option.agentArgs ? { agentArgs: option.agentArgs } : {}),
+        },
       });
       autoAssign(connectionId);
       setTimeout(() => {
@@ -578,8 +582,11 @@ function getAuthHint(binary: string): string {
   switch (binary) {
     case 'claude-agent-acp':
       return 'Run "claude auth login" in your terminal to sign in with your Claude subscription.';
+    case 'codex-acp':
     case 'codex':
-      return 'Run "codex auth login" in your terminal to sign in with your OpenAI subscription.';
+      return 'Run "codex login --device-auth" in your terminal to sign in with your ChatGPT subscription.';
+    case 'copilot':
+      return 'Run "copilot auth login" in your terminal to sign in with your GitHub account.';
     default:
       return `Sign in to "${binary}" before connecting.`;
   }
@@ -589,10 +596,12 @@ function getInstallHint(binary: string): string {
   switch (binary) {
     case 'claude-agent-acp':
       return 'Run: npm install -g @zed-industries/claude-agent-acp';
+    case 'codex-acp':
+      return 'Download from github.com/zed-industries/codex-acp/releases';
     case 'codex':
       return 'Run: npm install -g @openai/codex';
     case 'copilot':
-      return 'Install the GitHub Copilot CLI to connect with your Copilot subscription.';
+      return 'Run: npm install -g @anthropic/copilot-cli or download from github.com/github/copilot-cli';
     default:
       return `Install "${binary}" to continue.`;
   }

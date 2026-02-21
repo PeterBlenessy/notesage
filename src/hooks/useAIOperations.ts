@@ -155,9 +155,10 @@ async function ensureAcpAgent(connection: Connection, cwd: string): Promise<stri
     return acpAgent.instanceId;
   }
 
-  const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string };
+  const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[] };
   const result = await invoke<AcpSpawnResult>('acp_agent_spawn', {
     agentBinary: creds.agentBinary,
+    agentArgs: creds.agentArgs ?? null,
     role: 'interactive',
     workingDirectory: cwd,
   });
