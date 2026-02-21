@@ -6,11 +6,20 @@ export interface Citation {
   citedText: string;
 }
 
+export interface AgentActivity {
+  kind: string;
+  label: string;
+  detail?: string;
+  status: 'running' | 'done';
+  timestamp: number;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp?: number;
   citations?: Citation[];
+  activities?: AgentActivity[];
 }
 
 export interface GenerateOptions {

@@ -67,6 +67,13 @@ interface AcpPermissionRequestPayload {
   options: { optionId: string; kind: string; name: string }[];
 }
 
+/** Truncate a tool detail string (e.g. rawInput) for display. */
+function truncateDetail(text: string, max = 80): string {
+  const oneLine = text.replace(/\n/g, ' ').trim();
+  if (oneLine.length <= max) return oneLine;
+  return oneLine.slice(0, max) + '…';
+}
+
 /** Map ACP tool kind/title to a user-friendly label */
 function formatAcpToolName(kind?: string, title?: string): string {
   switch (kind) {
@@ -190,7 +197,7 @@ function resolveConnectionCredentials(connection: Connection): {
 export function useAIOperations() {
   const aiStore = useAIStore();
   const { apiKeys, ollamaUrl } = aiStore;
-  const { addMessage, updateMessage, setLoading, setError, setActiveTool, selectedProjectPaths, webSearchEnabled } = useChatStore();
+  const { addMessage, updateMessage, setLoading, setError, setActiveTool, addActivity, completeAllActivities, selectedProjectPaths, webSearchEnabled } = useChatStore();
   const cleanupRef = useRef<(() => void) | null>(null);
 
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
@@ -424,13 +431,27 @@ export function useAIOperations() {
               chunkCount++;
               streamedContent += update.content.text;
               updateMessage(assistantMessageId, streamedContent);
-            } else if (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update') {
+            } else if (update.sessionUpdate === 'tool_call') {
+              const kind = (update as Record<string, unknown>).kind as string | undefined;
+              const title = (update as Record<string, unknown>).title as string | undefined;
+              const rawInput = (update as Record<string, unknown>).rawInput as string | undefined;
+              const toolLabel = formatAcpToolName(kind, title);
+              setActiveTool(toolLabel);
+              addActivity(assistantMessageId, {
+                kind: kind || 'unknown',
+                label: toolLabel,
+                detail: rawInput ? truncateDetail(rawInput) : undefined,
+                status: 'running',
+                timestamp: Date.now(),
+              });
+            } else if (update.sessionUpdate === 'tool_call_update') {
               const kind = (update as Record<string, unknown>).kind as string | undefined;
               const title = (update as Record<string, unknown>).title as string | undefined;
               const toolLabel = formatAcpToolName(kind, title);
               setActiveTool(toolLabel);
             } else if (update.sessionUpdate === 'agent_turn_complete') {
               setActiveTool(null);
+              completeAllActivities(assistantMessageId);
             }
           });
 
@@ -575,7 +596,7 @@ export function useAIOperations() {
         setActiveTool(null);
       }
     },
-    [resolved, composedSystemMessage, webSearchEnabled, addMessage, updateMessage, setLoading, setError, setActiveTool, interactiveConnection, selectedProjectPaths]
+    [resolved, composedSystemMessage, webSearchEnabled, addMessage, updateMessage, setLoading, setError, setActiveTool, addActivity, completeAllActivities, interactiveConnection, selectedProjectPaths]
   );
 
   const cancelChat = useCallback(() => {

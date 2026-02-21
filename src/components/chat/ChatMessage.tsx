@@ -1,10 +1,61 @@
-import { Copy, Check, User, Sparkles, ExternalLink } from 'lucide-react';
+import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useChatStore } from '@/stores/chat-store';
-import type { ChatMessage as ChatMessageType } from '@/lib/ai/types';
+import type { ChatMessage as ChatMessageType, AgentActivity } from '@/lib/ai/types';
+
+function ActivityIcon({ activity }: { activity: AgentActivity }) {
+  if (activity.status === 'running') {
+    return <Loader2 className="h-2.5 w-2.5 animate-spin text-muted-foreground" strokeWidth={1.5} />;
+  }
+  return <Check className="h-2.5 w-2.5 text-muted-foreground" strokeWidth={1.5} />;
+}
+
+function ActivityLog({ activities }: { activities: AgentActivity[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasRunning = activities.some((a) => a.status === 'running');
+
+  return (
+    <div className="mt-2 pt-1.5 border-t border-border/50">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ChevronDown
+          className={`h-2.5 w-2.5 transition-transform duration-150 ${expanded ? '' : '-rotate-90'}`}
+          strokeWidth={1.5}
+        />
+        <span>
+          {hasRunning
+            ? `Working (${activities.length} ${activities.length === 1 ? 'step' : 'steps'})`
+            : `${activities.length} ${activities.length === 1 ? 'step' : 'steps'} completed`}
+        </span>
+      </button>
+      {expanded && (
+        <div className="mt-1 flex flex-col gap-0.5">
+          {activities.map((activity, i) => (
+            <div
+              key={`${activity.kind}-${activity.timestamp}-${i}`}
+              className="flex items-start gap-1.5 pl-1 py-0.5"
+            >
+              <span className="mt-px shrink-0">
+                <ActivityIcon activity={activity} />
+              </span>
+              <span className="text-[10px] text-muted-foreground leading-tight">
+                <span className="font-medium">{activity.label}</span>
+                {activity.detail && (
+                  <span className="opacity-70"> — {activity.detail}</span>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -17,6 +68,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const isStreaming = !isUser && isLoading && message.content.length === 0;
   const hasCitations = !isUser && message.citations && message.citations.length > 0;
+  const hasActivities = !isUser && message.activities && message.activities.length > 0;
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(message.content);
@@ -69,6 +121,11 @@ export function ChatMessage({ message }: ChatMessageProps) {
               <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse bg-muted-foreground" />
             )}
           </div>
+        )}
+
+        {/* Agent Activity Log */}
+        {hasActivities && (
+          <ActivityLog activities={message.activities!} />
         )}
 
         {/* Citations / Sources */}

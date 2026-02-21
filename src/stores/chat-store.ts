@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { ChatMessage, Citation } from '@/lib/ai/types';
+import type { ChatMessage, Citation, AgentActivity } from '@/lib/ai/types';
 
 interface ChatStore {
   messages: ChatMessage[];
@@ -21,6 +21,8 @@ interface ChatStore {
   setSelectedProjectPaths: (paths: string[]) => void;
   toggleProjectPath: (path: string) => void;
   setWebSearchEnabled: (enabled: boolean) => void;
+  addActivity: (messageTimestamp: number, activity: AgentActivity) => void;
+  completeAllActivities: (messageTimestamp: number) => void;
 }
 
 export const useChatStore = create<ChatStore>()(
@@ -62,6 +64,26 @@ export const useChatStore = create<ChatStore>()(
           };
         }),
       setWebSearchEnabled: (enabled) => set({ webSearchEnabled: enabled }),
+
+      addActivity: (messageTimestamp, activity) =>
+        set((state) => ({
+          messages: state.messages.map((msg) =>
+            msg.timestamp === messageTimestamp
+              ? { ...msg, activities: [...(msg.activities || []), activity] }
+              : msg
+          ),
+        })),
+
+      completeAllActivities: (messageTimestamp) =>
+        set((state) => ({
+          messages: state.messages.map((msg) => {
+            if (msg.timestamp !== messageTimestamp || !msg.activities) return msg;
+            const activities = msg.activities.map((a) =>
+              a.status === 'running' ? { ...a, status: 'done' as const } : a
+            );
+            return { ...msg, activities };
+          }),
+        })),
     }),
     { name: 'notesage-chat-history' }
   )
