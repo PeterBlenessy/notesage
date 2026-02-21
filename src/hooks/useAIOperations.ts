@@ -34,9 +34,82 @@ function buildProjectHeader(metadata: ProjectMetadata): string {
   return lines.join('\n');
 }
 
+// ---------------------------------------------------------------------------
+// ACP types and lazy agent management (module-level)
+// ---------------------------------------------------------------------------
+
+interface AcpSpawnResult {
+  instance_id: string;
+  agent_name: string | null;
+  agent_version: string | null;
+  auth_methods: { id: string; name: string; description: string | null }[];
+}
+
+interface AcpSessionResult {
+  session_id: string;
+}
+
+interface AcpSessionUpdatePayload {
+  instanceId: string;
+  sessionId: string;
+  update: {
+    sessionUpdate: string;
+    content?: { type: string; text?: string };
+    [key: string]: unknown;
+  };
+}
+
+interface AcpAgentState {
+  instanceId: string;
+  connectionId: string;
+  chatSessionId: string | null;
+}
+
+/** Persistent ACP agent state — survives re-renders, reset on connection change. */
+let acpAgent: AcpAgentState | null = null;
+
+/**
+ * Ensure an ACP agent is spawned and authenticated for the given connection.
+ * Reuses the existing agent if the connection matches. Stops and replaces
+ * if the connection changed.
+ */
+async function ensureAcpAgent(connection: Connection, cwd: string): Promise<string> {
+  if (acpAgent && acpAgent.connectionId !== connection.id) {
+    try {
+      await invoke('acp_agent_stop', { instanceId: acpAgent.instanceId });
+    } catch {
+      // Agent may already be stopped
+    }
+    acpAgent = null;
+  }
+
+  if (acpAgent) return acpAgent.instanceId;
+
+  const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string };
+  const result = await invoke<AcpSpawnResult>('acp_agent_spawn', {
+    agentBinary: creds.agentBinary,
+    role: 'interactive',
+    workingDirectory: cwd,
+  });
+
+  await invoke('acp_agent_authenticate', {
+    instanceId: result.instance_id,
+  });
+
+  acpAgent = {
+    instanceId: result.instance_id,
+    connectionId: connection.id,
+    chatSessionId: null,
+  };
+
+  return result.instance_id;
+}
+
+// ---------------------------------------------------------------------------
+
 /**
  * Resolve provider type, API key, and Ollama URL from a Connection.
- * Returns null if the connection uses agent_managed auth (ACP not yet implemented).
+ * Returns null for agent_managed connections (handled via ACP in callbacks).
  */
 function resolveConnectionCredentials(connection: Connection): {
   provider: AIProviderType;
@@ -44,7 +117,7 @@ function resolveConnectionCredentials(connection: Connection): {
   ollamaUrl: string | undefined;
 } | null {
   if (connection.authMethod === 'agent_managed') {
-    // ACP routing will be added in Phase 6b (task #17)
+    // ACP connections are routed separately in generateText / sendChatMessage
     return null;
   }
 
@@ -100,7 +173,7 @@ export function useAIOperations() {
     if (interactiveConnection) {
       const fromConnection = resolveConnectionCredentials(interactiveConnection);
       if (fromConnection) return fromConnection;
-      // agent_managed → not yet supported, fall through to ai-store
+      // agent_managed → handled via ACP in callbacks, fall through to ai-store
     }
 
     // Fall back to ai-store
@@ -159,6 +232,53 @@ export function useAIOperations() {
 
   const generateText = useCallback(
     async (prompt: string): Promise<string> => {
+      // ACP path: route through agent for agent_managed connections
+      if (interactiveConnection?.authMethod === 'agent_managed') {
+        const cwd = selectedProjectPaths[0] || '/tmp';
+        let instanceId: string;
+        try {
+          instanceId = await ensureAcpAgent(interactiveConnection, cwd);
+        } catch (error) {
+          acpAgent = null;
+          throw error;
+        }
+
+        // Fresh session per inline action (no multi-turn)
+        const session = await invoke<AcpSessionResult>('acp_session_new', {
+          instanceId,
+          workingDirectory: cwd,
+        });
+
+        let result = '';
+        const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
+          if (event.payload.instanceId !== instanceId) return;
+          const { update } = event.payload;
+          if (
+            update.sessionUpdate === 'agent_message_chunk' &&
+            update.content?.type === 'text' &&
+            update.content.text
+          ) {
+            result += update.content.text;
+          }
+        });
+
+        try {
+          const fullPrompt = `${composedSystemMessage}\n\n${prompt}`;
+          await invoke('acp_session_prompt', {
+            instanceId,
+            sessionId: session.session_id,
+            content: fullPrompt,
+          });
+          return result;
+        } catch (error) {
+          acpAgent = null;
+          throw error;
+        } finally {
+          unlisten();
+        }
+      }
+
+      // Direct API path
       if (!resolved) {
         throw new Error('No AI provider configured. Set up a provider in Settings.');
       }
@@ -177,19 +297,97 @@ export function useAIOperations() {
         throw error;
       }
     },
-    [resolved, composedSystemMessage]
+    [resolved, composedSystemMessage, interactiveConnection, selectedProjectPaths]
   );
 
   const sendChatMessage = useCallback(
     async (content: string, messages: ChatMessage[]) => {
-      if (!resolved) {
-        throw new Error('No AI provider configured. Set up a provider in Settings.');
-      }
-
       // Clean up any stale listeners from a previous streaming call
       if (cleanupRef.current) {
         cleanupRef.current();
         cleanupRef.current = null;
+      }
+
+      // ACP path: route through agent for agent_managed connections
+      if (interactiveConnection?.authMethod === 'agent_managed') {
+        setLoading(true);
+        setError(null);
+
+        const userTimestamp = Date.now();
+        const userMessage: ChatMessage = { role: 'user', content, timestamp: userTimestamp };
+        addMessage(userMessage);
+        const assistantMessageId = userTimestamp + 1;
+        addMessage({ role: 'assistant', content: '', timestamp: assistantMessageId });
+
+        try {
+          const cwd = selectedProjectPaths[0] || '/tmp';
+          const instanceId = await ensureAcpAgent(interactiveConnection, cwd);
+
+          // New conversation (no prior messages) → create a fresh session
+          if (messages.length === 0 && acpAgent) {
+            acpAgent.chatSessionId = null;
+          }
+
+          if (!acpAgent!.chatSessionId) {
+            const session = await invoke<AcpSessionResult>('acp_session_new', {
+              instanceId,
+              workingDirectory: cwd,
+            });
+            acpAgent!.chatSessionId = session.session_id;
+          }
+
+          let streamedContent = '';
+
+          const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
+            if (event.payload.instanceId !== instanceId) return;
+            const { update } = event.payload;
+
+            if (
+              update.sessionUpdate === 'agent_message_chunk' &&
+              update.content?.type === 'text' &&
+              update.content.text
+            ) {
+              streamedContent += update.content.text;
+              updateMessage(assistantMessageId, streamedContent);
+            } else if (update.sessionUpdate === 'tool_call') {
+              setActiveTool('agent_tool');
+            }
+          });
+
+          cleanupRef.current = () => {
+            unlisten();
+            setLoading(false);
+            setActiveTool(null);
+            cleanupRef.current = null;
+          };
+
+          try {
+            await invoke('acp_session_prompt', {
+              instanceId,
+              sessionId: acpAgent!.chatSessionId,
+              content,
+            });
+          } finally {
+            if (cleanupRef.current) {
+              cleanupRef.current();
+            }
+          }
+        } catch (error) {
+          if (cleanupRef.current) {
+            cleanupRef.current();
+          }
+          acpAgent = null;
+          setError(error instanceof Error ? error.message : 'ACP agent error');
+          setLoading(false);
+          setActiveTool(null);
+        }
+
+        return;
+      }
+
+      // Direct API path
+      if (!resolved) {
+        throw new Error('No AI provider configured. Set up a provider in Settings.');
       }
 
       setLoading(true);
@@ -274,7 +472,7 @@ export function useAIOperations() {
         setActiveTool(null);
       }
     },
-    [resolved, composedSystemMessage, webSearchEnabled, addMessage, updateMessage, setLoading, setError, setActiveTool]
+    [resolved, composedSystemMessage, webSearchEnabled, addMessage, updateMessage, setLoading, setError, setActiveTool, interactiveConnection, selectedProjectPaths]
   );
 
   return { generateText, sendChatMessage };
