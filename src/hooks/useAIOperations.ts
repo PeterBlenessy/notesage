@@ -1,10 +1,12 @@
 import { useCallback, useRef, useMemo } from 'react';
 import { useAIStore, getAllPersonas, BUILT_IN_PERSONAS } from '@/stores/ai-store';
+import { useRoutingStore } from '@/stores/routing-store';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { useChatStore } from '@/stores/chat-store';
 import { useProjectMetadataStore, type ProjectMetadata } from '@/stores/project-metadata-store';
 import { getAIProvider } from '@/lib/ai';
-import type { ChatMessage, Citation } from '@/lib/ai/types';
+import type { AIProviderType, ChatMessage, Citation } from '@/lib/ai/types';
+import type { Connection } from '@/lib/ai/connections';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
@@ -32,6 +34,33 @@ function buildProjectHeader(metadata: ProjectMetadata): string {
   return lines.join('\n');
 }
 
+/**
+ * Resolve provider type, API key, and Ollama URL from a Connection.
+ * Returns null if the connection uses agent_managed auth (ACP not yet implemented).
+ */
+function resolveConnectionCredentials(connection: Connection): {
+  provider: AIProviderType;
+  apiKey: string | undefined;
+  ollamaUrl: string | undefined;
+} | null {
+  if (connection.authMethod === 'agent_managed') {
+    // ACP routing will be added in Phase 6b (task #17)
+    return null;
+  }
+
+  const provider = connection.provider as AIProviderType;
+
+  if (connection.credentials.type === 'api_key') {
+    return { provider, apiKey: connection.credentials.key, ollamaUrl: undefined };
+  }
+
+  if (connection.credentials.type === 'local') {
+    return { provider, apiKey: undefined, ollamaUrl: connection.credentials.url };
+  }
+
+  return null;
+}
+
 export function useAIOperations() {
   const aiStore = useAIStore();
   const { apiKeys, ollamaUrl } = aiStore;
@@ -40,11 +69,52 @@ export function useAIOperations() {
 
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
 
+  // Resolve interactive connection from routing store
+  const interactiveConnection = useRoutingStore((s) => {
+    const id = s.routing.interactive;
+    if (!id) return null;
+    return s.getConnectionForUseCase('interactive');
+  });
+
   // Provider/persona overrides only apply when exactly one project is selected
   const singleProjectPath = selectedProjectPaths.length === 1 ? selectedProjectPaths[0] : null;
   const singleMetadata = singleProjectPath ? metadataMap[singleProjectPath] ?? null : null;
 
-  const effectiveProvider = singleMetadata?.ai.provider ?? aiStore.provider;
+  // Resolve effective provider + credentials:
+  // 1. Project override (v1 compat) → uses old ai-store apiKeys
+  // 2. Routing store connection → uses connection credentials
+  // 3. Fall back to ai-store (v1 behavior)
+  const resolved = useMemo(() => {
+    const projectProviderOverride = singleMetadata?.ai.provider ?? null;
+
+    // If project overrides the provider, use old v1 resolution
+    if (projectProviderOverride) {
+      return {
+        provider: projectProviderOverride,
+        apiKey: projectProviderOverride === 'ollama' ? undefined : apiKeys[projectProviderOverride],
+        ollamaUrl,
+      };
+    }
+
+    // Try routing store
+    if (interactiveConnection) {
+      const fromConnection = resolveConnectionCredentials(interactiveConnection);
+      if (fromConnection) return fromConnection;
+      // agent_managed → not yet supported, fall through to ai-store
+    }
+
+    // Fall back to ai-store
+    if (aiStore.provider) {
+      return {
+        provider: aiStore.provider,
+        apiKey: aiStore.provider === 'ollama' ? undefined : apiKeys[aiStore.provider],
+        ollamaUrl,
+      };
+    }
+
+    return null;
+  }, [singleMetadata, interactiveConnection, aiStore.provider, apiKeys, ollamaUrl]);
+
   const effectivePersonaId = singleMetadata?.ai.personaId ?? aiStore.activePersonaId;
   const allPersonas = getAllPersonas(aiStore);
   const effectivePersona = allPersonas.find((p) => p.id === effectivePersonaId) || BUILT_IN_PERSONAS[0];
@@ -89,15 +159,15 @@ export function useAIOperations() {
 
   const generateText = useCallback(
     async (prompt: string): Promise<string> => {
-      if (!effectiveProvider) {
-        throw new Error('No AI provider selected');
+      if (!resolved) {
+        throw new Error('No AI provider configured. Set up a provider in Settings.');
       }
 
       try {
         const aiProvider = getAIProvider(
-          effectiveProvider,
-          effectiveProvider === 'ollama' ? undefined : apiKeys[effectiveProvider],
-          ollamaUrl
+          resolved.provider,
+          resolved.apiKey,
+          resolved.ollamaUrl
         );
 
         const fullPrompt = `${composedSystemMessage}\n\n${prompt}`;
@@ -107,13 +177,13 @@ export function useAIOperations() {
         throw error;
       }
     },
-    [effectiveProvider, apiKeys, ollamaUrl, composedSystemMessage]
+    [resolved, composedSystemMessage]
   );
 
   const sendChatMessage = useCallback(
     async (content: string, messages: ChatMessage[]) => {
-      if (!effectiveProvider) {
-        throw new Error('No AI provider selected');
+      if (!resolved) {
+        throw new Error('No AI provider configured. Set up a provider in Settings.');
       }
 
       // Clean up any stale listeners from a previous streaming call
@@ -189,10 +259,10 @@ export function useAIOperations() {
         // Start streaming
         await invoke('ai_chat_stream', {
           messages: [systemMessage, ...messages, userMessage],
-          provider: effectiveProvider,
-          apiKey: effectiveProvider === 'ollama' ? undefined : apiKeys[effectiveProvider],
-          ollamaUrl,
-          webSearchEnabled: webSearchEnabled && effectiveProvider !== 'ollama',
+          provider: resolved.provider,
+          apiKey: resolved.apiKey,
+          ollamaUrl: resolved.ollamaUrl,
+          webSearchEnabled: webSearchEnabled && resolved.provider !== 'ollama',
         });
       } catch (error) {
         // Clean up listeners on error
@@ -204,7 +274,7 @@ export function useAIOperations() {
         setActiveTool(null);
       }
     },
-    [effectiveProvider, apiKeys, ollamaUrl, composedSystemMessage, webSearchEnabled, addMessage, updateMessage, setLoading, setError, setActiveTool]
+    [resolved, composedSystemMessage, webSearchEnabled, addMessage, updateMessage, setLoading, setError, setActiveTool]
   );
 
   return { generateText, sendChatMessage };
