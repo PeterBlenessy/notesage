@@ -119,7 +119,6 @@ export function stopAcpAgent(): void {
  */
 async function ensureAcpAgent(connection: Connection, cwd: string): Promise<string> {
   if (acpAgent && acpAgent.connectionId !== connection.id) {
-    console.log('[acp] Connection changed, stopping old agent');
     try {
       await invoke('acp_agent_stop', { instanceId: acpAgent.instanceId });
     } catch {
@@ -129,32 +128,26 @@ async function ensureAcpAgent(connection: Connection, cwd: string): Promise<stri
   }
 
   if (acpAgent) {
-    console.log('[acp] Reusing existing agent', acpAgent.instanceId);
     return acpAgent.instanceId;
   }
 
   const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string };
-  console.log('[acp] Spawning agent:', creds.agentBinary, 'cwd:', cwd);
   const result = await invoke<AcpSpawnResult>('acp_agent_spawn', {
     agentBinary: creds.agentBinary,
     role: 'interactive',
     workingDirectory: cwd,
   });
-  console.log('[acp] Agent spawned:', result.instance_id, result.agent_name, result.agent_version);
-
   // Try to authenticate — some agents handle auth internally
   // (e.g. claude-agent-acp uses Claude CLI's stored credentials)
   try {
     await invoke('acp_agent_authenticate', {
       instanceId: result.instance_id,
     });
-    console.log('[acp] Authenticated');
   } catch (authErr) {
     const msg = String(authErr);
     if (!msg.toLowerCase().includes('not implemented')) {
       throw authErr;
     }
-    console.log('[acp] Auth not implemented, skipping (agent handles auth internally)');
   }
 
   acpAgent = {
@@ -162,8 +155,6 @@ async function ensureAcpAgent(connection: Connection, cwd: string): Promise<stri
     connectionId: connection.id,
     chatSessionId: null,
   };
-  console.log('[acp] Agent ready:', acpAgent.instanceId);
-
   return result.instance_id;
 }
 
@@ -334,7 +325,6 @@ export function useAIOperations() {
             const opt = rawOptions[0] as Record<string, unknown>;
             firstOptionId = typeof opt === 'string' ? opt : String(opt?.id ?? '');
           }
-          console.log('[acp] Auto-approving permission (inline):', payload.requestId, 'option:', firstOptionId);
           invoke('acp_permission_respond', {
             instanceId,
             requestId: payload.requestId,
@@ -389,11 +379,8 @@ export function useAIOperations() {
         cleanupRef.current = null;
       }
 
-      console.log('[acp] interactiveConnection:', interactiveConnection?.id, interactiveConnection?.authMethod, '| resolved:', resolved?.provider);
-
       // ACP path: route through agent for agent_managed connections
       if (interactiveConnection?.authMethod === 'agent_managed') {
-        console.log('[acp] sendChatMessage via ACP');
         setLoading(true);
         setError(null);
 
@@ -420,7 +407,6 @@ export function useAIOperations() {
             });
             acpAgent!.chatSessionId = session.session_id;
             isNewSession = true;
-            console.log('[acp] New session:', session.session_id);
           }
 
           let streamedContent = '';
@@ -438,7 +424,6 @@ export function useAIOperations() {
               chunkCount++;
               streamedContent += update.content.text;
               updateMessage(assistantMessageId, streamedContent);
-              if (chunkCount === 1) console.log('[acp] Receiving streamed response...');
             } else if (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update') {
               const kind = (update as Record<string, unknown>).kind as string | undefined;
               const title = (update as Record<string, unknown>).title as string | undefined;
@@ -446,9 +431,6 @@ export function useAIOperations() {
               setActiveTool(toolLabel);
             } else if (update.sessionUpdate === 'agent_turn_complete') {
               setActiveTool(null);
-            } else {
-              // Log full payload for all other update types so we can see what's available
-              console.log('[acp] Session update:', update.sessionUpdate, JSON.stringify(update, null, 2));
             }
           });
 
@@ -456,20 +438,18 @@ export function useAIOperations() {
           const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
             if (event.payload.instanceId !== instanceId) return;
             const payload = event.payload;
-            console.log('[acp] Permission request:', JSON.stringify(payload, null, 2));
-            // Extract first option ID — handle both { id: "..." } and plain string formats
+            // Extract first option ID — handle both { optionId: "..." } and plain string formats
             const rawOptions = payload.options as unknown[];
             let firstOptionId: string | null = null;
             if (Array.isArray(rawOptions) && rawOptions.length > 0) {
               const opt = rawOptions[0] as Record<string, unknown>;
               firstOptionId = typeof opt === 'string' ? opt : String(opt?.optionId ?? opt?.id ?? '');
             }
-            console.log('[acp] Auto-approving permission:', payload.requestId, 'option:', firstOptionId);
             invoke('acp_permission_respond', {
               instanceId,
               requestId: payload.requestId,
               optionId: firstOptionId,
-            }).catch((err) => console.error('[acp] Permission respond failed:', err));
+            }).catch(() => {});
           });
 
           cleanupRef.current = () => {
@@ -485,13 +465,11 @@ export function useAIOperations() {
             const promptContent = isNewSession
               ? `${composedSystemMessage}\n\n${content}`
               : content;
-            console.log('[acp] Sending prompt to session:', acpAgent!.chatSessionId, isNewSession ? '(with system prompt)' : '(follow-up)');
             await invoke('acp_session_prompt', {
               instanceId,
               sessionId: acpAgent!.chatSessionId,
               content: promptContent,
             });
-            console.log('[acp] Prompt completed, chunks received:', chunkCount);
           } finally {
             if (cleanupRef.current) {
               cleanupRef.current();
@@ -502,7 +480,6 @@ export function useAIOperations() {
             cleanupRef.current();
           }
           acpAgent = null;
-          console.error('[acp] Error:', error);
           setError(error instanceof Error ? error.message : 'ACP agent error');
           setLoading(false);
           setActiveTool(null);
@@ -609,11 +586,10 @@ export function useAIOperations() {
 
     // Cancel ACP session if active
     if (acpAgent?.chatSessionId && acpAgent?.instanceId) {
-      console.log('[acp] Cancelling session:', acpAgent.chatSessionId);
       invoke('acp_session_cancel', {
         instanceId: acpAgent.instanceId,
         sessionId: acpAgent.chatSessionId,
-      }).catch((err) => console.error('[acp] Cancel failed:', err));
+      }).catch(() => {});
     }
 
     setLoading(false);
