@@ -20,9 +20,9 @@ export function SyncedIcon({ icon: Icon, synced, folder, className }: SyncedIcon
   return (
     <span className="relative shrink-0 h-3.5 w-3.5" title="Synced to iCloud">
       <Icon className={cn("h-3.5 w-3.5 text-muted-foreground/70", className)} strokeWidth={1.5} />
-      <span className={cn("absolute -right-[3px] flex items-center justify-center h-[11px] w-[11px] rounded-full bg-white dark:bg-white", folder ? "-bottom-[1px]" : "-bottom-[2px]")}>
+      <span className={cn("absolute -right-[3px] flex items-center justify-center h-[11px] w-[11px] rounded-full bg-background", folder ? "-bottom-[1px]" : "-bottom-[2px]")}>
         <Cloud
-          className="h-[9px] w-[9px] fill-muted-foreground/70 text-muted-foreground/70"
+          className="h-[9px] w-[9px] fill-muted-foreground text-muted-foreground"
           strokeWidth={0}
         />
       </span>
