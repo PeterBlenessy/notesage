@@ -6,6 +6,7 @@ pub mod export;
 pub mod git;
 pub mod watcher;
 pub mod sync;
+pub mod acp;
 
 pub use file::*;
 pub use dialog::*;
@@ -14,3 +15,4 @@ pub use export::*;
 pub use git::*;
 pub use watcher::*;
 pub use sync::*;
+pub use acp::*;

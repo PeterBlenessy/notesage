@@ -54,6 +54,7 @@ pub fn run() {
             migrate_to_icloud,
             migrate_from_icloud,
             migrate_quick_notes,
+            acp_agent_check_availability,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
