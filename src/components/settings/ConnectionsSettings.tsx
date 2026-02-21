@@ -192,8 +192,9 @@ export function ConnectionsSettings() {
           <div className="h-12 w-12 mx-auto mb-3 rounded-full bg-muted flex items-center justify-center">
             <Plus className="h-6 w-6 text-muted-foreground/50" strokeWidth={1.5} />
           </div>
-          <p className="text-sm text-muted-foreground">
-            No connections yet. Add a provider to get started.
+          <p className="text-sm font-medium">No connections yet</p>
+          <p className="text-xs text-muted-foreground mt-1.5 max-w-[240px] mx-auto">
+            Connect an AI provider to enable chat, inline actions, and agent tasks. Use your existing subscription or an API key.
           </p>
         </div>
       )}
@@ -225,42 +226,91 @@ function ProviderLogo({ provider, className = 'w-6 h-6' }: { provider: string; c
 }
 
 function ProviderPicker({ onPick }: { onPick: (option: ProviderOption) => void }) {
+  // Group by subscription-based (agent) vs API key
+  const subscriptionOptions = PROVIDER_OPTIONS.filter((o) => o.authMethod === 'agent_managed');
+  const apiKeyOptions = PROVIDER_OPTIONS.filter((o) => o.authMethod !== 'agent_managed');
+
   return (
     <div className="py-1">
       <div className="px-3 py-2 border-b border-border">
         <p className="text-sm font-medium">Add a provider</p>
         <p className="text-xs text-muted-foreground">
-          Choose how you want to connect
+          Use your existing subscription or an API key
         </p>
       </div>
-      <div className="py-1">
-        {PROVIDER_OPTIONS.map((option) => (
-          <button
-            key={`${option.provider}-${option.authMethod}`}
-            onClick={() => onPick(option)}
-            className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-accent transition-colors duration-150"
-          >
-            <ProviderLogo provider={option.provider} className="w-6 h-6 mt-0.5 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <span className="text-sm font-medium truncate block">{option.label}</span>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {option.description}
-              </p>
-              <div className="flex items-center gap-1.5 mt-1.5">
-                {option.capabilities.map((cap) => (
-                  <span
-                    key={cap}
-                    className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground"
-                  >
-                    {CAPABILITY_LABELS[cap]}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </button>
-        ))}
-      </div>
+      {subscriptionOptions.length > 0 && (
+        <>
+          <div className="px-3 pt-2 pb-1">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              Subscription
+            </p>
+          </div>
+          {subscriptionOptions.map((option, i) => (
+            <ProviderPickerItem key={`${option.provider}-${option.authMethod}`} option={option} onPick={onPick} isFirst={i === 0} />
+          ))}
+        </>
+      )}
+      {apiKeyOptions.length > 0 && (
+        <>
+          <div className="mx-3 my-1 border-t border-border" />
+          <div className="px-3 pt-1 pb-1">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              API Key
+            </p>
+          </div>
+          {apiKeyOptions.map((option) => (
+            <ProviderPickerItem key={`${option.provider}-${option.authMethod}`} option={option} onPick={onPick} />
+          ))}
+        </>
+      )}
     </div>
+  );
+}
+
+function ProviderPickerItem({
+  option,
+  onPick,
+  isFirst,
+}: {
+  option: ProviderOption;
+  onPick: (option: ProviderOption) => void;
+  isFirst?: boolean;
+}) {
+  const isFreeAvailable = option.provider === 'github';
+
+  return (
+    <button
+      onClick={() => onPick(option)}
+      className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-accent transition-colors duration-150"
+    >
+      <ProviderLogo provider={option.provider} className="w-6 h-6 mt-0.5 shrink-0" />
+      <div className="flex-1 min-w-0">
+        <span className="text-sm font-medium truncate block">
+          {option.label}
+          {isFirst && (
+            <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-sm bg-muted text-muted-foreground align-middle">
+              Recommended
+            </span>
+          )}
+        </span>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {option.description}
+          {isFreeAvailable && (
+            <span className="ml-1 text-[10px] font-medium text-muted-foreground"> · Free tier available</span>
+          )}
+        </p>
+        <div className="flex items-center gap-1.5 mt-1.5">
+          {option.capabilities.map((cap) => (
+            <span
+              key={cap}
+              className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground"
+            >
+              {CAPABILITY_LABELS[cap]}
+            </span>
+          ))}
+        </div>
+      </div>
+    </button>
   );
 }
 
@@ -397,6 +447,7 @@ function ConnectAgent({
       try {
         const result = await invoke<{ instance_id: string }>('acp_agent_spawn', {
           agentBinary: binary,
+          agentArgs: option.agentArgs ?? null,
           role: 'interactive',
           workingDirectory: '/tmp',
         });
