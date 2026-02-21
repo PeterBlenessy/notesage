@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::process::Command;
+use std::rc::Rc;
+use tauri::{AppHandle, Emitter, State};
 use tokio::sync::{mpsc, oneshot, Mutex};
-use tauri::State;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,6 +46,11 @@ pub struct AuthStatus {
     pub method_id: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SessionResult {
+    pub session_id: String,
+}
+
 // ---------------------------------------------------------------------------
 // Managed state
 // ---------------------------------------------------------------------------
@@ -81,13 +89,31 @@ enum AgentCmd {
         method_id: Option<String>,
         reply: oneshot::Sender<Result<AuthStatus, String>>,
     },
+    NewSession {
+        working_directory: String,
+        reply: oneshot::Sender<Result<String, String>>,
+    },
+    LoadSession {
+        session_id: String,
+        working_directory: String,
+        reply: oneshot::Sender<Result<String, String>>,
+    },
+    Prompt {
+        session_id: String,
+        content: String,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    Cancel {
+        session_id: String,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    PermissionRespond {
+        request_id: String,
+        option_id: Option<String>,
+    },
     Stop {
         reply: oneshot::Sender<Result<(), String>>,
     },
-    // Future task (15) will add:
-    // NewSession { ... },
-    // Prompt { ... },
-    // Cancel { ... },
 }
 
 /// Result of the initialize handshake, sent back to the spawning Tauri command.
@@ -97,15 +123,25 @@ struct InitInfo {
     auth_methods: Vec<AuthMethodInfo>,
 }
 
+/// Reply payload for permission responses from the frontend.
+struct PermissionReply {
+    option_id: Option<String>,
+}
+
 // ---------------------------------------------------------------------------
-// Minimal ACP Client implementation
+// ACP Client implementation with Tauri event forwarding
 // ---------------------------------------------------------------------------
 
 /// Notesage's implementation of the ACP Client trait.
-/// For task 13 this is a minimal stub: auto-approves permissions
-/// and silently accepts session notifications.
-/// Task 15 will replace this with full Tauri event forwarding.
-struct NotesageClient;
+/// Forwards session notifications as `acp-session-update` Tauri events
+/// and handles permission requests by emitting `acp-permission-request`
+/// events and waiting for frontend responses via the command channel.
+struct NotesageClient {
+    app: AppHandle,
+    instance_id: String,
+    permission_waiters: Rc<RefCell<HashMap<String, oneshot::Sender<PermissionReply>>>>,
+    next_request_id: Cell<u64>,
+}
 
 #[async_trait::async_trait(?Send)]
 impl agent_client_protocol::Client for NotesageClient {
@@ -114,26 +150,45 @@ impl agent_client_protocol::Client for NotesageClient {
         args: agent_client_protocol::RequestPermissionRequest,
     ) -> agent_client_protocol::Result<agent_client_protocol::RequestPermissionResponse> {
         use agent_client_protocol::{
-            PermissionOptionKind, RequestPermissionOutcome, RequestPermissionResponse,
+            PermissionOptionId, RequestPermissionOutcome, RequestPermissionResponse,
             SelectedPermissionOutcome,
         };
 
-        // Auto-approve: pick the first AllowOnce or AllowAlways option
-        let allow_option = args.options.iter().find(|o| {
-            matches!(
-                o.kind,
-                PermissionOptionKind::AllowOnce | PermissionOptionKind::AllowAlways
-            )
-        });
+        // Generate a unique request ID
+        let id = self.next_request_id.get();
+        self.next_request_id.set(id + 1);
+        let request_id = format!("perm-{}", id);
 
-        match allow_option {
-            Some(opt) => Ok(RequestPermissionResponse::new(
-                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                    opt.option_id.clone(),
+        // Create the response channel
+        let (tx, rx) = oneshot::channel();
+        self.permission_waiters
+            .borrow_mut()
+            .insert(request_id.clone(), tx);
+
+        // Emit permission request to frontend
+        let payload = serde_json::json!({
+            "instanceId": self.instance_id,
+            "sessionId": args.session_id.to_string(),
+            "requestId": request_id,
+            "toolCall": serde_json::to_value(&args.tool_call).unwrap_or_default(),
+            "options": serde_json::to_value(&args.options).unwrap_or_default(),
+        });
+        let _ = self.app.emit("acp-permission-request", payload);
+
+        // Wait for the frontend to respond
+        match rx.await {
+            Ok(reply) => match reply.option_id {
+                Some(oid) => Ok(RequestPermissionResponse::new(
+                    RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                        PermissionOptionId::new(oid),
+                    )),
                 )),
-            )),
-            None => {
-                // No allow option available — cancel
+                None => Ok(RequestPermissionResponse::new(
+                    RequestPermissionOutcome::Cancelled,
+                )),
+            },
+            Err(_) => {
+                // Waiter dropped (agent stopped) — cancel
                 Ok(RequestPermissionResponse::new(
                     RequestPermissionOutcome::Cancelled,
                 ))
@@ -143,9 +198,16 @@ impl agent_client_protocol::Client for NotesageClient {
 
     async fn session_notification(
         &self,
-        _args: agent_client_protocol::SessionNotification,
+        args: agent_client_protocol::SessionNotification,
     ) -> agent_client_protocol::Result<()> {
-        // Silently accept — task 15 will forward as Tauri events
+        // Serialize the full update and emit as a single event type.
+        // The frontend dispatches based on the `sessionUpdate` tag in the JSON.
+        let payload = serde_json::json!({
+            "instanceId": self.instance_id,
+            "sessionId": args.session_id.to_string(),
+            "update": serde_json::to_value(&args.update).unwrap_or_default(),
+        });
+        let _ = self.app.emit("acp-session-update", payload);
         Ok(())
     }
 }
@@ -157,6 +219,8 @@ impl agent_client_protocol::Client for NotesageClient {
 /// Runs on a dedicated OS thread with a single-threaded tokio runtime + LocalSet.
 /// This is necessary because ClientSideConnection is !Send (uses LocalBoxFuture).
 fn run_agent_thread(
+    app: AppHandle,
+    instance_id: String,
     agent_binary: String,
     working_directory: String,
     env_vars: HashMap<String, String>,
@@ -174,6 +238,17 @@ fn run_agent_thread(
     let local = tokio::task::LocalSet::new();
 
     local.block_on(&rt, async move {
+        // Shared permission waiters for client ↔ command loop communication
+        let permission_waiters: Rc<RefCell<HashMap<String, oneshot::Sender<PermissionReply>>>> =
+            Rc::new(RefCell::new(HashMap::new()));
+
+        let client = NotesageClient {
+            app,
+            instance_id,
+            permission_waiters: Rc::clone(&permission_waiters),
+            next_request_id: Cell::new(0),
+        };
+
         // Spawn agent process
         let mut child = match tokio::process::Command::new(&agent_binary)
             .current_dir(&working_directory)
@@ -198,13 +273,17 @@ fn run_agent_thread(
         let stdout = child.stdout.take().unwrap().compat();
 
         let (conn, io_task) = ClientSideConnection::new(
-            NotesageClient,
+            client,
             stdin,  // outgoing: client writes to agent's stdin
             stdout, // incoming: client reads from agent's stdout
             |fut| {
                 tokio::task::spawn_local(fut);
             },
         );
+
+        // Wrap connection in Rc so prompt can run via spawn_local while
+        // the command loop stays responsive for cancel/permission commands.
+        let conn = Rc::new(conn);
 
         // Spawn the I/O task on the LocalSet
         tokio::task::spawn_local(async move {
@@ -304,9 +383,95 @@ fn run_agent_thread(
                         }
                     }
                 }
+                AgentCmd::NewSession {
+                    working_directory: cwd,
+                    reply,
+                } => {
+                    let req = NewSessionRequest::new(PathBuf::from(cwd));
+                    match conn.new_session(req).await {
+                        Ok(resp) => {
+                            let _ = reply.send(Ok(resp.session_id.to_string()));
+                        }
+                        Err(e) => {
+                            let _ =
+                                reply.send(Err(format!("new_session failed: {}", e)));
+                        }
+                    }
+                }
+                AgentCmd::LoadSession {
+                    session_id: sid,
+                    working_directory: cwd,
+                    reply,
+                } => {
+                    let req = LoadSessionRequest::new(
+                        SessionId::new(sid.clone()),
+                        PathBuf::from(cwd),
+                    );
+                    match conn.load_session(req).await {
+                        Ok(_) => {
+                            // LoadSessionResponse doesn't return session_id —
+                            // it was provided in the request.
+                            let _ = reply.send(Ok(sid));
+                        }
+                        Err(e) => {
+                            let _ =
+                                reply.send(Err(format!("load_session failed: {}", e)));
+                        }
+                    }
+                }
+                AgentCmd::Prompt {
+                    session_id: sid,
+                    content,
+                    reply,
+                } => {
+                    // Run prompt in a spawn_local so the command loop remains
+                    // responsive for Cancel and PermissionRespond commands
+                    // while the agent processes the prompt.
+                    let conn = Rc::clone(&conn);
+                    tokio::task::spawn_local(async move {
+                        let req = PromptRequest::new(
+                            SessionId::new(sid),
+                            vec![ContentBlock::Text(TextContent::new(content))],
+                        );
+                        match conn.prompt(req).await {
+                            Ok(_) => {
+                                let _ = reply.send(Ok(()));
+                            }
+                            Err(e) => {
+                                let _ =
+                                    reply.send(Err(format!("Prompt failed: {}", e)));
+                            }
+                        }
+                    });
+                }
+                AgentCmd::Cancel {
+                    session_id: sid,
+                    reply,
+                } => {
+                    let req = CancelNotification::new(SessionId::new(sid));
+                    match conn.cancel(req).await {
+                        Ok(_) => {
+                            let _ = reply.send(Ok(()));
+                        }
+                        Err(e) => {
+                            let _ =
+                                reply.send(Err(format!("Cancel failed: {}", e)));
+                        }
+                    }
+                }
+                AgentCmd::PermissionRespond {
+                    request_id,
+                    option_id,
+                } => {
+                    if let Some(tx) =
+                        permission_waiters.borrow_mut().remove(&request_id)
+                    {
+                        let _ = tx.send(PermissionReply { option_id });
+                    }
+                }
                 AgentCmd::Stop { reply } => {
-                    // Drop connection to trigger graceful shutdown
-                    drop(conn);
+                    // Clear any pending permission waiters so they cancel
+                    permission_waiters.borrow_mut().clear();
                     let _ = child.kill().await;
                     let _ = reply.send(Ok(()));
                     break;
@@ -377,6 +542,7 @@ pub async fn acp_agent_check_availability(
 /// Spawn an ACP agent subprocess, initialize the connection, and return an instance ID.
 #[tauri::command]
 pub async fn acp_agent_spawn(
+    app: AppHandle,
     state: State<'_, AcpState>,
     agent_binary: String,
     role: AgentRole,
@@ -385,26 +551,7 @@ pub async fn acp_agent_spawn(
 ) -> Result<SpawnResult, String> {
     let env = env_vars.unwrap_or_default();
 
-    let (init_tx, init_rx) = oneshot::channel();
-    let (cmd_tx, cmd_rx) = mpsc::channel(32);
-
-    let binary = agent_binary.clone();
-    let cwd = working_directory.clone();
-
-    let thread_handle = std::thread::Builder::new()
-        .name(format!("acp-{}", &binary))
-        .spawn(move || {
-            run_agent_thread(binary, cwd, env, cmd_rx, init_tx);
-        })
-        .map_err(|e| format!("Failed to spawn agent thread: {}", e))?;
-
-    // Wait for initialization result from the agent thread
-    let init_result = init_rx
-        .await
-        .map_err(|_| "Agent thread exited unexpectedly during initialization".to_string())?;
-    let init_info = init_result?;
-
-    // Generate instance ID
+    // Generate instance ID before spawning so the thread can use it for events
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -414,6 +561,26 @@ pub async fn acp_agent_spawn(
         ts,
         &format!("{:x}", ts.wrapping_mul(6364136223846793005).wrapping_add(1))[..8]
     );
+
+    let (init_tx, init_rx) = oneshot::channel();
+    let (cmd_tx, cmd_rx) = mpsc::channel(32);
+
+    let binary = agent_binary.clone();
+    let cwd = working_directory.clone();
+    let iid = instance_id.clone();
+
+    let thread_handle = std::thread::Builder::new()
+        .name(format!("acp-{}", &binary))
+        .spawn(move || {
+            run_agent_thread(app, iid, binary, cwd, env, cmd_rx, init_tx);
+        })
+        .map_err(|e| format!("Failed to spawn agent thread: {}", e))?;
+
+    // Wait for initialization result from the agent thread
+    let init_result = init_rx
+        .await
+        .map_err(|_| "Agent thread exited unexpectedly during initialization".to_string())?;
+    let init_info = init_result?;
 
     let handle = AgentHandle {
         role,
@@ -498,6 +665,162 @@ pub async fn acp_agent_stop(
     if let Some(th) = handle.thread_handle.take() {
         let _ = th.join();
     }
+
+    Ok(())
+}
+
+/// Create a new ACP session.
+#[tauri::command]
+pub async fn acp_session_new(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    working_directory: String,
+) -> Result<SessionResult, String> {
+    let agents = state.agents.lock().await;
+    let handle = agents
+        .get(&instance_id)
+        .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+
+    handle
+        .cmd_tx
+        .send(AgentCmd::NewSession {
+            working_directory,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    drop(agents);
+
+    let session_id = reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to new_session".to_string())??;
+
+    Ok(SessionResult { session_id })
+}
+
+/// Load an existing ACP session.
+#[tauri::command]
+pub async fn acp_session_load(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+    working_directory: String,
+) -> Result<SessionResult, String> {
+    let agents = state.agents.lock().await;
+    let handle = agents
+        .get(&instance_id)
+        .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+
+    handle
+        .cmd_tx
+        .send(AgentCmd::LoadSession {
+            session_id,
+            working_directory,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    drop(agents);
+
+    let sid = reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to load_session".to_string())??;
+
+    Ok(SessionResult { session_id: sid })
+}
+
+/// Send a prompt to an ACP session. Blocks until the agent completes the turn.
+/// Session updates are emitted as `acp-session-update` Tauri events.
+/// Permission requests are emitted as `acp-permission-request` events.
+#[tauri::command]
+pub async fn acp_session_prompt(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+    content: String,
+) -> Result<(), String> {
+    let agents = state.agents.lock().await;
+    let handle = agents
+        .get(&instance_id)
+        .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+
+    handle
+        .cmd_tx
+        .send(AgentCmd::Prompt {
+            session_id,
+            content,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    drop(agents);
+
+    reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to prompt".to_string())?
+}
+
+/// Cancel the current prompt in an ACP session.
+#[tauri::command]
+pub async fn acp_session_cancel(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+) -> Result<(), String> {
+    let agents = state.agents.lock().await;
+    let handle = agents
+        .get(&instance_id)
+        .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+
+    handle
+        .cmd_tx
+        .send(AgentCmd::Cancel {
+            session_id,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    drop(agents);
+
+    reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to cancel".to_string())?
+}
+
+/// Respond to a permission request from an ACP agent.
+/// Pass `option_id: None` to cancel the permission request.
+#[tauri::command]
+pub async fn acp_permission_respond(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    request_id: String,
+    option_id: Option<String>,
+) -> Result<(), String> {
+    let agents = state.agents.lock().await;
+    let handle = agents
+        .get(&instance_id)
+        .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+
+    handle
+        .cmd_tx
+        .send(AgentCmd::PermissionRespond {
+            request_id,
+            option_id,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
 
     Ok(())
 }

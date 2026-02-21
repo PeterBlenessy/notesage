@@ -59,6 +59,11 @@ pub fn run() {
             acp_agent_spawn,
             acp_agent_authenticate,
             acp_agent_stop,
+            acp_session_new,
+            acp_session_load,
+            acp_session_prompt,
+            acp_session_cancel,
+            acp_permission_respond,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
