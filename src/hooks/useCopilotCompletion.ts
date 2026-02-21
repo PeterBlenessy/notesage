@@ -12,7 +12,6 @@ import {
   hasActiveInlineDiff,
   GhostTextPluginKey,
 } from '@/components/editor/extensions';
-import { getMarkdownFromEditor } from '@/lib/markdown';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -72,11 +71,13 @@ export function useCopilotCompletion(editor: Editor | null) {
 
     // Start LSP
     if (!lspReady) {
-      console.log('[copilot] Starting LSP with workingDir:', workingDir);
+      // Reset doc tracking — new LSP session has no open documents
+      openDocUri.current = null;
+      docVersion.current = 0;
+
       invoke('copilot_lsp_start', { workingDirectory: workingDir })
         .then(() => {
           if (!cancelled) {
-            console.log('[copilot] LSP started successfully, setting lspReady=true');
             setLspReady(true);
           }
         })
@@ -100,28 +101,26 @@ export function useCopilotCompletion(editor: Editor | null) {
   // -------------------------------------------------------------------------
 
   useEffect(() => {
-    if (!lspReady || !activeTab) {
-      console.log('[copilot] Doc sync skipped: lspReady=', lspReady, 'activeTab=', !!activeTab);
-      return;
-    }
+    if (!lspReady || !activeTab) return;
 
     const uri = activeTab.filePath;
-    console.log('[copilot] Doc sync for:', uri);
 
     // Close previous document if different
     if (openDocUri.current && openDocUri.current !== uri) {
       invoke('copilot_lsp_did_close', { uri: openDocUri.current }).catch(() => {});
     }
 
-    // Open new document
+    // Open new document — send ProseMirror plain text so positions match
     if (openDocUri.current !== uri) {
       docVersion.current = 0;
-      console.log('[copilot] Sending didOpen for:', uri);
+      const content = editor
+        ? editor.state.doc.textBetween(0, editor.state.doc.content.size, '\n')
+        : activeTab.content ?? '';
       invoke('copilot_lsp_did_open', {
         uri,
-        content: activeTab.content ?? '',
+        content,
         version: docVersion.current,
-      }).catch((err) => console.error('[copilot] didOpen failed:', err));
+      }).catch(() => {});
       openDocUri.current = uri;
     }
 
@@ -152,12 +151,17 @@ export function useCopilotCompletion(editor: Editor | null) {
     async (filePath: string, version: number) => {
       if (!editor || !lspReady) return;
 
+      // Don't request if completions disabled for this tab
+      if (activeTab?.copilotDisabled) return;
+
       // Don't request if selection is not collapsed, or inline diff is active
       const { selection } = editor.state;
       if (!selection.empty) return;
       if (hasActiveInlineDiff(editor)) return;
 
-      // Convert ProseMirror position to line/character
+      // Calculate line/character from the same text sent to the LSP via didChange.
+      // We use ProseMirror's textContent (plain text with \n separators) as the
+      // document content, so textBetween(0, pos) gives consistent positions.
       const pos = selection.$from.pos;
       const text = editor.state.doc.textBetween(0, pos, '\n');
       const lines = text.split('\n');
@@ -170,7 +174,6 @@ export function useCopilotCompletion(editor: Editor | null) {
       lastRequestedPos.current = posKey;
 
       try {
-        console.log(`[copilot] Requesting completion at ${line}:${character} (version ${version})`);
         const items = await invoke<InlineCompletionItem[]>('copilot_lsp_request_completion', {
           uri: filePath,
           line,
@@ -178,21 +181,34 @@ export function useCopilotCompletion(editor: Editor | null) {
           version,
         });
 
-        console.log(`[copilot] Got ${items?.length ?? 0} completion items`, items);
-
         // The editor state may have changed while we were waiting
-        if (!editor.isFocused || editor.isDestroyed) {
-          console.log('[copilot] Editor lost focus or destroyed, skipping');
-          return;
-        }
+        if (!editor.isFocused || editor.isDestroyed) return;
 
         if (items && items.length > 0) {
           const item = items[0];
-          console.log(`[copilot] Setting ghost text: "${item.insert_text.slice(0, 80)}..." at pos ${pos}`);
+          const currentPos = editor.state.selection.$from.pos;
+
+          // The LSP returns a range + full replacement text. Strip the prefix
+          // that's already typed so we only show the NEW text as ghost text.
+          let ghostText = item.insert_text;
+          if (item.range) {
+            // Characters from range.start to cursor are already in the document
+            const alreadyTypedLen = character - item.range.start.character;
+            if (alreadyTypedLen > 0 && alreadyTypedLen < ghostText.length) {
+              ghostText = ghostText.slice(alreadyTypedLen);
+            }
+          }
+
+          // Skip if nothing new to show
+          if (!ghostText) {
+            if (hasActiveGhostText(editor)) clearGhostText(editor);
+            return;
+          }
+
           setGhostText(editor, {
-            text: item.insert_text,
-            from: pos,
-            to: pos,
+            text: ghostText,
+            from: currentPos,
+            to: currentPos,
             command: item.command ? {
               command: item.command.command,
               arguments: item.command.arguments ?? undefined,
@@ -208,17 +224,16 @@ export function useCopilotCompletion(editor: Editor | null) {
             },
           }).catch(() => {});
         } else {
-          console.log('[copilot] No completions returned');
           // No completions — clear any stale ghost text
           if (hasActiveGhostText(editor)) {
             clearGhostText(editor);
           }
         }
-      } catch (err) {
-        console.error('[copilot] Completion request error:', err);
+      } catch {
+        // Silently ignore completion errors
       }
     },
-    [editor, lspReady]
+    [editor, lspReady, activeTab?.copilotDisabled]
   );
 
   useEffect(() => {
@@ -227,14 +242,20 @@ export function useCopilotCompletion(editor: Editor | null) {
     const handleUpdate = () => {
       if (!activeTab || !openDocUri.current) return;
 
-      // Send didChange
+      // Ensure document is opened before sending changes
+      if (openDocUri.current !== activeTab.filePath) return;
+
+      // Send didChange — use ProseMirror plain text so positions match
       docVersion.current += 1;
-      const content = getMarkdownFromEditor(editor);
+      const content = editor.state.doc.textBetween(0, editor.state.doc.content.size, '\n');
       invoke('copilot_lsp_did_change', {
         uri: activeTab.filePath,
         content,
         version: docVersion.current,
       }).catch(() => {});
+
+      // Skip completion request if disabled for this tab
+      if (activeTab.copilotDisabled) return;
 
       // Debounce completion request: wait 150ms after typing stops
       if (completionTimeout.current) {
@@ -254,6 +275,16 @@ export function useCopilotCompletion(editor: Editor | null) {
       }
     };
   }, [editor, connection?.id, lspReady, activeTab?.filePath, requestCompletion]);
+
+  // -------------------------------------------------------------------------
+  // Clear ghost text when completions are disabled for the active tab
+  // -------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (editor && activeTab?.copilotDisabled && hasActiveGhostText(editor)) {
+      clearGhostText(editor);
+    }
+  }, [editor, activeTab?.copilotDisabled]);
 
   // -------------------------------------------------------------------------
   // Accept tracking: when ghost text is accepted via Tab, notify LSP
@@ -292,7 +323,7 @@ export function useCopilotCompletion(editor: Editor | null) {
     if (!connection) return;
 
     const unlisten = listen<{ message: string; kind: string }>('copilot-status-changed', (event) => {
-      const { message, kind } = event.payload;
+      const { kind, message } = event.payload;
       if (kind === 'Error') {
         console.error('[copilot] Status error:', message);
       }

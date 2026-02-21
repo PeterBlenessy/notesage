@@ -114,13 +114,21 @@ function createGhostTextDecoration(
   doc: Parameters<typeof DecorationSet.create>[0],
   completion: GhostTextCompletion
 ): DecorationSet {
+  // Validate position is within document bounds
+  if (completion.from < 0 || completion.from > doc.content.size) {
+    console.warn('[ghost-text] Position out of bounds:', completion.from, 'doc size:', doc.content.size);
+    return DecorationSet.empty;
+  }
+
   // Create a widget decoration at the cursor position
   const widget = Decoration.widget(
     completion.from,
     () => {
       const span = document.createElement('span');
       span.className = 'ghost-text';
-      span.textContent = completion.text;
+      // Show first line only for inline display; full text on accept
+      const firstLine = completion.text.split('\n')[0];
+      span.textContent = firstLine;
       span.setAttribute('contenteditable', 'false');
       return span;
     },

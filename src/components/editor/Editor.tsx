@@ -2,6 +2,7 @@ import { useEffect, useCallback, useRef, useState, useMemo } from "react";
 import { EditorContent } from "@tiptap/react";
 import { Command, File, FolderDot, Folder, Clock } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
+import { useRoutingStore } from "@/stores/routing-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore, type ContentWidth } from "@/stores/settings-store";
 import { useExternalChangeStore } from "@/stores/external-change-store";
@@ -75,12 +76,13 @@ interface EditorProps {
 }
 
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange }: EditorProps) {
-  const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange } = useEditorStore();
+  const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange, toggleCopilotForTab } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, pageBreaks } = useSettingsStore();
   const { projectPath } = useActiveProject();
   const repo = useGitStore((s) => projectPath ? s.repos[projectPath] : undefined);
   const isGitRepo = repo?.isGitRepo ?? false;
+  const copilotConnection = useRoutingStore((s) => s.getConnectionForUseCase('inline_completion'));
   const { saveFile } = useFileOperations();
   const maxWidth = CONTENT_WIDTHS[contentWidth];
   const isPaperMode = contentWidth === 'a4' || contentWidth === 'a5' || contentWidth === 'letter';
@@ -866,6 +868,9 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           onRejectAllChanges={handleExternalRejectAll}
           onAcceptHunk={handleExternalAcceptHunk}
           onRejectHunk={handleExternalRejectHunk}
+          copilotActive={!!copilotConnection}
+          copilotDisabledForTab={activeTab?.copilotDisabled ?? false}
+          onToggleCopilot={() => { if (activeTabId) toggleCopilotForTab(activeTabId); }}
           onSelectChange={(change, hunkIndex) => {
             // Switch to the tab that has this file open and scroll to the specific hunk
             const matchingTab = tabs.find((t) => t.filePath === change.filePath);

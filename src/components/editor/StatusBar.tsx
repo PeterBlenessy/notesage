@@ -1,5 +1,7 @@
 import type { Editor } from "@tiptap/core";
-import { GitBranch } from "lucide-react";
+import { GitBranch, Github } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Switch } from "@/components/ui/switch";
 import { CommentListPopover } from "./CommentListPopover";
 import { ChangeListPopover } from "./ChangeListPopover";
 import type { Comment } from "@/stores/comment-store";
@@ -33,6 +35,9 @@ interface StatusBarProps {
   onAcceptHunk?: (hunkId: string) => void;
   onRejectHunk?: (hunkId: string) => void;
   onSelectChange?: (change: ExternalChangeEntry, hunkIndex: number) => void;
+  copilotActive?: boolean;
+  copilotDisabledForTab?: boolean;
+  onToggleCopilot?: () => void;
 }
 
 export function StatusBar({
@@ -57,6 +62,9 @@ export function StatusBar({
   onAcceptHunk,
   onRejectHunk,
   onSelectChange,
+  copilotActive = false,
+  copilotDisabledForTab = false,
+  onToggleCopilot,
 }: StatusBarProps) {
   if (!editor) {
     return null;
@@ -122,6 +130,50 @@ export function StatusBar({
               onAcceptHunk={onAcceptHunk}
               onRejectHunk={onRejectHunk}
             />
+            <span className="w-px h-2.5 bg-border" />
+          </>
+        )}
+        {copilotActive && onToggleCopilot && (
+          <>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  className={`inline-flex items-center gap-1 hover:text-foreground transition-colors ${
+                    copilotDisabledForTab ? "opacity-40" : ""
+                  }`}
+                  title="GitHub Copilot LSP"
+                >
+                  <Github className="h-3.5 w-3.5" strokeWidth={1.5} />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-56 p-3" sideOffset={6}>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Github className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+                    <span className="text-xs font-medium">GitHub Copilot LSP</span>
+                    <span
+                      className={`ml-auto h-1.5 w-1.5 rounded-full shrink-0 ${
+                        copilotDisabledForTab ? "bg-muted-foreground/40" : "bg-green-500"
+                      }`}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="copilot-toggle" className="text-xs text-muted-foreground">
+                      Enable for this document
+                    </label>
+                    <Switch
+                      id="copilot-toggle"
+                      checked={!copilotDisabledForTab}
+                      onCheckedChange={() => onToggleCopilot()}
+                      className="scale-75 origin-right"
+                    />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground/60 leading-tight">
+                    Session only — resets when tab is closed
+                  </p>
+                </div>
+              </PopoverContent>
+            </Popover>
             <span className="w-px h-2.5 bg-border" />
           </>
         )}

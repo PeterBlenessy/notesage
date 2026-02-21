@@ -148,7 +148,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
   {
     provider: 'github',
     authMethod: 'agent_managed',
-    label: 'GitHub Copilot LS',
+    label: 'GitHub Copilot LSP',
     description: 'Chat, completions, and agents via Language Server',
     capabilities: ['interactive', 'inline_completion', 'agent_tasks'],
     lspBinary: 'copilot-language-server',

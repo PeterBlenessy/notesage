@@ -9,6 +9,8 @@ export interface Tab {
   isDirty: boolean;
   content: string;
   frontmatter: Frontmatter | null;
+  /** Session-only: when true, Copilot completions are suppressed for this tab. */
+  copilotDisabled?: boolean;
 }
 
 export interface RecentFile {
@@ -51,6 +53,8 @@ interface EditorStore {
   renameTab: (oldPath: string, newPath: string) => void;
   /** Rewrite all file paths that start with oldPrefix to use newPrefix (used by project migration). */
   updateFilePaths: (oldPrefix: string, newPrefix: string) => void;
+  /** Toggle Copilot completions for a specific tab (session-only, not persisted). */
+  toggleCopilotForTab: (tabId: string) => void;
 }
 
 export const useEditorStore = create<EditorStore>()(
@@ -218,6 +222,14 @@ export const useEditorStore = create<EditorStore>()(
             Object.entries(state.scrollPositions).map(([k, v]) =>
               k === oldPath ? [newPath, v] : [k, v]
             )
+          ),
+        }));
+      },
+
+      toggleCopilotForTab: (tabId: string) => {
+        set((state) => ({
+          tabs: state.tabs.map((tab) =>
+            tab.id === tabId ? { ...tab, copilotDisabled: !tab.copilotDisabled } : tab
           ),
         }));
       },
