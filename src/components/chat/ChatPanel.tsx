@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { X, Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe } from 'lucide-react';
+import { Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 import { PersonaIcon } from '@/components/PersonaIcon';
 import { useChatStore } from '@/stores/chat-store';
@@ -22,11 +22,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 
-interface ChatPanelProps {
-  onClose: () => void;
-}
-
-export function ChatPanel({ onClose }: ChatPanelProps) {
+export function ChatPanel() {
   const { messages, isLoading, error, activeTool, clearMessages, selectedProjectPaths, setSelectedProjectPaths, toggleProjectPath, webSearchEnabled, setWebSearchEnabled } = useChatStore();
   const aiStore = useAIStore();
   const { provider, setActivePersona } = aiStore;
@@ -108,13 +104,6 @@ export function ChatPanel({ onClose }: ChatPanelProps) {
             title="Clear chat history"
           >
             <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-          </button>
-          <button
-            onClick={onClose}
-            className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors duration-150 text-muted-foreground hover:text-foreground hover:bg-accent"
-            title="Close chat"
-          >
-            <X className="h-3.5 w-3.5" strokeWidth={1.5} />
           </button>
         </div>
       </div>

@@ -183,6 +183,8 @@ export function useFileOperations() {
     async (oldPath: string, newPath: string) => {
       try {
         await tauriApi.renamePath(oldPath, newPath);
+        // Update open tab if this file is open in the editor
+        useEditorStore.getState().renameTab(oldPath, newPath);
         await refreshFileTree(oldPath);
         await refreshFileTree(newPath);
         refreshGitForPath(oldPath);

@@ -78,10 +78,12 @@ export function CommentPopover({
 
   // Focus textarea when entering create/edit mode
   useEffect(() => {
-    if ((mode === 'create' || mode === 'edit') && textareaRef.current) {
-      requestAnimationFrame(() => {
+    if (mode === 'create' || mode === 'edit') {
+      // Use a short timeout to ensure the popover content is fully mounted
+      const timer = setTimeout(() => {
         textareaRef.current?.focus();
-      });
+      }, 50);
+      return () => clearTimeout(timer);
     }
   }, [mode]);
 

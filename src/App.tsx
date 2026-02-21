@@ -477,7 +477,7 @@ function App() {
                   minSize={280}
                   maxSize={500}
                 >
-                  <ChatPanel onClose={() => setChatPanelOpen(false)} />
+                  <ChatPanel />
                 </ResizablePanel>
               </>
             )}

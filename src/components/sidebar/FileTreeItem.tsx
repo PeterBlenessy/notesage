@@ -261,7 +261,16 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
                 className="flex-1 min-w-0 h-5 px-1 text-sm rounded border border-primary bg-background text-foreground outline-none transition-colors duration-150"
               />
             ) : (
-              <span className="truncate flex-1">{entry.name}</span>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="truncate flex-1">{entry.name}</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>
+                    {entry.name}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
 
             {hasExternalChange && (

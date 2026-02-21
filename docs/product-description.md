@@ -200,7 +200,7 @@ Document comments and external change tracking — foundational infrastructure f
   - Inline diff decorations: red strikethrough for deletions, green for insertions
   - Per-hunk accept/reject via inline click controls or keyboard shortcuts (`Cmd+Enter` / `Cmd+Backspace`)
   - Status bar change tracker (`RefreshCw` icon + count) with `ChangeListPopover`
-  - Popover shows all pending changes across all open files: `[filename] : [change preview]  [✓] [✗]`
+  - Popover shows all pending changes across all open files: `[filename] : [change preview] [✓] [✗]`
   - Per-hunk accept/reject from popover (for the focused file), click-to-navigate for other files
   - Accept All / Reject All bulk actions in popover header
   - Toast auto-dismisses after 8 seconds; changes defer to status bar for later review

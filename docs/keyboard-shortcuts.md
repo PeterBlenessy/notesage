@@ -5,7 +5,7 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 ## File Operations
 
 | Action | Shortcut | Description |
-|--------|----------|-------------|
+| --- | --- | --- |
 | Save | `Cmd+S` | Save current file to disk |
 | Open file | `Cmd+O` | Open file picker dialog |
 | Close tab | `Cmd+W` | Close active tab (warns if unsaved) |
@@ -16,7 +16,7 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 ## Editor Formatting
 
 | Action | Shortcut | Description |
-|--------|----------|-------------|
+| --- | --- | --- |
 | Bold | `Cmd+B` | Toggle bold on selection |
 | Italic | `Cmd+I` | Toggle italic on selection |
 | Underline | `Cmd+U` | Toggle underline on selection |
@@ -27,7 +27,7 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 ## Editor Navigation
 
 | Action | Shortcut | Description |
-|--------|----------|-------------|
+| --- | --- | --- |
 | Undo | `Cmd+Z` | Undo last change |
 | Redo | `Cmd+Shift+Z` | Redo last undone change |
 | Find in document | `Cmd+F` | Native browser find in current document |
@@ -35,14 +35,14 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 ## App Settings
 
 | Action | Shortcut | Description |
-|--------|----------|-------------|
+| --- | --- | --- |
 | Toggle theme | `Cmd+T` | Switch between light and dark mode |
 | Open settings | `Cmd+,` | Open settings dialog |
 
 ## AI Features
 
 | Action | Shortcut | Description |
-|--------|----------|-------------|
+| --- | --- | --- |
 | Toggle chat panel | `Cmd+Shift+A` | Show/hide AI chat sidebar |
 | Accept suggestion | `Cmd+Enter` | Accept AI inline suggestion (when decoration visible) |
 | Reject suggestion | `Cmd+Backspace` | Reject AI inline suggestion (when decoration visible) |
@@ -50,13 +50,13 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 ## Tab Navigation
 
 | Action | Shortcut | Description |
-|--------|----------|-------------|
+| --- | --- | --- |
 | Middle-click tab | Mouse middle button | Close tab |
 
 ## Slash Commands
 
 | Command | Result | Description |
-|---------|--------|-------------|
+| --- | --- | --- |
 | `/` | Show menu | Trigger slash command menu |
 | `/h1` | Heading 1 | Insert level 1 heading |
 | `/h2` | Heading 2 | Insert level 2 heading |
@@ -73,7 +73,7 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 ## App Navigation
 
 | Action | Shortcut | Description |
-|--------|----------|-------------|
+| --- | --- | --- |
 | Command palette | `Cmd+K` | Open command palette (when no text selected) |
 | Search files | `Cmd+Shift+F` | Open command palette in file search mode |
 | Toggle sidebar | `Cmd+B` | Show/hide file sidebar |
@@ -86,7 +86,7 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 These shortcuts are planned but not yet implemented:
 
 | Action | Shortcut | Description |
-|--------|----------|-------------|
+| --- | --- | --- |
 | Find and replace | `Cmd+Shift+H` | Search and replace in current document |
 
 ## Implementation Notes
@@ -108,6 +108,7 @@ When multiple shortcuts could apply, priority is:
 ### Cross-platform
 
 Currently targeting macOS:
+
 - `Cmd` (⌘) is used for all shortcuts
 - Windows/Linux support would use `Ctrl` instead
 - Use `Mod` key in code to support both: `Mod+S` maps to `Cmd+S` on Mac, `Ctrl+S` on Windows
@@ -121,6 +122,7 @@ Currently targeting macOS:
 ### Testing
 
 Shortcuts to test in both light and dark mode:
+
 - All formatting shortcuts should work on selected text
 - All file operations should show appropriate dialogs/confirmations
 - Theme toggle should smoothly transition between modes
