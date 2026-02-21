@@ -6,7 +6,7 @@ id: ""
 
 Notesage is a WYSIWYG markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
-**Current version:** 0.12.0
+**Current version:** 0.12.2
 
 ## Current Features
 
@@ -262,80 +262,66 @@ Central library folder and selective iCloud sync for projects.
 - Sync progress/status monitoring from iCloud
 - Non-Apple cloud providers (Dropbox, Google Drive, OneDrive)
 
+### AI Provider Architecture v2
+
+Multi-provider AI with subscription-based auth, agent mode, and per-use-case routing via ACP (Agent Client Protocol).
+
+**Connections & routing:**
+
+- Multi-provider connection system: users can connect multiple AI providers simultaneously
+- Three auth methods: API key (Anthropic, OpenAI), agent-managed subscription (Claude Code, Codex, Copilot via ACP), local (Ollama)
+- Per-use-case routing: separate provider assignment for interactive (chat + inline actions), agent tasks, and inline completion
+- Smart auto-assignment: first connection fills all compatible use case slots
+- One-time migration from v1 ai-store preserves existing API key configurations
+- Settings UI: Connections list with provider cards, Add Connection popover with capability guidance, Advanced Routing collapsible section
+
+**ACP (Agent Client Protocol) integration:**
+
+- Full ACP client implementation in Rust backend using `agent-client-protocol` crate
+- Agent subprocess spawning, initialization, and authentication via Tauri commands
+- ACP session management: create, prompt, cancel, load sessions
+- Streaming responses via Tauri events (`acp-session-update`)
+- Permission request handling: read-only tools auto-approved, write tools tracked in permission-store
+- Three supported ACP agents: Claude Code (`claude-agent-acp`), OpenAI Codex (`codex-acp`), GitHub Copilot (`copilot --acp`)
+
+**Agent activity & tasks:**
+
+- Agent activity panel: collapsible per-message activity log showing tool call steps
+- Background task agent hook (`useAgentTaskOperations`): separate ACP instance for delegated work
+- Task lifecycle: start, cancel, track status and output
+- Agent file changes flow through existing file watcher → external-change-store → inline diff review
+
+**Architecture:**
+
+- `connections-store` (Zustand, persisted): manages provider connections
+- `routing-store` (Zustand, persisted): maps use cases to connections
+- `permission-store` (Zustand, non-persisted): tracks ACP tool call approvals
+- `AcpState` (Rust managed state): agent process handles, sessions, install lock
+- Tauri commands: `acp_agent_spawn`, `acp_agent_authenticate`, `acp_agent_stop`, `acp_agent_check_availability`, `acp_session_new`, `acp_session_prompt`, `acp_session_cancel`, `acp_session_load`, `acp_permission_respond`
+
+**Future enhancements (not yet built):**
+
+- Interactive permission approval UI (currently auto-approved with tracking)
+- Agent binary auto-install wizard (PRD: `docs/prds/2026-02-21-agent-install-wizard.md`)
+- Chat provider indicator and per-chat connection picker
+- ACP agent binary bundling as Tauri sidecar
+- Orphaned agent process cleanup on app exit
+
 ## Roadmap
 
-### Phase 6 — Agentic AI Collaboration
+### Phase 6.5 — Chat UX & Agent Polish
 
-**Goal:** Integrate agentic AI that works alongside the user — making changes, receiving delegated tasks, and operating with the user's existing AI subscription.
-
-**Features:**
-
-- Anthropic Agent SDK integration
-  - Reuse user's existing Claude subscription instead of requiring separate API keys
-  - OAuth/subscription-based authentication flow
-- Comment-to-task delegation
-  - User marks comments as "delegate to AI"
-  - AI agent reads delegated comments, makes changes to files on disk
-  - App detects changes (Phase 5 infrastructure), shows diffs for review
-  - User accepts/rejects/adds follow-up comments -&gt; iterative collaboration loop
-- AI-driven git workflows
-  - Smart commit messages generated from diffs
-  - PR description drafting
-  - Change summarization across multiple files
-
-**Architecture considerations:**
-
-- Anthropic Agent SDK client in Rust backend or as sidecar process
-- Agent task queue in `.notesage/agent-tasks/`
-- Requires Phase 5 (comments + change detection) as foundation
-- Security: agent operates within project directory boundaries only
-
-### Phase 6.5 — Chat UX Improvements
-
-**Goal:** Make the chat experience provider-aware so users always know which AI connection is handling their conversation and can switch seamlessly.
+**Goal:** Polish the agent experience with provider-aware chat, interactive permission approval, and agent binary management.
 
 **Features:**
 
-- Chat provider indicator
-  - Show active connection name/badge in chat input footer (e.g., "Claude Code (Subscription)" or "Anthropic API")
-  - Different avatar or badge on message bubbles to distinguish which provider generated each response
-  - System-style message inserted into chat when provider switches mid-conversation (e.g., "Switched to Claude Code (Subscription)")
-- Per-chat connection picker
-  - Dropdown in chat input area to override the default routing for the current conversation
-  - Overrides the global routing from Settings without changing it
-- Chat history forwarding on provider switch
-  - When switching to an ACP agent mid-conversation, offer to replay prior messages so the agent has context
-  - Show cost/size warning before forwarding history
-  - Option to start fresh or include history
-- ACP agent binary bundling
-  - Bundle `claude-agent-acp` standalone binary as a Tauri sidecar (no Node.js dependency for end users)
-  - Auto-update mechanism for bundled agent adapters
-- Agent activity panel
-  - Collapsible "Activity" section per assistant message showing tool calls as they happen
-  - Entries like: "Searched the web: query", "Read file: path", "Ran command: git status"
-  - Data comes from ACP `tool_call` / `tool_call_update` session updates (kind, title, rawInput)
-  - Could also surface `available_commands_update` as slash commands in the chat input
-- Tool use approval and permissions
-  - Currently all ACP permission requests are auto-approved with the first option (`allow_always`) — this is unsafe for destructive operations
-  - Replace auto-approve with a permission request UI: toast or inline panel showing what the agent wants to do (tool kind, target file/URL, command) with Approve/Deny buttons
-  - Granular permission levels: "Allow once", "Allow always for this tool", "Allow always for this session", "Deny"
-  - Pre-configured trust levels per tool kind: read-only tools (file read, glob, grep) can be auto-approved; write tools (file edit, bash commands) require explicit approval; destructive tools (delete, force push) always require approval
-  - Settings page for configuring default permission policies per agent
-  - Visual indicator in chat when agent is waiting for permission (distinct from "thinking" state)
-  - Timeout with auto-deny if user doesn't respond within configurable window
-- Orphaned agent process cleanup
-  - Kill ACP agent child processes on app exit/restart
-  - Track running processes and clean up on window close
-- External change diff application fidelity
-  - Current diff-match-patch operates on raw markdown text, but ProseMirror applies changes at the document model level — accepting diffs can strip markdown formatting (bold, lists, headings) when the two representations diverge
-  - Investigate mapping raw-text diffs to ProseMirror transactions that preserve formatting
-  - Alternatively, diff at the ProseMirror document model level instead of raw text
-
-**Architecture considerations:**
-
-- Chat store needs a per-conversation `connectionOverride` field
-- Message model needs a `connectionId` field to track which provider generated each message
-- Download platform-specific standalone binaries from `zed-industries/claude-agent-acp` GitHub Releases during build/CI
+- Chat provider indicator: show active connection in chat footer, per-message provider badge
+- Per-chat connection picker: override routing for current conversation
+- Interactive permission approval UI: replace auto-approve with approve/deny controls for write tools
+- Agent binary auto-install: one-click npm install from within the app (PRD ready)
+- ACP agent binary bundling as Tauri sidecar (no Node.js dependency for end users)
+- Orphaned agent process cleanup on app exit/restart
+- External change diff fidelity: map raw-text diffs to ProseMirror transactions that preserve formatting
 
 ### Phase 7 — AI-Assisted Research
 

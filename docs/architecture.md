@@ -25,7 +25,8 @@ note-sage/
 │   │   │   ├── mod.rs
 │   │   │   ├── file.rs     # File read/write/list operations
 │   │   │   ├── dialog.rs   # Native file/folder dialogs
-│   │   │   ├── ai.rs       # AI provider commands
+│   │   │   ├── ai.rs       # AI provider commands (direct API)
+│   │   │   ├── acp.rs      # ACP agent management (spawn, auth, sessions, permissions)
 │   │   │   ├── export.rs   # PDF export commands
 │   │   │   ├── git.rs      # Git operations
 │   │   │   └── watcher.rs  # Filesystem watcher (notify crate)
@@ -64,7 +65,10 @@ note-sage/
 │   │   ├── NewProjectDialog.tsx     # New project creation dialog
 │   │   ├── settings/
 │   │   │   ├── SettingsDialog.tsx  # Main settings modal
-│   │   │   ├── AISettings.tsx      # AI provider configuration
+│   │   │   ├── AISettings.tsx      # AI provider configuration (legacy)
+│   │   │   ├── ConnectionsSettings.tsx # Multi-provider connections management
+│   │   │   ├── ConnectionCard.tsx  # Single connection display card
+│   │   │   ├── UseCaseRoutingSettings.tsx # Per-use-case provider routing
 │   │   │   └── ProjectSettings.tsx # Project-level settings
 │   │   ├── chat/
 │   │   │   ├── ChatPanel.tsx       # AI chat sidebar
@@ -77,7 +81,8 @@ note-sage/
 │   │   ├── useFileWatcher.ts       # Filesystem watcher event handler
 │   │   ├── useExportOperations.ts  # PDF export flow orchestration
 │   │   ├── useProjectMetadata.ts   # Auto-bootstrap .notesage/project.json
-│   │   └── useAIOperations.ts      # AI generation and chat operations
+│   │   ├── useAIOperations.ts      # AI generation, chat, and ACP routing
+│   │   └── useAgentTaskOperations.ts # Background agent task management
 │   ├── stores/
 │   │   ├── editor-store.ts         # Open tabs, active file
 │   │   ├── project-store.ts        # Project folder, file tree
@@ -91,6 +96,8 @@ note-sage/
 │   │   ├── utils.ts                # General utilities
 │   │   └── ai/                     # AI provider abstraction
 │   │       ├── types.ts            # AI interfaces and types
+│   │       ├── connections.ts      # Connection types, capabilities, routing, provider options
+│   │       ├── migration.ts        # V1 ai-store → connections/routing migration
 │   │       ├── index.ts            # Provider factory
 │   │       └── providers/
 │   │           ├── anthropic.ts    # Anthropic implementation
@@ -144,8 +151,11 @@ All state stores use Zustand with the persist middleware for localStorage:
 - **project-store**: Root folder path, file tree structure, expanded folders
 - **project-metadata-store**: Project metadata from `.notesage/project.json` (name, description, AI overrides)
 - **settings-store**: Theme, window state, recent projects, UI preferences (floating toolbar toggle)
-- **ai-store**: AI provider selection, API keys, Ollama URL, suggestions enabled
-- **chat-store**: Chat conversation messages, loading state, errors
+- **ai-store**: AI provider selection, API keys, Ollama URL, suggestions enabled (legacy — used as fallback)
+- **connections-store**: Multi-provider connections with auth method, status, capabilities
+- **routing-store**: Per-use-case provider routing (interactive, agent_tasks, inline_completion)
+- **permission-store**: ACP tool call permission tracking (non-persisted)
+- **chat-store**: Chat conversation messages, loading state, errors, agent activities
 
 ### Styling
 
@@ -157,7 +167,9 @@ All state stores use Zustand with the persist middleware for localStorage:
 
 ### AI Provider Abstraction
 
-Clean provider interface that all AI backends implement:
+Two paths for AI operations, transparently routed based on the connection's auth method:
+
+**Path 1: Direct API** (for `api_key` and `local` connections)
 
 ```typescript
 interface AIProvider {
@@ -167,18 +179,18 @@ interface AIProvider {
 }
 ```
 
-**Why this design:**
-
-- Single interface for all providers
-- Easy to add new providers later
-- Type-safe with TypeScript
-- Secure: all API calls through Tauri backend (Rust)
-
-**Provider implementation:**
-
 - Anthropic: Claude Sonnet 4.5 (Messages API with server-side web search via `web_search_20250305`)
 - OpenAI: GPT-4o (Responses API `/v1/responses` with `web_search_preview` tool)
 - Ollama: Local AI models (no web search support)
+
+**Path 2: ACP (Agent Client Protocol)** (for `agent_managed` connections)
+
+- Uses the `agent-client-protocol` Rust crate to communicate with agent subprocesses over stdio
+- Agents handle their own auth (subscription login via browser popup)
+- Prompts sent via `acp_session_prompt`, responses streamed as `acp-session-update` Tauri events
+- Three supported agents: Claude Code (`claude-agent-acp`), Codex (`codex-acp`), Copilot (`copilot --acp`)
+
+**Routing:** `useAIOperations` reads the `interactive` connection from `routing-store`. If the connection is `api_key`/`local`, it uses Path 1 (direct API). If `agent_managed`, it uses Path 2 (ACP). The rest of the app (chat panel, bubble menu) is unaware of which path is used.
 
 ### Security Model
 
@@ -212,15 +224,30 @@ interface AIProvider {
 
 ### AI Operations
 
+**Direct API path** (api_key / local connections):
+
 1. User selects text → clicks "Improve" in BubbleMenu
 2. Frontend calls `useAIOperations.generateText(prompt)`
-3. Hook retrieves provider + API key from ai-store
+3. Hook reads `interactive` connection from `routing-store`, resolves credentials
 4. Frontend calls Tauri command `ai_generate_text(request)`
 5. Rust makes HTTP request to AI provider API
 6. AI response returned to frontend
 7. Frontend updates editor content
 
+**ACP path** (agent_managed connections):
+
+1. User selects text → clicks "Improve" in BubbleMenu
+2. Frontend calls `useAIOperations.generateText(prompt)`
+3. Hook reads `interactive` connection from `routing-store`, sees `agent_managed`
+4. Hook ensures ACP agent is spawned and has an active session (lazy init)
+5. Frontend calls `acp_session_prompt` with the prompt
+6. Agent processes prompt, streams `acp-session-update` events (text chunks, tool calls)
+7. Hook translates events to chat store updates
+8. Frontend updates editor content
+
 ### Chat Panel
+
+**Direct API path:**
 
 1. User types message in ChatInput
 2. Frontend calls `useChatStore.addMessage(userMessage)`
@@ -231,6 +258,15 @@ interface AIProvider {
 7. Frontend accumulates content and updates assistant message via `useChatStore.updateMessage`
 8. On stream completion (`ai-stream-done`), citations attached to final message
 9. Chat history persisted to localStorage
+
+**ACP path:**
+
+1-3. Same as above
+4. Hook calls `acp_session_prompt` on the interactive agent's session
+5. Agent streams `acp-session-update` notifications (text chunks, tool calls)
+6. Hook translates to chat store updates; tool calls tracked as `AgentActivity` entries
+7. On `agent_turn_complete`, all activities marked done
+8. Chat history persisted to localStorage
 
 ### Web Search
 
