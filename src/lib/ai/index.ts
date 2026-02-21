@@ -4,6 +4,7 @@ import { OpenAIProvider } from './providers/openai';
 import { OllamaProvider } from './providers/ollama';
 
 export * from './types';
+export * from './connections';
 
 export function getAIProvider(
   provider: AIProviderType,
