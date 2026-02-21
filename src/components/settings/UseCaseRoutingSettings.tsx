@@ -72,7 +72,18 @@ export function UseCaseRoutingSettings() {
                     </SelectItem>
                     {compatible.map((conn) => (
                       <SelectItem key={conn.id} value={conn.id}>
-                        {conn.label}
+                        <span className="flex items-center gap-1.5">
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                              conn.status === 'connected'
+                                ? 'bg-green-500'
+                                : conn.status === 'error'
+                                  ? 'bg-destructive'
+                                  : 'bg-muted-foreground'
+                            }`}
+                          />
+                          {conn.label}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
