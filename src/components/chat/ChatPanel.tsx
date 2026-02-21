@@ -34,7 +34,7 @@ export function ChatPanel() {
   // Goals discovery for single-project selection only
   const singleProjectPath = selectedProjectPaths.length === 1 ? selectedProjectPaths[0] : null;
   const { goalFiles } = useGoalsDiscovery(singleProjectPath);
-  const { sendChatMessage } = useAIOperations();
+  const { sendChatMessage, cancelChat } = useAIOperations();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [personaOpen, setPersonaOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
@@ -140,7 +140,7 @@ export function ChatPanel() {
               <div className="flex items-center gap-2 text-muted-foreground px-1 py-1">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 <span className="text-xs">
-                  {activeTool === 'web_search' ? 'Searching the web...' : `Using ${activeTool}...`}
+                  {activeTool === 'web_search' ? 'Searching the web...' : `${activeTool}...`}
                 </span>
               </div>
             )}
@@ -158,7 +158,9 @@ export function ChatPanel() {
       <div className="border-t border-border px-3 py-3">
         <ChatInput
           onSend={handleSend}
-          disabled={isLoading || !provider}
+          onStop={cancelChat}
+          isLoading={isLoading}
+          disabled={!provider}
           placeholder={chatPlaceholder}
           footer={
             <>

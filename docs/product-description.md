@@ -310,6 +310,22 @@ Central library folder and selective iCloud sync for projects.
 - ACP agent binary bundling
   - Bundle `claude-agent-acp` standalone binary as a Tauri sidecar (no Node.js dependency for end users)
   - Auto-update mechanism for bundled agent adapters
+- Agent activity panel
+  - Collapsible "Activity" section per assistant message showing tool calls as they happen
+  - Entries like: "Searched the web: query", "Read file: path", "Ran command: git status"
+  - Data comes from ACP `tool_call` / `tool_call_update` session updates (kind, title, rawInput)
+  - Could also surface `available_commands_update` as slash commands in the chat input
+- Tool use approval and permissions
+  - Currently all ACP permission requests are auto-approved with the first option (`allow_always`) — this is unsafe for destructive operations
+  - Replace auto-approve with a permission request UI: toast or inline panel showing what the agent wants to do (tool kind, target file/URL, command) with Approve/Deny buttons
+  - Granular permission levels: "Allow once", "Allow always for this tool", "Allow always for this session", "Deny"
+  - Pre-configured trust levels per tool kind: read-only tools (file read, glob, grep) can be auto-approved; write tools (file edit, bash commands) require explicit approval; destructive tools (delete, force push) always require approval
+  - Settings page for configuring default permission policies per agent
+  - Visual indicator in chat when agent is waiting for permission (distinct from "thinking" state)
+  - Timeout with auto-deny if user doesn't respond within configurable window
+- Orphaned agent process cleanup
+  - Kill ACP agent child processes on app exit/restart
+  - Track running processes and clean up on window close
 - External change diff application fidelity
   - Current diff-match-patch operates on raw markdown text, but ProseMirror applies changes at the document model level — accepting diffs can strip markdown formatting (bold, lists, headings) when the two representations diverge
   - Investigate mapping raw-text diffs to ProseMirror transactions that preserve formatting

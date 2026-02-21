@@ -1,14 +1,16 @@
 import { useState, useRef, useCallback } from 'react';
-import { ArrowUp } from 'lucide-react';
+import { ArrowUp, Square } from 'lucide-react';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
+  onStop?: () => void;
+  isLoading?: boolean;
   disabled?: boolean;
   placeholder?: string;
   footer?: React.ReactNode;
 }
 
-export function ChatInput({ onSend, disabled, placeholder = 'Ask anything...', footer }: ChatInputProps) {
+export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = 'Ask anything...', footer }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -23,7 +25,6 @@ export function ChatInput({ onSend, disabled, placeholder = 'Ask anything...', f
     if (message.trim() && !disabled) {
       onSend(message.trim());
       setMessage('');
-      // Reset height after clearing
       requestAnimationFrame(() => {
         const el = textareaRef.current;
         if (el) {
@@ -41,6 +42,27 @@ export function ChatInput({ onSend, disabled, placeholder = 'Ask anything...', f
   };
 
   const canSend = message.trim() && !disabled;
+
+  const sendButton = (
+    <button
+      onClick={handleSubmit}
+      disabled={!canSend}
+      className={`h-6 w-6 rounded-md flex items-center justify-center shrink-0 transition-colors disabled:opacity-30 ${canSend ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`}
+      title="Send (Cmd+Enter)"
+    >
+      <ArrowUp className="h-3.5 w-3.5" strokeWidth={1.5} />
+    </button>
+  );
+
+  const stopButton = isLoading && onStop ? (
+    <button
+      onClick={onStop}
+      className="h-6 w-6 rounded-md flex items-center justify-center shrink-0 transition-colors bg-muted text-muted-foreground hover:text-foreground"
+      title="Stop generating"
+    >
+      <Square className="h-2.5 w-2.5" strokeWidth={0} fill="currentColor" />
+    </button>
+  ) : null;
 
   return (
     <div
@@ -68,27 +90,17 @@ export function ChatInput({ onSend, disabled, placeholder = 'Ask anything...', f
             <div className="flex items-center gap-2 flex-wrap min-w-0">
               {footer}
             </div>
-            <button
-              onClick={handleSubmit}
-              disabled={!canSend}
-              className={`h-6 w-6 rounded-md flex items-center justify-center shrink-0 transition-colors disabled:opacity-30 ${canSend ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`}
-              title="Send (Cmd+Enter)"
-            >
-              <ArrowUp className="h-3.5 w-3.5" strokeWidth={1.5} />
-            </button>
+            <div className="flex items-center gap-1.5">
+              {stopButton}
+              {sendButton}
+            </div>
           </div>
         </>
       )}
       {!footer && (
-        <div className="flex justify-end px-3 pb-2">
-          <button
-            onClick={handleSubmit}
-            disabled={!canSend}
-            className={`h-6 w-6 rounded-md flex items-center justify-center shrink-0 transition-colors disabled:opacity-30 ${canSend ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`}
-            title="Send (Cmd+Enter)"
-          >
-            <ArrowUp className="h-3.5 w-3.5" strokeWidth={1.5} />
-          </button>
+        <div className="flex justify-end px-3 pb-2 gap-1.5">
+          {stopButton}
+          {sendButton}
         </div>
       )}
     </div>

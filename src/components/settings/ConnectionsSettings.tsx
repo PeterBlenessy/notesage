@@ -341,7 +341,7 @@ function ConfigureForm({
 
 // --- Agent connection flow ---
 
-type AgentPhase = 'checking' | 'not_installed' | 'connecting' | 'connected' | 'error';
+type AgentPhase = 'checking' | 'not_installed' | 'not_authenticated' | 'connecting' | 'connected' | 'error';
 
 function ConnectAgent({
   option,
@@ -368,12 +368,16 @@ function ConnectAgent({
       setError(null);
 
       try {
-        const avail = await invoke<{ installed: boolean; path: string | null }>('acp_agent_check_availability', {
+        const avail = await invoke<{ installed: boolean; path: string | null; authenticated: boolean | null }>('acp_agent_check_availability', {
           agentId: binary,
         });
         if (!active) return;
         if (!avail.installed) {
           setPhase('not_installed');
+          return;
+        }
+        if (avail.authenticated === false) {
+          setPhase('not_authenticated');
           return;
         }
       } catch {
@@ -482,6 +486,38 @@ function ConnectAgent({
         </div>
       )}
 
+      {phase === 'not_authenticated' && (
+        <div className="space-y-3">
+          <div className="p-3 rounded-lg bg-muted/50 border border-border">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" strokeWidth={1.5} />
+              <div>
+                <p className="text-sm font-medium">
+                  Not signed in
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {getAuthHint(binary)}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
+              Back
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRetryCount((c) => c + 1)}
+              className="flex-1"
+            >
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+              Retry
+            </Button>
+          </div>
+        </div>
+      )}
+
       {phase === 'connecting' && (
         <div className="space-y-2 py-2">
           <div className="flex items-center gap-2.5">
@@ -536,6 +572,17 @@ function ConnectAgent({
       )}
     </div>
   );
+}
+
+function getAuthHint(binary: string): string {
+  switch (binary) {
+    case 'claude-agent-acp':
+      return 'Run "claude auth login" in your terminal to sign in with your Claude subscription.';
+    case 'codex':
+      return 'Run "codex auth login" in your terminal to sign in with your OpenAI subscription.';
+    default:
+      return `Sign in to "${binary}" before connecting.`;
+  }
 }
 
 function getInstallHint(binary: string): string {

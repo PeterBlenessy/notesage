@@ -59,6 +59,42 @@ interface AcpSessionUpdatePayload {
   };
 }
 
+interface AcpPermissionRequestPayload {
+  instanceId: string;
+  sessionId: string;
+  requestId: string;
+  toolCall: unknown;
+  options: { optionId: string; kind: string; name: string }[];
+}
+
+/** Map ACP tool kind/title to a user-friendly label */
+function formatAcpToolName(kind?: string, title?: string): string {
+  switch (kind) {
+    case 'fetch':
+      return 'Searching the web';
+    case 'bash':
+    case 'terminal':
+      return 'Running command';
+    case 'read':
+    case 'read_file':
+      return 'Reading file';
+    case 'write':
+    case 'write_file':
+    case 'edit':
+      return 'Editing file';
+    case 'glob':
+    case 'list':
+      return 'Searching files';
+    case 'grep':
+      return 'Searching content';
+    default:
+      // Fall back to title if available, otherwise generic label
+      if (title) return title;
+      if (kind) return kind;
+      return 'Working';
+  }
+}
+
 interface AcpAgentState {
   instanceId: string;
   connectionId: string;
@@ -288,6 +324,24 @@ export function useAIOperations() {
           }
         });
 
+        // Auto-approve permission requests for inline actions
+        const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
+          if (event.payload.instanceId !== instanceId) return;
+          const payload = event.payload;
+          const rawOptions = payload.options as unknown[];
+          let firstOptionId: string | null = null;
+          if (Array.isArray(rawOptions) && rawOptions.length > 0) {
+            const opt = rawOptions[0] as Record<string, unknown>;
+            firstOptionId = typeof opt === 'string' ? opt : String(opt?.id ?? '');
+          }
+          console.log('[acp] Auto-approving permission (inline):', payload.requestId, 'option:', firstOptionId);
+          invoke('acp_permission_respond', {
+            instanceId,
+            requestId: payload.requestId,
+            optionId: firstOptionId,
+          }).catch(() => {});
+        });
+
         try {
           const fullPrompt = `${composedSystemMessage}\n\n${prompt}`;
           await invoke('acp_session_prompt', {
@@ -301,6 +355,7 @@ export function useAIOperations() {
           throw error;
         } finally {
           unlisten();
+          unlistenPermission();
         }
       }
 
@@ -384,15 +439,42 @@ export function useAIOperations() {
               streamedContent += update.content.text;
               updateMessage(assistantMessageId, streamedContent);
               if (chunkCount === 1) console.log('[acp] Receiving streamed response...');
-            } else if (update.sessionUpdate === 'tool_call') {
-              setActiveTool('agent_tool');
+            } else if (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update') {
+              const kind = (update as Record<string, unknown>).kind as string | undefined;
+              const title = (update as Record<string, unknown>).title as string | undefined;
+              const toolLabel = formatAcpToolName(kind, title);
+              setActiveTool(toolLabel);
+            } else if (update.sessionUpdate === 'agent_turn_complete') {
+              setActiveTool(null);
             } else {
-              console.log('[acp] Session update:', update.sessionUpdate);
+              // Log full payload for all other update types so we can see what's available
+              console.log('[acp] Session update:', update.sessionUpdate, JSON.stringify(update, null, 2));
             }
+          });
+
+          // Auto-approve permission requests (proper permission UI is Phase 6.5)
+          const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
+            if (event.payload.instanceId !== instanceId) return;
+            const payload = event.payload;
+            console.log('[acp] Permission request:', JSON.stringify(payload, null, 2));
+            // Extract first option ID — handle both { id: "..." } and plain string formats
+            const rawOptions = payload.options as unknown[];
+            let firstOptionId: string | null = null;
+            if (Array.isArray(rawOptions) && rawOptions.length > 0) {
+              const opt = rawOptions[0] as Record<string, unknown>;
+              firstOptionId = typeof opt === 'string' ? opt : String(opt?.optionId ?? opt?.id ?? '');
+            }
+            console.log('[acp] Auto-approving permission:', payload.requestId, 'option:', firstOptionId);
+            invoke('acp_permission_respond', {
+              instanceId,
+              requestId: payload.requestId,
+              optionId: firstOptionId,
+            }).catch((err) => console.error('[acp] Permission respond failed:', err));
           });
 
           cleanupRef.current = () => {
             unlisten();
+            unlistenPermission();
             setLoading(false);
             setActiveTool(null);
             cleanupRef.current = null;
@@ -519,5 +601,24 @@ export function useAIOperations() {
     [resolved, composedSystemMessage, webSearchEnabled, addMessage, updateMessage, setLoading, setError, setActiveTool, interactiveConnection, selectedProjectPaths]
   );
 
-  return { generateText, sendChatMessage };
+  const cancelChat = useCallback(() => {
+    // Clean up listeners and reset loading state
+    if (cleanupRef.current) {
+      cleanupRef.current();
+    }
+
+    // Cancel ACP session if active
+    if (acpAgent?.chatSessionId && acpAgent?.instanceId) {
+      console.log('[acp] Cancelling session:', acpAgent.chatSessionId);
+      invoke('acp_session_cancel', {
+        instanceId: acpAgent.instanceId,
+        sessionId: acpAgent.chatSessionId,
+      }).catch((err) => console.error('[acp] Cancel failed:', err));
+    }
+
+    setLoading(false);
+    setActiveTool(null);
+  }, [setLoading, setActiveTool]);
+
+  return { generateText, sendChatMessage, cancelChat };
 }

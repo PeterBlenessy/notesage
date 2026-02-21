@@ -16,6 +16,7 @@ pub struct AgentAvailability {
     pub installed: bool,
     pub path: Option<String>,
     pub version: Option<String>,
+    pub authenticated: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -530,6 +531,30 @@ fn resolve_agent_binary(agent_id: &str, app: &AppHandle) -> Option<String> {
     None
 }
 
+/// Check the auth status of the underlying CLI tool for an ACP agent.
+/// For claude-agent-acp, checks `claude auth status` since the adapter
+/// uses Claude Code's stored credentials internally.
+fn check_agent_auth(agent_id: &str) -> Option<bool> {
+    // Map agent adapter binary → underlying CLI that manages auth
+    let auth_cli = match agent_id {
+        "claude-agent-acp" => "claude",
+        "codex" => "codex",
+        _ => return None, // Unknown agent, can't check
+    };
+
+    match Command::new(auth_cli)
+        .args(["auth", "status"])
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            // claude auth status returns JSON with "loggedIn": true/false
+            Some(stdout.contains("\"loggedIn\": true") || stdout.contains("\"loggedIn\":true"))
+        }
+        _ => None,
+    }
+}
+
 /// Check whether an ACP agent binary is installed on the system.
 #[tauri::command]
 pub async fn acp_agent_check_availability(
@@ -543,6 +568,7 @@ pub async fn acp_agent_check_availability(
             installed: false,
             path: None,
             version: None,
+            authenticated: None,
         });
     }
 
@@ -561,10 +587,13 @@ pub async fn acp_agent_check_availability(
         _ => None,
     };
 
+    let authenticated = check_agent_auth(&agent_id);
+
     Ok(AgentAvailability {
         installed: true,
         path,
         version,
+        authenticated,
     })
 }
 

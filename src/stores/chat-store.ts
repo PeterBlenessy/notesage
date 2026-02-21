@@ -47,7 +47,7 @@ export const useChatStore = create<ChatStore>()(
           ),
         })),
 
-      clearMessages: () => set({ messages: [] }),
+      clearMessages: () => set({ messages: [], isLoading: false, error: null, activeTool: null }),
       setLoading: (loading) => set({ isLoading: loading }),
       setError: (error) => set({ error }),
       setActiveTool: (tool) => set({ activeTool: tool }),
