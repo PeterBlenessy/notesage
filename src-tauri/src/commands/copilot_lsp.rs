@@ -406,6 +406,7 @@ async fn handle_server_notification(method: &str, params: Option<&Value>, app: &
         "didChangeStatus" => {
             // Auth status or general status change
             if let Some(params) = params {
+                eprintln!("[copilot-lsp] didChangeStatus params: {}", serde_json::to_string(params).unwrap_or_default());
                 let message = params
                     .get("message")
                     .and_then(|v| v.as_str())
@@ -417,6 +418,7 @@ async fn handle_server_notification(method: &str, params: Option<&Value>, app: &
                     .unwrap_or("Normal")
                     .to_string();
 
+                eprintln!("[copilot-lsp] Emitting copilot-status-changed: kind={}, message={}", kind, message);
                 let _ = app.emit(
                     "copilot-status-changed",
                     serde_json::json!({
@@ -747,7 +749,7 @@ pub async fn copilot_lsp_stop(
     Ok(())
 }
 
-/// Get the current Copilot LSP status.
+/// Get the current Copilot LSP status by sending a checkStatus request.
 #[tauri::command]
 pub async fn copilot_lsp_status(
     state: State<'_, CopilotLspState>,
@@ -756,14 +758,58 @@ pub async fn copilot_lsp_status(
 
     match guard.as_ref() {
         Some(process) => {
-            let status = process.status.lock().await;
-            Ok(status.clone())
+            // Actively query the LSP for current auth status
+            match process
+                .transport
+                .send_request("checkStatus", Some(serde_json::json!({})))
+                .await
+            {
+                Ok(result) => {
+                    eprintln!("[copilot-lsp] checkStatus response: {}", serde_json::to_string(&result).unwrap_or_default());
+                    let status_str = result
+                        .get("status")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let user = result
+                        .get("user")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    // Copilot LSP returns status: "OK" when authenticated,
+                    // "NotSignedIn" or similar when not
+                    let authenticated = status_str == "OK"
+                        || status_str == "MaybeOk"
+                        || status_str.contains("OK");
+                    let message = if authenticated {
+                        format!("Signed in as {}", user)
+                    } else {
+                        format!("Status: {}", status_str)
+                    };
+                    eprintln!("[copilot-lsp] Status: authenticated={}, status_str={}, user={}", authenticated, status_str, user);
+                    Ok(CopilotStatus {
+                        authenticated,
+                        message,
+                        kind: if authenticated { "Normal".to_string() } else { "Inactive".to_string() },
+                    })
+                }
+                Err(e) => {
+                    eprintln!("[copilot-lsp] checkStatus failed: {}", e);
+                    Ok(CopilotStatus {
+                        authenticated: false,
+                        message: format!("checkStatus failed: {}", e),
+                        kind: "Error".to_string(),
+                    })
+                }
+            }
         }
-        None => Ok(CopilotStatus {
-            authenticated: false,
-            message: "Not running".to_string(),
-            kind: "Inactive".to_string(),
-        }),
+        None => {
+            eprintln!("[copilot-lsp] Status query: process not running");
+            Ok(CopilotStatus {
+                authenticated: false,
+                message: "Not running".to_string(),
+                kind: "Inactive".to_string(),
+            })
+        }
     }
 }
 
@@ -784,11 +830,14 @@ pub async fn copilot_lsp_sign_in(
         .ok_or("Copilot LSP not running. Call copilot_lsp_start first.")?;
 
     // Send signIn request — returns { userCode, command }
+    eprintln!("[copilot-lsp] Sending signIn request...");
     let result = process
         .transport
         .send_request("signIn", Some(serde_json::json!({})))
         .await
         .map_err(|e| format!("signIn failed: {}", e))?;
+
+    eprintln!("[copilot-lsp] signIn response: {}", serde_json::to_string(&result).unwrap_or_default());
 
     let user_code = result
         .get("userCode")

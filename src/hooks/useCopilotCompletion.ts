@@ -72,9 +72,13 @@ export function useCopilotCompletion(editor: Editor | null) {
 
     // Start LSP
     if (!lspReady) {
+      console.log('[copilot] Starting LSP with workingDir:', workingDir);
       invoke('copilot_lsp_start', { workingDirectory: workingDir })
         .then(() => {
-          if (!cancelled) setLspReady(true);
+          if (!cancelled) {
+            console.log('[copilot] LSP started successfully, setting lspReady=true');
+            setLspReady(true);
+          }
         })
         .catch((err) => {
           console.error('[copilot] Failed to start LSP:', err);
@@ -96,9 +100,13 @@ export function useCopilotCompletion(editor: Editor | null) {
   // -------------------------------------------------------------------------
 
   useEffect(() => {
-    if (!lspReady || !activeTab) return;
+    if (!lspReady || !activeTab) {
+      console.log('[copilot] Doc sync skipped: lspReady=', lspReady, 'activeTab=', !!activeTab);
+      return;
+    }
 
     const uri = activeTab.filePath;
+    console.log('[copilot] Doc sync for:', uri);
 
     // Close previous document if different
     if (openDocUri.current && openDocUri.current !== uri) {
@@ -108,11 +116,12 @@ export function useCopilotCompletion(editor: Editor | null) {
     // Open new document
     if (openDocUri.current !== uri) {
       docVersion.current = 0;
+      console.log('[copilot] Sending didOpen for:', uri);
       invoke('copilot_lsp_did_open', {
         uri,
         content: activeTab.content ?? '',
         version: docVersion.current,
-      }).catch(() => {});
+      }).catch((err) => console.error('[copilot] didOpen failed:', err));
       openDocUri.current = uri;
     }
 
@@ -161,6 +170,7 @@ export function useCopilotCompletion(editor: Editor | null) {
       lastRequestedPos.current = posKey;
 
       try {
+        console.log(`[copilot] Requesting completion at ${line}:${character} (version ${version})`);
         const items = await invoke<InlineCompletionItem[]>('copilot_lsp_request_completion', {
           uri: filePath,
           line,
@@ -168,11 +178,17 @@ export function useCopilotCompletion(editor: Editor | null) {
           version,
         });
 
+        console.log(`[copilot] Got ${items?.length ?? 0} completion items`, items);
+
         // The editor state may have changed while we were waiting
-        if (!editor.isFocused || editor.isDestroyed) return;
+        if (!editor.isFocused || editor.isDestroyed) {
+          console.log('[copilot] Editor lost focus or destroyed, skipping');
+          return;
+        }
 
         if (items && items.length > 0) {
           const item = items[0];
+          console.log(`[copilot] Setting ghost text: "${item.insert_text.slice(0, 80)}..." at pos ${pos}`);
           setGhostText(editor, {
             text: item.insert_text,
             from: pos,
@@ -192,13 +208,14 @@ export function useCopilotCompletion(editor: Editor | null) {
             },
           }).catch(() => {});
         } else {
+          console.log('[copilot] No completions returned');
           // No completions — clear any stale ghost text
           if (hasActiveGhostText(editor)) {
             clearGhostText(editor);
           }
         }
-      } catch {
-        // Silently ignore completion errors (e.g., cancelled, LSP busy)
+      } catch (err) {
+        console.error('[copilot] Completion request error:', err);
       }
     },
     [editor, lspReady]

@@ -433,7 +433,34 @@ function ConnectCopilotLsp({
   const onConnectedRef = useRef(onConnected);
   onConnectedRef.current = onConnected;
 
-  // Check binary availability
+  // Listen for auth completion via didChangeStatus — attach BEFORE starting LSP
+  // so we don't miss early "Normal" events from cached credentials
+  const authCompleted = useRef(false);
+
+  useEffect(() => {
+    authCompleted.current = false;
+
+    const unlisten = listen<{ message: string; kind: string }>(
+      'copilot-status-changed',
+      (event) => {
+        const { message, kind } = event.payload;
+        console.log('[copilot-lsp-ui] status changed:', kind, message);
+        if (kind === 'Normal' && !authCompleted.current) {
+          authCompleted.current = true;
+          console.log('[copilot-lsp-ui] Auth succeeded (status: Normal), completing connection');
+          setPhase('connected');
+          invoke('copilot_lsp_stop').catch(() => {});
+          onConnectedRef.current(option);
+        }
+      }
+    );
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [option, retryCount]);
+
+  // Check binary availability, start LSP, and sign in
   useEffect(() => {
     let active = true;
 
@@ -442,7 +469,9 @@ function ConnectCopilotLsp({
       setError(null);
 
       try {
+        console.log('[copilot-lsp-ui] Checking binary availability...');
         const available = await invoke<boolean>('copilot_lsp_check_availability');
+        console.log('[copilot-lsp-ui] Binary available:', available);
         if (!active) return;
 
         if (!available) {
@@ -453,19 +482,66 @@ function ConnectCopilotLsp({
         // Binary found — start LSP and sign in
         setPhase('signing_in');
 
+        console.log('[copilot-lsp-ui] Starting LSP...');
         await invoke('copilot_lsp_start', { workingDirectory: '/tmp' });
+        console.log('[copilot-lsp-ui] LSP started');
         if (!active) return;
 
+        // Check if already authenticated (status changed during init)
+        if (authCompleted.current) {
+          console.log('[copilot-lsp-ui] Already authenticated during LSP init, skipping signIn');
+          return;
+        }
+
+        // Check status before attempting sign-in
+        console.log('[copilot-lsp-ui] Checking LSP status...');
+        try {
+          const status = await invoke<{ authenticated: boolean; message: string; kind: string }>(
+            'copilot_lsp_status'
+          );
+          console.log('[copilot-lsp-ui] LSP status:', JSON.stringify(status));
+          if (!active) return;
+
+          if (status.authenticated) {
+            console.log('[copilot-lsp-ui] Already authenticated, completing connection');
+            authCompleted.current = true;
+            setPhase('connected');
+            invoke('copilot_lsp_stop').catch(() => {});
+            onConnectedRef.current(option);
+            return;
+          }
+        } catch (statusErr) {
+          console.log('[copilot-lsp-ui] Status check failed (non-fatal):', statusErr);
+        }
+
+        console.log('[copilot-lsp-ui] Calling signIn...');
         const result = await invoke<{ user_code: string; verification_uri: string }>(
           'copilot_lsp_sign_in'
         );
+        console.log('[copilot-lsp-ui] signIn result:', JSON.stringify(result));
         if (!active) return;
+
+        if (!result.user_code) {
+          // Empty user code may mean already authenticated
+          console.log('[copilot-lsp-ui] Empty user_code — may be already authenticated');
+          if (!authCompleted.current) {
+            // Give the status event a moment to arrive
+            await new Promise((r) => setTimeout(r, 1000));
+            if (authCompleted.current) return;
+            // Still not authenticated — show error
+            setError('Sign-in returned empty device code. You may already be authenticated — try removing and re-adding the connection.');
+            setPhase('error');
+          }
+          return;
+        }
 
         setDeviceCode(result.user_code);
         setPhase('device_code');
       } catch (err) {
         if (!active) return;
-        setError(err instanceof Error ? err.message : String(err));
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[copilot-lsp-ui] Error:', msg);
+        setError(msg);
         setPhase('error');
       }
     })();
@@ -474,29 +550,6 @@ function ConnectCopilotLsp({
       active = false;
     };
   }, [retryCount]);
-
-  // Listen for auth completion via didChangeStatus
-  useEffect(() => {
-    if (phase !== 'device_code') return;
-
-    const unlisten = listen<{ message: string; kind: string }>(
-      'copilot-status-changed',
-      (event) => {
-        const { kind } = event.payload;
-        // When status becomes Normal after sign-in, auth succeeded
-        if (kind === 'Normal') {
-          setPhase('connected');
-          // Stop the temporary LSP used for auth
-          invoke('copilot_lsp_stop').catch(() => {});
-          onConnectedRef.current(option);
-        }
-      }
-    );
-
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [phase, option]);
 
   // Cleanup on unmount
   useEffect(() => {
