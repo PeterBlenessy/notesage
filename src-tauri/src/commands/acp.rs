@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
 // ---------------------------------------------------------------------------
@@ -485,30 +485,58 @@ fn run_agent_thread(
 // Tauri commands
 // ---------------------------------------------------------------------------
 
-/// Check whether an ACP agent binary is installed on the system.
-#[tauri::command]
-pub async fn acp_agent_check_availability(
-    agent_id: String,
-) -> Result<AgentAvailability, String> {
+/// Resolve the path to an ACP agent binary.
+/// Checks: 1) system PATH via `which`, 2) bundled node_modules/.bin/ relative to the app.
+fn resolve_agent_binary(agent_id: &str, app: &AppHandle) -> Option<String> {
+    // 1. Check system PATH
     let which_cmd = if cfg!(target_os = "windows") {
         "where"
     } else {
         "which"
     };
 
-    let path = match Command::new(which_cmd).arg(&agent_id).output() {
-        Ok(output) if output.status.success() => {
-            let p = String::from_utf8_lossy(&output.stdout)
-                .trim()
-                .to_string();
-            if p.is_empty() {
-                None
-            } else {
-                Some(p)
+    if let Ok(output) = Command::new(which_cmd).arg(agent_id).output() {
+        if output.status.success() {
+            let p = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !p.is_empty() {
+                return Some(p);
             }
         }
-        _ => None,
-    };
+    }
+
+    // 2. Check bundled node_modules/.bin/ (development and Tauri resource path)
+    // In dev, the app root is the project directory.
+    // Try resolving relative to the Tauri resource dir first, then CWD.
+    let candidates: Vec<PathBuf> = vec![
+        // Dev: project root / node_modules/.bin/
+        std::env::current_dir()
+            .unwrap_or_default()
+            .join("node_modules/.bin")
+            .join(agent_id),
+        // Tauri resource dir fallback
+        app.path()
+            .resource_dir()
+            .unwrap_or_default()
+            .join("node_modules/.bin")
+            .join(agent_id),
+    ];
+
+    for candidate in candidates {
+        if candidate.exists() {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+
+    None
+}
+
+/// Check whether an ACP agent binary is installed on the system.
+#[tauri::command]
+pub async fn acp_agent_check_availability(
+    app: AppHandle,
+    agent_id: String,
+) -> Result<AgentAvailability, String> {
+    let path = resolve_agent_binary(&agent_id, &app);
 
     if path.is_none() {
         return Ok(AgentAvailability {
@@ -518,7 +546,8 @@ pub async fn acp_agent_check_availability(
         });
     }
 
-    let version = match Command::new(&agent_id).arg("--version").output() {
+    let binary = path.as_deref().unwrap();
+    let version = match Command::new(binary).arg("--version").output() {
         Ok(output) if output.status.success() => {
             let v = String::from_utf8_lossy(&output.stdout)
                 .trim()
@@ -551,6 +580,10 @@ pub async fn acp_agent_spawn(
 ) -> Result<SpawnResult, String> {
     let env = env_vars.unwrap_or_default();
 
+    // Resolve the actual binary path (system PATH or bundled node_modules)
+    let resolved_binary = resolve_agent_binary(&agent_binary, &app)
+        .ok_or_else(|| format!("Agent binary '{}' not found", agent_binary))?;
+
     // Generate instance ID before spawning so the thread can use it for events
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -565,7 +598,7 @@ pub async fn acp_agent_spawn(
     let (init_tx, init_rx) = oneshot::channel();
     let (cmd_tx, cmd_rx) = mpsc::channel(32);
 
-    let binary = agent_binary.clone();
+    let binary = resolved_binary;
     let cwd = working_directory.clone();
     let iid = instance_id.clone();
 
@@ -576,9 +609,16 @@ pub async fn acp_agent_spawn(
         })
         .map_err(|e| format!("Failed to spawn agent thread: {}", e))?;
 
-    // Wait for initialization result from the agent thread
-    let init_result = init_rx
+    // Wait for initialization result from the agent thread (30s timeout)
+    let init_result = tokio::time::timeout(std::time::Duration::from_secs(30), init_rx)
         .await
+        .map_err(|_| {
+            // Timeout — kill the agent thread
+            let _ = cmd_tx.try_send(AgentCmd::Stop {
+                reply: oneshot::channel().0,
+            });
+            "ACP initialize timed out after 30s — the agent binary may not support ACP".to_string()
+        })?
         .map_err(|_| "Agent thread exited unexpectedly during initialization".to_string())?;
     let init_info = init_result?;
 

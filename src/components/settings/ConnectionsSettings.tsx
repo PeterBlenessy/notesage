@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
+import { stopAcpAgent } from '@/hooks/useAIOperations';
 import { ConnectionCard } from './ConnectionCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,9 +11,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { Plus, Check, Eye, EyeOff, Clock, Github } from 'lucide-react';
+import { Plus, Check, Eye, EyeOff, Github, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import type { Connection, ProviderOption } from '@/lib/ai/connections';
 import { PROVIDER_OPTIONS, CAPABILITY_LABELS } from '@/lib/ai/connections';
+import { invoke } from '@tauri-apps/api/core';
 
 const PROVIDER_LOGOS: Record<string, string | null> = {
   anthropic: '/logos/anthropic.svg',
@@ -24,7 +26,7 @@ const PROVIDER_LOGOS: Record<string, string | null> = {
 type AddFlowState =
   | { step: 'pick' }
   | { step: 'configure'; option: ProviderOption }
-  | { step: 'coming_soon'; option: ProviderOption };
+  | { step: 'connecting'; option: ProviderOption };
 
 export function ConnectionsSettings() {
   const connections = useConnectionsStore((s) => s.connections);
@@ -56,7 +58,7 @@ export function ConnectionsSettings() {
 
   const handlePickProvider = useCallback((option: ProviderOption) => {
     if (option.authMethod === 'agent_managed') {
-      setFlow({ step: 'coming_soon', option });
+      setFlow({ step: 'connecting', option });
     } else {
       setFlow({ step: 'configure', option });
     }
@@ -97,8 +99,29 @@ export function ConnectionsSettings() {
     }, 600);
   }, [flow, inputValue, addConnection, autoAssign, resetFlow]);
 
+  const handleAgentConnected = useCallback(
+    (option: ProviderOption) => {
+      const connectionId = addConnection({
+        provider: option.provider,
+        authMethod: 'agent_managed',
+        status: 'connected',
+        label: option.label,
+        credentials: { type: 'agent_managed', agentBinary: option.agentBinary! },
+      });
+      autoAssign(connectionId);
+      setTimeout(() => {
+        setPopoverOpen(false);
+        resetFlow();
+      }, 600);
+    },
+    [addConnection, autoAssign, resetFlow]
+  );
+
   const handleDisconnect = useCallback(
     (connection: Connection) => {
+      if (connection.authMethod === 'agent_managed') {
+        stopAcpAgent();
+      }
       clearRoutingForConnection(connection.id);
       removeConnection(connection.id);
     },
@@ -138,10 +161,11 @@ export function ConnectionsSettings() {
                 savedFlash={savedFlash}
               />
             )}
-            {flow.step === 'coming_soon' && (
-              <ComingSoon
+            {flow.step === 'connecting' && (
+              <ConnectAgent
                 option={flow.option}
                 onBack={() => setFlow({ step: 'pick' })}
+                onConnected={handleAgentConnected}
               />
             )}
           </PopoverContent>
@@ -214,12 +238,7 @@ function ProviderPicker({ onPick }: { onPick: (option: ProviderOption) => void }
           >
             <ProviderLogo provider={option.provider} className="w-6 h-6 mt-0.5 shrink-0" />
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium truncate">{option.label}</span>
-                {option.authMethod === 'agent_managed' && (
-                  <Clock className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
-                )}
-              </div>
+              <span className="text-sm font-medium truncate block">{option.label}</span>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {option.description}
               </p>
@@ -320,13 +339,101 @@ function ConfigureForm({
   );
 }
 
-function ComingSoon({
+// --- Agent connection flow ---
+
+type AgentPhase = 'checking' | 'not_installed' | 'connecting' | 'connected' | 'error';
+
+function ConnectAgent({
   option,
   onBack,
+  onConnected,
 }: {
   option: ProviderOption;
   onBack: () => void;
+  onConnected: (option: ProviderOption) => void;
 }) {
+  const [phase, setPhase] = useState<AgentPhase>('checking');
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const onConnectedRef = useRef(onConnected);
+  onConnectedRef.current = onConnected;
+
+  useEffect(() => {
+    let active = true;
+    const binary = option.agentBinary!;
+
+    (async () => {
+      // Phase 1: Check binary availability
+      setPhase('checking');
+      setError(null);
+
+      try {
+        const avail = await invoke<{ installed: boolean; path: string | null }>('acp_agent_check_availability', {
+          agentId: binary,
+        });
+        if (!active) return;
+        if (!avail.installed) {
+          setPhase('not_installed');
+          return;
+        }
+      } catch {
+        if (!active) return;
+        setPhase('not_installed');
+        return;
+      }
+
+      // Phase 2: Spawn agent and authenticate
+      setPhase('connecting');
+      let instanceId: string | null = null;
+
+      try {
+        const result = await invoke<{ instance_id: string }>('acp_agent_spawn', {
+          agentBinary: binary,
+          role: 'interactive',
+          workingDirectory: '/tmp',
+        });
+        if (!active) {
+          invoke('acp_agent_stop', { instanceId: result.instance_id }).catch(() => {});
+          return;
+        }
+        instanceId = result.instance_id;
+
+        // Try to authenticate — some agents handle auth internally
+        // (e.g. claude-agent-acp uses Claude CLI's stored credentials)
+        try {
+          await invoke('acp_agent_authenticate', { instanceId });
+        } catch (authErr) {
+          const msg = String(authErr);
+          // "not implemented" means the agent doesn't need explicit auth — that's fine
+          if (!msg.toLowerCase().includes('not implemented')) {
+            throw authErr;
+          }
+        }
+        if (!active) {
+          invoke('acp_agent_stop', { instanceId }).catch(() => {});
+          return;
+        }
+
+        // Stop temporary agent used for the connection test
+        invoke('acp_agent_stop', { instanceId }).catch(() => {});
+
+        setPhase('connected');
+        onConnectedRef.current(option);
+      } catch (err) {
+        if (instanceId) {
+          invoke('acp_agent_stop', { instanceId }).catch(() => {});
+        }
+        if (!active) return;
+        setError(err instanceof Error ? err.message : String(err));
+        setPhase('error');
+      }
+    })();
+
+    return () => { active = false; };
+  }, [option, retryCount]);
+
+  const binary = option.agentBinary!;
+
   return (
     <div className="p-4 space-y-3">
       <div className="flex items-center gap-2">
@@ -334,20 +441,112 @@ function ComingSoon({
         <span className="text-sm font-medium">{option.label}</span>
       </div>
 
-      <div className="p-3 rounded-lg bg-muted/50 border border-border">
-        <div className="flex items-center gap-2 mb-1">
-          <Clock className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
-          <span className="text-sm font-medium">Coming soon</span>
+      {phase === 'checking' && (
+        <div className="flex items-center gap-2.5 py-3">
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" strokeWidth={1.5} />
+          <span className="text-sm text-muted-foreground">
+            Checking for {binary}...
+          </span>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Subscription-based authentication via ACP is under development.
-          In the meantime, you can use an API key if available for this provider.
-        </p>
-      </div>
+      )}
 
-      <Button variant="ghost" size="sm" onClick={onBack} className="w-full">
-        Back to providers
-      </Button>
+      {phase === 'not_installed' && (
+        <div className="space-y-3">
+          <div className="p-3 rounded-lg bg-muted/50 border border-border">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" strokeWidth={1.5} />
+              <div>
+                <p className="text-sm font-medium">
+                  {binary} not found
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {getInstallHint(binary)}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
+              Back
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRetryCount((c) => c + 1)}
+              className="flex-1"
+            >
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+              Retry
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {phase === 'connecting' && (
+        <div className="space-y-2 py-2">
+          <div className="flex items-center gap-2.5">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" strokeWidth={1.5} />
+            <span className="text-sm text-muted-foreground">Connecting...</span>
+          </div>
+          <p className="text-xs text-muted-foreground pl-6.5">
+            A browser window may open for sign-in.
+          </p>
+        </div>
+      )}
+
+      {phase === 'connected' && (
+        <div className="flex items-center gap-2.5 py-3">
+          <Check className="h-4 w-4 text-green-500" strokeWidth={2} />
+          <span className="text-sm font-medium">Connected!</span>
+        </div>
+      )}
+
+      {phase === 'error' && (
+        <div className="space-y-3">
+          <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" strokeWidth={1.5} />
+              <div>
+                <p className="text-sm font-medium text-destructive">
+                  Connection failed
+                </p>
+                {error && (
+                  <p className="text-xs text-destructive/80 mt-1 break-words">
+                    {error}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
+              Back
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRetryCount((c) => c + 1)}
+              className="flex-1"
+            >
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+              Retry
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function getInstallHint(binary: string): string {
+  switch (binary) {
+    case 'claude-agent-acp':
+      return 'Run: npm install -g @zed-industries/claude-agent-acp';
+    case 'codex':
+      return 'Run: npm install -g @openai/codex';
+    case 'copilot':
+      return 'Install the GitHub Copilot CLI to connect with your Copilot subscription.';
+    default:
+      return `Install "${binary}" to continue.`;
+  }
 }

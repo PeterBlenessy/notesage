@@ -290,6 +290,37 @@ Central library folder and selective iCloud sync for projects.
 - Requires Phase 5 (comments + change detection) as foundation
 - Security: agent operates within project directory boundaries only
 
+### Phase 6.5 — Chat UX Improvements
+
+**Goal:** Make the chat experience provider-aware so users always know which AI connection is handling their conversation and can switch seamlessly.
+
+**Features:**
+
+- Chat provider indicator
+  - Show active connection name/badge in chat input footer (e.g., "Claude Code (Subscription)" or "Anthropic API")
+  - Different avatar or badge on message bubbles to distinguish which provider generated each response
+  - System-style message inserted into chat when provider switches mid-conversation (e.g., "Switched to Claude Code (Subscription)")
+- Per-chat connection picker
+  - Dropdown in chat input area to override the default routing for the current conversation
+  - Overrides the global routing from Settings without changing it
+- Chat history forwarding on provider switch
+  - When switching to an ACP agent mid-conversation, offer to replay prior messages so the agent has context
+  - Show cost/size warning before forwarding history
+  - Option to start fresh or include history
+- ACP agent binary bundling
+  - Bundle `claude-agent-acp` standalone binary as a Tauri sidecar (no Node.js dependency for end users)
+  - Auto-update mechanism for bundled agent adapters
+- External change diff application fidelity
+  - Current diff-match-patch operates on raw markdown text, but ProseMirror applies changes at the document model level — accepting diffs can strip markdown formatting (bold, lists, headings) when the two representations diverge
+  - Investigate mapping raw-text diffs to ProseMirror transactions that preserve formatting
+  - Alternatively, diff at the ProseMirror document model level instead of raw text
+
+**Architecture considerations:**
+
+- Chat store needs a per-conversation `connectionOverride` field
+- Message model needs a `connectionId` field to track which provider generated each message
+- Download platform-specific standalone binaries from `zed-industries/claude-agent-acp` GitHub Releases during build/CI
+
 ### Phase 7 — AI-Assisted Research
 
 **Goal:** AI-powered research workflow — collect, store, synthesize, and draft from web sources.
