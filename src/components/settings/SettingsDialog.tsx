@@ -6,7 +6,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { AISettings } from './AISettings';
+import { ConnectionsSettings } from './ConnectionsSettings';
+import { UseCaseRoutingSettings } from './UseCaseRoutingSettings';
 import { PersonasSettings } from './PersonasSettings';
 import { PromptsSettings } from './PromptsSettings';
 import { SyncSettings } from './SyncSettings';
@@ -168,8 +169,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           {/* Content Area */}
           <div className="flex-1 overflow-y-auto">
             {activeTab === 'ai' && (
-              <div className="p-6">
-                <AISettings />
+              <div className="p-6 space-y-6">
+                <ConnectionsSettings />
+                <div className="h-px bg-border" />
+                <UseCaseRoutingSettings />
               </div>
             )}
 
