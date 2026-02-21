@@ -7,6 +7,7 @@ import { useProjectMetadataStore, type ProjectMetadata } from '@/stores/project-
 import { getAIProvider } from '@/lib/ai';
 import type { AIProviderType, ChatMessage, Citation } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
+import { usePermissionStore } from '@/stores/permission-store';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
@@ -65,6 +66,22 @@ interface AcpPermissionRequestPayload {
   requestId: string;
   toolCall: unknown;
   options: { optionId: string; kind: string; name: string }[];
+}
+
+/** Classify a tool kind by risk level for permission auto-approve decisions. */
+function isReadOnlyTool(kind: string): boolean {
+  const readOnly = ['read', 'read_file', 'glob', 'list', 'grep', 'fetch', 'web_search'];
+  return readOnly.includes(kind);
+}
+
+/** Extract tool kind and title from an ACP toolCall payload. */
+function extractToolInfo(toolCall: unknown): { kind: string; title: string; input: string } {
+  const tc = toolCall as Record<string, unknown> | null;
+  return {
+    kind: String(tc?.kind ?? tc?.type ?? 'unknown'),
+    title: String(tc?.title ?? tc?.name ?? ''),
+    input: typeof tc?.rawInput === 'string' ? tc.rawInput : JSON.stringify(tc?.rawInput ?? ''),
+  };
 }
 
 /** Truncate a tool detail string (e.g. rawInput) for display. */
@@ -455,17 +472,48 @@ export function useAIOperations() {
             }
           });
 
-          // Auto-approve permission requests (proper permission UI is Phase 6.5)
+          // Handle permission requests: auto-approve read-only tools,
+          // track write tools in the permission store for future UI review.
+          // Currently all are auto-approved; the store enables Phase 6.5 permission UI.
           const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
             if (event.payload.instanceId !== instanceId) return;
             const payload = event.payload;
-            // Extract first option ID — handle both { optionId: "..." } and plain string formats
+
+            const toolInfo = extractToolInfo(payload.toolCall);
             const rawOptions = payload.options as unknown[];
             let firstOptionId: string | null = null;
             if (Array.isArray(rawOptions) && rawOptions.length > 0) {
               const opt = rawOptions[0] as Record<string, unknown>;
               firstOptionId = typeof opt === 'string' ? opt : String(opt?.optionId ?? opt?.id ?? '');
             }
+
+            // Track non-read-only permission requests in the store
+            if (!isReadOnlyTool(toolInfo.kind)) {
+              const options = Array.isArray(rawOptions)
+                ? rawOptions.map((o) => {
+                    const opt = o as Record<string, unknown>;
+                    return {
+                      optionId: String(opt?.optionId ?? opt?.id ?? ''),
+                      kind: String(opt?.kind ?? ''),
+                      name: String(opt?.name ?? ''),
+                    };
+                  })
+                : [];
+
+              usePermissionStore.getState().addRequest({
+                id: `${payload.requestId}-${Date.now()}`,
+                instanceId,
+                sessionId: payload.sessionId,
+                requestId: payload.requestId,
+                toolKind: toolInfo.kind,
+                toolTitle: toolInfo.title,
+                toolInput: truncateDetail(toolInfo.input, 200),
+                options,
+                timestamp: Date.now(),
+              });
+            }
+
+            // Auto-approve all for now (Phase 6.5 will add approval UI for write tools)
             invoke('acp_permission_respond', {
               instanceId,
               requestId: payload.requestId,

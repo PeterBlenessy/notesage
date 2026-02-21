@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useChatStore } from '@/stores/chat-store';
+import { usePermissionStore } from '@/stores/permission-store';
 import type { Connection } from '@/lib/ai/connections';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -179,7 +180,9 @@ export function useAgentTaskOperations() {
         }
       });
 
-      // Auto-approve permission requests for task agents (Phase 6.5 will add proper UI)
+      // Track and auto-approve permission requests for task agents.
+      // All write/edit tool calls are stored in permission-store for visibility.
+      // Phase 6.5 will add interactive approval UI.
       const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
         if (event.payload.instanceId !== instanceId) return;
         const payload = event.payload;
@@ -189,6 +192,36 @@ export function useAgentTaskOperations() {
           const opt = rawOptions[0] as Record<string, unknown>;
           firstOptionId = typeof opt === 'string' ? opt : String(opt?.optionId ?? opt?.id ?? '');
         }
+
+        // Track all task agent permission requests in the store
+        const tc = payload.toolCall as Record<string, unknown> | null;
+        const toolKind = String(tc?.kind ?? tc?.type ?? 'unknown');
+        const readOnly = ['read', 'read_file', 'glob', 'list', 'grep', 'fetch', 'web_search'];
+        if (!readOnly.includes(toolKind)) {
+          const options = Array.isArray(rawOptions)
+            ? rawOptions.map((o) => {
+                const opt2 = o as Record<string, unknown>;
+                return {
+                  optionId: String(opt2?.optionId ?? opt2?.id ?? ''),
+                  kind: String(opt2?.kind ?? ''),
+                  name: String(opt2?.name ?? ''),
+                };
+              })
+            : [];
+          usePermissionStore.getState().addRequest({
+            id: `${payload.requestId}-${Date.now()}`,
+            instanceId,
+            sessionId: payload.sessionId,
+            requestId: payload.requestId,
+            toolKind,
+            toolTitle: String(tc?.title ?? tc?.name ?? ''),
+            toolInput: String(tc?.rawInput ?? '').slice(0, 200),
+            options,
+            timestamp: Date.now(),
+          });
+        }
+
+        // Auto-approve all for now
         invoke('acp_permission_respond', {
           instanceId,
           requestId: payload.requestId,
