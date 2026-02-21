@@ -28,3 +28,4 @@ Chronological log of major implementation milestones and changes.
 | 022 | [Release v0.12.1](022-release-v0.12.1.md) | CI fixes — cross-platform watcher type mismatch, release workflow JSON corruption |
 | 023 | [Release v0.12.2](023-release-v0.12.2.md) | UI fixes — chat close button, sidebar tooltips, tab rename, comment focus, cloud badge |
 | 024 | [Release v0.13.0](024-release-v0.13.0.md) | AI Provider Architecture v2 — ACP agents, multi-provider connections, per-use-case routing (Phase 6) |
+| 025 | [Release v0.14.0](025-release-v0.14.0.md) | Copilot Language Server — inline ghost text completions, status bar toggle (Phase 6e) |
