@@ -1,7 +1,7 @@
 # Chat Provider Indicator
 
 **Date:** 2026-02-22
-**Status:** Draft
+**Status:** Done
 **Parent:** Phase 6.5 — Chat UX & Agent Polish
 
 ## Problem
