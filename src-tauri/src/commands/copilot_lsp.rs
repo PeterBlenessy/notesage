@@ -365,10 +365,22 @@ async fn handle_server_request(
         }
 
         "workspace/configuration" => {
-            // Server is pulling configuration. Return empty settings for each requested item.
+            // Server is pulling configuration. Return appropriate settings for each requested item.
             if let Some(params) = params {
                 if let Some(items) = params.get("items").and_then(|v| v.as_array()) {
-                    let results: Vec<Value> = items.iter().map(|_| serde_json::json!({})).collect();
+                    let results: Vec<Value> = items.iter().map(|item| {
+                        let section = item.get("section").and_then(|v| v.as_str()).unwrap_or("");
+                        match section {
+                            "github.copilot" | "copilot" => serde_json::json!({
+                                "enable": { "*": true, "markdown": true },
+                                "inlineSuggest.enable": true,
+                            }),
+                            "github.copilot.inlineSuggest" => serde_json::json!({
+                                "enable": true,
+                            }),
+                            _ => serde_json::json!({}),
+                        }
+                    }).collect();
                     Value::Array(results)
                 } else {
                     Value::Array(vec![])
@@ -406,7 +418,6 @@ async fn handle_server_notification(method: &str, params: Option<&Value>, app: &
         "didChangeStatus" => {
             // Auth status or general status change
             if let Some(params) = params {
-                eprintln!("[copilot-lsp] didChangeStatus params: {}", serde_json::to_string(params).unwrap_or_default());
                 let message = params
                     .get("message")
                     .and_then(|v| v.as_str())
@@ -418,7 +429,6 @@ async fn handle_server_notification(method: &str, params: Option<&Value>, app: &
                     .unwrap_or("Normal")
                     .to_string();
 
-                eprintln!("[copilot-lsp] Emitting copilot-status-changed: kind={}, message={}", kind, message);
                 let _ = app.emit(
                     "copilot-status-changed",
                     serde_json::json!({
@@ -566,6 +576,8 @@ pub async fn copilot_lsp_check_availability(app: AppHandle) -> Result<bool, Stri
 }
 
 /// Start the Copilot LSP server process and complete the initialize handshake.
+/// If an LSP is already running, updates the workspace folder via
+/// `workspace/didChangeWorkspaceFolders` instead of restarting.
 #[tauri::command]
 pub async fn copilot_lsp_start(
     app: AppHandle,
@@ -574,19 +586,37 @@ pub async fn copilot_lsp_start(
 ) -> Result<(), String> {
     let mut guard = state.process.lock().await;
 
-    // Already running — but check if the process is still alive
+    // If already running, reuse and update workspace folder
     if let Some(proc) = guard.as_mut() {
         match proc.child.try_wait() {
             Ok(Some(_)) => {
-                // Process exited — clear stale state and restart below
+                // Process already exited — clear stale state, restart below
                 *guard = None;
             }
             Ok(None) => {
-                // Still running
+                // Still running — update workspace folder instead of restarting
+                let new_uri = path_to_uri(&working_directory);
+                let folder_name = working_directory.rsplit('/').next().unwrap_or("workspace");
+
+                proc.transport
+                    .send_notification(
+                        "workspace/didChangeWorkspaceFolders",
+                        Some(serde_json::json!({
+                            "event": {
+                                "added": [{
+                                    "uri": new_uri,
+                                    "name": folder_name,
+                                }],
+                                "removed": [],
+                            },
+                        })),
+                    )
+                    .await
+                    .map_err(|e| format!("Failed to update workspace folders: {}", e))?;
+
                 return Ok(());
             }
             Err(_) => {
-                // Error checking status — clear and restart
                 *guard = None;
             }
         }
@@ -621,14 +651,7 @@ pub async fn copilot_lsp_start(
     // --- LSP initialize handshake ---
 
     // 1. Send initialize request
-    let workspace_uri = format!(
-        "file://{}",
-        if working_directory.starts_with('/') {
-            &working_directory
-        } else {
-            &working_directory
-        }
-    );
+    let workspace_uri = path_to_uri(&working_directory);
 
     let init_params = serde_json::json!({
         "processId": std::process::id(),
@@ -676,13 +699,17 @@ pub async fn copilot_lsp_start(
         .await
         .map_err(|e| format!("LSP initialized notification failed: {}", e))?;
 
-    // 3. Send default configuration (telemetry off)
+    // 3. Send configuration: enable copilot + inline suggestions, disable telemetry
     transport
         .send_notification(
             "workspace/didChangeConfiguration",
             Some(serde_json::json!({
                 "settings": {
                     "telemetry": { "telemetryLevel": "off" },
+                    "github.copilot": {
+                        "enable": { "*": true, "markdown": true },
+                        "inlineSuggest.enable": true,
+                    },
                 },
             })),
         )
@@ -765,7 +792,6 @@ pub async fn copilot_lsp_status(
                 .await
             {
                 Ok(result) => {
-                    eprintln!("[copilot-lsp] checkStatus response: {}", serde_json::to_string(&result).unwrap_or_default());
                     let status_str = result
                         .get("status")
                         .and_then(|v| v.as_str())
@@ -785,7 +811,6 @@ pub async fn copilot_lsp_status(
                     } else {
                         format!("Status: {}", status_str)
                     };
-                    eprintln!("[copilot-lsp] Status: authenticated={}, status_str={}, user={}", authenticated, status_str, user);
                     Ok(CopilotStatus {
                         authenticated,
                         message,
@@ -803,7 +828,6 @@ pub async fn copilot_lsp_status(
             }
         }
         None => {
-            eprintln!("[copilot-lsp] Status query: process not running");
             Ok(CopilotStatus {
                 authenticated: false,
                 message: "Not running".to_string(),
@@ -830,14 +854,11 @@ pub async fn copilot_lsp_sign_in(
         .ok_or("Copilot LSP not running. Call copilot_lsp_start first.")?;
 
     // Send signIn request — returns { userCode, command }
-    eprintln!("[copilot-lsp] Sending signIn request...");
     let result = process
         .transport
         .send_request("signIn", Some(serde_json::json!({})))
         .await
         .map_err(|e| format!("signIn failed: {}", e))?;
-
-    eprintln!("[copilot-lsp] signIn response: {}", serde_json::to_string(&result).unwrap_or_default());
 
     let user_code = result
         .get("userCode")
@@ -918,12 +939,27 @@ pub async fn copilot_lsp_sign_out(
 
 /// Convert a file path to a file:// URI.
 fn path_to_uri(path: &str) -> String {
-    // Ensure path starts with / for Unix-style URIs
+    // URL-encode path segments (spaces → %20, etc.) while preserving /
+    let encoded: String = path
+        .split('/')
+        .map(|seg| {
+            seg.bytes()
+                .map(|b| match b {
+                    b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                        format!("{}", b as char)
+                    }
+                    _ => format!("%{:02X}", b),
+                })
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("/");
+
     if path.starts_with('/') {
-        format!("file://{}", path)
+        format!("file://{}", encoded)
     } else {
         // Windows: file:///C:/path
-        format!("file:///{}", path)
+        format!("file:///{}", encoded)
     }
 }
 
@@ -1043,28 +1079,27 @@ pub async fn copilot_lsp_request_completion(
     let guard = state.process.lock().await;
     let process = guard.as_ref().ok_or("Copilot LSP not running.")?;
 
+    let req_params = serde_json::json!({
+        "textDocument": {
+            "uri": path_to_uri(&uri),
+            "version": version,
+        },
+        "position": {
+            "line": line,
+            "character": character,
+        },
+        "context": {
+            "triggerKind": 2,
+        },
+        "formattingOptions": {
+            "tabSize": 2,
+            "insertSpaces": true,
+        },
+    });
+
     let result = process
         .transport
-        .send_request(
-            "textDocument/inlineCompletion",
-            Some(serde_json::json!({
-                "textDocument": {
-                    "uri": path_to_uri(&uri),
-                    "version": version,
-                },
-                "position": {
-                    "line": line,
-                    "character": character,
-                },
-                "context": {
-                    "triggerKind": 2,
-                },
-                "formattingOptions": {
-                    "tabSize": 2,
-                    "insertSpaces": true,
-                },
-            })),
-        )
+        .send_request("textDocument/inlineCompletion", Some(req_params))
         .await
         .map_err(|e| format!("Completion request failed: {}", e))?;
 
