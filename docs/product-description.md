@@ -6,7 +6,7 @@ id: ""
 
 Notesage is a WYSIWYG markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
-**Current version:** 0.14.0
+**Current version:** 0.14.1
 
 ## Current Features
 
@@ -309,7 +309,7 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 **Connections & routing:**
 
 - Multi-provider connection system: users can connect multiple AI providers simultaneously
-- Three auth methods: API key (Anthropic, OpenAI), agent-managed subscription (Claude Code, Codex, Copilot via ACP/LSP), local (Ollama)
+- Three auth methods: API key (Anthropic, OpenAI), agent-managed subscription (Claude Code, Codex, Copilot, Gemini CLI via ACP/LSP), local (Ollama)
 - Per-use-case routing: separate provider assignment for interactive (chat + inline actions), agent tasks, and inline completion
 - GitHub Copilot split into two connections: CLI (ACP — chat/agents only) and LSP (inline completions + chat/agents)
 - Smart auto-assignment: first connection fills all compatible use case slots
@@ -323,7 +323,7 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - ACP session management: create, prompt, cancel, load sessions
 - Streaming responses via Tauri events (`acp-session-update`)
 - Permission request handling: read-only tools auto-approved, write tools tracked in permission-store
-- Three supported ACP agents: Claude Code (`claude-agent-acp`), OpenAI Codex (`codex-acp`), GitHub Copilot CLI (`copilot --acp` — chat/agents only, no inline completions)
+- Four supported ACP agents: Claude Code (`claude-agent-acp`), OpenAI Codex (`codex-acp`), GitHub Copilot CLI (`copilot --acp` — chat/agents only, no inline completions), Google Gemini CLI (`gemini --acp` — free with Google account)
 - Copilot Language Server (`copilot-language-server`) for inline completions via LSP protocol (separate from ACP)
 
 **Agent activity & tasks:**

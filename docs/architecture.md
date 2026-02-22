@@ -113,6 +113,7 @@ note-sage/
 │   └── logos/                      # AI provider logos
 │       ├── anthropic.svg
 │       ├── openai.svg
+│       ├── google.svg
 │       └── ollama-official.png
 ├── docs/                           # Documentation
 ├── CLAUDE.md                       # Project spec (this references docs/)
@@ -191,7 +192,7 @@ interface AIProvider {
 - Uses the `agent-client-protocol` Rust crate to communicate with agent subprocesses over stdio
 - Agents handle their own auth (subscription login via browser popup)
 - Prompts sent via `acp_session_prompt`, responses streamed as `acp-session-update` Tauri events
-- Three supported agents: Claude Code (`claude-agent-acp`), Codex (`codex-acp`), Copilot (`copilot --acp`)
+- Four supported agents: Claude Code (`claude-agent-acp`), Codex (`codex-acp`), Copilot (`copilot --acp`), Gemini CLI (`gemini --acp`)
 
 **Path 3: Copilot LSP** (for `inline_completion` use case)
 
