@@ -1,5 +1,5 @@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, BotMessageSquare, Loader2 } from "lucide-react";
 import type { Comment } from "@/stores/comment-store";
 
 interface CommentListPopoverProps {
@@ -7,6 +7,9 @@ interface CommentListPopoverProps {
   onOpenChange: (open: boolean) => void;
   comments: Comment[];
   onSelectComment: (comment: Comment) => void;
+  onDelegateComment?: (comment: Comment) => void;
+  onDelegateAll?: () => void;
+  canDelegate?: boolean;
 }
 
 function relativeTime(timestamp: number): string {
@@ -34,8 +37,14 @@ export function CommentListPopover({
   onOpenChange,
   comments,
   onSelectComment,
+  onDelegateComment,
+  onDelegateAll,
+  canDelegate = false,
 }: CommentListPopoverProps) {
-  const sorted = [...comments].sort((a, b) => b.createdAt - a.createdAt);
+  // Filter out resolved comments, then sort by creation time
+  const visible = comments.filter((c) => c.status !== 'resolved');
+  const sorted = [...visible].sort((a, b) => b.createdAt - a.createdAt);
+  const delegatable = visible.filter((c) => c.status !== 'delegated' && c.status !== 'done');
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -45,7 +54,7 @@ export function CommentListPopover({
           className="inline-flex items-center gap-1 rounded px-0.5 hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           <MessageSquare className="h-3 w-3" strokeWidth={1.5} />
-          <span>{comments.length}</span>
+          <span>{visible.length}</span>
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -53,10 +62,25 @@ export function CommentListPopover({
         align="end"
         className="w-72 p-0 max-h-80 overflow-y-auto"
       >
-        <div className="px-3 py-2 border-b border-border">
+        <div className="px-3 py-2 border-b border-border flex items-center justify-between">
           <span className="text-xs font-medium text-foreground">
-            Comments ({comments.length})
+            Comments ({visible.length})
           </span>
+          {canDelegate && onDelegateAll && delegatable.length > 0 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelegateAll();
+                onOpenChange(false);
+              }}
+              title={`Delegate ${delegatable.length} comment${delegatable.length === 1 ? '' : 's'} to AI agent`}
+              className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-muted"
+            >
+              <BotMessageSquare className="h-3 w-3" strokeWidth={1.5} />
+              Delegate all
+            </button>
+          )}
         </div>
         {sorted.length === 0 ? (
           <div className="px-3 py-4 text-center text-xs text-muted-foreground">
@@ -72,15 +96,38 @@ export function CommentListPopover({
                   onSelectComment(comment);
                   onOpenChange(false);
                 }}
-                className="w-full text-left px-3 py-2 hover:bg-muted transition-colors focus-visible:outline-none focus-visible:bg-muted"
+                className="w-full text-left px-3 py-2 hover:bg-muted transition-colors focus-visible:outline-none focus-visible:bg-muted group"
               >
                 <div className="flex items-baseline justify-between gap-2 mb-0.5">
                   <span className="text-[11px] text-muted-foreground/70 italic truncate flex-1 min-w-0">
-                    "{truncate(comment.anchorText, 40)}"
+                    &ldquo;{truncate(comment.anchorText, 40)}&rdquo;
                   </span>
-                  <span className="text-[11px] text-muted-foreground/50 shrink-0">
-                    {relativeTime(comment.createdAt)}
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[11px] text-muted-foreground/50">
+                      {relativeTime(comment.createdAt)}
+                    </span>
+                    {comment.status === 'delegated' && (
+                      <Loader2 className="h-3 w-3 animate-spin text-muted-foreground/50" />
+                    )}
+                    {comment.status === 'done' && (
+                      <BotMessageSquare className="h-3 w-3 text-muted-foreground/50" strokeWidth={1.5} />
+                    )}
+                    {canDelegate && onDelegateComment && comment.status !== 'delegated' && comment.status !== 'done' && (
+                      <span
+                        role="button"
+                        tabIndex={-1}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelegateComment(comment);
+                          onOpenChange(false);
+                        }}
+                        title="Delegate to AI agent"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-foreground"
+                      >
+                        <BotMessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <p className="text-xs text-foreground/80 leading-snug">
                   {truncate(comment.body, 60)}

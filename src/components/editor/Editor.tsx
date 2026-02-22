@@ -13,6 +13,8 @@ import { useDiffReview } from "@/hooks/useDiffReview";
 import { useFileWatcher } from "@/hooks/useFileWatcher";
 import { useCommentOperations } from "@/hooks/useCommentOperations";
 import { useCopilotCompletion } from "@/hooks/useCopilotCompletion";
+import { useCommentDelegation } from "@/hooks/useCommentDelegation";
+import { useCommentStore } from "@/stores/comment-store";
 import {
   setPendingCommentRange as setPendingRangeDecoration,
   showInlineDiff,
@@ -44,6 +46,9 @@ import "@/styles/editor.css";
 
 // 1 CSS px = 1/96 inch, 1 inch = 2.54 cm
 const PX_PER_CM = 96 / 2.54;
+
+// Stable empty array for Zustand selector fallback (avoids infinite re-render loop)
+const EMPTY_ACTIVITIES: import('@/stores/comment-store').DelegationActivity[] = [];
 
 // Full page widths at 96 CSS DPI (1 CSS px = 1/96 inch)
 // ProseMirror padding acts as page margins
@@ -78,8 +83,9 @@ interface EditorProps {
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange }: EditorProps) {
   const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange, toggleCopilotForTab } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
-  const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, pageBreaks } = useSettingsStore();
+  const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, pageBreaks, notesRootPath } = useSettingsStore();
   const { projectPath } = useActiveProject();
+  const commentStorageRoot = projectPath ?? (notesRootPath && !notesRootPath.startsWith('~') ? notesRootPath : null);
   const repo = useGitStore((s) => projectPath ? s.repos[projectPath] : undefined);
   const isGitRepo = repo?.isGitRepo ?? false;
   const copilotConnection = useRoutingStore((s) => s.getConnectionForUseCase('inline_completion'));
@@ -269,6 +275,11 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
   // Comments
   const commentOps = useCommentOperations(editor);
+  const { delegateComment, cancelDelegation, delegateAll, canDelegate } = useCommentDelegation();
+  const activeCommentId = commentOps.activeComment?.id ?? null;
+  const activeCommentActivities = useCommentStore((s) =>
+    activeCommentId ? s.activitiesByComment[activeCommentId] : undefined
+  ) ?? EMPTY_ACTIVITIES;
   const [commentPopoverOpen, setCommentPopoverOpen] = useState(false);
   const [pendingCommentRange, setPendingCommentRange] = useState<{ from: number; to: number } | null>(null);
   const [commentAnchorPos, setCommentAnchorPos] = useState<{ top: number; left: number } | null>(null);
@@ -868,6 +879,17 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           onRejectAllChanges={handleExternalRejectAll}
           onAcceptHunk={handleExternalAcceptHunk}
           onRejectHunk={handleExternalRejectHunk}
+          onDelegateComment={async (comment) => {
+            if (commentOps.commentKey && commentStorageRoot) {
+              await delegateComment(comment, commentOps.commentKey, commentStorageRoot);
+            }
+          }}
+          onDelegateAll={async () => {
+            if (commentOps.commentKey && commentStorageRoot) {
+              await delegateAll(commentOps.commentKey, commentStorageRoot);
+            }
+          }}
+          canDelegate={canDelegate}
           copilotActive={!!copilotConnection}
           copilotDisabledForTab={activeTab?.copilotDisabled ?? false}
           onToggleCopilot={() => { if (activeTabId) toggleCopilotForTab(activeTabId); }}
@@ -913,6 +935,13 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         comment={commentOps.activeComment}
         open={commentPopoverOpen}
         anchorPosition={commentAnchorPos}
+        canDelegate={canDelegate}
+        activities={activeCommentActivities}
+        onCancelDelegation={async () => {
+          if (commentOps.activeComment && commentOps.commentKey && commentStorageRoot) {
+            await cancelDelegation(commentOps.activeComment, commentOps.commentKey, commentStorageRoot);
+          }
+        }}
         onOpenChange={(open) => {
           setCommentPopoverOpen(open);
           if (!open) {
@@ -935,6 +964,28 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             await commentOps.createComment(body, pendingCommentRange.from, pendingCommentRange.to);
             if (editor) setPendingRangeDecoration(editor, null);
             setPendingCommentRange(null);
+          }
+        }}
+        onDelegate={async (body) => {
+          if (pendingCommentRange && editor && commentOps.commentKey && commentStorageRoot) {
+            generatedUUIDRef.current = false;
+            const comment = await commentOps.createComment(body, pendingCommentRange.from, pendingCommentRange.to);
+            if (editor) setPendingRangeDecoration(editor, null);
+            setPendingCommentRange(null);
+            if (comment) {
+              await delegateComment(comment, commentOps.commentKey, commentStorageRoot);
+            }
+          }
+        }}
+        onDelegateExisting={async () => {
+          if (commentOps.activeComment && commentOps.commentKey && commentStorageRoot) {
+            await delegateComment(commentOps.activeComment, commentOps.commentKey, commentStorageRoot);
+          }
+        }}
+        onResolve={async (commentId) => {
+          if (commentOps.commentKey && commentStorageRoot) {
+            useCommentStore.getState().setCommentStatus(commentOps.commentKey, commentId, 'resolved');
+            await useCommentStore.getState().saveComments(commentOps.commentKey, commentStorageRoot);
           }
         }}
         onEdit={async (commentId, body) => {

@@ -7,6 +7,7 @@ interface CommentDecoration {
   commentId: string;
   from: number;
   to: number;
+  status?: string;
 }
 
 interface CommentMarkState {
@@ -161,9 +162,12 @@ function buildDecorations(
     if (from >= to) continue;
 
     const isActive = comment.commentId === activeCommentId;
+    let className = 'comment-highlight';
+    if (isActive) className += ' comment-highlight-active';
+    if (comment.status === 'delegated') className += ' comment-highlight-delegated';
     decorations.push(
       Decoration.inline(from, to, {
-        class: isActive ? 'comment-highlight comment-highlight-active' : 'comment-highlight',
+        class: className,
         'data-comment-id': comment.commentId,
       })
     );
@@ -187,6 +191,7 @@ export function setCommentDecorations(
       commentId: c.id,
       from: c.from,
       to: c.to,
+      status: c.status,
     }));
 
   editor.view.dispatch(

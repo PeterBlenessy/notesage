@@ -78,10 +78,12 @@ export function useCommentOperations(editor: Editor | null) {
     loadComments(commentKey, storageRoot);
   }, [commentKey, storageRoot, editor, loadComments]);
 
-  // Sync decorations when comments change
+  // Sync decorations when comments change — filter out resolved comments
   useEffect(() => {
     if (!editor || !commentKey) return;
-    const comments = commentsByDocument[commentKey] ?? [];
+    const comments = (commentsByDocument[commentKey] ?? []).filter(
+      (c) => c.status !== 'resolved'
+    );
     setCommentDecorations(editor, comments, activeCommentId);
   }, [editor, commentKey, commentsByDocument, activeCommentId]);
 

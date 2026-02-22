@@ -75,6 +75,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     theme, setTheme,
     showFloatingToolbar, setShowFloatingToolbar,
     toolbarVisible, setToolbarVisible,
+    externalChangeDiffReview, setExternalChangeDiffReview,
     contentWidth, setContentWidth,
     measurementUnit, setMeasurementUnit,
     marginTop, setMarginTop,
@@ -273,6 +274,28 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         id="floating-toolbar"
                         checked={showFloatingToolbar}
                         onCheckedChange={setShowFloatingToolbar}
+                        className="ml-auto"
+                      />
+                    </div>
+                    <div
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
+                    >
+                      <div>
+                        <Label
+                          htmlFor="external-diff-review"
+                          className="text-sm font-medium cursor-pointer"
+                        >
+                          Review External Changes
+                        </Label>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Show inline diff when files change on disk. When off, changes are auto-accepted.
+                          <span className="text-muted-foreground/60"> Beta — may not preserve formatting perfectly.</span>
+                        </p>
+                      </div>
+                      <Switch
+                        id="external-diff-review"
+                        checked={externalChangeDiffReview}
+                        onCheckedChange={setExternalChangeDiffReview}
                         className="ml-auto"
                       />
                     </div>

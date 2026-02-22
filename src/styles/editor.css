@@ -488,6 +488,16 @@
   border-bottom-color: oklch(79% 0.15 68 / 0.8);
 }
 
+/* Delegated comment highlight — subtle pulse */
+.comment-highlight-delegated {
+  animation: comment-pulse 2s ease-in-out infinite;
+}
+
+@keyframes comment-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 /* Inline diff decorations */
 .inline-diff-delete {
   background-color: rgba(239, 68, 68, 0.15);

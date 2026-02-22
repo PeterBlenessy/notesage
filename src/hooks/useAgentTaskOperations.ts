@@ -133,9 +133,19 @@ export function useAgentTaskOperations() {
   /**
    * Start a background agent task. Returns a task ID for tracking.
    * The task runs in its own ACP session (separate from interactive chat).
+   *
+   * Callbacks:
+   * - onComplete: fires when the agent finishes (with accumulated output)
+   * - onActivity: fires on tool_call / tool_result events (for activity log)
+   * - onError: fires if the prompt fails or the agent errors
    */
   const startTask = useCallback(
-    async (prompt: string): Promise<string> => {
+    async (
+      prompt: string,
+      onComplete?: (output: string) => void,
+      onActivity?: (activity: { kind: string; label: string; detail?: string; event: 'tool_call' | 'tool_result' | 'agent_responding' | 'agent_complete' | 'permission_auto_approved' }) => void,
+      onError?: (error: string) => void,
+    ): Promise<string> => {
       if (!taskConnection || taskConnection.authMethod !== 'agent_managed') {
         throw new Error('No agent connection configured for tasks. Set up agent routing in Settings.');
       }
@@ -162,6 +172,7 @@ export function useAgentTaskOperations() {
       tasksRef.current.set(taskId, task);
 
       // Listen for session updates
+      let receivedFirstChunk = false;
       const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
         if (event.payload.instanceId !== instanceId) return;
         if (event.payload.sessionId !== session.session_id) return;
@@ -170,14 +181,39 @@ export function useAgentTaskOperations() {
         const current = tasksRef.current.get(taskId);
         if (!current) return;
 
+        const eventType = update.sessionUpdate;
+
         if (
-          update.sessionUpdate === 'agent_message_chunk' &&
+          eventType === 'agent_message_chunk' &&
           update.content?.type === 'text' &&
           update.content.text
         ) {
+          if (!receivedFirstChunk) {
+            receivedFirstChunk = true;
+            onActivity?.({ kind: 'agent_responding', label: 'Agent responding', event: 'agent_responding' });
+          }
           current.output += update.content.text;
-        } else if (update.sessionUpdate === 'agent_turn_complete') {
+        } else if (eventType === 'tool_call') {
+          const kind = (update as Record<string, unknown>).kind as string | undefined;
+          const title = (update as Record<string, unknown>).title as string | undefined;
+          const rawInput = (update as Record<string, unknown>).rawInput as string | undefined;
+          const label = title || kind || 'Tool call';
+          onActivity?.({ kind: kind || 'unknown', label, detail: rawInput?.slice(0, 200), event: 'tool_call' });
+        } else if (eventType === 'tool_result') {
+          onActivity?.({ kind: 'tool_result', label: 'Tool result', event: 'tool_result' });
+        } else if (eventType === 'agent_turn_complete') {
           current.status = 'completed';
+          const responsePreview = current.output.length > 100
+            ? current.output.slice(0, 100) + '\u2026'
+            : current.output || '(empty response)';
+          onActivity?.({ kind: 'agent_complete', label: 'Agent finished', detail: responsePreview, event: 'agent_complete' });
+          onComplete?.(current.output);
+          // Clean up listeners now that the turn is done
+          const c = cleanupRef.current.get(taskId);
+          if (c) {
+            c();
+            cleanupRef.current.delete(taskId);
+          }
         }
       });
 
@@ -223,6 +259,8 @@ export function useAgentTaskOperations() {
         }
 
         // Auto-approve all for now
+        const toolLabel = String(tc?.title ?? tc?.name ?? toolKind);
+        onActivity?.({ kind: 'permission', label: `Auto-approved: ${toolLabel}`, event: 'permission_auto_approved' });
         invoke('acp_permission_respond', {
           instanceId,
           requestId: payload.requestId,
@@ -236,20 +274,38 @@ export function useAgentTaskOperations() {
       };
       cleanupRef.current.set(taskId, cleanup);
 
-      // Send the prompt (non-blocking from the caller's perspective after setup)
+      // Send the prompt — resolves when the agent finishes its turn.
+      // Some agents emit `agent_turn_complete` (Claude Code), others don't (Copilot CLI).
+      // We handle both: the event listener catches `agent_turn_complete` if it arrives,
+      // and `.then()` catches completion when the invoke resolves (fallback).
       invoke('acp_session_prompt', {
         instanceId,
         sessionId: session.session_id,
         content: prompt,
       })
+        .then(() => {
+          const t = tasksRef.current.get(taskId);
+          if (t && t.status === 'running') {
+            // agent_turn_complete didn't fire — complete from invoke resolution
+            t.status = 'completed';
+            const responsePreview = t.output.length > 100
+              ? t.output.slice(0, 100) + '\u2026'
+              : t.output || '(empty response)';
+            onActivity?.({ kind: 'agent_complete', label: 'Agent finished', detail: responsePreview, event: 'agent_complete' });
+            onComplete?.(t.output);
+          }
+        })
         .catch((error) => {
           const t = tasksRef.current.get(taskId);
           if (t) {
             t.status = 'failed';
             t.error = error instanceof Error ? error.message : String(error);
           }
+          const errMsg = error instanceof Error ? error.message : String(error);
+          onError?.(errMsg);
         })
         .finally(() => {
+          // Clean up event listeners
           const c = cleanupRef.current.get(taskId);
           if (c) {
             c();
@@ -262,18 +318,20 @@ export function useAgentTaskOperations() {
     [taskConnection, selectedProjectPaths]
   );
 
-  /** Cancel a running task. */
+  /** Cancel a running task. Returns true if session was cancelled, false if already done. */
   const cancelTask = useCallback(
-    async (taskId: string) => {
+    async (taskId: string): Promise<boolean> => {
       const task = tasksRef.current.get(taskId);
-      if (!task || task.status !== 'running') return;
+      if (!task || task.status !== 'running') return false;
 
+      let cancelled = false;
       try {
         await invoke('acp_session_cancel', {
           instanceId: task.instanceId,
           sessionId: task.sessionId,
         });
         task.status = 'cancelled';
+        cancelled = true;
       } catch {
         // Agent may have already completed
       }
@@ -283,6 +341,7 @@ export function useAgentTaskOperations() {
         cleanup();
         cleanupRef.current.delete(taskId);
       }
+      return cancelled;
     },
     []
   );

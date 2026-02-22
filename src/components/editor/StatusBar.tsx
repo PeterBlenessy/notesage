@@ -44,6 +44,9 @@ interface StatusBarProps {
   onAcceptHunk?: (hunkId: string) => void;
   onRejectHunk?: (hunkId: string) => void;
   onSelectChange?: (change: ExternalChangeEntry, hunkIndex: number) => void;
+  onDelegateComment?: (comment: Comment) => void;
+  onDelegateAll?: () => void;
+  canDelegate?: boolean;
   copilotActive?: boolean;
   copilotDisabledForTab?: boolean;
   onToggleCopilot?: () => void;
@@ -71,6 +74,9 @@ export function StatusBar({
   onAcceptHunk,
   onRejectHunk,
   onSelectChange,
+  onDelegateComment,
+  onDelegateAll,
+  canDelegate = false,
   copilotActive = false,
   copilotDisabledForTab = false,
   onToggleCopilot,
@@ -122,6 +128,9 @@ export function StatusBar({
               onOpenChange={onCommentListOpenChange}
               comments={comments}
               onSelectComment={onSelectComment}
+              onDelegateComment={onDelegateComment}
+              onDelegateAll={onDelegateAll}
+              canDelegate={canDelegate}
             />
             <span className="w-px h-2.5 bg-border" />
           </>

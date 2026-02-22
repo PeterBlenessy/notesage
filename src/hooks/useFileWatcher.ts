@@ -4,6 +4,7 @@ import { tauriApi } from "@/lib/tauri";
 import { useEditorStore } from "@/stores/editor-store";
 import { useExternalChangeStore } from "@/stores/external-change-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations, refreshGitForPath } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
 
@@ -111,17 +112,21 @@ async function handleModifyEvent(path: string, normalizedPath: string) {
       // Dirty tabs: use the old ExternalChangeBanner (reload/keep)
       state.setExternalChange(tab.filePath, content);
     } else {
-      // Clean tabs: compute diff and store in external-change-store
-      // Skip if we already have a pending change with the same new content
-      const existing = useExternalChangeStore.getState().getChange(tab.filePath);
-      if (existing && existing.newContent === content) return;
+      if (!useSettingsStore.getState().externalChangeDiffReview) {
+        // Auto-accept: editor-store path → Editor.tsx auto-reloads clean tabs
+        state.setExternalChange(tab.filePath, content);
+      } else {
+        // Diff review beta: external-change-store → inline decorations
+        const existing = useExternalChangeStore.getState().getChange(tab.filePath);
+        if (existing && existing.newContent === content) return;
 
-      useExternalChangeStore.getState().addChange(
-        tab.filePath,
-        tab.fileName,
-        tab.content,
-        content,
-      );
+        useExternalChangeStore.getState().addChange(
+          tab.filePath,
+          tab.fileName,
+          tab.content,
+          content,
+        );
+      }
     }
   } catch (error) {
     console.error("Failed to read externally changed file:", error);

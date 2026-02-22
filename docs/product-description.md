@@ -365,7 +365,7 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 
 - Chat provider indicator and picker: show active connection in chat footer, per-message provider badge, switch providers from chat (done)
 - Interactive permission approval UI: tiered allow once/session/always controls for all tools, context-aware Tools (done)
-- Agent install guidance: step-by-step guides with copyable commands (done) 
+- Agent install guidance: step-by-step guides with copyable commands (done)
 - Agent binary auto-install: one-click npm install from within the app (PRD ready)
 - ACP agent binary bundling as Tauri sidecar (no Node.js dependency for end users)
 - Orphaned agent process cleanup on app exit/restart (done)

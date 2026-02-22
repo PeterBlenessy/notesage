@@ -25,6 +25,7 @@ interface SettingsStore {
   gitEnabled: boolean;
   pageBreaks: PageBreaks;
   typewriterScrolling: boolean;
+  externalChangeDiffReview: boolean;
   lastExportTemplate: ExportTemplate;
   lastExportPageSize: ExportPageSize;
   lastExportIncludeToC: boolean;
@@ -48,6 +49,7 @@ interface SettingsStore {
   setGitEnabled: (enabled: boolean) => void;
   setPageBreaks: (mode: PageBreaks) => void;
   setTypewriterScrolling: (enabled: boolean) => void;
+  setExternalChangeDiffReview: (enabled: boolean) => void;
   setLastExportTemplate: (template: ExportTemplate) => void;
   setLastExportPageSize: (pageSize: ExportPageSize) => void;
   setLastExportIncludeToC: (include: boolean) => void;
@@ -77,6 +79,7 @@ export const useSettingsStore = create<SettingsStore>()(
       icloudNotesagePath: null,
       pageBreaks: "continuous",
       typewriterScrolling: false,
+      externalChangeDiffReview: false,
       lastExportTemplate: "clean",
       lastExportPageSize: "a4",
       lastExportIncludeToC: false,
@@ -144,6 +147,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setTypewriterScrolling: (enabled: boolean) => {
         set({ typewriterScrolling: enabled });
+      },
+
+      setExternalChangeDiffReview: (enabled: boolean) => {
+        set({ externalChangeDiffReview: enabled });
       },
 
       setLastExportTemplate: (template: ExportTemplate) => {
