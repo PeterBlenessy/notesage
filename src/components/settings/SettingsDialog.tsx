@@ -266,7 +266,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           Floating Toolbar
                         </Label>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          Show formatting toolbar when text is selected
+                          Show AI actions and comment button when text is selected
                         </p>
                       </div>
                       <Switch

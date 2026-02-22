@@ -1,8 +1,9 @@
 [package]
 name = "notesage"
 version = "0.1.0"
-description = "Notesage - A WYSIWYG markdown editor"
-authors = ["you"]
+description = "Notesage - A WYSIWYG markdown editor with AI collaboration"
+authors = ["Peter Blenessy"]
+license = "MIT"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

@@ -63,6 +63,27 @@ Bump the version, generate a changelog, and create a release history entry.
    - Show the files that were modified
    - Ask the user to confirm before committing
 
+## Post-Tag: Monitor GitHub Workflow
+
+After the user commits, tags, and pushes a release tag, **always** monitor the GitHub Actions workflow:
+
+1. Wait a few seconds for the workflow to start, then run:
+   ```bash
+   gh run list --workflow=release.yml --limit 1
+   ```
+2. Get the run ID and launch a **background agent** to poll the workflow status:
+   ```bash
+   gh run watch <run-id> --exit-status
+   ```
+3. If the workflow **fails**, immediately check the failed logs:
+   ```bash
+   gh run view <run-id> --log-failed
+   ```
+   Report the failure to the user with the error details.
+4. If the workflow **succeeds**, confirm to the user that the release was built and published.
+
+This monitoring should run in the background so it does not block other work.
+
 ## Important Notes
 
 - This skill prepares the release but does **not** commit or tag. The user decides when to commit.

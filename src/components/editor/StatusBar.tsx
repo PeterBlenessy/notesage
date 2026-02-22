@@ -150,7 +150,7 @@ export function StatusBar({
                   className={`inline-flex items-center gap-1 hover:text-foreground transition-colors ${
                     copilotDisabledForTab ? "opacity-40" : ""
                   }`}
-                  title="GitHub Copilot LSP"
+                  title="Inline completions"
                 >
                   <CopilotIcon className="h-3.5 w-3.5" />
                 </button>
@@ -159,13 +159,16 @@ export function StatusBar({
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <CopilotIcon className="h-3.5 w-3.5 shrink-0" />
-                    <span className="text-xs font-medium">GitHub Copilot LSP</span>
+                    <span className="text-xs font-medium">Inline Completions</span>
                     <span
                       className={`ml-auto h-1.5 w-1.5 rounded-full shrink-0 ${
                         copilotDisabledForTab ? "bg-muted-foreground/40" : "bg-green-500"
                       }`}
                     />
                   </div>
+                  <p className="text-[10px] text-muted-foreground/60 leading-tight">
+                    GitHub Copilot suggests code and text as you type. Press Tab to accept, Escape to dismiss.
+                  </p>
                   <div className="flex items-center justify-between">
                     <label htmlFor="copilot-toggle" className="text-xs text-muted-foreground">
                       Enable for this document
