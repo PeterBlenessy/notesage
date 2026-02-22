@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
 
 export interface CommentReply {
@@ -246,6 +247,7 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
       await tauriApi.writeFile(filePath, JSON.stringify(comments, null, 2));
     } catch (error) {
       console.error('Failed to save comments:', error);
+      toast.error(`Failed to save comments: ${error}`);
     }
   },
 

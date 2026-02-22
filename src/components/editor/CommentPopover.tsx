@@ -190,7 +190,7 @@ export function CommentPopover({
               />
               <div className="flex justify-between items-center">
                 <span className="text-[10px] text-muted-foreground">
-                  {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Enter to submit
+                  {navigator.userAgent.includes('Mac') ? '⌘' : 'Ctrl'}+Enter to submit
                 </span>
                 <div className="flex gap-1.5">
                   {mode === 'edit' && (
@@ -387,7 +387,7 @@ export function CommentPopover({
                     {activityExpanded && activities.length > 0 && (
                       <div className="pl-1 space-y-0.5 max-h-32 overflow-y-auto">
                         {activities.map((a, i) => (
-                          <div key={i} className={`flex items-start gap-1.5 text-[10px] ${a.status === 'error' ? 'text-destructive/70' : 'text-muted-foreground/70'}`}>
+                          <div key={`${a.timestamp}-${i}`} className={`flex items-start gap-1.5 text-[10px] ${a.status === 'error' ? 'text-destructive/70' : 'text-muted-foreground/70'}`}>
                             {a.status === 'running' ? (
                               <Loader2 className="h-2.5 w-2.5 animate-spin shrink-0 mt-px" />
                             ) : a.status === 'error' ? (

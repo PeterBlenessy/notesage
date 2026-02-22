@@ -3,44 +3,57 @@ import { useRoutingStore } from '@/stores/routing-store';
 import { useChatStore } from '@/stores/chat-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import type { Connection } from '@/lib/ai/connections';
-import { invoke } from '@tauri-apps/api/core';
+import { tauriApi } from '@/lib/tauri';
 import { listen } from '@tauri-apps/api/event';
 
 // ---------------------------------------------------------------------------
-// ACP types (shared with useAIOperations — consider extracting if they grow)
+// ACP event payload types
 // ---------------------------------------------------------------------------
 
-interface AcpSpawnResult {
-  instance_id: string;
-  agent_name: string | null;
-  agent_version: string | null;
-  auth_methods: { id: string; name: string; description: string | null }[];
-}
-
-interface AcpSessionResult {
-  session_id: string;
+interface AcpSessionUpdate {
+  sessionUpdate: 'agent_message_chunk' | 'tool_call' | 'tool_result' | 'agent_turn_complete' | string;
+  content?: { type: string; text?: string };
+  kind?: string;
+  title?: string;
+  rawInput?: string;
 }
 
 interface AcpSessionUpdatePayload {
   instanceId: string;
   sessionId: string;
-  update: {
-    sessionUpdate: string;
-    content?: { type: string; text?: string };
-    [key: string]: unknown;
-  };
+  update: AcpSessionUpdate;
+}
+
+interface AcpToolCall {
+  kind?: string;
+  type?: string;
+  title?: string;
+  name?: string;
+  rawInput?: string;
+}
+
+interface AcpPermissionOption {
+  optionId?: string;
+  id?: string;
+  kind?: string;
+  name?: string;
 }
 
 interface AcpPermissionRequestPayload {
   instanceId: string;
   sessionId: string;
   requestId: string;
-  toolCall: unknown;
-  options: { optionId: string; kind: string; name: string }[];
+  toolCall: AcpToolCall | null;
+  options: AcpPermissionOption[];
 }
 
 // ---------------------------------------------------------------------------
-// Task agent state (module-level, survives re-renders)
+// Task agent state (module-level singleton, survives re-renders)
+//
+// Only one task agent runs at a time. This module-level state is intentional:
+// useAgentTaskOperations is called from useCommentDelegation, which is wired
+// in a single place (Editor.tsx). If the hook were ever used in multiple
+// component trees, they would share this agent instance.
 // ---------------------------------------------------------------------------
 
 interface TaskAgentState {
@@ -53,7 +66,7 @@ let taskAgent: TaskAgentState | null = null;
 
 export function stopTaskAgent(): void {
   if (taskAgent) {
-    invoke('acp_agent_stop', { instanceId: taskAgent.instanceId }).catch(() => {});
+    tauriApi.acpAgentStop(taskAgent.instanceId).catch(() => {});
     taskAgent = null;
   }
 }
@@ -61,7 +74,7 @@ export function stopTaskAgent(): void {
 async function ensureTaskAgent(connection: Connection, cwd: string): Promise<string> {
   if (taskAgent && taskAgent.connectionId !== connection.id) {
     try {
-      await invoke('acp_agent_stop', { instanceId: taskAgent.instanceId });
+      await tauriApi.acpAgentStop(taskAgent.instanceId);
     } catch {
       // Agent may already be stopped
     }
@@ -73,16 +86,16 @@ async function ensureTaskAgent(connection: Connection, cwd: string): Promise<str
   }
 
   const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[] };
-  const result = await invoke<AcpSpawnResult>('acp_agent_spawn', {
-    agentBinary: creds.agentBinary,
-    agentArgs: creds.agentArgs ?? null,
-    role: 'task',
-    workingDirectory: cwd,
-  });
+  const result = await tauriApi.acpAgentSpawn(
+    creds.agentBinary,
+    creds.agentArgs ?? null,
+    'task',
+    cwd,
+  );
 
   // Try to authenticate — some agents handle auth internally
   try {
-    await invoke('acp_agent_authenticate', { instanceId: result.instance_id });
+    await tauriApi.acpAgentAuthenticate(result.instance_id);
   } catch (authErr) {
     const msg = String(authErr);
     if (!msg.toLowerCase().includes('not implemented')) throw authErr;
@@ -154,10 +167,7 @@ export function useAgentTaskOperations() {
       const instanceId = await ensureTaskAgent(taskConnection, cwd);
 
       // Each task gets its own session
-      const session = await invoke<AcpSessionResult>('acp_session_new', {
-        instanceId,
-        workingDirectory: cwd,
-      });
+      const session = await tauriApi.acpSessionNew(instanceId, cwd);
 
       const taskId = `task-${Date.now()}`;
       const task: AgentTask = {
@@ -194,11 +204,8 @@ export function useAgentTaskOperations() {
           }
           current.output += update.content.text;
         } else if (eventType === 'tool_call') {
-          const kind = (update as Record<string, unknown>).kind as string | undefined;
-          const title = (update as Record<string, unknown>).title as string | undefined;
-          const rawInput = (update as Record<string, unknown>).rawInput as string | undefined;
-          const label = title || kind || 'Tool call';
-          onActivity?.({ kind: kind || 'unknown', label, detail: rawInput?.slice(0, 200), event: 'tool_call' });
+          const label = update.title || update.kind || 'Tool call';
+          onActivity?.({ kind: update.kind || 'unknown', label, detail: update.rawInput?.slice(0, 200), event: 'tool_call' });
         } else if (eventType === 'tool_result') {
           onActivity?.({ kind: 'tool_result', label: 'Tool result', event: 'tool_result' });
         } else if (eventType === 'agent_turn_complete') {
@@ -223,27 +230,24 @@ export function useAgentTaskOperations() {
       const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
         if (event.payload.instanceId !== instanceId) return;
         const payload = event.payload;
-        const rawOptions = payload.options as unknown[];
+        const rawOptions = payload.options;
         let firstOptionId: string | null = null;
         if (Array.isArray(rawOptions) && rawOptions.length > 0) {
-          const opt = rawOptions[0] as Record<string, unknown>;
-          firstOptionId = typeof opt === 'string' ? opt : String(opt?.optionId ?? opt?.id ?? '');
+          const opt = rawOptions[0];
+          firstOptionId = String(opt?.optionId ?? opt?.id ?? '');
         }
 
         // Track all task agent permission requests in the store
-        const tc = payload.toolCall as Record<string, unknown> | null;
+        const tc = payload.toolCall;
         const toolKind = String(tc?.kind ?? tc?.type ?? 'unknown');
         const readOnly = ['read', 'read_file', 'glob', 'list', 'grep', 'fetch', 'web_search'];
         if (!readOnly.includes(toolKind)) {
           const options = Array.isArray(rawOptions)
-            ? rawOptions.map((o) => {
-                const opt2 = o as Record<string, unknown>;
-                return {
-                  optionId: String(opt2?.optionId ?? opt2?.id ?? ''),
-                  kind: String(opt2?.kind ?? ''),
-                  name: String(opt2?.name ?? ''),
-                };
-              })
+            ? rawOptions.map((o) => ({
+                optionId: String(o?.optionId ?? o?.id ?? ''),
+                kind: String(o?.kind ?? ''),
+                name: String(o?.name ?? ''),
+              }))
             : [];
           usePermissionStore.getState().addRequest({
             id: `${payload.requestId}-${Date.now()}`,
@@ -261,11 +265,7 @@ export function useAgentTaskOperations() {
         // Auto-approve all for now
         const toolLabel = String(tc?.title ?? tc?.name ?? toolKind);
         onActivity?.({ kind: 'permission', label: `Auto-approved: ${toolLabel}`, event: 'permission_auto_approved' });
-        invoke('acp_permission_respond', {
-          instanceId,
-          requestId: payload.requestId,
-          optionId: firstOptionId,
-        }).catch(() => {});
+        tauriApi.acpPermissionRespond(instanceId, payload.requestId, firstOptionId).catch(() => {});
       });
 
       const cleanup = () => {
@@ -278,11 +278,7 @@ export function useAgentTaskOperations() {
       // Some agents emit `agent_turn_complete` (Claude Code), others don't (Copilot CLI).
       // We handle both: the event listener catches `agent_turn_complete` if it arrives,
       // and `.then()` catches completion when the invoke resolves (fallback).
-      invoke('acp_session_prompt', {
-        instanceId,
-        sessionId: session.session_id,
-        content: prompt,
-      })
+      tauriApi.acpSessionPrompt(instanceId, session.session_id, prompt)
         .then(() => {
           const t = tasksRef.current.get(taskId);
           if (t && t.status === 'running') {
@@ -326,10 +322,7 @@ export function useAgentTaskOperations() {
 
       let cancelled = false;
       try {
-        await invoke('acp_session_cancel', {
-          instanceId: task.instanceId,
-          sessionId: task.sessionId,
-        });
+        await tauriApi.acpSessionCancel(task.instanceId, task.sessionId);
         task.status = 'cancelled';
         cancelled = true;
       } catch {

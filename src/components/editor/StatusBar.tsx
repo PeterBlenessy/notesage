@@ -171,7 +171,7 @@ export function StatusBar({
                     <span className="text-xs font-medium">Inline Completions</span>
                     <span
                       className={`ml-auto h-1.5 w-1.5 rounded-full shrink-0 ${
-                        copilotDisabledForTab ? "bg-muted-foreground/40" : "bg-green-500"
+                        copilotDisabledForTab ? "bg-muted-foreground/40" : "bg-foreground/70"
                       }`}
                     />
                   </div>

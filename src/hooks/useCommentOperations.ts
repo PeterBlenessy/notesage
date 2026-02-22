@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import type { Editor } from '@tiptap/core';
+import type { Transaction } from '@tiptap/pm/state';
 import { useEditorStore } from '@/stores/editor-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useCommentStore } from '@/stores/comment-store';
@@ -91,7 +92,7 @@ export function useCommentOperations(editor: Editor | null) {
   useEffect(() => {
     if (!editor) return;
 
-    const handleTransaction = ({ transaction }: { transaction: any }) => {
+    const handleTransaction = ({ transaction }: { transaction: Transaction }) => {
       const meta = transaction.getMeta(CommentMarkPluginKey);
       if (!meta) return;
 

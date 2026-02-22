@@ -1,5 +1,6 @@
-import { Extension } from '@tiptap/core';
+import { Extension, type Editor } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
+import type { Node as PMNode } from '@tiptap/pm/model';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { Comment } from '@/stores/comment-store';
 
@@ -134,7 +135,7 @@ export const CommentMark = Extension.create({
 });
 
 function buildDecorations(
-  doc: any,
+  doc: PMNode,
   comments: CommentDecoration[],
   activeCommentId: string | null,
   pendingRange: { from: number; to: number } | null
@@ -181,7 +182,7 @@ function buildDecorations(
 
 /** Set all comment decorations from a comment list. */
 export function setCommentDecorations(
-  editor: any,
+  editor: Editor,
   comments: Comment[],
   activeCommentId?: string | null
 ) {
@@ -204,7 +205,7 @@ export function setCommentDecorations(
 }
 
 /** Clear all comment decorations. */
-export function clearCommentDecorations(editor: any) {
+export function clearCommentDecorations(editor: Editor) {
   editor.view.dispatch(
     editor.state.tr.setMeta(CommentMarkPluginKey, {
       clearComments: true,
@@ -213,7 +214,7 @@ export function clearCommentDecorations(editor: any) {
 }
 
 /** Set the active (highlighted) comment. */
-export function setActiveCommentDecoration(editor: any, commentId: string | null) {
+export function setActiveCommentDecoration(editor: Editor, commentId: string | null) {
   editor.view.dispatch(
     editor.state.tr.setMeta(CommentMarkPluginKey, {
       setActiveComment: commentId,
@@ -222,7 +223,7 @@ export function setActiveCommentDecoration(editor: any, commentId: string | null
 }
 
 /** Set or clear the pending comment range (highlight shown during creation). */
-export function setPendingCommentRange(editor: any, range: { from: number; to: number } | null) {
+export function setPendingCommentRange(editor: Editor, range: { from: number; to: number } | null) {
   editor.view.dispatch(
     editor.state.tr.setMeta(CommentMarkPluginKey, {
       setPendingRange: range,
@@ -231,7 +232,7 @@ export function setPendingCommentRange(editor: any, range: { from: number; to: n
 }
 
 /** Find the comment at a given position, if any. */
-export function getCommentAtPos(editor: any, pos: number): string | null {
+export function getCommentAtPos(editor: Editor, pos: number): string | null {
   const state = CommentMarkPluginKey.getState(editor.state);
   if (!state) return null;
   const found = state.comments.find((c: CommentDecoration) => pos >= c.from && pos <= c.to);
@@ -239,6 +240,6 @@ export function getCommentAtPos(editor: any, pos: number): string | null {
 }
 
 /** Get the current comment plugin state. */
-export function getCommentMarkState(editor: any): CommentMarkState | null {
+export function getCommentMarkState(editor: Editor): CommentMarkState | null {
   return CommentMarkPluginKey.getState(editor.state) ?? null;
 }

@@ -37,6 +37,21 @@ export interface SyncSettings {
   syncedProjects: string[];
 }
 
+// ---------------------------------------------------------------------------
+// ACP (Agent Client Protocol) types
+// ---------------------------------------------------------------------------
+
+export interface AcpSpawnResult {
+  instance_id: string;
+  agent_name: string | null;
+  agent_version: string | null;
+  auth_methods: { id: string; name: string; description: string | null }[];
+}
+
+export interface AcpSessionResult {
+  session_id: string;
+}
+
 export const tauriApi = {
   async readFile(path: string): Promise<string> {
     return await invoke<string>("read_file", { path });
@@ -204,5 +219,34 @@ export const tauriApi = {
 
   async migrateQuickNotes(fromPath: string, toPath: string): Promise<number> {
     return await invoke<number>("migrate_quick_notes", { fromPath, toPath });
+  },
+
+  // ACP (Agent Client Protocol) operations
+  async acpAgentSpawn(agentBinary: string, agentArgs: string[] | null, role: string, workingDirectory: string): Promise<AcpSpawnResult> {
+    return await invoke<AcpSpawnResult>("acp_agent_spawn", { agentBinary, agentArgs, role, workingDirectory });
+  },
+
+  async acpAgentStop(instanceId: string): Promise<void> {
+    await invoke("acp_agent_stop", { instanceId });
+  },
+
+  async acpAgentAuthenticate(instanceId: string): Promise<void> {
+    await invoke("acp_agent_authenticate", { instanceId });
+  },
+
+  async acpSessionNew(instanceId: string, workingDirectory: string): Promise<AcpSessionResult> {
+    return await invoke<AcpSessionResult>("acp_session_new", { instanceId, workingDirectory });
+  },
+
+  async acpSessionPrompt(instanceId: string, sessionId: string, content: string): Promise<void> {
+    await invoke("acp_session_prompt", { instanceId, sessionId, content });
+  },
+
+  async acpSessionCancel(instanceId: string, sessionId: string): Promise<void> {
+    await invoke("acp_session_cancel", { instanceId, sessionId });
+  },
+
+  async acpPermissionRespond(instanceId: string, requestId: string, optionId: string | null): Promise<void> {
+    await invoke("acp_permission_respond", { instanceId, requestId, optionId });
   },
 };

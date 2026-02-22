@@ -14,7 +14,7 @@ import { useFileWatcher } from "@/hooks/useFileWatcher";
 import { useCommentOperations } from "@/hooks/useCommentOperations";
 import { useCopilotCompletion } from "@/hooks/useCopilotCompletion";
 import { useCommentDelegation } from "@/hooks/useCommentDelegation";
-import { useCommentStore } from "@/stores/comment-store";
+import { useCommentStore, type DelegationActivity } from "@/stores/comment-store";
 import {
   setPendingCommentRange as setPendingRangeDecoration,
   showInlineDiff,
@@ -48,7 +48,7 @@ import "@/styles/editor.css";
 const PX_PER_CM = 96 / 2.54;
 
 // Stable empty array for Zustand selector fallback (avoids infinite re-render loop)
-const EMPTY_ACTIVITIES: import('@/stores/comment-store').DelegationActivity[] = [];
+const EMPTY_ACTIVITIES: DelegationActivity[] = [];
 
 // Full page widths at 96 CSS DPI (1 CSS px = 1/96 inch)
 // ProseMirror padding acts as page margins

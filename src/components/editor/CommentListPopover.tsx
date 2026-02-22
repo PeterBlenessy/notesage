@@ -113,19 +113,18 @@ export function CommentListPopover({
                       <BotMessageSquare className="h-3 w-3 text-muted-foreground/50" strokeWidth={1.5} />
                     )}
                     {canDelegate && onDelegateComment && comment.status !== 'delegated' && comment.status !== 'done' && (
-                      <span
-                        role="button"
-                        tabIndex={-1}
+                      <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           onDelegateComment(comment);
                           onOpenChange(false);
                         }}
                         title="Delegate to AI agent"
-                        className="opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-foreground"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-foreground"
                       >
                         <BotMessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
-                      </span>
+                      </button>
                     )}
                   </div>
                 </div>
