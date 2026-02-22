@@ -322,15 +322,13 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - Agent subprocess spawning, initialization, and authentication via Tauri commands
 - ACP session management: create, prompt, cancel, load sessions
 - Streaming responses via Tauri events (`acp-session-update`)
-- Permission request handling: all tool calls require explicit user approval with tiered options (allow once / allow for session / allow always); no hard-coded auto-approval
-- Tiered permission UI: PermissionCard with split Allow button + dropdown for session/always; session approvals non-persisted, always approvals persisted via Zustand persist
-- Context-aware chat footer: "Tools" popover for ACP agents (pre-populated tool list with per-tool approval cycling), "Search" toggle for direct API connections
+- Permission request handling: all tool calls require explicit user approval with tiered options (allow once / allow for session / allow always); no hard-coded auto-approval Tiered permission UI: PermissionCard with split Allow button + dropdown for session/always; session approvals non-persisted, always approvals persisted via Zustand persist Context-aware chat footer: "Tools" popover for ACP agents (pre-populated tool list with per-tool approval cycling), "Search" toggle for direct API connections
 - Four supported ACP agents: Claude Code (`claude-agent-acp`), OpenAI Codex (`codex-acp`), GitHub Copilot CLI (`copilot --acp` — chat/agents only, no inline completions), Google Gemini CLI (`gemini --acp` — free with Google account)
 - Copilot Language Server (`copilot-language-server`) for inline completions via LSP protocol (separate from ACP)
 
 **Agent activity & tasks:**
 
-- Agent activity panel: collapsible per-message activity log showing tool call steps with per-tool completion (`tool_result` marks individual activities done, not just `agent_turn_complete`)
+- Agent activity panel: collapsible per-message activity log showing tool call steps
 - Background task agent hook (`useAgentTaskOperations`): separate ACP instance for delegated work
 - Task lifecycle: start, cancel, track status and output
 - Agent file changes flow through existing file watcher → external-change-store → inline diff review
@@ -339,24 +337,25 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 
 - `connections-store` (Zustand, persisted): manages provider connections
 - `routing-store` (Zustand, persisted): maps use cases to connections
-- `permission-store` (Zustand, partially persisted): tracks ACP tool call approvals with `sessionAllowed` (Set, non-persisted), `alwaysAllowed` (string[], persisted), `getToolTier()` returns `'none' | 'session' | 'always'`
-- `AcpState` (Rust managed state): agent process handles, sessions, install lock
+- `permission-store` (Zustand, partially persisted): tracks ACP tool call approvals
+- `AcpState` (Rust managed state): agent process handles, sessions, install lock; `stop_all_sync()` drains all agents on app exit
 - Tauri commands: `acp_agent_spawn`, `acp_agent_authenticate`, `acp_agent_stop`, `acp_agent_check_availability`, `acp_session_new`, `acp_session_prompt`, `acp_session_cancel`, `acp_session_load`, `acp_permission_respond`
 
 **Future enhancements (not yet built):**
 
-- ~~Interactive permission approval UI~~ (done — tiered allow once/session/always with context-aware Tools popover)
+- ~~Interactive permission approval UI~~ (done)
 - Agent binary auto-install wizard — automated npm install from within the app (PRD: `docs/prds/2026-02-21-agent-install-wizard.md`)
-- 
 - ACP agent binary bundling as Tauri sidecar
-- Orphaned agent process cleanup on app exit
+- ~~Orphaned agent process cleanup on app exit~~ (done — `kill_on_drop(true)`, `RunEvent::Exit` hook, frontend `beforeunload`)
 
 ## Recently completed:
 
-Chat provider indicator & picker — interactive connection picker in chat footer, per-message provider badges, shared ProviderLogo component (PRD: docs/prds/2026-02-22-chat-provider-indicator.md)
-Agent install & auth guidance — step-by-step guides with copyable commands and URLs for all providers (PRD: docs/prds/2026-02-22-agent-install-guidance.md)
-Tiered permission approval UI — PermissionCard split Allow button (once/session/always), context-aware chat footer (Search for direct API, Tools popover for ACP agents), per-tool activity completion, official Copilot Octicons icon (PRD: docs/prds/2026-02-22-permission-approval-ui.md)
-Roadmap
+- Chat provider indicator & picker — interactive connection picker in chat footer, per-message provider badges, shared ProviderLogo component (PRD: docs/prds/2026-02-22-chat-provider-indicator.md)
+- Agent install & auth guidance — step-by-step guides with copyable commands and URLs for all providers (PRD: docs/prds/2026-02-22-agent-install-guidance.md)
+- Tiered permission approval UI — PermissionCard split Allow button (once/session/always), context-aware chat footer (Search for direct API, Tools popover for ACP agents), per-tool activity completion, official Copilot Octicons icon (PRD: docs/prds/2026-02-22-permission-approval-ui.md)
+- Orphaned agent process cleanup — `kill_on_drop(true)` on ACP child processes, `RunEvent::Exit` hook in Tauri builder, frontend `beforeunload` cleanup, error-path leak fixes (PRD: docs/prds/2026-02-22-orphaned-agent-cleanup.md)
+
+## Roadmap
 
 ### Phase 6.5 — Chat UX & Agent Polish
 
@@ -365,11 +364,11 @@ Roadmap
 **Features:**
 
 - Chat provider indicator and picker: show active connection in chat footer, per-message provider badge, switch providers from chat (done)
-- Interactive permission approval UI: tiered allow once/session/always controls for all tools, context-aware Tools popover in chat footer (done)
-- Agent install guidance: step-by-step guides with copyable commands (done)
-  Agent binary auto-install: one-click npm install from within the app (PRD ready)
+- Interactive permission approval UI: tiered allow once/session/always controls for all tools, context-aware Tools (done)
+- Agent install guidance: step-by-step guides with copyable commands (done) 
+- Agent binary auto-install: one-click npm install from within the app (PRD ready)
 - ACP agent binary bundling as Tauri sidecar (no Node.js dependency for end users)
-- Orphaned agent process cleanup on app exit/restart
+- Orphaned agent process cleanup on app exit/restart (done)
 - External change diff fidelity: map raw-text diffs to ProseMirror transactions that preserve formatting
 
 ### Phase 7 — AI-Assisted Research

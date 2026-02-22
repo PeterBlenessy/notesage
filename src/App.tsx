@@ -23,6 +23,8 @@ import { tauriApi } from "@/lib/tauri";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { migrateV1AISettings } from "@/lib/ai/migration";
+import { stopAcpAgent } from "@/hooks/useAIOperations";
+import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -103,6 +105,19 @@ function App() {
   // Migrate v1 AI settings to v2 connections/routing on first load
   useEffect(() => {
     migrateV1AISettings();
+  }, []);
+
+  // Stop ACP agent processes on window close (supplementary to Rust exit hook)
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      stopAcpAgent();
+      stopTaskAgent();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      handleBeforeUnload();
+    };
   }, []);
 
   // Reload file trees for all persisted projects on startup

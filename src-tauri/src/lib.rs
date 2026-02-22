@@ -2,6 +2,7 @@ mod commands;
 mod export;
 
 use commands::*;
+use tauri::{Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -79,6 +80,12 @@ pub fn run() {
             copilot_lsp_did_show_completion,
             copilot_lsp_accept_completion,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let RunEvent::Exit = event {
+                // Stop all ACP agent subprocesses
+                app_handle.state::<AcpState>().stop_all_sync();
+            }
+        });
 }

@@ -20,13 +20,13 @@ note-sage/
 ├── src-tauri/              # Rust backend (Tauri)
 │   ├── src/
 │   │   ├── main.rs
-│   │   ├── lib.rs
+│   │   ├── lib.rs          # Tauri builder + RunEvent::Exit cleanup hook
 │   │   ├── commands/       # Tauri IPC commands
 │   │   │   ├── mod.rs
 │   │   │   ├── file.rs     # File read/write/list operations
 │   │   │   ├── dialog.rs   # Native file/folder dialogs
 │   │   │   ├── ai.rs       # AI provider commands (direct API)
-│   │   │   ├── acp.rs      # ACP agent management (spawn, auth, sessions, permissions)
+│   │   │   ├── acp.rs      # ACP agent management (spawn, auth, sessions, permissions, cleanup)
 │   │   │   ├── copilot_lsp.rs # Copilot Language Server (JSON-RPC, inline completions)
 │   │   │   ├── export.rs   # PDF export commands
 │   │   │   ├── git.rs      # Git operations
@@ -191,9 +191,11 @@ interface AIProvider {
 **Path 2: ACP (Agent Client Protocol)** (for `agent_managed` connections)
 
 - Uses the `agent-client-protocol` Rust crate to communicate with agent subprocesses over stdio
+- Agent processes spawned with `kill_on_drop(true)` — SIGKILL sent when `Child` is dropped (thread exit, app shutdown)
 - Agents handle their own auth (subscription login via browser popup)
 - Prompts sent via `acp_session_prompt`, responses streamed as `acp-session-update` Tauri events
 - Four supported agents: Claude Code (`claude-agent-acp`), Codex (`codex-acp`), Copilot (`copilot --acp`), Gemini CLI (`gemini --acp`)
+- Process cleanup: `AcpState::stop_all_sync()` called from `RunEvent::Exit` hook; frontend `beforeunload` as secondary defense
 
 **Path 3: Copilot LSP** (for `inline_completion` use case)
 

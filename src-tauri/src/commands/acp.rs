@@ -66,6 +66,33 @@ impl AcpState {
             agents: Mutex::new(HashMap::new()),
         }
     }
+
+    /// Stop all running agents synchronously. Drains the agents map,
+    /// drops channel senders (closing channels), and joins threads.
+    /// Called from the Tauri `RunEvent::Exit` handler.
+    ///
+    /// When `cmd_tx` is dropped, the channel closes, causing `cmd_rx.recv()`
+    /// in `run_agent_thread` to return `None`. This exits the command loop,
+    /// which drops the `Child` (with `kill_on_drop(true)`) sending SIGKILL.
+    pub fn stop_all_sync(&self) {
+        let mut agents = match self.agents.try_lock() {
+            Ok(guard) => guard,
+            Err(_) => {
+                eprintln!("[acp] Could not acquire agent lock during shutdown");
+                return;
+            }
+        };
+
+        for (instance_id, mut handle) in agents.drain() {
+            eprintln!("[acp] Stopping agent {} on exit", instance_id);
+            // Drop the channel sender to close the channel
+            drop(handle.cmd_tx);
+            // Wait for the OS thread to finish (child kill_on_drop handles the process)
+            if let Some(th) = handle.thread_handle.take() {
+                let _ = th.join();
+            }
+        }
+    }
 }
 
 /// Handle held in AcpState for each running agent.
@@ -259,6 +286,7 @@ fn run_agent_thread(
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
             .spawn()
         {
             Ok(child) => child,

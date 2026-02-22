@@ -314,7 +314,7 @@ export function useAIOperations() {
         try {
           instanceId = await ensureAcpAgent(interactiveConnection, cwd);
         } catch (error) {
-          acpAgent = null;
+          stopAcpAgent();
           throw error;
         }
 
@@ -363,7 +363,7 @@ export function useAIOperations() {
           });
           return result;
         } catch (error) {
-          acpAgent = null;
+          stopAcpAgent();
           throw error;
         } finally {
           unlisten();
@@ -571,7 +571,7 @@ export function useAIOperations() {
           if (cleanupRef.current) {
             cleanupRef.current();
           }
-          acpAgent = null;
+          stopAcpAgent();
           const msg = error instanceof Error ? error.message : String(error);
           setError(msg || 'Something went wrong with the AI agent. Please try again.');
           setLoading(false);
