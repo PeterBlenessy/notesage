@@ -1,8 +1,6 @@
 # Agent Binary Auto-Install Wizard
 
-**Date:** 2026-02-21
-**Status:** Draft
-**Parent:** AI Provider Architecture v2
+**Date:** 2026-02-21 **Status:** Partially implemented **Parent:** AI Provider Architecture v2
 
 ## Problem
 
@@ -38,9 +36,9 @@ New `acp_agent_install` Tauri command in `src-tauri/src/commands/acp.rs`:
 
 - **npm resolution**: `resolve_npm()` helper that finds npm on the system. Tauri GUI apps don't inherit shell PATH, so it tries `which npm`, then common paths (`/opt/homebrew/bin/npm`, `/usr/local/bin/npm`), then `~/.nvm/versions/node/*/bin/npm`.
 - **Package allowlist**: `get_install_package()` maps agent IDs to npm packages. Only pre-approved packages can be installed:
-  - `claude-agent-acp` -> `@anthropic-ai/claude-code`
-  - `codex-acp` -> `@openai/codex`
-  - `copilot` -> `@githubnext/github-copilot-cli`
+  - `claude-agent-acp` -&gt; `@anthropic-ai/claude-code`
+  - `codex-acp` -&gt; `@openai/codex`
+  - `copilot` -&gt; `@githubnext/github-copilot-cli`
 - **Streaming output**: Spawns `npm install -g <package>` with piped stdout/stderr. Lines emitted as `agent-install-output` Tauri events. Completion emitted as `agent-install-done` event.
 - **Concurrency guard**: Install lock (`Mutex<bool>`) in `AcpState` prevents concurrent installs.
 
@@ -59,24 +57,28 @@ New `acp_agent_install` Tauri command in `src-tauri/src/commands/acp.rs`:
 Two new phases added to `AgentPhase`: `installing` and `install_failed`.
 
 **Phase flow:**
+
 ```
 checking -> not_installed -> installing -> (re-check) -> not_authenticated -> connecting -> connected
                                 |
                           install_failed -> (retry) -> installing
 ```
 
-**`not_installed` phase** (redesigned):
+`not_installed` **phase** (redesigned):
+
 - Alert box: "{binary} not found"
 - Primary "Install" button triggers auto-install
 - Monospace block with npm command + copy button for manual install
 - Back / "I've installed it" (retry) buttons
 
-**`installing` phase** (new):
+`installing` **phase** (new):
+
 - Spinner + "Installing..."
-- Small scrollable log area (~100px) showing npm output
+- Small scrollable log area (\~100px) showing npm output
 - Back button (install continues in background)
 
-**`install_failed` phase** (new):
+`install_failed` **phase** (new):
+
 - Red error box with output
 - Context-sensitive hints: suggests `sudo` for EACCES, nodejs.org for npm-not-found
 - Back / Retry Install buttons
@@ -100,6 +102,7 @@ interface AgentInstallInfo {
 ```
 
 Tauri event payloads:
+
 ```typescript
 // agent-install-output
 { line: string; stream: "stdout" | "stderr" }
@@ -116,14 +119,23 @@ Tauri event payloads:
 ## Quality Gates
 
 - [ ] `cargo check` passes
+
 - [ ] `npx tsc --noEmit` passes
+
 - [ ] Auto-install works when npm is available and binary is not installed
+
 - [ ] Correct error shown when npm is not found
+
 - [ ] Correct error shown for permission denied (EACCES)
+
 - [ ] Manual install command is copyable
+
 - [ ] After successful install, flow auto-proceeds to auth check
+
 - [ ] Install log shows real-time npm output
+
 - [ ] Concurrent install attempts are blocked
+
 - [ ] Looks correct in both light and dark mode
 
 ## Out of Scope
