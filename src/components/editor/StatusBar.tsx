@@ -186,7 +186,7 @@ export function StatusBar({
                       id="copilot-toggle"
                       checked={!copilotDisabledForTab}
                       onCheckedChange={() => onToggleCopilot()}
-                      className="scale-75 origin-right"
+                      className="scale-75 origin-center"
                     />
                   </div>
                   <p className="text-[10px] text-muted-foreground/60 leading-tight">

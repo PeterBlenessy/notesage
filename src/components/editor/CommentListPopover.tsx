@@ -51,7 +51,7 @@ export function CommentListPopover({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded px-0.5 hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="inline-flex items-center gap-1 rounded px-0.5 hover:text-foreground active:opacity-75 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           <MessageSquare className="h-3 w-3" strokeWidth={1.5} />
           <span>{visible.length}</span>
@@ -75,7 +75,7 @@ export function CommentListPopover({
                 onOpenChange(false);
               }}
               title={`Delegate ${delegatable.length} comment${delegatable.length === 1 ? '' : 's'} to AI agent`}
-              className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-muted"
+              className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground active:opacity-75 transition-colors px-1.5 py-0.5 rounded hover:bg-muted"
             >
               <BotMessageSquare className="h-3 w-3" strokeWidth={1.5} />
               Delegate all
@@ -121,7 +121,7 @@ export function CommentListPopover({
                           onOpenChange(false);
                         }}
                         title="Delegate to AI agent"
-                        className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-foreground"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-foreground active:opacity-75"
                       >
                         <BotMessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
                       </button>

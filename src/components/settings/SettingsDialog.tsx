@@ -153,7 +153,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
                     className={cn(
-                      'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors duration-150 hover:bg-accent',
+                      'w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors duration-150 hover:bg-accent active:opacity-80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
                       isActive
                         ? 'bg-accent text-foreground'
                         : 'text-muted-foreground'
@@ -210,7 +210,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         key={value}
                         onClick={() => setTheme(value)}
                         className={cn(
-                          'flex flex-col items-center gap-2 py-3 rounded-lg border transition-colors duration-150 hover:bg-accent',
+                          'flex flex-col items-center gap-2 py-3 rounded-lg border transition-colors duration-150 hover:bg-accent active:opacity-80',
                           theme === value
                             ? 'border-foreground bg-accent text-foreground font-medium'
                             : 'border-border text-muted-foreground'

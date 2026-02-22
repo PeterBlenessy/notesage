@@ -777,7 +777,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             </div>
           )}
           {/* Privacy note */}
-          <div className="pt-[100px]">
+          <div className="pt-24">
             <p className="text-xs text-muted-foreground/50 max-w-md mx-auto leading-relaxed">
               Your files never leave your computer. Notesage reads and writes directly to your local filesystem — no cloud sync, no accounts, no tracking. AI features connect only when you provide an API key.
             </p>

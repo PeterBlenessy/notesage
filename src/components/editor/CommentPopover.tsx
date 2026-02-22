@@ -216,7 +216,7 @@ export function CommentPopover({
                       disabled={!body.trim()}
                       title="Add comment and send to AI agent"
                     >
-                      <BotMessageSquare className="h-3.5 w-3.5" strokeWidth={2} />
+                      <BotMessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
                       Delegate
                     </Button>
                   )}
@@ -226,7 +226,7 @@ export function CommentPopover({
                     onClick={handleSubmit}
                     disabled={!body.trim()}
                   >
-                    <Check className="h-3 w-3" strokeWidth={2} />
+                    <Check className="h-3 w-3" strokeWidth={1.5} />
                     {mode === 'create' ? 'Add' : 'Save'}
                   </Button>
                 </div>
@@ -301,7 +301,7 @@ export function CommentPopover({
                 </div>
               </div>
               {/* Scrollable content — comment body + replies */}
-              <div className="px-3 pb-2 space-y-2 max-h-[320px] overflow-y-auto">
+              <div className="px-3 pb-2 space-y-2 max-h-80 overflow-y-auto thin-scrollbar">
                 <p className="text-sm whitespace-pre-wrap text-foreground">
                   {comment.body}
                 </p>
@@ -341,7 +341,7 @@ export function CommentPopover({
                               return next;
                             });
                           }}
-                          className="text-[10px] text-muted-foreground hover:text-foreground transition-colors mt-0.5"
+                          className="text-[10px] text-muted-foreground hover:text-foreground active:opacity-75 transition-colors mt-0.5"
                         >
                           {isExpanded ? 'Show less' : 'Show more'}
                         </button>
@@ -358,7 +358,7 @@ export function CommentPopover({
                       <button
                         type="button"
                         onClick={() => setActivityExpanded(!activityExpanded)}
-                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground active:opacity-75 transition-colors"
                       >
                         {comment.status === 'delegated' ? (
                           <Loader2 className="h-3 w-3 animate-spin shrink-0" />
@@ -377,15 +377,15 @@ export function CommentPopover({
                           type="button"
                           onClick={onCancelDelegation}
                           title="Cancel delegation"
-                          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-muted"
+                          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground active:opacity-75 transition-colors px-1.5 py-0.5 rounded hover:bg-muted"
                         >
-                          <Square className="h-2.5 w-2.5" strokeWidth={2} />
+                          <Square className="h-2.5 w-2.5" strokeWidth={1.5} />
                           Stop
                         </button>
                       )}
                     </div>
                     {activityExpanded && activities.length > 0 && (
-                      <div className="pl-1 space-y-0.5 max-h-32 overflow-y-auto">
+                      <div className="pl-1 space-y-0.5 max-h-32 overflow-y-auto thin-scrollbar">
                         {activities.map((a, i) => (
                           <div key={`${a.timestamp}-${i}`} className={`flex items-start gap-1.5 text-[10px] ${a.status === 'error' ? 'text-destructive/70' : 'text-muted-foreground/70'}`}>
                             {a.status === 'running' ? (

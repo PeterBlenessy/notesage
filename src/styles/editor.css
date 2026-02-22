@@ -600,6 +600,25 @@
   background-color: var(--color-foreground);
 }
 
+/* Thin scrollbar for compact UI areas (popovers, panels) */
+.thin-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--color-muted-foreground);
+  border-radius: 3px;
+  opacity: 0;
+}
+
+.thin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-foreground);
+}
+
 /* Ghost text (inline completion suggestions) */
 .ghost-text {
   color: var(--color-muted-foreground);
