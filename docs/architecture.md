@@ -51,9 +51,15 @@ note-sage/
 │   │   │   ├── Toolbar.tsx         # Floating format toolbar
 │   │   │   ├── SlashCommand.tsx    # Slash command menu
 │   │   │   ├── BubbleMenu.tsx      # Selection bubble menu
+│   │   │   ├── CommentPopover.tsx   # Comment create/view/delegate popover
+│   │   │   ├── CommentListPopover.tsx # Status bar comment list with delegation
+│   │   │   ├── ChangeListPopover.tsx  # Status bar external change list
+│   │   │   ├── StatusBar.tsx          # Editor status bar
 │   │   │   └── extensions/         # Custom Tiptap extensions
 │   │   │       ├── index.ts
 │   │   │       ├── ghost-text.ts   # Copilot ghost text (ProseMirror widget decorations)
+│   │   │       ├── comment-mark.ts # Comment highlight decorations with status classes
+│   │   │       ├── inline-diff.ts  # Inline diff decorations (external changes + git review)
 │   │   │       └── slash-command.ts
 │   │   ├── sidebar/
 │   │   │   ├── Sidebar.tsx         # Main sidebar container
@@ -85,7 +91,9 @@ note-sage/
 │   │   ├── useExportOperations.ts  # PDF export flow orchestration
 │   │   ├── useProjectMetadata.ts   # Auto-bootstrap .notesage/project.json
 │   │   ├── useAIOperations.ts      # AI generation, chat, and ACP routing
-│   │   ├── useAgentTaskOperations.ts # Background agent task management
+│   │   ├── useAgentTaskOperations.ts # Background agent task management (singleton)
+│   │   ├── useCommentDelegation.ts # Comment → agent delegation flow
+│   │   ├── useCommentOperations.ts # Comment CRUD, decorations, status filtering
 │   │   └── useCopilotCompletion.ts # Copilot LSP lifecycle + ghost text completions
 │   ├── stores/
 │   │   ├── editor-store.ts         # Open tabs, active file
@@ -155,12 +163,14 @@ All state stores use Zustand with the persist middleware for localStorage:
 - **editor-store**: Open tabs (file path + dirty state + per-tab copilotDisabled flag), active tab index
 - **project-store**: Root folder path, file tree structure, expanded folders
 - **project-metadata-store**: Project metadata from `.notesage/project.json` (name, description, AI overrides)
-- **settings-store**: Theme, window state, recent projects, UI preferences (floating toolbar toggle)
+- **settings-store**: Theme, window state, recent projects, UI preferences (floating toolbar toggle, external change diff review toggle)
 - **ai-store**: AI provider selection, API keys, Ollama URL, suggestions enabled (legacy — used as fallback)
 - **connections-store**: Multi-provider connections with auth method, status, capabilities
 - **routing-store**: Per-use-case provider routing (interactive, agent_tasks, inline_completion)
 - **permission-store**: ACP tool call permission tracking with tiered approval (`sessionAllowed`: Set non-persisted, `alwaysAllowed`: string[] persisted); actions: `allowSession`, `removeSession`, `allowAlways`, `removeAlways`, `getToolTier` → `'none' | 'session' | 'always'`
 - **chat-store**: Chat conversation messages, loading state, errors, agent activities
+- **comment-store**: Comments per document, replies, delegation status, activity log (non-persisted activities, JSON-persisted comments)
+- **external-change-store**: Pending external file changes with hunks (non-persisted)
 
 ### Styling
 
@@ -327,6 +337,27 @@ Ghost text completions via the Copilot Language Server, a separate path from bot
 - Auth: OAuth device flow via `signIn` command → user code → browser verification → `didChangeStatus` notification
 - Frontend: `GhostText` Tiptap extension (ProseMirror plugin with widget decoration state), `useCopilotCompletion` hook
 
+### Comment Delegation (Agent Tasks)
+
+Comments can be delegated to AI agents via the `agent_tasks` routing slot. The delegation flow:
+
+1. User clicks "Delegate" on a comment (create mode, view mode, or comment list)
+2. `useCommentDelegation` hook sets comment status to `delegated`, builds prompt from anchor text + comment body
+3. Hook calls `useAgentTaskOperations.startTask()` with three callbacks: `onComplete`, `onActivity`, `onError`
+4. `startTask` spawns/reuses the `agent_tasks` ACP agent, creates a session, sends the prompt
+5. Agent streams `acp-session-update` events: tool calls → `onActivity` → activity log entries in `comment-store`
+6. On `agent_turn_complete`: `onComplete` fires → `addReply()` with agent response → status set to `done` → saved to disk
+7. On error: `onError` fires → status reverted to `open` → toast error
+8. User can cancel active delegation: `cancelTask()` stops ACP session → status reverted to `open`
+9. User can resolve completed comments: status set to `resolved` → decoration removed from editor
+
+**Architecture:**
+
+- `useCommentDelegation` hook: encapsulates delegation flow, cancel, delegate-all
+- `comment-store.activitiesByComment`: runtime-only activity log per comment (not persisted)
+- `comment-store.replies`: persisted agent responses in sidecar JSON
+- `useAgentTaskOperations`: singleton module-level agent state, shared across all callers
+
 ### Filesystem Watcher (External Change Detection)
 
 Detects external file changes (from other editors, AI agents, terminal commands) and updates the sidebar tree and editor content.
@@ -346,7 +377,9 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 8. Create/delete: debounced `refreshFileTree()` (no target path — avoids canonicalization mismatches) + debounced git status refresh
 9. Modify: looks up open tab by normalized path comparison
 10. Content guard: reads file from disk, compares against both `tab.content` and any pending `externalChanges` entry — skips if identical (prevents self-write false positives)
-11. Sets external change via `editor-store.setExternalChange(filePath, content)`
+11. Clean-tab behavior gated on `settings-store.externalChangeDiffReview`:
+    - **Off (default):** `editor-store.setExternalChange()` → Editor.tsx auto-reloads with toast
+    - **On (beta):** `external-change-store.addChange()` → inline diff decorations for review
 
 **Editor auto-reload (`Editor.tsx`):**
 

@@ -44,6 +44,7 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | Action | Shortcut | Description |
 | --- | --- | --- |
 | Toggle chat panel | `Cmd+Shift+A` | Show/hide AI chat sidebar |
+| Add comment | `Cmd+Shift+M` | Create inline comment on selected text |
 | Accept suggestion | `Cmd+Enter` | Accept AI inline suggestion (when decoration visible) |
 | Reject suggestion | `Cmd+Backspace` | Reject AI inline suggestion (when decoration visible) |
 

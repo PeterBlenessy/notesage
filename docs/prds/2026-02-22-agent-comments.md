@@ -3,6 +3,7 @@
 **Date:** 2026-02-22
 **Phase:** 6.5 — Chat UX & Agent Polish
 **Version:** 0.14.1
+**Status:** Part 1 implemented (2026-02-22)
 
 ## Problem
 
@@ -24,7 +25,7 @@ This friction discourages using comments as actionable review items. Comments be
 
 - Agent Activity Strip/Panel (right-side activity indicator) -- deferred to Part 2
 - Auto-apply: agent directly modifying document content from a comment -- deferred to Part 3
-- Batch delegation (select multiple comments -> delegate all) -- deferred to Part 2
+- ~~Batch delegation (select multiple comments -> delegate all) -- deferred to Part 2~~ (done in Part 1 — "Delegate all" button in comment list popover header)
 - Real-time streaming of agent response into the comment thread -- Part 1 shows response after completion
 - Comment assignment to specific agents (always uses the `agent_tasks` routing slot)
 - Collaborative multi-user comments -- single-user only
@@ -234,34 +235,40 @@ Stored in `.notesage/comments/{documentId}.json` -- same file, extended shape. E
 
 ### Functional
 
-- [ ] **Delegate from create:** Select text -> Cmd+Shift+M -> type comment -> click Delegate -> comment saved with status `delegated`, agent starts, spinner visible
-- [ ] **Delegate from view:** Click existing comment -> click bot icon -> status changes to `delegated`, spinner visible
-- [ ] **Delegate from list:** Comment list popover -> click bot icon on comment -> status changes, popover closes
-- [ ] **Agent reply appears:** After agent completes, reply shows in comment popover with "AI Agent" attribution and relative timestamp
-- [ ] **Status lifecycle:** open -> delegated (spinner) -> done (reply received) -> resolved (highlight removed)
-- [ ] **Resolve comment:** Click CheckCircle2 in view mode -> comment highlight disappears from editor
-- [ ] **Resolved comments hidden:** Resolved comments not shown in decoration highlights or comment list
-- [ ] **Persistence:** Agent replies and status survive app restart (persisted in sidecar JSON)
-- [ ] **No agent configured:** Click Delegate without agent_tasks routing -> toast error
-- [ ] **Backward compatibility:** Existing comments without status/replies load and display correctly
-- [ ] **TypeScript:** `npx tsc --noEmit` passes
-- [ ] **Tests:** `pnpm test` passes
+- [x] **Delegate from create:** Select text -> Cmd+Shift+M -> type comment -> click Delegate -> comment saved with status `delegated`, agent starts, spinner visible
+- [x] **Delegate from view:** Click existing comment -> click bot icon -> status changes to `delegated`, spinner visible
+- [x] **Delegate from list:** Comment list popover -> click bot icon on comment -> status changes, popover closes
+- [x] **Delegate all from list:** Comment list popover -> "Delegate all" button delegates all open comments
+- [x] **Agent reply appears:** After agent completes, reply shows in comment popover with agent name attribution and relative timestamp
+- [x] **Status lifecycle:** open -> delegated (spinner + activity log) -> done (reply received) -> resolved (highlight removed)
+- [x] **Resolve comment:** Click resolve button in view mode -> comment highlight disappears from editor
+- [x] **Resolved comments hidden:** Resolved comments not shown in decoration highlights or comment list
+- [x] **Persistence:** Agent replies and status survive app restart (persisted in sidecar JSON)
+- [x] **No agent configured:** Click Delegate without agent_tasks routing -> toast error
+- [x] **Backward compatibility:** Existing comments without status/replies load and display correctly
+- [x] **Cancel delegation:** Stop button cancels active agent task and resets comment to open
+- [x] **Activity log:** Per-comment collapsible activity log showing agent tool calls, permissions, errors
+- [x] **TypeScript:** `npx tsc --noEmit` passes
+- [x] **Tests:** `pnpm test` passes (73/73)
 
 ### Design
 
-- [ ] Delegate button matches existing popover button styling (outline variant, xs size)
-- [ ] Agent reply section visually distinct from user comment (border separator, bot icon)
-- [ ] Spinner animation smooth, uses existing `animate-spin` utility
-- [ ] Delegated highlight pulse subtle, not distracting
-- [ ] All new UI works in both light and dark mode
-- [ ] No chromatic accent colors (greyscale palette only)
+- [x] Delegate button matches existing popover button styling (outline variant, xs size)
+- [x] Agent reply section visually distinct from user comment (border separator, bot icon)
+- [x] Spinner animation smooth, uses existing `animate-spin` utility
+- [x] Delegated highlight pulse subtle, not distracting
+- [x] All new UI works in both light and dark mode
+- [x] No chromatic accent colors (greyscale palette only)
+- [x] Icon strokeWidth={1.5} consistent with design system
+- [x] All interactive elements have active:opacity-75 states
+- [x] Thin styled scrollbars on popover content areas
 
 ## Out of Scope (Future Parts)
 
 **Part 2 -- Agent Activity & Batch:**
 - Agent Activity Strip (right-side vertical indicator showing active agent tasks)
-- Batch delegation (select multiple comments -> delegate all at once)
-- Agent task cancellation from comment UI
+- ~~Batch delegation (select multiple comments -> delegate all at once)~~ (delivered in Part 1)
+- ~~Agent task cancellation from comment UI~~ (delivered in Part 1)
 - Progress streaming (show agent response as it generates)
 
 **Part 3 -- Auto-Apply:**
@@ -272,14 +279,16 @@ Stored in `.notesage/comments/{documentId}.json` -- same file, extended shape. E
 
 ## Files
 
-| File | Role |
-|------|------|
-| `src/stores/comment-store.ts` | Add `CommentReply`, extend `Comment`, add `addReply`, `setCommentStatus`, `setTaskId` |
-| `src/hooks/useAgentTaskOperations.ts` | Add `onComplete` callback to `startTask` |
-| `src/hooks/useCommentDelegation.ts` | **New** -- delegation flow hook |
-| `src/components/editor/CommentPopover.tsx` | Delegate button (create + view), replies, status, resolve |
-| `src/components/editor/CommentListPopover.tsx` | Delegate icon + status per comment |
-| `src/components/editor/Editor.tsx` | Wire delegation callbacks |
-| `src/components/editor/StatusBar.tsx` | Pass delegation props through |
-| `src/hooks/useCommentOperations.ts` | Filter resolved from decorations, add delegated class |
-| `src/styles/editor.css` | `comment-highlight-delegated` pulse animation |
+| File | Role | Status |
+|------|------|--------|
+| `src/stores/comment-store.ts` | `CommentReply`, `DelegationActivity`, extend `Comment`, `addReply`, `setCommentStatus`, `setTaskId`, activity tracking | Done |
+| `src/hooks/useAgentTaskOperations.ts` | `onComplete`, `onActivity`, `onError` callbacks on `startTask`; typed ACP wrappers | Done |
+| `src/hooks/useCommentDelegation.ts` | **New** -- delegation flow hook with cancel, delegate all | Done |
+| `src/components/editor/CommentPopover.tsx` | Delegate button (create + view), replies, status, resolve, activity log, cancel | Done |
+| `src/components/editor/CommentListPopover.tsx` | Delegate icon + status per comment, delegate all button | Done |
+| `src/components/editor/Editor.tsx` | Wire delegation callbacks, pass through StatusBar | Done |
+| `src/components/editor/StatusBar.tsx` | Pass delegation props through | Done |
+| `src/hooks/useCommentOperations.ts` | Filter resolved from decorations, add delegated class | Done |
+| `src/components/editor/extensions/comment-mark.ts` | Proper ProseMirror/Tiptap types (no `any`) | Done |
+| `src/styles/editor.css` | `comment-highlight-delegated` pulse animation, `.thin-scrollbar` | Done |
+| `src/lib/tauri.ts` | Typed ACP invoke wrappers (`acpAgentSpawn`, etc.) | Done |

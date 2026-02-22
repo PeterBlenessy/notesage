@@ -212,9 +212,9 @@ Export notes to professionally typeset PDFs using the embedded Typst engine.
 - Custom template editor
 - Template marketplace
 
-### Comments & Change Detection
+### Comments, Agent Delegation & Change Detection
 
-Document comments and external change tracking — foundational infrastructure for human-AI collaboration.
+Document comments with AI agent delegation and external change tracking — foundational infrastructure for human-AI collaboration.
 
 **Comments:**
 
@@ -228,6 +228,22 @@ Document comments and external change tracking — foundational infrastructure f
   - **Non-project files (Explorer):** Comments keyed by a hash of the file path. No frontmatter modification — external files are never altered. Stored in `~/Notesage/.notesage/comments/path-{hash}.json`. Comments lost if file is renamed while app is closed.
 - Document index (`.notesage/doc-index.json`) mapping UUID → current file path for project files
 
+**Agent comment delegation (v0.14.1):**
+
+- Delegate any comment to an AI agent with one click — agent replies within the comment thread
+- Comment lifecycle states: open → delegated (spinner) → done (reply received) → resolved (highlight removed)
+- Delegation from three entry points:
+  - **Create mode:** "Delegate" button next to "Add" — saves comment and sends to agent in one action
+  - **View mode:** Bot icon button in comment popover action bar
+  - **Comment list:** Bot icon button per comment, plus "Delegate all" bulk action in header
+- Agent replies displayed as threaded responses with author attribution and relative timestamps
+- Per-comment activity log: collapsible panel showing agent steps (tool calls, permissions, errors)
+- Activity log with expandable long entries and stop button for cancelling active delegations
+- Delegated comment highlights pulse subtly in the editor
+- Resolved comments hidden from both decorations and comment list
+- Uses existing `useAgentTaskOperations` infrastructure — routes through `agent_tasks` connection slot
+- No agent configured: toast error with guidance to set up routing in Settings
+
 **External change detection & review:**
 
 - Tauri filesystem watcher (via `notify` crate with `notify_debouncer_full`) for watched directories
@@ -235,15 +251,16 @@ Document comments and external change tracking — foundational infrastructure f
 - `.git/` and `.DS_Store` paths filtered to prevent iCloud-synced repo event floods
 - macOS FSEvents workaround: modify events for deleted paths reclassified as deletes
 - Path normalization for macOS `/private/` prefix (FSEvents canonicalization)
-- Clean tabs: inline diff review with word-level `diff-match-patch` diffing, mapped to ProseMirror positions
-  - Toast notification ("File changed externally") with Accept button and close X
-  - Inline diff decorations: red strikethrough for deletions, green for insertions
-  - Per-hunk accept/reject via inline click controls or keyboard shortcuts (`Cmd+Enter` / `Cmd+Backspace`)
-  - Status bar change tracker (`RefreshCw` icon + count) with `ChangeListPopover`
-  - Popover shows all pending changes across all open files: `[filename] : [change preview] [✓] [✗]`
-  - Per-hunk accept/reject from popover (for the focused file), click-to-navigate for other files
-  - Accept All / Reject All bulk actions in popover header
-  - Toast auto-dismisses after 8 seconds; changes defer to status bar for later review
+- **Configurable behavior** (Settings toggle, default: auto-accept):
+  - **Auto-accept (default):** Clean-tab external changes auto-reload silently with toast notification
+  - **Diff review (beta):** Inline diff review with word-level `diff-match-patch` diffing, mapped to ProseMirror positions
+    - Inline diff decorations: red strikethrough for deletions, green for insertions
+    - Per-hunk accept/reject via inline click controls or keyboard shortcuts (`Cmd+Enter` / `Cmd+Backspace`)
+    - Status bar change tracker (`RefreshCw` icon + count) with `ChangeListPopover`
+    - Popover shows all pending changes across all open files: `[filename] : [change preview] [✓] [✗]`
+    - Per-hunk accept/reject from popover (for the focused file), click-to-navigate for other files
+    - Accept All / Reject All bulk actions in popover header
+    - Toast auto-dismisses after 8 seconds; changes defer to status bar for later review
 - Dirty tabs show reload/keep banner for user decision (no auto-accept)
 - Sidebar tree auto-refreshes on external file creates and deletes
 - Git status auto-refreshes on any external file change
@@ -261,7 +278,8 @@ Document comments and external change tracking — foundational infrastructure f
 - `external-change-store` (Zustand, non-persisted): tracks pending changes per file with hunks, status (`pending` → `deferred`), old/new content
 - `diff-match-patch` for character-level diffing with semantic cleanup, mapped to PM positions via `buildTextWithPositions`
 - Tiptap extension (`CommentMark`) with ProseMirror plugin state for comment decorations
-- `comment-store` (Zustand) with sidecar JSON persistence
+- `comment-store` (Zustand) with sidecar JSON persistence — extended with `CommentReply`, `CommentStatus`, `DelegationActivity`, `addReply`, `setCommentStatus`, `setTaskId`, activity tracking methods
+- `useCommentDelegation` hook: encapsulates delegation flow (status lifecycle, prompt building, `startTask` with callbacks for completion/activity/error)
 - `notify`-based filesystem watcher with `notify_debouncer_full` (500ms debounce), backend self-write suppression, `.git/` + `.DS_Store` path filtering, macOS FSEvents modify-to-delete reclassification
 - Comment key strategy: UUID for project files, deterministic path hash for non-project files
 
@@ -269,6 +287,9 @@ Document comments and external change tracking — foundational infrastructure f
 
 - Per-hunk accept/reject from popover for non-focused files (currently navigates to file first)
 - Cross-file Accept All / Reject All (currently per-file only)
+- Agent auto-apply: agent directly modifying document content from a comment (Part 3)
+- Progress streaming: show agent response as it generates in the comment thread
+- Comment assignment to specific agents (currently always uses `agent_tasks` routing slot)
 
 ### Notesage Library & iCloud Sync
 
@@ -350,6 +371,8 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 
 ## Recently completed:
 
+- Agent comment delegation (Part 1) — delegate comments to AI agents, comment lifecycle states, threaded replies, activity log, delegate all, cancel, resolve (PRD: docs/prds/2026-02-22-agent-comments.md)
+- External change detection setting — configurable toggle between auto-accept (default) and inline diff review (beta)
 - Chat provider indicator & picker — interactive connection picker in chat footer, per-message provider badges, shared ProviderLogo component (PRD: docs/prds/2026-02-22-chat-provider-indicator.md)
 - Agent install & auth guidance — step-by-step guides with copyable commands and URLs for all providers (PRD: docs/prds/2026-02-22-agent-install-guidance.md)
 - Tiered permission approval UI — PermissionCard split Allow button (once/session/always), context-aware chat footer (Search for direct API, Tools popover for ACP agents), per-tool activity completion, official Copilot Octicons icon (PRD: docs/prds/2026-02-22-permission-approval-ui.md)
@@ -359,17 +382,15 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 
 ### Phase 6.5 — Chat UX & Agent Polish
 
-**Goal:** Polish the agent experience with provider-aware chat, interactive permission approval, and agent binary management.
+**Goal:** Polish the agent experience with provider-aware chat, interactive permission approval, agent comment delegation, and agent binary management.
 
-**Features:**
+**Remaining features:**
 
-- Chat provider indicator and picker: show active connection in chat footer, per-message provider badge, switch providers from chat (done)
-- Interactive permission approval UI: tiered allow once/session/always controls for all tools, context-aware Tools (done)
-- Agent install guidance: step-by-step guides with copyable commands (done)
 - Agent binary auto-install: one-click npm install from within the app (PRD ready)
 - ACP agent binary bundling as Tauri sidecar (no Node.js dependency for end users)
-- Orphaned agent process cleanup on app exit/restart (done)
 - External change diff fidelity: map raw-text diffs to ProseMirror transactions that preserve formatting
+- Agent comment delegation Part 2: agent activity strip, progress streaming
+- Agent comment delegation Part 3: auto-apply agent suggestions to document, inline diff review for agent edits
 
 ### Phase 7 — AI-Assisted Research
 
