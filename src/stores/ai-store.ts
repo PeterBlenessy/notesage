@@ -72,10 +72,7 @@ export const BUILT_IN_PERSONAS: AIPersona[] = [
 
 interface AIStore {
   provider: AIProviderType | null;
-  apiKeys: {
-    anthropic?: string;
-    openai?: string;
-  };
+  apiKeys: Record<string, string | undefined>;
   ollamaUrl: string;
   suggestionsEnabled: boolean;
 

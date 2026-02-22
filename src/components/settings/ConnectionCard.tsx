@@ -8,6 +8,7 @@ const PROVIDER_LOGOS: Record<string, string | null> = {
   openai: '/logos/openai.svg',
   ollama: '/logos/ollama-official.png',
   github: null, // Uses lucide icon fallback
+  google: '/logos/google.svg',
 };
 
 const AUTH_BADGES: Record<string, string> = {

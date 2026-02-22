@@ -14,6 +14,7 @@ export type ConnectionProvider =
   | 'anthropic'    // API key (direct API) or agent-managed subscription (Claude Code via ACP)
   | 'openai'       // API key (direct API) or agent-managed subscription (Codex via ACP)
   | 'github'       // Agent-managed subscription (Copilot via ACP + LSP)
+  | 'google'       // Agent-managed subscription (Gemini CLI via ACP)
   | 'ollama';      // Local, no auth
 
 // --- Credentials ---
@@ -50,6 +51,9 @@ export const PROVIDER_CAPABILITIES: Record<ConnectionProvider, Partial<Record<Au
   },
   github: {
     agent_managed: ['interactive', 'inline_completion', 'agent_tasks'],
+  },
+  google: {
+    agent_managed: ['interactive', 'agent_tasks'],
   },
   ollama: {
     local:         ['interactive'],
@@ -152,6 +156,15 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     description: 'Chat, completions, and agents via Language Server',
     capabilities: ['interactive', 'inline_completion', 'agent_tasks'],
     lspBinary: 'copilot-language-server',
+  },
+  {
+    provider: 'google',
+    authMethod: 'agent_managed',
+    label: 'Gemini CLI',
+    description: 'Free with Google account, or Gemini Code Assist subscription',
+    capabilities: ['interactive', 'agent_tasks'],
+    agentBinary: 'gemini',
+    agentArgs: ['--acp'],
   },
   {
     provider: 'ollama',

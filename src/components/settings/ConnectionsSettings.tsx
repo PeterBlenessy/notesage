@@ -27,6 +27,7 @@ const PROVIDER_LOGOS: Record<string, string | null> = {
   openai: '/logos/openai.svg',
   ollama: '/logos/ollama-official.png',
   github: null,
+  google: '/logos/google.svg',
 };
 
 type AddFlowState =
@@ -434,8 +435,19 @@ function ConnectCopilotLsp({
   onConnectedRef.current = onConnected;
 
   // Listen for auth completion via didChangeStatus — attach BEFORE starting LSP
-  // so we don't miss early "Normal" events from cached credentials
+  // so we don't miss early "Normal" events from cached credentials.
+  // Guard: onConnected must only be called ONCE per attempt.
   const authCompleted = useRef(false);
+
+  const completeAuth = useCallback(() => {
+    if (authCompleted.current) return; // already fired
+    authCompleted.current = true;
+    console.log('[copilot-lsp-ui] Auth succeeded, completing connection (once)');
+    setPhase('connected');
+    // Don't stop the LSP here — useCopilotCompletion will restart it with
+    // the correct working directory. Stopping here races with the hook's start.
+    onConnectedRef.current(option);
+  }, [option]);
 
   useEffect(() => {
     authCompleted.current = false;
@@ -445,12 +457,8 @@ function ConnectCopilotLsp({
       (event) => {
         const { message, kind } = event.payload;
         console.log('[copilot-lsp-ui] status changed:', kind, message);
-        if (kind === 'Normal' && !authCompleted.current) {
-          authCompleted.current = true;
-          console.log('[copilot-lsp-ui] Auth succeeded (status: Normal), completing connection');
-          setPhase('connected');
-          invoke('copilot_lsp_stop').catch(() => {});
-          onConnectedRef.current(option);
+        if (kind === 'Normal') {
+          completeAuth();
         }
       }
     );
@@ -458,7 +466,7 @@ function ConnectCopilotLsp({
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [option, retryCount]);
+  }, [completeAuth, retryCount]);
 
   // Check binary availability, start LSP, and sign in
   useEffect(() => {
@@ -487,7 +495,7 @@ function ConnectCopilotLsp({
         console.log('[copilot-lsp-ui] LSP started');
         if (!active) return;
 
-        // Check if already authenticated (status changed during init)
+        // Check if already authenticated (status event arrived during init)
         if (authCompleted.current) {
           console.log('[copilot-lsp-ui] Already authenticated during LSP init, skipping signIn');
           return;
@@ -503,11 +511,7 @@ function ConnectCopilotLsp({
           if (!active) return;
 
           if (status.authenticated) {
-            console.log('[copilot-lsp-ui] Already authenticated, completing connection');
-            authCompleted.current = true;
-            setPhase('connected');
-            invoke('copilot_lsp_stop').catch(() => {});
-            onConnectedRef.current(option);
+            completeAuth();
             return;
           }
         } catch (statusErr) {
@@ -549,14 +553,10 @@ function ConnectCopilotLsp({
     return () => {
       active = false;
     };
-  }, [retryCount]);
+  }, [retryCount, completeAuth]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      invoke('copilot_lsp_stop').catch(() => {});
-    };
-  }, []);
+  // Note: no LSP cleanup on unmount — useCopilotCompletion manages the lifecycle.
+  // Stopping here would race with the hook restarting the LSP.
 
   const handleCopyCode = useCallback(() => {
     if (deviceCode) {
