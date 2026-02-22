@@ -11,7 +11,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { Plus, Check, Eye, EyeOff, Github, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Plus, Check, Eye, EyeOff, Github, Loader2, AlertCircle, RefreshCw, Copy } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -161,7 +161,7 @@ export function ConnectionsSettings() {
               Add Connection
             </Button>
           </PopoverTrigger>
-          <PopoverContent align="end" className="w-80 p-0">
+          <PopoverContent align="end" className="w-96 p-0">
             {flow.step === 'pick' && (
               <ProviderPicker onPick={handlePickProvider} />
             )}
@@ -582,19 +582,7 @@ function ConnectCopilotLsp({
 
       {phase === 'not_installed' && (
         <div className="space-y-3">
-          <div className="p-3 rounded-lg bg-muted/50 border border-border">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" strokeWidth={1.5} />
-              <div>
-                <p className="text-sm font-medium">
-                  copilot-language-server not found
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Run: npm install -g @github/copilot-language-server
-                </p>
-              </div>
-            </div>
-          </div>
+          <SetupGuideView guide={getInstallGuide('copilot-language-server')} />
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
               Back
@@ -820,19 +808,7 @@ function ConnectAgent({
 
       {phase === 'not_installed' && (
         <div className="space-y-3">
-          <div className="p-3 rounded-lg bg-muted/50 border border-border">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" strokeWidth={1.5} />
-              <div>
-                <p className="text-sm font-medium">
-                  {binary} not found
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {getInstallHint(binary)}
-                </p>
-              </div>
-            </div>
-          </div>
+          <SetupGuideView guide={getInstallGuide(binary)} />
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
               Back
@@ -852,19 +828,7 @@ function ConnectAgent({
 
       {phase === 'not_authenticated' && (
         <div className="space-y-3">
-          <div className="p-3 rounded-lg bg-muted/50 border border-border">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" strokeWidth={1.5} />
-              <div>
-                <p className="text-sm font-medium">
-                  Not signed in
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {getAuthHint(binary)}
-                </p>
-              </div>
-            </div>
-          </div>
+          <SetupGuideView guide={getAuthGuide(binary)} />
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
               Back
@@ -938,31 +902,204 @@ function ConnectAgent({
   );
 }
 
-function getAuthHint(binary: string): string {
+// --- Setup guide types and data ---
+
+interface GuideStep {
+  label?: string;
+  command?: string;
+  note?: string;
+  url?: string;
+}
+
+interface SetupGuide {
+  title: string;
+  steps: GuideStep[];
+}
+
+function getInstallGuide(binary: string): SetupGuide {
   switch (binary) {
     case 'claude-agent-acp':
-      return 'Run "claude auth login" in your terminal to sign in with your Claude subscription.';
+      return {
+        title: 'Install Claude Code',
+        steps: [
+          { label: 'Install Node.js if you don\'t have it', url: 'https://nodejs.org' },
+          { label: 'Run in your terminal:', command: 'npm install -g @zed-industries/claude-agent-acp' },
+          { label: 'Requires a Claude Pro or Max subscription', url: 'https://anthropic.com/claude' },
+        ],
+      };
     case 'codex-acp':
     case 'codex':
-      return 'Run "codex login --device-auth" in your terminal to sign in with your ChatGPT subscription.';
+      return {
+        title: 'Install OpenAI Codex',
+        steps: [
+          { label: 'Install Node.js if you don\'t have it', url: 'https://nodejs.org' },
+          { label: 'Run in your terminal:', command: 'npm install -g @zed-industries/codex-acp' },
+          { label: 'Requires a ChatGPT Plus or Pro subscription' },
+        ],
+      };
     case 'copilot':
-      return 'Run "copilot auth login" in your terminal to sign in with your GitHub account.';
+      return {
+        title: 'Install GitHub Copilot CLI',
+        steps: [
+          { label: 'Install Node.js if you don\'t have it', url: 'https://nodejs.org' },
+          { label: 'Run in your terminal:', command: 'npm install -g @github/copilot' },
+          { label: 'Requires a GitHub Copilot subscription', url: 'https://github.com/features/copilot' },
+        ],
+      };
+    case 'gemini':
+      return {
+        title: 'Install Google Gemini CLI',
+        steps: [
+          { label: 'Install Node.js if you don\'t have it', url: 'https://nodejs.org' },
+          { label: 'Run in your terminal:', command: 'npm install -g @google/gemini-cli' },
+          { label: 'Free with a Google account', url: 'https://github.com/google-gemini/gemini-cli' },
+        ],
+      };
+    case 'copilot-language-server':
+      return {
+        title: 'Install Copilot Language Server',
+        steps: [
+          { label: 'Install Node.js if you don\'t have it', url: 'https://nodejs.org' },
+          { label: 'Run in your terminal:', command: 'npm install -g @github/copilot-language-server' },
+          { label: 'Requires a GitHub Copilot subscription', url: 'https://github.com/features/copilot' },
+        ],
+      };
     default:
-      return `Sign in to "${binary}" before connecting.`;
+      return {
+        title: `Install ${binary}`,
+        steps: [
+          { label: `Install "${binary}" to continue` },
+        ],
+      };
   }
 }
 
-function getInstallHint(binary: string): string {
+function getAuthGuide(binary: string): SetupGuide {
   switch (binary) {
     case 'claude-agent-acp':
-      return 'Run: npm install -g @zed-industries/claude-agent-acp';
+      return {
+        title: 'Sign in to Claude',
+        steps: [
+          { label: 'Run in your terminal:', command: 'claude auth login' },
+          { label: 'A browser window will open for sign-in', note: 'Requires Claude Pro or Max subscription' },
+        ],
+      };
     case 'codex-acp':
-      return 'Download from github.com/zed-industries/codex-acp/releases';
     case 'codex':
-      return 'Run: npm install -g @openai/codex';
+      return {
+        title: 'Sign in to OpenAI',
+        steps: [
+          { label: 'Run in your terminal:', command: 'codex login --device-auth' },
+          { note: 'Requires ChatGPT Plus or Pro subscription' },
+        ],
+      };
     case 'copilot':
-      return 'Install GitHub Copilot CLI from github.com/github/copilot-cli';
+      return {
+        title: 'Sign in to GitHub',
+        steps: [
+          { label: 'Run in your terminal:', command: 'copilot auth login' },
+          { note: 'Requires a GitHub Copilot subscription' },
+        ],
+      };
+    case 'gemini':
+      return {
+        title: 'Sign in to Google',
+        steps: [
+          { label: 'Run in your terminal:', command: 'gemini auth login' },
+          { note: 'Free with any Google account' },
+        ],
+      };
     default:
-      return `Install "${binary}" to continue.`;
+      return {
+        title: `Sign in to ${binary}`,
+        steps: [
+          { label: `Sign in to "${binary}" before connecting` },
+        ],
+      };
   }
+}
+
+// --- Setup guide UI components ---
+
+function CopyableCommand({ command }: { command: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(command).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  }, [command]);
+
+  return (
+    <div className="flex items-center gap-1.5 mt-1 rounded-md bg-muted/50 border border-border px-2.5 py-1.5 font-mono text-xs">
+      <span className="flex-1 overflow-x-auto whitespace-nowrap select-all">{command}</span>
+      <button
+        onClick={handleCopy}
+        className="shrink-0 p-0.5 rounded hover:bg-muted transition-colors cursor-pointer"
+        title="Copy to clipboard"
+      >
+        {copied ? (
+          <Check className="h-3.5 w-3.5 text-green-500" strokeWidth={1.5} />
+        ) : (
+          <Copy className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+        )}
+      </button>
+    </div>
+  );
+}
+
+function CopyableUrl({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  }, [url]);
+
+  return (
+    <div className="flex items-center gap-1.5 mt-1">
+      <span className="text-xs text-muted-foreground select-all truncate">{url}</span>
+      <button
+        onClick={handleCopy}
+        className="shrink-0 p-0.5 rounded hover:bg-muted transition-colors cursor-pointer"
+        title="Copy URL"
+      >
+        {copied ? (
+          <Check className="h-3 w-3 text-green-500" strokeWidth={1.5} />
+        ) : (
+          <Copy className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+        )}
+      </button>
+    </div>
+  );
+}
+
+function SetupGuideView({ guide }: { guide: SetupGuide }) {
+  return (
+    <div className="space-y-2.5">
+      <p className="text-sm font-medium">{guide.title}</p>
+      <ol className="space-y-2.5">
+        {guide.steps.map((step, i) => (
+          <li key={i} className="flex gap-2">
+            <span className="text-xs text-muted-foreground font-medium mt-0.5 shrink-0 w-4 text-right">
+              {step.label || step.note ? `${i + 1}.` : ''}
+            </span>
+            <div className="flex-1 min-w-0">
+              {step.label && (
+                <p className="text-sm text-foreground">{step.label}</p>
+              )}
+              {step.command && <CopyableCommand command={step.command} />}
+              {step.url && <CopyableUrl url={step.url} />}
+              {step.note && (
+                <p className="text-xs text-muted-foreground mt-0.5 italic">{step.note}</p>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
 }
