@@ -18,17 +18,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { ProviderLogo } from '@/components/ProviderLogo';
 import type { Connection, ProviderOption } from '@/lib/ai/connections';
 import { PROVIDER_OPTIONS, CAPABILITY_LABELS, ROUTING_SLOT_LABELS } from '@/lib/ai/connections';
 import { invoke } from '@tauri-apps/api/core';
-
-const PROVIDER_LOGOS: Record<string, string | null> = {
-  anthropic: '/logos/anthropic.svg',
-  openai: '/logos/openai.svg',
-  ollama: '/logos/ollama-official.png',
-  github: null,
-  google: '/logos/google.svg',
-};
 
 type AddFlowState =
   | { step: 'pick' }
@@ -221,27 +214,6 @@ export function ConnectionsSettings() {
 }
 
 // --- Sub-components ---
-
-function ProviderLogo({ provider, className = 'w-6 h-6' }: { provider: string; className?: string }) {
-  const src = PROVIDER_LOGOS[provider];
-  if (!src) {
-    if (provider === 'github') {
-      return (
-        <span className={`${className} rounded flex items-center justify-center bg-white p-0.5`}>
-          <Github className="w-5 h-5 text-black" strokeWidth={1.5} />
-        </span>
-      );
-    }
-    return <span className={`${className} rounded bg-muted`} />;
-  }
-  return (
-    <img
-      src={src}
-      alt={provider}
-      className={`${className} rounded object-contain bg-white p-0.5`}
-    />
-  );
-}
 
 function ProviderPicker({ onPick }: { onPick: (option: ProviderOption) => void }) {
   // Group by subscription-based (agent) vs API key

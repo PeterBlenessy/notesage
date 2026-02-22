@@ -1,15 +1,8 @@
 import type { Connection } from '@/lib/ai/connections';
 import { CAPABILITY_LABELS } from '@/lib/ai/connections';
+import { ProviderLogo } from '@/components/ProviderLogo';
 import { Button } from '@/components/ui/button';
-import { Settings2, Unplug, Github } from 'lucide-react';
-
-const PROVIDER_LOGOS: Record<string, string | null> = {
-  anthropic: '/logos/anthropic.svg',
-  openai: '/logos/openai.svg',
-  ollama: '/logos/ollama-official.png',
-  github: null, // Uses lucide icon fallback
-  google: '/logos/google.svg',
-};
+import { Settings2, Unplug } from 'lucide-react';
 
 const AUTH_BADGES: Record<string, string> = {
   api_key: 'API Key',
@@ -29,30 +22,6 @@ function StatusDot({ status }: { status: Connection['status'] }) {
     <span
       className={`inline-block w-2 h-2 rounded-full shrink-0 ${colors[status]}`}
       title={status.replace('_', ' ')}
-    />
-  );
-}
-
-function ProviderLogo({ provider }: { provider: string }) {
-  const src = PROVIDER_LOGOS[provider];
-
-  if (!src) {
-    // GitHub fallback — lucide icon
-    if (provider === 'github') {
-      return (
-        <span className="w-6 h-6 rounded flex items-center justify-center bg-white p-0.5">
-          <Github className="w-5 h-5 text-black" strokeWidth={1.5} />
-        </span>
-      );
-    }
-    return <span className="w-6 h-6 rounded bg-muted" />;
-  }
-
-  return (
-    <img
-      src={src}
-      alt={provider}
-      className="w-6 h-6 rounded object-contain bg-white p-0.5"
     />
   );
 }

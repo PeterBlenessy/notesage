@@ -413,7 +413,14 @@ export function useAIOperations() {
         const userMessage: ChatMessage = { role: 'user', content, timestamp: userTimestamp };
         addMessage(userMessage);
         const assistantMessageId = userTimestamp + 1;
-        addMessage({ role: 'assistant', content: '', timestamp: assistantMessageId });
+        addMessage({
+          role: 'assistant',
+          content: '',
+          timestamp: assistantMessageId,
+          connectionId: interactiveConnection.id,
+          connectionLabel: interactiveConnection.label,
+          connectionProvider: interactiveConnection.provider,
+        });
 
         try {
           const cwd = selectedProjectPaths[0] || '/tmp';
@@ -572,7 +579,18 @@ export function useAIOperations() {
 
       // Add placeholder message for streaming - ensure unique timestamp
       const assistantMessageId = userTimestamp + 1;
-      addMessage({ role: 'assistant', content: '', timestamp: assistantMessageId });
+      addMessage({
+        role: 'assistant',
+        content: '',
+        timestamp: assistantMessageId,
+        ...(interactiveConnection ? {
+          connectionId: interactiveConnection.id,
+          connectionLabel: interactiveConnection.label,
+          connectionProvider: interactiveConnection.provider,
+        } : resolved ? {
+          connectionProvider: resolved.provider,
+        } : {}),
+      });
 
       try {
         let streamedContent = '';

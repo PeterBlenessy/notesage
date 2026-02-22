@@ -20,6 +20,12 @@ export interface ChatMessage {
   timestamp?: number;
   citations?: Citation[];
   activities?: AgentActivity[];
+  /** Connection ID at the time of generation (for lookup) */
+  connectionId?: string;
+  /** Snapshot of connection label at generation time (survives connection removal) */
+  connectionLabel?: string;
+  /** Snapshot of provider name at generation time (for logo rendering) */
+  connectionProvider?: string;
 }
 
 export interface GenerateOptions {

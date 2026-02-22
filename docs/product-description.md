@@ -349,11 +349,9 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - ACP agent binary bundling as Tauri sidecar
 - Orphaned agent process cleanup on app exit
 
-**Recently completed:**
+## Recently completed:
 
-- Agent install & auth guidance — step-by-step guides with copyable commands and URLs for all providers (PRD: `docs/prds/2026-02-22-agent-install-guidance.md`)
-
-## Roadmap
+Agent install & auth guidance — step-by-step guides with copyable commands and URLs for all providers (PRD: docs/prds/2026-02-22-agent-install-guidance.md) Roadmap
 
 ### Phase 6.5 — Chat UX & Agent Polish
 
@@ -364,8 +362,7 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - Chat provider indicator: show active connection in chat footer, per-message provider badge
 - Per-chat connection picker: override routing for current conversation
 - Interactive permission approval UI: replace auto-approve with approve/deny controls for write tools
-- Agent install guidance: step-by-step guides with copyable commands (done)
-- Agent binary auto-install: one-click npm install from within the app (PRD ready)
+- Agent install guidance: step-by-step guides with copyable commands (done) Agent binary auto-install: one-click npm install from within the app (PRD ready)
 - ACP agent binary bundling as Tauri sidecar (no Node.js dependency for end users)
 - Orphaned agent process cleanup on app exit/restart
 - External change diff fidelity: map raw-text diffs to ProseMirror transactions that preserve formatting

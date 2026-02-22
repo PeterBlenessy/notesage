@@ -2,8 +2,11 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import { Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 import { PersonaIcon } from '@/components/PersonaIcon';
+import { ProviderLogo } from '@/components/ProviderLogo';
 import { useChatStore } from '@/stores/chat-store';
 import { useAIStore, getActivePersona, getAllPersonas } from '@/stores/ai-store';
+import { useConnectionsStore } from '@/stores/connections-store';
+import { useRoutingStore } from '@/stores/routing-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { useAIOperations } from '@/hooks/useAIOperations';
@@ -30,12 +33,17 @@ export function ChatPanel() {
   const allPersonas = getAllPersonas(aiStore);
   const projects = useWorkspaceStore((s) => s.projects);
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
+  const interactiveConnection = useRoutingStore((s) => s.getConnectionForUseCase('interactive'));
+  const setRouting = useRoutingStore((s) => s.setRouting);
+  const allConnections = useConnectionsStore((s) => s.connections);
+  const interactiveConnections = useMemo(() => allConnections.filter((c) => c.capabilities.includes('interactive')), [allConnections]);
 
   // Goals discovery for single-project selection only
   const singleProjectPath = selectedProjectPaths.length === 1 ? selectedProjectPaths[0] : null;
   const { goalFiles } = useGoalsDiscovery(singleProjectPath);
   const { sendChatMessage, cancelChat } = useAIOperations();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [providerOpen, setProviderOpen] = useState(false);
   const [personaOpen, setPersonaOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
 
@@ -164,6 +172,40 @@ export function ChatPanel() {
           placeholder={chatPlaceholder}
           footer={
             <>
+              {interactiveConnections.length > 0 && (
+                <Popover open={providerOpen} onOpenChange={setProviderOpen}>
+                  <PopoverTrigger asChild>
+                    <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent/50">
+                      {interactiveConnection && (
+                        <ProviderLogo provider={interactiveConnection.provider} className="w-3.5 h-3.5" />
+                      )}
+                      <span className="max-w-[80px] truncate">
+                        {interactiveConnection?.label ?? 'Select provider'}
+                      </span>
+                      <ChevronUp className="h-3 w-3 opacity-50" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent side="top" align="start" className="w-52 p-1">
+                    {interactiveConnections.map((conn) => (
+                      <button
+                        key={conn.id}
+                        onClick={() => {
+                          setRouting('interactive', conn.id);
+                          setProviderOpen(false);
+                        }}
+                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${
+                          interactiveConnection?.id === conn.id
+                            ? 'bg-accent text-accent-foreground'
+                            : 'text-foreground hover:bg-accent/50'
+                        }`}
+                      >
+                        <ProviderLogo provider={conn.provider} className="w-4 h-4" />
+                        <span className="truncate">{conn.label}</span>
+                      </button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+              )}
               <Popover open={personaOpen} onOpenChange={setPersonaOpen}>
                 <PopoverTrigger asChild>
                   <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent/50">

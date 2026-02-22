@@ -3,6 +3,7 @@ import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { ProviderLogo } from '@/components/ProviderLogo';
 import { useChatStore } from '@/stores/chat-store';
 import type { ChatMessage as ChatMessageType, AgentActivity } from '@/lib/ai/types';
 
@@ -120,6 +121,14 @@ export function ChatMessage({ message }: ChatMessageProps) {
             {isLoading && (
               <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse bg-muted-foreground" />
             )}
+          </div>
+        )}
+
+        {/* Provider badge */}
+        {!isUser && message.connectionProvider && !isLoading && message.content && (
+          <div className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground/60">
+            <ProviderLogo provider={message.connectionProvider} className="w-3 h-3" />
+            <span>{message.connectionLabel || message.connectionProvider}</span>
           </div>
         )}
 
