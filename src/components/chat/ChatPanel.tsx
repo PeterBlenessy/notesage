@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe } from 'lucide-react';
+import { Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe, Shield, Terminal, Pencil, FileOutput, FileInput, FolderSearch, TextSearch, Download, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { PersonaIcon } from '@/components/PersonaIcon';
 import { ProviderLogo } from '@/components/ProviderLogo';
@@ -9,10 +9,13 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
+import { invoke } from '@tauri-apps/api/core';
 import { useAIOperations } from '@/hooks/useAIOperations';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
+import { usePermissionStore, type PermissionTier } from '@/stores/permission-store';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
+import { PermissionCard } from './PermissionCard';
 import {
   Tooltip,
   TooltipContent,
@@ -24,6 +27,27 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+
+const PRE_POPULATED_TOOLS = ['bash', 'edit', 'write', 'read', 'glob', 'grep', 'fetch', 'web_search'] as const;
+
+const TOOL_META: Record<string, { label: string; icon: LucideIcon }> = {
+  bash: { label: 'Terminal', icon: Terminal },
+  edit: { label: 'Edit files', icon: Pencil },
+  write: { label: 'Write files', icon: FileOutput },
+  read: { label: 'Read files', icon: FileInput },
+  glob: { label: 'Search files', icon: FolderSearch },
+  grep: { label: 'Search content', icon: TextSearch },
+  fetch: { label: 'Web fetch', icon: Download },
+  web_search: { label: 'Web search', icon: Globe },
+};
+
+function getToolLabel(kind: string): string {
+  return TOOL_META[kind]?.label ?? kind;
+}
+
+function getToolIcon(kind: string): LucideIcon {
+  return TOOL_META[kind]?.icon ?? Shield;
+}
 
 export function ChatPanel() {
   const { messages, isLoading, error, activeTool, clearMessages, selectedProjectPaths, setSelectedProjectPaths, toggleProjectPath, webSearchEnabled, setWebSearchEnabled } = useChatStore();
@@ -42,10 +66,45 @@ export function ChatPanel() {
   const singleProjectPath = selectedProjectPaths.length === 1 ? selectedProjectPaths[0] : null;
   const { goalFiles } = useGoalsDiscovery(singleProjectPath);
   const { sendChatMessage, cancelChat } = useAIOperations();
+  const permissionRequests = usePermissionStore((s) => s.requests);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const sessionAllowed = usePermissionStore((s) => s.sessionAllowed);
+  const alwaysAllowed = usePermissionStore((s) => s.alwaysAllowed);
   const [providerOpen, setProviderOpen] = useState(false);
   const [personaOpen, setPersonaOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+
+  const isAcpConnection = interactiveConnection?.authMethod === 'agent_managed';
+
+  // Compute tools list: pre-populated + any dynamic session/always approvals
+  const toolsList = useMemo(() => {
+    const kinds = new Set<string>(PRE_POPULATED_TOOLS);
+    for (const k of sessionAllowed) kinds.add(k);
+    for (const k of alwaysAllowed) kinds.add(k);
+    return Array.from(kinds);
+  }, [sessionAllowed, alwaysAllowed]);
+
+  const approvedCount = useMemo(() => {
+    let count = 0;
+    for (const kind of toolsList) {
+      if (sessionAllowed.has(kind) || alwaysAllowed.includes(kind)) count++;
+    }
+    return count;
+  }, [toolsList, sessionAllowed, alwaysAllowed]);
+
+  const handleToolCycle = (kind: string) => {
+    const store = usePermissionStore.getState();
+    const tier = store.getToolTier(kind);
+    if (tier === 'none') {
+      store.allowSession(kind);
+    } else if (tier === 'session') {
+      store.removeSession(kind);
+      store.allowAlways(kind);
+    } else {
+      store.removeAlways(kind);
+    }
+  };
 
   // Derive display label for the project selector trigger
   const projectLabel = useMemo(() => {
@@ -75,7 +134,7 @@ export function ChatPanel() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, permissionRequests.length]);
 
   const handleSend = async (content: string) => {
     if (!provider) {
@@ -87,6 +146,16 @@ export function ChatPanel() {
 
   const handleClear = () => {
     if (confirm('Clear all chat history?')) {
+      // Deny any pending permission requests before clearing
+      const pending = usePermissionStore.getState().requests;
+      for (const req of pending) {
+        invoke('acp_permission_respond', {
+          instanceId: req.instanceId,
+          requestId: req.requestId,
+          optionId: null,
+        }).catch(() => {});
+      }
+      usePermissionStore.getState().clearAll();
       clearMessages();
     }
   };
@@ -150,6 +219,13 @@ export function ChatPanel() {
                 <span className="text-xs">
                   {activeTool === 'web_search' ? 'Searching the web...' : `${activeTool}...`}
                 </span>
+              </div>
+            )}
+            {permissionRequests.length > 0 && (
+              <div className="flex flex-col gap-2 mt-2">
+                {permissionRequests.map((req) => (
+                  <PermissionCard key={req.id} request={req} />
+                ))}
               </div>
             )}
           </>
@@ -277,43 +353,96 @@ export function ChatPanel() {
                   )}
                 </PopoverContent>
               </Popover>
-              <TooltipProvider delayDuration={200}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
+              {isAcpConnection ? (
+                <Popover open={toolsOpen} onOpenChange={setToolsOpen}>
+                  <PopoverTrigger asChild>
                     <button
-                      onClick={() => {
-                        if (!provider) return;
-                        if (provider === 'ollama') {
-                          toast.info('Web search is not yet available for Ollama. Please use Anthropic or OpenAI for search.');
-                          return;
-                        }
-                        setWebSearchEnabled(!webSearchEnabled);
-                      }}
-                      disabled={!provider}
-                      className="flex items-center gap-1 text-xs transition-colors rounded px-1 py-0.5 hover:bg-accent/50 disabled:opacity-30 disabled:cursor-not-allowed"
-                      style={{
-                        color: webSearchEnabled && provider && provider !== 'ollama'
-                          ? 'var(--color-foreground)'
-                          : 'var(--color-muted-foreground)',
-                      }}
+                      className="flex items-center gap-1 text-xs transition-colors rounded px-1 py-0.5 hover:bg-accent/50"
+                      style={{ color: approvedCount > 0 ? 'var(--color-foreground)' : 'var(--color-muted-foreground)' }}
                     >
-                      <Globe className="h-3 w-3" strokeWidth={1.5} />
-                      <span>Search</span>
+                      <Shield className="h-3 w-3" strokeWidth={1.5} />
+                      <span>Tools</span>
+                      {approvedCount > 0 && (
+                        <span className="text-[10px] text-muted-foreground">({approvedCount})</span>
+                      )}
+                      <ChevronUp className="h-3 w-3 opacity-50" />
                     </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-64">
-                    <p className="text-xs">
-                      {!provider
-                        ? 'Configure an AI provider to use search'
-                        : provider === 'ollama'
-                          ? 'Web search is not available for Ollama'
-                          : webSearchEnabled
-                            ? 'Web search enabled — AI can search the internet'
-                            : 'Click to enable web search'}
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+                  </PopoverTrigger>
+                  <PopoverContent side="top" align="start" className="w-56 p-1">
+                    <div className="px-2 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Agent tool permissions
+                    </div>
+                    {toolsList.map((kind) => {
+                      const tier: PermissionTier = alwaysAllowed.includes(kind)
+                        ? 'always'
+                        : sessionAllowed.has(kind)
+                          ? 'session'
+                          : 'none';
+                      const ToolIcon = getToolIcon(kind);
+                      return (
+                        <button
+                          key={kind}
+                          onClick={() => handleToolCycle(kind)}
+                          className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50"
+                        >
+                          <span className="flex items-center gap-2">
+                            <ToolIcon className={`h-3.5 w-3.5 ${tier !== 'none' ? 'text-foreground' : 'text-muted-foreground'}`} strokeWidth={1.5} />
+                            {getToolLabel(kind)}
+                          </span>
+                          <span className="flex items-center gap-1.5 shrink-0">
+                            {tier !== 'none' && (
+                              <span className="text-[10px] text-muted-foreground">
+                                {tier === 'session' ? 'Session' : 'Always'}
+                              </span>
+                            )}
+                            {tier !== 'none' && (
+                              <Check className="h-3 w-3 text-muted-foreground" />
+                            )}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </PopoverContent>
+                </Popover>
+              ) : (
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => {
+                          if (!provider) return;
+                          if (provider === 'ollama') {
+                            toast.info('Web search is not yet available for Ollama. Please use Anthropic or OpenAI for search.');
+                            return;
+                          }
+                          setWebSearchEnabled(!webSearchEnabled);
+                        }}
+                        disabled={!provider}
+                        className="flex items-center gap-1 text-xs transition-colors rounded px-1 py-0.5 hover:bg-accent/50 disabled:opacity-30 disabled:cursor-not-allowed"
+                        style={{
+                          color: webSearchEnabled && provider && provider !== 'ollama'
+                            ? 'var(--color-foreground)'
+                            : 'var(--color-muted-foreground)',
+                        }}
+                      >
+                        <Globe className="h-3 w-3" strokeWidth={1.5} />
+                        <span>Search</span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-64">
+                      <p className="text-xs">
+                        {!provider
+                          ? 'Configure an AI provider to use search'
+                          : provider === 'ollama'
+                            ? 'Web search is not available for Ollama'
+                            : webSearchEnabled
+                              ? 'Web search enabled — AI can search the internet'
+                              : 'Click to enable web search'}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
               {goalFiles.length > 0 && (
                 <TooltipProvider delayDuration={200}>
                   <Tooltip>

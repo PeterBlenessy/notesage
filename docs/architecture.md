@@ -73,9 +73,10 @@ note-sage/
 │   │   │   ├── UseCaseRoutingSettings.tsx # Per-use-case provider routing
 │   │   │   └── ProjectSettings.tsx # Project-level settings
 │   │   ├── chat/
-│   │   │   ├── ChatPanel.tsx       # AI chat sidebar
-│   │   │   ├── ChatMessage.tsx     # Individual message
-│   │   │   └── ChatInput.tsx       # Message input
+│   │   │   ├── ChatPanel.tsx       # AI chat sidebar (context-aware footer: Tools popover for ACP, Search toggle for direct API)
+│   │   │   ├── ChatMessage.tsx     # Individual message with activity log
+│   │   │   ├── ChatInput.tsx       # Message input
+│   │   │   └── PermissionCard.tsx  # ACP tool call approval (allow once/session/always, deny)
 │   │   └── ui/             # shadcn/ui components (auto-generated)
 │   ├── hooks/
 │   │   ├── useEditor.ts            # Tiptap editor instance hook
@@ -158,7 +159,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 - **ai-store**: AI provider selection, API keys, Ollama URL, suggestions enabled (legacy — used as fallback)
 - **connections-store**: Multi-provider connections with auth method, status, capabilities
 - **routing-store**: Per-use-case provider routing (interactive, agent_tasks, inline_completion)
-- **permission-store**: ACP tool call permission tracking (non-persisted)
+- **permission-store**: ACP tool call permission tracking with tiered approval (`sessionAllowed`: Set non-persisted, `alwaysAllowed`: string[] persisted); actions: `allowSession`, `removeSession`, `allowAlways`, `removeAlways`, `getToolTier` → `'none' | 'session' | 'always'`
 - **chat-store**: Chat conversation messages, loading state, errors, agent activities
 
 ### Styling
@@ -274,14 +275,16 @@ interface AIProvider {
 
 1-3. Same as above
 4. Hook calls `acp_session_prompt` on the interactive agent's session
-5. Agent streams `acp-session-update` notifications (text chunks, tool calls)
+5. Agent streams `acp-session-update` notifications (text chunks, tool calls, permission requests)
 6. Hook translates to chat store updates; tool calls tracked as `AgentActivity` entries
-7. On `agent_turn_complete`, all activities marked done
-8. Chat history persisted to localStorage
+7. On `tool_call`: new activity added (status `running`). On `tool_result`: last running activity marked done via `completeLastActivity`
+8. Permission requests: hook checks `permission-store.isAutoAllowed(toolKind)` — if auto-allowed (session or always tier), responds immediately; otherwise shows `PermissionCard` inline with Allow (once/session/always) and Deny options
+9. On `agent_turn_complete`, any remaining running activities marked done via `completeAllActivities`
+10. Chat history persisted to localStorage
 
 ### Web Search
 
-When web search is enabled (toggle in chat footer):
+When web search is enabled (toggle in chat footer — only visible for direct API connections; ACP connections show a Tools popover instead):
 
 1. `webSearchEnabled` flag read from chat-store, passed to `ai_chat_stream`
 2. Anthropic: `web_search_20250305` server tool added to request — Anthropic executes search server-side

@@ -7,16 +7,17 @@ import { ProviderLogo } from '@/components/ProviderLogo';
 import { useChatStore } from '@/stores/chat-store';
 import type { ChatMessage as ChatMessageType, AgentActivity } from '@/lib/ai/types';
 
-function ActivityIcon({ activity }: { activity: AgentActivity }) {
-  if (activity.status === 'running') {
+function ActivityIcon({ activity, isActive }: { activity: AgentActivity; isActive: boolean }) {
+  if (isActive && activity.status === 'running') {
     return <Loader2 className="h-2.5 w-2.5 animate-spin text-muted-foreground" strokeWidth={1.5} />;
   }
   return <Check className="h-2.5 w-2.5 text-muted-foreground" strokeWidth={1.5} />;
 }
 
-function ActivityLog({ activities }: { activities: AgentActivity[] }) {
+function ActivityLog({ activities, isActive }: { activities: AgentActivity[]; isActive: boolean }) {
   const [expanded, setExpanded] = useState(false);
-  const hasRunning = activities.some((a) => a.status === 'running');
+  // Only show running state if the chat is actively loading; otherwise treat all as done
+  const hasRunning = isActive && activities.some((a) => a.status === 'running');
 
   return (
     <div className="mt-2 pt-1.5 border-t border-border/50">
@@ -42,7 +43,7 @@ function ActivityLog({ activities }: { activities: AgentActivity[] }) {
               className="flex items-start gap-1.5 pl-1 py-0.5"
             >
               <span className="mt-px shrink-0">
-                <ActivityIcon activity={activity} />
+                <ActivityIcon activity={activity} isActive={isActive} />
               </span>
               <span className="text-[10px] text-muted-foreground leading-tight">
                 <span className="font-medium">{activity.label}</span>
@@ -134,7 +135,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
         {/* Agent Activity Log */}
         {hasActivities && (
-          <ActivityLog activities={message.activities!} />
+          <ActivityLog activities={message.activities!} isActive={isLoading} />
         )}
 
         {/* Citations / Sources */}

@@ -22,6 +22,7 @@ interface ChatStore {
   toggleProjectPath: (path: string) => void;
   setWebSearchEnabled: (enabled: boolean) => void;
   addActivity: (messageTimestamp: number, activity: AgentActivity) => void;
+  completeLastActivity: (messageTimestamp: number) => void;
   completeAllActivities: (messageTimestamp: number) => void;
 }
 
@@ -72,6 +73,20 @@ export const useChatStore = create<ChatStore>()(
               ? { ...msg, activities: [...(msg.activities || []), activity] }
               : msg
           ),
+        })),
+
+      completeLastActivity: (messageTimestamp) =>
+        set((state) => ({
+          messages: state.messages.map((msg) => {
+            if (msg.timestamp !== messageTimestamp || !msg.activities) return msg;
+            // Find the last running activity and mark it done
+            const lastRunningIdx = msg.activities.map((a) => a.status).lastIndexOf('running');
+            if (lastRunningIdx === -1) return msg;
+            const activities = msg.activities.map((a, i) =>
+              i === lastRunningIdx ? { ...a, status: 'done' as const } : a
+            );
+            return { ...msg, activities };
+          }),
         })),
 
       completeAllActivities: (messageTimestamp) =>

@@ -115,7 +115,7 @@ Ghost text autocomplete powered by the GitHub Copilot Language Server.
 
 **Per-document toggle:**
 
-- Status bar shows GitHub icon when Copilot LSP is connected
+- Status bar shows official GitHub Copilot icon (Octicons) when Copilot LSP is connected
 - Click icon → popover with toggle switch to disable completions for the current document
 - Session-only — resets when the tab is closed (not persisted)
 - Icon dims when disabled; green status dot in popover reflects state
@@ -322,13 +322,15 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - Agent subprocess spawning, initialization, and authentication via Tauri commands
 - ACP session management: create, prompt, cancel, load sessions
 - Streaming responses via Tauri events (`acp-session-update`)
-- Permission request handling: read-only tools auto-approved, write tools tracked in permission-store
+- Permission request handling: all tool calls require explicit user approval with tiered options (allow once / allow for session / allow always); no hard-coded auto-approval
+- Tiered permission UI: PermissionCard with split Allow button + dropdown for session/always; session approvals non-persisted, always approvals persisted via Zustand persist
+- Context-aware chat footer: "Tools" popover for ACP agents (pre-populated tool list with per-tool approval cycling), "Search" toggle for direct API connections
 - Four supported ACP agents: Claude Code (`claude-agent-acp`), OpenAI Codex (`codex-acp`), GitHub Copilot CLI (`copilot --acp` — chat/agents only, no inline completions), Google Gemini CLI (`gemini --acp` — free with Google account)
 - Copilot Language Server (`copilot-language-server`) for inline completions via LSP protocol (separate from ACP)
 
 **Agent activity & tasks:**
 
-- Agent activity panel: collapsible per-message activity log showing tool call steps
+- Agent activity panel: collapsible per-message activity log showing tool call steps with per-tool completion (`tool_result` marks individual activities done, not just `agent_turn_complete`)
 - Background task agent hook (`useAgentTaskOperations`): separate ACP instance for delegated work
 - Task lifecycle: start, cancel, track status and output
 - Agent file changes flow through existing file watcher → external-change-store → inline diff review
@@ -337,14 +339,15 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 
 - `connections-store` (Zustand, persisted): manages provider connections
 - `routing-store` (Zustand, persisted): maps use cases to connections
-- `permission-store` (Zustand, non-persisted): tracks ACP tool call approvals
+- `permission-store` (Zustand, partially persisted): tracks ACP tool call approvals with `sessionAllowed` (Set, non-persisted), `alwaysAllowed` (string[], persisted), `getToolTier()` returns `'none' | 'session' | 'always'`
 - `AcpState` (Rust managed state): agent process handles, sessions, install lock
 - Tauri commands: `acp_agent_spawn`, `acp_agent_authenticate`, `acp_agent_stop`, `acp_agent_check_availability`, `acp_session_new`, `acp_session_prompt`, `acp_session_cancel`, `acp_session_load`, `acp_permission_respond`
 
 **Future enhancements (not yet built):**
 
-- Interactive permission approval UI (currently auto-approved with tracking)
+- ~~Interactive permission approval UI~~ (done — tiered allow once/session/always with context-aware Tools popover)
 - Agent binary auto-install wizard — automated npm install from within the app (PRD: `docs/prds/2026-02-21-agent-install-wizard.md`)
+- 
 - ACP agent binary bundling as Tauri sidecar
 - Orphaned agent process cleanup on app exit
 
@@ -352,8 +355,8 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 
 Chat provider indicator & picker — interactive connection picker in chat footer, per-message provider badges, shared ProviderLogo component (PRD: docs/prds/2026-02-22-chat-provider-indicator.md)
 Agent install & auth guidance — step-by-step guides with copyable commands and URLs for all providers (PRD: docs/prds/2026-02-22-agent-install-guidance.md)
-
-## Roadmap
+Tiered permission approval UI — PermissionCard split Allow button (once/session/always), context-aware chat footer (Search for direct API, Tools popover for ACP agents), per-tool activity completion, official Copilot Octicons icon (PRD: docs/prds/2026-02-22-permission-approval-ui.md)
+Roadmap
 
 ### Phase 6.5 — Chat UX & Agent Polish
 
@@ -362,9 +365,9 @@ Agent install & auth guidance — step-by-step guides with copyable commands and
 **Features:**
 
 - Chat provider indicator and picker: show active connection in chat footer, per-message provider badge, switch providers from chat (done)
-- Interactive permission approval UI: replace auto-approve with approve/deny controls for write tools
+- Interactive permission approval UI: tiered allow once/session/always controls for all tools, context-aware Tools popover in chat footer (done)
 - Agent install guidance: step-by-step guides with copyable commands (done)
-- Agent binary auto-install: one-click npm install from within the app (PRD ready)
+  Agent binary auto-install: one-click npm install from within the app (PRD ready)
 - ACP agent binary bundling as Tauri sidecar (no Node.js dependency for end users)
 - Orphaned agent process cleanup on app exit/restart
 - External change diff fidelity: map raw-text diffs to ProseMirror transactions that preserve formatting

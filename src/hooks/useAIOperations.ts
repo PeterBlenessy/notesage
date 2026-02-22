@@ -68,12 +68,6 @@ interface AcpPermissionRequestPayload {
   options: { optionId: string; kind: string; name: string }[];
 }
 
-/** Classify a tool kind by risk level for permission auto-approve decisions. */
-function isReadOnlyTool(kind: string): boolean {
-  const readOnly = ['read', 'read_file', 'glob', 'list', 'grep', 'fetch', 'web_search'];
-  return readOnly.includes(kind);
-}
-
 /** Extract tool kind and title from an ACP toolCall payload. */
 function extractToolInfo(toolCall: unknown): { kind: string; title: string; input: string } {
   const tc = toolCall as Record<string, unknown> | null;
@@ -85,14 +79,17 @@ function extractToolInfo(toolCall: unknown): { kind: string; title: string; inpu
 }
 
 /** Truncate a tool detail string (e.g. rawInput) for display. */
-function truncateDetail(text: string, max = 80): string {
-  const oneLine = text.replace(/\n/g, ' ').trim();
+export function truncateDetail(text: unknown, max = 80): string {
+  const str = typeof text === 'string' ? text : JSON.stringify(text ?? '');
+  const oneLine = str.replace(/\n/g, ' ').trim();
+  // Skip empty or meaningless values
+  if (!oneLine || oneLine === '{}' || oneLine === '""' || oneLine === 'null') return '';
   if (oneLine.length <= max) return oneLine;
   return oneLine.slice(0, max) + '…';
 }
 
 /** Map ACP tool kind/title to a user-friendly label */
-function formatAcpToolName(kind?: string, title?: string): string {
+export function formatAcpToolName(kind?: string, title?: string): string {
   switch (kind) {
     case 'fetch':
       return 'Searching the web';
@@ -215,7 +212,7 @@ function resolveConnectionCredentials(connection: Connection): {
 export function useAIOperations() {
   const aiStore = useAIStore();
   const { apiKeys, ollamaUrl } = aiStore;
-  const { addMessage, updateMessage, setLoading, setError, setActiveTool, addActivity, completeAllActivities, selectedProjectPaths, webSearchEnabled } = useChatStore();
+  const { addMessage, updateMessage, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, selectedProjectPaths, webSearchEnabled } = useChatStore();
   const cleanupRef = useRef<(() => void) | null>(null);
 
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
@@ -474,6 +471,9 @@ export function useAIOperations() {
               const title = (update as Record<string, unknown>).title as string | undefined;
               const toolLabel = formatAcpToolName(kind, title);
               setActiveTool(toolLabel);
+            } else if (update.sessionUpdate === 'tool_result') {
+              setActiveTool(null);
+              completeLastActivity(assistantMessageId);
             } else if (update.sessionUpdate === 'agent_turn_complete') {
               setActiveTool(null);
               completeAllActivities(assistantMessageId);
@@ -481,11 +481,14 @@ export function useAIOperations() {
           });
 
           // Handle permission requests: auto-approve read-only tools,
-          // track write tools in the permission store for future UI review.
-          // Currently all are auto-approved; the store enables Phase 6.5 permission UI.
+          // show inline permission card for write tools (user must Allow/Deny).
           const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
             if (event.payload.instanceId !== instanceId) return;
             const payload = event.payload;
+
+            // Clear the active tool spinner — the previous tool finished,
+            // now the agent is asking permission for the next action.
+            setActiveTool(null);
 
             const toolInfo = extractToolInfo(payload.toolCall);
             const rawOptions = payload.options as unknown[];
@@ -495,8 +498,15 @@ export function useAIOperations() {
               firstOptionId = typeof opt === 'string' ? opt : String(opt?.optionId ?? opt?.id ?? '');
             }
 
-            // Track non-read-only permission requests in the store
-            if (!isReadOnlyTool(toolInfo.kind)) {
+            if (usePermissionStore.getState().isAutoAllowed(toolInfo.kind)) {
+              // Tool kinds in session or always allow-lists: auto-approve silently
+              invoke('acp_permission_respond', {
+                instanceId,
+                requestId: payload.requestId,
+                optionId: firstOptionId,
+              }).catch(() => {});
+            } else {
+              // Write tools: add to permission store, let PermissionCard UI handle response
               const options = Array.isArray(rawOptions)
                 ? rawOptions.map((o) => {
                     const opt = o as Record<string, unknown>;
@@ -520,18 +530,23 @@ export function useAIOperations() {
                 timestamp: Date.now(),
               });
             }
-
-            // Auto-approve all for now (Phase 6.5 will add approval UI for write tools)
-            invoke('acp_permission_respond', {
-              instanceId,
-              requestId: payload.requestId,
-              optionId: firstOptionId,
-            }).catch(() => {});
           });
 
           cleanupRef.current = () => {
             unlisten();
             unlistenPermission();
+            // Deny any pending permission requests for this agent and clear from store
+            const pendingRequests = usePermissionStore.getState().requests.filter(
+              (r) => r.instanceId === instanceId
+            );
+            for (const req of pendingRequests) {
+              invoke('acp_permission_respond', {
+                instanceId,
+                requestId: req.requestId,
+                optionId: null,
+              }).catch(() => {});
+            }
+            usePermissionStore.getState().clearRequestsForInstance(instanceId);
             setLoading(false);
             setActiveTool(null);
             cleanupRef.current = null;
@@ -557,7 +572,8 @@ export function useAIOperations() {
             cleanupRef.current();
           }
           acpAgent = null;
-          setError(error instanceof Error ? error.message : 'ACP agent error');
+          const msg = error instanceof Error ? error.message : String(error);
+          setError(msg || 'Something went wrong with the AI agent. Please try again.');
           setLoading(false);
           setActiveTool(null);
         }
@@ -663,7 +679,7 @@ export function useAIOperations() {
         setActiveTool(null);
       }
     },
-    [resolved, composedSystemMessage, webSearchEnabled, addMessage, updateMessage, setLoading, setError, setActiveTool, addActivity, completeAllActivities, interactiveConnection, selectedProjectPaths]
+    [resolved, composedSystemMessage, webSearchEnabled, addMessage, updateMessage, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, interactiveConnection, selectedProjectPaths]
   );
 
   const cancelChat = useCallback(() => {
@@ -674,6 +690,19 @@ export function useAIOperations() {
 
     // Cancel ACP session if active
     if (acpAgent?.chatSessionId && acpAgent?.instanceId) {
+      // Deny any pending permission requests before cancelling
+      const pendingRequests = usePermissionStore.getState().requests.filter(
+        (r) => r.instanceId === acpAgent!.instanceId
+      );
+      for (const req of pendingRequests) {
+        invoke('acp_permission_respond', {
+          instanceId: acpAgent!.instanceId,
+          requestId: req.requestId,
+          optionId: null,
+        }).catch(() => {});
+      }
+      usePermissionStore.getState().clearRequestsForInstance(acpAgent!.instanceId);
+
       invoke('acp_session_cancel', {
         instanceId: acpAgent.instanceId,
         sessionId: acpAgent.chatSessionId,
