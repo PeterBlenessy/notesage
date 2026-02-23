@@ -22,7 +22,7 @@ pub fn get_shell_path() -> Option<&'static str> {
         .get_or_init(|| {
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
             let output = Command::new(&shell)
-                .args(["-l", "-c", "echo $PATH"])
+                .args(["-il", "-c", "echo $PATH"])
                 .output()
                 .ok()?;
 

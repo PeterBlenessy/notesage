@@ -4,6 +4,11 @@ mod export;
 use commands::*;
 use tauri::{Manager, RunEvent};
 
+#[tauri::command]
+fn open_devtools(webview_window: tauri::WebviewWindow) {
+    webview_window.open_devtools();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -15,6 +20,7 @@ pub fn run() {
         .manage(AcpState::new())
         .manage(CopilotLspState::new())
         .invoke_handler(tauri::generate_handler![
+            open_devtools,
             read_file,
             write_file,
             list_directory,

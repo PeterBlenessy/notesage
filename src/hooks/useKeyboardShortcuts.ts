@@ -140,6 +140,15 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         callbacks.onOpenFolder();
       }
 
+      // Cmd+Option+I — open devtools
+      if (isMod && e.altKey && e.key === "i") {
+        e.preventDefault();
+        import("@tauri-apps/api/core").then(({ invoke }) => {
+          invoke("open_devtools").catch(console.error);
+        });
+        return;
+      }
+
       // Cmd+S is handled in the Editor component for context-aware saving
     };
 

@@ -584,13 +584,7 @@ fn resolve_agent_binary(agent_id: &str, app: &AppHandle) -> Option<String> {
         }
     }
 
-    // 3. Bundled node_modules/.bin/ (development and Tauri resource path)
-    candidates.push(
-        std::env::current_dir()
-            .unwrap_or_default()
-            .join("node_modules/.bin")
-            .join(agent_id),
-    );
+    // 3. Tauri resource path (for future sidecar bundling)
     candidates.push(
         app.path()
             .resource_dir()
@@ -599,7 +593,18 @@ fn resolve_agent_binary(agent_id: &str, app: &AppHandle) -> Option<String> {
             .join(agent_id),
     );
 
-    for candidate in candidates {
+    // 4. npm global prefix paths (covers non-standard npm configurations)
+    //    `npm root -g` typically resolves to <prefix>/lib/node_modules
+    //    and binaries are linked in <prefix>/bin — already covered above,
+    //    but some setups put bins directly in the node_modules/.bin.
+    candidates.push(
+        PathBuf::from("/opt/homebrew/lib/node_modules/.bin").join(agent_id),
+    );
+    candidates.push(
+        PathBuf::from("/usr/local/lib/node_modules/.bin").join(agent_id),
+    );
+
+    for candidate in &candidates {
         if candidate.exists() {
             return Some(candidate.to_string_lossy().to_string());
         }
