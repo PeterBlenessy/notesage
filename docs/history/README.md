@@ -32,3 +32,4 @@ Chronological log of major implementation milestones and changes.
 | 026 | [Release v0.14.1](026-release-v0.14.1.md) | Add Google Gemini CLI as ACP agent provider |
 | 027 | [Release v0.15.0](027-release-v0.15.0.md) | Agent comment delegation, permission UI, provider picker, external change setting (Phase 6.5) |
 | 028 | [Release v0.15.1](028-release-v0.15.1.md) | macOS code signing & notarization |
+| 029 | [Release v0.15.2](029-release-v0.15.2.md) | In-app auto-update via Tauri updater plugin |

@@ -6,7 +6,7 @@ id: ""
 
 Notesage is a WYSIWYG markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
-**Current version:** 0.15.1
+**Current version:** 0.15.2
 
 ## Current Features
 
