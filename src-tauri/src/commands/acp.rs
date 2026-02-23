@@ -7,6 +7,8 @@ use std::rc::Rc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
+use super::shell_path::get_shell_path;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -278,16 +280,21 @@ fn run_agent_thread(
             next_request_id: Cell::new(0),
         };
 
-        // Spawn agent process
-        let mut child = match tokio::process::Command::new(&agent_binary)
+        // Spawn agent process — inject login shell PATH so the agent
+        // (and its child processes) can find Node.js and other tools
+        let mut spawn_cmd = tokio::process::Command::new(&agent_binary);
+        spawn_cmd
             .args(&agent_args)
             .current_dir(&working_directory)
             .envs(&env_vars)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
+            .kill_on_drop(true);
+        if let Some(shell_path) = get_shell_path() {
+            spawn_cmd.env("PATH", shell_path);
+        }
+        let mut child = match spawn_cmd.spawn()
         {
             Ok(child) => child,
             Err(e) => {
@@ -517,16 +524,27 @@ fn run_agent_thread(
 // ---------------------------------------------------------------------------
 
 /// Resolve the path to an ACP agent binary.
-/// Checks: 1) system PATH via `which`, 2) bundled node_modules/.bin/ relative to the app.
+/// Checks: 1) system PATH via `which`, 2) common install locations
+/// (Homebrew, npm global, pnpm, nvm, ~/.local/bin), 3) bundled node_modules/.bin/.
+///
+/// macOS GUI apps (launched from Finder/Dock) inherit a minimal PATH that does
+/// not include user-installed directories, so we must check common locations
+/// explicitly as fallback.
 fn resolve_agent_binary(agent_id: &str, app: &AppHandle) -> Option<String> {
-    // 1. Check system PATH
+    // 1. Check PATH via `which` — use login shell PATH if available
+    //    (macOS GUI apps have a minimal inherited PATH)
     let which_cmd = if cfg!(target_os = "windows") {
         "where"
     } else {
         "which"
     };
 
-    if let Ok(output) = Command::new(which_cmd).arg(agent_id).output() {
+    let mut cmd = Command::new(which_cmd);
+    cmd.arg(agent_id);
+    if let Some(path) = get_shell_path() {
+        cmd.env("PATH", path);
+    }
+    if let Ok(output) = cmd.output() {
         if output.status.success() {
             let p = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !p.is_empty() {
@@ -535,24 +553,100 @@ fn resolve_agent_binary(agent_id: &str, app: &AppHandle) -> Option<String> {
         }
     }
 
-    // 2. Check bundled node_modules/.bin/ (development and Tauri resource path)
-    // In dev, the app root is the project directory.
-    // Try resolving relative to the Tauri resource dir first, then CWD.
-    let candidates: Vec<PathBuf> = vec![
-        // Dev: project root / node_modules/.bin/
+    // 2. Check common install locations (needed for production macOS GUI apps)
+    let home = dirs::home_dir().unwrap_or_default();
+    let mut candidates: Vec<PathBuf> = vec![
+        // ~/.local/bin (Claude Code, pipx, etc.)
+        home.join(".local/bin").join(agent_id),
+        // Homebrew (macOS Apple Silicon)
+        PathBuf::from("/opt/homebrew/bin").join(agent_id),
+        // Homebrew (macOS Intel) / system-level
+        PathBuf::from("/usr/local/bin").join(agent_id),
+        // npm global (default prefix)
+        home.join(".npm-global/bin").join(agent_id),
+        // pnpm global (macOS)
+        home.join("Library/pnpm").join(agent_id),
+        // pnpm global (Linux)
+        home.join(".local/share/pnpm").join(agent_id),
+        // Volta
+        home.join(".volta/bin").join(agent_id),
+        // Cargo
+        home.join(".cargo/bin").join(agent_id),
+    ];
+
+    // nvm: scan for node versions
+    let nvm_dir = home.join(".nvm/versions/node");
+    if nvm_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&nvm_dir) {
+            for entry in entries.flatten() {
+                candidates.push(entry.path().join("bin").join(agent_id));
+            }
+        }
+    }
+
+    // 3. Bundled node_modules/.bin/ (development and Tauri resource path)
+    candidates.push(
         std::env::current_dir()
             .unwrap_or_default()
             .join("node_modules/.bin")
             .join(agent_id),
-        // Tauri resource dir fallback
+    );
+    candidates.push(
         app.path()
             .resource_dir()
             .unwrap_or_default()
             .join("node_modules/.bin")
             .join(agent_id),
-    ];
+    );
 
     for candidate in candidates {
+        if candidate.exists() {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+
+    None
+}
+
+/// Resolve a CLI binary by name, checking common install locations.
+/// Used by `check_agent_auth` to find the underlying CLI that manages auth
+/// (e.g., `claude`, `codex`, `copilot`) which may differ from the ACP adapter binary.
+fn resolve_cli_binary(name: &str) -> Option<String> {
+    // Try PATH via `which` — use login shell PATH if available
+    let which_cmd = if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    };
+
+    let mut cmd = Command::new(which_cmd);
+    cmd.arg(name);
+    if let Some(path) = get_shell_path() {
+        cmd.env("PATH", path);
+    }
+    if let Ok(output) = cmd.output() {
+        if output.status.success() {
+            let p = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !p.is_empty() {
+                return Some(p);
+            }
+        }
+    }
+
+    // Fallback: check common install locations (macOS GUI apps have minimal PATH)
+    let home = dirs::home_dir().unwrap_or_default();
+    let candidates = [
+        home.join(".local/bin").join(name),
+        PathBuf::from("/opt/homebrew/bin").join(name),
+        PathBuf::from("/usr/local/bin").join(name),
+        home.join(".npm-global/bin").join(name),
+        home.join("Library/pnpm").join(name),
+        home.join(".local/share/pnpm").join(name),
+        home.join(".volta/bin").join(name),
+        home.join(".cargo/bin").join(name),
+    ];
+
+    for candidate in &candidates {
         if candidate.exists() {
             return Some(candidate.to_string_lossy().to_string());
         }
@@ -568,8 +662,8 @@ fn check_agent_auth(agent_id: &str) -> Option<bool> {
     // Map agent adapter binary → underlying CLI that manages auth
     match agent_id {
         "claude-agent-acp" => {
-            // claude auth status returns JSON with "loggedIn": true/false
-            match Command::new("claude").args(["auth", "status"]).output() {
+            let cli = resolve_cli_binary("claude")?;
+            match Command::new(&cli).args(["auth", "status"]).output() {
                 Ok(output) if output.status.success() => {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     Some(stdout.contains("\"loggedIn\": true") || stdout.contains("\"loggedIn\":true"))
@@ -578,8 +672,8 @@ fn check_agent_auth(agent_id: &str) -> Option<bool> {
             }
         }
         "codex-acp" | "codex" => {
-            // codex auth status — check if codex CLI is authenticated
-            match Command::new("codex").args(["auth", "status"]).output() {
+            let cli = resolve_cli_binary("codex")?;
+            match Command::new(&cli).args(["auth", "status"]).output() {
                 Ok(output) if output.status.success() => {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     Some(stdout.contains("\"loggedIn\": true") || stdout.contains("\"loggedIn\":true")
@@ -589,8 +683,8 @@ fn check_agent_auth(agent_id: &str) -> Option<bool> {
             }
         }
         "copilot" => {
-            // copilot auth status
-            match Command::new("copilot").args(["auth", "status"]).output() {
+            let cli = resolve_cli_binary("copilot")?;
+            match Command::new(&cli).args(["auth", "status"]).output() {
                 Ok(output) if output.status.success() => {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     Some(stdout.contains("Logged in") || stdout.contains("authenticated")

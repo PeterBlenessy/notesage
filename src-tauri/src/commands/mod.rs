@@ -8,6 +8,7 @@ pub mod watcher;
 pub mod sync;
 pub mod acp;
 pub mod copilot_lsp;
+pub mod shell_path;
 
 pub use file::*;
 pub use dialog::*;

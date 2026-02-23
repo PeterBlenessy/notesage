@@ -462,7 +462,11 @@ function ConnectCopilotLsp({
 
       try {
         console.log('[copilot-lsp-ui] Checking binary availability...');
-        const available = await invoke<boolean>('copilot_lsp_check_availability');
+        const available = await withTimeout(
+          invoke<boolean>('copilot_lsp_check_availability'),
+          CONNECTION_TIMEOUT_MS,
+          'Availability check',
+        );
         console.log('[copilot-lsp-ui] Binary available:', available);
         if (!active) return;
 
@@ -475,7 +479,11 @@ function ConnectCopilotLsp({
         setPhase('signing_in');
 
         console.log('[copilot-lsp-ui] Starting LSP...');
-        await invoke('copilot_lsp_start', { workingDirectory: '/tmp' });
+        await withTimeout(
+          invoke('copilot_lsp_start', { workingDirectory: '/tmp' }),
+          CONNECTION_TIMEOUT_MS,
+          'Starting Copilot',
+        );
         console.log('[copilot-lsp-ui] LSP started');
         if (!active) return;
 
@@ -503,8 +511,12 @@ function ConnectCopilotLsp({
         }
 
         console.log('[copilot-lsp-ui] Calling signIn...');
-        const result = await invoke<{ user_code: string; verification_uri: string }>(
-          'copilot_lsp_sign_in'
+        const result = await withTimeout(
+          invoke<{ user_code: string; verification_uri: string }>(
+            'copilot_lsp_sign_in'
+          ),
+          CONNECTION_TIMEOUT_MS,
+          'Sign-in',
         );
         console.log('[copilot-lsp-ui] signIn result:', JSON.stringify(result));
         if (!active) return;
@@ -674,6 +686,19 @@ function ConnectCopilotLsp({
   );
 }
 
+// --- Connection timeout helper ---
+
+const CONNECTION_TIMEOUT_MS = 60_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms)
+    ),
+  ]);
+}
+
 // --- Agent connection flow ---
 
 type AgentPhase = 'checking' | 'not_installed' | 'not_authenticated' | 'connecting' | 'connected' | 'error';
@@ -703,9 +728,13 @@ function ConnectAgent({
       setError(null);
 
       try {
-        const avail = await invoke<{ installed: boolean; path: string | null; authenticated: boolean | null }>('acp_agent_check_availability', {
-          agentId: binary,
-        });
+        const avail = await withTimeout(
+          invoke<{ installed: boolean; path: string | null; authenticated: boolean | null }>('acp_agent_check_availability', {
+            agentId: binary,
+          }),
+          CONNECTION_TIMEOUT_MS,
+          'Availability check',
+        );
         if (!active) return;
         if (!avail.installed) {
           setPhase('not_installed');
@@ -715,9 +744,15 @@ function ConnectAgent({
           setPhase('not_authenticated');
           return;
         }
-      } catch {
+      } catch (err) {
         if (!active) return;
-        setPhase('not_installed');
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('timed out')) {
+          setError(msg);
+          setPhase('error');
+        } else {
+          setPhase('not_installed');
+        }
         return;
       }
 
@@ -726,12 +761,16 @@ function ConnectAgent({
       let instanceId: string | null = null;
 
       try {
-        const result = await invoke<{ instance_id: string }>('acp_agent_spawn', {
-          agentBinary: binary,
-          agentArgs: option.agentArgs ?? null,
-          role: 'interactive',
-          workingDirectory: '/tmp',
-        });
+        const result = await withTimeout(
+          invoke<{ instance_id: string }>('acp_agent_spawn', {
+            agentBinary: binary,
+            agentArgs: option.agentArgs ?? null,
+            role: 'interactive',
+            workingDirectory: '/tmp',
+          }),
+          CONNECTION_TIMEOUT_MS,
+          'Connection',
+        );
         if (!active) {
           invoke('acp_agent_stop', { instanceId: result.instance_id }).catch(() => {});
           return;
@@ -741,7 +780,11 @@ function ConnectAgent({
         // Try to authenticate — some agents handle auth internally
         // (e.g. claude-agent-acp uses Claude CLI's stored credentials)
         try {
-          await invoke('acp_agent_authenticate', { instanceId });
+          await withTimeout(
+            invoke('acp_agent_authenticate', { instanceId }),
+            CONNECTION_TIMEOUT_MS,
+            'Authentication',
+          );
         } catch (authErr) {
           const msg = String(authErr);
           // "not implemented" means the agent doesn't need explicit auth — that's fine

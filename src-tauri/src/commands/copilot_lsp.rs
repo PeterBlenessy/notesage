@@ -11,6 +11,8 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWrit
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::{oneshot, Mutex};
 
+use super::shell_path::get_shell_path;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -502,14 +504,20 @@ const COPILOT_BINARY: &str = "copilot-language-server";
 /// Checks: 1) system PATH via `which`, 2) common npm global install locations,
 /// 3) bundled node_modules relative to the app.
 fn resolve_copilot_binary(app: &AppHandle) -> Option<String> {
-    // 1. Check system PATH
+    // 1. Check PATH via `which` — use login shell PATH if available
+    //    (macOS GUI apps have a minimal inherited PATH)
     let which_cmd = if cfg!(target_os = "windows") {
         "where"
     } else {
         "which"
     };
 
-    if let Ok(output) = Command::new(which_cmd).arg(COPILOT_BINARY).output() {
+    let mut cmd = Command::new(which_cmd);
+    cmd.arg(COPILOT_BINARY);
+    if let Some(path) = get_shell_path() {
+        cmd.env("PATH", path);
+    }
+    if let Ok(output) = cmd.output() {
         if output.status.success() {
             let p = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !p.is_empty() {
@@ -625,13 +633,19 @@ pub async fn copilot_lsp_start(
     let binary_path = resolve_copilot_binary(&app)
         .ok_or_else(|| "copilot-language-server not found. Install via: npm install -g @github/copilot-language-server".to_string())?;
 
-    // Spawn the LSP process
-    let mut child = tokio::process::Command::new(&binary_path)
+    // Spawn the LSP process — inject login shell PATH so the process
+    // (a Node.js script) can find Node and other dependencies
+    let mut spawn_cmd = tokio::process::Command::new(&binary_path);
+    spawn_cmd
         .arg("--stdio")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
+        .kill_on_drop(true);
+    if let Some(shell_path) = get_shell_path() {
+        spawn_cmd.env("PATH", shell_path);
+    }
+    let mut child = spawn_cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn copilot-language-server: {}", e))?;
 
