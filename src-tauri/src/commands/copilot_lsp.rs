@@ -92,6 +92,7 @@ struct JsonRpcMessage {
 pub struct JsonRpcError {
     pub code: i64,
     pub message: String,
+    #[allow(dead_code)]
     pub data: Option<Value>,
 }
 

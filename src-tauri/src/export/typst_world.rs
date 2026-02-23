@@ -67,6 +67,7 @@ impl NotesageWorld {
     }
 
     /// Add a virtual source file (e.g. a template).
+    #[allow(dead_code)]
     pub fn add_source(&self, path: &str, content: String) {
         let id = FileId::new(None, VirtualPath::new(path));
         let source = Source::new(id, content);
@@ -74,6 +75,7 @@ impl NotesageWorld {
     }
 
     /// Add a virtual binary file (e.g. an image).
+    #[allow(dead_code)]
     pub fn add_file(&self, path: &str, data: Vec<u8>) {
         let id = FileId::new(None, VirtualPath::new(path));
         self.files.lock().unwrap().insert(id, Bytes::new(data));
