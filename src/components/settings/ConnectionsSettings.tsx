@@ -7,20 +7,23 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Popover,
+  PopoverAnchor,
   PopoverContent,
-  PopoverTrigger,
 } from '@/components/ui/popover';
 import { Plus, Check, Eye, EyeOff, Loader2, AlertCircle, RefreshCw, Copy } from 'lucide-react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import type { Connection, ProviderOption } from '@/lib/ai/connections';
-import { PROVIDER_OPTIONS, CAPABILITY_LABELS, ROUTING_SLOT_LABELS } from '@/lib/ai/connections';
+import { PROVIDER_OPTIONS, CAPABILITY_LABELS } from '@/lib/ai/connections';
 import { invoke } from '@tauri-apps/api/core';
 
 const COPILOT_PATH = "M7.998 15.035c-4.562 0-7.873-2.914-7.998-3.749V9.338c.085-.628.677-1.686 1.588-2.065.013-.07.024-.143.036-.218.029-.183.06-.384.126-.612-.201-.508-.254-1.084-.254-1.656 0-.87.128-1.769.693-2.484.579-.733 1.494-1.124 2.724-1.261 1.206-.134 2.262.034 2.944.765.05.053.096.108.139.165.044-.057.094-.112.143-.165.682-.731 1.738-.899 2.944-.765 1.23.137 2.145.528 2.724 1.261.566.715.693 1.614.693 2.484 0 .572-.053 1.148-.254 1.656.066.228.098.429.126.612.012.076.024.148.037.218.924.385 1.522 1.471 1.591 2.095v1.872c0 .766-3.351 3.795-8.002 3.795Zm0-1.485c2.28 0 4.584-1.11 5.002-1.433V7.862l-.023-.116c-.49.21-1.075.291-1.727.291-1.146 0-2.059-.327-2.71-.991A3.222 3.222 0 0 1 8 6.303a3.24 3.24 0 0 1-.544.743c-.65.664-1.563.991-2.71.991-.652 0-1.236-.081-1.727-.291l-.023.116v4.255c.419.323 2.722 1.433 5.002 1.433ZM6.762 2.83c-.193-.206-.637-.413-1.682-.297-1.019.113-1.479.404-1.713.7-.247.312-.369.789-.369 1.554 0 .793.129 1.171.308 1.371.162.181.519.379 1.442.379.853 0 1.339-.235 1.638-.54.315-.322.527-.827.617-1.553.117-.935-.037-1.395-.241-1.614Zm4.155-.297c-1.044-.116-1.488.091-1.681.297-.204.219-.359.679-.242 1.614.091.726.303 1.231.618 1.553.299.305.784.54 1.638.54.922 0 1.28-.198 1.442-.379.179-.2.308-.578.308-1.371 0-.765-.123-1.242-.37-1.554-.233-.296-.693-.587-1.713-.7Z";
@@ -47,8 +50,14 @@ export function ConnectionsSettings() {
   const clearRoutingForConnection = useRoutingStore((s) => s.clearRoutingForConnection);
   const autoAssign = useRoutingStore((s) => s.autoAssign);
 
-  const [popoverOpen, setPopoverOpen] = useState(false);
+  // Track which provider options are already connected (by label)
+  const connectedLabels = new Set(connections.map((c) => c.label));
+
+  // Two-stage flow: DropdownMenu for picking, Popover for configure/connect
   const [flow, setFlow] = useState<AddFlowState>({ step: 'pick' });
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const popoverOpenedAt = useRef(0);
   const [inputValue, setInputValue] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -58,15 +67,16 @@ export function ConnectionsSettings() {
     setInputValue('');
     setShowKey(false);
     setSavedFlash(false);
+    setPopoverOpen(false);
   }, []);
 
-  const handlePopoverChange = useCallback(
-    (open: boolean) => {
-      setPopoverOpen(open);
-      if (!open) resetFlow();
-    },
-    [resetFlow]
-  );
+  const handleBack = useCallback(() => {
+    setPopoverOpen(false);
+    setFlow({ step: 'pick' });
+    setInputValue('');
+    // Reopen the dropdown after the popover closes
+    requestAnimationFrame(() => setDropdownOpen(true));
+  }, []);
 
   const handlePickProvider = useCallback((option: ProviderOption) => {
     if (option.lspBinary || option.authMethod === 'agent_managed') {
@@ -74,6 +84,11 @@ export function ConnectionsSettings() {
     } else {
       setFlow({ step: 'configure', option });
     }
+    // Delay popover open so it doesn't race with the dropdown close animation
+    setTimeout(() => {
+      setPopoverOpen(true);
+      popoverOpenedAt.current = Date.now();
+    }, 100);
   }, []);
 
   const handleSave = useCallback(() => {
@@ -105,10 +120,7 @@ export function ConnectionsSettings() {
 
     autoAssign(connectionId);
     setSavedFlash(true);
-    setTimeout(() => {
-      setPopoverOpen(false);
-      resetFlow();
-    }, 600);
+    setTimeout(() => resetFlow(), 600);
   }, [flow, inputValue, addConnection, autoAssign, resetFlow]);
 
   const handleAgentConnected = useCallback(
@@ -129,10 +141,7 @@ export function ConnectionsSettings() {
         credentials,
       });
       autoAssign(connectionId);
-      setTimeout(() => {
-        setPopoverOpen(false);
-        resetFlow();
-      }, 600);
+      setTimeout(() => resetFlow(), 600);
     },
     [addConnection, autoAssign, resetFlow]
   );
@@ -159,17 +168,115 @@ export function ConnectionsSettings() {
           </p>
         </div>
 
-        <Popover open={popoverOpen} onOpenChange={handlePopoverChange}>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="shrink-0">
-              <Plus className="h-4 w-4 mr-1.5" strokeWidth={1.5} />
-              Add Connection
-            </Button>
-          </PopoverTrigger>
+        {/* Popover anchors to the button; DropdownMenu opens from it too */}
+        <Popover
+          open={popoverOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              // Guard: ignore dismiss within 300ms of opening (dropdown close race)
+              if (Date.now() - popoverOpenedAt.current < 300) return;
+              resetFlow();
+            }
+          }}
+        >
+          <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+            <PopoverAnchor asChild>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="shrink-0">
+                  <Plus className="h-4 w-4 mr-1.5" strokeWidth={1.5} />
+                  Add Connection
+                </Button>
+              </DropdownMenuTrigger>
+            </PopoverAnchor>
+            <DropdownMenuContent align="end" className="w-80">
+              <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
+                Use your existing subscription or an API key
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Subscription
+                </DropdownMenuLabel>
+                {PROVIDER_OPTIONS.filter((o) => o.authMethod === 'agent_managed').map((option) => {
+                  const alreadyConnected = connectedLabels.has(option.label);
+                  return (
+                    <DropdownMenuItem
+                      key={`${option.provider}-${option.authMethod}-${option.label}`}
+                      className={`relative flex items-start gap-3 py-2.5 ${alreadyConnected ? 'opacity-50' : 'cursor-pointer'}`}
+                      disabled={alreadyConnected}
+                      onSelect={() => handlePickProvider(option)}
+                    >
+                      <ProviderLogo provider={option.provider} className="w-5 h-5 mt-0.5 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium block">
+                          {option.label}
+                          {alreadyConnected && (
+                            <span className="ml-2 text-xs font-normal text-muted-foreground">Connected</span>
+                          )}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {option.description}
+                          {option.provider === 'github' && (
+                            <span className="ml-1 text-[10px] font-medium"> · Free tier available</span>
+                          )}
+                        </span>
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          {option.capabilities.map((cap) => (
+                            <span key={cap} className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground">
+                              {CAPABILITY_LABELS[cap]}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {alreadyConnected && (
+                        <Check className="absolute right-2 top-3 h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                      )}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  API Key
+                </DropdownMenuLabel>
+                {PROVIDER_OPTIONS.filter((o) => o.authMethod !== 'agent_managed').map((option) => {
+                  const alreadyConnected = connectedLabels.has(option.label);
+                  return (
+                    <DropdownMenuItem
+                      key={`${option.provider}-${option.authMethod}-${option.label}`}
+                      className={`relative flex items-start gap-3 py-2.5 ${alreadyConnected ? 'opacity-50' : 'cursor-pointer'}`}
+                      disabled={alreadyConnected}
+                      onSelect={() => handlePickProvider(option)}
+                    >
+                      <ProviderLogo provider={option.provider} className="w-5 h-5 mt-0.5 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium block">
+                          {option.label}
+                          {alreadyConnected && (
+                            <span className="ml-2 text-xs font-normal text-muted-foreground">Connected</span>
+                          )}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{option.description}</span>
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          {option.capabilities.map((cap) => (
+                            <span key={cap} className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground">
+                              {CAPABILITY_LABELS[cap]}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {alreadyConnected && (
+                        <Check className="absolute right-2 top-3 h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                      )}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <PopoverContent align="end" className="w-96 p-0">
-            {flow.step === 'pick' && (
-              <ProviderPicker onPick={handlePickProvider} />
-            )}
             {flow.step === 'configure' && (
               <ConfigureForm
                 option={flow.option}
@@ -184,14 +291,14 @@ export function ConnectionsSettings() {
             {flow.step === 'connecting' && flow.option.lspBinary && (
               <ConnectCopilotLsp
                 option={flow.option}
-                onBack={() => setFlow({ step: 'pick' })}
+                onBack={handleBack}
                 onConnected={handleAgentConnected}
               />
             )}
             {flow.step === 'connecting' && !flow.option.lspBinary && (
               <ConnectAgent
                 option={flow.option}
-                onBack={() => setFlow({ step: 'pick' })}
+                onBack={handleBack}
                 onConnected={handleAgentConnected}
               />
             )}
@@ -226,96 +333,6 @@ export function ConnectionsSettings() {
 }
 
 // --- Sub-components ---
-
-function ProviderPicker({ onPick }: { onPick: (option: ProviderOption) => void }) {
-  // Group by subscription-based (agent) vs API key
-  const subscriptionOptions = PROVIDER_OPTIONS.filter((o) => o.authMethod === 'agent_managed');
-  const apiKeyOptions = PROVIDER_OPTIONS.filter((o) => o.authMethod !== 'agent_managed');
-
-  return (
-    <div className="py-1">
-      <div className="px-3 py-2 border-b border-border">
-        <p className="text-sm font-medium">Add a provider</p>
-        <p className="text-xs text-muted-foreground">
-          Use your existing subscription or an API key
-        </p>
-      </div>
-      {subscriptionOptions.length > 0 && (
-        <>
-          <div className="px-3 pt-2 pb-1">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Subscription
-            </p>
-          </div>
-          {subscriptionOptions.map((option) => (
-            <ProviderPickerItem key={`${option.provider}-${option.authMethod}-${option.label}`} option={option} onPick={onPick} />
-          ))}
-        </>
-      )}
-      {apiKeyOptions.length > 0 && (
-        <>
-          <div className="mx-3 my-1 border-t border-border" />
-          <div className="px-3 pt-1 pb-1">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              API Key
-            </p>
-          </div>
-          {apiKeyOptions.map((option) => (
-            <ProviderPickerItem key={`${option.provider}-${option.authMethod}-${option.label}`} option={option} onPick={onPick} />
-          ))}
-        </>
-      )}
-    </div>
-  );
-}
-
-function ProviderPickerItem({
-  option,
-  onPick,
-}: {
-  option: ProviderOption;
-  onPick: (option: ProviderOption) => void;
-}) {
-  const isFreeAvailable = option.provider === 'github';
-
-  return (
-    <button
-      onClick={() => onPick(option)}
-      className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-accent transition-colors duration-150"
-    >
-      <ProviderLogo provider={option.provider} className="w-6 h-6 mt-0.5 shrink-0" />
-      <div className="flex-1 min-w-0">
-        <span className="text-sm font-medium truncate block">
-          {option.label}
-        </span>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          {option.description}
-          {isFreeAvailable && (
-            <span className="ml-1 text-[10px] font-medium text-muted-foreground"> · Free tier available</span>
-          )}
-        </p>
-        <div className="flex items-center gap-1.5 mt-1.5">
-          {option.capabilities.map((cap) => (
-            <TooltipProvider key={cap}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground cursor-default"
-                  >
-                    {CAPABILITY_LABELS[cap]}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="max-w-[200px] text-xs">
-                  {ROUTING_SLOT_LABELS[cap].description}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          ))}
-        </div>
-      </div>
-    </button>
-  );
-}
 
 function ConfigureForm({
   option,
@@ -415,6 +432,8 @@ function ConnectCopilotLsp({
   const [error, setError] = useState<string | null>(null);
   const [deviceCode, setDeviceCode] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [retrying, setRetrying] = useState(false);
+  const isRetryRef = useRef(false);
   const onConnectedRef = useRef(onConnected);
   onConnectedRef.current = onConnected;
 
@@ -455,9 +474,21 @@ function ConnectCopilotLsp({
   // Check binary availability, start LSP, and sign in
   useEffect(() => {
     let active = true;
+    const isRetry = isRetryRef.current;
+    isRetryRef.current = false;
+    const retryStart = isRetry ? Date.now() : 0;
+    const endRetry = async () => {
+      if (!isRetry) return;
+      const elapsed = Date.now() - retryStart;
+      if (elapsed < 600) await new Promise((r) => setTimeout(r, 600 - elapsed));
+      setRetrying(false);
+    };
 
     (async () => {
-      setPhase('checking');
+      // On retry, keep showing current guide — only reset on first load
+      if (!isRetry) {
+        setPhase('checking');
+      }
       setError(null);
 
       try {
@@ -470,6 +501,7 @@ function ConnectCopilotLsp({
         console.log('[copilot-lsp-ui] Binary available:', available);
         if (!active) return;
 
+        await endRetry();
         if (!available) {
           setPhase('not_installed');
           return;
@@ -539,6 +571,7 @@ function ConnectCopilotLsp({
         setPhase('device_code');
       } catch (err) {
         if (!active) return;
+        await endRetry();
         const msg = err instanceof Error ? err.message : String(err);
         console.error('[copilot-lsp-ui] Error:', msg);
         setError(msg);
@@ -553,6 +586,12 @@ function ConnectCopilotLsp({
 
   // Note: no LSP cleanup on unmount — useCopilotCompletion manages the lifecycle.
   // Stopping here would race with the hook restarting the LSP.
+
+  const handleRetry = useCallback(() => {
+    isRetryRef.current = true;
+    setRetrying(true);
+    setRetryCount((c) => c + 1);
+  }, []);
 
   const handleCopyCode = useCallback(() => {
     if (deviceCode) {
@@ -578,6 +617,9 @@ function ConnectCopilotLsp({
 
       {phase === 'not_installed' && (
         <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            {option.label} wasn't found on your system. Follow the steps below to install it.
+          </p>
           <SetupGuideView guide={getInstallGuide('copilot-language-server')} />
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
@@ -586,10 +628,11 @@ function ConnectCopilotLsp({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setRetryCount((c) => c + 1)}
+              onClick={handleRetry}
+              disabled={retrying}
               className="flex-1"
             >
-              <RefreshCw className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${retrying ? 'animate-spin' : ''}`} strokeWidth={1.5} />
               Retry
             </Button>
           </div>
@@ -673,10 +716,11 @@ function ConnectCopilotLsp({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setRetryCount((c) => c + 1)}
+              onClick={handleRetry}
+              disabled={retrying}
               className="flex-1"
             >
-              <RefreshCw className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${retrying ? 'animate-spin' : ''}`} strokeWidth={1.5} />
               Retry
             </Button>
           </div>
@@ -715,16 +759,29 @@ function ConnectAgent({
   const [phase, setPhase] = useState<AgentPhase>('checking');
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [retrying, setRetrying] = useState(false);
+  const isRetryRef = useRef(false);
   const onConnectedRef = useRef(onConnected);
   onConnectedRef.current = onConnected;
 
   useEffect(() => {
     let active = true;
     const binary = option.agentBinary!;
+    const isRetry = isRetryRef.current;
+    isRetryRef.current = false;
+    const retryStart = isRetry ? Date.now() : 0;
+    const endRetry = async () => {
+      if (!isRetry) return;
+      const elapsed = Date.now() - retryStart;
+      if (elapsed < 600) await new Promise((r) => setTimeout(r, 600 - elapsed));
+      setRetrying(false);
+    };
 
     (async () => {
-      // Phase 1: Check binary availability
-      setPhase('checking');
+      // On retry, keep showing current guide — only reset on first load
+      if (!isRetry) {
+        setPhase('checking');
+      }
       setError(null);
 
       try {
@@ -736,6 +793,7 @@ function ConnectAgent({
           'Availability check',
         );
         if (!active) return;
+        await endRetry();
         if (!avail.installed) {
           setPhase('not_installed');
           return;
@@ -746,6 +804,7 @@ function ConnectAgent({
         }
       } catch (err) {
         if (!active) return;
+        await endRetry();
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes('timed out')) {
           setError(msg);
@@ -757,6 +816,7 @@ function ConnectAgent({
       }
 
       // Phase 2: Spawn agent and authenticate
+      await endRetry();
       setPhase('connecting');
       let instanceId: string | null = null;
 
@@ -817,6 +877,25 @@ function ConnectAgent({
 
   const binary = option.agentBinary!;
 
+  const handleRetry = useCallback(() => {
+    isRetryRef.current = true;
+    setRetrying(true);
+    setRetryCount((c) => c + 1);
+  }, []);
+
+  const retryButton = (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={handleRetry}
+      disabled={retrying}
+      className="flex-1"
+    >
+      <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${retrying ? 'animate-spin' : ''}`} strokeWidth={1.5} />
+      Retry
+    </Button>
+  );
+
   return (
     <div className="p-4 space-y-3">
       <div className="flex items-center gap-2">
@@ -835,40 +914,30 @@ function ConnectAgent({
 
       {phase === 'not_installed' && (
         <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            {option.label} wasn't found on your system. Follow the steps below to install it.
+          </p>
           <SetupGuideView guide={getInstallGuide(binary)} />
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
               Back
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setRetryCount((c) => c + 1)}
-              className="flex-1"
-            >
-              <RefreshCw className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
-              Retry
-            </Button>
+            {retryButton}
           </div>
         </div>
       )}
 
       {phase === 'not_authenticated' && (
         <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            {option.label} is installed but not signed in. Follow the steps below to authenticate.
+          </p>
           <SetupGuideView guide={getAuthGuide(binary)} />
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
               Back
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setRetryCount((c) => c + 1)}
-              className="flex-1"
-            >
-              <RefreshCw className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
-              Retry
-            </Button>
+            {retryButton}
           </div>
         </div>
       )}
@@ -913,15 +982,7 @@ function ConnectAgent({
             <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
               Back
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setRetryCount((c) => c + 1)}
-              className="flex-1"
-            >
-              <RefreshCw className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
-              Retry
-            </Button>
+            {retryButton}
           </div>
         </div>
       )}
@@ -1106,8 +1167,7 @@ function CopyableUrl({ url }: { url: string }) {
 
 function SetupGuideView({ guide }: { guide: SetupGuide }) {
   return (
-    <div className="space-y-2.5">
-      <p className="text-sm font-medium">{guide.title}</p>
+    <div className="rounded-lg border border-border bg-muted/30 p-3">
       <ol className="space-y-2.5">
         {guide.steps.map((step, i) => (
           <li key={i} className="flex gap-2">
