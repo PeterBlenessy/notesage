@@ -113,14 +113,21 @@ jobs:
           cat package.json | grep version
           cat src-tauri/Cargo.toml | grep version
 
-      # Build Tauri app (unsigned for now - signing can be added later by configuring secrets)
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Note: macOS code signing requires APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
-          # APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD secrets to be configured.
-          # Without these, builds will be unsigned (users need to right-click -> Open on first launch)
+          # macOS code signing & notarization
+          ENABLE_CODE_SIGNING: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          # Tauri update signing
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           tagName: ${{ github.ref_name }}
