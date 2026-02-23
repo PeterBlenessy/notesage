@@ -8,8 +8,10 @@ import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { ProjectSettingsDialog } from "@/components/settings/ProjectSettingsDialog";
 import { NewNoteDialog } from "@/components/NewNoteDialog";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
+import { UpdateDialog } from "@/components/UpdateDialog";
 import { TitleBar } from "@/components/TitleBar";
 import { SidebarPanel } from "@/components/SidebarPanel";
+import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useProjectMetadata } from "@/hooks/useProjectMetadata";
 import { useActiveProject } from "@/hooks/useActiveProject";
@@ -60,7 +62,7 @@ function loadPanelSize(configKey: string, panel: string, fallback: number): numb
 }
 
 // Editor area with document-style presentation
-function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange }: {
+function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick }: {
   onNewNote?: () => void;
   onNewProject?: () => void;
   onOpenFolder?: () => void;
@@ -71,11 +73,14 @@ function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOp
   focusMode?: boolean;
   outlineOpen?: boolean;
   onOutlineOpenChange?: (open: boolean) => void;
+  updateAvailable?: boolean;
+  updateVersion?: string | null;
+  onUpdateClick?: () => void;
 }) {
   return (
     <div className="flex flex-col h-full overflow-hidden bg-muted">
       {!focusMode && <TabBar />}
-      <Editor onNewNote={onNewNote} onNewProject={onNewProject} onOpenFolder={onOpenFolder} onOpenProject={onOpenProject} onOpenFile={onOpenFile} exportOpen={exportOpen} onExportOpenChange={onExportOpenChange} focusMode={focusMode} outlineOpen={outlineOpen} onOutlineOpenChange={onOutlineOpenChange} />
+      <Editor onNewNote={onNewNote} onNewProject={onNewProject} onOpenFolder={onOpenFolder} onOpenProject={onOpenProject} onOpenFile={onOpenFile} exportOpen={exportOpen} onExportOpenChange={onExportOpenChange} focusMode={focusMode} outlineOpen={outlineOpen} onOutlineOpenChange={onOutlineOpenChange} updateAvailable={updateAvailable} updateVersion={updateVersion} onUpdateClick={onUpdateClick} />
     </div>
   );
 }
@@ -93,8 +98,10 @@ function App() {
   const [focusMode, setFocusMode] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [focusHintVisible, setFocusHintVisible] = useState(false);
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
 
   const { chatPanelOpen, setChatPanelOpen } = useSettingsStore();
+  const { state: updateState, checkForUpdate, downloadAndInstall, dismiss: dismissUpdate } = useAutoUpdate();
 
   const { addProject, setExplorerPath, setExplorerTree } = useWorkspaceStore();
   const { projectPath: activeProjectPath } = useActiveProject();
@@ -413,6 +420,20 @@ function App() {
     ...(chatPanelOpen ? ["chat"] : []),
   ]);
 
+  // Show toast when update becomes available
+  useEffect(() => {
+    if (updateState.status === "available" && updateState.updateInfo) {
+      toast.info(`Notesage v${updateState.updateInfo.version} is available`, {
+        id: "update-available",
+        duration: 8000,
+        action: {
+          label: "View",
+          onClick: () => setUpdateDialogOpen(true),
+        },
+      });
+    }
+  }, [updateState.status, updateState.updateInfo]);
+
   // Show and auto-fade focus mode hint
   useEffect(() => {
     if (focusMode) {
@@ -486,6 +507,9 @@ function App() {
                 focusMode={focusMode}
                 outlineOpen={outlineOpen}
                 onOutlineOpenChange={setOutlineOpen}
+                updateAvailable={updateState.status === "available"}
+                updateVersion={updateState.updateInfo?.version ?? null}
+                onUpdateClick={() => setUpdateDialogOpen(true)}
               />
             </ResizablePanel>
 
@@ -516,7 +540,13 @@ function App() {
           </div>
         )}
 
-        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+        <SettingsDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          updateState={updateState}
+          onCheckForUpdate={checkForUpdate}
+          onOpenUpdateDialog={() => setUpdateDialogOpen(true)}
+        />
         {projectSettingsPath && (
           <ProjectSettingsDialog
             open={projectSettingsOpen}
@@ -549,6 +579,15 @@ function App() {
           open={newProjectOpen}
           onOpenChange={setNewProjectOpen}
           onCreated={handleOpenProject}
+        />
+        <UpdateDialog
+          open={updateDialogOpen}
+          onOpenChange={setUpdateDialogOpen}
+          updateInfo={updateState.updateInfo}
+          status={updateState.status}
+          progress={updateState.progress}
+          onInstall={downloadAndInstall}
+          onDismiss={dismissUpdate}
         />
       </div>
       <Toaster position="bottom-right" />

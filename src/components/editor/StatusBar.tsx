@@ -1,5 +1,6 @@
 import type { Editor } from "@tiptap/core";
-import { GitBranch } from "lucide-react";
+import { ArrowUpCircle, GitBranch } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 function CopilotIcon({ className }: { className?: string }) {
   return (
@@ -50,6 +51,9 @@ interface StatusBarProps {
   copilotActive?: boolean;
   copilotDisabledForTab?: boolean;
   onToggleCopilot?: () => void;
+  updateAvailable?: boolean;
+  updateVersion?: string | null;
+  onUpdateClick?: () => void;
 }
 
 export function StatusBar({
@@ -80,6 +84,9 @@ export function StatusBar({
   copilotActive = false,
   copilotDisabledForTab = false,
   onToggleCopilot,
+  updateAvailable = false,
+  updateVersion = null,
+  onUpdateClick,
 }: StatusBarProps) {
   if (!editor) {
     return null;
@@ -113,6 +120,24 @@ export function StatusBar({
             <GitBranch className="h-3 w-3 shrink-0" strokeWidth={1.5} />
             <span className="truncate">Reviewing {compareBranch}</span>
           </span>
+        )}
+        {updateAvailable && onUpdateClick && (
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={onUpdateClick}
+                  className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+                >
+                  <ArrowUpCircle className="h-3 w-3 shrink-0" strokeWidth={1.5} />
+                  <span>Update</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                Update available: v{updateVersion}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
       </div>
 

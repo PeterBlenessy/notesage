@@ -55,3 +55,6 @@ agent-client-protocol-schema = "0.10"
 async-trait = "0.1"
 tokio-util = { version = "0.7", features = ["compat"] }
 
+# Auto-update
+tauri-plugin-updater = "2"
+

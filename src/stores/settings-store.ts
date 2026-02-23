@@ -26,6 +26,9 @@ interface SettingsStore {
   pageBreaks: PageBreaks;
   typewriterScrolling: boolean;
   externalChangeDiffReview: boolean;
+  autoCheckUpdates: boolean;
+  lastUpdateCheck: string | null;
+  dismissedVersion: string | null;
   lastExportTemplate: ExportTemplate;
   lastExportPageSize: ExportPageSize;
   lastExportIncludeToC: boolean;
@@ -50,6 +53,9 @@ interface SettingsStore {
   setPageBreaks: (mode: PageBreaks) => void;
   setTypewriterScrolling: (enabled: boolean) => void;
   setExternalChangeDiffReview: (enabled: boolean) => void;
+  setAutoCheckUpdates: (enabled: boolean) => void;
+  setLastUpdateCheck: (timestamp: string | null) => void;
+  setDismissedVersion: (version: string | null) => void;
   setLastExportTemplate: (template: ExportTemplate) => void;
   setLastExportPageSize: (pageSize: ExportPageSize) => void;
   setLastExportIncludeToC: (include: boolean) => void;
@@ -80,6 +86,9 @@ export const useSettingsStore = create<SettingsStore>()(
       pageBreaks: "continuous",
       typewriterScrolling: false,
       externalChangeDiffReview: false,
+      autoCheckUpdates: true,
+      lastUpdateCheck: null,
+      dismissedVersion: null,
       lastExportTemplate: "clean",
       lastExportPageSize: "a4",
       lastExportIncludeToC: false,
@@ -151,6 +160,18 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setExternalChangeDiffReview: (enabled: boolean) => {
         set({ externalChangeDiffReview: enabled });
+      },
+
+      setAutoCheckUpdates: (enabled: boolean) => {
+        set({ autoCheckUpdates: enabled });
+      },
+
+      setLastUpdateCheck: (timestamp: string | null) => {
+        set({ lastUpdateCheck: timestamp });
+      },
+
+      setDismissedVersion: (version: string | null) => {
+        set({ dismissedVersion: version });
       },
 
       setLastExportTemplate: (template: ExportTemplate) => {

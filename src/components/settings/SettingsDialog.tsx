@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, UserCircle2, FileText, GitBranch, Cloud, Info } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, UserCircle2, FileText, GitBranch, Cloud, Info, Loader2, Check, ArrowUpCircle } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -22,16 +22,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import { useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { tauriApi } from '@/lib/tauri';
+import type { UpdateState } from '@/hooks/useAutoUpdate';
 
 interface SettingsDialogProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  updateState?: UpdateState;
+  onCheckForUpdate?: () => Promise<void>;
+  onOpenUpdateDialog?: () => void;
 }
 
-type SettingsTab = 'ai' | 'personas' | 'prompts' | 'editor' | 'git' | 'sync';
+type SettingsTab = 'ai' | 'personas' | 'prompts' | 'editor' | 'git' | 'sync' | 'about';
 
 const TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
   { id: 'editor', label: 'Editor', icon: Sliders },
@@ -40,6 +45,7 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
   { id: 'prompts', label: 'Custom Prompts', icon: FileText },
   { id: 'git', label: 'Version Control', icon: GitBranch },
   { id: 'sync', label: 'Sync', icon: Cloud },
+  { id: 'about', label: 'About', icon: Info },
 ];
 
 // Page dimensions in cm
@@ -70,7 +76,35 @@ function formatDimension(cm: number, unit: MeasurementUnit): string {
   return cm.toFixed(1);
 }
 
-export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+function friendlyUpdateError(error: string | null): string {
+  if (!error) return 'Could not check for updates';
+  const lower = error.toLowerCase();
+  if (lower.includes('network') || lower.includes('fetch') || lower.includes('connect') || lower.includes('dns'))
+    return 'Could not connect to update server';
+  if (lower.includes('404') || lower.includes('not found'))
+    return 'No published release found';
+  if (lower.includes('timeout'))
+    return 'Update check timed out';
+  if (lower.includes('signature') || lower.includes('verify'))
+    return 'Update signature verification failed';
+  if (lower.includes('json') || lower.includes('parse') || lower.includes('deserialize'))
+    return 'Invalid update manifest';
+  return error.length > 80 ? 'Could not check for updates' : error;
+}
+
+function formatRelativeTime(isoString: string | null): string {
+  if (!isoString) return 'Never';
+  const diff = Date.now() - new Date(isoString).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+export function SettingsDialog({ open, onOpenChange, updateState, onCheckForUpdate, onOpenUpdateDialog }: SettingsDialogProps) {
   const {
     theme, setTheme,
     showFloatingToolbar, setShowFloatingToolbar,
@@ -84,6 +118,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     marginRight, setMarginRight,
     gitEnabled, setGitEnabled,
     pageBreaks, setPageBreaks,
+    autoCheckUpdates, setAutoCheckUpdates,
+    lastUpdateCheck,
   } = useSettingsStore();
   const [activeTab, setActiveTab] = useState<SettingsTab>('editor');
   const [gitNotAvailable, setGitNotAvailable] = useState(false);
@@ -481,6 +517,111 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             {activeTab === 'sync' && (
               <div className="p-6">
                 <SyncSettings />
+              </div>
+            )}
+            {activeTab === 'about' && (
+              <div className="p-6 space-y-6">
+                {/* App Info */}
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-semibold">Notesage</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Version {__APP_VERSION__}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="h-px bg-border" />
+
+                {/* Updates */}
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-semibold">Updates</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Keep Notesage up to date
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    {/* Check for updates */}
+                    <div
+                      className="flex items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <Label className="text-sm font-medium">Check for Updates</Label>
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                          {updateState?.status === 'available' && updateState.updateInfo ? (
+                            <span className="text-foreground">
+                              Update available: v{updateState.updateInfo.version}
+                            </span>
+                          ) : updateState?.status === 'checking' ? (
+                            'Checking...'
+                          ) : updateState?.status === 'error' ? (
+                            friendlyUpdateError(updateState.error)
+                          ) : (
+                            <>Last checked: {formatRelativeTime(lastUpdateCheck)}</>
+                          )}
+                        </p>
+                      </div>
+                      <div className="shrink-0 flex items-center gap-2">
+                        {updateState?.status === 'available' && onOpenUpdateDialog ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              onOpenUpdateDialog();
+                              onOpenChange?.(false);
+                            }}
+                          >
+                            <ArrowUpCircle className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+                            View Update
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={onCheckForUpdate}
+                            disabled={updateState?.status === 'checking'}
+                          >
+                            {updateState?.status === 'checking' ? (
+                              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />
+                            ) : updateState?.status === 'idle' && lastUpdateCheck && !updateState.updateInfo ? (
+                              <Check className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+                            ) : null}
+                            {updateState?.status === 'checking'
+                              ? 'Checking...'
+                              : updateState?.status === 'idle' && lastUpdateCheck && !updateState.updateInfo
+                                ? "You're up to date"
+                                : 'Check Now'}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Auto-check toggle */}
+                    <div
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
+                    >
+                      <div>
+                        <Label
+                          htmlFor="auto-check-updates"
+                          className="text-sm font-medium cursor-pointer"
+                        >
+                          Automatically Check for Updates
+                        </Label>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Check for new versions when the app starts
+                        </p>
+                      </div>
+                      <Switch
+                        id="auto-check-updates"
+                        checked={autoCheckUpdates}
+                        onCheckedChange={setAutoCheckUpdates}
+                        className="ml-auto"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>

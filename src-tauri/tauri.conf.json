@@ -28,6 +28,14 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJGREFFNzhEODNBOEJEM0QKUldROXZhaURqZWZhdnhzNG0xS0k0MmFZc3FJYjB3L1kvTzJDVGxZSzNtQTZTMFduOVJsODUzU2YK",
+      "endpoints": [
+        "https://github.com/PeterBlenessy/notesage/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

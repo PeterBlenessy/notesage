@@ -133,6 +133,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Notesage v__VERSION__"
           releaseBody: "See https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }} for release notes"
+          updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
 
   publish-release:
