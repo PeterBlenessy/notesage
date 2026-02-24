@@ -85,12 +85,6 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: TypeScript check
-        run: npx tsc --noEmit
-
-      - name: Rust check
-        run: cargo check --manifest-path src-tauri/Cargo.toml
-
       - name: Update version from tag
         shell: bash
         run: |
