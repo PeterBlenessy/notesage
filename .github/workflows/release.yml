@@ -27,9 +27,32 @@ jobs:
         id: get_version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          # Find previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            COMMITS=$(git log --oneline --pretty="format:- %s" HEAD)
+          else
+            COMMITS=$(git log --oneline --pretty="format:- %s" "${PREV_TAG}..HEAD")
+          fi
+
+          # Write to file for multi-line output
+          echo "## Changes" > /tmp/release_notes.md
+          echo "" >> /tmp/release_notes.md
+          echo "$COMMITS" >> /tmp/release_notes.md
+
+          # Set as output using delimiter
+          echo "notes<<NOTES_EOF" >> $GITHUB_OUTPUT
+          cat /tmp/release_notes.md >> $GITHUB_OUTPUT
+          echo "NOTES_EOF" >> $GITHUB_OUTPUT
+
       - name: Create Release
         id: create-release
         uses: actions/github-script@v7
+        env:
+          RELEASE_NOTES: ${{ steps.release_notes.outputs.notes }}
         with:
           script: |
             const { data } = await github.rest.repos.createRelease({
@@ -37,7 +60,7 @@ jobs:
               repo: context.repo.repo,
               tag_name: context.ref.replace('refs/tags/', ''),
               name: `Notesage ${context.ref.replace('refs/tags/', '')}`,
-              body: 'Release notes will be updated after builds complete.',
+              body: process.env.RELEASE_NOTES,
               draft: true,
               prerelease: false
             })
@@ -126,7 +149,6 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           tagName: ${{ github.ref_name }}
           releaseName: "Notesage v__VERSION__"
-          releaseBody: "See https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }} for release notes"
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
 

@@ -111,6 +111,11 @@ export function useAutoUpdate() {
   }, []);
 
   const dismiss = useCallback(() => {
+    // Just close the dialog — keep status as "available" so Settings can show "View Update"
+    // The update remains available for install at any time
+  }, []);
+
+  const skipVersion = useCallback(() => {
     if (state.updateInfo) {
       setDismissedVersion(state.updateInfo.version);
     }
@@ -134,5 +139,6 @@ export function useAutoUpdate() {
     checkForUpdate,
     downloadAndInstall,
     dismiss,
+    skipVersion,
   };
 }

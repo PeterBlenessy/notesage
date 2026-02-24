@@ -548,9 +548,8 @@ export function SettingsDialog({ open, onOpenChange, updateState, onCheckForUpda
                       className="flex items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
                     >
                       <div className="min-w-0 flex-1">
-                        <Label className="text-sm font-medium">Check for Updates</Label>
-                        <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                          {updateState?.status === 'available' && updateState.updateInfo ? (
+                        <p className="text-sm text-muted-foreground truncate">
+                          {updateState?.updateInfo ? (
                             <span className="text-foreground">
                               Update available: v{updateState.updateInfo.version}
                             </span>
@@ -564,7 +563,7 @@ export function SettingsDialog({ open, onOpenChange, updateState, onCheckForUpda
                         </p>
                       </div>
                       <div className="shrink-0 flex items-center gap-2">
-                        {updateState?.status === 'available' && onOpenUpdateDialog ? (
+                        {updateState?.updateInfo && onOpenUpdateDialog ? (
                           <Button
                             variant="outline"
                             size="sm"

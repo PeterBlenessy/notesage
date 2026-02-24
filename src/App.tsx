@@ -507,7 +507,7 @@ function App() {
                 focusMode={focusMode}
                 outlineOpen={outlineOpen}
                 onOutlineOpenChange={setOutlineOpen}
-                updateAvailable={updateState.status === "available"}
+                updateAvailable={!!updateState.updateInfo}
                 updateVersion={updateState.updateInfo?.version ?? null}
                 onUpdateClick={() => setUpdateDialogOpen(true)}
               />
