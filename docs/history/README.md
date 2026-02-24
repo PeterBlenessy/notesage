@@ -35,3 +35,4 @@ Chronological log of major implementation milestones and changes.
 | 029 | [Release v0.15.2](029-release-v0.15.2.md) | In-app auto-update via Tauri updater plugin |
 | 030 | [Release v0.15.3](030-release-v0.15.3.md) | Optimize release CI build time |
 | 031 | [Release v0.15.4](031-release-v0.15.4.md) | Fix update UX and CI release notes |
+| 032 | [Release v0.15.5](032-release-v0.15.5.md) | Fix release notes in latest.json for auto-updater |
