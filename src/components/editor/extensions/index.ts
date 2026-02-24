@@ -22,6 +22,7 @@ export {
   getCommentMarkState,
   CommentMarkPluginKey,
 } from './comment-mark';
+export { LocalImage } from './local-image';
 export { pageBreaksKey } from './page-breaks';
 export {
   GhostText,

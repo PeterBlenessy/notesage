@@ -132,9 +132,12 @@ const commands: CommandItem[] = [
     description: "Insert an image",
     icon: ImageIcon,
     command: ({ editor, range }) => {
-      const url = window.prompt("Image URL");
-      if (url) {
-        editor.chain().focus().deleteRange(range).setImage({ src: url }).run();
+      editor.chain().focus().deleteRange(range).run();
+      // Open the image insert dialog via the LocalImage extension storage callback
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const openDialog = (editor.storage as any).image?.openInsertDialog;
+      if (typeof openDialog === "function") {
+        openDialog();
       }
     },
   },

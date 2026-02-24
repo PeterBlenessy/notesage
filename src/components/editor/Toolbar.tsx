@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 
 interface ToolbarProps {
   editor: Editor | null;
+  onImageInsert?: () => void;
 }
 
 function ToolbarButton({
@@ -60,17 +61,10 @@ function ToolbarSeparator() {
   return <Separator orientation="vertical" className="h-4 mx-0.5" />;
 }
 
-export function Toolbar({ editor }: ToolbarProps) {
+export function Toolbar({ editor, onImageInsert }: ToolbarProps) {
   if (!editor) {
     return null;
   }
-
-  const addImage = () => {
-    const url = window.prompt("Image URL");
-    if (url) {
-      editor.chain().focus().setImage({ src: url }).run();
-    }
-  };
 
   const insertTable = () => {
     editor
@@ -204,7 +198,7 @@ export function Toolbar({ editor }: ToolbarProps) {
       </ToolbarButton>
 
       <ToolbarButton
-        onClick={addImage}
+        onClick={() => onImageInsert?.()}
         title="Insert Image"
       >
         <ImageIcon className="h-3.5 w-3.5" strokeWidth={1.5} />

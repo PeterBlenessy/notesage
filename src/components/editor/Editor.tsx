@@ -32,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ExportDialog } from "@/components/ExportDialog";
 import { Toolbar } from "./Toolbar";
+import { ImageInsertDialog } from "./ImageInsertDialog";
 import { BubbleMenu } from "./BubbleMenu";
 import { DiffReviewBanner } from "./DiffReviewBanner";
 import { ExternalChangeBanner } from "./ExternalChangeBanner";
@@ -41,6 +42,7 @@ import { StatusBar } from "./StatusBar";
 import { FrontmatterBlock } from "./FrontmatterBlock";
 import { DocumentOutline } from "@/components/DocumentOutline";
 import { getMarkdownFromEditor } from "@/lib/markdown";
+import { getDocumentDir } from "@/lib/image-utils";
 import { toast } from "sonner";
 import "@/styles/editor.css";
 
@@ -105,6 +107,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const [renderedWidth, setRenderedWidth] = useState<number | null>(null);
   const [pageInfo, setPageInfo] = useState<{ current: number; total: number } | null>(null);
   const [commentListOpen, setCommentListOpen] = useState(false);
+  const [imageDialogOpen, setImageDialogOpen] = useState(false);
 
   // Convert cm margins to px
   const paddingTop = `${marginTop * PX_PER_CM}px`;
@@ -589,6 +592,15 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       } else {
         editor.commands.setContent(activeTab.content);
       }
+
+      // Set document directory for local image resolution
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const imageStorage = (editor.storage as any).image;
+      if (imageStorage) {
+        imageStorage.documentDir = getDocumentDir(activeTab.filePath);
+        imageStorage.openInsertDialog = () => setImageDialogOpen(true);
+      }
+
       editor.commands.blur();
 
       // Restore scroll position then reveal
@@ -803,7 +815,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     <div className="h-full flex flex-col overflow-hidden">
       {toolbarVisible && !focusMode && (
         <div className="flex items-center border-b border-border shrink-0 bg-background">
-          <Toolbar editor={editor} />
+          <Toolbar editor={editor} onImageInsert={() => setImageDialogOpen(true)} />
           {gitEnabled && isGitRepo && projectPath && !reviewActive && (
             <div className="shrink-0 pr-2">
               <BranchDiffSelector projectPath={projectPath} />
@@ -999,6 +1011,16 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         }}
         onDelete={async (commentId) => {
           await commentOps.removeComment(commentId);
+        }}
+      />
+      <ImageInsertDialog
+        open={imageDialogOpen}
+        onOpenChange={setImageDialogOpen}
+        documentDir={activeTab ? getDocumentDir(activeTab.filePath) : undefined}
+        onInsert={(src, alt) => {
+          if (editor) {
+            editor.chain().focus().setImage({ src, alt: alt || undefined }).run();
+          }
         }}
       />
     </div>

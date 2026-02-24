@@ -23,6 +23,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_devtools,
             read_file,
+            read_binary_file,
             write_file,
             list_directory,
             list_files_shallow,

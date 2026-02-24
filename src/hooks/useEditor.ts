@@ -1,7 +1,7 @@
 import { useEditor as useTiptapEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import Image from "@tiptap/extension-image";
+import { LocalImage } from "@/components/editor/extensions/local-image";
 import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableCell } from "@tiptap/extension-table-cell";
@@ -46,7 +46,7 @@ export function useEditor({ content, onUpdate, editable = true }: UseEditorOptio
       TextAlign.configure({
         types: ["heading", "paragraph"],
       }),
-      Image.configure({
+      LocalImage.configure({
         HTMLAttributes: {
           class: "rounded-lg max-w-full",
         },

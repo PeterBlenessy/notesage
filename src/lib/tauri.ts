@@ -57,6 +57,10 @@ export const tauriApi = {
     return await invoke<string>("read_file", { path });
   },
 
+  async readBinaryFile(path: string): Promise<number[]> {
+    return await invoke<number[]>("read_binary_file", { path });
+  },
+
   async writeFile(path: string, content: string): Promise<void> {
     await invoke("write_file", { path, content });
   },
