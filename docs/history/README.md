@@ -33,3 +33,4 @@ Chronological log of major implementation milestones and changes.
 | 027 | [Release v0.15.0](027-release-v0.15.0.md) | Agent comment delegation, permission UI, provider picker, external change setting (Phase 6.5) |
 | 028 | [Release v0.15.1](028-release-v0.15.1.md) | macOS code signing & notarization |
 | 029 | [Release v0.15.2](029-release-v0.15.2.md) | In-app auto-update via Tauri updater plugin |
+| 030 | [Release v0.15.3](030-release-v0.15.3.md) | Optimize release CI build time |
