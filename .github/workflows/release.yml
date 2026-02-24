@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.create-release.outputs.result }}
-      release_upload_url: ${{ steps.create-release.outputs.upload_url }}
+      release_notes: ${{ steps.release_notes.outputs.notes }}
 
     steps:
       - uses: actions/checkout@v4
@@ -149,6 +149,7 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           tagName: ${{ github.ref_name }}
           releaseName: "Notesage v__VERSION__"
+          releaseBody: ${{ needs.create-release.outputs.release_notes }}
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
 
