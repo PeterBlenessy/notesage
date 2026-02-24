@@ -45,7 +45,7 @@ import { CommentPopover } from "./CommentPopover";
 import { StatusBar } from "./StatusBar";
 import { FrontmatterBlock } from "./FrontmatterBlock";
 import { DocumentOutline } from "@/components/DocumentOutline";
-import { getMarkdownFromEditor } from "@/lib/markdown";
+import { getMarkdownFromEditor, encodeImagePathSpaces } from "@/lib/markdown";
 import { getDocumentDir } from "@/lib/image-utils";
 import { toast } from "sonner";
 import "@/styles/editor.css";
@@ -339,7 +339,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
   const handleExternalReload = useCallback(() => {
     if (!editor || !activeTab || activeExternalContent === undefined) return;
-    editor.commands.setContent(activeExternalContent);
+    editor.commands.setContent(encodeImagePathSpaces(activeExternalContent));
     updateTabContent(activeTab.id, activeExternalContent, false);
     clearExternalChange(activeTab.filePath);
   }, [editor, activeTab, activeExternalContent, updateTabContent, clearExternalChange]);
@@ -353,7 +353,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   // (only for git review auto-accept; normal clean tab changes go through external-change-store)
   useEffect(() => {
     if (editor && activeTab && !activeTab.isDirty && activeExternalContent !== undefined) {
-      editor.commands.setContent(activeExternalContent);
+      editor.commands.setContent(encodeImagePathSpaces(activeExternalContent));
       updateTabContent(activeTab.id, activeExternalContent, false);
       clearExternalChange(activeTab.filePath);
       toast("File updated from disk", { id: "external-change", description: activeTab.fileName });
@@ -589,12 +589,12 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       // load that content instead of the stale tab.content.
       const pendingExternal = externalChanges[activeTab.filePath];
       if (pendingExternal !== undefined && !activeTab.isDirty) {
-        editor.commands.setContent(pendingExternal);
+        editor.commands.setContent(encodeImagePathSpaces(pendingExternal));
         updateTabContent(activeTab.id, pendingExternal, false);
         clearExternalChange(activeTab.filePath);
         toast("File updated from disk", { id: "external-change", description: activeTab.fileName });
       } else {
-        editor.commands.setContent(activeTab.content);
+        editor.commands.setContent(encodeImagePathSpaces(activeTab.content));
       }
 
       // Set document directory for local image resolution

@@ -28,15 +28,19 @@ export function resolveImageSrc(src: string, documentDir?: string): string {
     return src;
   }
 
+  // Decode %20 → spaces (from encodeImagePathSpaces) before resolving,
+  // since convertFileSrc expects a real filesystem path.
+  const decoded = src.replace(/%20/g, " ");
+
   // Absolute file path
-  if (src.startsWith("/")) {
-    return convertFileSrc(src);
+  if (decoded.startsWith("/")) {
+    return convertFileSrc(decoded);
   }
 
   // Relative path — resolve against document directory
   if (documentDir) {
     // Strip leading ./ if present
-    const cleanSrc = src.startsWith("./") ? src.slice(2) : src;
+    const cleanSrc = decoded.startsWith("./") ? decoded.slice(2) : decoded;
     const absolutePath = `${documentDir}/${cleanSrc}`;
     return convertFileSrc(absolutePath);
   }
