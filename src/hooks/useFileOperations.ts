@@ -6,6 +6,8 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useGitStore } from "@/stores/git-store";
 import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
+import { getFileType, isBinaryFileType } from "@/lib/file-utils";
+import { setBinaryData } from "@/lib/binary-cache";
 
 /** Debounced git status refresh per repo. Each repo gets its own timer. */
 const repoRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -115,9 +117,30 @@ export function useFileOperations() {
   const openFile = useCallback(
     async (filePath: string, fileName: string) => {
       try {
+        const fileType = getFileType(fileName);
+
+        if (fileType === "image") {
+          // Images don't need to be read — the viewer uses the asset protocol URL
+          openTab(filePath, fileName, "", null, fileType);
+          return;
+        }
+
+        if (isBinaryFileType(fileType)) {
+          // Binary files (PDF, DOCX): read as bytes, cache outside Zustand
+          const bytes = await tauriApi.readBinaryFile(filePath);
+          setBinaryData(filePath, new Uint8Array(bytes));
+          openTab(filePath, fileName, "", null, fileType);
+          return;
+        }
+
+        // Text files (markdown, other): read as UTF-8
         const raw = await tauriApi.readFile(filePath);
-        const { frontmatter, content } = parseFrontmatter(raw);
-        openTab(filePath, fileName, content, frontmatter);
+        if (fileType === "markdown") {
+          const { frontmatter, content } = parseFrontmatter(raw);
+          openTab(filePath, fileName, content, frontmatter, fileType);
+        } else {
+          openTab(filePath, fileName, raw, null, fileType);
+        }
       } catch (error) {
         console.error("Failed to read file:", error);
         throw error;

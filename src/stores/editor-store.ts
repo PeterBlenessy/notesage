@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Frontmatter } from "@/lib/frontmatter";
+import type { FileType, ViewMode } from "@/lib/file-utils";
+
+export type { FileType, ViewMode } from "@/lib/file-utils";
 
 export interface Tab {
   id: string;
@@ -9,6 +12,10 @@ export interface Tab {
   isDirty: boolean;
   content: string;
   frontmatter: Frontmatter | null;
+  /** Determined from file extension on open. */
+  fileType: FileType;
+  /** WYSIWYG vs source mode — only meaningful for markdown tabs. Session-only, not persisted. */
+  viewMode?: ViewMode;
   /** Session-only: when true, Copilot completions are suppressed for this tab. */
   copilotDisabled?: boolean;
 }
@@ -39,7 +46,7 @@ interface EditorStore {
   /** Persisted: which file was active, so we can re-activate it on restart. */
   persistedActiveFilePath: string | null;
 
-  openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null) => void;
+  openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null, fileType?: FileType) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   updateTabContent: (tabId: string, content: string, isDirty: boolean) => void;
@@ -53,6 +60,10 @@ interface EditorStore {
   renameTab: (oldPath: string, newPath: string) => void;
   /** Rewrite all file paths that start with oldPrefix to use newPrefix (used by project migration). */
   updateFilePaths: (oldPrefix: string, newPrefix: string) => void;
+  /** Set view mode for a markdown tab (session-only, not persisted). */
+  setViewMode: (tabId: string, mode: ViewMode) => void;
+  /** Toggle between WYSIWYG and source mode for a markdown tab. */
+  toggleViewMode: (tabId: string) => void;
   /** Toggle Copilot completions for a specific tab (session-only, not persisted). */
   toggleCopilotForTab: (tabId: string) => void;
 }
@@ -68,7 +79,7 @@ export const useEditorStore = create<EditorStore>()(
       persistedTabs: [],
       persistedActiveFilePath: null,
 
-      openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null) => {
+      openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null, fileType?: FileType) => {
         set((state) => {
           // Track in recent files (deduplicate, cap)
           const filteredRecent = state.recentFiles.filter((r) => r.path !== filePath);
@@ -93,6 +104,7 @@ export const useEditorStore = create<EditorStore>()(
             isDirty: false,
             content,
             frontmatter: frontmatter ?? null,
+            fileType: fileType ?? "markdown",
           };
 
           const newPersistedTabs = [...state.persistedTabs.filter((p) => p.filePath !== filePath), { filePath, fileName }];
@@ -222,6 +234,24 @@ export const useEditorStore = create<EditorStore>()(
             Object.entries(state.scrollPositions).map(([k, v]) =>
               k === oldPath ? [newPath, v] : [k, v]
             )
+          ),
+        }));
+      },
+
+      setViewMode: (tabId: string, mode: ViewMode) => {
+        set((state) => ({
+          tabs: state.tabs.map((tab) =>
+            tab.id === tabId ? { ...tab, viewMode: mode } : tab
+          ),
+        }));
+      },
+
+      toggleViewMode: (tabId: string) => {
+        set((state) => ({
+          tabs: state.tabs.map((tab) =>
+            tab.id === tabId
+              ? { ...tab, viewMode: tab.viewMode === "source" ? "wysiwyg" : "source" }
+              : tab
           ),
         }));
       },

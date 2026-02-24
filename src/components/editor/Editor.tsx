@@ -33,6 +33,10 @@ import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/comp
 import { ExportDialog } from "@/components/ExportDialog";
 import { Toolbar } from "./Toolbar";
 import { ImageInsertDialog } from "./ImageInsertDialog";
+import { ImageViewer } from "./viewers/ImageViewer";
+import { PlainTextViewer } from "./viewers/PlainTextViewer";
+import { PdfPlaceholder } from "./viewers/PdfPlaceholder";
+import { DocxPlaceholder } from "./viewers/DocxPlaceholder";
 import { BubbleMenu } from "./BubbleMenu";
 import { DiffReviewBanner } from "./DiffReviewBanner";
 import { ExternalChangeBanner } from "./ExternalChangeBanner";
@@ -801,6 +805,20 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         </div>
       </div>
     );
+  }
+
+  // Route non-markdown file types to their viewers
+  if (activeTab && activeTab.fileType !== "markdown") {
+    switch (activeTab.fileType) {
+      case "image":
+        return <ImageViewer filePath={activeTab.filePath} />;
+      case "pdf":
+        return <PdfPlaceholder fileName={activeTab.fileName} />;
+      case "docx":
+        return <DocxPlaceholder fileName={activeTab.fileName} />;
+      case "other":
+        return <PlainTextViewer content={activeTab.content} fileName={activeTab.fileName} />;
+    }
   }
 
   if (!editor) {

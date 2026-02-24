@@ -1,6 +1,23 @@
-import { useEditorStore } from "@/stores/editor-store";
-import { X } from "lucide-react";
+import { useEditorStore, type FileType } from "@/stores/editor-store";
+import { X, FileText, FileImage, FileType2, FileSpreadsheet, File } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+function TabIcon({ fileType }: { fileType?: FileType }) {
+  const cls = "h-3.5 w-3.5 shrink-0 text-muted-foreground";
+  switch (fileType) {
+    case "pdf":
+      return <FileType2 className={cls} strokeWidth={1.5} />;
+    case "docx":
+      return <FileSpreadsheet className={cls} strokeWidth={1.5} />;
+    case "image":
+      return <FileImage className={cls} strokeWidth={1.5} />;
+    case "other":
+      return <File className={cls} strokeWidth={1.5} />;
+    case "markdown":
+    default:
+      return <FileText className={cls} strokeWidth={1.5} />;
+  }
+}
 
 export function TabBar() {
   const { tabs, activeTabId, setActiveTab, closeTab } = useEditorStore();
@@ -53,6 +70,9 @@ export function TabBar() {
             {tab.isDirty && (
               <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
             )}
+
+            {/* File type icon */}
+            <TabIcon fileType={tab.fileType} />
 
             {/* File name */}
             <span className="truncate">{tab.fileName}</span>
