@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 
 export interface Release {
   version: string;
@@ -55,11 +56,11 @@ export function useChangelog() {
         // No bundled changelog
       }
 
-      // Then try remote for potentially newer data (with timeout)
+      // Then try remote for potentially newer data (via Tauri HTTP plugin to avoid CORS)
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 3000);
-        const res = await fetch(GITHUB_CHANGELOG_URL, { signal: controller.signal });
+        const res = await tauriFetch(GITHUB_CHANGELOG_URL, { signal: controller.signal });
         clearTimeout(timeout);
         if (res.ok) {
           const data = await res.json();

@@ -2,6 +2,7 @@ import { Sparkles, Bug, Zap, ChevronDown } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -109,6 +110,7 @@ export function ChangelogDialog({ open, onOpenChange }: ChangelogDialogProps) {
       <DialogContent className="max-w-lg max-h-[80vh] p-0 gap-0 overflow-hidden flex flex-col">
         <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle className="text-base">Changelog</DialogTitle>
+          <DialogDescription className="sr-only">Version history and release notes</DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">

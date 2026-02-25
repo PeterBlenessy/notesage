@@ -1,6 +1,27 @@
 {
   "releases": [
     {
+      "version": "0.16.3",
+      "date": "2026-02-25",
+      "previousVersion": "0.16.2",
+      "sections": {
+        "features": [
+          "Multi-folder explorer support: open multiple folders simultaneously in the Folders sidebar section",
+          "Full-width source editor with word wrap toggle in toolbar"
+        ],
+        "fixes": [
+          "Fix tab restoration order and active tab on app restart",
+          "Fix changelog dialog: scrollable content, dev mode loading, bullet alignment",
+          "Fix image display: project-root relative paths, path normalization, load timing",
+          "Fix Cmd+/ view mode toggle for Nordic keyboard layouts",
+          "Fix changelog CORS error in production: use Tauri HTTP plugin instead of browser fetch"
+        ],
+        "improvements": [
+          "Enlarge toolbar and chat icons for better visibility"
+        ]
+      }
+    },
+    {
       "version": "0.16.2",
       "date": "2026-02-25",
       "previousVersion": "0.16.1",

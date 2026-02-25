@@ -39,3 +39,4 @@ Chronological log of major implementation milestones and changes.
 | 033 | [Release v0.16.0](033-release-v0.16.0.md) | Raw mode: Copilot completions, AI actions, frontmatter, UX polish |
 | 034 | [Release v0.16.1](034-release-v0.16.1.md) | Fix Copilot auth, auto-update restart, portable images, ghost text truncation |
 | 035 | [Release v0.16.2](035-release-v0.16.2.md) | Curated changelog: generator, UpdateDialog, Settings viewer |
+| 036 | [Release v0.16.3](036-release-v0.16.3.md) | Multi-folder explorer, source editor word wrap, UI fixes |

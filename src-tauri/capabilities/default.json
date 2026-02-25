@@ -17,6 +17,12 @@
     "fs:allow-rename",
     "fs:allow-remove",
     "updater:default",
-    "process:default"
+    "process:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://github.com/PeterBlenessy/notesage/**" }
+      ]
+    }
   ]
 }

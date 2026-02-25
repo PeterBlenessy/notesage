@@ -3,6 +3,7 @@ import { FileDown, Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -125,6 +126,7 @@ export function ExportDialog({
             <FileDown className="h-4 w-4" strokeWidth={1.5} />
             Export as PDF
           </DialogTitle>
+          <DialogDescription className="sr-only">Configure PDF export options</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5">

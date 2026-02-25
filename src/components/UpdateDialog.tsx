@@ -2,6 +2,7 @@ import { ArrowUpCircle, Sparkles, Bug, Zap, ChevronDown } from "lucide-react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -136,9 +137,9 @@ export function UpdateDialog({
               <DialogTitle>
                 {isDownloaded ? "Ready to Restart" : "Update Available"}
               </DialogTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <DialogDescription className="text-xs text-muted-foreground mt-0.5">
                 v{updateInfo.currentVersion} → v{updateInfo.version}
-              </p>
+              </DialogDescription>
             </div>
           </div>
         </DialogHeader>
