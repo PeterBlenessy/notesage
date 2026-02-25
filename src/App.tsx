@@ -229,32 +229,46 @@ function App() {
       // Load Quick Notes tree (after iCloud + sync settings are known, so we
       // get it right in one shot — no flash of local-only then merged content)
       await refreshNotesTree();
+
+      // Re-open persisted tabs in order, then restore active tab
+      const { persistedTabs, persistedActiveFilePath } = useEditorStore.getState();
+      if (persistedTabs.length > 0) {
+        // Read all files in parallel, but open tabs in persisted order
+        const results = await Promise.allSettled(
+          persistedTabs.map(async (pt) => {
+            const raw = await tauriApi.readFile(pt.filePath);
+            const { frontmatter, content } = parseFrontmatter(raw);
+            return { filePath: pt.filePath, fileName: pt.fileName, content, frontmatter };
+          })
+        );
+        const failedPaths: string[] = [];
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
+          if (result.status === "fulfilled") {
+            const { filePath, fileName, content, frontmatter } = result.value;
+            useEditorStore.getState().openTab(filePath, fileName, content, frontmatter);
+          } else {
+            // File no longer exists — remove from persisted list
+            failedPaths.push(persistedTabs[i].filePath);
+          }
+        }
+        if (failedPaths.length > 0) {
+          const store = useEditorStore.getState();
+          const cleaned = store.persistedTabs.filter((p) => !failedPaths.includes(p.filePath));
+          useEditorStore.setState({ persistedTabs: cleaned });
+        }
+        // Restore the previously active tab
+        if (persistedActiveFilePath) {
+          const { tabs } = useEditorStore.getState();
+          const match = tabs.find((t) => t.filePath === persistedActiveFilePath);
+          if (match) {
+            useEditorStore.getState().setActiveTab(match.id);
+          }
+        }
+      }
     }
 
     reloadTrees();
-
-    // Re-open persisted tabs
-    const { persistedTabs, persistedActiveFilePath } = useEditorStore.getState();
-    for (const pt of persistedTabs) {
-      tauriApi.readFile(pt.filePath).then((raw) => {
-        const { frontmatter, content } = parseFrontmatter(raw);
-        useEditorStore.getState().openTab(pt.filePath, pt.fileName, content, frontmatter);
-      }).catch(() => {
-        // File no longer exists — skip it
-      });
-    }
-    if (persistedActiveFilePath) {
-      const waitForActive = () => {
-        const { tabs } = useEditorStore.getState();
-        const match = tabs.find((t) => t.filePath === persistedActiveFilePath);
-        if (match) {
-          useEditorStore.getState().setActiveTab(match.id);
-        } else if (persistedTabs.some((p) => p.filePath === persistedActiveFilePath)) {
-          requestAnimationFrame(waitForActive);
-        }
-      };
-      requestAnimationFrame(waitForActive);
-    }
   }, []);
 
   const handleOpenFolder = useCallback(async () => {
