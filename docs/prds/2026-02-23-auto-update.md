@@ -1,8 +1,6 @@
 # PRD: In-App Auto-Update
 
-**Date:** 2026-02-23
-**Status:** Draft
-**Author:** Claude
+**Date:** 2026-02-23 **Status:** Draft **Author:** Claude
 
 ## Problem
 
@@ -84,7 +82,7 @@ The updater plugin fetches this manifest from a configured URL pointing to the l
 3. **User clicks notification:** Dialog shows version number, release notes, and "Install & Restart" button
 4. **Download:** Progress indicator while downloading the update
 5. **Install:** User confirms restart; app closes, update applies, app relaunches
-6. **Manual check:** Settings > General > "Check for Updates" button + current version display
+6. **Manual check:** Settings &gt; General &gt; "Check for Updates" button + current version display
 
 ### Signature Verification
 
@@ -105,7 +103,7 @@ When an update is available, a subtle indicator appears in the editor status bar
 A centered dialog (shadcn/ui `Dialog`, max-width 480px) with:
 
 - **Header:** "Update Available" with new version number
-- **Body:** Release notes (rendered markdown, scroll area if long, max ~200px height)
+- **Body:** Release notes (rendered markdown, scroll area if long, max \~200px height)
 - **Current version** displayed as muted text (e.g., "Current: v0.15.1 → v0.16.0")
 - **Footer actions:**
   - "Install & Restart" primary button
@@ -115,7 +113,7 @@ A centered dialog (shadcn/ui `Dialog`, max-width 480px) with:
 
 ### Settings Integration
 
-In Settings > General (or a new "About" section):
+In Settings &gt; General (or a new "About" section):
 
 - Current version display: "Notesage v0.15.1"
 - "Check for Updates" button — triggers manual check
@@ -275,27 +273,45 @@ The public key goes in `tauri.conf.json`, the private key stays as a GitHub secr
 ### Functional
 
 - [ ] App checks for updates on launch (after 5s delay) when auto-check is enabled
+
 - [ ] "Check for Updates" in Settings triggers a manual check and shows result
+
 - [ ] Update available notification appears in status bar and as toast
+
 - [ ] Update dialog shows correct version number and release notes
+
 - [ ] Download progress is displayed accurately
+
 - [ ] "Install & Restart" downloads, installs, and relaunches the app
+
 - [ ] "Later" dismisses the dialog; status bar indicator remains
+
 - [ ] Dismissed version is not re-notified on subsequent app launches
+
 - [ ] Next new version after dismissed one triggers notification again
+
 - [ ] Update signature verification works (tampered updates are rejected)
+
 - [ ] No update check when auto-check is disabled
+
 - [ ] Works on macOS (primary), with CI building for Windows and Linux
+
 - [ ] App startup is not delayed by update check (async, post-delay)
+
 - [ ] No console errors during update flow
 
 ### Design
 
 - [ ] Update indicator in status bar is subtle and consistent with existing indicators
+
 - [ ] Update dialog follows design system (neutral palette, consistent spacing, backdrop blur)
+
 - [ ] Progress bar uses shadcn/ui `Progress` component
+
 - [ ] Release notes are readable in both light and dark mode
+
 - [ ] All interactive elements have hover/active/focus states
+
 - [ ] Transitions are smooth (dialog open/close, progress bar animation)
 
 ## Out of Scope
@@ -304,6 +320,6 @@ The public key goes in `tauri.conf.json`, the private key stays as a GitHub secr
 - **Background silent updates:** Always require user to click "Install & Restart"
 - **Update scheduling:** No "remind me later" or scheduled installs
 - **Rollback:** No mechanism to revert to a previous version
-- **Delta updates:** Full binary replacement; file size is manageable (~30-50MB)
+- **Delta updates:** Full binary replacement; file size is manageable (\~30-50MB)
 - **Custom update server:** GitHub Releases is sufficient; self-hosted can be added by changing the endpoint URL
 - **Release notes editing in-app:** Notes come from GitHub Release body as-is

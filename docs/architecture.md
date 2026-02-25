@@ -64,7 +64,8 @@ note-sage/
 │   │   ├── sidebar/
 │   │   │   ├── Sidebar.tsx         # Main sidebar container
 │   │   │   ├── FileTree.tsx        # File/folder tree
-│   │   │   └── FileTreeItem.tsx    # Individual tree node
+│   │   │   ├── FileTreeItem.tsx    # Individual tree node
+│   │   │   ├── ExplorerFolderItem.tsx # Collapsible explorer folder entry
 │   │   ├── tabs/
 │   │   │   ├── TabBar.tsx          # Tab bar for open files
 │   │   │   └── Tab.tsx             # Single tab
@@ -97,7 +98,7 @@ note-sage/
 │   │   └── useCopilotCompletion.ts # Copilot LSP lifecycle + ghost text completions
 │   ├── stores/
 │   │   ├── editor-store.ts         # Open tabs, active file
-│   │   ├── project-store.ts        # Project folder, file tree
+│   │   ├── workspace-store.ts       # Explorer folders, projects, notes tree
 │   │   ├── project-metadata-store.ts # Project metadata (.notesage/project.json)
 │   │   ├── settings-store.ts       # App settings, theme
 │   │   ├── ai-store.ts             # AI provider configuration
@@ -161,7 +162,7 @@ note-sage/
 All state stores use Zustand with the persist middleware for localStorage:
 
 - **editor-store**: Open tabs (file path + dirty state + per-tab copilotDisabled flag), active tab index
-- **project-store**: Root folder path, file tree structure, expanded folders
+- **workspace-store**: Explorer folders (multiple), open projects, notes tree, expanded folders, section collapse state
 - **project-metadata-store**: Project metadata from `.notesage/project.json` (name, description, AI overrides)
 - **settings-store**: Theme, window state, recent projects, UI preferences (floating toolbar toggle, external change diff review toggle)
 - **ai-store**: AI provider selection, API keys, Ollama URL, suggestions enabled (legacy — used as fallback)
