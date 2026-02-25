@@ -5,7 +5,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { useChangelog, type Release } from '@/hooks/useChangelog';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -112,23 +111,21 @@ export function ChangelogDialog({ open, onOpenChange }: ChangelogDialogProps) {
           <DialogTitle className="text-base">Changelog</DialogTitle>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="p-4 space-y-3">
-            {loading && (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                Loading changelog...
-              </p>
-            )}
-            {!loading && (!changelog || changelog.releases.length === 0) && (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                No changelog available.
-              </p>
-            )}
-            {changelog?.releases.map((release) => (
-              <ReleaseCard key={release.version} release={release} />
-            ))}
-          </div>
-        </ScrollArea>
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+          {loading && (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              Loading changelog...
+            </p>
+          )}
+          {!loading && (!changelog || changelog.releases.length === 0) && (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              No changelog available.
+            </p>
+          )}
+          {changelog?.releases.map((release) => (
+            <ReleaseCard key={release.version} release={release} />
+          ))}
+        </div>
       </DialogContent>
     </Dialog>
   );

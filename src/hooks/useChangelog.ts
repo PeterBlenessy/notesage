@@ -73,7 +73,10 @@ export function useChangelog() {
     }
 
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      fetchedRef.current = false;
+    };
   }, []);
 
   const getChangesBetween = useCallback(
