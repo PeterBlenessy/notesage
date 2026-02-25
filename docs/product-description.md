@@ -4,7 +4,7 @@ id: ""
 
 # Notesage — Product Description
 
-Notesage is a WYSIWYG markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
+Notesage is a rich text markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
 **Current version:** 0.16.0
 
@@ -12,7 +12,7 @@ Notesage is a WYSIWYG markdown editor with AI collaboration capabilities, packag
 
 ### Editor
 
-Tiptap-powered WYSIWYG editor with full markdown round-tripping.
+Tiptap-powered rich text editor with full markdown round-tripping.
 
 **Supported content:**
 
@@ -50,7 +50,7 @@ Tiptap-powered WYSIWYG editor with full markdown round-tripping.
 
 **Markdown round-tripping**:
 
-- Open .md file -&gt; parse to ProseMirror -&gt; edit in WYSIWYG -&gt; serialize back to clean markdown
+- Open .md file -&gt; parse to ProseMirror -&gt; edit in rich text -&gt; serialize back to clean markdown
 - Lossless: markdown in must equal markdown out (modulo whitespace normalization)
 - Test fixtures in `tests/fixtures/*.md` covering all syntax
 
@@ -496,9 +496,9 @@ Before any release, ALL of these must pass:
 
 - [ ] File tree displays all files and folders correctly
 
-- [ ] Clicking a .md file opens it in the WYSIWYG editor
+- [ ] Clicking a .md file opens it in the rich text editor
 
-- [ ] All markdown syntax renders correctly in WYSIWYG mode
+- [ ] All markdown syntax renders correctly in rich text mode
 
 - [ ] Saving serializes back to clean, valid markdown
 

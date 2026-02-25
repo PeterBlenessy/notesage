@@ -36,4 +36,4 @@ Chronological log of major implementation milestones and changes.
 | 030 | [Release v0.15.3](030-release-v0.15.3.md) | Optimize release CI build time |
 | 031 | [Release v0.15.4](031-release-v0.15.4.md) | Fix update UX and CI release notes |
 | 032 | [Release v0.15.5](032-release-v0.15.5.md) | Fix release notes in latest.json for auto-updater |
-| 033 | [Release v0.16.0](033-release-v0.16.0.md) | Source mode: Copilot completions, AI actions, frontmatter, UX polish |
+| 033 | [Release v0.16.0](033-release-v0.16.0.md) | Raw mode: Copilot completions, AI actions, frontmatter, UX polish |
