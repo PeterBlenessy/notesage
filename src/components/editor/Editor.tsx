@@ -96,7 +96,7 @@ interface EditorProps {
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick }: EditorProps) {
   const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange, toggleCopilotForTab, toggleViewMode } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
-  const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, pageBreaks, notesRootPath } = useSettingsStore();
+  const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, pageBreaks, notesRootPath, sourceWordWrap, setSourceWordWrap } = useSettingsStore();
   const { projectPath } = useActiveProject();
   const commentStorageRoot = projectPath ?? (notesRootPath && !notesRootPath.startsWith('~') ? notesRootPath : null);
   const repo = useGitStore((s) => projectPath ? s.repos[projectPath] : undefined);
@@ -921,6 +921,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             onImageInsert={() => setImageDialogOpen(true)}
             viewMode={activeTab?.viewMode}
             onToggleViewMode={activeTab?.fileType === "markdown" ? handleToggleViewMode : undefined}
+            sourceWordWrap={sourceWordWrap}
+            onToggleWordWrap={() => setSourceWordWrap(!sourceWordWrap)}
           />
           {gitEnabled && isGitRepo && projectPath && !reviewActive && (
             <div className="shrink-0 pr-2">
@@ -944,6 +946,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         <div className="flex-1 overflow-auto relative">
           <SourceEditor
             content={activeTab.content}
+            wordWrap={sourceWordWrap}
             onUpdate={(content) => {
               if (activeTab) {
                 const hasChanged = content !== activeTab.content;
@@ -960,6 +963,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
               }
             }}
             onToggleViewMode={handleToggleViewMode}
+            onToggleWordWrap={() => setSourceWordWrap(!sourceWordWrap)}
             onViewReady={setCmView}
           />
           {showFloatingToolbar && <SourceBubbleMenu cmView={cmView} />}

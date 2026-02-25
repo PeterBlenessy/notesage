@@ -13,11 +13,15 @@ export const notesageTheme = EditorView.theme(
       fontFamily: '"JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, monospace',
       backgroundColor: "var(--color-background)",
       color: "var(--color-foreground)",
+      height: "100%",
+    },
+    ".cm-scroller": {
+      overflow: "auto",
     },
     ".cm-content": {
       caretColor: "var(--color-foreground)",
       lineHeight: "1.7",
-      padding: "0",
+      padding: "16px 0 0 0",
     },
     ".cm-cursor, .cm-dropCursor": {
       borderLeftColor: "var(--color-foreground)",

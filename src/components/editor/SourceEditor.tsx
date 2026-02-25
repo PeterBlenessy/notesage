@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, rectangularSelection, placeholder as cmPlaceholder } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
+import { EditorState, Compartment } from "@codemirror/state";
 import { markdown } from "@codemirror/lang-markdown";
 import { yamlFrontmatter } from "./codemirror-frontmatter";
 import { defaultKeymap, indentWithTab, history, historyKeymap } from "@codemirror/commands";
@@ -11,24 +11,29 @@ import { ghostTextExtensionCM } from "./codemirror-ghost-text";
 
 interface SourceEditorProps {
   content: string;
+  wordWrap?: boolean;
   onUpdate?: (content: string) => void;
   onSave?: () => void;
   onToggleViewMode?: () => void;
+  onToggleWordWrap?: () => void;
   /** Called when the CodeMirror EditorView is created/destroyed. */
   onViewReady?: (view: EditorView | null) => void;
 }
 
-export function SourceEditor({ content, onUpdate, onSave, onToggleViewMode, onViewReady }: SourceEditorProps) {
+export function SourceEditor({ content, wordWrap = true, onUpdate, onSave, onToggleViewMode, onToggleWordWrap, onViewReady }: SourceEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onUpdateRef = useRef(onUpdate);
   const onSaveRef = useRef(onSave);
   const onToggleViewModeRef = useRef(onToggleViewMode);
+  const onToggleWordWrapRef = useRef(onToggleWordWrap);
+  const wrapCompartment = useRef(new Compartment());
 
   // Keep refs in sync
   onUpdateRef.current = onUpdate;
   onSaveRef.current = onSave;
   onToggleViewModeRef.current = onToggleViewMode;
+  onToggleWordWrapRef.current = onToggleWordWrap;
 
   // Track whether we're programmatically setting content (to avoid feedback loops)
   const settingContent = useRef(false);
@@ -53,6 +58,13 @@ export function SourceEditor({ content, onUpdate, onSave, onToggleViewMode, onVi
         key: "Shift-Mod-/",
         run: () => {
           onToggleViewModeRef.current?.();
+          return true;
+        },
+      },
+      {
+        key: "Alt-z",
+        run: () => {
+          onToggleWordWrapRef.current?.();
           return true;
         },
       },
@@ -91,7 +103,7 @@ export function SourceEditor({ content, onUpdate, onSave, onToggleViewMode, onVi
           ...searchKeymap,
         ]),
         updateListener,
-        EditorView.lineWrapping,
+        wrapCompartment.current.of(wordWrap ? EditorView.lineWrapping : []),
       ],
     });
 
@@ -111,6 +123,17 @@ export function SourceEditor({ content, onUpdate, onSave, onToggleViewMode, onVi
     // Only create once — content updates handled separately
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Dynamically toggle word wrap via compartment
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: wrapCompartment.current.reconfigure(
+        wordWrap ? EditorView.lineWrapping : []
+      ),
+    });
+  }, [wordWrap]);
 
   // Update content when switching tabs (external content change)
   useEffect(() => {
@@ -132,10 +155,8 @@ export function SourceEditor({ content, onUpdate, onSave, onToggleViewMode, onVi
   }, [content]);
 
   return (
-    <div className="min-h-full">
-      <div className="max-w-[720px] mx-auto py-10 px-8">
-        <div ref={containerRef} className="source-editor" />
-      </div>
+    <div className="h-full">
+      <div ref={containerRef} className="source-editor h-full" />
     </div>
   );
 }

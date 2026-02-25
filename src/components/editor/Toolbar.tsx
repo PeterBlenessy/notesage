@@ -17,6 +17,7 @@ import {
   Redo,
   FileCode,
   FileText,
+  WrapText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -29,6 +30,8 @@ interface ToolbarProps {
   onImageInsert?: () => void;
   viewMode?: ViewMode;
   onToggleViewMode?: () => void;
+  sourceWordWrap?: boolean;
+  onToggleWordWrap?: () => void;
 }
 
 function ToolbarButton({
@@ -67,7 +70,7 @@ function ToolbarSeparator() {
   return <Separator orientation="vertical" className="h-4 mx-0.5" />;
 }
 
-export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleViewMode }: ToolbarProps) {
+export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleViewMode, sourceWordWrap, onToggleWordWrap }: ToolbarProps) {
   const isSource = viewMode === "source";
 
   const insertTable = () => {
@@ -211,8 +214,28 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           </ToolbarButton>
         </>
       )}
-      {isSource && (
-        <span className="text-xs text-muted-foreground px-1">Source</span>
+      {isSource && onToggleWordWrap && (
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={onToggleWordWrap}
+                className={cn(
+                  sourceWordWrap
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground"
+                )}
+              >
+                <WrapText className="size-4" strokeWidth={1.5} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              Word Wrap (Alt+Z)
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       )}
 
       {/* Spacer pushes toggle to the right */}
