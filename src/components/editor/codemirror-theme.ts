@@ -25,8 +25,13 @@ export const notesageTheme = EditorView.theme(
     },
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
       {
-        backgroundColor: "var(--color-accent)",
+        backgroundColor: "oklch(88% 0 0)",
       },
+    // Highlight other occurrences of selected text
+    ".cm-selectionMatch": {
+      backgroundColor: "oklch(92% 0 0)",
+      borderRadius: "2px",
+    },
     ".cm-panels": {
       backgroundColor: "var(--color-muted)",
       color: "var(--color-foreground)",
@@ -64,15 +69,16 @@ export const notesageTheme = EditorView.theme(
     ".cm-searchMatch.cm-searchMatch-selected": {
       backgroundColor: "oklch(75% 0 0)",
     },
-    // Gutters
+    // Gutters — subtle, de-emphasized meta info
     ".cm-gutters": {
-      backgroundColor: "var(--color-background)",
-      color: "var(--color-muted-foreground)",
+      backgroundColor: "var(--color-muted)",
+      color: "oklch(72% 0 0)",
       border: "none",
+      borderRight: "1px solid var(--color-border)",
       paddingRight: "8px",
     },
     ".cm-lineNumbers .cm-gutterElement": {
-      fontSize: "12px",
+      fontSize: "11px",
       minWidth: "3ch",
       padding: "0 4px 0 0",
     },
@@ -82,7 +88,7 @@ export const notesageTheme = EditorView.theme(
     },
     ".cm-activeLineGutter": {
       backgroundColor: "transparent",
-      color: "var(--color-foreground)",
+      color: "oklch(45% 0 0)",
     },
     // Fold gutter
     ".cm-foldGutter .cm-gutterElement": {
@@ -158,14 +164,27 @@ export const notesageHighlightStyle = syntaxHighlighting(
   ]),
 );
 
-/** Dark mode search match override (CSS vars don't cover these well) */
-const darkSearchOverride = EditorView.theme(
+/** Dark mode overrides for selection, search matches, gutters, etc. */
+const darkOverrides = EditorView.theme(
   {
+    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
+      {
+        backgroundColor: "oklch(38% 0 0)",
+      },
+    ".cm-selectionMatch": {
+      backgroundColor: "oklch(32% 0 0)",
+    },
     ".cm-searchMatch": {
       backgroundColor: "oklch(35% 0 0)",
     },
     ".cm-searchMatch.cm-searchMatch-selected": {
       backgroundColor: "oklch(45% 0 0)",
+    },
+    ".cm-gutters": {
+      color: "oklch(45% 0 0)",
+    },
+    ".cm-activeLineGutter": {
+      color: "oklch(65% 0 0)",
     },
   },
   { dark: true },
@@ -177,5 +196,5 @@ const darkSearchOverride = EditorView.theme(
 export const notesageExtensions = [
   notesageTheme,
   notesageHighlightStyle,
-  darkSearchOverride,
+  darkOverrides,
 ];

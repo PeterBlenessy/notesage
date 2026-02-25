@@ -13,6 +13,8 @@ import { useDiffReview } from "@/hooks/useDiffReview";
 import { useFileWatcher } from "@/hooks/useFileWatcher";
 import { useCommentOperations } from "@/hooks/useCommentOperations";
 import { useCopilotCompletion } from "@/hooks/useCopilotCompletion";
+import { useCopilotCompletionCM } from "@/hooks/useCopilotCompletionCM";
+import type { EditorView as CMEditorView } from "@codemirror/view";
 import { useCommentDelegation } from "@/hooks/useCommentDelegation";
 import { useCommentStore, type DelegationActivity } from "@/stores/comment-store";
 import {
@@ -39,6 +41,7 @@ import { PlainTextViewer } from "./viewers/PlainTextViewer";
 import { PdfViewer } from "./viewers/PdfViewer";
 import { DocxViewer } from "./viewers/DocxViewer";
 import { BubbleMenu } from "./BubbleMenu";
+import { SourceBubbleMenu } from "./SourceBubbleMenu";
 import { DiffReviewBanner } from "./DiffReviewBanner";
 import { ExternalChangeBanner } from "./ExternalChangeBanner";
 import { BranchDiffSelector } from "./BranchDiffSelector";
@@ -113,6 +116,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const [pageInfo, setPageInfo] = useState<{ current: number; total: number } | null>(null);
   const [commentListOpen, setCommentListOpen] = useState(false);
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
+  const [cmView, setCmView] = useState<CMEditorView | null>(null);
 
   // Convert cm margins to px
   const paddingTop = `${marginTop * PX_PER_CM}px`;
@@ -220,6 +224,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const { reviewActive, compareBranch, handleAcceptAll, handleRejectAll } = useDiffReview(editor);
   useFileWatcher();
   useCopilotCompletion(editor);
+  useCopilotCompletionCM(cmView);
 
   // Page position: calculate from editor content height and page geometry
   const marginTopPx = marginTop * PX_PER_CM;
@@ -929,24 +934,29 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         <ExternalChangeBanner onReload={handleExternalReload} onKeep={handleExternalKeep} />
       )}
       {activeTab?.viewMode === "source" ? (
-        <SourceEditor
-          content={activeTab.content}
-          onUpdate={(content) => {
-            if (activeTab) {
-              const hasChanged = content !== activeTab.content;
-              updateTabContent(activeTab.id, content, hasChanged);
-            }
-          }}
-          onSave={async () => {
-            if (activeTab && activeTab.isDirty) {
-              try {
-                await saveFile(activeTab.filePath, activeTab.content, activeTab.id);
-              } catch (error) {
-                toast.error(`Failed to save file: ${error}`);
+        <div className="flex-1 overflow-auto relative">
+          <SourceEditor
+            content={activeTab.content}
+            onUpdate={(content) => {
+              if (activeTab) {
+                const hasChanged = content !== activeTab.content;
+                updateTabContent(activeTab.id, content, hasChanged);
               }
-            }
-          }}
-        />
+            }}
+            onSave={async () => {
+              if (activeTab && activeTab.isDirty) {
+                try {
+                  await saveFile(activeTab.filePath, activeTab.content, activeTab.id);
+                } catch (error) {
+                  toast.error(`Failed to save file: ${error}`);
+                }
+              }
+            }}
+            onToggleViewMode={handleToggleViewMode}
+            onViewReady={setCmView}
+          />
+          {showFloatingToolbar && <SourceBubbleMenu cmView={cmView} />}
+        </div>
       ) : (
         <div ref={scrollAreaRef} className="flex-1 overflow-y-auto editor-scroll-area">
           <div
@@ -990,6 +1000,31 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           commentListOpen={commentListOpen}
           onCommentListOpenChange={setCommentListOpen}
           onSelectComment={(comment) => {
+            if (activeTab?.viewMode === "source") {
+              // Comments aren't rendered in source mode — offer to switch
+              toast("Comments are not available in Source mode", {
+                description: "Switch to WYSIWYG to view and edit comments.",
+                action: {
+                  label: "Switch",
+                  onClick: () => {
+                    handleToggleViewMode();
+                    // Wait for mode switch and editor re-render, then scroll and activate
+                    setTimeout(() => {
+                      if (editor) {
+                        try {
+                          const dom = editor.view.domAtPos(comment.from);
+                          const node = dom.node instanceof HTMLElement ? dom.node : dom.node.parentElement;
+                          node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        } catch { /* position may be invalid */ }
+                        setTimeout(() => commentOps.setActiveComment(comment.id), 300);
+                      }
+                    }, 200);
+                  },
+                },
+                id: "source-mode-comment",
+              });
+              return;
+            }
             if (editor) {
               // Scroll comment into view, then activate it so the popover positions correctly
               const dom = editor.view.domAtPos(comment.from);

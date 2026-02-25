@@ -98,10 +98,23 @@ export function useCopilotCompletion(editor: Editor | null) {
 
   // -------------------------------------------------------------------------
   // Document sync: didOpen/didClose/didFocus on tab changes
+  // (Skipped in source mode — useCopilotCompletionCM handles its own sync)
   // -------------------------------------------------------------------------
+
+  const isSourceMode = activeTab?.viewMode === 'source';
 
   useEffect(() => {
     if (!lspReady || !activeTab) return;
+
+    // In source mode, the CM hook manages document sync.
+    // Close our tracked document so the CM hook can open it with raw markdown.
+    if (isSourceMode) {
+      if (openDocUri.current) {
+        invoke('copilot_lsp_did_close', { uri: openDocUri.current }).catch(() => {});
+        openDocUri.current = null;
+      }
+      return;
+    }
 
     const uri = activeTab.filePath;
 
@@ -110,7 +123,8 @@ export function useCopilotCompletion(editor: Editor | null) {
       invoke('copilot_lsp_did_close', { uri: openDocUri.current }).catch(() => {});
     }
 
-    // Open new document — send ProseMirror plain text so positions match
+    // Open new document — send ProseMirror plain text so positions match.
+    // Also re-open when returning from source mode (openDocUri.current is null).
     if (openDocUri.current !== uri) {
       docVersion.current = 0;
       const content = editor
@@ -131,7 +145,7 @@ export function useCopilotCompletion(editor: Editor | null) {
     if (editor && hasActiveGhostText(editor)) {
       clearGhostText(editor);
     }
-  }, [lspReady, activeTab?.filePath, editor]);
+  }, [lspReady, activeTab?.filePath, isSourceMode, editor]);
 
   // Cleanup: close doc on unmount
   useEffect(() => {
@@ -237,7 +251,7 @@ export function useCopilotCompletion(editor: Editor | null) {
   );
 
   useEffect(() => {
-    if (!editor || !connection || !lspReady) return;
+    if (!editor || !connection || !lspReady || isSourceMode) return;
 
     const handleUpdate = () => {
       if (!activeTab || !openDocUri.current) return;
@@ -274,7 +288,7 @@ export function useCopilotCompletion(editor: Editor | null) {
         clearTimeout(completionTimeout.current);
       }
     };
-  }, [editor, connection?.id, lspReady, activeTab?.filePath, requestCompletion]);
+  }, [editor, connection?.id, lspReady, isSourceMode, activeTab?.filePath, requestCompletion]);
 
   // -------------------------------------------------------------------------
   // Clear ghost text when completions are disabled for the active tab
