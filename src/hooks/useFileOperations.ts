@@ -57,13 +57,15 @@ export function useFileOperations() {
 
     // If a specific path is given, determine which section to refresh
     if (targetPath) {
-      // Check explorer
-      if (ws.explorerPath && targetPath.startsWith(ws.explorerPath)) {
-        try {
-          const tree = await tauriApi.listDirectory(ws.explorerPath);
-          ws.setExplorerTree(tree);
-        } catch (error) {
-          console.error("Failed to refresh explorer tree:", error);
+      // Check explorer folders
+      for (const folder of ws.explorerFolders) {
+        if (targetPath.startsWith(folder.path)) {
+          try {
+            const tree = await tauriApi.listDirectory(folder.path);
+            ws.updateExplorerTree(folder.path, tree);
+          } catch (error) {
+            console.error("Failed to refresh explorer tree:", error);
+          }
         }
       }
 
@@ -93,10 +95,10 @@ export function useFileOperations() {
     }
 
     // No target path: refresh everything that's open
-    if (ws.explorerPath) {
+    for (const folder of ws.explorerFolders) {
       try {
-        const tree = await tauriApi.listDirectory(ws.explorerPath);
-        ws.setExplorerTree(tree);
+        const tree = await tauriApi.listDirectory(folder.path);
+        ws.updateExplorerTree(folder.path, tree);
       } catch (error) {
         console.error("Failed to refresh explorer tree:", error);
       }

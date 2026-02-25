@@ -56,7 +56,7 @@ export function CommandPalette({
 }: CommandPaletteProps) {
   const [search, setSearch] = useState("");
   const { recentFiles, activeTabId } = useEditorStore();
-  const { explorerTree, projects, notesTree } = useWorkspaceStore();
+  const { explorerFolders, projects, notesTree } = useWorkspaceStore();
   const { theme, setTheme, sidebarPinned, setSidebarPinned, chatPanelOpen, setChatPanelOpen } = useSettingsStore();
   const { openFile } = useFileOperations();
 
@@ -75,7 +75,9 @@ export function CommandPalette({
       }
     };
 
-    flatten(explorerTree);
+    for (const folder of explorerFolders) {
+      flatten(folder.fileTree);
+    }
     for (const project of projects) {
       flatten(project.fileTree);
     }
@@ -88,7 +90,7 @@ export function CommandPalette({
       seen.add(f.path);
       return true;
     });
-  }, [explorerTree, projects, notesTree]);
+  }, [explorerFolders, projects, notesTree]);
 
   // Recent file paths for exclusion from "Go to File"
   const recentPaths = useMemo(

@@ -13,7 +13,7 @@ export function useStartWatchers() {
   const icloudNotesagePath = useSettingsStore((s) => s.icloudNotesagePath);
   const icloudEnabled = useSyncStore((s) => s.icloudEnabled);
   const projects = useWorkspaceStore((s) => s.projects);
-  const explorerPath = useWorkspaceStore((s) => s.explorerPath);
+  const explorerFolders = useWorkspaceStore((s) => s.explorerFolders);
 
   useEffect(() => {
     const paths: string[] = [];
@@ -33,9 +33,9 @@ export function useStartWatchers() {
       paths.push(project.path);
     }
 
-    // Explorer directory
-    if (explorerPath) {
-      paths.push(explorerPath);
+    // All open explorer folders
+    for (const folder of explorerFolders) {
+      paths.push(folder.path);
     }
 
     // Start watching all paths (the Rust side deduplicates)
@@ -44,5 +44,5 @@ export function useStartWatchers() {
         console.error(`Failed to watch ${path}:`, err);
       });
     }
-  }, [notesRootPath, icloudNotesagePath, icloudEnabled, projects, explorerPath]);
+  }, [notesRootPath, icloudNotesagePath, icloudEnabled, projects, explorerFolders]);
 }

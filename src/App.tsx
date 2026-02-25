@@ -103,7 +103,7 @@ function App() {
   const { chatPanelOpen, setChatPanelOpen } = useSettingsStore();
   const { state: updateState, checkForUpdate, downloadAndInstall, restartNow, dismiss: dismissUpdate } = useAutoUpdate();
 
-  const { addProject, setExplorerPath, setExplorerTree } = useWorkspaceStore();
+  const { addProject, addExplorerFolder } = useWorkspaceStore();
   const { projectPath: activeProjectPath } = useActiveProject();
 
   useProjectMetadata();
@@ -145,14 +145,21 @@ function App() {
         }
       }
 
-      // Reload explorer tree
-      if (ws.explorerPath) {
+      // Reload explorer folder trees (remove invalid ones)
+      const validFolders: string[] = [];
+      for (const folder of ws.explorerFolders) {
         try {
-          const tree = await tauriApi.listDirectory(ws.explorerPath);
-          ws.setExplorerTree(tree);
+          const tree = await tauriApi.listDirectory(folder.path);
+          ws.updateExplorerTree(folder.path, tree);
+          validFolders.push(folder.path);
         } catch {
-          ws.setExplorerPath(null);
-          ws.setExplorerTree([]);
+          // Folder no longer exists — will be removed below
+        }
+      }
+      // Remove invalid folders
+      for (const folder of ws.explorerFolders) {
+        if (!validFolders.includes(folder.path)) {
+          ws.removeExplorerFolder(folder.path);
         }
       }
 
@@ -276,20 +283,18 @@ function App() {
       const folderPath = await tauriApi.openFolderDialog();
       if (folderPath) {
         const isProject = await tauriApi.pathExists(`${folderPath}/.notesage`);
+        const tree = await tauriApi.listDirectory(folderPath);
         if (isProject) {
-          const tree = await tauriApi.listDirectory(folderPath);
           addProject(folderPath, tree);
         } else {
-          setExplorerPath(folderPath);
-          const tree = await tauriApi.listDirectory(folderPath);
-          setExplorerTree(tree);
+          addExplorerFolder(folderPath, tree);
         }
       }
     } catch (error) {
       console.error("Failed to open folder:", error);
       toast.error(`Failed to open folder: ${error}`);
     }
-  }, [setExplorerPath, setExplorerTree, addProject]);
+  }, [addProject, addExplorerFolder]);
 
   const { openFile } = useFileOperations();
 
@@ -357,9 +362,12 @@ function App() {
           break;
         }
       }
-      if (ws.explorerPath && filePath.startsWith(ws.explorerPath)) {
-        const tree = await tauriApi.listDirectory(ws.explorerPath);
-        ws.setExplorerTree(tree);
+      for (const folder of ws.explorerFolders) {
+        if (filePath.startsWith(folder.path + "/")) {
+          const tree = await tauriApi.listDirectory(folder.path);
+          ws.updateExplorerTree(folder.path, tree);
+          break;
+        }
       }
       const settings = useSettingsStore.getState();
       const notesRoot = settings.notesRootPath;

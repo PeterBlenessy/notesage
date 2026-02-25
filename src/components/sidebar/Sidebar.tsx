@@ -8,6 +8,7 @@ import { useFileOperations } from "@/hooks/useFileOperations";
 import { Button } from "@/components/ui/button";
 import { SidebarSection } from "./SidebarSection";
 import { ProjectItem } from "./ProjectItem";
+import { ExplorerFolderItem } from "./ExplorerFolderItem";
 import { FileTree } from "./FileTree";
 
 interface SidebarProps {
@@ -23,10 +24,8 @@ interface SidebarProps {
 export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpenProjectSettings, onMakeProject, onExportFile, panelCollapsed }: SidebarProps) {
   const [isLoading, setIsLoading] = useState(false);
   const {
-    explorerPath,
-    explorerTree,
-    setExplorerPath,
-    setExplorerTree,
+    explorerFolders,
+    addExplorerFolder,
     projects,
     removeProject,
     notesTree,
@@ -45,9 +44,8 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
       setIsLoading(true);
       const folderPath = await tauriApi.openFolderDialog();
       if (folderPath) {
-        setExplorerPath(folderPath);
         const tree = await tauriApi.listDirectory(folderPath);
-        setExplorerTree(tree);
+        addExplorerFolder(folderPath, tree);
       }
     } catch (error) {
       console.error("Failed to open folder:", error);
@@ -187,15 +185,19 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
             </Button>
           }
         >
-          {explorerPath ? (
-            <FileTree
-              tree={explorerTree}
-              onFileClick={handleFileClick}
-              onNewNote={onNewNote}
-              onMakeProject={onMakeProject}
-              onExportFile={onExportFile}
-              expandKeyPrefix="explorer:"
-            />
+          {explorerFolders.length > 0 ? (
+            <div className="py-0.5">
+              {explorerFolders.map((folder) => (
+                <ExplorerFolderItem
+                  key={folder.path}
+                  folderPath={folder.path}
+                  onFileClick={handleFileClick}
+                  onNewNote={onNewNote}
+                  onMakeProject={onMakeProject}
+                  onExportFile={onExportFile}
+                />
+              ))}
+            </div>
           ) : (
             <p className="text-xs text-muted-foreground py-1.5">
               Open a folder to browse files

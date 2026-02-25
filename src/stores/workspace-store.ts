@@ -7,6 +7,11 @@ export interface WorkspaceProject {
   fileTree: FileEntry[];
 }
 
+export interface ExplorerFolder {
+  path: string;
+  fileTree: FileEntry[];
+}
+
 export interface RecentProject {
   path: string;
   name: string;
@@ -15,9 +20,8 @@ export interface RecentProject {
 const MAX_RECENT_PROJECTS = 5;
 
 interface WorkspaceStore {
-  // Explorer section
-  explorerPath: string | null;
-  explorerTree: FileEntry[];
+  // Explorer section (multiple folders)
+  explorerFolders: ExplorerFolder[];
 
   // Projects section
   projects: WorkspaceProject[];
@@ -37,8 +41,10 @@ interface WorkspaceStore {
   notesCollapsed: boolean;
 
   // Explorer actions
-  setExplorerPath: (path: string | null) => void;
-  setExplorerTree: (tree: FileEntry[]) => void;
+  addExplorerFolder: (path: string, tree: FileEntry[]) => void;
+  removeExplorerFolder: (path: string) => void;
+  updateExplorerTree: (path: string, tree: FileEntry[]) => void;
+  findOwningExplorerFolder: (filePath: string) => ExplorerFolder | undefined;
 
   // Project actions
   addProject: (path: string, tree: FileEntry[]) => void;
@@ -71,8 +77,7 @@ interface WorkspaceStore {
 export const useWorkspaceStore = create<WorkspaceStore>()(
   persist(
     (set, get) => ({
-      explorerPath: null,
-      explorerTree: [],
+      explorerFolders: [],
       projects: [],
       recentProjects: [],
       notesTree: [],
@@ -81,18 +86,47 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       projectsCollapsed: false,
       notesCollapsed: false,
 
-      setExplorerPath: (path) => {
-        set({ explorerPath: path });
+      addExplorerFolder: (path, tree) => {
+        set((state) => {
+          // If already open, refresh its tree
+          if (state.explorerFolders.some((f) => f.path === path)) {
+            return {
+              explorerFolders: state.explorerFolders.map((f) =>
+                f.path === path ? { ...f, fileTree: tree } : f
+              ),
+            };
+          }
+          return {
+            explorerFolders: [...state.explorerFolders, { path, fileTree: tree }],
+          };
+        });
       },
 
-      setExplorerTree: (tree) => {
-        set({ explorerTree: tree });
+      removeExplorerFolder: (path) => {
+        set((state) => ({
+          explorerFolders: state.explorerFolders.filter((f) => f.path !== path),
+        }));
+      },
+
+      updateExplorerTree: (path, tree) => {
+        set((state) => ({
+          explorerFolders: state.explorerFolders.map((f) =>
+            f.path === path ? { ...f, fileTree: tree } : f
+          ),
+        }));
+      },
+
+      findOwningExplorerFolder: (filePath) => {
+        return get().explorerFolders.find((f) => filePath.startsWith(f.path + "/"));
       },
 
       addProject: (path, tree) => {
         set((state) => {
           // Remove from recent if re-opening
           const newRecent = state.recentProjects.filter((r) => r.path !== path);
+
+          // Also remove from explorer folders if it's being promoted to a project
+          const newExplorerFolders = state.explorerFolders.filter((f) => f.path !== path);
 
           // Don't add duplicates
           if (state.projects.some((p) => p.path === path)) {
@@ -101,11 +135,13 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
                 p.path === path ? { ...p, fileTree: tree } : p
               ),
               recentProjects: newRecent,
+              explorerFolders: newExplorerFolders,
             };
           }
           return {
             projects: [...state.projects, { path, fileTree: tree }],
             recentProjects: newRecent,
+            explorerFolders: newExplorerFolders,
           };
         });
       },
@@ -187,7 +223,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
     {
       name: "notesage-workspace",
       partialize: (state) => ({
-        explorerPath: state.explorerPath,
+        explorerFolders: state.explorerFolders.map((f) => ({ path: f.path })),
         projects: state.projects.map((p) => ({ path: p.path, fileTree: [] })),
         recentProjects: state.recentProjects,
         expandedFolders: Array.from(state.expandedFolders),
@@ -197,9 +233,21 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       }),
       merge: (persisted, current) => {
         const p = persisted as Record<string, unknown>;
+
+        // Migrate old single explorerPath to explorerFolders array
+        let explorerFolders: ExplorerFolder[] = [];
+        if (Array.isArray(p.explorerFolders)) {
+          explorerFolders = (p.explorerFolders as Array<{ path: string }>).map(
+            (f) => ({ path: f.path, fileTree: [] })
+          );
+        } else if (typeof p.explorerPath === "string" && p.explorerPath) {
+          // v1 migration: single explorerPath → array
+          explorerFolders = [{ path: p.explorerPath as string, fileTree: [] }];
+        }
+
         return {
           ...current,
-          explorerPath: (p.explorerPath as string | null) ?? null,
+          explorerFolders,
           projects: (p.projects as WorkspaceProject[]) ?? [],
           recentProjects: (p.recentProjects as RecentProject[]) ?? [],
           expandedFolders: new Set(
