@@ -28,14 +28,14 @@ function ReleaseSection({
   if (items.length === 0) return null;
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
         <Icon className="h-3 w-3" strokeWidth={1.5} />
         {title}
       </div>
-      <ul className="space-y-1 text-sm text-foreground">
+      <ul className="space-y-1 text-sm text-foreground pl-1">
         {items.map((item, i) => (
           <li key={i} className="flex gap-2 leading-relaxed">
-            <span className="text-muted-foreground mt-1.5 shrink-0">·</span>
+            <span className="text-muted-foreground shrink-0 leading-relaxed">•</span>
             <span>{item}</span>
           </li>
         ))}
