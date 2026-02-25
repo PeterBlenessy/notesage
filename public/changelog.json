@@ -1,0 +1,498 @@
+{
+  "releases": [
+    {
+      "version": "0.16.1",
+      "date": "2026-02-25",
+      "previousVersion": "0.16.0",
+      "sections": {
+        "fixes": [
+          "Fix Copilot LSP auth: try multiple field names for device code, extract from URI as fallback, emit error event on failure",
+          "Fix auto-update restart: add \"downloaded\" state with \"Restart Now\" button using tauri-plugin-process relaunch()",
+          "Fix cross-device images: copy local images to project-relative images/ folder for portability",
+          "Fix ghost text jumpiness: add copilotMaxCompletionChars setting (default 80) to truncate displayed completions"
+        ]
+      }
+    },
+    {
+      "version": "0.16.0",
+      "date": "2026-02-25",
+      "previousVersion": "0.15.5",
+      "sections": {
+        "features": [
+          "Raw mode enhancements: Copilot inline completions (ghost text) in CodeMirror via LSP",
+          "Raw mode enhancements: AI text actions bubble menu (Improve, Summarize, Expand) on selection",
+          "YAML frontmatter recognition and syntax highlighting in raw mode with fold support",
+          "Cmd+/ keyboard shortcut works in raw mode to toggle back to rich text"
+        ],
+        "fixes": [
+          "Fix selection visibility in raw mode — selection background now clearly visible in both light and dark themes",
+          "Fix line numbers styling — gutters use muted background with subtle border, lighter text color, smaller font",
+          "Fix comment interaction in raw mode — shows toast with \"Switch\" action instead of broken popover positioning",
+          "Fix Copilot LSP document sync coordination — rich text and raw mode hooks properly hand off document tracking"
+        ],
+        "improvements": [
+          "CodeMirror theme: explicit selection/match colors instead of relying on CSS variables",
+          "Dark mode: proper overrides for selection, search matches, and gutter colors",
+          "Raw editor container layout: proper scroll handling with relative positioning for bubble menu",
+          "Rename view mode labels: \"Source\" → \"Raw\", \"WYSIWYG\" → \"Rich text\""
+        ]
+      }
+    },
+    {
+      "version": "0.15.5",
+      "date": "2026-02-24",
+      "previousVersion": "0.15.4",
+      "sections": {
+        "fixes": [
+          "Pass generated release notes to `tauri-action` `releaseBody` so `latest.json` contains real changelog (previously empty)"
+        ]
+      }
+    },
+    {
+      "version": "0.15.4",
+      "date": "2026-02-24",
+      "previousVersion": "0.15.3",
+      "sections": {
+        "fixes": [
+          "\"Later\" no longer permanently dismisses update — keeps it available for install at any time",
+          "Settings and StatusBar show update indicator whenever an update is known, not just immediately after check",
+          "Fix dialog footer button spacing in UpdateDialog"
+        ],
+        "improvements": [
+          "Remove redundant \"Check for Updates\" label in Settings &gt; About",
+          "CI generates real release notes from git commit history instead of placeholder link",
+          "Add `createUpdaterArtifacts` to bundle config for signed updater artifacts",
+          "Fix updater signing secret names in release workflow"
+        ]
+      }
+    },
+    {
+      "version": "0.15.3",
+      "date": "2026-02-24",
+      "previousVersion": "0.15.2",
+      "sections": {
+        "improvements": [
+          "Remove redundant TypeScript and Rust checks from release workflow, cutting CI build time roughly in half per platform"
+        ]
+      }
+    },
+    {
+      "version": "0.15.2",
+      "date": "2026-02-23",
+      "previousVersion": "0.15.1",
+      "sections": {
+        "features": [
+          "In-app auto-update via Tauri updater plugin — silent check on launch, download with progress, install & restart",
+          "UpdateDialog with markdown release notes, version transition display, and progress bar",
+          "Status bar update indicator (ArrowUpCircle icon) when update is available",
+          "Settings > About tab with version display, Check Now button, and auto-check toggle",
+          "Toast notification when a new version is detected"
+        ],
+        "fixes": [
+          "Fix settings dialog width and suppress Rust warnings",
+          "Fix production binary resolution and add devtools support",
+          "Fix agent binary resolution failing in production macOS builds"
+        ],
+        "improvements": [
+          "Rewrite provider picker as DropdownMenu with polished connection flow",
+          "CI release workflow generates `latest.json` update manifest via `updaterJsonPreferNsis`",
+          "Friendly error messages for update check failures (network, 404, timeout, signature)",
+          "Update check timestamp persisted and displayed as relative time (\"Just now\", \"2 minutes ago\")"
+        ]
+      }
+    },
+    {
+      "version": "0.15.1",
+      "date": "2026-02-23",
+      "previousVersion": "0.15.0",
+      "sections": {
+        "improvements": [
+          "**macOS code signing & notarization:** Release builds are now signed with an Apple Developer certificate and notarized with Apple, so macOS users can open the app without Gatekeeper warnings",
+          "**Tauri update signing:** Release artifacts signed with Tauri update keys for secure auto-updates"
+        ]
+      }
+    },
+    {
+      "version": "0.15.0",
+      "date": "2026-02-22",
+      "previousVersion": "0.14.1",
+      "sections": {
+        "features": [
+          "**Agent comment delegation (Part 1):** Delegate inline comments to AI agents — agents reply within the comment thread with full activity log",
+          "**External change detection setting:** Configurable toggle between auto-accept (default) and inline diff review (beta) in Settings > Editor Options",
+          "**Chat provider indicator & picker:** Interactive connection picker in chat footer, per-message provider badges, shared ProviderLogo component",
+          "**Tiered permission approval UI:** PermissionCard with split Allow button (once/session/always), context-aware chat footer (Search for direct API, Tools popover for ACP agents)",
+          "**Agent install & auth guidance:** Step-by-step install guides with copyable commands and URLs for all agent providers",
+          "**Orphaned agent process cleanup:** `kill_on_drop(true)` on ACP child processes, `RunEvent::Exit` hook, frontend `beforeunload` cleanup",
+          "**MIT license** added to repository",
+          "**CI build checks** via GitHub Actions release workflow"
+        ],
+        "fixes": [
+          "Removed all `any` types in comment-mark.ts and useCommentOperations.ts (proper ProseMirror/Tiptap types)",
+          "Added typed ACP invoke wrappers to tauri.ts (7 methods), refactored useAgentTaskOperations to use them",
+          "Fixed accessibility: replaced span-as-button with proper `<button>` elements in CommentListPopover",
+          "Fixed deprecated `navigator.platform` usage (replaced with `navigator.userAgent`)",
+          "Fixed React key warning: index-as-key replaced with timestamp-based keys",
+          "Added toast error notification for saveComments failures (was silent)"
+        ],
+        "improvements": [
+          "Icon strokeWidth consistency (2 → 1.5) across comment UI icons",
+          "Switch component alignment fixed (origin-right → origin-center)",
+          "Added `active:opacity-75` states to all raw interactive buttons",
+          "Added `.thin-scrollbar` CSS class for compact scroll areas (comment popover, activity log)",
+          "Replaced arbitrary spacing with Tailwind scale values (max-h-[320px] → max-h-80, pt-[100px] → pt-24)",
+          "Added focus-visible ring states to settings navigation buttons",
+          "Copilot LSP workspace handling and configuration improvements",
+          "Copilot status dot uses neutral `bg-foreground/70` instead of chromatic `bg-green-500`"
+        ]
+      }
+    },
+    {
+      "version": "0.14.1",
+      "date": "2026-02-22",
+      "previousVersion": "0.14.0",
+      "sections": {
+        "features": [
+          "Add Google Gemini CLI as ACP agent provider (`gemini --acp`) for interactive chat and agent tasks",
+          "Free tier available with Google account, or Gemini Code Assist subscription",
+          "Gemini sparkle logo (official Google branding) in connection cards"
+        ],
+        "improvements": [
+          "Update documentation to reflect four supported ACP agents (added Gemini CLI)",
+          "Add `google.svg` to provider logos"
+        ]
+      }
+    },
+    {
+      "version": "0.14.0",
+      "date": "2026-02-21",
+      "previousVersion": "0.13.0",
+      "sections": {
+        "features": [
+          "Add Copilot Language Server integration for inline completions (Phase 6e)",
+          "Add status bar Copilot indicator with per-document toggle"
+        ],
+        "fixes": [
+          "Fix Copilot LSP auth flow, rename providers, enable all capabilities",
+          "Fix Copilot LSP key collision, race condition, and dead process detection",
+          "Remove `inline_completion` capability from Copilot CLI provider (only LSP supports it)",
+          "Rename \"GitHub Copilot LS\" to \"GitHub Copilot LSP\" throughout UI",
+          "Remove debug console.log statements from ghost-text extension"
+        ]
+      }
+    },
+    {
+      "version": "0.13.0",
+      "date": "2026-02-21",
+      "previousVersion": "0.12.2",
+      "sections": {
+        "features": [
+          "Multi-provider AI connection system with subscription-based auth, API keys, and local providers",
+          "ACP (Agent Client Protocol) integration — full client implementation in Rust backend",
+          "Three ACP agent adapters: Claude Code (`claude-agent-acp`), OpenAI Codex (`codex-acp`), GitHub Copilot (`copilot --acp`)",
+          "Per-use-case provider routing: separate providers for interactive (chat + inline actions), agent tasks, and inline completion",
+          "Smart auto-assignment: first connection fills all compatible use case slots",
+          "Agent activity panel: collapsible per-message log showing tool call steps during ACP sessions",
+          "Background task agent hook (`useAgentTaskOperations`) for delegated multi-step work",
+          "Permission-store for tracking ACP tool call approvals (read-only auto-approved, write tools tracked)",
+          "Connection settings UI: provider cards, Add Connection popover with capability guidance, Advanced Routing section",
+          "Agent connection flow: check binary availability, spawn agent, authenticate via subscription",
+          "One-time migration from v1 ai-store preserves existing API key configurations"
+        ],
+        "improvements": [
+          "Clean up provider labels: removed redundant auth method suffixes since grouping conveys this",
+          "Capability badge tooltips explaining what Interactive, Agent Tasks, and Inline Completion mean",
+          "Connection status indicators (green/red/grey dots) in routing dropdowns",
+          "Provider picker grouped into Subscription vs API Key sections with free tier indicators",
+          "Fixed incorrect Copilot install hint (was referencing wrong package)",
+          "Removed opinionated \"Recommended\" badge from provider picker"
+        ]
+      }
+    },
+    {
+      "version": "0.12.2",
+      "date": "2026-02-21",
+      "previousVersion": "0.12.1",
+      "sections": {
+        "fixes": [
+          "Remove duplicate close button from AI chat panel (use TitleBar toggle instead)",
+          "Update tab name and path when file is renamed from sidebar",
+          "Improve comment input focus timing so cursor lands in textarea reliably",
+          "Fix cloud sync badge visibility in dark mode (use theme background instead of hardcoded white)"
+        ],
+        "improvements": [
+          "Show full filename tooltip on hover for truncated sidebar items"
+        ]
+      }
+    },
+    {
+      "version": "0.12.1",
+      "date": "2026-02-20",
+      "previousVersion": "0.12.0",
+      "sections": {
+        "fixes": [
+          "Fix cross-platform watcher type mismatch causing Linux/Windows build failures — use `RecommendedCache` instead of hardcoded `FileIdMap` in `WatcherState` (on Linux/Android, `RecommendedCache = NoCache`; on macOS/Windows, `RecommendedCache = FileIdMap`)",
+          "Fix release workflow corrupting `package.json` via `sed` — replace fragile regex-based version update with `node -e` for safe JSON manipulation"
+        ]
+      }
+    },
+    {
+      "version": "0.12.0",
+      "date": "2026-02-20",
+      "previousVersion": "0.11.1",
+      "sections": {
+        "features": [
+          "**External Change Review** — inline diff decorations for externally modified files with per-hunk accept/reject controls"
+        ],
+        "fixes": [
+          "**Tab-switch race condition** — pending-change effect now uses `requestAnimationFrame` to ensure editor content is loaded before computing diffs (previously could diff wrong tab's content)",
+          "**Self-write false suppression** — removed redundant frontend self-write guard; backend `markSelfWrite` is the single source of truth (frontend guard caused third+ changes to be silently dropped)",
+          "**Sync effect double-save** — accept/reject handlers now nullify tracking ref and resolve store before dispatching ProseMirror transactions (prevents sync effect from racing)"
+        ],
+        "improvements": [
+          "Sonner toast close button restyled: top-right, flat borderless window-style X",
+          "Removed `ExternalReviewBanner` (caused confusing dual toast + banner UI)",
+          "`ChangeListPopover` wider (384px) with filename, change preview, and per-hunk controls",
+          "Popover stays open while browsing changes (no auto-close on click)"
+        ]
+      }
+    },
+    {
+      "version": "0.11.1",
+      "date": "2026-02-20",
+      "previousVersion": "0.11.0",
+      "sections": {
+        "fixes": [
+          "Fix filesystem watcher for explorer folders — create, modify, and delete events now all work",
+          "Fix macOS FSEvents reporting file deletions as modify events (reclassify when path no longer exists)",
+          "Filter `.git/` and `.DS_Store` paths from watcher to eliminate event flood from iCloud-synced repos",
+          "Increase self-write TTL from 2s to 5s to cover macOS FSEvents re-reporting delay",
+          "Fix self-write regression where editing in Notesage triggered false external change notifications",
+          "Fix editor not updating on external file changes (push content to Tiptap, not just Zustand store)",
+          "Fix stale sidebar entries when deleting already-deleted files via context menu",
+          "Add debounced git status refresh on external file changes",
+          "Normalize paths for tab lookup (macOS `/private/` prefix handling)",
+          "Fix `package.json` invalid JSON escape (`\\~` to `~`)"
+        ],
+        "improvements": [
+          "Show \"File updated from disk\" toast when editor auto-reloads external changes",
+          "Prevent duplicate toasts for the same file update (stable toast ID + pending change dedup)"
+        ]
+      }
+    },
+    {
+      "version": "0.11.0",
+      "date": "2026-02-20",
+      "previousVersion": "0.10.0",
+      "sections": {
+        "features": [
+          "Implement Phase 5.5 — Notesage Library & iCloud Sync"
+        ],
+        "improvements": [
+          "Redesign Sync settings with \"configure then apply\" pattern (pending state, Apply/Discard buttons)",
+          "Replace intrusive AlertDialog confirmations with inline migration preview and path flow visualization",
+          "Show all workspace projects in Sync settings, not just library projects",
+          "Pin settings dialog to fixed top position to prevent layout jumps",
+          "Add ghost checkmark on hover for persona and sync project cards",
+          "Fix filesystem watcher self-write false positives (TTL-based HashMap instead of single-use HashSet)"
+        ]
+      }
+    },
+    {
+      "version": "0.10.0",
+      "date": "2026-02-19",
+      "previousVersion": "0.9.0",
+      "sections": {
+        "features": [
+          "Add custom title bar with drag region overlay",
+          "Add rail-to-drawer sidebar with collapsible sections",
+          "Add command palette with file search, actions, and focus mode toggle (Cmd+K, Cmd+Shift+F)",
+          "Add focus mode — hides sidebar, tabs, status bar (Cmd+.)",
+          "Add document outline popover (Cmd+Shift+O)",
+          "Add contextual status bar with git branch, comment count, page position indicator",
+          "Add comment list popover from status bar badge with scroll-to-comment navigation",
+          "Add page break visibility toggle (visible gap vs continuous margin ticks)",
+          "Add toolbar visibility toggle in settings"
+        ],
+        "fixes": [
+          "Fix empty catch blocks, add strokeWidth and standard icon size to slash commands",
+          "Fix code review warnings: inline styles, any types, error toasts, keyboard shortcuts",
+          "Replace alert() with toast notifications for save/auto-save errors",
+          "Fix drag region clickability, settings row interaction"
+        ],
+        "improvements": [
+          "Eliminate all inline CSS variable styles and hover handlers across codebase",
+          "Normalize text sizes to Tailwind scale, add missing strokeWidth={1.5}",
+          "Replace inline styles with Tailwind classes throughout",
+          "Make editor scrollbar more prominent",
+          "Add focus states and normalize font sizes in CommentListPopover",
+          "Improve CSS custom property typing for editor styles",
+          "Command palette: denser rows, file count in placeholder"
+        ]
+      }
+    },
+    {
+      "version": "0.9.0",
+      "date": "2026-02-18",
+      "previousVersion": "0.8.0",
+      "sections": {
+        "features": [
+          "Inline comments system (Phase 5, Stream A) — select text, add/edit/delete comments via popover, comment highlights with orange accent",
+          "Filesystem watcher with external change detection (Phase 5, Stream C) — detects when open files are modified externally, prompts to reload",
+          "Git branch diff review (Phase 5, Stream B) — compare current branch against another, accept/reject changes",
+          "Restore open tabs on app restart — persists which files were open and re-opens them",
+          "Comments on non-project files (Explorer) using path-based keys — no frontmatter modification to external files"
+        ],
+        "fixes": [
+          "Fix per-tab scroll position regression (tabs were sharing scroll positions)",
+          "Fix stray cursor appearing in top-left corner after tab switch",
+          "Fix comment decoration race condition on first comment creation",
+          "Fix comment popover not dismissing delete confirmation dialog correctly"
+        ],
+        "improvements": [
+          "Comment storage strategy: UUID keys for project files (survives renames), path hash keys for non-project files (no file modification)",
+          "UUID generated eagerly when comment popover opens, reverted on cancel",
+          "Added Phase 5.5 (Notesage Library & iCloud Sync) to roadmap"
+        ]
+      }
+    },
+    {
+      "version": "0.8.0",
+      "date": "2026-02-18",
+      "previousVersion": "0.7.0",
+      "sections": {
+        "features": [
+          "PDF export via embedded Typst 0.14 typesetting engine",
+          "Three export templates: Clean (sans-serif, Inter), Academic (serif, Source Serif 4), Report (title page + ToC)",
+          "Page size options: A4, Letter, A5",
+          "Table of contents and page numbers toggles",
+          "Export triggers: Cmd+Shift+E keyboard shortcut, toolbar button, sidebar context menu (\"Export as PDF\" on .md files)",
+          "Native save dialog for PDF output",
+          "Export settings persistence between sessions (template, page size, ToC, page numbers)",
+          "Bundled OFL-licensed fonts: Inter, Source Serif 4, JetBrains Mono (~2.7MB)",
+          "Markdown-to-Typst converter via comrak GFM parser (headings, lists, tables, code blocks, blockquotes, images, links, task lists, horizontal rules, formatting)"
+        ],
+        "improvements": [
+          "Consolidated documentation: merged phase-1-spec.md and future-phases.md into product-description.md",
+          "Slimmed CLAUDE.md by removing duplicated content"
+        ]
+      }
+    },
+    {
+      "version": "0.7.0",
+      "date": "2026-02-18",
+      "previousVersion": "0.6.2",
+      "sections": {
+        "features": [
+          "Add AI web search with Anthropic and OpenAI provider-native search",
+          "Search toggle in chat input footer (Globe icon) with per-provider state",
+          "Citation display in chat messages with numbered \"Sources\" section and clickable URLs",
+          "Citations open in system browser via Tauri opener plugin"
+        ],
+        "improvements": [
+          "Migrate OpenAI from Chat Completions API to Responses API (`/v1/responses`)",
+          "Upgrade OpenAI model from `gpt-4-turbo-preview` to `gpt-4o`",
+          "Rewrite Anthropic streaming to use real SSE parsing instead of character-by-character emit",
+          "Remove DuckDuckGo tool infrastructure (replaced by provider-native search)",
+          "Remove `urlencoding` crate dependency (no longer needed)",
+          "Clean up unused `HashMap` import in AI commands"
+        ]
+      }
+    },
+    {
+      "version": "0.6.2",
+      "date": "2026-02-17",
+      "previousVersion": "0.6.1",
+      "sections": {
+        "fixes": [
+          "Remove duplicate Link and Underline Tiptap extensions that caused console warnings on every editor creation",
+          "Configure Link through StarterKit options instead of adding a separate instance (StarterKit now bundles both)"
+        ]
+      }
+    },
+    {
+      "version": "0.6.1",
+      "date": "2026-02-17",
+      "previousVersion": "0.6.0",
+      "sections": {
+        "fixes": [
+          "Fix scroll position lost when resizing window across the 1200px wide/narrow layout breakpoint",
+          "Fix scroll position lost on window resize (fullscreen toggle, split-screen, etc.)",
+          "Eliminate flicker when restoring scroll position on tab switch and layout remount"
+        ],
+        "improvements": [
+          "Persist per-document scroll positions across app restarts (stored as ratios in localStorage)",
+          "Scroll positions keyed by file path so they survive tab close/reopen cycles",
+          "Suppress scroll position saves during resize to prevent overwriting with incorrect values",
+          "Double-RAF scroll restore ensures correct positioning after ProseMirror DOM updates"
+        ]
+      }
+    },
+    {
+      "version": "0.6.0",
+      "date": "2026-02-17",
+      "previousVersion": "0.5.2",
+      "sections": {
+        "features": [
+          "Add project goals system with template-based creation (OKR, Simple Checklist, SMART Goals, Milestone Tracker)",
+          "Add YAML frontmatter support to the editor (parse, preserve, and edit frontmatter on markdown files)",
+          "Add frontmatter indicator and expandable editor UI for viewing/editing frontmatter fields",
+          "Add goal template picker dialog for adding goals to existing projects via context menu",
+          "Add project template picker to New Project dialog (Default, Research, Writing, Blank)",
+          "Add goals discovery hook that scans project files for `type: goal` frontmatter",
+          "Inject goals content into AI chat system prompt for project-aware conversations",
+          "Add multi-select project selector in chat footer for choosing which projects provide AI context",
+          "Add goals badge showing count of discovered goal files in chat footer",
+          "Dynamic chat placeholder when project has goals (\"Ask about your project goals...\")"
+        ],
+        "fixes": [
+          "Fix Anthropic API system message handling — system messages now correctly passed as top-level `system` parameter (both streaming and non-streaming)",
+          "Fix chat footer overflow when panel is narrow (flex-wrap)",
+          "Remove redundant CTX badge from chat footer"
+        ],
+        "improvements": [
+          "Rename `.note-sage` metadata directory to `.notesage` with auto-migration for existing projects",
+          "Add vitest for unit testing with frontmatter round-trip tests",
+          "Add `yaml` dependency for frontmatter parsing"
+        ]
+      }
+    },
+    {
+      "version": "0.5.2",
+      "date": "2026-02-17",
+      "previousVersion": "0.5.1",
+      "sections": {
+        "features": [
+          "Toast notifications for git operations via sonner: commit success (with short hash), branch switch/list errors, git init failures"
+        ]
+      }
+    },
+    {
+      "version": "0.5.1",
+      "date": "2026-02-17",
+      "previousVersion": "0.5.0",
+      "sections": {
+        "fixes": [
+          "Per-document scroll positions: switching tabs no longer resets scroll to top",
+          "Inactive editor tabs now have a visible background instead of blending into the tab bar"
+        ]
+      }
+    },
+    {
+      "version": "0.5.0",
+      "date": "2026-02-17",
+      "previousVersion": "0.4.0",
+      "sections": {
+        "features": [
+          "Git integration (opt-in via Settings > Editor > Version Control)",
+          "Window position and size persisted across app restarts (tauri-plugin-window-state)"
+        ],
+        "improvements": [
+          "Settings dialog: Editor tab is now the default/first tab, above AI tabs",
+          "Development lifecycle: migrated slash commands to skills system",
+          "Release workflow: removed macOS Intel build target"
+        ]
+      }
+    }
+  ]
+}

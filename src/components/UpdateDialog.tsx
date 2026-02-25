@@ -1,4 +1,4 @@
-import { ArrowUpCircle } from "lucide-react";
+import { ArrowUpCircle, Sparkles, Bug, Zap, ChevronDown } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import ReactMarkdown from "react-markdown";
+import { useChangelog, type Release } from "@/hooks/useChangelog";
+import { cn } from "@/lib/utils";
+import { useState } from "react";
 import type { UpdateInfo, UpdateStatus } from "@/hooks/useAutoUpdate";
 
 interface UpdateDialogProps {
@@ -21,6 +23,83 @@ interface UpdateDialogProps {
   onInstall: () => void;
   onRestartNow: () => void;
   onDismiss: () => void;
+}
+
+function VersionRelease({ release }: { release: Release }) {
+  const [expanded, setExpanded] = useState(true);
+
+  const hasMultipleSections =
+    (release.sections.features?.length ?? 0) +
+      (release.sections.fixes?.length ?? 0) +
+      (release.sections.improvements?.length ?? 0) >
+    0;
+
+  if (!hasMultipleSections) return null;
+
+  return (
+    <div className="space-y-2">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 w-full text-left"
+      >
+        <span className="text-xs font-medium text-foreground">
+          v{release.version}
+        </span>
+        {release.date && (
+          <span className="text-[10px] text-muted-foreground">
+            {release.date}
+          </span>
+        )}
+        <ChevronDown
+          className={cn(
+            "h-3 w-3 text-muted-foreground ml-auto transition-transform duration-150",
+            expanded && "rotate-180"
+          )}
+          strokeWidth={1.5}
+        />
+      </button>
+
+      {expanded && (
+        <div className="space-y-2 pl-0.5">
+          <SectionItems
+            icon={Sparkles}
+            items={release.sections.features}
+          />
+          <SectionItems
+            icon={Bug}
+            items={release.sections.fixes}
+          />
+          <SectionItems
+            icon={Zap}
+            items={release.sections.improvements}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SectionItems({
+  icon: Icon,
+  items,
+}: {
+  icon: typeof Sparkles;
+  items?: string[];
+}) {
+  if (!items || items.length === 0) return null;
+  return (
+    <ul className="space-y-0.5">
+      {items.map((item, i) => (
+        <li
+          key={i}
+          className="flex gap-1.5 text-xs text-muted-foreground leading-relaxed"
+        >
+          <Icon className="h-3 w-3 shrink-0 mt-0.5" strokeWidth={1.5} />
+          <span>{item}</span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 export function UpdateDialog({
@@ -35,15 +114,24 @@ export function UpdateDialog({
 }: UpdateDialogProps) {
   if (!updateInfo) return null;
 
+  const { getChangesBetween } = useChangelog();
   const isDownloading = status === "downloading";
   const isDownloaded = status === "downloaded";
+
+  const releases = getChangesBetween(
+    updateInfo.currentVersion,
+    updateInfo.version
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
-            <ArrowUpCircle className="h-5 w-5 text-foreground" strokeWidth={1.5} />
+            <ArrowUpCircle
+              className="h-5 w-5 text-foreground"
+              strokeWidth={1.5}
+            />
             <div>
               <DialogTitle>
                 {isDownloaded ? "Ready to Restart" : "Update Available"}
@@ -55,13 +143,23 @@ export function UpdateDialog({
           </div>
         </DialogHeader>
 
-        {updateInfo.notes && (
-          <ScrollArea className="max-h-48 rounded-md border border-border p-3">
-            <div className="prose prose-sm dark:prose-invert prose-headings:text-foreground prose-p:text-muted-foreground prose-a:text-foreground prose-strong:text-foreground max-w-none text-xs leading-relaxed [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_p]:my-1 [&_ul]:my-1 [&_li]:my-0">
-              <ReactMarkdown>{updateInfo.notes}</ReactMarkdown>
+        <ScrollArea className="max-h-48 rounded-md border border-border p-3">
+          {releases.length > 0 ? (
+            <div className="space-y-3">
+              {releases.map((release) => (
+                <VersionRelease key={release.version} release={release} />
+              ))}
             </div>
-          </ScrollArea>
-        )}
+          ) : updateInfo.notes ? (
+            <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
+              {updateInfo.notes}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              A new version is available.
+            </p>
+          )}
+        </ScrollArea>
 
         {isDownloading ? (
           <div className="space-y-2 py-2">
@@ -82,9 +180,7 @@ export function UpdateDialog({
             >
               Later
             </Button>
-            <Button onClick={onRestartNow}>
-              Restart Now
-            </Button>
+            <Button onClick={onRestartNow}>Restart Now</Button>
           </DialogFooter>
         ) : (
           <DialogFooter className="gap-2">
@@ -97,9 +193,7 @@ export function UpdateDialog({
             >
               Later
             </Button>
-            <Button onClick={onInstall}>
-              Install & Restart
-            </Button>
+            <Button onClick={onInstall}>Install & Restart</Button>
           </DialogFooter>
         )}
       </DialogContent>

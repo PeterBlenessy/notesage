@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, UserCircle2, FileText, GitBranch, Cloud, Info, Loader2, Check, ArrowUpCircle } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, UserCircle2, FileText, GitBranch, Cloud, Info, Loader2, Check, ArrowUpCircle, ScrollText } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -11,6 +11,7 @@ import { UseCaseRoutingSettings } from './UseCaseRoutingSettings';
 import { PersonasSettings } from './PersonasSettings';
 import { PromptsSettings } from './PromptsSettings';
 import { SyncSettings } from './SyncSettings';
+import { ChangelogDialog } from './ChangelogDialog';
 import { useSettingsStore, type MeasurementUnit } from '@/stores/settings-store';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -123,6 +124,7 @@ export function SettingsDialog({ open, onOpenChange, updateState, onCheckForUpda
   } = useSettingsStore();
   const [activeTab, setActiveTab] = useState<SettingsTab>('editor');
   const [gitNotAvailable, setGitNotAvailable] = useState(false);
+  const [changelogOpen, setChangelogOpen] = useState(false);
 
   const handleGitToggle = useCallback(async (checked: boolean) => {
     if (!checked) {
@@ -529,6 +531,15 @@ export function SettingsDialog({ open, onOpenChange, updateState, onCheckForUpda
                       Version {__APP_VERSION__}
                     </p>
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setChangelogOpen(true)}
+                  >
+                    <ScrollText className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+                    Changelog
+                  </Button>
+                  <ChangelogDialog open={changelogOpen} onOpenChange={setChangelogOpen} />
                 </div>
 
                 <div className="h-px bg-border" />
