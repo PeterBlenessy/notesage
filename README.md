@@ -1,27 +1,36 @@
 # Notesage
 
-A WYSIWYG markdown editor with AI collaboration capabilities, built with Tauri v2.
+A polished WYSIWYG markdown editor with AI collaboration capabilities, built as a native desktop app with Tauri v2.
 
 ## Features
 
 ### Editor
-- Full-featured Tiptap WYSIWYG editor with markdown round-tripping
+- Tiptap WYSIWYG editor with full markdown round-tripping
+- Raw markdown source mode with CodeMirror 6 (toggle with Cmd+/)
 - Multi-tab editing with file tree sidebar
-- Slash commands, floating toolbar, light/dark theme
+- Slash commands, floating toolbar, bubble menu
+- YAML frontmatter support with fold/collapse
+- Light and dark themes following system preference
 
 ### AI Collaboration
-- **Multi-Provider Support**: Anthropic Claude, OpenAI, and Ollama (local)
-- **AI Chat Panel**: Right sidebar with conversation history (Cmd+Shift+A)
-- **Inline AI Actions**: Improve, summarize, or expand selected text via bubble menu
-- **AI Web Search**: Provider-native web search with citation display
-- **AI Personas**: Configurable system prompts and per-project AI context
-- **Settings UI**: Configure API keys and provider preferences (Cmd+,)
+- **Multi-Provider Connections**: Anthropic Claude, OpenAI, Ollama (local), and ACP agents (Claude Code, Codex, Copilot CLI, Gemini CLI)
+- **Per-Use-Case Routing**: Separate provider assignment for chat, agent tasks, and inline completions
+- **AI Chat Panel**: Streaming responses, web search with citations, agent activity log (Cmd+Shift+A)
+- **Inline AI Actions**: Improve, summarize, or expand selected text — works in both WYSIWYG and source mode
+- **Copilot Inline Completions**: Ghost text autocomplete via GitHub Copilot Language Server
+- **Agent Comment Delegation**: Delegate comments to AI agents with threaded replies and activity tracking
+
+### Document Export
+- **PDF Export**: Typst-powered typesetting with three templates (Clean, Academic, Report)
+- **PDF Viewing**: Built-in PDF viewer for non-markdown files
+- **DOCX Viewing & Import**: View Word documents and import them as markdown
 
 ### Project Workspace
-- **Git Integration**: File status indicators, commit dialog, branch switching
-- **Project Goals**: YAML frontmatter-based goals with templates (OKR, SMART, etc.)
-- **Project Metadata**: `.notesage/` directory with per-project settings and AI context
-- **Multi-Project**: Select multiple projects as AI context in chat
+- **Git Integration**: File status indicators, commit dialog, branch switching, branch diff review
+- **Comments**: Inline comments with delegation to AI agents, lifecycle tracking, bulk operations
+- **External Change Detection**: Filesystem watcher with inline diff review or auto-accept
+- **Project Goals**: YAML frontmatter-based goals with AI context injection
+- **Notesage Library**: Central `~/Notesage` folder with selective iCloud sync per project
 
 ## Getting Started
 
@@ -33,121 +42,114 @@ A WYSIWYG markdown editor with AI collaboration capabilities, built with Tauri v
 ### Development
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Run in development mode
-pnpm tauri dev
-
-# Build for production
-pnpm tauri build
+pnpm install        # Install dependencies
+pnpm tauri dev      # Run in development mode
+pnpm tauri build    # Build for production
 ```
 
 ## Keyboard Shortcuts
 
-### General
-- `Cmd+O` - Open file
-- `Cmd+S` - Save file
-- `Cmd+N` - New file
-- `Cmd+W` - Close tab
-- `Cmd+F` - Quick open (fuzzy file search)
-- `Cmd+,` - Settings
-- `Cmd+Shift+T` - Toggle theme
-- `Cmd+Shift+A` - Toggle AI chat panel
+| Action | Shortcut |
+|--------|----------|
+| Save | Cmd+S |
+| New note | Cmd+N |
+| Close tab | Cmd+W |
+| Command palette | Cmd+K |
+| Search files | Cmd+Shift+F |
+| Toggle sidebar | Cmd+B |
+| Toggle theme | Cmd+T |
+| Toggle chat panel | Cmd+Shift+A |
+| Toggle source mode | Cmd+/ |
+| Export as PDF | Cmd+Shift+E |
+| Focus mode | Cmd+. |
+| Document outline | Cmd+Shift+O |
+| Settings | Cmd+, |
+| Add comment | Cmd+Shift+M |
 
-### Editor Formatting
-- `Cmd+B` - Bold
-- `Cmd+I` - Italic
-- `Cmd+U` - Underline
-- `Cmd+Shift+X` - Strikethrough
-- `Cmd+E` - Code
-- `Cmd+K` - Insert link
-- `Cmd+Z` - Undo
-- `Cmd+Shift+Z` - Redo
-
-### AI Features
-- `Cmd+Enter` (in chat) - Send message
-- Select text + click "Improve/Summarize/Expand" in bubble menu
+### Formatting
+| Action | Shortcut |
+|--------|----------|
+| Bold | Cmd+B |
+| Italic | Cmd+I |
+| Underline | Cmd+U |
+| Strikethrough | Cmd+Shift+X |
+| Inline code | Cmd+E |
+| Link | Cmd+K |
 
 ## AI Provider Setup
 
-### Anthropic Claude
-1. Open Settings (Cmd+,)
-2. Go to "AI Providers" tab
-3. Select "Anthropic Claude"
-4. Enter your API key (starts with `sk-ant-`)
-5. Click "Save" and "Test Connection"
+Open Settings (Cmd+,) and go to the **Connections** tab.
 
-### OpenAI
-1. Open Settings (Cmd+,)
-2. Go to "AI Providers" tab
-3. Select "OpenAI"
-4. Enter your API key (starts with `sk-`)
-5. Click "Save" and "Test Connection"
+### API Key Providers
+- **Anthropic Claude**: Add connection with API key (Claude Sonnet 4.5, web search)
+- **OpenAI**: Add connection with API key (GPT-4o, web search)
+- **Ollama**: Add local connection (any model, no API key needed)
 
-### Ollama (Local)
-1. Install and run Ollama: https://ollama.ai
-2. Open Settings (Cmd+,)
-3. Go to "AI Providers" tab
-4. Select "Ollama (Local)"
-5. Verify URL is correct (default: `http://localhost:11434`)
-6. Click "Test Connection"
+### Agent Providers (ACP)
+- **Claude Code**: `npm install -g @anthropic-ai/claude-code` + Anthropic subscription
+- **Codex**: `npm install -g @openai/codex` + OpenAI subscription
+- **Copilot CLI**: `npm install -g @githubnext/github-copilot-cli` + Copilot subscription
+- **Gemini CLI**: `npm install -g @anthropic-ai/gemini-cli` + Google account (free)
+
+### Inline Completions
+- **Copilot LSP**: `npm install -g @anthropic-ai/copilot-language-server` + Copilot subscription
+- Routed separately via Advanced Routing in Settings
 
 ## Tech Stack
 
-- **Desktop**: Tauri v2
-- **Frontend**: React 19 + TypeScript 5
-- **Editor**: Tiptap v2 (ProseMirror)
-- **UI**: shadcn/ui (Radix UI + Tailwind CSS v4)
-- **State**: Zustand
-- **AI**: Multi-provider abstraction (Anthropic, OpenAI, Ollama)
+| Layer | Technology |
+|-------|-----------|
+| Desktop shell | Tauri v2 |
+| Frontend | React 19 + TypeScript 5 |
+| Editor | Tiptap v2 (ProseMirror) + CodeMirror 6 |
+| UI components | shadcn/ui (Radix + Tailwind v4) |
+| State management | Zustand with persist |
+| PDF export | Typst (embedded) |
+| AI agents | Agent Client Protocol (ACP) |
+| Inline completions | Copilot Language Server (LSP) |
+| Package manager | pnpm |
 
 ## Project Structure
 
 ```
 note-sage/
-├── src/                      # React frontend
+├── src/                        # React frontend
 │   ├── components/
-│   │   ├── editor/          # Tiptap editor components
-│   │   ├── chat/            # AI chat panel
-│   │   ├── settings/        # Settings dialog
-│   │   ├── sidebar/         # File tree
-│   │   └── tabs/            # Tab management
-│   ├── stores/              # Zustand state stores
-│   ├── hooks/               # React hooks
-│   └── lib/
-│       └── ai/              # AI provider abstraction
-├── src-tauri/               # Rust backend
-│   └── src/
-│       └── commands/
-│           ├── file.rs      # File operations
-│           ├── dialog.rs    # Native dialogs
-│           ├── ai.rs        # AI API calls
-│           ├── ai_streaming.rs  # SSE streaming (Anthropic, OpenAI, Ollama)
-│           └── git.rs       # Git operations
-└── docs/                    # Documentation
+│   │   ├── editor/            # Tiptap + CodeMirror editor
+│   │   ├── chat/              # AI chat panel
+│   │   ├── settings/          # Settings dialog
+│   │   ├── sidebar/           # File tree
+│   │   └── ui/                # shadcn/ui components
+│   ├── stores/                # Zustand state stores
+│   ├── hooks/                 # React hooks
+│   └── lib/ai/               # AI provider abstraction
+├── src-tauri/                 # Rust backend
+│   ├── src/commands/          # Tauri IPC commands
+│   ├── src/export/            # Typst PDF engine
+│   ├── fonts/                 # Bundled fonts
+│   └── templates/             # Typst templates
+└── docs/                      # Documentation
     ├── architecture.md
+    ├── design-system.md
     ├── product-description.md
-    ├── prds/                # Product requirements
-    └── history/             # Release history
+    ├── prds/                  # Product requirements
+    └── history/               # Release history
 ```
-
-## Security Notes
-
-⚠️ **API Keys**: Currently stored in browser localStorage (plaintext). This is convenient for development but means keys are visible in browser developer tools. For production use, consider encrypting stored credentials.
 
 ## Roadmap
 
-- ✅ Phase 1: The Editor
-- ✅ Phase 2: AI Collaboration
-- ✅ Phase 3: Project Workspace
-- 🔜 Phase 4: Document Generation (PDF/DOCX/PPTX export)
-- 🔜 Phase 5: Comments & Change Detection
-- 🔜 Phase 6: Agentic AI Collaboration
-- 🔜 Phase 7: AI-Assisted Research
-- 🔜 Phase 8: Workflows & Automation
-- 🔜 Phase 9: Local AI
+- Phase 1: The Editor
+- Phase 2: AI Collaboration
+- Phase 3: Project Workspace
+- Phase 4: Document Generation (PDF export)
+- Phase 5: Comments & Change Detection
+- Phase 5.5: Notesage Library & iCloud Sync
+- Phase 6: AI Provider Architecture v2 (ACP agents, Copilot LSP)
+- Phase 6.5: Chat UX & Agent Polish (current)
+- **Phase 7: AI-Assisted Research** (next)
+- Phase 8: Workflows & Automation
+- Phase 9: Local AI
 
 ## License
 
-See CLAUDE.md for full project specification.
+MIT License. See [LICENSE](LICENSE) for details.
