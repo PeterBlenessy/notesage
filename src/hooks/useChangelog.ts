@@ -43,28 +43,30 @@ export function useChangelog() {
 
     async function load() {
       setLoading(true);
-      try {
-        // Try remote first
-        const res = await fetch(GITHUB_CHANGELOG_URL);
-        if (res.ok) {
-          const data = await res.json();
-          if (!cancelled) setChangelog(data);
-          setLoading(false);
-          return;
-        }
-      } catch {
-        // Remote failed — fall through to bundled
-      }
 
+      // Load bundled changelog first (instant, always available)
       try {
-        // Fall back to bundled changelog
         const res = await fetch('/changelog.json');
         if (res.ok) {
           const data = await res.json();
           if (!cancelled) setChangelog(data);
         }
       } catch {
-        // No changelog available
+        // No bundled changelog
+      }
+
+      // Then try remote for potentially newer data (with timeout)
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        const res = await fetch(GITHUB_CHANGELOG_URL, { signal: controller.signal });
+        clearTimeout(timeout);
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) setChangelog(data);
+        }
+      } catch {
+        // Remote unavailable — bundled data already loaded
       }
 
       if (!cancelled) setLoading(false);
