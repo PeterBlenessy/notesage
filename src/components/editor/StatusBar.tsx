@@ -229,7 +229,7 @@ export function StatusBar({
         {viewMode && (
           <>
             <span className="uppercase tracking-wider font-medium">
-              {viewMode === "source" ? "Source" : "WYSIWYG"}
+              {viewMode === "source" ? "Raw" : "Rich text"}
             </span>
             <span className="w-px h-2.5 bg-border" />
           </>

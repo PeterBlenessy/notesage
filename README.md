@@ -1,12 +1,12 @@
 # Notesage
 
-A polished WYSIWYG markdown editor with AI collaboration capabilities, built as a native desktop app with Tauri v2.
+A polished rich text markdown editor with AI collaboration capabilities, built as a native desktop app with Tauri v2.
 
 ## Features
 
 ### Editor
-- Tiptap WYSIWYG editor with full markdown round-tripping
-- Raw markdown source mode with CodeMirror 6 (toggle with Cmd+/)
+- Tiptap rich text editor with full markdown round-tripping
+- Raw markdown mode with CodeMirror 6 (toggle with Cmd+/)
 - Multi-tab editing with file tree sidebar
 - Slash commands, floating toolbar, bubble menu
 - YAML frontmatter support with fold/collapse
@@ -16,7 +16,7 @@ A polished WYSIWYG markdown editor with AI collaboration capabilities, built as 
 - **Multi-Provider Connections**: Anthropic Claude, OpenAI, Ollama (local), and ACP agents (Claude Code, Codex, Copilot CLI, Gemini CLI)
 - **Per-Use-Case Routing**: Separate provider assignment for chat, agent tasks, and inline completions
 - **AI Chat Panel**: Streaming responses, web search with citations, agent activity log (Cmd+Shift+A)
-- **Inline AI Actions**: Improve, summarize, or expand selected text — works in both WYSIWYG and source mode
+- **Inline AI Actions**: Improve, summarize, or expand selected text — works in both rich text and raw mode
 - **Copilot Inline Completions**: Ghost text autocomplete via GitHub Copilot Language Server
 - **Agent Comment Delegation**: Delegate comments to AI agents with threaded replies and activity tracking
 
@@ -59,7 +59,7 @@ pnpm tauri build    # Build for production
 | Toggle sidebar | Cmd+B |
 | Toggle theme | Cmd+T |
 | Toggle chat panel | Cmd+Shift+A |
-| Toggle source mode | Cmd+/ |
+| Toggle raw mode | Cmd+/ |
 | Export as PDF | Cmd+Shift+E |
 | Focus mode | Cmd+. |
 | Document outline | Cmd+Shift+O |

@@ -240,7 +240,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">
-              {isSource ? "Switch to WYSIWYG (Cmd+/)" : "Switch to Source (Cmd+/)"}
+              {isSource ? "Switch to Rich text (Cmd+/)" : "Switch to Raw (Cmd+/)"}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

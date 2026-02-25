@@ -1002,8 +1002,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           onSelectComment={(comment) => {
             if (activeTab?.viewMode === "source") {
               // Comments aren't rendered in source mode — offer to switch
-              toast("Comments are not available in Source mode", {
-                description: "Switch to WYSIWYG to view and edit comments.",
+              toast("Comments are not available in Raw mode", {
+                description: "Switch to Rich text to view and edit comments.",
                 action: {
                   label: "Switch",
                   onClick: () => {
