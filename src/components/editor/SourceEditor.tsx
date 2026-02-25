@@ -50,7 +50,7 @@ export function SourceEditor({ content, onUpdate, onSave, onToggleViewMode, onVi
         },
       },
       {
-        key: "Mod-/",
+        key: "Shift-Mod-/",
         run: () => {
           onToggleViewModeRef.current?.();
           return true;
