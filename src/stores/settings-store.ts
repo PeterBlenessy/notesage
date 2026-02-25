@@ -26,6 +26,7 @@ interface SettingsStore {
   pageBreaks: PageBreaks;
   typewriterScrolling: boolean;
   externalChangeDiffReview: boolean;
+  copilotMaxCompletionChars: number;
   autoCheckUpdates: boolean;
   lastUpdateCheck: string | null;
   dismissedVersion: string | null;
@@ -53,6 +54,7 @@ interface SettingsStore {
   setPageBreaks: (mode: PageBreaks) => void;
   setTypewriterScrolling: (enabled: boolean) => void;
   setExternalChangeDiffReview: (enabled: boolean) => void;
+  setCopilotMaxCompletionChars: (chars: number) => void;
   setAutoCheckUpdates: (enabled: boolean) => void;
   setLastUpdateCheck: (timestamp: string | null) => void;
   setDismissedVersion: (version: string | null) => void;
@@ -86,6 +88,7 @@ export const useSettingsStore = create<SettingsStore>()(
       pageBreaks: "continuous",
       typewriterScrolling: false,
       externalChangeDiffReview: false,
+      copilotMaxCompletionChars: 80,
       autoCheckUpdates: true,
       lastUpdateCheck: null,
       dismissedVersion: null,
@@ -160,6 +163,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setExternalChangeDiffReview: (enabled: boolean) => {
         set({ externalChangeDiffReview: enabled });
+      },
+
+      setCopilotMaxCompletionChars: (chars: number) => {
+        set({ copilotMaxCompletionChars: chars });
       },
 
       setAutoCheckUpdates: (enabled: boolean) => {

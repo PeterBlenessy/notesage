@@ -13,6 +13,8 @@ function CopilotIcon({ className }: { className?: string }) {
 }
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import { useSettingsStore } from "@/stores/settings-store";
 import { CommentListPopover } from "./CommentListPopover";
 import { ChangeListPopover } from "./ChangeListPopover";
 import type { Comment } from "@/stores/comment-store";
@@ -22,6 +24,27 @@ import type { ExternalChangeEntry } from "@/stores/external-change-store";
 const fmt = new Intl.NumberFormat(navigator.languages as string[], { useGrouping: true });
 function fmtNum(n: number): string {
   return fmt.format(n);
+}
+
+function CopilotMaxCharsSlider() {
+  const maxChars = useSettingsStore((s) => s.copilotMaxCompletionChars);
+  const setMaxChars = useSettingsStore((s) => s.setCopilotMaxCompletionChars);
+  return (
+    <div className="space-y-1.5 pt-1 border-t border-border">
+      <div className="flex items-center justify-between">
+        <label className="text-xs text-muted-foreground">Max display length</label>
+        <span className="text-[10px] text-muted-foreground tabular-nums">{maxChars} chars</span>
+      </div>
+      <Slider
+        min={40}
+        max={200}
+        step={10}
+        value={[maxChars]}
+        onValueChange={([v]) => setMaxChars(v)}
+        className="w-full"
+      />
+    </div>
+  );
 }
 
 interface StatusBarProps {
@@ -220,6 +243,7 @@ export function StatusBar({
                   <p className="text-[10px] text-muted-foreground/60 leading-tight">
                     Session only — resets when tab is closed
                   </p>
+                  <CopilotMaxCharsSlider />
                 </div>
               </PopoverContent>
             </Popover>

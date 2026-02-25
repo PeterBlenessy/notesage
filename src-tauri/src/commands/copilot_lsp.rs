@@ -868,18 +868,50 @@ pub async fn copilot_lsp_sign_in(
         .as_ref()
         .ok_or("Copilot LSP not running. Call copilot_lsp_start first.")?;
 
-    // Send signIn request — returns { userCode, command }
+    // Send signIn request — returns { userCode, command } or { user_code, verification_uri }
     let result = process
         .transport
         .send_request("signIn", Some(serde_json::json!({})))
         .await
         .map_err(|e| format!("signIn failed: {}", e))?;
 
+    eprintln!("[copilot-lsp] signIn response: {}", result);
+
+    // Try multiple field names for the device code (LSP versions vary)
     let user_code = result
         .get("userCode")
         .and_then(|v| v.as_str())
+        .or_else(|| result.get("user_code").and_then(|v| v.as_str()))
         .unwrap_or("")
         .to_string();
+
+    // Try to extract verification URI from response, with fallback
+    let verification_uri = result
+        .get("verificationUri")
+        .and_then(|v| v.as_str())
+        .or_else(|| result.get("verification_uri").and_then(|v| v.as_str()))
+        .unwrap_or("https://github.com/login/device")
+        .to_string();
+
+    // If user_code is empty, try extracting from verificationUri query params
+    let user_code = if user_code.is_empty() {
+        if let Some(code) = extract_code_from_uri(&verification_uri) {
+            eprintln!("[copilot-lsp] Extracted user_code from URI: {}", code);
+            code
+        } else {
+            eprintln!("[copilot-lsp] WARNING: Could not extract user_code from signIn response");
+            let _ = app.emit(
+                "copilot-sign-in-error",
+                serde_json::json!({
+                    "message": "Sign-in returned empty device code. The LSP response format may have changed.",
+                    "response": result.to_string(),
+                }),
+            );
+            String::new()
+        }
+    } else {
+        user_code
+    };
 
     // Extract the command to execute (triggers browser opening)
     if let Some(command) = result.get("command") {
@@ -909,7 +941,6 @@ pub async fn copilot_lsp_sign_in(
     }
 
     // Emit device code event for the frontend
-    let verification_uri = "https://github.com/login/device".to_string();
     let _ = app.emit(
         "copilot-auth-device-code",
         serde_json::json!({
@@ -946,6 +977,28 @@ pub async fn copilot_lsp_sign_out(
     status.message = "Signed out".to_string();
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Try to extract a user code from a verification URI's query parameters.
+/// e.g. `https://github.com/login/device?user_code=ABCD-1234` → Some("ABCD-1234")
+fn extract_code_from_uri(uri: &str) -> Option<String> {
+    let query = uri.split('?').nth(1)?;
+    for param in query.split('&') {
+        let mut kv = param.splitn(2, '=');
+        let key = kv.next()?;
+        let value = kv.next()?;
+        if key == "user_code" || key == "userCode" || key == "code" {
+            let decoded = value.replace("%20", " ").replace('+', " ");
+            if !decoded.is_empty() {
+                return Some(decoded);
+            }
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------

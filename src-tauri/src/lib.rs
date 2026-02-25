@@ -17,6 +17,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(WatcherState::new())
         .manage(AcpState::new())
         .manage(CopilotLspState::new())
@@ -29,6 +30,7 @@ pub fn run() {
             list_files_shallow,
             create_file,
             create_directory,
+            copy_file,
             rename_path,
             delete_path,
             path_exists,

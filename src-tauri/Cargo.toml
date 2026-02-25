@@ -57,4 +57,5 @@ tokio-util = { version = "0.7", features = ["compat"] }
 
 # Auto-update
 tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 

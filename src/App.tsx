@@ -101,7 +101,7 @@ function App() {
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
 
   const { chatPanelOpen, setChatPanelOpen } = useSettingsStore();
-  const { state: updateState, checkForUpdate, downloadAndInstall, dismiss: dismissUpdate } = useAutoUpdate();
+  const { state: updateState, checkForUpdate, downloadAndInstall, restartNow, dismiss: dismissUpdate } = useAutoUpdate();
 
   const { addProject, setExplorerPath, setExplorerTree } = useWorkspaceStore();
   const { projectPath: activeProjectPath } = useActiveProject();
@@ -587,6 +587,7 @@ function App() {
           status={updateState.status}
           progress={updateState.progress}
           onInstall={downloadAndInstall}
+          onRestartNow={restartNow}
           onDismiss={dismissUpdate}
         />
       </div>

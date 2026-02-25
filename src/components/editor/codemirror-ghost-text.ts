@@ -6,6 +6,7 @@ import {
   WidgetType,
   keymap,
 } from "@codemirror/view";
+import { useSettingsStore } from "@/stores/settings-store";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -47,8 +48,12 @@ class GhostTextWidget extends WidgetType {
   toDOM() {
     const span = document.createElement("span");
     span.className = "ghost-text";
-    // Show first line only for inline display
-    span.textContent = this.text.split("\n")[0];
+    // Show first line only for inline display, truncated to max chars
+    const firstLine = this.text.split("\n")[0];
+    const maxChars = useSettingsStore.getState().copilotMaxCompletionChars;
+    span.textContent = maxChars > 0 && firstLine.length > maxChars
+      ? firstLine.slice(0, maxChars) + "\u2026"
+      : firstLine;
     return span;
   }
   eq(other: GhostTextWidget) {

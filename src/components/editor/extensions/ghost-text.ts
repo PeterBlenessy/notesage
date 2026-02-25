@@ -4,6 +4,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { hasActiveInlineDiff } from './inline-diff';
 import { hasActiveSuggestion } from './ai-suggestion';
+import { useSettingsStore } from '@/stores/settings-store';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -121,6 +122,7 @@ function createGhostTextDecoration(
   }
 
   // Create a widget decoration at the cursor position
+  const maxChars = useSettingsStore.getState().copilotMaxCompletionChars;
   const widget = Decoration.widget(
     completion.from,
     () => {
@@ -128,7 +130,9 @@ function createGhostTextDecoration(
       span.className = 'ghost-text';
       // Show first line only for inline display; full text on accept
       const firstLine = completion.text.split('\n')[0];
-      span.textContent = firstLine;
+      span.textContent = maxChars > 0 && firstLine.length > maxChars
+        ? firstLine.slice(0, maxChars) + '\u2026'
+        : firstLine;
       span.setAttribute('contenteditable', 'false');
       return span;
     },

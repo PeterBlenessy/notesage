@@ -182,6 +182,26 @@ pub async fn path_exists(path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+pub async fn copy_file(source: String, destination: String) -> Result<(), String> {
+    let src = Path::new(&source);
+    if !src.exists() {
+        return Err(format!("Source file does not exist: {}", source));
+    }
+    if !src.is_file() {
+        return Err(format!("Source is not a file: {}", source));
+    }
+    // Ensure destination parent directory exists
+    if let Some(parent) = Path::new(&destination).parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {}", e))?;
+        }
+    }
+    fs::copy(&source, &destination)
+        .map(|_| ())
+        .map_err(|e| format!("Failed to copy file: {}", e))
+}
+
+#[tauri::command]
 pub async fn get_home_dir() -> Result<String, String> {
     dirs::home_dir()
         .map(|p| p.to_string_lossy().to_string())

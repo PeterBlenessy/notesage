@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { FolderOpen, ImageIcon } from "lucide-react";
 import { resolveImageSrc } from "@/lib/image-utils";
+import { toast } from "sonner";
 
 interface ImageInsertDialogProps {
   open: boolean;
@@ -21,6 +23,8 @@ interface ImageInsertDialogProps {
   onInsert: (src: string, alt: string) => void;
   /** Current document's directory, used to resolve relative paths for preview. */
   documentDir?: string;
+  /** Project root directory. When set, local images are copied to images/ subfolder for portability. */
+  projectRoot?: string;
 }
 
 export function ImageInsertDialog({
@@ -28,6 +32,7 @@ export function ImageInsertDialog({
   onOpenChange,
   onInsert,
   documentDir,
+  projectRoot,
 }: ImageInsertDialogProps) {
   const [tab, setTab] = useState<"url" | "file">("url");
   const [url, setUrl] = useState("");
@@ -67,13 +72,50 @@ export function ImageInsertDialog({
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const src = tab === "url" ? url.trim() : filePath;
     if (!src) return;
 
-    if (tab === "file" && documentDir) {
-      // Store as relative path if the file is under the document directory
+    if (tab === "file" && projectRoot) {
+      // Copy image to project-relative images/ folder for portability
+      try {
+        const fileName = src.split("/").pop() ?? "image.png";
+        const imagesDir = `${projectRoot}/images`;
+
+        // Ensure images/ directory exists
+        try {
+          await invoke("create_directory", { path: imagesDir });
+        } catch {
+          // Directory may already exist — that's fine
+        }
+
+        // Handle name collisions by adding a numeric suffix
+        let destName = fileName;
+        let destPath = `${imagesDir}/${destName}`;
+        let counter = 1;
+        while (await invoke<boolean>("path_exists", { path: destPath })) {
+          const ext = fileName.lastIndexOf(".") >= 0 ? fileName.slice(fileName.lastIndexOf(".")) : "";
+          const base = fileName.lastIndexOf(".") >= 0 ? fileName.slice(0, fileName.lastIndexOf(".")) : fileName;
+          destName = `${base}-${counter}${ext}`;
+          destPath = `${imagesDir}/${destName}`;
+          counter++;
+        }
+
+        await invoke("copy_file", { source: src, destination: destPath });
+        onInsert(`images/${destName}`, alt.trim());
+      } catch (err) {
+        console.error("Failed to copy image:", err);
+        toast.error("Failed to copy image to project");
+        // Fall back to relative path
+        const relativePath = documentDir ? toRelativePath(src, documentDir) : src;
+        onInsert(relativePath, alt.trim());
+      }
+    } else if (tab === "file" && documentDir) {
+      // No project root — use relative path with portability warning
       const relativePath = toRelativePath(src, documentDir);
+      if (relativePath === src) {
+        toast.warning("Image uses an absolute path and won't be visible on other devices");
+      }
       onInsert(relativePath, alt.trim());
     } else {
       onInsert(src, alt.trim());

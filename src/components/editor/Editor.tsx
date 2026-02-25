@@ -1168,6 +1168,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         open={imageDialogOpen}
         onOpenChange={setImageDialogOpen}
         documentDir={activeTab ? getDocumentDir(activeTab.filePath) : undefined}
+        projectRoot={projectPath ?? undefined}
         onInsert={(src, alt) => {
           if (editor) {
             editor.chain().focus().setImage({ src, alt: alt || undefined }).run();

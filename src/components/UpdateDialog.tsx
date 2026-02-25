@@ -19,6 +19,7 @@ interface UpdateDialogProps {
   status: UpdateStatus;
   progress: number | null;
   onInstall: () => void;
+  onRestartNow: () => void;
   onDismiss: () => void;
 }
 
@@ -29,11 +30,13 @@ export function UpdateDialog({
   status,
   progress,
   onInstall,
+  onRestartNow,
   onDismiss,
 }: UpdateDialogProps) {
   if (!updateInfo) return null;
 
   const isDownloading = status === "downloading";
+  const isDownloaded = status === "downloaded";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -42,7 +45,9 @@ export function UpdateDialog({
           <div className="flex items-center gap-3">
             <ArrowUpCircle className="h-5 w-5 text-foreground" strokeWidth={1.5} />
             <div>
-              <DialogTitle>Update Available</DialogTitle>
+              <DialogTitle>
+                {isDownloaded ? "Ready to Restart" : "Update Available"}
+              </DialogTitle>
               <p className="text-xs text-muted-foreground mt-0.5">
                 v{updateInfo.currentVersion} → v{updateInfo.version}
               </p>
@@ -66,6 +71,21 @@ export function UpdateDialog({
             </div>
             <Progress value={progress ?? 0} className="h-1.5" />
           </div>
+        ) : isDownloaded ? (
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                onDismiss();
+                onOpenChange(false);
+              }}
+            >
+              Later
+            </Button>
+            <Button onClick={onRestartNow}>
+              Restart Now
+            </Button>
+          </DialogFooter>
         ) : (
           <DialogFooter className="gap-2">
             <Button

@@ -455,7 +455,7 @@ function ConnectCopilotLsp({
   useEffect(() => {
     authCompleted.current = false;
 
-    const unlisten = listen<{ message: string; kind: string }>(
+    const unlistenStatus = listen<{ message: string; kind: string }>(
       'copilot-status-changed',
       (event) => {
         const { message, kind } = event.payload;
@@ -466,8 +466,19 @@ function ConnectCopilotLsp({
       }
     );
 
+    // Listen for sign-in errors from the backend
+    const unlistenError = listen<{ message: string; response?: string }>(
+      'copilot-sign-in-error',
+      (event) => {
+        console.error('[copilot-lsp-ui] sign-in error:', event.payload);
+        setError(event.payload.message);
+        setPhase('error');
+      }
+    );
+
     return () => {
-      unlisten.then((fn) => fn());
+      unlistenStatus.then((fn) => fn());
+      unlistenError.then((fn) => fn());
     };
   }, [completeAuth, retryCount]);
 

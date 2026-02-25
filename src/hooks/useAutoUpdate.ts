@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import { useSettingsStore } from "@/stores/settings-store";
 
@@ -15,6 +16,7 @@ export type UpdateStatus =
   | "checking"
   | "available"
   | "downloading"
+  | "downloaded"
   | "error";
 
 export interface UpdateState {
@@ -99,8 +101,10 @@ export function useAutoUpdate() {
           const pct = totalSize > 0 ? Math.round((downloaded / totalSize) * 100) : null;
           setState((s) => ({ ...s, progress: pct }));
         }
-        // 'Finished' — the app will restart via the plugin
       });
+
+      // Download & install completed — waiting for restart
+      setState((s) => ({ ...s, status: "downloaded", progress: 100 }));
     } catch (err) {
       setState((s) => ({
         ...s,
@@ -108,6 +112,10 @@ export function useAutoUpdate() {
         error: err instanceof Error ? err.message : String(err),
       }));
     }
+  }, []);
+
+  const restartNow = useCallback(async () => {
+    await relaunch();
   }, []);
 
   const dismiss = useCallback(() => {
@@ -138,6 +146,7 @@ export function useAutoUpdate() {
     state,
     checkForUpdate,
     downloadAndInstall,
+    restartNow,
     dismiss,
     skipVersion,
   };
