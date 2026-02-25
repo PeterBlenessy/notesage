@@ -23,10 +23,22 @@ interface UseEditorOptions {
   content: string;
   onUpdate?: (content: string) => void;
   editable?: boolean;
+  /** Document directory for resolving relative image paths on initial load. */
+  documentDir?: string;
 }
 
-export function useEditor({ content, onUpdate, editable = true }: UseEditorOptions) {
+export function useEditor({ content, onUpdate, editable = true, documentDir }: UseEditorOptions) {
   const editor = useTiptapEditor({
+    onCreate: ({ editor }) => {
+      // Set documentDir early so image nodes created during initial parse resolve correctly
+      if (documentDir) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const imageStorage = (editor.storage as any).image;
+        if (imageStorage) {
+          imageStorage.documentDir = documentDir;
+        }
+      }
+    },
     extensions: [
       StarterKit.configure({
         codeBlock: false,

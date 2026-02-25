@@ -21,9 +21,9 @@ interface ImageInsertDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onInsert: (src: string, alt: string) => void;
-  /** Current document's directory, used to resolve relative paths for preview. */
+  /** Current document's directory, used to resolve relative paths for preview and fallback. */
   documentDir?: string;
-  /** Project root directory. When set, local images are copied to images/ subfolder for portability. */
+  /** Project root directory. Images are copied to projectRoot/images/ for portability. */
   projectRoot?: string;
 }
 
@@ -76,17 +76,19 @@ export function ImageInsertDialog({
     const src = tab === "url" ? url.trim() : filePath;
     if (!src) return;
 
-    if (tab === "file" && projectRoot) {
-      // Copy image to project-relative images/ folder for portability
+    // Copy target: projectRoot/images/ if in a project, else documentDir/images/
+    const copyRoot = projectRoot ?? documentDir;
+
+    if (tab === "file" && copyRoot) {
       try {
         const fileName = src.split("/").pop() ?? "image.png";
-        const imagesDir = `${projectRoot}/images`;
+        const imagesDir = `${copyRoot}/images`;
 
         // Ensure images/ directory exists
         try {
           await invoke("create_directory", { path: imagesDir });
         } catch {
-          // Directory may already exist — that's fine
+          // Directory may already exist
         }
 
         // Handle name collisions by adding a numeric suffix
@@ -102,21 +104,24 @@ export function ImageInsertDialog({
         }
 
         await invoke("copy_file", { source: src, destination: destPath });
-        onInsert(`images/${destName}`, alt.trim());
+
+        // Compute relative path from document to projectRoot/images/destName
+        const relativePath = relativePathFromTo(documentDir ?? copyRoot, `${imagesDir}/${destName}`);
+        onInsert(relativePath, alt.trim());
       } catch (err) {
         console.error("Failed to copy image:", err);
         toast.error("Failed to copy image to project");
-        // Fall back to relative path
-        const relativePath = documentDir ? toRelativePath(src, documentDir) : src;
-        onInsert(relativePath, alt.trim());
+        // Fall back to relative path from document
+        if (documentDir) {
+          const relativePath = relativePathBetweenDirs(documentDir, src);
+          if (relativePath === src) {
+            toast.warning("Image uses an absolute path and won't be visible on other devices");
+          }
+          onInsert(relativePath, alt.trim());
+        } else {
+          onInsert(src, alt.trim());
+        }
       }
-    } else if (tab === "file" && documentDir) {
-      // No project root — use relative path with portability warning
-      const relativePath = toRelativePath(src, documentDir);
-      if (relativePath === src) {
-        toast.warning("Image uses an absolute path and won't be visible on other devices");
-      }
-      onInsert(relativePath, alt.trim());
     } else {
       onInsert(src, alt.trim());
     }
@@ -234,17 +239,38 @@ export function ImageInsertDialog({
 }
 
 /**
+ * Compute a relative path from a directory to a target file.
+ * e.g. relativePathFromTo("/a/b/notes", "/a/b/images/photo.png") → "../images/photo.png"
+ *      relativePathFromTo("/a/b", "/a/b/images/photo.png") → "images/photo.png"
+ */
+function relativePathFromTo(fromDir: string, toFile: string): string {
+  const fromParts = fromDir.replace(/\/$/, "").split("/");
+  const toParts = toFile.split("/");
+
+  // Find common prefix length
+  let common = 0;
+  while (common < fromParts.length && common < toParts.length && fromParts[common] === toParts[common]) {
+    common++;
+  }
+
+  // Number of directories to go up from fromDir
+  const ups = fromParts.length - common;
+  const remainder = toParts.slice(common);
+
+  const parts = [...Array(ups).fill(".."), ...remainder];
+  return parts.join("/");
+}
+
+/**
  * Convert an absolute file path to a relative path from the given directory.
  * Falls back to the absolute path if it's not under the directory.
  */
-function toRelativePath(absolutePath: string, baseDir: string): string {
-  // Normalize trailing slashes
+function relativePathBetweenDirs(baseDir: string, absolutePath: string): string {
   const base = baseDir.endsWith("/") ? baseDir : `${baseDir}/`;
 
   if (absolutePath.startsWith(base)) {
     return `./${absolutePath.slice(base.length)}`;
   }
 
-  // Not under base directory — return absolute path
   return absolutePath;
 }

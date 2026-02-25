@@ -41,12 +41,29 @@ export function resolveImageSrc(src: string, documentDir?: string): string {
   if (documentDir) {
     // Strip leading ./ if present
     const cleanSrc = decoded.startsWith("./") ? decoded.slice(2) : decoded;
-    const absolutePath = `${documentDir}/${cleanSrc}`;
+    const absolutePath = normalizePath(`${documentDir}/${cleanSrc}`);
     return convertFileSrc(absolutePath);
   }
 
   // Cannot resolve relative path without documentDir
   return src;
+}
+
+/**
+ * Resolve `.` and `..` segments in a path.
+ * e.g. `/a/b/notes/../images/photo.png` → `/a/b/images/photo.png`
+ */
+function normalizePath(path: string): string {
+  const parts = path.split("/");
+  const resolved: string[] = [];
+  for (const part of parts) {
+    if (part === "..") {
+      resolved.pop();
+    } else if (part !== ".") {
+      resolved.push(part);
+    }
+  }
+  return resolved.join("/");
 }
 
 /**

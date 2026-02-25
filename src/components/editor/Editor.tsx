@@ -218,6 +218,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     content: activeTab?.content || "",
     onUpdate: handleUpdate,
     editable: true,
+    documentDir: activeTab ? getDocumentDir(activeTab.filePath) : undefined,
   });
 
   const { exportPdf, isExporting } = useExportOperations(editor);
@@ -591,6 +592,14 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
       lastLoadedTabId.current = activeTab.id;
 
+      // Set document directory BEFORE setContent so image nodes resolve paths correctly
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const imageStorage = (editor.storage as any).image;
+      if (imageStorage) {
+        imageStorage.documentDir = getDocumentDir(activeTab.filePath);
+        imageStorage.openInsertDialog = () => setImageDialogOpen(true);
+      }
+
       // If the tab has a pending external change in the old store (dirty tab / git auto-accept),
       // load that content instead of the stale tab.content.
       const pendingExternal = externalChanges[activeTab.filePath];
@@ -601,14 +610,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         toast("File updated from disk", { id: "external-change", description: activeTab.fileName });
       } else {
         editor.commands.setContent(encodeImagePathSpaces(activeTab.content));
-      }
-
-      // Set document directory for local image resolution
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const imageStorage = (editor.storage as any).image;
-      if (imageStorage) {
-        imageStorage.documentDir = getDocumentDir(activeTab.filePath);
-        imageStorage.openInsertDialog = () => setImageDialogOpen(true);
       }
 
       editor.commands.blur();
