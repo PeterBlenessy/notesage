@@ -32,11 +32,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ExportDialog } from "@/components/ExportDialog";
 import { Toolbar } from "./Toolbar";
+import { SourceEditor } from "./SourceEditor";
 import { ImageInsertDialog } from "./ImageInsertDialog";
 import { ImageViewer } from "./viewers/ImageViewer";
 import { PlainTextViewer } from "./viewers/PlainTextViewer";
-import { PdfPlaceholder } from "./viewers/PdfPlaceholder";
-import { DocxPlaceholder } from "./viewers/DocxPlaceholder";
+import { PdfViewer } from "./viewers/PdfViewer";
+import { DocxViewer } from "./viewers/DocxViewer";
 import { BubbleMenu } from "./BubbleMenu";
 import { DiffReviewBanner } from "./DiffReviewBanner";
 import { ExternalChangeBanner } from "./ExternalChangeBanner";
@@ -90,7 +91,7 @@ interface EditorProps {
 }
 
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick }: EditorProps) {
-  const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange, toggleCopilotForTab } = useEditorStore();
+  const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange, toggleCopilotForTab, toggleViewMode } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, pageBreaks, notesRootPath } = useSettingsStore();
   const { projectPath } = useActiveProject();
@@ -616,6 +617,41 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     }
   }, [activeTab?.id, editor, activeTab, tabs, setScrollPosition, restoreScrollRatio, externalChanges, updateTabContent, clearExternalChange]);
 
+  // When switching from Source → WYSIWYG, reload editor with current tab content
+  const prevViewMode = useRef(activeTab?.viewMode);
+  useEffect(() => {
+    if (!editor || !activeTab) return;
+    const wasSource = prevViewMode.current === "source";
+    const isNowWysiwyg = activeTab.viewMode !== "source";
+    prevViewMode.current = activeTab.viewMode;
+
+    if (wasSource && isNowWysiwyg) {
+      editor.commands.setContent(encodeImagePathSpaces(activeTab.content));
+      // Re-set image storage in case it was lost
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const imageStorage = (editor.storage as any).image;
+      if (imageStorage) {
+        imageStorage.documentDir = getDocumentDir(activeTab.filePath);
+        imageStorage.openInsertDialog = () => setImageDialogOpen(true);
+      }
+    }
+  }, [editor, activeTab?.viewMode, activeTab?.id]);
+
+  // Handle view mode toggle — sync content between WYSIWYG and Source
+  const handleToggleViewMode = useCallback(() => {
+    if (!activeTab || activeTab.fileType !== "markdown") return;
+    const isCurrentlySource = activeTab.viewMode === "source";
+
+    if (!isCurrentlySource && editor) {
+      // WYSIWYG → Source: serialize current editor state to markdown
+      const markdown = getMarkdownFromEditor(editor);
+      updateTabContent(activeTab.id, markdown, activeTab.isDirty);
+    }
+    // Source → WYSIWYG: content is already in tab store (updated by SourceEditor)
+
+    toggleViewMode(activeTab.id);
+  }, [activeTab, editor, updateTabContent, toggleViewMode]);
+
   // Handle Cmd+S to save
   useEffect(() => {
     const handleSave = async (e: KeyboardEvent) => {
@@ -634,6 +670,18 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     window.addEventListener("keydown", handleSave);
     return () => window.removeEventListener("keydown", handleSave);
   }, [activeTab, saveFile]);
+
+  // Handle Cmd+/ to toggle view mode
+  useEffect(() => {
+    const handleToggle = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "/") {
+        e.preventDefault();
+        handleToggleViewMode();
+      }
+    };
+    window.addEventListener("keydown", handleToggle);
+    return () => window.removeEventListener("keydown", handleToggle);
+  }, [handleToggleViewMode]);
 
   // Auto-save on blur (when switching tabs or focus changes)
   useEffect(() => {
@@ -813,9 +861,32 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       case "image":
         return <ImageViewer filePath={activeTab.filePath} />;
       case "pdf":
-        return <PdfPlaceholder fileName={activeTab.fileName} />;
+        return <PdfViewer filePath={activeTab.filePath} fileName={activeTab.fileName} />;
       case "docx":
-        return <DocxPlaceholder fileName={activeTab.fileName} />;
+        return (
+          <DocxViewer
+            filePath={activeTab.filePath}
+            fileName={activeTab.fileName}
+            onConvertToMarkdown={async (_html, name) => {
+              try {
+                const { docxToMarkdown } = await import("@/lib/import-utils");
+                const { getBinaryData } = await import("@/lib/binary-cache");
+                const data = getBinaryData(activeTab.filePath);
+                if (!data) { toast.error("No DOCX data available"); return; }
+                const md = await docxToMarkdown(data);
+                const mdName = name.replace(/\.docx$/i, ".md");
+                const dir = activeTab.filePath.slice(0, activeTab.filePath.lastIndexOf("/"));
+                const mdPath = `${dir}/${mdName}`;
+                const { tauriApi } = await import("@/lib/tauri");
+                await tauriApi.writeFile(mdPath, md);
+                onOpenFile?.(mdPath, mdName);
+                toast.success(`Saved ${mdName}`);
+              } catch (err) {
+                toast.error(`Import failed: ${err}`);
+              }
+            }}
+          />
+        );
       case "other":
         return <PlainTextViewer content={activeTab.content} fileName={activeTab.fileName} />;
     }
@@ -833,7 +904,12 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     <div className="h-full flex flex-col overflow-hidden">
       {toolbarVisible && !focusMode && (
         <div className="flex items-center border-b border-border shrink-0 bg-background">
-          <Toolbar editor={editor} onImageInsert={() => setImageDialogOpen(true)} />
+          <Toolbar
+            editor={editor}
+            onImageInsert={() => setImageDialogOpen(true)}
+            viewMode={activeTab?.viewMode}
+            onToggleViewMode={activeTab?.fileType === "markdown" ? handleToggleViewMode : undefined}
+          />
           {gitEnabled && isGitRepo && projectPath && !reviewActive && (
             <div className="shrink-0 pr-2">
               <BranchDiffSelector projectPath={projectPath} />
@@ -852,33 +928,54 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       {activeExternalContent !== undefined && activeTab?.isDirty && (
         <ExternalChangeBanner onReload={handleExternalReload} onKeep={handleExternalKeep} />
       )}
-      <div ref={scrollAreaRef} className="flex-1 overflow-y-auto editor-scroll-area">
-        <div
-          className={`min-h-full flex justify-center ${
-            contentWidth === "full" ? "py-4 px-4" : "py-10 px-8"
-          }`}
-        >
+      {activeTab?.viewMode === "source" ? (
+        <SourceEditor
+          content={activeTab.content}
+          onUpdate={(content) => {
+            if (activeTab) {
+              const hasChanged = content !== activeTab.content;
+              updateTabContent(activeTab.id, content, hasChanged);
+            }
+          }}
+          onSave={async () => {
+            if (activeTab && activeTab.isDirty) {
+              try {
+                await saveFile(activeTab.filePath, activeTab.content, activeTab.id);
+              } catch (error) {
+                toast.error(`Failed to save file: ${error}`);
+              }
+            }
+          }}
+        />
+      ) : (
+        <div ref={scrollAreaRef} className="flex-1 overflow-y-auto editor-scroll-area">
           <div
-            ref={contentRef}
-            className={`w-full ${isPaperMode ? 'paper-mode' : ''}`}
-            data-page-breaks={isPaperMode ? pageBreaks : undefined}
-            style={{
-              maxWidth: maxWidth ? `${maxWidth}px` : undefined,
-              '--editor-padding-top': paddingTop,
-              '--editor-padding-bottom': paddingBottom,
-              '--editor-padding-left': paddingLeft,
-              '--editor-padding-right': paddingRight,
-              ...(pageHeight ? { '--page-height': `${pageHeight}px` } : {}),
-            } as React.CSSProperties & Record<`--${string}`, string | undefined>}
+            className={`min-h-full flex justify-center ${
+              contentWidth === "full" ? "py-4 px-4" : "py-10 px-8"
+            }`}
           >
-            {activeTab && (
-              <FrontmatterBlock tabId={activeTab.id} frontmatter={activeTab.frontmatter} />
-            )}
-            <EditorContent editor={editor} />
+            <div
+              ref={contentRef}
+              className={`w-full ${isPaperMode ? 'paper-mode' : ''}`}
+              data-page-breaks={isPaperMode ? pageBreaks : undefined}
+              style={{
+                maxWidth: maxWidth ? `${maxWidth}px` : undefined,
+                '--editor-padding-top': paddingTop,
+                '--editor-padding-bottom': paddingBottom,
+                '--editor-padding-left': paddingLeft,
+                '--editor-padding-right': paddingRight,
+                ...(pageHeight ? { '--page-height': `${pageHeight}px` } : {}),
+              } as React.CSSProperties & Record<`--${string}`, string | undefined>}
+            >
+              {activeTab && (
+                <FrontmatterBlock tabId={activeTab.id} frontmatter={activeTab.frontmatter} />
+              )}
+              <EditorContent editor={editor} />
+            </div>
           </div>
+          {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}
         </div>
-        {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}
-      </div>
+      )}
       {!focusMode && (
         <StatusBar
           editor={editor}
@@ -923,6 +1020,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             }
           }}
           canDelegate={canDelegate}
+          viewMode={activeTab?.viewMode}
           copilotActive={!!copilotConnection}
           copilotDisabledForTab={activeTab?.copilotDisabled ?? false}
           onToggleCopilot={() => { if (activeTabId) toggleCopilotForTab(activeTabId); }}

@@ -1,5 +1,6 @@
 import type { Editor } from "@tiptap/core";
 import { ArrowUpCircle, GitBranch } from "lucide-react";
+import type { ViewMode } from "@/lib/file-utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 function CopilotIcon({ className }: { className?: string }) {
@@ -51,6 +52,7 @@ interface StatusBarProps {
   copilotActive?: boolean;
   copilotDisabledForTab?: boolean;
   onToggleCopilot?: () => void;
+  viewMode?: ViewMode;
   updateAvailable?: boolean;
   updateVersion?: string | null;
   onUpdateClick?: () => void;
@@ -84,6 +86,7 @@ export function StatusBar({
   copilotActive = false,
   copilotDisabledForTab = false,
   onToggleCopilot,
+  viewMode,
   updateAvailable = false,
   updateVersion = null,
   onUpdateClick,
@@ -220,6 +223,14 @@ export function StatusBar({
                 </div>
               </PopoverContent>
             </Popover>
+            <span className="w-px h-2.5 bg-border" />
+          </>
+        )}
+        {viewMode && (
+          <>
+            <span className="uppercase tracking-wider font-medium">
+              {viewMode === "source" ? "Source" : "WYSIWYG"}
+            </span>
             <span className="w-px h-2.5 bg-border" />
           </>
         )}
