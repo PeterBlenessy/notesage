@@ -50,7 +50,7 @@ export function TitleBar({ onToggleChat }: TitleBarProps) {
           )}
           title={`${chatPanelOpen ? "Hide" : "Show"} AI Chat (⌘⇧A)`}
         >
-          <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
+          <MessageSquare className="size-4" strokeWidth={1.5} />
         </Button>
       </div>
     </div>

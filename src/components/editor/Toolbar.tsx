@@ -89,7 +89,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
             disabled={!editor.can().undo()}
             title="Undo (Cmd+Z)"
           >
-            <Undo className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <Undo className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarButton
@@ -97,7 +97,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
             disabled={!editor.can().redo()}
             title="Redo (Cmd+Shift+Z)"
           >
-            <Redo className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <Redo className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarSeparator />
@@ -107,7 +107,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
             active={editor.isActive("bold")}
             title="Bold (Cmd+B)"
           >
-            <Bold className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <Bold className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarButton
@@ -115,7 +115,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
             active={editor.isActive("italic")}
             title="Italic (Cmd+I)"
           >
-            <Italic className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <Italic className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarButton
@@ -123,7 +123,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
             active={editor.isActive("underline")}
             title="Underline (Cmd+U)"
           >
-            <Underline className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <Underline className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarButton
@@ -131,7 +131,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
             active={editor.isActive("strike")}
             title="Strikethrough (Cmd+Shift+X)"
           >
-            <Strikethrough className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <Strikethrough className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarButton
@@ -139,7 +139,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
             active={editor.isActive("code")}
             title="Code (Cmd+E)"
           >
-            <Code className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <Code className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarSeparator />
@@ -149,7 +149,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
             active={editor.isActive("bulletList")}
             title="Bullet List"
           >
-            <List className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <List className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarButton
@@ -157,7 +157,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
             active={editor.isActive("orderedList")}
             title="Numbered List"
           >
-            <ListOrdered className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <ListOrdered className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarButton
@@ -165,7 +165,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
             active={editor.isActive("taskList")}
             title="Task List"
           >
-            <ListChecks className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <ListChecks className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarSeparator />
@@ -175,7 +175,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
             active={editor.isActive("blockquote")}
             title="Blockquote"
           >
-            <Quote className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <Quote className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarButton
@@ -183,14 +183,14 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
             active={editor.isActive("codeBlock")}
             title="Code Block"
           >
-            <CodeSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <CodeSquare className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarButton
             onClick={() => editor.chain().focus().setHorizontalRule().run()}
             title="Horizontal Rule"
           >
-            <Minus className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <Minus className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarSeparator />
@@ -200,14 +200,14 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
             active={editor.isActive("table")}
             title="Insert Table"
           >
-            <Table className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <Table className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarButton
             onClick={() => onImageInsert?.()}
             title="Insert Image"
           >
-            <ImageIcon className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <ImageIcon className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
         </>
       )}
@@ -233,9 +233,9 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
                 )}
               >
                 {isSource ? (
-                  <FileText className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  <FileText className="size-4" strokeWidth={1.5} />
                 ) : (
-                  <FileCode className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  <FileCode className="size-4" strokeWidth={1.5} />
                 )}
               </Button>
             </TooltipTrigger>

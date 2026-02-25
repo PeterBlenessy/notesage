@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { StickyNote, FolderDot, FolderOpen, FolderPlus, FilePlus, Loader2 } from "lucide-react";
+import { FileText, FolderDot, FolderOpen, FolderPlus, FilePlus, Loader2 } from "lucide-react";
 import { tauriApi } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
@@ -75,7 +75,7 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
       <div className="flex-1 overflow-y-auto py-1">
         {/* QUICK NOTES */}
         <SidebarSection
-          icon={<StickyNote className="h-4 w-4" strokeWidth={1.5} />}
+          icon={<FileText className="h-4 w-4" strokeWidth={1.5} />}
           title="Quick Notes"
           open={!notesCollapsed}
           onOpenChange={(open) => setNotesCollapsed(!open)}
