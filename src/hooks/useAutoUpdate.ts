@@ -90,16 +90,23 @@ export function useAutoUpdate() {
 
     let totalSize = 0;
     let downloaded = 0;
+    let lastPct = 0;
 
     try {
       await update.downloadAndInstall((event) => {
         if (event.event === "Started") {
           totalSize = event.data.contentLength ?? 0;
           downloaded = 0;
+          lastPct = 0;
         } else if (event.event === "Progress") {
           downloaded += event.data.chunkLength;
-          const pct = totalSize > 0 ? Math.round((downloaded / totalSize) * 100) : null;
-          setState((s) => ({ ...s, progress: pct }));
+          if (totalSize > 0) {
+            const pct = Math.min(100, Math.floor((downloaded / totalSize) * 100));
+            if (pct > lastPct) {
+              lastPct = pct;
+              setState((s) => ({ ...s, progress: pct }));
+            }
+          }
         }
       });
 
