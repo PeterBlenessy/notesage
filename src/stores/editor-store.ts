@@ -18,6 +18,8 @@ export interface Tab {
   viewMode?: ViewMode;
   /** Session-only: when true, Copilot completions are suppressed for this tab. */
   copilotDisabled?: boolean;
+  /** Session-only: true when the file has been deleted from disk. */
+  deleted?: boolean;
 }
 
 export interface RecentFile {
@@ -51,6 +53,7 @@ interface EditorStore {
   setActiveTab: (tabId: string) => void;
   updateTabContent: (tabId: string, content: string, isDirty: boolean) => void;
   markTabClean: (tabId: string) => void;
+  markTabDeleted: (filePath: string) => void;
   setFrontmatter: (tabId: string, frontmatter: Frontmatter | null) => void;
   updateFrontmatter: (tabId: string, updates: Partial<Frontmatter>) => void;
   setScrollPosition: (filePath: string, ratio: number) => void;
@@ -169,6 +172,16 @@ export const useEditorStore = create<EditorStore>()(
         set((state) => ({
           tabs: state.tabs.map((tab) =>
             tab.id === tabId ? { ...tab, isDirty: false } : tab
+          ),
+        }));
+      },
+
+      markTabDeleted: (filePath: string) => {
+        set((state) => ({
+          tabs: state.tabs.map((tab) =>
+            tab.filePath === filePath || tab.filePath.startsWith(filePath + '/')
+              ? { ...tab, deleted: true, isDirty: false }
+              : tab
           ),
         }));
       },

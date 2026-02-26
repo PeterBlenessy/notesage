@@ -278,6 +278,7 @@ export function useFileOperations() {
         refreshGitForPath(path);
         throw error;
       }
+      useEditorStore.getState().markTabDeleted(path);
       await refreshFileTree(path);
       refreshGitForPath(path);
       return true;

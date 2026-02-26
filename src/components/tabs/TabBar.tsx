@@ -75,7 +75,7 @@ export function TabBar() {
             <TabIcon fileType={tab.fileType} />
 
             {/* File name */}
-            <span className="truncate">{tab.fileName}</span>
+            <span className={cn("truncate", tab.deleted && "line-through text-muted-foreground")}>{tab.fileName}</span>
 
             {/* Close button */}
             <span

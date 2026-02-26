@@ -28,6 +28,16 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const GIT_STATUS_CONFIG: Record<GitStatus, { label: string; color: string; tooltip: string }> = {
   modified: { label: "M", color: "text-muted-foreground/50", tooltip: "Modified" },
@@ -60,6 +70,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
   const expanded = isExpanded(expandKey);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(entry.name);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   const projects = useWorkspaceStore((s) => s.projects);
@@ -172,13 +183,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
     setRenameValue(entry.name);
   };
 
-  const handleDelete = async () => {
-    const confirmMessage = entry.is_directory
-      ? `Delete folder "${entry.name}" and all its contents?`
-      : `Delete file "${entry.name}"?`;
-
-    if (!window.confirm(confirmMessage)) return;
-
+  const handleDeleteConfirm = async () => {
     try {
       await deletePath(entry.path);
     } catch (error) {
@@ -382,12 +387,33 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
             <Pencil className="mr-2 h-4 w-4" strokeWidth={1.5} />
             Rename
           </ContextMenuItem>
-          <ContextMenuItem onClick={handleDelete}>
+          <ContextMenuItem onClick={() => setDeleteDialogOpen(true)}>
             <Trash2 className="mr-2 h-4 w-4 text-destructive" strokeWidth={1.5} />
             Delete
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {entry.is_directory ? "folder" : "file"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {entry.is_directory
+                ? `"${entry.name}" and all its contents will be permanently deleted.`
+                : `"${entry.name}" will be permanently deleted.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteConfirm}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {entry.is_directory && expanded && entry.children && (
         <div>
