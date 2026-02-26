@@ -71,15 +71,20 @@ Users have different reading/writing preferences. A writer may prefer serif at 1
 ### Future
 
 - **System font enumeration**: Use a Rust crate like `font-kit` via a Tauri command to list all installed system fonts, enabling a full font picker instead of the curated preset list. Requires mapping OS font names to CSS `font-family` values and verifying WebView rendering compatibility.
-- Project-level typography overrides (global -> project -> document cascade)
+- Project-level typography overrides (global -&gt; project -&gt; document cascade)
 - Document-level typography via frontmatter
 - Custom font loading (user-provided fonts / Google Fonts)
 
 ## Quality Gates
 
 - [x] Typography changes apply immediately in the editor
+
 - [x] Settings persist across app restarts
+
 - [x] Reset button restores all defaults
+
 - [x] Works in both light and dark mode
+
 - [x] Popover follows design system (shadcn/ui components, consistent spacing)
+
 - [x] No regressions in existing editor functionality

@@ -42,3 +42,4 @@ Chronological log of major implementation milestones and changes.
 | 036 | [Release v0.16.3](036-release-v0.16.3.md) | Multi-folder explorer, source editor word wrap, UI fixes |
 | 037 | [Release v0.16.4](037-release-v0.16.4.md) | Editor typography settings: font family, size, line height, paragraph spacing |
 | 038 | [Release v0.16.5](038-release-v0.16.5.md) | PDF viewer: continuous scroll, fit-to-page, smoother zoom |
+| 039 | [Release v0.16.6](039-release-v0.16.6.md) | Project rename UX, delete confirmation, tab auto-scroll, progress bar fix |
