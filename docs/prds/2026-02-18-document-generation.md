@@ -1,5 +1,7 @@
 # PRD: Document Generation (Phase 4)
 
+**Status:** Complete (v0.8.0)
+
 ## Problem
 
 Notesage users write and edit markdown documents but have no way to export them as professionally formatted PDFs for sharing, printing, or archiving. Users must copy content into external tools (Google Docs, Word, LaTeX) to produce presentable output. This breaks the writing flow and loses formatting fidelity.

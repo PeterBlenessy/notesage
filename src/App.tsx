@@ -21,6 +21,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSyncStore } from "@/stores/sync-store";
+import { useEditorStylesStore } from "@/stores/editor-styles-store";
 import { tauriApi } from "@/lib/tauri";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
@@ -188,6 +189,11 @@ function App() {
         } catch {
           // Notes root creation failed, that's fine on first launch
         }
+      }
+
+      // Load editor typography settings from disk
+      if (notesRoot) {
+        await useEditorStylesStore.getState().loadSettings(notesRoot);
       }
 
       // Detect iCloud availability

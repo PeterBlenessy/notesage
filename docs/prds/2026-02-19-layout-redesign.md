@@ -1,5 +1,7 @@
 # PRD: Layout Redesign (Phase 5.5A)
 
+**Status:** Complete (v0.10.0)
+
 ## Problem
 
 Notesage's current layout has five chrome rows consuming \~130px of vertical space (native title bar 28px + tab bar 36px + toolbar 36px + editor + status bar 24px). The 40px strip is a dead placeholder with 3 action buttons that duplicate keyboard shortcuts. On narrow windows (&lt;1200px), the sidebar becomes a floating overlay that requires a title bar button click to toggle — there's no fluid way to browse files while writing. The status bar only shows word/char count and reading time, missing key context like comments, git branch, and page position. There is no command palette, no focus mode, and no page break visualization.

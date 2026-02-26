@@ -1,5 +1,7 @@
 # PRD: Comments & Change Detection (Phase 5)
 
+**Status:** Complete (v0.9.0)
+
 ## Problem
 
 Notesage users have no way to annotate their documents with comments — personal notes, reminders, or AI feedback attached to specific text ranges. When AI agents (working in git worktrees) or external editors modify files, the app has no mechanism to detect, visualize, or selectively merge those changes. This creates two gaps:

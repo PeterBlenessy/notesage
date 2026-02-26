@@ -40,3 +40,4 @@ Chronological log of major implementation milestones and changes.
 | 034 | [Release v0.16.1](034-release-v0.16.1.md) | Fix Copilot auth, auto-update restart, portable images, ghost text truncation |
 | 035 | [Release v0.16.2](035-release-v0.16.2.md) | Curated changelog: generator, UpdateDialog, Settings viewer |
 | 036 | [Release v0.16.3](036-release-v0.16.3.md) | Multi-folder explorer, source editor word wrap, UI fixes |
+| 037 | [Release v0.16.4](037-release-v0.16.4.md) | Editor typography settings: font family, size, line height, paragraph spacing |

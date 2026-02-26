@@ -9,8 +9,9 @@
   padding-right: var(--editor-padding-right, 6rem);
   background-color: var(--color-background);
   color: var(--color-foreground);
-  font-size: 16px;
-  line-height: 1.7;
+  font-family: var(--editor-font-family);
+  font-size: var(--editor-font-size, 16px);
+  line-height: var(--editor-line-height, 1.7);
   letter-spacing: -0.01em;
   caret-color: var(--color-primary);
 }
@@ -159,7 +160,7 @@
 
 /* Paragraphs */
 .ProseMirror p {
-  margin-bottom: 0.75em;
+  margin-bottom: var(--editor-paragraph-spacing, 0.75em);
 }
 
 /* Strong */
@@ -171,7 +172,7 @@
 .ProseMirror ul,
 .ProseMirror ol {
   padding-left: 1.5em;
-  margin-bottom: 0.75em;
+  margin-bottom: var(--editor-paragraph-spacing, 0.75em);
 }
 
 .ProseMirror ul {

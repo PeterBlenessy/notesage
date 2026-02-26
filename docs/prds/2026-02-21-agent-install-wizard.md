@@ -1,6 +1,6 @@
 # Agent Binary Auto-Install Wizard
 
-**Date:** 2026-02-21 **Status:** Partially implemented **Parent:** AI Provider Architecture v2
+**Date:** 2026-02-21 **Status:** Guidance MVP complete (see agent-install-guidance.md); auto-install not yet built **Parent:** AI Provider Architecture v2
 
 ## Problem
 

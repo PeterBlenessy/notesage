@@ -5,6 +5,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore, type ContentWidth } from "@/stores/settings-store";
+import { useEditorStylesStore, fontFamilyCSS } from "@/stores/editor-styles-store";
 import { useExternalChangeStore } from "@/stores/external-change-store";
 import { useEditor } from "@/hooks/useEditor";
 import { useFileOperations } from "@/hooks/useFileOperations";
@@ -97,6 +98,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange, toggleCopilotForTab, toggleViewMode } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, pageBreaks, notesRootPath, sourceWordWrap, setSourceWordWrap } = useSettingsStore();
+  const editorStyles = useEditorStylesStore();
   const { projectPath } = useActiveProject();
   const commentStorageRoot = projectPath ?? (notesRootPath && !notesRootPath.startsWith('~') ? notesRootPath : null);
   const repo = useGitStore((s) => projectPath ? s.repos[projectPath] : undefined);
@@ -985,6 +987,10 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
                 '--editor-padding-bottom': paddingBottom,
                 '--editor-padding-left': paddingLeft,
                 '--editor-padding-right': paddingRight,
+                '--editor-font-family': fontFamilyCSS(editorStyles.fontFamily),
+                '--editor-font-size': `${editorStyles.fontSize}px`,
+                '--editor-line-height': String(editorStyles.lineHeight),
+                '--editor-paragraph-spacing': `${editorStyles.paragraphSpacing}em`,
                 ...(pageHeight ? { '--page-height': `${pageHeight}px` } : {}),
               } as React.CSSProperties & Record<`--${string}`, string | undefined>}
             >

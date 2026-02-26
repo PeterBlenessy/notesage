@@ -1,7 +1,7 @@
 # Agent Install & Auth Guidance (MVP)
 
 **Date:** 2026-02-22
-**Status:** Draft
+**Status:** Complete (v0.15.0)
 **Parent:** AI Provider Architecture v2
 **Supersedes:** Partial scope of `2026-02-21-agent-install-wizard.md` (guidance portion only)
 
