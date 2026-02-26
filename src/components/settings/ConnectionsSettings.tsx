@@ -433,7 +433,9 @@ function ConnectCopilotLsp({
   const [deviceCode, setDeviceCode] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [retrying, setRetrying] = useState(false);
+  const [copied, setCopied] = useState(false);
   const isRetryRef = useRef(false);
+  const deviceCodeReceivedRef = useRef(false);
   const onConnectedRef = useRef(onConnected);
   onConnectedRef.current = onConnected;
 
@@ -466,19 +468,26 @@ function ConnectCopilotLsp({
       }
     );
 
-    // Listen for sign-in errors from the backend
-    const unlistenError = listen<{ message: string; response?: string }>(
-      'copilot-sign-in-error',
+    // Listen for device code from server→client signIn request (fallback path).
+    // When the direct signIn RPC returns an empty code, the LSP sends the
+    // device code asynchronously via a server→client request handled in Rust.
+    deviceCodeReceivedRef.current = false;
+    const unlistenDeviceCode = listen<{ userCode: string; verificationUri: string }>(
+      'copilot-auth-device-code',
       (event) => {
-        console.error('[copilot-lsp-ui] sign-in error:', event.payload);
-        setError(event.payload.message);
-        setPhase('error');
+        const { userCode } = event.payload;
+        console.log('[copilot-lsp-ui] device code received via event:', userCode);
+        if (userCode && !authCompleted.current) {
+          deviceCodeReceivedRef.current = true;
+          setDeviceCode(userCode);
+          setPhase('device_code');
+        }
       }
     );
 
     return () => {
       unlistenStatus.then((fn) => fn());
-      unlistenError.then((fn) => fn());
+      unlistenDeviceCode.then((fn) => fn());
     };
   }, [completeAuth, retryCount]);
 
@@ -565,14 +574,20 @@ function ConnectCopilotLsp({
         if (!active) return;
 
         if (!result.user_code) {
-          // Empty user code may mean already authenticated
-          console.log('[copilot-lsp-ui] Empty user_code — may be already authenticated');
+          // Empty user code from direct signIn RPC — the fallback path
+          // (workspace/executeCommand with signInInitiate) was triggered.
+          // The device code will arrive via copilot-auth-device-code event
+          // from the server→client signIn request handler.
+          console.log('[copilot-lsp-ui] Empty user_code from signIn — waiting for device code event or auth completion');
           if (!authCompleted.current) {
-            // Give the status event a moment to arrive
-            await new Promise((r) => setTimeout(r, 1000));
-            if (authCompleted.current) return;
-            // Still not authenticated — show error
-            setError('Sign-in returned empty device code. You may already be authenticated — try removing and re-adding the connection.');
+            // Wait up to 10 seconds for either the device code event or auth completion
+            for (let i = 0; i < 20; i++) {
+              await new Promise((r) => setTimeout(r, 500));
+              if (!active || authCompleted.current || deviceCodeReceivedRef.current) return;
+            }
+            if (!active) return;
+            // Still nothing — show error
+            setError('Sign-in timed out waiting for device code. You may already be authenticated — try removing and re-adding the connection.');
             setPhase('error');
           }
           return;
@@ -606,7 +621,13 @@ function ConnectCopilotLsp({
 
   const handleCopyCode = useCallback(() => {
     if (deviceCode) {
-      navigator.clipboard.writeText(deviceCode).catch(() => {});
+      navigator.clipboard.writeText(deviceCode).then(
+        () => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        },
+        () => {}
+      );
     }
   }, [deviceCode]);
 
@@ -663,15 +684,24 @@ function ConnectCopilotLsp({
             <p className="text-xs text-muted-foreground mb-2">
               Enter this code on GitHub:
             </p>
-            <button
-              onClick={handleCopyCode}
-              className="text-2xl font-mono font-bold tracking-widest cursor-pointer hover:opacity-70 transition-opacity"
-              title="Click to copy"
-            >
-              {deviceCode}
-            </button>
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-2xl font-mono font-bold tracking-widest">
+                {deviceCode}
+              </span>
+              <button
+                onClick={handleCopyCode}
+                className="p-1 rounded hover:bg-muted transition-colors"
+                title="Copy code"
+              >
+                {copied ? (
+                  <Check className="h-4 w-4 text-foreground" strokeWidth={2} />
+                ) : (
+                  <Copy className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                )}
+              </button>
+            </div>
             <p className="text-xs text-muted-foreground mt-2">
-              Click code to copy
+              {copied ? 'Copied!' : 'Click icon to copy'}
             </p>
           </div>
           <div className="flex gap-2">

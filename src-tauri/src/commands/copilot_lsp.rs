@@ -337,10 +337,80 @@ async fn handle_server_request(
     id: &Value,
     params: Option<&Value>,
     writer: &Arc<Mutex<BufWriter<ChildStdin>>>,
-    _next_id: &Arc<AtomicU64>,
+    next_id: &Arc<AtomicU64>,
     app: &AppHandle,
 ) {
     let response_result = match method {
+        "signIn" => {
+            // Server→client request: OAuth device flow sign-in data.
+            // The Copilot LSP sends this after sign-in is initiated, containing
+            // the device code the user must enter on GitHub.
+            if let Some(params) = params {
+                let user_code = params
+                    .get("userCode")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| params.get("user_code").and_then(|v| v.as_str()))
+                    .unwrap_or("")
+                    .to_string();
+                let verification_uri = params
+                    .get("verificationUri")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| params.get("verification_uri").and_then(|v| v.as_str()))
+                    .unwrap_or("https://github.com/login/device")
+                    .to_string();
+
+                eprintln!(
+                    "[copilot-lsp] signIn server request: userCode={}, verificationUri={}",
+                    user_code, verification_uri
+                );
+
+                // Emit device code to frontend
+                if !user_code.is_empty() {
+                    let _ = app.emit(
+                        "copilot-auth-device-code",
+                        serde_json::json!({
+                            "userCode": user_code,
+                            "verificationUri": verification_uri,
+                        }),
+                    );
+                }
+
+                // Execute the embedded command to finish the device flow
+                // (tells the LSP to start polling GitHub for OAuth completion)
+                if let Some(command) = params.get("command") {
+                    let cmd_name = command
+                        .get("command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let cmd_args = command
+                        .get("arguments")
+                        .cloned()
+                        .unwrap_or(Value::Array(vec![]));
+
+                    if !cmd_name.is_empty() {
+                        let exec_id = next_id.fetch_add(1, Ordering::SeqCst);
+                        let exec_req = serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "id": exec_id,
+                            "method": "workspace/executeCommand",
+                            "params": {
+                                "command": cmd_name,
+                                "arguments": cmd_args,
+                            },
+                        });
+                        if let Ok(json) = serde_json::to_string(&exec_req) {
+                            let header = format!("Content-Length: {}\r\n\r\n", json.len());
+                            let mut w = writer.lock().await;
+                            let _ = w.write_all(header.as_bytes()).await;
+                            let _ = w.write_all(json.as_bytes()).await;
+                            let _ = w.flush().await;
+                        }
+                    }
+                }
+            }
+            serde_json::json!({})
+        }
+
         "window/showDocument" => {
             // LSP wants to open a URL (e.g., GitHub login page during auth)
             if let Some(params) = params {
@@ -854,9 +924,16 @@ pub async fn copilot_lsp_status(
 
 /// Sign in to GitHub Copilot via OAuth device flow.
 ///
-/// Sends the `signIn` request to the LSP, which returns a device code.
-/// The LSP then opens a browser via `window/showDocument` (handled by the
-/// reader loop). Auth completion is signalled asynchronously via
+/// Two-phase approach:
+/// 1. Try the direct `signIn` JSON-RPC method — works with older LSP versions
+///    that return `{ userCode, verificationUri, command }` directly.
+/// 2. If step 1 returns an empty device code, fall back to executing the
+///    `github.copilot.signInInitiate` workspace command. In this case the LSP
+///    sends the device code asynchronously via a server→client `signIn` request,
+///    which is handled in `handle_server_request` and emitted as the
+///    `copilot-auth-device-code` Tauri event.
+///
+/// Auth completion is signalled asynchronously via
 /// `didChangeStatus` → `copilot-status-changed` Tauri event.
 #[tauri::command]
 pub async fn copilot_lsp_sign_in(
@@ -868,7 +945,7 @@ pub async fn copilot_lsp_sign_in(
         .as_ref()
         .ok_or("Copilot LSP not running. Call copilot_lsp_start first.")?;
 
-    // Send signIn request — returns { userCode, command } or { user_code, verification_uri }
+    // --- Phase 1: Try direct signIn RPC ---
     let result = process
         .transport
         .send_request("signIn", Some(serde_json::json!({})))
@@ -899,59 +976,76 @@ pub async fn copilot_lsp_sign_in(
             eprintln!("[copilot-lsp] Extracted user_code from URI: {}", code);
             code
         } else {
-            eprintln!("[copilot-lsp] WARNING: Could not extract user_code from signIn response");
-            let _ = app.emit(
-                "copilot-sign-in-error",
-                serde_json::json!({
-                    "message": "Sign-in returned empty device code. The LSP response format may have changed.",
-                    "response": result.to_string(),
-                }),
-            );
             String::new()
         }
     } else {
         user_code
     };
 
-    // Extract the command to execute (triggers browser opening)
-    if let Some(command) = result.get("command") {
-        let cmd_name = command
-            .get("command")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let cmd_args = command
-            .get("arguments")
-            .cloned()
-            .unwrap_or(Value::Array(vec![]));
+    if !user_code.is_empty() {
+        // Phase 1 succeeded — we have a device code from the direct response.
+        // Execute the embedded command to trigger the device flow.
+        if let Some(command) = result.get("command") {
+            let cmd_name = command
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let cmd_args = command
+                .get("arguments")
+                .cloned()
+                .unwrap_or(Value::Array(vec![]));
 
-        if !cmd_name.is_empty() {
-            // Execute the command via workspace/executeCommand
-            // This tells the LSP to proceed with the device flow
-            let _ = process
-                .transport
-                .send_request(
-                    "workspace/executeCommand",
-                    Some(serde_json::json!({
-                        "command": cmd_name,
-                        "arguments": cmd_args,
-                    })),
-                )
-                .await;
+            if !cmd_name.is_empty() {
+                let _ = process
+                    .transport
+                    .send_request(
+                        "workspace/executeCommand",
+                        Some(serde_json::json!({
+                            "command": cmd_name,
+                            "arguments": cmd_args,
+                        })),
+                    )
+                    .await;
+            }
         }
+
+        let _ = app.emit(
+            "copilot-auth-device-code",
+            serde_json::json!({
+                "userCode": user_code,
+                "verificationUri": verification_uri,
+            }),
+        );
+
+        return Ok(SignInResponse {
+            user_code,
+            verification_uri,
+        });
     }
 
-    // Emit device code event for the frontend
-    let _ = app.emit(
-        "copilot-auth-device-code",
-        serde_json::json!({
-            "userCode": user_code,
-            "verificationUri": verification_uri,
-        }),
-    );
+    // --- Phase 2: Fallback — initiate sign-in via workspace command ---
+    // Newer Copilot LSP versions return the device code asynchronously via
+    // a server→client `signIn` request (handled in handle_server_request)
+    // rather than in the direct signIn response.
+    eprintln!("[copilot-lsp] signIn returned empty device code, falling back to signInInitiate command");
 
+    let _ = process
+        .transport
+        .send_request(
+            "workspace/executeCommand",
+            Some(serde_json::json!({
+                "command": "github.copilot.signInInitiate",
+                "arguments": [],
+            })),
+        )
+        .await;
+
+    // The device code will arrive asynchronously via the server→client
+    // `signIn` request → handle_server_request → copilot-auth-device-code event.
+    // Return empty response; frontend will use the event.
     Ok(SignInResponse {
-        user_code,
-        verification_uri,
+        user_code: String::new(),
+        verification_uri: "https://github.com/login/device".to_string(),
     })
 }
 
