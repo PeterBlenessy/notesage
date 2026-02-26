@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useEditorStore, type FileType } from "@/stores/editor-store";
 import { X, FileText, FileImage, FileType2, FileSpreadsheet, File } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,12 @@ function TabIcon({ fileType }: { fileType?: FileType }) {
 
 export function TabBar() {
   const { tabs, activeTabId, setActiveTab, closeTab } = useEditorStore();
+  const activeTabRef = useRef<HTMLButtonElement>(null);
+
+  // Scroll the active tab into view when it changes
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  }, [activeTabId]);
 
   const handleCloseTab = (
     e: React.MouseEvent,
@@ -53,6 +60,7 @@ export function TabBar() {
         return (
           <button
             key={tab.id}
+            ref={isActive ? activeTabRef : undefined}
             onClick={() => setActiveTab(tab.id)}
             className={cn(
               "group relative flex items-center gap-1.5 px-3 h-8 text-sm rounded-t-md transition-colors duration-150 shrink-0 max-w-[200px]",
