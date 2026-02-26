@@ -468,16 +468,6 @@ function ConnectCopilotLsp({
       }
     );
 
-    // Listen for sign-in errors from the backend
-    const unlistenError = listen<{ message: string; response?: string }>(
-      'copilot-sign-in-error',
-      (event) => {
-        console.error('[copilot-lsp-ui] sign-in error:', event.payload);
-        setError(event.payload.message);
-        setPhase('error');
-      }
-    );
-
     // Listen for device code from server→client signIn request (fallback path).
     // When the direct signIn RPC returns an empty code, the LSP sends the
     // device code asynchronously via a server→client request handled in Rust.
@@ -497,7 +487,6 @@ function ConnectCopilotLsp({
 
     return () => {
       unlistenStatus.then((fn) => fn());
-      unlistenError.then((fn) => fn());
       unlistenDeviceCode.then((fn) => fn());
     };
   }, [completeAuth, retryCount]);
@@ -705,7 +694,7 @@ function ConnectCopilotLsp({
                 title="Copy code"
               >
                 {copied ? (
-                  <Check className="h-4 w-4 text-green-500" strokeWidth={2} />
+                  <Check className="h-4 w-4 text-foreground" strokeWidth={2} />
                 ) : (
                   <Copy className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
                 )}
