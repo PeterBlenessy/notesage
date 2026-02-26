@@ -15,12 +15,22 @@ export async function migrateProjectPath(oldPath: string, newPath: string): Prom
   const ws = useWorkspaceStore.getState();
   ws.updateProjectPath(oldPath, newPath, tree);
 
-  // Update project metadata store (re-key from old → new)
+  // Update project metadata store (re-key from old → new, update name to match new folder)
   const metaStore = useProjectMetadataStore.getState();
   const meta = metaStore.metadataMap[oldPath];
   if (meta) {
     metaStore.removeMetadata(oldPath);
-    metaStore.setMetadata(newPath, meta);
+    const newFolderName = newPath.split('/').filter(Boolean).pop() || meta.name;
+    const updatedMeta = { ...meta, name: newFolderName };
+    metaStore.setMetadata(newPath, updatedMeta);
+
+    // Persist to disk so useProjectMetadata doesn't reload stale data
+    const metaFilePath = `${newPath}/.notesage/project.json`;
+    try {
+      await tauriApi.writeFile(metaFilePath, JSON.stringify(updatedMeta, null, 2));
+    } catch {
+      // Non-fatal — in-memory state is already correct
+    }
   }
 
   // Update editor store (rewrite open tab paths, persisted tabs, scroll positions)

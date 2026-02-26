@@ -6,6 +6,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useGitStore } from "@/stores/git-store";
 import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
+import { migrateProjectPath } from "@/lib/migrate-project-path";
 import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { setBinaryData } from "@/lib/binary-cache";
 
@@ -46,6 +47,40 @@ export function refreshGitForPath(filePath: string) {
       }, 300)
     );
   }
+}
+
+/**
+ * Detect if a project was renamed by scanning the parent directory for a
+ * sibling folder with .notesage metadata that isn't already open as a project.
+ * Returns the new path if found, null otherwise.
+ */
+async function detectRenamedProject(
+  parentDir: string,
+): Promise<string | null> {
+  try {
+    const parentExists = await tauriApi.pathExists(parentDir);
+    if (!parentExists) return null;
+
+    const entries = await tauriApi.listDirectory(parentDir);
+    const ws = useWorkspaceStore.getState();
+    const openPaths = new Set(ws.projects.map((p) => p.path));
+
+    for (const entry of entries) {
+      if (!entry.is_directory) continue;
+      if (openPaths.has(entry.path)) continue;
+      // Check if this folder has .notesage metadata (i.e., is a Notesage project)
+      const metaPath = `${entry.path}/.notesage/project.json`;
+      try {
+        const exists = await tauriApi.pathExists(metaPath);
+        if (exists) return entry.path;
+      } catch {
+        // Skip this candidate
+      }
+    }
+  } catch {
+    // Parent directory scan failed
+  }
+  return null;
 }
 
 export function useFileOperations() {
@@ -108,8 +143,16 @@ export function useFileOperations() {
       try {
         const tree = await tauriApi.listDirectory(project.path);
         ws.updateProjectTree(project.path, tree);
-      } catch (error) {
-        console.error("Failed to refresh project tree:", error);
+      } catch {
+        // Project path no longer exists — check if it was renamed
+        // by scanning the parent directory for a folder with matching .notesage metadata
+        const parentDir = project.path.substring(0, project.path.lastIndexOf('/'));
+        const renamed = await detectRenamedProject(parentDir);
+        if (renamed) {
+          await migrateProjectPath(project.path, renamed);
+        } else {
+          ws.removeProject(project.path);
+        }
       }
     }
 

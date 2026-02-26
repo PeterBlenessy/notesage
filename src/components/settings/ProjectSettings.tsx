@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import { ArrowRight, Cloud, FolderOpen, Loader2 } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import { ArrowRight, Check, Cloud, FolderOpen, Loader2, X } from 'lucide-react';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { useAIStore, getAllPersonas } from '@/stores/ai-store';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -68,6 +68,16 @@ export function ProjectSettings({ projectPath, onPathChanged }: ProjectSettingsP
   const [pendingSync, setPendingSync] = useState<boolean | null>(null);
   const [applying, setApplying] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [localName, setLocalName] = useState(metadata?.name ?? '');
+
+  // Sync localName when metadata.name changes externally (e.g., after rename completes)
+  useEffect(() => {
+    if (metadata?.name) {
+      setLocalName(metadata.name);
+    }
+  }, [metadata?.name]);
+
+  const nameChanged = localName.trim() !== '' && localName !== (metadata?.name ?? '');
 
   const isSynced = syncedProjectPaths.includes(projectPath);
   const displaySynced = pendingSync ?? isSynced;
@@ -76,14 +86,20 @@ export function ProjectSettings({ projectPath, onPathChanged }: ProjectSettingsP
   // Show sync section for all projects when iCloud is enabled
   const showSyncSection = icloudEnabled && icloudAvailable;
 
-  /** Rename the project folder on disk when the display name changes. */
-  const handleNameBlur = useCallback(async () => {
+  /** Confirm rename: rename the project folder on disk to localName. */
+  const handleNameConfirm = useCallback(async () => {
     if (!metadata || renaming) return;
-    const newName = metadata.name.trim();
+    const newName = localName.trim();
     if (!newName) return;
 
     const currentFolderName = projectPath.split('/').filter(Boolean).pop() || '';
-    if (newName === currentFolderName) return;
+    if (newName === currentFolderName) {
+      // Name matches the folder — just update metadata if needed
+      if (newName !== metadata.name) {
+        updateMetadata(projectPath, { name: newName });
+      }
+      return;
+    }
 
     const parentDir = projectPath.substring(0, projectPath.lastIndexOf('/'));
     const newPath = `${parentDir}/${newName}`;
@@ -93,8 +109,7 @@ export function ProjectSettings({ projectPath, onPathChanged }: ProjectSettingsP
       const exists = await tauriApi.pathExists(newPath);
       if (exists) {
         toast.error(`A folder named "${newName}" already exists`);
-        // Revert the name in metadata
-        updateMetadata(projectPath, { name: currentFolderName });
+        setLocalName(metadata.name);
         return;
       }
     } catch {
@@ -117,12 +132,17 @@ export function ProjectSettings({ projectPath, onPathChanged }: ProjectSettingsP
       toast.success(`Project folder renamed to "${newName}"`);
     } catch (err) {
       toast.error(`Failed to rename folder: ${err}`);
-      // Revert the name
-      updateMetadata(projectPath, { name: currentFolderName });
+      setLocalName(metadata.name);
     } finally {
       setRenaming(false);
     }
-  }, [metadata, projectPath, renaming, updateMetadata, syncedProjectPaths, notesRootPath, onPathChanged]);
+  }, [metadata, localName, projectPath, renaming, updateMetadata, syncedProjectPaths, notesRootPath, onPathChanged]);
+
+  const handleNameCancel = useCallback(() => {
+    if (metadata) {
+      setLocalName(metadata.name);
+    }
+  }, [metadata]);
 
   const handleSyncToggle = (checked: boolean) => {
     setPendingSync(checked);
@@ -192,15 +212,50 @@ export function ProjectSettings({ projectPath, onPathChanged }: ProjectSettingsP
             <p className="text-xs text-muted-foreground mt-0.5 mb-2">
               Displayed in the sidebar header
             </p>
-            <Input
-              id="project-name"
-              value={metadata.name}
-              onChange={(e) => updateMetadata(projectPath, { name: e.target.value })}
-              onBlur={handleNameBlur}
-              disabled={renaming}
-              placeholder="My Project"
-              className="text-sm transition-all hover:border-foreground/20 focus:border-foreground/40"
-            />
+            <div className="flex items-center gap-2">
+              <Input
+                id="project-name"
+                value={localName}
+                onChange={(e) => setLocalName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && nameChanged) {
+                    e.preventDefault();
+                    handleNameConfirm();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    handleNameCancel();
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
+                disabled={renaming}
+                placeholder="My Project"
+                className="text-sm transition-all hover:border-foreground/20 focus:border-foreground/40"
+              />
+              {nameChanged && (
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleNameConfirm}
+                    disabled={renaming}
+                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors duration-150 disabled:opacity-50"
+                  >
+                    {renaming ? (
+                      <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.5} />
+                    ) : (
+                      <Check className="h-4 w-4" strokeWidth={1.5} />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNameCancel}
+                    disabled={renaming}
+                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors duration-150 disabled:opacity-50"
+                  >
+                    <X className="h-4 w-4" strokeWidth={1.5} />
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           <div

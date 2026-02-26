@@ -39,6 +39,10 @@ async function loadProjectMetadata(
   const filePath = getMetadataPath(projectPath);
 
   try {
+    // Bail out if the project directory itself doesn't exist (e.g., externally renamed/deleted)
+    const projectExists = await tauriApi.pathExists(projectPath);
+    if (!projectExists) return;
+
     // Migration: .note-sage -> .notesage
     const oldDirPath = `${projectPath}/.note-sage`;
     try {
