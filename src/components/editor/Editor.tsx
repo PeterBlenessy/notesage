@@ -971,7 +971,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           {showFloatingToolbar && <SourceBubbleMenu cmView={cmView} />}
         </div>
       ) : (
-        <div ref={scrollAreaRef} className="flex-1 overflow-y-auto editor-scroll-area">
+        <div ref={scrollAreaRef} className="flex-1 overflow-y-auto">
           <div
             className={`min-h-full flex justify-center ${
               contentWidth === "full" ? "py-4 px-4" : "py-10 px-8"
