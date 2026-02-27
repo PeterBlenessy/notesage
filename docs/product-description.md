@@ -6,7 +6,7 @@ id: ""
 
 Notesage is a rich text markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
-**Current version:** 0.16.6
+**Current version:** 0.16.7
 
 ## Current Features
 
@@ -212,6 +212,36 @@ Export notes to professionally typeset PDFs using the embedded Typst engine.
 - Custom template editor
 - Template marketplace
 
+### EPUB Viewer
+
+Read EPUB ebooks directly in Notesage with paginated or scrollable rendering.
+
+**Rendering:**
+
+- Powered by vendored foliate-js (MIT) — modern Web Component-based EPUB renderer
+- Paginated mode: single-column layout with CSS multi-column, prev/next navigation
+- Scroll mode: continuous vertical scrolling
+- Dark/light mode: content theme follows app theme with comprehensive element coverage
+- Arrow key navigation in paginated mode
+
+**Reading features:**
+
+- Running header (chapter title) and footer (page number) in paginated mode
+- Book-wide page numbering accumulated from physical pages across sections
+- TOC dropdown for chapter navigation
+- Bookmark persistence and restoration on app restart (CFI-based, per file path)
+- View mode preference (scroll/paginated) persisted globally
+
+**Architecture:**
+
+- foliate-js vendored in `public/foliate-js/` (cannot be bundled by Vite — uses dynamic ES module imports internally)
+- `<foliate-view>` Web Component loaded via dynamic `import('/foliate-js/view.js')`
+- EPUB binary data loaded via `getBinaryData()` from binary cache, opened as `Blob`
+- Layout configured via renderer attributes (`flow`, `max-inline-size`, `max-column-count`, `gap`, margins)
+- Content theming via `renderer.setStyles()` CSS injection into EPUB iframe
+- `epub-store` (Zustand, persisted): view mode preference + per-file bookmarks (CFI + chapter label)
+- `Editor.tsx` routes `.epub` files to `EpubViewer` component
+
 ### Comments, Agent Delegation & Change Detection
 
 Document comments with AI agent delegation and external change tracking — foundational infrastructure for human-AI collaboration.
@@ -371,6 +401,7 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 
 ## Recently completed:
 
+- EPUB viewer — foliate-js Web Component replacing epubjs, paginated/scroll modes, dark/light theme, running header/footer, book-wide page numbering, TOC navigation, bookmark persistence
 - Agent comment delegation (Part 1) — delegate comments to AI agents, comment lifecycle states, threaded replies, activity log, delegate all, cancel, resolve (PRD: docs/prds/2026-02-22-agent-comments.md)
 - External change detection setting — configurable toggle between auto-accept (default) and inline diff review (beta)
 - Chat provider indicator & picker — interactive connection picker in chat footer, per-message provider badges, shared ProviderLogo component (PRD: docs/prds/2026-02-22-chat-provider-indicator.md)

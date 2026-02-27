@@ -84,6 +84,8 @@ note-sage/
 │   │   │   ├── ChatMessage.tsx     # Individual message with activity log
 │   │   │   ├── ChatInput.tsx       # Message input
 │   │   │   └── PermissionCard.tsx  # ACP tool call approval (allow once/session/always, deny)
+│   │   ├── editor/viewers/        # Binary file viewers
+│   │   │   └── EpubViewer.tsx     # EPUB reader (foliate-js Web Component)
 │   │   └── ui/             # shadcn/ui components (auto-generated)
 │   ├── hooks/
 │   │   ├── useEditor.ts            # Tiptap editor instance hook
@@ -102,7 +104,8 @@ note-sage/
 │   │   ├── project-metadata-store.ts # Project metadata (.notesage/project.json)
 │   │   ├── settings-store.ts       # App settings, theme
 │   │   ├── ai-store.ts             # AI provider configuration
-│   │   └── chat-store.ts           # Chat conversation state
+│   │   ├── chat-store.ts           # Chat conversation state
+│   │   └── epub-store.ts          # EPUB viewer preferences and bookmarks
 │   ├── lib/
 │   │   ├── markdown.ts             # Markdown ↔ ProseMirror conversion
 │   │   ├── tauri.ts                # Typed Tauri invoke wrappers
@@ -120,6 +123,12 @@ note-sage/
 │       ├── globals.css             # Global styles and CSS variables
 │       └── editor.css              # Editor-specific styles (ProseMirror overrides)
 ├── public/
+│   ├── foliate-js/                 # Vendored EPUB renderer (MIT, pinned commit)
+│   │   ├── view.js                 # <foliate-view> Web Component
+│   │   ├── paginator.js            # Paginated layout engine
+│   │   ├── epub.js                 # EPUB parser
+│   │   ├── epubcfi.js              # EPUB CFI navigation
+│   │   └── ...                     # Supporting modules (overlayer, progress, zip)
 │   └── logos/                      # AI provider logos
 │       ├── anthropic.svg
 │       ├── openai.svg
@@ -171,6 +180,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 - **permission-store**: ACP tool call permission tracking with tiered approval (`sessionAllowed`: Set non-persisted, `alwaysAllowed`: string[] persisted); actions: `allowSession`, `removeSession`, `allowAlways`, `removeAlways`, `getToolTier` → `'none' | 'session' | 'always'`
 - **chat-store**: Chat conversation messages, loading state, errors, agent activities
 - **comment-store**: Comments per document, replies, delegation status, activity log (non-persisted activities, JSON-persisted comments)
+- **epub-store**: EPUB viewer mode (scroll/paginated), per-file bookmarks keyed by file path (CFI + chapter)
 - **external-change-store**: Pending external file changes with hunks (non-persisted)
 
 ### Styling
