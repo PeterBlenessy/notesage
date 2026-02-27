@@ -84,8 +84,13 @@ export function parseFrontmatter(raw: string): ParseResult {
     return { frontmatter: null, content: raw };
   }
 
-  // Parse the YAML
-  const parsed: unknown = parse(yamlString);
+  // Parse the YAML — if it's invalid, treat as no frontmatter
+  let parsed: unknown;
+  try {
+    parsed = parse(yamlString);
+  } catch {
+    return { frontmatter: null, content: raw };
+  }
 
   // If parsed result is not a plain object, treat as no frontmatter
   if (parsed === null || parsed === undefined || typeof parsed !== 'object' || Array.isArray(parsed)) {

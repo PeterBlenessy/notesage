@@ -41,6 +41,7 @@ import { ImageViewer } from "./viewers/ImageViewer";
 import { PlainTextViewer } from "./viewers/PlainTextViewer";
 import { PdfViewer } from "./viewers/PdfViewer";
 import { DocxViewer } from "./viewers/DocxViewer";
+import { EpubViewer } from "./viewers/EpubViewer";
 import { BubbleMenu } from "./BubbleMenu";
 import { SourceBubbleMenu } from "./SourceBubbleMenu";
 import { DiffReviewBanner } from "./DiffReviewBanner";
@@ -901,6 +902,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             }}
           />
         );
+      case "epub":
+        return <EpubViewer filePath={activeTab.filePath} fileName={activeTab.fileName} />;
       case "other":
         return <PlainTextViewer content={activeTab.content} fileName={activeTab.fileName} />;
     }

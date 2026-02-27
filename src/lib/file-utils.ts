@@ -1,4 +1,4 @@
-export type FileType = "markdown" | "pdf" | "docx" | "image" | "other";
+export type FileType = "markdown" | "pdf" | "docx" | "epub" | "image" | "other";
 export type ViewMode = "wysiwyg" | "source";
 
 const EXTENSION_MAP: Record<string, FileType> = {
@@ -11,6 +11,8 @@ const EXTENSION_MAP: Record<string, FileType> = {
   // Word
   docx: "docx",
   doc: "docx",
+  // EPUB
+  epub: "epub",
   // Images
   png: "image",
   jpg: "image",
@@ -21,6 +23,9 @@ const EXTENSION_MAP: Record<string, FileType> = {
   bmp: "image",
   ico: "image",
   avif: "image",
+  // Text
+  log: "other",
+  txt: "other",
 };
 
 /**
@@ -35,5 +40,5 @@ export function getFileType(fileName: string): FileType {
  * Returns true if the file type requires binary reading (not UTF-8 text).
  */
 export function isBinaryFileType(fileType: FileType): boolean {
-  return fileType === "pdf" || fileType === "docx" || fileType === "image";
+  return fileType === "pdf" || fileType === "docx" || fileType === "epub" || fileType === "image";
 }
