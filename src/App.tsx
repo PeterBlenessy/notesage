@@ -24,6 +24,8 @@ import { useSyncStore } from "@/stores/sync-store";
 import { useEditorStylesStore } from "@/stores/editor-styles-store";
 import { tauriApi } from "@/lib/tauri";
 import { parseFrontmatter } from "@/lib/frontmatter";
+import { getFileType, isBinaryFileType } from "@/lib/file-utils";
+import { setBinaryData } from "@/lib/binary-cache";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { migrateV1AISettings } from "@/lib/ai/migration";
 import { stopAcpAgent } from "@/hooks/useAIOperations";
@@ -249,17 +251,35 @@ function App() {
         // Read all files in parallel, but open tabs in persisted order
         const results = await Promise.allSettled(
           persistedTabs.map(async (pt) => {
+            const fileType = getFileType(pt.fileName);
+
+            if (fileType === "image") {
+              // Images use asset protocol — no file read needed
+              return { filePath: pt.filePath, fileName: pt.fileName, content: "", frontmatter: null, fileType };
+            }
+
+            if (isBinaryFileType(fileType)) {
+              // Binary files (PDF, DOCX): read as bytes and populate cache
+              const bytes = await tauriApi.readBinaryFile(pt.filePath);
+              setBinaryData(pt.filePath, new Uint8Array(bytes));
+              return { filePath: pt.filePath, fileName: pt.fileName, content: "", frontmatter: null, fileType };
+            }
+
+            // Text files (markdown, other): read as UTF-8
             const raw = await tauriApi.readFile(pt.filePath);
-            const { frontmatter, content } = parseFrontmatter(raw);
-            return { filePath: pt.filePath, fileName: pt.fileName, content, frontmatter };
+            if (fileType === "markdown") {
+              const { frontmatter, content } = parseFrontmatter(raw);
+              return { filePath: pt.filePath, fileName: pt.fileName, content, frontmatter, fileType };
+            }
+            return { filePath: pt.filePath, fileName: pt.fileName, content: raw, frontmatter: null, fileType };
           })
         );
         const failedPaths: string[] = [];
         for (let i = 0; i < results.length; i++) {
           const result = results[i];
           if (result.status === "fulfilled") {
-            const { filePath, fileName, content, frontmatter } = result.value;
-            useEditorStore.getState().openTab(filePath, fileName, content, frontmatter);
+            const { filePath, fileName, content, frontmatter, fileType } = result.value;
+            useEditorStore.getState().openTab(filePath, fileName, content, frontmatter, fileType);
           } else {
             // File no longer exists — remove from persisted list
             failedPaths.push(persistedTabs[i].filePath);
