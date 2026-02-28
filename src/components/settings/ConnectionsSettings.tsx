@@ -96,7 +96,10 @@ export function ConnectionsSettings() {
     const { option } = flow;
 
     const value = inputValue.trim();
-    if (!value) return;
+
+    // API keys are required; local (Ollama) falls back to default URL
+    if (option.authMethod === 'api_key' && !value) return;
+    const localDefault = 'http://localhost:11434';
 
     let connectionId: string;
     if (option.authMethod === 'api_key') {
@@ -114,7 +117,7 @@ export function ConnectionsSettings() {
         authMethod: 'local',
         status: 'connected',
         label: option.label,
-        credentials: { type: 'local', url: value },
+        credentials: { type: 'local', url: value || localDefault },
       });
     }
 
@@ -401,7 +404,7 @@ function ConfigureForm({
               </Button>
             )}
           </div>
-          <Button onClick={onSave} size="sm" disabled={!value.trim()}>
+          <Button onClick={onSave} size="sm" disabled={isApiKey && !value.trim()}>
             <Check
               className={`h-4 w-4 mr-1 transition-colors ${savedFlash ? 'text-green-500' : ''}`}
             />
