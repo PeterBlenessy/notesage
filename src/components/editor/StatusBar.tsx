@@ -117,7 +117,30 @@ export function StatusBar({
   onShortcutsOpen,
 }: StatusBarProps) {
   if (!editor) {
-    return null;
+    return (
+      <div className="h-6 border-t border-border px-3 flex items-center text-[11px] shrink-0 overflow-x-auto overflow-y-hidden whitespace-nowrap bg-background text-muted-foreground">
+        <span className="flex-1" />
+        <div className="flex items-center gap-3">
+          {onShortcutsOpen && (
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={onShortcutsOpen}
+                    className="inline-flex items-center hover:text-foreground transition-colors"
+                  >
+                    <Command className="h-3 w-3" strokeWidth={1.5} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  Keyboard shortcuts (⌘7)
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </div>
+      </div>
+    );
   }
 
   const text = editor.getText();

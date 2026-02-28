@@ -1080,13 +1080,16 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
   // Route non-markdown file types to their viewers
   if (activeTab && activeTab.fileType !== "markdown") {
+    let viewer: React.ReactNode = null;
     switch (activeTab.fileType) {
       case "image":
-        return <ImageViewer filePath={activeTab.filePath} />;
+        viewer = <ImageViewer filePath={activeTab.filePath} />;
+        break;
       case "pdf":
-        return <PdfViewer filePath={activeTab.filePath} fileName={activeTab.fileName} />;
+        viewer = <PdfViewer filePath={activeTab.filePath} fileName={activeTab.fileName} />;
+        break;
       case "docx":
-        return (
+        viewer = (
           <DocxViewer
             filePath={activeTab.filePath}
             fileName={activeTab.fileName}
@@ -1110,11 +1113,25 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             }}
           />
         );
+        break;
       case "epub":
-        return <EpubViewer filePath={activeTab.filePath} fileName={activeTab.fileName} />;
+        viewer = <EpubViewer filePath={activeTab.filePath} fileName={activeTab.fileName} />;
+        break;
       case "other":
-        return <PlainTextViewer content={activeTab.content} fileName={activeTab.fileName} />;
+        viewer = <PlainTextViewer content={activeTab.content} fileName={activeTab.fileName} />;
+        break;
     }
+    return (
+      <div className="h-full flex flex-col overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-hidden">{viewer}</div>
+        {!focusMode && (
+          <StatusBar
+            editor={null}
+            onShortcutsOpen={onShortcutsOpen}
+          />
+        )}
+      </div>
+    );
   }
 
   if (!editor) {

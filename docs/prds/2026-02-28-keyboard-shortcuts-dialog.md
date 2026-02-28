@@ -89,7 +89,7 @@ No new data model. Shortcut definitions are static constants in the component.
 
 - [x] Works in both light and dark mode
 
-- [ ] Command icon visible regardless of file type
+- [x] Command icon visible regardless of file type
 
 ## Out of Scope
 
