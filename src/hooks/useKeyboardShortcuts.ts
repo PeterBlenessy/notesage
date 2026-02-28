@@ -16,6 +16,7 @@ interface KeyboardShortcutCallbacks {
   onNewProject: () => void;
   onNewNote: () => void;
   onOpenFolder: () => void;
+  onShortcutsOpen: () => void;
   focusMode: boolean;
 }
 
@@ -134,6 +135,13 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       if (isMod && e.key === ",") {
         e.preventDefault();
         callbacks.onSettingsOpen();
+      }
+
+      // Cmd+7 — keyboard shortcuts reference
+      if (isMod && !e.shiftKey && e.key === "7") {
+        e.preventDefault();
+        callbacks.onShortcutsOpen();
+        return;
       }
 
       // Cmd+Shift+E — export PDF

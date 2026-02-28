@@ -9,6 +9,7 @@ import { ProjectSettingsDialog } from "@/components/settings/ProjectSettingsDial
 import { NewNoteDialog } from "@/components/NewNoteDialog";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
 import { UpdateDialog } from "@/components/UpdateDialog";
+import { KeyboardShortcutsDialog } from "@/components/KeyboardShortcutsDialog";
 import { TitleBar } from "@/components/TitleBar";
 import { SidebarPanel } from "@/components/SidebarPanel";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
@@ -67,7 +68,7 @@ function loadPanelSize(configKey: string, panel: string, fallback: number): numb
 }
 
 // Editor area with document-style presentation
-function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick }: {
+function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick, onShortcutsOpen }: {
   onNewNote?: () => void;
   onNewProject?: () => void;
   onOpenFolder?: () => void;
@@ -81,11 +82,12 @@ function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOp
   updateAvailable?: boolean;
   updateVersion?: string | null;
   onUpdateClick?: () => void;
+  onShortcutsOpen?: () => void;
 }) {
   return (
     <div className="flex flex-col h-full overflow-hidden bg-muted">
       {!focusMode && <TabBar />}
-      <Editor onNewNote={onNewNote} onNewProject={onNewProject} onOpenFolder={onOpenFolder} onOpenProject={onOpenProject} onOpenFile={onOpenFile} exportOpen={exportOpen} onExportOpenChange={onExportOpenChange} focusMode={focusMode} outlineOpen={outlineOpen} onOutlineOpenChange={onOutlineOpenChange} updateAvailable={updateAvailable} updateVersion={updateVersion} onUpdateClick={onUpdateClick} />
+      <Editor onNewNote={onNewNote} onNewProject={onNewProject} onOpenFolder={onOpenFolder} onOpenProject={onOpenProject} onOpenFile={onOpenFile} exportOpen={exportOpen} onExportOpenChange={onExportOpenChange} focusMode={focusMode} outlineOpen={outlineOpen} onOutlineOpenChange={onOutlineOpenChange} updateAvailable={updateAvailable} updateVersion={updateVersion} onUpdateClick={onUpdateClick} onShortcutsOpen={onShortcutsOpen} />
     </div>
   );
 }
@@ -108,6 +110,7 @@ function App() {
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [focusHintVisible, setFocusHintVisible] = useState(false);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const { chatPanelOpen, setChatPanelOpen } = useSettingsStore();
   const { state: updateState, checkForUpdate, downloadAndInstall, restartNow, dismiss: dismissUpdate } = useAutoUpdate();
@@ -573,6 +576,7 @@ function App() {
     onNewProject: handleNewProject,
     onNewNote: handleNewNote,
     onOpenFolder: handleOpenFolder,
+    onShortcutsOpen: () => setShortcutsOpen(true),
     focusMode,
   });
 
@@ -624,6 +628,7 @@ function App() {
                 updateAvailable={!!updateState.updateInfo}
                 updateVersion={updateState.updateInfo?.version ?? null}
                 onUpdateClick={() => setUpdateDialogOpen(true)}
+                onShortcutsOpen={() => setShortcutsOpen(true)}
               />
             </ResizablePanel>
 
@@ -714,6 +719,10 @@ function App() {
           onInstall={downloadAndInstall}
           onRestartNow={restartNow}
           onDismiss={dismissUpdate}
+        />
+        <KeyboardShortcutsDialog
+          open={shortcutsOpen}
+          onOpenChange={setShortcutsOpen}
         />
       </div>
       <Toaster position="bottom-right" />

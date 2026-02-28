@@ -135,9 +135,10 @@ interface EditorProps {
   updateAvailable?: boolean;
   updateVersion?: string | null;
   onUpdateClick?: () => void;
+  onShortcutsOpen?: () => void;
 }
 
-export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick }: EditorProps) {
+export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick, onShortcutsOpen }: EditorProps) {
   const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange, toggleCopilotForTab, toggleViewMode, setScrollToTag } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, pageBreaks, notesRootPath, sourceWordWrap, setSourceWordWrap } = useSettingsStore();
@@ -1308,6 +1309,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           updateAvailable={updateAvailable}
           updateVersion={updateVersion}
           onUpdateClick={onUpdateClick}
+          onShortcutsOpen={onShortcutsOpen}
           onSelectChange={(change, hunkIndex) => {
             // Switch to the tab that has this file open and scroll to the specific hunk
             const matchingTab = tabs.find((t) => t.filePath === change.filePath);

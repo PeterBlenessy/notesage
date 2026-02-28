@@ -1,5 +1,5 @@
 import type { Editor } from "@tiptap/core";
-import { ArrowUpCircle, GitBranch } from "lucide-react";
+import { ArrowUpCircle, Command, GitBranch } from "lucide-react";
 import type { ViewMode } from "@/lib/file-utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -79,6 +79,7 @@ interface StatusBarProps {
   updateAvailable?: boolean;
   updateVersion?: string | null;
   onUpdateClick?: () => void;
+  onShortcutsOpen?: () => void;
 }
 
 export function StatusBar({
@@ -113,6 +114,7 @@ export function StatusBar({
   updateAvailable = false,
   updateVersion = null,
   onUpdateClick,
+  onShortcutsOpen,
 }: StatusBarProps) {
   if (!editor) {
     return null;
@@ -271,6 +273,26 @@ export function StatusBar({
           <>
             <span className="w-px h-2.5 bg-border" />
             <span>{scalePercent}%</span>
+          </>
+        )}
+        {onShortcutsOpen && (
+          <>
+            <span className="w-px h-2.5 bg-border" />
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={onShortcutsOpen}
+                    className="inline-flex items-center hover:text-foreground transition-colors"
+                  >
+                    <Command className="h-3 w-3" strokeWidth={1.5} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  Keyboard shortcuts (⌘7)
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </>
         )}
       </div>
