@@ -757,6 +757,27 @@ mark.pdf-find-highlight-active {
   background: oklch(50% 0 0 / 0.6);
 }
 
+/* DOM-based search highlights (DOCX, plain text viewers) — matches .find-match.
+   Uses !important to override Tailwind prose mark styles and UA defaults. */
+mark.dom-find-highlight {
+  background: oklch(85% 0 0) !important;
+  border-radius: 2px !important;
+  color: inherit !important;
+  padding: 0 !important;
+}
+.dark mark.dom-find-highlight {
+  background: oklch(35% 0 0) !important;
+}
+mark.dom-find-highlight-active {
+  background: oklch(72% 0 0) !important;
+  border-radius: 2px !important;
+  color: inherit !important;
+  padding: 0 !important;
+}
+.dark mark.dom-find-highlight-active {
+  background: oklch(50% 0 0) !important;
+}
+
 /* Ghost text (inline completion suggestions) */
 .ghost-text {
   color: var(--color-muted-foreground);

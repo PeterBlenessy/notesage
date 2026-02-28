@@ -55,6 +55,19 @@ export function FindBar({
     }
   }, [open]);
 
+  // Global Escape key to close FindBar even when it's not focused
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open, onClose]);
+
   // Sync query when FindBar opens: from initialQuery or persisted local query
   useEffect(() => {
     if (open) {

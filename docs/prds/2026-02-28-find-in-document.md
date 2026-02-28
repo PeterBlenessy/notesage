@@ -165,29 +165,29 @@ Find state is local to the editor component — no persistence needed.
 
 ### Functional
 
-- [ ] Cmd+F opens find bar in all document types (markdown WYSIWYG, source, PDF, EPUB, DOCX, plain text)
+- [x] Cmd+F opens find bar in all document types (markdown WYSIWYG, source, PDF, EPUB, DOCX, plain text)
 
-- [ ] Typing in find input highlights all matches in the document
+- [x] Typing in find input highlights all matches in the document
 
-- [ ] Match count updates as user types
+- [x] Match count updates as user types
 
-- [ ] Enter / Shift+Enter navigates forward/backward through matches
+- [x] Enter / Shift+Enter navigates forward/backward through matches
 
-- [ ] Active match is visually distinct from other matches
+- [x] Active match is visually distinct from other matches
 
-- [ ] Active match scrolls into view
+- [x] Active match scrolls into view
 
-- [ ] Escape closes find bar and clears all highlights
+- [x] Escape closes find bar and clears all highlights
 
-- [ ] Selected text pre-fills the search input
+- [x] Selected text pre-fills the search input
 
-- [ ] Cmd+Shift+H opens find bar with replace row expanded (editable documents only)
+- [x] Cmd+Shift+H opens find bar with replace row expanded (editable documents only)
 
-- [ ] Replace replaces the current match and advances to next
+- [x] Replace replaces the current match and advances to next
 
-- [ ] Replace All replaces all matches
+- [x] Replace All replaces all matches
 
-- [ ] Find bar does not interfere with other editor features (slash commands, tag autocomplete, ghost text)
+- [x] Find bar does not interfere with other editor features (slash commands, tag autocomplete, ghost text)
 
 - [ ] Works correctly after tab switch (find state resets)
 

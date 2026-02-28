@@ -51,6 +51,8 @@ interface FoliateView extends HTMLElement {
   close(): void;
   goTo(target: string | number): Promise<unknown>;
   goToFraction(frac: number): Promise<void>;
+  select(target: string): Promise<void>;
+  deselect(): void;
   prev(): Promise<void>;
   next(): Promise<void>;
   search(opts: { query: string; index?: number }): AsyncGenerator<FoliateSearchResult | "done">;
@@ -237,6 +239,33 @@ export function EpubViewer({ filePath, fileName }: EpubViewerProps) {
   const [searchLoading, setSearchLoading] = useState(false);
   const searchAbortRef = useRef(false);
 
+  /** Inject a keydown listener into a foliate-js section document so Cmd+F
+   *  works when the iframe has focus (paginated mode). Called from the `load`
+   *  event which provides the iframe's contentDocument directly — we cannot
+   *  access it via shadowRoot since foliate-js uses closed Shadow DOM. */
+  const injectKeyboardForwarding = useCallback((doc: Document) => {
+    try {
+      if ((doc as unknown as Record<string, unknown>).__notesageFindHandler) return;
+      doc.addEventListener("keydown", (e: KeyboardEvent) => {
+        // Forward all keydown events from the iframe to the parent window
+        // so app-level shortcuts (Cmd+F, Cmd+T, Escape, etc.) work when
+        // the EPUB content has focus.
+        e.preventDefault();
+        window.dispatchEvent(new KeyboardEvent("keydown", {
+          key: e.key,
+          code: e.code,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          shiftKey: e.shiftKey,
+          altKey: e.altKey,
+        }));
+      });
+      (doc as unknown as Record<string, unknown>).__notesageFindHandler = true;
+    } catch {
+      // Cross-origin or sandboxed — skip
+    }
+  }, []);
+
   /** Configure the renderer for the current view mode.
    *  The foliate-view fills the full available area. The paginator's internal
    *  5-column CSS grid handles centering and margins via max-inline-size.
@@ -311,15 +340,17 @@ export function EpubViewer({ filePath, fileName }: EpubViewerProps) {
         // auto-syncs to the iframe's computed background color.
         view.renderer.setStyles(getContentStyles(isDark));
 
-        // Listen for section loads
-        viewEl.addEventListener("load", () => {
-          if (!destroyedRef.current) {
-            // Re-apply styles to each newly loaded section
-            view?.renderer.setStyles(getContentStyles(
-              resolveTheme(useSettingsStore.getState().theme) === "dark"
-            ));
-          }
-        });
+        // Listen for section loads — foliate-js emits { doc, index } on each section
+        viewEl.addEventListener("load", ((e: Event) => {
+          if (destroyedRef.current) return;
+          // Re-apply styles to each newly loaded section
+          view?.renderer.setStyles(getContentStyles(
+            resolveTheme(useSettingsStore.getState().theme) === "dark"
+          ));
+          // Inject keyboard forwarding into the new section's iframe document
+          const doc = (e as CustomEvent<{ doc: Document }>).detail?.doc;
+          if (doc) injectKeyboardForwarding(doc);
+        }) as EventListener);
 
         // Listen for relocate events
         viewEl.addEventListener("relocate", ((e: CustomEvent<RelocateDetail>) => {
@@ -501,7 +532,9 @@ export function EpubViewer({ filePath, fileName }: EpubViewerProps) {
   const goNext = useCallback(() => { viewRef.current?.next(); }, []);
   const goToChapter = useCallback((href: string) => { viewRef.current?.goTo(href); }, []);
 
-  // Search: run foliate-js search and collect all matches
+  // Search: run foliate-js search to collect CFIs, use view.select() for
+  // native text selection on the current match. Overlay drawing is disabled
+  // in the vendored view.js — we handle all visual feedback.
   const handleSearch = useCallback(async (query: string) => {
     const view = viewRef.current;
     if (!view) return;
@@ -509,6 +542,7 @@ export function EpubViewer({ filePath, fileName }: EpubViewerProps) {
     // Clear previous search
     searchAbortRef.current = true;
     view.clearSearch();
+    view.deselect();
     setSearchMatches([]);
     setSearchCurrentIndex(-1);
 
@@ -533,19 +567,19 @@ export function EpubViewer({ filePath, fileName }: EpubViewerProps) {
             matches.push({ cfi: item.cfi });
             if (!navigatedToFirst) {
               navigatedToFirst = true;
-              view.goTo(item.cfi);
               setSearchCurrentIndex(0);
+              view.select(item.cfi);
             }
           }
         } else if (result.cfi) {
           matches.push({ cfi: result.cfi });
           if (!navigatedToFirst) {
             navigatedToFirst = true;
-            view.goTo(result.cfi);
             setSearchCurrentIndex(0);
+            view.select(result.cfi);
           }
         }
-        // Update matches progressively
+        // Update match count progressively
         setSearchMatches([...matches]);
       }
     } catch {
@@ -562,20 +596,21 @@ export function EpubViewer({ filePath, fileName }: EpubViewerProps) {
     if (searchMatches.length === 0) return;
     const next = (searchCurrentIndex + 1) % searchMatches.length;
     setSearchCurrentIndex(next);
-    viewRef.current?.goTo(searchMatches[next].cfi);
+    viewRef.current?.select(searchMatches[next].cfi);
   }, [searchMatches, searchCurrentIndex]);
 
   const handleSearchPrev = useCallback(() => {
     if (searchMatches.length === 0) return;
     const prev = (searchCurrentIndex - 1 + searchMatches.length) % searchMatches.length;
     setSearchCurrentIndex(prev);
-    viewRef.current?.goTo(searchMatches[prev].cfi);
+    viewRef.current?.select(searchMatches[prev].cfi);
   }, [searchMatches, searchCurrentIndex]);
 
   const handleFindClose = useCallback(() => {
     setFindBarOpen(false);
     searchAbortRef.current = true;
     viewRef.current?.clearSearch();
+    viewRef.current?.deselect();
     setSearchMatches([]);
     setSearchCurrentIndex(-1);
     setSearchLoading(false);

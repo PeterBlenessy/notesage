@@ -555,7 +555,7 @@ export class View extends HTMLElement {
                 const list = result.subitems
                     .map(({ cfi }) => ({ value: SEARCH_PREFIX + cfi }))
                 this.#searchResults.set(result.index, list)
-                for (const item of list) this.addAnnotation(item)
+                // Overlay drawing removed — consumer handles visual feedback
                 yield {
                     label: this.#tocProgress.getProgress(result.index)?.label ?? '',
                     subitems: result.subitems,
@@ -565,7 +565,6 @@ export class View extends HTMLElement {
                 if (result.cfi) {
                     const item = { value: SEARCH_PREFIX + result.cfi }
                     list.push(item)
-                    this.addAnnotation(item)
                 }
                 yield result
             }
