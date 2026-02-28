@@ -20,6 +20,7 @@ interface SettingsStore {
   marginRight: number;
   sidebarOpen: boolean;
   sidebarPinned: boolean;
+  sidebarWidth: number;
   chatPanelOpen: boolean;
   notesRootPath: string;
   gitEnabled: boolean;
@@ -49,6 +50,7 @@ interface SettingsStore {
   setMarginRight: (margin: number) => void;
   setSidebarOpen: (open: boolean) => void;
   setSidebarPinned: (pinned: boolean) => void;
+  setSidebarWidth: (width: number) => void;
   setChatPanelOpen: (open: boolean) => void;
   setNotesRootPath: (path: string) => void;
   setGitEnabled: (enabled: boolean) => void;
@@ -82,6 +84,7 @@ export const useSettingsStore = create<SettingsStore>()(
       marginRight: 2.54,
       sidebarOpen: true,
       sidebarPinned: true,
+      sidebarWidth: 280,
       chatPanelOpen: false,
       notesRootPath: "~/Notesage",
       gitEnabled: false,
@@ -142,6 +145,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setSidebarPinned: (pinned: boolean) => {
         set({ sidebarPinned: pinned });
+      },
+
+      setSidebarWidth: (width: number) => {
+        set({ sidebarWidth: Math.round(Math.max(200, Math.min(400, width))) });
       },
 
       setChatPanelOpen: (open: boolean) => {

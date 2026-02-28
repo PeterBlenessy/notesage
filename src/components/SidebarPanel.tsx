@@ -1,12 +1,13 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Settings, PanelLeft } from "lucide-react";
+import { Settings, PanelLeft, GripVerticalIcon } from "lucide-react";
 import { useSettingsStore } from "@/stores/settings-store";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const STRIP_WIDTH = 40;
-const EXPANDED_WIDTH = 280;
+const MIN_WIDTH = 200;
+const MAX_WIDTH = 400;
 const HOVER_DELAY = 150;
 const LEAVE_DELAY = 300;
 
@@ -24,13 +25,16 @@ export function SidebarPanel({
   onOpenSettings,
   ...sidebarProps
 }: SidebarPanelProps) {
-  const { sidebarPinned, setSidebarPinned } = useSettingsStore();
+  const { sidebarPinned, setSidebarPinned, sidebarWidth, setSidebarWidth } = useSettingsStore();
 
   const [overlayVisible, setOverlayVisible] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const isResizingRef = useRef(false);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const expanded = sidebarPinned || overlayVisible;
+  const expandedWidth = sidebarWidth || 280;
 
   // Cleanup timers
   useEffect(() => {
@@ -76,10 +80,10 @@ export function SidebarPanel({
   }, []);
 
   const handleMouseLeave = useCallback(() => {
-    if (sidebarPinned) return;
+    if (sidebarPinned || isResizing) return;
     clearTimeout(hoverTimerRef.current);
     scheduleCollapse();
-  }, [sidebarPinned, scheduleCollapse]);
+  }, [sidebarPinned, isResizing, scheduleCollapse]);
 
   const dismissOverlay = useCallback(() => {
     clearTimeout(hoverTimerRef.current);
@@ -102,8 +106,36 @@ export function SidebarPanel({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [overlayVisible, sidebarPinned, dismissOverlay]);
 
+  // Resize handle drag
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+    isResizingRef.current = true;
+    const startX = e.clientX;
+    const startWidth = expandedWidth;
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      const newWidth = Math.round(Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth + ev.clientX - startX)));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      isResizingRef.current = false;
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }, [expandedWidth, setSidebarWidth]);
+
   // Toggle left position: after traffic lights when collapsed, near sidebar right edge when expanded
-  const toggleLeft = expanded ? EXPANDED_WIDTH - 34 : 72;
+  const toggleLeft = expanded ? expandedWidth - 34 : 72;
 
   return (
     <>
@@ -117,10 +149,11 @@ export function SidebarPanel({
         variant="ghost"
         size="icon"
         className={cn(
-          "fixed z-50 h-7 w-7 text-muted-foreground hover:text-foreground transition-all duration-200 ease-in-out",
+          "fixed z-50 h-7 w-7 text-muted-foreground hover:text-foreground",
+          !isResizing && "transition-all duration-150 ease-out",
           sidebarPinned && "text-foreground"
         )}
-        style={{ left: toggleLeft, top: 4 }}
+        style={{ left: toggleLeft, top: 4, ...(isResizing && { transition: "none" }) }}
         onClick={handleToggle}
         title={`${sidebarPinned ? "Collapse" : "Expand"} Sidebar (⌘B)`}
       >
@@ -129,17 +162,20 @@ export function SidebarPanel({
 
       {/* Flow container — reserves width in document flow */}
       <div
-        className="h-full shrink-0 relative z-40 transition-[width] duration-200 ease-in-out"
-        style={{ width: sidebarPinned ? EXPANDED_WIDTH : STRIP_WIDTH }}
+        className={cn(
+          "h-full shrink-0 relative z-40",
+          !isResizing && "transition-[width] duration-150 ease-out"
+        )}
+        style={{ width: sidebarPinned ? expandedWidth : STRIP_WIDTH, ...(isResizing && { transition: "none" }) }}
       >
         {/* Panel surface — single column, overflow-hidden clips content past width */}
         <div
           className={cn(
             "absolute inset-y-0 left-0 bg-card flex flex-col overflow-hidden",
-            "transition-[width] duration-200 ease-in-out",
+            !isResizing && "transition-[width] duration-150 ease-out",
             !sidebarPinned && overlayVisible && "shadow-xl"
           )}
-          style={{ width: expanded ? EXPANDED_WIDTH : STRIP_WIDTH }}
+          style={{ width: expanded ? expandedWidth : STRIP_WIDTH, ...(isResizing && { transition: "none" }) }}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
@@ -168,6 +204,24 @@ export function SidebarPanel({
             </button>
           </div>
         </div>
+
+        {/* Resize handle — only when expanded */}
+        {expanded && (
+          <div
+            className={cn(
+              "absolute top-0 bottom-0 z-50 flex items-center justify-center cursor-col-resize",
+              "w-px bg-border after:absolute after:inset-y-0 after:left-1/2 after:w-4 after:-translate-x-1/2",
+              isResizing ? "w-0.5 bg-muted-foreground" : "hover:w-0.5 hover:bg-muted-foreground",
+              "transition-all"
+            )}
+            style={{ right: 0 }}
+            onMouseDown={handleResizeStart}
+          >
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex h-8 w-3 items-center justify-center rounded-full bg-muted">
+              <GripVerticalIcon className="size-2.5 text-muted-foreground" strokeWidth={1.5} />
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
