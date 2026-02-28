@@ -40,7 +40,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 
 - Open tabs restored on app restart (persisted file paths, re-opened from disk)
 
-- Cmd+F quick-open with file search change 2 **File management:**
+**File management:**
 
 - Sidebar file tree with expand/collapse, file icons by extension, right-click context menu (new file, new folder, rename, delete)
 
@@ -59,6 +59,37 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 - macOS primary (arm64 + x86_64), window 1200x800 default, min 800x600
 - Native title bar, resizable
 - Light/dark mode following system preference (Cmd+Shift+T to toggle)
+
+### Find in Document
+
+In-document search and replace for the rich text editor.
+
+**Find (Cmd+F):**
+
+- Floating find bar anchored to the top of the editor content area
+- Case-insensitive text matching across the entire document
+- Match count display (e.g., "3 of 12") with prev/next navigation (Enter / Shift+Enter or arrow buttons)
+- Current match highlighted distinctly; all other matches highlighted with neutral grey decorations
+- Editor scrolls to bring the current match into view
+- Selected text pre-fills the search input when the find bar opens
+- Find state clears on tab switch
+
+**Replace (Cmd+Shift+H):**
+
+- Opens find bar with replace row expanded
+- Replace current match or Replace All in one click
+- Replace row can be toggled open/closed independently
+
+**Mode-aware behavior:**
+
+- WYSIWYG mode: custom FindBar component with ProseMirror `SearchHighlight` decoration plugin
+- Source mode: delegates to CodeMirror's native search panel
+
+**Architecture:**
+
+- `FindBar.tsx`: React component with search input, match counter, prev/next/replace/replace all controls
+- `SearchHighlight` Tiptap extension (`search-highlight.ts`): ProseMirror decoration plugin that scans text nodes for matches and renders highlight decorations
+- No new stores or Tauri commands — fully frontend-side
 
 ### Inline Tag Badges & Search
 
@@ -434,6 +465,7 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 
 ## Recently completed:
 
+- Find in Document — Cmd+F find bar with match highlighting, prev/next navigation, replace/replace all, Cmd+Shift+H for find-and-replace, mode-aware (WYSIWYG uses ProseMirror decorations, source mode uses CodeMirror native search) (PRD: docs/prds/2026-02-28-find-in-document.md)
 - Inline tag badges & search — `#tag` patterns render as styled badges, clicking shows cross-file occurrences with jump-to-position, `#` autocomplete from workspace index, Cmd+3 direct tag search (PRDs: docs/prds/2026-02-28-inline-tag-badges.md, docs/prds/2026-02-28-tag-occurrence-search.md)
 - EPUB viewer — foliate-js Web Component replacing epubjs, paginated/scroll modes, dark/light theme, running header/footer, book-wide page numbering, TOC navigation, bookmark persistence
 - Agent comment delegation (Part 1) — delegate comments to AI agents, comment lifecycle states, threaded replies, activity log, delegate all, cancel, resolve (PRD: docs/prds/2026-02-22-agent-comments.md)

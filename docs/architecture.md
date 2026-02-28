@@ -54,12 +54,14 @@ note-sage/
 │   │   │   ├── CommentPopover.tsx   # Comment create/view/delegate popover
 │   │   │   ├── CommentListPopover.tsx # Status bar comment list with delegation
 │   │   │   ├── ChangeListPopover.tsx  # Status bar external change list
+│   │   │   ├── FindBar.tsx             # Find and replace bar (Cmd+F / Cmd+Shift+H)
 │   │   │   ├── StatusBar.tsx          # Editor status bar
 │   │   │   └── extensions/         # Custom Tiptap extensions
 │   │   │       ├── index.ts
 │   │   │       ├── ghost-text.ts   # Copilot ghost text (ProseMirror widget decorations)
 │   │   │       ├── comment-mark.ts # Comment highlight decorations with status classes
 │   │   │       ├── inline-diff.ts  # Inline diff decorations (external changes + git review)
+│   │   │       ├── search-highlight.ts # Find-in-document match decorations (ProseMirror plugin)
 │   │   │       ├── tag-highlight.ts # Inline tag badge decorations (#tag → styled pill)
 │   │   │       ├── tag-suggestion.tsx # Tag autocomplete popup (triggered by # character)
 │   │   │       └── slash-command.ts
