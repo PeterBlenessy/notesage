@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { getBinaryData } from "@/lib/binary-cache";
 import { useEpubStore } from "@/stores/epub-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { FindBar } from "@/components/editor/FindBar";
 
 type ViewMode = "scroll" | "paginated";
 
@@ -34,6 +35,15 @@ interface RelocateDetail {
   location?: { current: number; next: number; total: number };
 }
 
+// foliate-js search result yielded by view.search()
+interface FoliateSearchResult {
+  cfi?: string;
+  excerpt?: { pre: string; match: string; post: string };
+  subitems?: Array<{ cfi: string; excerpt: { pre: string; match: string; post: string } }>;
+  label?: string;
+  progress?: number;
+}
+
 // foliate-js View element interface
 interface FoliateView extends HTMLElement {
   open(file: File | Blob): Promise<void>;
@@ -43,6 +53,8 @@ interface FoliateView extends HTMLElement {
   goToFraction(frac: number): Promise<void>;
   prev(): Promise<void>;
   next(): Promise<void>;
+  search(opts: { query: string; index?: number }): AsyncGenerator<FoliateSearchResult | "done">;
+  clearSearch(): void;
   renderer: FoliateRenderer;
   book: FoliateBook;
   lastLocation?: RelocateDetail;
@@ -217,6 +229,13 @@ export function EpubViewer({ filePath, fileName }: EpubViewerProps) {
   const bookTitleRef = useRef("");
   /** Physical page counts per section index, accumulated as sections are visited. */
   const sectionPageCounts = useRef<Map<number, number>>(new Map());
+
+  // Search state
+  const [findBarOpen, setFindBarOpen] = useState(false);
+  const [searchMatches, setSearchMatches] = useState<Array<{ cfi: string }>>([]);
+  const [searchCurrentIndex, setSearchCurrentIndex] = useState(-1);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const searchAbortRef = useRef(false);
 
   /** Configure the renderer for the current view mode.
    *  The foliate-view fills the full available area. The paginator's internal
@@ -482,6 +501,95 @@ export function EpubViewer({ filePath, fileName }: EpubViewerProps) {
   const goNext = useCallback(() => { viewRef.current?.next(); }, []);
   const goToChapter = useCallback((href: string) => { viewRef.current?.goTo(href); }, []);
 
+  // Search: run foliate-js search and collect all matches
+  const handleSearch = useCallback(async (query: string) => {
+    const view = viewRef.current;
+    if (!view) return;
+
+    // Clear previous search
+    searchAbortRef.current = true;
+    view.clearSearch();
+    setSearchMatches([]);
+    setSearchCurrentIndex(-1);
+
+    if (!query.trim()) {
+      setSearchLoading(false);
+      return;
+    }
+
+    searchAbortRef.current = false;
+    setSearchLoading(true);
+
+    const matches: Array<{ cfi: string }> = [];
+    let navigatedToFirst = false;
+
+    try {
+      for await (const result of view.search({ query })) {
+        if (searchAbortRef.current) break;
+        if (result === "done") break;
+
+        if (result.subitems) {
+          for (const item of result.subitems) {
+            matches.push({ cfi: item.cfi });
+            if (!navigatedToFirst) {
+              navigatedToFirst = true;
+              view.goTo(item.cfi);
+              setSearchCurrentIndex(0);
+            }
+          }
+        } else if (result.cfi) {
+          matches.push({ cfi: result.cfi });
+          if (!navigatedToFirst) {
+            navigatedToFirst = true;
+            view.goTo(result.cfi);
+            setSearchCurrentIndex(0);
+          }
+        }
+        // Update matches progressively
+        setSearchMatches([...matches]);
+      }
+    } catch {
+      // Search may fail if view is destroyed
+    }
+
+    if (!searchAbortRef.current) {
+      setSearchMatches([...matches]);
+      setSearchLoading(false);
+    }
+  }, []);
+
+  const handleSearchNext = useCallback(() => {
+    if (searchMatches.length === 0) return;
+    const next = (searchCurrentIndex + 1) % searchMatches.length;
+    setSearchCurrentIndex(next);
+    viewRef.current?.goTo(searchMatches[next].cfi);
+  }, [searchMatches, searchCurrentIndex]);
+
+  const handleSearchPrev = useCallback(() => {
+    if (searchMatches.length === 0) return;
+    const prev = (searchCurrentIndex - 1 + searchMatches.length) % searchMatches.length;
+    setSearchCurrentIndex(prev);
+    viewRef.current?.goTo(searchMatches[prev].cfi);
+  }, [searchMatches, searchCurrentIndex]);
+
+  const handleFindClose = useCallback(() => {
+    setFindBarOpen(false);
+    searchAbortRef.current = true;
+    viewRef.current?.clearSearch();
+    setSearchMatches([]);
+    setSearchCurrentIndex(-1);
+    setSearchLoading(false);
+  }, []);
+
+  // Listen for Cmd+F / notesage:find-open event
+  useEffect(() => {
+    const handleFindOpen = () => {
+      setFindBarOpen(true);
+    };
+    window.addEventListener("notesage:find-open", handleFindOpen);
+    return () => window.removeEventListener("notesage:find-open", handleFindOpen);
+  }, []);
+
   if (error) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-4 text-muted-foreground">
@@ -568,10 +676,27 @@ export function EpubViewer({ filePath, fileName }: EpubViewerProps) {
           The #background div inside the paginator auto-syncs to the
           iframe's computed background, so the surrounding area matches. */}
       <div className="flex-1 overflow-hidden relative bg-background">
+        <FindBar
+          open={findBarOpen}
+          onClose={handleFindClose}
+          matchCount={searchMatches.length}
+          currentMatch={searchCurrentIndex}
+          onSearch={handleSearch}
+          onNext={handleSearchNext}
+          onPrevious={handleSearchPrev}
+          replaceEnabled={false}
+          replaceExpanded={false}
+          onReplaceExpandedChange={() => {}}
+        />
         <div ref={containerRef} className="w-full h-full" />
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-background">
             <p className="text-sm text-muted-foreground">Loading…</p>
+          </div>
+        )}
+        {searchLoading && findBarOpen && (
+          <div className="absolute top-8 right-4 z-20">
+            <span className="text-[10px] text-muted-foreground">Searching…</span>
           </div>
         )}
       </div>

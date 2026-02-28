@@ -49,17 +49,22 @@ export function FindBar({
     if (open) {
       // Use rAF to ensure the DOM is rendered
       requestAnimationFrame(() => {
-        searchRef.current?.focus();
+        searchRef.current?.focus({ preventScroll: true });
         searchRef.current?.select();
       });
     }
   }, [open]);
 
-  // Sync initialQuery when it changes (e.g., opening with selection)
+  // Sync query when FindBar opens: from initialQuery or persisted local query
   useEffect(() => {
-    if (open && initialQuery) {
-      setQuery(initialQuery);
-      onSearch(initialQuery);
+    if (open) {
+      if (initialQuery) {
+        setQuery(initialQuery);
+        onSearch(initialQuery);
+      } else if (query) {
+        // Reopen with persisted query — re-trigger search to restore matches
+        onSearch(query);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialQuery]);

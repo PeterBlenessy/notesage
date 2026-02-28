@@ -73,6 +73,11 @@ select:focus-visible,
   border-color: oklch(40% 0 0);
 }
 
+html, body, #root {
+  height: 100%;
+  overflow: clip;
+}
+
 body {
   background-color: var(--color-background);
   color: var(--color-foreground);
