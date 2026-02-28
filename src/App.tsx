@@ -554,6 +554,12 @@ function App() {
       setCommandPaletteFilesOnly(true);
       setCommandPaletteOpen(true);
     },
+    onFindOpen: () => {
+      window.dispatchEvent(new CustomEvent("notesage:find-open"));
+    },
+    onFindReplaceOpen: () => {
+      window.dispatchEvent(new CustomEvent("notesage:find-replace-open"));
+    },
     onTagSearchOpen: () => {
       setCommandPaletteTagSearchMode(true);
       setCommandPaletteFilesOnly(true);

@@ -5,6 +5,8 @@ import { useSettingsStore } from "@/stores/settings-store";
 interface KeyboardShortcutCallbacks {
   onCommandPaletteOpen: () => void;
   onFileSearchOpen: () => void;
+  onFindOpen: () => void;
+  onFindReplaceOpen: () => void;
   onTagSearchOpen: () => void;
   onToggleFocusMode: () => void;
   onExitFocusMode: () => void;
@@ -64,10 +66,24 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         return;
       }
 
+      // Cmd+Shift+H — find and replace in document
+      if (isMod && e.shiftKey && e.key.toLowerCase() === "h") {
+        e.preventDefault();
+        callbacks.onFindReplaceOpen();
+        return;
+      }
+
       // Cmd+Shift+F — project file search
       if (isMod && e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
         callbacks.onFileSearchOpen();
+        return;
+      }
+
+      // Cmd+F — find in document (must come after Cmd+Shift+F check)
+      if (isMod && !e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        callbacks.onFindOpen();
         return;
       }
 

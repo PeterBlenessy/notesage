@@ -632,6 +632,71 @@
   border-bottom-left-radius: 0;
 }
 
+/* Find in document */
+.find-match {
+  background: oklch(85% 0 0);
+  border-radius: 2px;
+}
+
+.dark .find-match {
+  background: oklch(35% 0 0);
+}
+
+.find-match-active {
+  background: oklch(72% 0 0);
+  border-radius: 2px;
+}
+
+.dark .find-match-active {
+  background: oklch(50% 0 0);
+}
+
+/* CodeMirror search panel — match app design system */
+.cm-panel.cm-search {
+  background: var(--color-background);
+  border-bottom: 1px solid var(--color-border);
+  padding: 4px 8px;
+  font-family: var(--font-family-sans);
+  font-size: 12px;
+}
+
+.cm-panel.cm-search input,
+.cm-panel.cm-search button {
+  font-family: var(--font-family-sans);
+  font-size: 12px;
+}
+
+.cm-panel.cm-search input {
+  background: var(--color-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: var(--color-foreground);
+  outline: none;
+}
+
+.cm-panel.cm-search input:focus {
+  border-color: var(--color-muted-foreground);
+}
+
+.cm-panel.cm-search button {
+  background: var(--color-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  color: var(--color-foreground);
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.cm-panel.cm-search button:hover {
+  background: var(--color-accent);
+}
+
+.cm-panel.cm-search label {
+  color: var(--color-muted-foreground);
+}
+
 /* Ghost text (inline completion suggestions) */
 .ghost-text {
   color: var(--color-muted-foreground);

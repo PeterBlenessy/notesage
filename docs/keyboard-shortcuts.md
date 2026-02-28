@@ -30,7 +30,8 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | --- | --- | --- |
 | Undo | `Cmd+Z` | Undo last change |
 | Redo | `Cmd+Shift+Z` | Redo last undone change |
-| Find in document | `Cmd+F` | Native browser find in current document |
+| Find in document | `Cmd+F` | Open find bar (WYSIWYG) or CodeMirror search panel (source mode) |
+| Find and replace | `Cmd+Shift+H` | Open find bar with replace row expanded |
 
 ## App Settings
 
@@ -85,11 +86,7 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 
 ## Future Shortcuts (Planned)
 
-These shortcuts are planned but not yet implemented:
-
-| Action | Shortcut | Description |
-| --- | --- | --- |
-| Find and replace | `Cmd+Shift+H` | Search and replace in current document |
+No shortcuts are currently planned but not yet implemented.
 
 ## Implementation Notes
 

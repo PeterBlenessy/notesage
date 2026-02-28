@@ -27,6 +27,13 @@ import {
   acceptDiffHunk,
   rejectDiffHunk,
   getInlineDiffHunks,
+  setSearchQuery,
+  searchNext,
+  searchPrevious,
+  clearSearch,
+  replaceCurrentMatch,
+  replaceAllMatches,
+  getSearchState,
 } from "@/components/editor/extensions";
 import { mapExternalChangeToPM } from "@/lib/external-diff";
 import { useActiveProject } from "@/hooks/useActiveProject";
@@ -44,6 +51,8 @@ import { DocxViewer } from "./viewers/DocxViewer";
 import { EpubViewer } from "./viewers/EpubViewer";
 import { BubbleMenu } from "./BubbleMenu";
 import { SourceBubbleMenu } from "./SourceBubbleMenu";
+import { FindBar } from "./FindBar";
+import { openSearchPanel } from "@codemirror/search";
 import { DiffReviewBanner } from "./DiffReviewBanner";
 import { ExternalChangeBanner } from "./ExternalChangeBanner";
 import { BranchDiffSelector } from "./BranchDiffSelector";
@@ -153,6 +162,13 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const [commentListOpen, setCommentListOpen] = useState(false);
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
   const [cmView, setCmView] = useState<CMEditorView | null>(null);
+
+  // Find in document state
+  const [findBarOpen, setFindBarOpen] = useState(false);
+  const [findMatchCount, setFindMatchCount] = useState(0);
+  const [findCurrentMatch, setFindCurrentMatch] = useState(-1);
+  const [findInitialQuery, setFindInitialQuery] = useState("");
+  const [findReplaceExpanded, setFindReplaceExpanded] = useState(false);
 
   // Convert cm margins to px
   const paddingTop = `${marginTop * PX_PER_CM}px`;
@@ -775,6 +791,120 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     return () => window.removeEventListener("keydown", handleToggle);
   }, [handleToggleViewMode]);
 
+  // Find in document — listen for custom events from App.tsx
+  useEffect(() => {
+    const handleFindOpen = () => {
+      if (!activeTab) return;
+
+      // Source mode: delegate to CodeMirror's built-in search
+      if (activeTab.viewMode === "source" && cmView) {
+        openSearchPanel(cmView);
+        return;
+      }
+
+      // WYSIWYG mode: open our FindBar
+      if (activeTab.fileType === "markdown" && editor) {
+        // Capture selected text as initial query
+        const { from, to } = editor.state.selection;
+        const selectedText = from !== to ? editor.state.doc.textBetween(from, to) : "";
+        setFindInitialQuery(selectedText);
+        setFindBarOpen(true);
+      }
+    };
+
+    const handleFindReplaceOpen = () => {
+      if (!activeTab) return;
+
+      if (activeTab.viewMode === "source" && cmView) {
+        openSearchPanel(cmView);
+        return;
+      }
+
+      if (activeTab.fileType === "markdown" && editor) {
+        const { from, to } = editor.state.selection;
+        const selectedText = from !== to ? editor.state.doc.textBetween(from, to) : "";
+        setFindInitialQuery(selectedText);
+        setFindReplaceExpanded(true);
+        setFindBarOpen(true);
+      }
+    };
+
+    window.addEventListener("notesage:find-open", handleFindOpen);
+    window.addEventListener("notesage:find-replace-open", handleFindReplaceOpen);
+    return () => {
+      window.removeEventListener("notesage:find-open", handleFindOpen);
+      window.removeEventListener("notesage:find-replace-open", handleFindReplaceOpen);
+    };
+  }, [activeTab, editor, cmView]);
+
+  // Clear find state on tab switch
+  const prevFindTabId = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (activeTab?.id !== prevFindTabId.current) {
+      prevFindTabId.current = activeTab?.id;
+      if (findBarOpen) {
+        if (editor) clearSearch(editor);
+        setFindBarOpen(false);
+        setFindMatchCount(0);
+        setFindCurrentMatch(-1);
+        setFindInitialQuery("");
+        setFindReplaceExpanded(false);
+      }
+    }
+  }, [activeTab?.id, findBarOpen, editor]);
+
+  // FindBar callbacks
+  const handleFindSearch = useCallback((query: string) => {
+    if (!editor) return;
+    setSearchQuery(editor, query);
+    const state = getSearchState(editor);
+    setFindMatchCount(state?.matchCount ?? 0);
+    setFindCurrentMatch(state?.currentIndex ?? -1);
+  }, [editor]);
+
+  const handleFindNext = useCallback(() => {
+    if (!editor) return;
+    searchNext(editor);
+    const state = getSearchState(editor);
+    setFindCurrentMatch(state?.currentIndex ?? -1);
+  }, [editor]);
+
+  const handleFindPrevious = useCallback(() => {
+    if (!editor) return;
+    searchPrevious(editor);
+    const state = getSearchState(editor);
+    setFindCurrentMatch(state?.currentIndex ?? -1);
+  }, [editor]);
+
+  const handleFindReplace = useCallback((replacement: string) => {
+    if (!editor) return;
+    replaceCurrentMatch(editor, replacement);
+    // State updates after transaction via rAF
+    requestAnimationFrame(() => {
+      const state = getSearchState(editor);
+      setFindMatchCount(state?.matchCount ?? 0);
+      setFindCurrentMatch(state?.currentIndex ?? -1);
+    });
+  }, [editor]);
+
+  const handleFindReplaceAll = useCallback((replacement: string) => {
+    if (!editor) return;
+    replaceAllMatches(editor, replacement);
+    requestAnimationFrame(() => {
+      const state = getSearchState(editor);
+      setFindMatchCount(state?.matchCount ?? 0);
+      setFindCurrentMatch(state?.currentIndex ?? -1);
+    });
+  }, [editor]);
+
+  const handleFindClose = useCallback(() => {
+    if (editor) clearSearch(editor);
+    setFindBarOpen(false);
+    setFindMatchCount(0);
+    setFindCurrentMatch(-1);
+    setFindInitialQuery("");
+  }, [editor]);
+
   // Auto-save on blur (when switching tabs or focus changes)
   useEffect(() => {
     const handleBlur = async () => {
@@ -1051,7 +1181,25 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           {showFloatingToolbar && <SourceBubbleMenu cmView={cmView} />}
         </div>
       ) : (
-        <div ref={scrollAreaRef} className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-hidden relative">
+          {findBarOpen && activeTab?.fileType === "markdown" && (
+            <FindBar
+              open={findBarOpen}
+              onClose={handleFindClose}
+              matchCount={findMatchCount}
+              currentMatch={findCurrentMatch}
+              onSearch={handleFindSearch}
+              onNext={handleFindNext}
+              onPrevious={handleFindPrevious}
+              replaceEnabled={true}
+              replaceExpanded={findReplaceExpanded}
+              onReplaceExpandedChange={setFindReplaceExpanded}
+              onReplace={handleFindReplace}
+              onReplaceAll={handleFindReplaceAll}
+              initialQuery={findInitialQuery}
+            />
+          )}
+          <div ref={scrollAreaRef} className="h-full overflow-y-auto">
           <div
             className={`min-h-full flex justify-center ${
               contentWidth === "full" ? "py-4 px-4" : "py-10 px-8"
@@ -1081,6 +1229,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             </div>
           </div>
           {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}
+        </div>
         </div>
       )}
       {!focusMode && (

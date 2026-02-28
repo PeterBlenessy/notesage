@@ -35,3 +35,14 @@ export {
 export type { GhostTextCompletion } from './ghost-text';
 export { TagHighlight } from './tag-highlight';
 export { TagSuggestion } from './tag-suggestion';
+export {
+  SearchHighlight,
+  SearchPluginKey,
+  setSearchQuery,
+  searchNext,
+  searchPrevious,
+  clearSearch,
+  replaceCurrentMatch,
+  replaceAllMatches,
+  getSearchState,
+} from './search-highlight';

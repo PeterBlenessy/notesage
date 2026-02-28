@@ -13,7 +13,7 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { common, createLowlight } from "lowlight";
 import { Markdown } from "tiptap-markdown";
 import { SlashCommand } from "@/components/editor/extensions/slash-command";
-import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSuggestion } from "@/components/editor/extensions";
+import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSuggestion, SearchHighlight } from "@/components/editor/extensions";
 import { PageBreaks } from "@/components/editor/extensions/page-breaks";
 import { getMarkdownFromEditor, encodeImagePathSpaces } from "@/lib/markdown";
 
@@ -112,6 +112,7 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       GhostText,
       TagHighlight,
       TagSuggestion,
+      SearchHighlight,
     ],
     content: encodeImagePathSpaces(content),
     editable,
