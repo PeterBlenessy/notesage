@@ -60,6 +60,8 @@ note-sage/
 │   │   │       ├── ghost-text.ts   # Copilot ghost text (ProseMirror widget decorations)
 │   │   │       ├── comment-mark.ts # Comment highlight decorations with status classes
 │   │   │       ├── inline-diff.ts  # Inline diff decorations (external changes + git review)
+│   │   │       ├── tag-highlight.ts # Inline tag badge decorations (#tag → styled pill)
+│   │   │       ├── tag-suggestion.tsx # Tag autocomplete popup (triggered by # character)
 │   │   │       └── slash-command.ts
 │   │   ├── sidebar/
 │   │   │   ├── Sidebar.tsx         # Main sidebar container
@@ -105,7 +107,8 @@ note-sage/
 │   │   ├── settings-store.ts       # App settings, theme
 │   │   ├── ai-store.ts             # AI provider configuration
 │   │   ├── chat-store.ts           # Chat conversation state
-│   │   └── epub-store.ts          # EPUB viewer preferences and bookmarks
+│   │   ├── epub-store.ts          # EPUB viewer preferences and bookmarks
+│   │   └── tag-store.ts           # Workspace tag index (non-persisted)
 │   ├── lib/
 │   │   ├── markdown.ts             # Markdown ↔ ProseMirror conversion
 │   │   ├── tauri.ts                # Typed Tauri invoke wrappers
@@ -181,6 +184,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 - **chat-store**: Chat conversation messages, loading state, errors, agent activities
 - **comment-store**: Comments per document, replies, delegation status, activity log (non-persisted activities, JSON-persisted comments)
 - **epub-store**: EPUB viewer mode (scroll/paginated), per-file bookmarks keyed by file path (CFI + chapter)
+- **tag-store**: Workspace tag index — all known tags and tag-to-file mapping (non-persisted, rebuilt from scan)
 - **external-change-store**: Pending external file changes with hunks (non-persisted)
 
 ### Styling

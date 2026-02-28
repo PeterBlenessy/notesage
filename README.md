@@ -9,6 +9,7 @@ A polished rich text markdown editor with AI collaboration capabilities, built a
 - Raw markdown mode with CodeMirror 6 (toggle with Cmd+/)
 - Multi-tab editing with file tree sidebar
 - Slash commands, floating toolbar, bubble menu
+- Inline tag badges (`#tag` → styled pills) with autocomplete and cross-file search (Cmd+3)
 - YAML frontmatter support with fold/collapse
 - Light and dark themes following system preference
 
@@ -62,6 +63,7 @@ pnpm tauri build    # Build for production
 | Toggle raw mode | Cmd+/ |
 | Export as PDF | Cmd+Shift+E |
 | Focus mode | Cmd+. |
+| Tag search | Cmd+3 |
 | Document outline | Cmd+Shift+O |
 | Settings | Cmd+, |
 | Add comment | Cmd+Shift+M |

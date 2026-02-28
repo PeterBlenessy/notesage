@@ -60,6 +60,39 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 - Native title bar, resizable
 - Light/dark mode following system preference (Cmd+Shift+T to toggle)
 
+### Inline Tag Badges & Search
+
+Hashtag-based tagging system with visual badges, autocomplete, and cross-file search.
+
+**Tag badges:**
+
+- `#tagName` patterns render as styled inline badges (pill shape) in the editor
+- Tags inside code blocks and inline code are excluded
+- Clicking a tag badge opens the command palette with all occurrences of that tag across the workspace
+- Each occurrence shows file name, line number, and a content snippet
+- Selecting an occurrence opens the file and scrolls to the exact tag position
+
+**Tag autocomplete:**
+
+- Typing `#` triggers a suggestion popup listing known tags from the workspace
+- Case-insensitive substring filtering as user types
+- Keyboard navigation (arrow keys, Enter to select, Escape to dismiss)
+- Suppressed inside code blocks and existing tag decorations
+
+**Tag search (Cmd+3):**
+
+- Opens the command palette in direct tag search mode
+- Type a tag name → debounced backend search shows occurrences across all files
+- Select an occurrence to jump directly to it
+
+**Architecture:**
+
+- `TagHighlight` Tiptap extension: ProseMirror decoration plugin scanning text nodes for `#tag` patterns
+- `TagSuggestion` Tiptap extension: `@tiptap/suggestion`-based autocomplete with React popup
+- `tag-store` (Zustand, non-persisted): workspace tag index rebuilt from periodic scans
+- `find_tag_occurrences` Rust command: scans `.md` files for exact tag matches, returns per-line occurrences with snippets
+- `scrollToTag` on editor-store Tab: ProseMirror text search finds the Nth tag occurrence and scrolls to it
+
 ### AI Collaboration
 
 Multi-provider AI integration with chat and inline actions.
@@ -401,6 +434,7 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 
 ## Recently completed:
 
+- Inline tag badges & search — `#tag` patterns render as styled badges, clicking shows cross-file occurrences with jump-to-position, `#` autocomplete from workspace index, Cmd+3 direct tag search (PRDs: docs/prds/2026-02-28-inline-tag-badges.md, docs/prds/2026-02-28-tag-occurrence-search.md)
 - EPUB viewer — foliate-js Web Component replacing epubjs, paginated/scroll modes, dark/light theme, running header/footer, book-wide page numbering, TOC navigation, bookmark persistence
 - Agent comment delegation (Part 1) — delegate comments to AI agents, comment lifecycle states, threaded replies, activity log, delegate all, cancel, resolve (PRD: docs/prds/2026-02-22-agent-comments.md)
 - External change detection setting — configurable toggle between auto-accept (default) and inline diff review (beta)
