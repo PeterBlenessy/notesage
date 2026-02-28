@@ -98,7 +98,6 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
               tree={notesTree}
               onFileClick={handleFileClick}
               onNewNote={onNewNote}
-              showMoveToProject
               onExportFile={onExportFile}
               expandKeyPrefix="notes:"
             />

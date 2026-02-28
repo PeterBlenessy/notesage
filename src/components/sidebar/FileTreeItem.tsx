@@ -16,6 +16,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuLabel,
   ContextMenuSeparator,
   ContextMenuSub,
   ContextMenuSubContent,
@@ -49,20 +50,44 @@ const GIT_STATUS_CONFIG: Record<GitStatus, { label: string; color: string; toolt
   conflicted: { label: "C", color: "text-destructive", tooltip: "Conflicted — merge conflict" },
 };
 
+function FolderPickerItem({ folder, onMoveTo }: { folder: FileEntry; onMoveTo: (path: string) => void }) {
+  const subfolders = (folder.children ?? []).filter((e) => e.is_directory && e.name !== ".notesage" && e.name !== ".git");
+  if (subfolders.length === 0) {
+    return (
+      <ContextMenuItem onClick={() => onMoveTo(folder.path)}>
+        {folder.name}
+      </ContextMenuItem>
+    );
+  }
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger>{folder.name}</ContextMenuSubTrigger>
+      <ContextMenuSubContent>
+        <ContextMenuItem onClick={() => onMoveTo(folder.path)}>
+          <span className="text-muted-foreground">(here)</span>
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        {subfolders.map((child) => (
+          <FolderPickerItem key={child.path} folder={child} onMoveTo={onMoveTo} />
+        ))}
+      </ContextMenuSubContent>
+    </ContextMenuSub>
+  );
+}
+
 interface FileTreeItemProps {
   entry: FileEntry;
   level: number;
   onFileClick: (filePath: string, fileName: string) => void;
   onNewNote?: (parentPath?: string) => void;
   onMakeProject?: (path: string) => void;
-  showMoveToProject?: boolean;
   expandKeyPrefix?: string;
   gitRepoRoot?: string;
   onCommitFile?: (filePath: string) => void;
   onExportFile?: (filePath: string, fileName: string) => void;
 }
 
-export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProject, showMoveToProject, expandKeyPrefix = "", gitRepoRoot, onCommitFile, onExportFile }: FileTreeItemProps) {
+export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProject, expandKeyPrefix = "", gitRepoRoot, onCommitFile, onExportFile }: FileTreeItemProps) {
   const { isExpanded, toggleFolder } = useWorkspaceStore();
   const { tabs, activeTabId } = useEditorStore();
   const { createFolder, renamePath, deletePath } = useFileOperations();
@@ -74,7 +99,10 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   const projects = useWorkspaceStore((s) => s.projects);
+  const explorerFolders = useWorkspaceStore((s) => s.explorerFolders);
+  const notesTree = useWorkspaceStore((s) => s.notesTree);
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
+  const notesRootPath = useSettingsStore((s) => s.notesRootPath);
 
   const icloudNotesagePath = useSettingsStore((s) => s.icloudNotesagePath);
 
@@ -191,12 +219,17 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
     }
   };
 
-  const handleMoveToProject = async (destProjectPath: string) => {
-    const destPath = `${destProjectPath}/${entry.name}`;
+  const handleMoveTo = async (destFolderPath: string) => {
+    const destPath = `${destFolderPath}/${entry.name}`;
     try {
+      const exists = await tauriApi.pathExists(destPath);
+      if (exists) {
+        toast.error(`A file named "${entry.name}" already exists in the destination`);
+        return;
+      }
       await renamePath(entry.path, destPath);
     } catch (error) {
-      console.error("Failed to move to project:", error);
+      console.error("Failed to move file:", error);
     }
   };
 
@@ -333,32 +366,100 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
               </ContextMenuItem>
             </>
           )}
-          {showMoveToProject && projects.length > 0 && (
-            <>
-              <ContextMenuSeparator />
-              <ContextMenuSub>
-                <ContextMenuSubTrigger>
-                  <FolderInput className="mr-2 h-4 w-4" strokeWidth={1.5} />
-                  Move to Project
-                </ContextMenuSubTrigger>
-                <ContextMenuSubContent>
-                  {projects.map((p) => {
-                    const projectName = metadataMap[p.path]?.name || p.path.split("/").filter(Boolean).pop() || "Project";
-                    const isCurrentProject = entry.path.startsWith(p.path + "/");
-                    return (
-                      <ContextMenuItem
-                        key={p.path}
-                        disabled={isCurrentProject}
-                        onClick={() => handleMoveToProject(p.path)}
-                      >
-                        {projectName}
-                      </ContextMenuItem>
-                    );
-                  })}
-                </ContextMenuSubContent>
-              </ContextMenuSub>
-            </>
-          )}
+          {(() => {
+            const destinations = [
+              // Quick Notes root
+              ...(notesRootPath && !notesRootPath.startsWith("~") ? [{ path: notesRootPath, label: "Quick Notes", category: "notes" as const, tree: notesTree }] : []),
+              // Projects
+              ...projects.map((p) => ({
+                path: p.path,
+                label: metadataMap[p.path]?.name || p.path.split("/").filter(Boolean).pop() || "Project",
+                category: "project" as const,
+                tree: p.fileTree,
+              })),
+              // Explorer folders
+              ...explorerFolders.map((f) => ({
+                path: f.path,
+                label: f.path.split("/").filter(Boolean).pop() || "Folder",
+                category: "folder" as const,
+                tree: f.fileTree,
+              })),
+            ];
+            // Deduplicate by path (a project may also be an explorer folder or Quick Notes root)
+            const seen = new Set<string>();
+            const unique = destinations.filter((d) => {
+              if (seen.has(d.path)) return false;
+              seen.add(d.path);
+              return true;
+            });
+            // Filter out the container the file is already in
+            const valid = unique.filter((d) => !entry.path.startsWith(d.path + "/"));
+            if (valid.length === 0) return null;
+
+            const hasMultipleCategories = new Set(valid.map((d) => d.category)).size > 1;
+
+            const renderDestination = (d: typeof valid[number]) => {
+              const subfolders = d.tree.filter((e) => e.is_directory && e.name !== ".notesage" && e.name !== ".git");
+              if (subfolders.length === 0) {
+                return (
+                  <ContextMenuItem key={d.path} onClick={() => handleMoveTo(d.path)}>
+                    {d.label}
+                  </ContextMenuItem>
+                );
+              }
+              return (
+                <ContextMenuSub key={d.path}>
+                  <ContextMenuSubTrigger>{d.label}</ContextMenuSubTrigger>
+                  <ContextMenuSubContent>
+                    <ContextMenuItem onClick={() => handleMoveTo(d.path)}>
+                      <span className="text-muted-foreground">(root)</span>
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    {subfolders.map((folder) => (
+                      <FolderPickerItem key={folder.path} folder={folder} onMoveTo={handleMoveTo} />
+                    ))}
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+              );
+            };
+
+            return (
+              <>
+                <ContextMenuSeparator />
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger>
+                    <FolderInput className="mr-2 h-4 w-4" strokeWidth={1.5} />
+                    Move to...
+                  </ContextMenuSubTrigger>
+                  <ContextMenuSubContent>
+                    {hasMultipleCategories ? (
+                      <>
+                        {valid.some((d) => d.category === "notes") && (
+                          <>
+                            {valid.filter((d) => d.category === "notes").map(renderDestination)}
+                          </>
+                        )}
+                        {valid.some((d) => d.category === "project") && (
+                          <>
+                            <ContextMenuLabel className="text-xs text-muted-foreground">Projects</ContextMenuLabel>
+                            {valid.filter((d) => d.category === "project").map(renderDestination)}
+                          </>
+                        )}
+                        {valid.some((d) => d.category === "folder") && (
+                          <>
+                            <ContextMenuLabel className="text-xs text-muted-foreground">Folders</ContextMenuLabel>
+                            {valid.filter((d) => d.category === "folder").map(renderDestination)}
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      valid.map(renderDestination)
+                    )}
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+              </>
+            );
+          })()}
           <ContextMenuSeparator />
           <ContextMenuItem onClick={handleRevealInFinder}>
             <ExternalLink className="mr-2 h-4 w-4" strokeWidth={1.5} />
@@ -425,7 +526,6 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
               onFileClick={onFileClick}
               onNewNote={onNewNote}
               onMakeProject={onMakeProject}
-              showMoveToProject={showMoveToProject}
               expandKeyPrefix={expandKeyPrefix}
               gitRepoRoot={gitRepoRoot}
               onCommitFile={onCommitFile}
