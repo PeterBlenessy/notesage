@@ -62,33 +62,41 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 
 ### Find in Document
 
-In-document search and replace for the rich text editor.
+In-document search across all supported file types, with replace for editable documents.
 
 **Find (Cmd+F):**
 
-- Floating find bar anchored to the top of the editor content area
+- Floating find bar anchored to the top of the content area
 - Case-insensitive text matching across the entire document
 - Match count display (e.g., "3 of 12") with prev/next navigation (Enter / Shift+Enter or arrow buttons)
 - Current match highlighted distinctly; all other matches highlighted with neutral grey decorations
-- Editor scrolls to bring the current match into view
+- Document scrolls to bring the current match into view
 - Selected text pre-fills the search input when the find bar opens
 - Find state clears on tab switch
+- Escape closes find bar from anywhere (global keyboard listener)
 
 **Replace (Cmd+Shift+H):**
 
 - Opens find bar with replace row expanded
 - Replace current match or Replace All in one click
 - Replace row can be toggled open/closed independently
+- Only available for editable documents (markdown)
 
-**Mode-aware behavior:**
+**Per-viewer implementations:**
 
-- WYSIWYG mode: custom FindBar component with ProseMirror `SearchHighlight` decoration plugin
-- Source mode: delegates to CodeMirror's native search panel
+- **Markdown WYSIWYG:** Custom `SearchHighlight` ProseMirror decoration plugin with find + replace
+- **Markdown source mode:** Delegates to CodeMirror's native search panel
+- **PDF:** Uses pdfjs-dist text layer search with `highlightTextLayerMatches` utility
+- **EPUB:** Uses foliate-js `view.search()` async generator for CFI collection, `view.select()` for native text selection highlighting
+- **DOCX:** DOM-based search via shared `dom-search.ts` utility (walk text nodes, wrap matches in `<mark>` elements)
+- **Plain text:** Same DOM-based search via `dom-search.ts` operating on `<pre>` element
 
 **Architecture:**
 
-- `FindBar.tsx`: React component with search input, match counter, prev/next/replace/replace all controls
-- `SearchHighlight` Tiptap extension (`search-highlight.ts`): ProseMirror decoration plugin that scans text nodes for matches and renders highlight decorations
+- `FindBar.tsx`: Shared React component with search input, match counter, prev/next/replace/replace all controls
+- `SearchHighlight` Tiptap extension (`search-highlight.ts`): ProseMirror decoration plugin for markdown WYSIWYG
+- `dom-search.ts`: Shared DOM text search utility for DOCX and plain text viewers (TreeWalker-based text node walking, `<mark>` wrapping)
+- EPUB: Patched vendored `view.js` to suppress red SVG overlay annotations from search; keyboard event forwarding from EPUB iframes to parent window
 - No new stores or Tauri commands — fully frontend-side
 
 ### Inline Tag Badges & Search
@@ -295,14 +303,17 @@ Read EPUB ebooks directly in Notesage with paginated or scrollable rendering.
 - TOC dropdown for chapter navigation
 - Bookmark persistence and restoration on app restart (CFI-based, per file path)
 - View mode preference (scroll/paginated) persisted globally
+- In-document search (Cmd+F) with match count, prev/next navigation, native text selection highlighting via `view.select()`
 
 **Architecture:**
 
 - foliate-js vendored in `public/foliate-js/` (cannot be bundled by Vite — uses dynamic ES module imports internally)
 - `<foliate-view>` Web Component loaded via dynamic `import('/foliate-js/view.js')`
+- Vendored `view.js` patched to suppress red SVG overlay annotations from search (annotations removed from search generator, visual feedback handled by `view.select()` instead)
 - EPUB binary data loaded via `getBinaryData()` from binary cache, opened as `Blob`
 - Layout configured via renderer attributes (`flow`, `max-inline-size`, `max-column-count`, `gap`, margins)
 - Content theming via `renderer.setStyles()` CSS injection into EPUB iframe
+- Keyboard event forwarding from EPUB iframes to parent window (all keydown events with modifier keys) — enables Escape to close FindBar and app shortcuts (Cmd+T, etc.) when EPUB has focus
 - `epub-store` (Zustand, persisted): view mode preference + per-file bookmarks (CFI + chapter label)
 - `Editor.tsx` routes `.epub` files to `EpubViewer` component
 
@@ -465,7 +476,7 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 
 ## Recently completed:
 
-- Find in Document — Cmd+F find bar with match highlighting, prev/next navigation, replace/replace all, Cmd+Shift+H for find-and-replace, mode-aware (WYSIWYG uses ProseMirror decorations, source mode uses CodeMirror native search) (PRD: docs/prds/2026-02-28-find-in-document.md)
+- Find in Document — Cmd+F search across all document types (markdown WYSIWYG/source, PDF, EPUB, DOCX, plain text) with match highlighting, prev/next navigation, replace/replace all for editable documents, shared FindBar component, DOM search utility for DOCX/plain text, EPUB keyboard forwarding from iframes (PRD: docs/prds/2026-02-28-find-in-document.md)
 - Inline tag badges & search — `#tag` patterns render as styled badges, clicking shows cross-file occurrences with jump-to-position, `#` autocomplete from workspace index, Cmd+3 direct tag search (PRDs: docs/prds/2026-02-28-inline-tag-badges.md, docs/prds/2026-02-28-tag-occurrence-search.md)
 - EPUB viewer — foliate-js Web Component replacing epubjs, paginated/scroll modes, dark/light theme, running header/footer, book-wide page numbering, TOC navigation, bookmark persistence
 - Agent comment delegation (Part 1) — delegate comments to AI agents, comment lifecycle states, threaded replies, activity log, delegate all, cancel, resolve (PRD: docs/prds/2026-02-22-agent-comments.md)

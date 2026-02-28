@@ -88,8 +88,11 @@ note-sage/
 │   │   │   ├── ChatMessage.tsx     # Individual message with activity log
 │   │   │   ├── ChatInput.tsx       # Message input
 │   │   │   └── PermissionCard.tsx  # ACP tool call approval (allow once/session/always, deny)
-│   │   ├── editor/viewers/        # Binary file viewers
-│   │   │   └── EpubViewer.tsx     # EPUB reader (foliate-js Web Component)
+│   │   ├── editor/viewers/        # Non-markdown file viewers
+│   │   │   ├── EpubViewer.tsx     # EPUB reader (foliate-js Web Component, Cmd+F search)
+│   │   │   ├── PdfViewer.tsx      # PDF viewer (pdfjs-dist, Cmd+F search)
+│   │   │   ├── DocxViewer.tsx     # DOCX viewer (mammoth HTML, Cmd+F DOM search)
+│   │   │   └── PlainTextViewer.tsx # Plain text viewer (Cmd+F DOM search)
 │   │   └── ui/             # shadcn/ui components (auto-generated)
 │   ├── hooks/
 │   │   ├── useEditor.ts            # Tiptap editor instance hook
@@ -115,6 +118,7 @@ note-sage/
 │   │   ├── markdown.ts             # Markdown ↔ ProseMirror conversion
 │   │   ├── tauri.ts                # Typed Tauri invoke wrappers
 │   │   ├── utils.ts                # General utilities
+│   │   ├── dom-search.ts           # Shared DOM text search utility (DOCX, plain text viewers)
 │   │   └── ai/                     # AI provider abstraction
 │   │       ├── types.ts            # AI interfaces and types
 │   │       ├── connections.ts      # Connection types, capabilities, routing, provider options
@@ -129,7 +133,7 @@ note-sage/
 │       └── editor.css              # Editor-specific styles (ProseMirror overrides)
 ├── public/
 │   ├── foliate-js/                 # Vendored EPUB renderer (MIT, pinned commit)
-│   │   ├── view.js                 # <foliate-view> Web Component
+│   │   ├── view.js                 # <foliate-view> Web Component (patched: search annotation removal)
 │   │   ├── paginator.js            # Paginated layout engine
 │   │   ├── epub.js                 # EPUB parser
 │   │   ├── epubcfi.js              # EPUB CFI navigation

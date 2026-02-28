@@ -1,6 +1,6 @@
 # PRD: Find in Document
 
-**Date:** 2026-02-28 **Status:** Draft **Parent:** Editor
+**Date:** 2026-02-28 **Status:** Complete **Parent:** Editor
 
 ## Problem
 
@@ -189,19 +189,19 @@ Find state is local to the editor component — no persistence needed.
 
 - [x] Find bar does not interfere with other editor features (slash commands, tag autocomplete, ghost text)
 
-- [ ] Works correctly after tab switch (find state resets)
+- [x] Works correctly after tab switch (find state resets)
 
 ### Design
 
-- [ ] Find bar matches the app's neutral design system
+- [x] Find bar matches the app's neutral design system
 
-- [ ] Smooth appear/disappear transition
+- [x] Smooth appear/disappear transition
 
-- [ ] Match highlight colors work in both light and dark mode
+- [x] Match highlight colors work in both light and dark mode
 
-- [ ] Find bar does not obscure the first line of the document
+- [x] Find bar does not obscure the first line of the document
 
-- [ ] Input styling consistent with other inputs in the app
+- [x] Input styling consistent with other inputs in the app
 
 ## Phased Implementation
 
