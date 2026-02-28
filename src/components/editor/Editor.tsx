@@ -59,6 +59,7 @@ import { BranchDiffSelector } from "./BranchDiffSelector";
 import { CommentPopover } from "./CommentPopover";
 import { StatusBar } from "./StatusBar";
 import { FrontmatterBlock } from "./FrontmatterBlock";
+import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
 import { DocumentOutline } from "@/components/DocumentOutline";
 import { getMarkdownFromEditor, encodeImagePathSpaces, setContentWithoutHistory } from "@/lib/markdown";
 import { getDocumentDir } from "@/lib/image-utils";
@@ -163,6 +164,11 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const [commentListOpen, setCommentListOpen] = useState(false);
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
   const [cmView, setCmView] = useState<CMEditorView | null>(null);
+
+  // Source mode: holds the full raw text (frontmatter + body) for CodeMirror
+  const [sourceContent, setSourceContent] = useState("");
+  // Prevents the init effect from clobbering user edits
+  const sourceUserEditRef = useRef(false);
 
   // Find in document state
   const [findBarOpen, setFindBarOpen] = useState(false);
@@ -740,6 +746,18 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     }
   }, [editor, activeTab?.viewMode, activeTab?.id]);
 
+  // Initialize source content when entering source mode, switching tabs, or on external change.
+  // Skipped when the change came from the user editing in CodeMirror (sourceUserEditRef).
+  useEffect(() => {
+    if (activeTab?.viewMode !== "source") return;
+    if (sourceUserEditRef.current) {
+      sourceUserEditRef.current = false;
+      return;
+    }
+    const raw = serializeFrontmatter(activeTab.frontmatter, activeTab.content);
+    setSourceContent(raw);
+  }, [activeTab?.id, activeTab?.viewMode, activeTab?.content, activeTab?.frontmatter]);
+
   // Handle view mode toggle — sync content between WYSIWYG and Source
   const handleToggleViewMode = useCallback(() => {
     if (!activeTab || activeTab.fileType !== "markdown") return;
@@ -1175,12 +1193,17 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       {activeTab?.viewMode === "source" ? (
         <div className="flex-1 overflow-auto relative">
           <SourceEditor
-            content={activeTab.content}
+            content={sourceContent}
             wordWrap={sourceWordWrap}
-            onUpdate={(content) => {
+            onUpdate={(raw) => {
               if (activeTab) {
-                const hasChanged = content !== activeTab.content;
-                updateTabContent(activeTab.id, content, hasChanged);
+                sourceUserEditRef.current = true;
+                setSourceContent(raw);
+                const { frontmatter, content } = parseFrontmatter(raw);
+                const bodyChanged = content !== activeTab.content;
+                const fmChanged = JSON.stringify(frontmatter) !== JSON.stringify(activeTab.frontmatter);
+                updateTabContent(activeTab.id, content, activeTab.isDirty || bodyChanged || fmChanged);
+                if (fmChanged) setFrontmatter(activeTab.id, frontmatter);
               }
             }}
             onSave={async () => {

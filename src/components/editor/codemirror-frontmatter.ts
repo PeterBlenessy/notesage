@@ -84,7 +84,7 @@ export const yamlFrontmatter: MarkdownConfig = {
         );
         return true;
       },
-      before: "ATXHeading",
+      before: "HorizontalRule",
     },
   ],
 };
