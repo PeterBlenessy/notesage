@@ -33,7 +33,7 @@ function normalizePath(p: string): string {
 
 /**
  * Listens for `file-changed` Tauri events from the filesystem watcher
- * and handles auto-reload (clean tabs) or external-change banners (dirty tabs).
+ * and handles auto-reload (clean tabs) or external-change toasts (dirty tabs).
  */
 export function useFileWatcher() {
   const { refreshFileTree } = useFileOperations();
@@ -109,7 +109,7 @@ async function handleModifyEvent(path: string, normalizedPath: string) {
     }
 
     if (tab.isDirty) {
-      // Dirty tabs: use the old ExternalChangeBanner (reload/keep)
+      // Dirty tabs: toast with Reload action shown by Editor.tsx
       state.setExternalChange(tab.filePath, content);
     } else {
       if (!useSettingsStore.getState().externalChangeDiffReview) {

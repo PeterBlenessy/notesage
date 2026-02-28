@@ -54,7 +54,6 @@ import { SourceBubbleMenu } from "./SourceBubbleMenu";
 import { FindBar } from "./FindBar";
 import { openSearchPanel } from "@codemirror/search";
 import { DiffReviewBanner } from "./DiffReviewBanner";
-import { ExternalChangeBanner } from "./ExternalChangeBanner";
 import { BranchDiffSelector } from "./BranchDiffSelector";
 import { CommentPopover } from "./CommentPopover";
 import { StatusBar } from "./StatusBar";
@@ -400,29 +399,42 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     }
   }, [commentOps.activeCommentId, commentOps.activeComment, editor]);
 
-  // External change detection — dirty tabs use old banner (reload/keep)
+  // External change detection via editor-store
   const activeExternalContent = activeTab ? externalChanges[activeTab.filePath] : undefined;
 
-  const handleExternalReload = useCallback(() => {
-    if (!editor || !activeTab || activeExternalContent === undefined) return;
-    setContentWithoutHistory(editor, encodeImagePathSpaces(activeExternalContent));
-    updateTabContent(activeTab.id, activeExternalContent, false);
-    clearExternalChange(activeTab.filePath);
-  }, [editor, activeTab, activeExternalContent, updateTabContent, clearExternalChange]);
-
-  const handleExternalKeep = useCallback(() => {
-    if (!activeTab) return;
-    clearExternalChange(activeTab.filePath);
-  }, [activeTab, clearExternalChange]);
-
-  // Auto-reload clean tabs when external changes are detected via editor-store
-  // (only for git review auto-accept; normal clean tab changes go through external-change-store)
+  // Auto-reload clean tabs; show toast with Reload action for dirty tabs
   useEffect(() => {
-    if (editor && activeTab && !activeTab.isDirty && activeExternalContent !== undefined) {
+    if (!editor || !activeTab || activeExternalContent === undefined) return;
+
+    if (!activeTab.isDirty) {
+      // Clean tab: auto-reload silently + toast
       setContentWithoutHistory(editor, encodeImagePathSpaces(activeExternalContent));
       updateTabContent(activeTab.id, activeExternalContent, false);
       clearExternalChange(activeTab.filePath);
       toast("File updated from disk", { id: "external-change", description: activeTab.fileName });
+    } else {
+      // Dirty tab: persistent toast with Reload action
+      const filePath = activeTab.filePath;
+      const tabId = activeTab.id;
+      const content = activeExternalContent;
+      toast("File modified externally", {
+        id: `external-change-dirty-${filePath}`,
+        description: activeTab.fileName,
+        duration: Infinity,
+        action: {
+          label: "Reload",
+          onClick: () => {
+            const currentEditor = editor;
+            if (!currentEditor) return;
+            setContentWithoutHistory(currentEditor, encodeImagePathSpaces(content));
+            useEditorStore.getState().updateTabContent(tabId, content, false);
+            useEditorStore.getState().clearExternalChange(filePath);
+          },
+        },
+        onDismiss: () => {
+          useEditorStore.getState().clearExternalChange(filePath);
+        },
+      });
     }
   }, [editor, activeTab?.id, activeTab?.isDirty, activeExternalContent, updateTabContent, clearExternalChange]);
 
@@ -1186,9 +1198,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           onAcceptAll={handleAcceptAll}
           onRejectAll={handleRejectAll}
         />
-      )}
-      {activeExternalContent !== undefined && activeTab?.isDirty && (
-        <ExternalChangeBanner onReload={handleExternalReload} onKeep={handleExternalKeep} />
       )}
       {activeTab?.viewMode === "source" ? (
         <div className="flex-1 overflow-auto relative">
