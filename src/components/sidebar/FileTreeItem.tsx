@@ -436,18 +436,19 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
                       <>
                         {valid.some((d) => d.category === "notes") && (
                           <>
+                            <ContextMenuLabel className="text-xs text-muted-foreground">QUICK NOTES</ContextMenuLabel>
                             {valid.filter((d) => d.category === "notes").map(renderDestination)}
                           </>
                         )}
                         {valid.some((d) => d.category === "project") && (
                           <>
-                            <ContextMenuLabel className="text-xs text-muted-foreground">Projects</ContextMenuLabel>
+                            <ContextMenuLabel className="text-xs text-muted-foreground">PROJECTS</ContextMenuLabel>
                             {valid.filter((d) => d.category === "project").map(renderDestination)}
                           </>
                         )}
                         {valid.some((d) => d.category === "folder") && (
                           <>
-                            <ContextMenuLabel className="text-xs text-muted-foreground">Folders</ContextMenuLabel>
+                            <ContextMenuLabel className="text-xs text-muted-foreground">FOLDERS</ContextMenuLabel>
                             {valid.filter((d) => d.category === "folder").map(renderDestination)}
                           </>
                         )}
