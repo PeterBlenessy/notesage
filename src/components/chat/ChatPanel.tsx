@@ -162,10 +162,51 @@ export function ChatPanel() {
 
   const allSelected = projects.length > 0 && selectedProjectPaths.length === projects.length;
 
+  /** Get a project's provider override (connection ID), or null if none. */
+  const getProjectOverride = (path: string): string | null =>
+    metadataMap[path]?.ai?.provider ?? null;
+
+  const handleProjectToggle = (path: string) => {
+    const isSelected = selectedProjectPaths.includes(path);
+    if (isSelected) {
+      // Deselecting — always allowed
+      toggleProjectPath(path);
+      return;
+    }
+
+    // Selecting — check for provider override conflicts
+    const newOverride = getProjectOverride(path);
+    if (newOverride) {
+      // Check if any currently selected project has a different non-null override
+      const conflicting = selectedProjectPaths.some((sp) => {
+        const existing = getProjectOverride(sp);
+        return existing !== null && existing !== newOverride;
+      });
+      if (conflicting) {
+        // Swap to just the new project
+        setSelectedProjectPaths([path]);
+        toast.info('Switched project — selected projects had conflicting provider overrides.', { id: 'provider-conflict' });
+        return;
+      }
+    }
+
+    toggleProjectPath(path);
+  };
+
   const handleToggleAll = () => {
     if (allSelected) {
       setSelectedProjectPaths([]);
     } else {
+      // Check for conflicting overrides across all projects
+      const overrides = new Set<string>();
+      for (const p of projects) {
+        const ov = getProjectOverride(p.path);
+        if (ov) overrides.add(ov);
+      }
+      if (overrides.size > 1) {
+        toast.info('Cannot select all — projects have conflicting provider overrides.', { id: 'provider-conflict' });
+        return;
+      }
       setSelectedProjectPaths(projects.map((p) => p.path));
     }
   };
@@ -338,7 +379,7 @@ export function ChatPanel() {
                     return (
                       <button
                         key={project.path}
-                        onClick={() => toggleProjectPath(project.path)}
+                        onClick={() => handleProjectToggle(project.path)}
                         className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50"
                       >
                         <span className="truncate">{name}</span>

@@ -4,7 +4,7 @@ import { Editor } from "@/components/editor/Editor";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { CommandPalette } from "@/components/CommandPalette";
 import { ChatPanel } from "@/components/chat/ChatPanel";
-import { SettingsDialog } from "@/components/settings/SettingsDialog";
+import { SettingsDialog, type SettingsTab } from "@/components/settings/SettingsDialog";
 import { ProjectSettingsDialog } from "@/components/settings/ProjectSettingsDialog";
 import { NewNoteDialog } from "@/components/NewNoteDialog";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
@@ -100,6 +100,7 @@ function App() {
   const [commandPaletteTagOccurrences, setCommandPaletteTagOccurrences] = useState<TagOccurrence[]>([]);
   const [commandPaletteTagSearchMode, setCommandPaletteTagSearchMode] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab | undefined>(undefined);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [projectSettingsPath, setProjectSettingsPath] = useState("");
   const [newNoteOpen, setNewNoteOpen] = useState(false);
@@ -661,7 +662,11 @@ function App() {
 
         <SettingsDialog
           open={settingsOpen}
-          onOpenChange={setSettingsOpen}
+          onOpenChange={(open) => {
+            setSettingsOpen(open);
+            if (!open) setSettingsInitialTab(undefined);
+          }}
+          initialTab={settingsInitialTab}
           updateState={updateState}
           onCheckForUpdate={checkForUpdate}
           onOpenUpdateDialog={() => setUpdateDialogOpen(true)}
@@ -672,6 +677,11 @@ function App() {
             onOpenChange={setProjectSettingsOpen}
             projectPath={projectSettingsPath}
             onPathChanged={setProjectSettingsPath}
+            onOpenAISettings={() => {
+              setProjectSettingsOpen(false);
+              setSettingsInitialTab('ai');
+              setSettingsOpen(true);
+            }}
           />
         )}
         <CommandPalette

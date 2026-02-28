@@ -1,12 +1,11 @@
 import { create } from 'zustand';
-import type { AIProviderType } from '@/lib/ai/types';
 
 export interface ProjectMetadata {
   version: 1;
   name: string;
   description: string;
   ai: {
-    provider: AIProviderType | null;
+    provider: string | null; // Connection ID (v2) or legacy provider name
     personaId: string | null;
     projectContext: string;
   };

@@ -24,20 +24,21 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { tauriApi } from '@/lib/tauri';
 import type { UpdateState } from '@/hooks/useAutoUpdate';
 
+export type SettingsTab = 'ai' | 'personas' | 'prompts' | 'editor' | 'git' | 'sync' | 'about';
+
 interface SettingsDialogProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  initialTab?: SettingsTab;
   updateState?: UpdateState;
   onCheckForUpdate?: () => Promise<void>;
   onOpenUpdateDialog?: () => void;
 }
-
-type SettingsTab = 'ai' | 'personas' | 'prompts' | 'editor' | 'git' | 'sync' | 'about';
 
 const TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
   { id: 'editor', label: 'Editor', icon: Sliders },
@@ -105,7 +106,7 @@ function formatRelativeTime(isoString: string | null): string {
   return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
-export function SettingsDialog({ open, onOpenChange, updateState, onCheckForUpdate, onOpenUpdateDialog }: SettingsDialogProps) {
+export function SettingsDialog({ open, onOpenChange, initialTab, updateState, onCheckForUpdate, onOpenUpdateDialog }: SettingsDialogProps) {
   const {
     theme, setTheme,
     showFloatingToolbar, setShowFloatingToolbar,
@@ -122,9 +123,16 @@ export function SettingsDialog({ open, onOpenChange, updateState, onCheckForUpda
     autoCheckUpdates, setAutoCheckUpdates,
     lastUpdateCheck,
   } = useSettingsStore();
-  const [activeTab, setActiveTab] = useState<SettingsTab>('editor');
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'editor');
   const [gitNotAvailable, setGitNotAvailable] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
+
+  // Sync activeTab when initialTab changes (e.g., opened from Project Settings → AI Providers)
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   const handleGitToggle = useCallback(async (checked: boolean) => {
     if (!checked) {

@@ -7,6 +7,7 @@ import { useProjectMetadataStore, type ProjectMetadata } from '@/stores/project-
 import { getAIProvider } from '@/lib/ai';
 import type { AIProviderType, ChatMessage, Citation } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
+import { useConnectionsStore } from '@/stores/connections-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -228,20 +229,47 @@ export function useAIOperations() {
   const singleProjectPath = selectedProjectPaths.length === 1 ? selectedProjectPaths[0] : null;
   const singleMetadata = singleProjectPath ? metadataMap[singleProjectPath] ?? null : null;
 
+  // All connections (for reactivity when a connection referenced by project override is added/removed)
+  const connections = useConnectionsStore((s) => s.connections);
+
+  // Resolve the effective connection: project override takes priority over global routing.
+  // This is critical for agent_managed overrides — without it, a project override to an
+  // ACP connection (e.g., Claude Code) would be silently ignored.
+  const effectiveConnection = useMemo(() => {
+    const projectProviderOverride = singleMetadata?.ai.provider ?? null;
+    if (projectProviderOverride) {
+      const conn = connections.find((c) => c.id === projectProviderOverride);
+      if (conn) return conn;
+    }
+    return interactiveConnection;
+  }, [singleMetadata, interactiveConnection, connections]);
+
   // Resolve effective provider + credentials:
-  // 1. Project override (v1 compat) → uses old ai-store apiKeys
+  // 1. Project override (connection ID or v1 legacy provider name)
   // 2. Routing store connection → uses connection credentials
   // 3. Fall back to ai-store (v1 behavior)
   const resolved = useMemo(() => {
     const projectProviderOverride = singleMetadata?.ai.provider ?? null;
 
-    // If project overrides the provider, use old v1 resolution
+    // If project overrides the provider
     if (projectProviderOverride) {
-      return {
-        provider: projectProviderOverride,
-        apiKey: projectProviderOverride === 'ollama' ? undefined : apiKeys[projectProviderOverride],
-        ollamaUrl,
-      };
+      // Try resolving as a connection ID (v2)
+      const conn = useConnectionsStore.getState().getConnection(projectProviderOverride);
+      if (conn) {
+        const fromConn = resolveConnectionCredentials(conn);
+        if (fromConn) return fromConn;
+        // agent_managed → falls through, handled via ACP
+      }
+
+      // Legacy v1 resolution (provider name string like 'anthropic', 'openai', 'ollama')
+      const legacyProvider = projectProviderOverride as AIProviderType;
+      if (['anthropic', 'openai', 'ollama', 'google'].includes(legacyProvider)) {
+        return {
+          provider: legacyProvider,
+          apiKey: legacyProvider === 'ollama' ? undefined : apiKeys[legacyProvider],
+          ollamaUrl,
+        };
+      }
     }
 
     // Try routing store
@@ -308,11 +336,11 @@ export function useAIOperations() {
   const generateText = useCallback(
     async (prompt: string): Promise<string> => {
       // ACP path: route through agent for agent_managed connections
-      if (interactiveConnection?.authMethod === 'agent_managed') {
+      if (effectiveConnection?.authMethod === 'agent_managed') {
         const cwd = selectedProjectPaths[0] || '/tmp';
         let instanceId: string;
         try {
-          instanceId = await ensureAcpAgent(interactiveConnection, cwd);
+          instanceId = await ensureAcpAgent(effectiveConnection, cwd);
         } catch (error) {
           stopAcpAgent();
           throw error;
@@ -390,7 +418,7 @@ export function useAIOperations() {
         throw error;
       }
     },
-    [resolved, composedSystemMessage, interactiveConnection, selectedProjectPaths]
+    [resolved, composedSystemMessage, effectiveConnection, selectedProjectPaths]
   );
 
   const sendChatMessage = useCallback(
@@ -402,7 +430,7 @@ export function useAIOperations() {
       }
 
       // ACP path: route through agent for agent_managed connections
-      if (interactiveConnection?.authMethod === 'agent_managed') {
+      if (effectiveConnection?.authMethod === 'agent_managed') {
         setLoading(true);
         setError(null);
 
@@ -414,14 +442,14 @@ export function useAIOperations() {
           role: 'assistant',
           content: '',
           timestamp: assistantMessageId,
-          connectionId: interactiveConnection.id,
-          connectionLabel: interactiveConnection.label,
-          connectionProvider: interactiveConnection.provider,
+          connectionId: effectiveConnection.id,
+          connectionLabel: effectiveConnection.label,
+          connectionProvider: effectiveConnection.provider,
         });
 
         try {
           const cwd = selectedProjectPaths[0] || '/tmp';
-          const instanceId = await ensureAcpAgent(interactiveConnection, cwd);
+          const instanceId = await ensureAcpAgent(effectiveConnection, cwd);
 
           // New conversation (no prior messages) → create a fresh session
           let isNewSession = false;
@@ -599,10 +627,10 @@ export function useAIOperations() {
         role: 'assistant',
         content: '',
         timestamp: assistantMessageId,
-        ...(interactiveConnection ? {
-          connectionId: interactiveConnection.id,
-          connectionLabel: interactiveConnection.label,
-          connectionProvider: interactiveConnection.provider,
+        ...(effectiveConnection ? {
+          connectionId: effectiveConnection.id,
+          connectionLabel: effectiveConnection.label,
+          connectionProvider: effectiveConnection.provider,
         } : resolved ? {
           connectionProvider: resolved.provider,
         } : {}),
@@ -679,7 +707,7 @@ export function useAIOperations() {
         setActiveTool(null);
       }
     },
-    [resolved, composedSystemMessage, webSearchEnabled, addMessage, updateMessage, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, interactiveConnection, selectedProjectPaths]
+    [resolved, composedSystemMessage, webSearchEnabled, addMessage, updateMessage, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, effectiveConnection, selectedProjectPaths]
   );
 
   const cancelChat = useCallback(() => {

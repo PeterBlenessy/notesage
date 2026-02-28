@@ -4,6 +4,7 @@ import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { useAIStore, getAllPersonas } from '@/stores/ai-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useSyncStore } from '@/stores/sync-store';
+import { useConnectionsStore } from '@/stores/connections-store';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -25,37 +26,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { AIProviderType } from '@/lib/ai/types';
+import { ProviderLogo } from '@/components/ProviderLogo';
 import { PersonaIcon } from '@/components/PersonaIcon';
 import { formatDisplayPath } from '@/lib/utils';
-
-const PROVIDERS = [
-  {
-    value: 'anthropic',
-    label: 'Anthropic Claude',
-    logo: '/logos/anthropic.svg',
-  },
-  {
-    value: 'openai',
-    label: 'OpenAI',
-    logo: '/logos/openai.svg',
-  },
-  {
-    value: 'ollama',
-    label: 'Ollama',
-    logo: '/logos/ollama-official.png',
-  },
-];
 
 interface ProjectSettingsProps {
   projectPath: string;
   onPathChanged?: (newPath: string) => void;
+  onOpenAISettings?: () => void;
 }
 
-export function ProjectSettings({ projectPath, onPathChanged }: ProjectSettingsProps) {
+export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }: ProjectSettingsProps) {
   const metadata = useProjectMetadataStore((s) => s.metadataMap[projectPath]);
   const { updateMetadata, updateAI } = useProjectMetadataStore();
   const aiStore = useAIStore();
+  const connections = useConnectionsStore((s) => s.connections);
   const { icloudAvailable, icloudNotesagePath, notesRootPath } = useSettingsStore();
   const {
     icloudEnabled,
@@ -189,7 +174,7 @@ export function ProjectSettings({ projectPath, onPathChanged }: ProjectSettingsP
   }
 
   const allPersonas = getAllPersonas(aiStore);
-  const selectedProvider = PROVIDERS.find((p) => p.value === metadata.ai.provider);
+  const selectedConnection = connections.find((c) => c.id === metadata.ai.provider);
 
   return (
     <div className="space-y-6">
@@ -300,46 +285,56 @@ export function ProjectSettings({ projectPath, onPathChanged }: ProjectSettingsP
                 Override the global AI provider for this project
               </p>
             </div>
-            <Select
-              value={metadata.ai.provider || '_global'}
-              onValueChange={(value) =>
-                updateAI(projectPath, { provider: value === '_global' ? null : (value as AIProviderType) })
-              }
-            >
-              <SelectTrigger className="ml-auto w-56 text-left">
-                <SelectValue>
-                  {metadata.ai.provider === null ? (
+            {connections.length === 0 ? (
+              <div className="ml-auto flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">No providers configured</span>
+                {onOpenAISettings && (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0 text-xs"
+                    onClick={onOpenAISettings}
+                  >
+                    Set up in Settings
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <Select
+                value={metadata.ai.provider || '_global'}
+                onValueChange={(value) =>
+                  updateAI(projectPath, { provider: value === '_global' ? null : value })
+                }
+              >
+                <SelectTrigger className="ml-auto w-56 text-left">
+                  <SelectValue>
+                    {metadata.ai.provider === null ? (
+                      <span className="text-muted-foreground">Use Global Default</span>
+                    ) : selectedConnection ? (
+                      <div className="flex items-center gap-2">
+                        <ProviderLogo provider={selectedConnection.provider} className="w-4 h-4" />
+                        <span>{selectedConnection.label}</span>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">Use Global Default</span>
+                    )}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_global">
                     <span className="text-muted-foreground">Use Global Default</span>
-                  ) : selectedProvider ? (
-                    <div className="flex items-center gap-2">
-                      <img
-                        src={selectedProvider.logo}
-                        alt={selectedProvider.label}
-                        className="w-4 h-4 rounded object-contain bg-white p-0.5"
-                      />
-                      <span>{selectedProvider.label}</span>
-                    </div>
-                  ) : null}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_global">
-                  <span className="text-muted-foreground">Use Global Default</span>
-                </SelectItem>
-                {PROVIDERS.map((p) => (
-                  <SelectItem key={p.value} value={p.value}>
-                    <div className="flex items-center gap-2">
-                      <img
-                        src={p.logo}
-                        alt={p.label}
-                        className="w-4 h-4 rounded object-contain bg-white p-0.5"
-                      />
-                      <span>{p.label}</span>
-                    </div>
                   </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                  {connections.map((conn) => (
+                    <SelectItem key={conn.id} value={conn.id}>
+                      <div className="flex items-center gap-2">
+                        <ProviderLogo provider={conn.provider} className="w-4 h-4" />
+                        <span>{conn.label}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           {/* Persona Override */}
