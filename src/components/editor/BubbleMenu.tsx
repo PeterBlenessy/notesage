@@ -5,6 +5,8 @@ import {
   Loader2,
   ChevronDown,
   MessageSquare,
+  ListChevronsDownUp,
+  ListChevronsUpDown,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -118,7 +120,7 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
   return (
     <TiptapBubbleMenu
       editor={editor}
-      className="flex items-center rounded-lg border border-border bg-popover p-1 shadow-lg backdrop-blur-sm overflow-hidden animate-in fade-in-0 zoom-in-95 duration-150"
+      className="z-50 flex items-center rounded-lg border border-border bg-popover p-1 shadow-lg backdrop-blur-sm overflow-hidden animate-in fade-in-0 zoom-in-95 duration-150"
     >
       {!hasSuggestion && (
         <>
@@ -148,8 +150,10 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
                 disabled={loadingAction !== null}
                 title="Summarize with AI"
               >
-                {loadingAction === 'summarize' && (
+                {loadingAction === 'summarize' ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <ListChevronsDownUp className="h-3 w-3" strokeWidth={1.5} />
                 )}
                 Summarize
               </Button>
@@ -163,8 +167,10 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
                 disabled={loadingAction !== null}
                 title="Expand with AI"
               >
-                {loadingAction === 'expand' && (
+                {loadingAction === 'expand' ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <ListChevronsUpDown className="h-3 w-3" strokeWidth={1.5} />
                 )}
                 Expand
               </Button>

@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import type { EditorView } from "@codemirror/view";
-import { Sparkles, Loader2, Wand2, AlignLeft, Expand } from "lucide-react";
+import { Sparkles, Loader2, ListChevronsDownUp, ListChevronsUpDown } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { useAIStore } from "@/stores/ai-store";
 import { useAIOperations } from "@/hooks/useAIOperations";
 
@@ -64,18 +65,22 @@ export function SourceBubbleMenu({ cmView }: SourceBubbleMenuProps) {
 
       selectionRef.current = { from: sel.from, to: sel.to, text };
 
-      // Position above the selection start
+      // Position above the selection start using viewport coords (fixed positioning)
       const coords = cmView.coordsAtPos(sel.from);
       if (coords) {
-        const scrollParent = cmView.dom.closest(".overflow-auto");
-        const containerRect = scrollParent
-          ? scrollParent.getBoundingClientRect()
-          : cmView.dom.getBoundingClientRect();
+        const menuHeight = 36;
+        const menuWidth = 260;
+        const pad = 8;
 
-        setPosition({
-          top: coords.top - containerRect.top - 44,
-          left: Math.max(8, coords.left - containerRect.left),
-        });
+        let top = coords.top - menuHeight - 8;
+        let left = coords.left;
+
+        // Clamp to viewport
+        if (top < pad) top = coords.bottom + 8;
+        if (left + menuWidth > window.innerWidth - pad) left = window.innerWidth - pad - menuWidth;
+        if (left < pad) left = pad;
+
+        setPosition({ top, left });
         setVisible(true);
       }
 
@@ -141,7 +146,7 @@ export function SourceBubbleMenu({ cmView }: SourceBubbleMenuProps) {
   return (
     <div
       ref={menuRef}
-      className="absolute z-50 flex items-center gap-0.5 rounded-lg border border-border bg-popover/95 backdrop-blur-sm p-1 shadow-md transition-opacity duration-150"
+      className="fixed z-50 flex items-center rounded-lg border border-border bg-popover p-1 shadow-lg backdrop-blur-sm transition-opacity duration-150 animate-in fade-in-0 zoom-in-95"
       style={{
         top: `${position.top}px`,
         left: `${position.left}px`,
@@ -156,32 +161,37 @@ export function SourceBubbleMenu({ cmView }: SourceBubbleMenuProps) {
         </div>
       ) : (
         <>
-          <Sparkles className="h-3 w-3 text-muted-foreground ml-1.5 mr-0.5" strokeWidth={1.5} />
           <Button
             variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs"
+            size="xs"
             onClick={() => handleAction("improve")}
+            title="Improve with AI"
           >
-            <Wand2 className="h-3 w-3 mr-1" strokeWidth={1.5} />
+            <Sparkles className="h-3 w-3" strokeWidth={1.5} />
             Improve
           </Button>
+
+          <Separator orientation="vertical" className="h-4 mx-0.5" />
+
           <Button
             variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs"
+            size="xs"
             onClick={() => handleAction("summarize")}
+            title="Summarize with AI"
           >
-            <AlignLeft className="h-3 w-3 mr-1" strokeWidth={1.5} />
+            <ListChevronsDownUp className="h-3 w-3" strokeWidth={1.5} />
             Summarize
           </Button>
+
+          <Separator orientation="vertical" className="h-4 mx-0.5" />
+
           <Button
             variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs"
+            size="xs"
             onClick={() => handleAction("expand")}
+            title="Expand with AI"
           >
-            <Expand className="h-3 w-3 mr-1" strokeWidth={1.5} />
+            <ListChevronsUpDown className="h-3 w-3" strokeWidth={1.5} />
             Expand
           </Button>
         </>
