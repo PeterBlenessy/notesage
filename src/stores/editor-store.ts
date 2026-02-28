@@ -5,6 +5,12 @@ import type { FileType, ViewMode } from "@/lib/file-utils";
 
 export type { FileType, ViewMode } from "@/lib/file-utils";
 
+/** Scroll target for navigating to a specific tag occurrence within a document. */
+export interface ScrollToTag {
+  tag: string;
+  occurrence: number; // 0-based index of this tag match within the file
+}
+
 export interface Tab {
   id: string;
   filePath: string;
@@ -20,6 +26,8 @@ export interface Tab {
   copilotDisabled?: boolean;
   /** Session-only: true when the file has been deleted from disk. */
   deleted?: boolean;
+  /** Session-only: scroll to a specific tag occurrence after content loads. Cleared after use. */
+  scrollToTag?: ScrollToTag;
 }
 
 export interface RecentFile {
@@ -48,7 +56,7 @@ interface EditorStore {
   /** Persisted: which file was active, so we can re-activate it on restart. */
   persistedActiveFilePath: string | null;
 
-  openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null, fileType?: FileType) => void;
+  openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null, fileType?: FileType, scrollToTag?: ScrollToTag) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   updateTabContent: (tabId: string, content: string, isDirty: boolean) => void;
@@ -69,6 +77,8 @@ interface EditorStore {
   toggleViewMode: (tabId: string) => void;
   /** Toggle Copilot completions for a specific tab (session-only, not persisted). */
   toggleCopilotForTab: (tabId: string) => void;
+  /** Set a tag scroll target. Cleared after Editor.tsx consumes it. */
+  setScrollToTag: (tabId: string, target: ScrollToTag | undefined) => void;
 }
 
 export const useEditorStore = create<EditorStore>()(
@@ -82,7 +92,7 @@ export const useEditorStore = create<EditorStore>()(
       persistedTabs: [],
       persistedActiveFilePath: null,
 
-      openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null, fileType?: FileType) => {
+      openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null, fileType?: FileType, scrollToTag?: ScrollToTag) => {
         set((state) => {
           // Track in recent files (deduplicate, cap)
           const filteredRecent = state.recentFiles.filter((r) => r.path !== filePath);
@@ -92,11 +102,19 @@ export const useEditorStore = create<EditorStore>()(
           const existingTab = state.tabs.find((tab) => tab.filePath === filePath);
 
           if (existingTab) {
-            // Sync persisted state
+            // Sync persisted state + set scrollToTag atomically
             const newPersistedTabs = state.persistedTabs.some((p) => p.filePath === filePath)
               ? state.persistedTabs
               : [...state.persistedTabs, { filePath, fileName }];
-            return { activeTabId: existingTab.id, recentFiles: newRecent, persistedTabs: newPersistedTabs, persistedActiveFilePath: filePath };
+            return {
+              tabs: scrollToTag !== undefined
+                ? state.tabs.map((tab) => tab.id === existingTab.id ? { ...tab, scrollToTag } : tab)
+                : state.tabs,
+              activeTabId: existingTab.id,
+              recentFiles: newRecent,
+              persistedTabs: newPersistedTabs,
+              persistedActiveFilePath: filePath,
+            };
           }
 
           // Create new tab
@@ -108,6 +126,7 @@ export const useEditorStore = create<EditorStore>()(
             content,
             frontmatter: frontmatter ?? null,
             fileType: fileType ?? "markdown",
+            scrollToTag,
           };
 
           const newPersistedTabs = [...state.persistedTabs.filter((p) => p.filePath !== filePath), { filePath, fileName }];
@@ -273,6 +292,14 @@ export const useEditorStore = create<EditorStore>()(
         set((state) => ({
           tabs: state.tabs.map((tab) =>
             tab.id === tabId ? { ...tab, copilotDisabled: !tab.copilotDisabled } : tab
+          ),
+        }));
+      },
+
+      setScrollToTag: (tabId: string, target: ScrollToTag | undefined) => {
+        set((state) => ({
+          tabs: state.tabs.map((tab) =>
+            tab.id === tabId ? { ...tab, scrollToTag: target } : tab
           ),
         }));
       },

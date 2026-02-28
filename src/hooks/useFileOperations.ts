@@ -1,9 +1,10 @@
 import { useCallback } from "react";
 import { tauriApi } from "@/lib/tauri";
-import { useEditorStore } from "@/stores/editor-store";
+import { useEditorStore, type ScrollToTag } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useGitStore } from "@/stores/git-store";
+import { useTagStore } from "@/stores/tag-store";
 import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { migrateProjectPath } from "@/lib/migrate-project-path";
@@ -12,6 +13,29 @@ import { setBinaryData } from "@/lib/binary-cache";
 
 /** Debounced git status refresh per repo. Each repo gets its own timer. */
 const repoRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Debounced workspace tag scan. */
+let tagScanTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function refreshTags() {
+  if (tagScanTimer) clearTimeout(tagScanTimer);
+  tagScanTimer = setTimeout(async () => {
+    tagScanTimer = null;
+    try {
+      const ws = useWorkspaceStore.getState();
+      const settings = useSettingsStore.getState();
+      const paths: string[] = [];
+      for (const folder of ws.explorerFolders) paths.push(folder.path);
+      for (const project of ws.projects) paths.push(project.path);
+      if (settings.notesRootPath) paths.push(settings.notesRootPath);
+      if (paths.length === 0) return;
+      const filesByTag = await tauriApi.scanTagsInDirectories(paths);
+      useTagStore.getState().setScanResult(filesByTag);
+    } catch (error) {
+      console.error("Failed to scan tags:", error);
+    }
+  }, 500);
+}
 
 export function refreshGitForPath(filePath: string) {
   if (!useSettingsStore.getState().gitEnabled) return;
@@ -160,21 +184,19 @@ export function useFileOperations() {
   }, []);
 
   const openFile = useCallback(
-    async (filePath: string, fileName: string) => {
+    async (filePath: string, fileName: string, scrollToTag?: ScrollToTag) => {
       try {
         const fileType = getFileType(fileName);
 
         if (fileType === "image") {
-          // Images don't need to be read — the viewer uses the asset protocol URL
-          openTab(filePath, fileName, "", null, fileType);
+          openTab(filePath, fileName, "", null, fileType, scrollToTag);
           return;
         }
 
         if (isBinaryFileType(fileType)) {
-          // Binary files (PDF, DOCX): read as bytes, cache outside Zustand
           const bytes = await tauriApi.readBinaryFile(filePath);
           setBinaryData(filePath, new Uint8Array(bytes));
-          openTab(filePath, fileName, "", null, fileType);
+          openTab(filePath, fileName, "", null, fileType, scrollToTag);
           return;
         }
 
@@ -182,9 +204,9 @@ export function useFileOperations() {
         const raw = await tauriApi.readFile(filePath);
         if (fileType === "markdown") {
           const { frontmatter, content } = parseFrontmatter(raw);
-          openTab(filePath, fileName, content, frontmatter, fileType);
+          openTab(filePath, fileName, content, frontmatter, fileType, scrollToTag);
         } else {
-          openTab(filePath, fileName, raw, null, fileType);
+          openTab(filePath, fileName, raw, null, fileType, scrollToTag);
         }
       } catch (error) {
         console.error("Failed to read file:", error);
@@ -192,6 +214,13 @@ export function useFileOperations() {
       }
     },
     [openTab]
+  );
+
+  const openFileAtTag = useCallback(
+    async (filePath: string, fileName: string, tag: string, occurrence: number) => {
+      await openFile(filePath, fileName, { tag, occurrence });
+    },
+    [openFile]
   );
 
   const saveFile = useCallback(
@@ -205,6 +234,7 @@ export function useFileOperations() {
         markTabClean(tabId);
         useEditorStore.getState().clearExternalChange(filePath);
         refreshGitForPath(filePath);
+        if (filePath.endsWith(".md")) refreshTags();
         return true;
       } catch (error) {
         await tauriApi.clearSelfWrite(filePath).catch(() => {});
@@ -288,6 +318,7 @@ export function useFileOperations() {
 
   return {
     openFile,
+    openFileAtTag,
     saveFile,
     createFile,
     createFolder,

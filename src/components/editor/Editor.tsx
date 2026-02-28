@@ -51,7 +51,7 @@ import { CommentPopover } from "./CommentPopover";
 import { StatusBar } from "./StatusBar";
 import { FrontmatterBlock } from "./FrontmatterBlock";
 import { DocumentOutline } from "@/components/DocumentOutline";
-import { getMarkdownFromEditor, encodeImagePathSpaces } from "@/lib/markdown";
+import { getMarkdownFromEditor, encodeImagePathSpaces, setContentWithoutHistory } from "@/lib/markdown";
 import { getDocumentDir } from "@/lib/image-utils";
 import { toast } from "sonner";
 import "@/styles/editor.css";
@@ -61,6 +61,39 @@ const PX_PER_CM = 96 / 2.54;
 
 // Stable empty array for Zustand selector fallback (avoids infinite re-render loop)
 const EMPTY_ACTIVITIES: DelegationActivity[] = [];
+
+/**
+ * Find the ProseMirror position of the Nth occurrence (0-based) of `#tag` in the document.
+ * Walks all text nodes and searches for the tag pattern.
+ */
+function findNthTagInDoc(doc: { descendants: (fn: (node: { isText: boolean; text?: string }, pos: number) => boolean | void) => void }, tag: string, occurrence: number): number | null {
+  const needle = `#${tag}`;
+  // Characters that can follow a tag name (i.e., the tag ends here)
+  const tagTerminators = new Set([' ', '\t', '\n', ',', '.', ';', ':', '!', '?', ')', ']', '}', '"', "'", '`']);
+  let found = 0;
+  let result: number | null = null;
+  doc.descendants((node, pos) => {
+    if (result !== null) return false;
+    if (!node.isText || !node.text) return;
+    let searchFrom = 0;
+    while (searchFrom < node.text.length) {
+      const idx = node.text.indexOf(needle, searchFrom);
+      if (idx === -1) break;
+      // Verify the character after the tag name is a terminator or end-of-text
+      const afterIdx = idx + needle.length;
+      const isEnd = afterIdx >= node.text.length || tagTerminators.has(node.text[afterIdx]) || !/[a-zA-Z0-9_-]/.test(node.text[afterIdx]);
+      if (isEnd) {
+        if (found === occurrence) {
+          result = pos + idx;
+          return false;
+        }
+        found++;
+      }
+      searchFrom = idx + 1;
+    }
+  });
+  return result;
+}
 
 // Full page widths at 96 CSS DPI (1 CSS px = 1/96 inch)
 // ProseMirror padding acts as page margins
@@ -96,7 +129,7 @@ interface EditorProps {
 }
 
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick }: EditorProps) {
-  const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange, toggleCopilotForTab, toggleViewMode } = useEditorStore();
+  const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange, toggleCopilotForTab, toggleViewMode, setScrollToTag } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, pageBreaks, notesRootPath, sourceWordWrap, setSourceWordWrap } = useSettingsStore();
   const editorStyles = useEditorStylesStore();
@@ -349,7 +382,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
   const handleExternalReload = useCallback(() => {
     if (!editor || !activeTab || activeExternalContent === undefined) return;
-    editor.commands.setContent(encodeImagePathSpaces(activeExternalContent));
+    setContentWithoutHistory(editor, encodeImagePathSpaces(activeExternalContent));
     updateTabContent(activeTab.id, activeExternalContent, false);
     clearExternalChange(activeTab.filePath);
   }, [editor, activeTab, activeExternalContent, updateTabContent, clearExternalChange]);
@@ -363,7 +396,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   // (only for git review auto-accept; normal clean tab changes go through external-change-store)
   useEffect(() => {
     if (editor && activeTab && !activeTab.isDirty && activeExternalContent !== undefined) {
-      editor.commands.setContent(encodeImagePathSpaces(activeExternalContent));
+      setContentWithoutHistory(editor, encodeImagePathSpaces(activeExternalContent));
       updateTabContent(activeTab.id, activeExternalContent, false);
       clearExternalChange(activeTab.filePath);
       toast("File updated from disk", { id: "external-change", description: activeTab.fileName });
@@ -607,24 +640,68 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       // load that content instead of the stale tab.content.
       const pendingExternal = externalChanges[activeTab.filePath];
       if (pendingExternal !== undefined && !activeTab.isDirty) {
-        editor.commands.setContent(encodeImagePathSpaces(pendingExternal));
+        setContentWithoutHistory(editor, encodeImagePathSpaces(pendingExternal));
         updateTabContent(activeTab.id, pendingExternal, false);
         clearExternalChange(activeTab.filePath);
         toast("File updated from disk", { id: "external-change", description: activeTab.fileName });
       } else {
-        editor.commands.setContent(encodeImagePathSpaces(activeTab.content));
+        setContentWithoutHistory(editor, encodeImagePathSpaces(activeTab.content));
       }
 
       editor.commands.blur();
 
-      // Restore scroll position then reveal
-      restoreScrollRatio(activeTab.filePath, () => {
-        if (scrollAreaRef.current) {
-          scrollAreaRef.current.style.opacity = '1';
-        }
-      });
+      // If scrollToTag is set, scroll to that tag instead of restoring saved position
+      if (activeTab.scrollToTag) {
+        const { tag, occurrence } = activeTab.scrollToTag;
+        setScrollToTag(activeTab.id, undefined);
+        requestAnimationFrame(() => {
+          if (!editor.state?.doc) return;
+          const pos = findNthTagInDoc(editor.state.doc, tag, occurrence);
+          if (pos !== null) {
+            try {
+              const domInfo = editor.view.domAtPos(pos);
+              const node = domInfo.node instanceof HTMLElement ? domInfo.node : domInfo.node.parentElement;
+              node?.scrollIntoView({ block: "center" });
+            } catch {
+              // fallback: just reveal scroll area
+            }
+          }
+          if (scrollAreaRef.current) {
+            scrollAreaRef.current.style.opacity = '1';
+          }
+        });
+      } else {
+        // Restore scroll position then reveal
+        restoreScrollRatio(activeTab.filePath, () => {
+          if (scrollAreaRef.current) {
+            scrollAreaRef.current.style.opacity = '1';
+          }
+        });
+      }
     }
-  }, [activeTab?.id, editor, activeTab, tabs, setScrollPosition, restoreScrollRatio, externalChanges, updateTabContent, clearExternalChange]);
+  }, [activeTab?.id, editor, activeTab, tabs, setScrollPosition, restoreScrollRatio, externalChanges, updateTabContent, clearExternalChange, setScrollToTag]);
+
+  // Scroll to tag when scrollToTag is set on the already-active tab (same-tab jump)
+  useEffect(() => {
+    if (!editor || !activeTab || !activeTab.scrollToTag) return;
+    // Only handle same-tab jumps — tab-switch case is handled above
+    if (activeTab.id !== lastLoadedTabId.current) return;
+    const { tag, occurrence } = activeTab.scrollToTag;
+    setScrollToTag(activeTab.id, undefined);
+    requestAnimationFrame(() => {
+      if (!editor.state?.doc) return;
+      const pos = findNthTagInDoc(editor.state.doc, tag, occurrence);
+      if (pos !== null) {
+        try {
+          const domInfo = editor.view.domAtPos(pos);
+          const node = domInfo.node instanceof HTMLElement ? domInfo.node : domInfo.node.parentElement;
+          node?.scrollIntoView({ block: "center" });
+        } catch {
+          // Position not in DOM
+        }
+      }
+    });
+  }, [editor, activeTab?.scrollToTag, activeTab?.id, setScrollToTag]);
 
   // When switching from Source → WYSIWYG, reload editor with current tab content
   const prevViewMode = useRef(activeTab?.viewMode);
@@ -635,7 +712,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     prevViewMode.current = activeTab.viewMode;
 
     if (wasSource && isNowWysiwyg) {
-      editor.commands.setContent(encodeImagePathSpaces(activeTab.content));
+      setContentWithoutHistory(editor, encodeImagePathSpaces(activeTab.content));
       // Re-set image storage in case it was lost
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const imageStorage = (editor.storage as any).image;

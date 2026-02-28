@@ -22,7 +22,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSyncStore } from "@/stores/sync-store";
 import { useEditorStylesStore } from "@/stores/editor-styles-store";
-import { tauriApi } from "@/lib/tauri";
+import { tauriApi, type TagOccurrence } from "@/lib/tauri";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { setBinaryData } from "@/lib/binary-cache";
@@ -30,6 +30,8 @@ import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { migrateV1AISettings } from "@/lib/ai/migration";
 import { stopAcpAgent } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
+import { refreshTags } from "@/hooks/useFileOperations";
+import { useTagStore } from "@/stores/tag-store";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -91,6 +93,10 @@ function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOp
 function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandPaletteFilesOnly, setCommandPaletteFilesOnly] = useState(false);
+  const [commandPaletteInitialSearch, setCommandPaletteInitialSearch] = useState("");
+  const [commandPaletteTagFiles, setCommandPaletteTagFiles] = useState<{ path: string; name: string }[]>([]);
+  const [commandPaletteTagOccurrences, setCommandPaletteTagOccurrences] = useState<TagOccurrence[]>([]);
+  const [commandPaletteTagSearchMode, setCommandPaletteTagSearchMode] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [projectSettingsPath, setProjectSettingsPath] = useState("");
@@ -111,6 +117,43 @@ function App() {
 
   useProjectMetadata();
   useStartWatchers();
+
+  // Listen for tag badge clicks → open command palette with tag occurrence results
+  useEffect(() => {
+    const handler = async (e: Event) => {
+      const tag = (e as CustomEvent<{ tag: string }>).detail.tag;
+
+      // Open palette immediately with file-level results while occurrences load
+      const filePaths = useTagStore.getState().filesByTag[tag] ?? [];
+      const files = filePaths.map((p) => ({
+        path: p,
+        name: p.split("/").pop() ?? p,
+      }));
+      setCommandPaletteInitialSearch(tag);
+      setCommandPaletteTagFiles(files);
+      setCommandPaletteTagOccurrences([]);
+      setCommandPaletteFilesOnly(true);
+      setCommandPaletteOpen(true);
+
+      // Fetch per-line occurrences asynchronously
+      try {
+        const ws = useWorkspaceStore.getState();
+        const settings = useSettingsStore.getState();
+        const paths: string[] = [];
+        for (const folder of ws.explorerFolders) paths.push(folder.path);
+        for (const project of ws.projects) paths.push(project.path);
+        if (settings.notesRootPath) paths.push(settings.notesRootPath);
+        if (paths.length > 0) {
+          const occurrences = await tauriApi.findTagOccurrences(tag, paths);
+          setCommandPaletteTagOccurrences(occurrences);
+        }
+      } catch (error) {
+        console.error("Failed to find tag occurrences:", error);
+      }
+    };
+    window.addEventListener("notesage:open-tag-search", handler);
+    return () => window.removeEventListener("notesage:open-tag-search", handler);
+  }, []);
 
   // Migrate v1 AI settings to v2 connections/routing on first load
   useEffect(() => {
@@ -245,6 +288,9 @@ function App() {
       // get it right in one shot — no flash of local-only then merged content)
       await refreshNotesTree();
 
+      // Initial workspace tag scan (for tag autocomplete)
+      refreshTags();
+
       // Re-open persisted tabs in order, then restore active tab
       const { persistedTabs, persistedActiveFilePath } = useEditorStore.getState();
       if (persistedTabs.length > 0) {
@@ -322,7 +368,7 @@ function App() {
     }
   }, [addProject, addExplorerFolder]);
 
-  const { openFile } = useFileOperations();
+  const { openFile, openFileAtTag } = useFileOperations();
 
   const handleOpenProject = useCallback(async (projectPath: string) => {
     try {
@@ -342,6 +388,15 @@ function App() {
       toast.error(`Failed to open file: ${error}`);
     }
   }, [openFile]);
+
+  const handleOpenFileAtTag = useCallback(async (filePath: string, fileName: string, tag: string, occurrence: number) => {
+    try {
+      await openFileAtTag(filePath, fileName, tag, occurrence);
+    } catch (error) {
+      console.error("Failed to open file at tag:", error);
+      toast.error(`Failed to open file: ${error}`);
+    }
+  }, [openFileAtTag]);
 
   const handleBrowseForProject = useCallback(async () => {
     try {
@@ -499,6 +554,11 @@ function App() {
       setCommandPaletteFilesOnly(true);
       setCommandPaletteOpen(true);
     },
+    onTagSearchOpen: () => {
+      setCommandPaletteTagSearchMode(true);
+      setCommandPaletteFilesOnly(true);
+      setCommandPaletteOpen(true);
+    },
     onToggleFocusMode: () => setFocusMode((prev) => !prev),
     onExitFocusMode: () => setFocusMode(false),
     onOutlineOpen: () => setOutlineOpen(true),
@@ -607,7 +667,13 @@ function App() {
           open={commandPaletteOpen}
           onOpenChange={(open) => {
             setCommandPaletteOpen(open);
-            if (!open) setCommandPaletteFilesOnly(false);
+            if (!open) {
+              setCommandPaletteFilesOnly(false);
+              setCommandPaletteInitialSearch("");
+              setCommandPaletteTagFiles([]);
+              setCommandPaletteTagOccurrences([]);
+              setCommandPaletteTagSearchMode(false);
+            }
           }}
           onNewNote={() => handleNewNote()}
           onNewProject={handleNewProject}
@@ -616,6 +682,11 @@ function App() {
           onExportPdf={() => setExportOpen(true)}
           onToggleFocusMode={() => setFocusMode((prev) => !prev)}
           filesOnly={commandPaletteFilesOnly}
+          initialSearch={commandPaletteInitialSearch}
+          tagFiles={commandPaletteTagFiles.length > 0 ? commandPaletteTagFiles : undefined}
+          tagOccurrences={commandPaletteTagOccurrences.length > 0 ? commandPaletteTagOccurrences : undefined}
+          onOpenFileAtTag={handleOpenFileAtTag}
+          tagSearchMode={commandPaletteTagSearchMode}
         />
         <NewNoteDialog
           open={newNoteOpen}

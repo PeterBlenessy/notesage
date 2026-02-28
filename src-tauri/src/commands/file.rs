@@ -1,4 +1,6 @@
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 use tauri_plugin_opener::OpenerExt;
@@ -213,4 +215,160 @@ pub async fn reveal_in_finder(app: tauri::AppHandle, path: String) -> Result<(),
     app.opener()
         .reveal_item_in_dir(&path)
         .map_err(|e| e.to_string())
+}
+
+/// Scan all .md files in the given directories (recursively) for #tag patterns.
+/// Returns a map of tag name → list of file paths that contain that tag.
+/// Tag names are without the `#` prefix, sorted alphabetically.
+#[tauri::command]
+pub async fn scan_tags_in_directories(
+    paths: Vec<String>,
+) -> Result<BTreeMap<String, Vec<String>>, String> {
+    let tag_re = Regex::new(r"(?:^|(?:\s|[^\w]))#([a-zA-Z][a-zA-Z0-9_-]*)").unwrap();
+    let mut tag_files: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+
+    for dir_path in &paths {
+        let path = Path::new(dir_path);
+        if !path.is_dir() {
+            continue;
+        }
+        scan_dir_for_tags(path, &tag_re, &mut tag_files);
+    }
+
+    // Convert BTreeSet<String> values to Vec<String>
+    Ok(tag_files
+        .into_iter()
+        .map(|(tag, files)| (tag, files.into_iter().collect()))
+        .collect())
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct TagOccurrence {
+    pub path: String,
+    pub file_name: String,
+    pub line_number: usize,      // 1-based
+    pub occurrence_in_file: usize, // 0-based index of this tag match within the file
+    pub snippet: String,         // trimmed line content, max ~100 chars
+}
+
+/// Find all occurrences of a specific tag across .md files in the given directories.
+/// Returns per-line occurrences with context snippets, sorted by file name then line number.
+#[tauri::command]
+pub async fn find_tag_occurrences(
+    tag: String,
+    paths: Vec<String>,
+) -> Result<Vec<TagOccurrence>, String> {
+    let pattern = format!(r"(?:^|(?:\s|[^\w]))#{}(?:[^a-zA-Z0-9_-]|$)", regex::escape(&tag));
+    let tag_re = Regex::new(&pattern).map_err(|e| e.to_string())?;
+    let mut occurrences: Vec<TagOccurrence> = Vec::new();
+
+    for dir_path in &paths {
+        let path = Path::new(dir_path);
+        if !path.is_dir() {
+            continue;
+        }
+        scan_dir_for_tag_occurrences(path, &tag_re, &mut occurrences);
+    }
+
+    // Sort by file name then line number
+    occurrences.sort_by(|a, b| {
+        a.file_name
+            .to_lowercase()
+            .cmp(&b.file_name.to_lowercase())
+            .then(a.line_number.cmp(&b.line_number))
+    });
+
+    Ok(occurrences)
+}
+
+fn scan_dir_for_tag_occurrences(
+    dir: &Path,
+    tag_re: &Regex,
+    occurrences: &mut Vec<TagOccurrence>,
+) {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+
+        if name_str.starts_with('.') {
+            continue;
+        }
+
+        if path.is_dir() {
+            scan_dir_for_tag_occurrences(&path, tag_re, occurrences);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
+            if let Ok(content) = fs::read_to_string(&path) {
+                let file_path = path.to_string_lossy().to_string();
+                let file_name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+
+                let mut occ_count: usize = 0;
+                for (idx, line) in content.lines().enumerate() {
+                    if tag_re.is_match(line) {
+                        let trimmed = line.trim();
+                        let snippet = if trimmed.chars().count() > 100 {
+                            let end = trimmed.char_indices().nth(97).map(|(i, _)| i).unwrap_or(trimmed.len());
+                            format!("{}...", &trimmed[..end])
+                        } else {
+                            trimmed.to_string()
+                        };
+                        occurrences.push(TagOccurrence {
+                            path: file_path.clone(),
+                            file_name: file_name.clone(),
+                            line_number: idx + 1,
+                            occurrence_in_file: occ_count,
+                            snippet,
+                        });
+                        occ_count += 1;
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn scan_dir_for_tags(
+    dir: &Path,
+    tag_re: &Regex,
+    tag_files: &mut BTreeMap<String, BTreeSet<String>>,
+) {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+
+        // Skip hidden files/dirs
+        if name_str.starts_with('.') {
+            continue;
+        }
+
+        if path.is_dir() {
+            scan_dir_for_tags(&path, tag_re, tag_files);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
+            if let Ok(content) = fs::read_to_string(&path) {
+                let file_path = path.to_string_lossy().to_string();
+                for cap in tag_re.captures_iter(&content) {
+                    if let Some(m) = cap.get(1) {
+                        tag_files
+                            .entry(m.as_str().to_string())
+                            .or_default()
+                            .insert(file_path.clone());
+                    }
+                }
+            }
+        }
+    }
 }

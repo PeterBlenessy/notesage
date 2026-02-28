@@ -600,6 +600,38 @@
   background-color: var(--color-foreground);
 }
 
+/* Tag badges */
+.tag-badge {
+  background-color: var(--color-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.05em 0.45em;
+  font-size: 0.88em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.tag-badge:hover {
+  background-color: var(--color-accent);
+}
+
+/* When cursor is inside a tag, ProseMirror splits the decoration into two
+   adjacent spans. Merge them visually so the badge looks intact. */
+.tag-badge:has(+ .tag-badge) {
+  border-right: 0;
+  padding-right: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.tag-badge + .tag-badge {
+  border-left: 0;
+  padding-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
 /* Ghost text (inline completion suggestions) */
 .ghost-text {
   color: var(--color-muted-foreground);

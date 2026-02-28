@@ -41,6 +41,14 @@ export interface SyncSettings {
 // ACP (Agent Client Protocol) types
 // ---------------------------------------------------------------------------
 
+export interface TagOccurrence {
+  path: string;
+  file_name: string;
+  line_number: number;
+  occurrence_in_file: number;
+  snippet: string;
+}
+
 export interface AcpSpawnResult {
   instance_id: string;
   agent_name: string | null;
@@ -252,5 +260,14 @@ export const tauriApi = {
 
   async acpPermissionRespond(instanceId: string, requestId: string, optionId: string | null): Promise<void> {
     await invoke("acp_permission_respond", { instanceId, requestId, optionId });
+  },
+
+  // Tag scanning
+  async scanTagsInDirectories(paths: string[]): Promise<Record<string, string[]>> {
+    return await invoke<Record<string, string[]>>("scan_tags_in_directories", { paths });
+  },
+
+  async findTagOccurrences(tag: string, paths: string[]): Promise<TagOccurrence[]> {
+    return await invoke<TagOccurrence[]>("find_tag_occurrences", { tag, paths });
   },
 };

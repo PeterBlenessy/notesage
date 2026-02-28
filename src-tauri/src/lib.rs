@@ -90,6 +90,8 @@ pub fn run() {
             copilot_lsp_request_completion,
             copilot_lsp_did_show_completion,
             copilot_lsp_accept_completion,
+            scan_tags_in_directories,
+            find_tag_occurrences,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

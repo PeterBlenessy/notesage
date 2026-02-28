@@ -5,6 +5,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 interface KeyboardShortcutCallbacks {
   onCommandPaletteOpen: () => void;
   onFileSearchOpen: () => void;
+  onTagSearchOpen: () => void;
   onToggleFocusMode: () => void;
   onExitFocusMode: () => void;
   onOutlineOpen: () => void;
@@ -67,6 +68,13 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       if (isMod && e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
         callbacks.onFileSearchOpen();
+        return;
+      }
+
+      // Cmd+3 — tag search
+      if (isMod && !e.shiftKey && e.key === "3") {
+        e.preventDefault();
+        callbacks.onTagSearchOpen();
         return;
       }
 

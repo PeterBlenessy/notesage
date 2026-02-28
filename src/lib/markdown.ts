@@ -68,5 +68,14 @@ export function getMarkdownFromEditor(editor: Editor): string {
 }
 
 export function setMarkdownInEditor(editor: Editor, markdown: string): void {
-  editor.commands.setContent(encodeImagePathSpaces(markdown));
+  setContentWithoutHistory(editor, encodeImagePathSpaces(markdown));
+}
+
+/**
+ * Replace the editor's document content without adding to undo history.
+ * Uses Tiptap's chain API to set `addToHistory: false` on the transaction
+ * so Cmd+Z won't undo file loads, tab switches, or external change reloads.
+ */
+export function setContentWithoutHistory(editor: Editor, content: string): void {
+  editor.chain().setMeta('addToHistory', false).setContent(content).run();
 }

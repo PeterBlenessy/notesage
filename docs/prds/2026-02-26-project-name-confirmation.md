@@ -1,8 +1,6 @@
 # Project Name Rename Confirmation
 
-**Date:** 2026-02-26
-**Status:** Done
-**Parent:** Phase 6.5 — Chat UX & Agent Polish
+**Date:** 2026-02-26 **Status:** Done **Parent:** Phase 6.5 — Chat UX & Agent Polish
 
 ## Problem
 
@@ -48,6 +46,7 @@ Add `localName` state initialized from `metadata.name`. A `useEffect` syncs `loc
 ### Inline Confirm/Cancel Icons
 
 When `localName !== metadata.name`:
+
 - **Check icon** (confirm): triggers the rename flow (existing `handleNameBlur` logic)
 - **X icon** (cancel): resets `localName` to `metadata.name`
 - Icons placed in a flex row to the right of the input
