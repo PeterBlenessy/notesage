@@ -346,7 +346,7 @@ Final polish pass to meet all design quality gates.
 
 - [x] Clean up partial reply and activity entries when comment is deleted or document is closed
 
-- [ ] Run `/review-ui` for design system compliance
+- [x] Run `/review-ui` for design system compliance
 
 - [x] All functional quality gates from the PRD pass
 
