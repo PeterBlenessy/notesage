@@ -504,15 +504,13 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 
 ### Phase 6.5 — Chat UX & Agent Polish
 
-**Goal:** Polish the agent experience with provider-aware chat, interactive permission approval, agent comment delegation, and agent binary management.
+**Goal:** Polish the agent experience with provider-aware chat, interactive permission approval, and agent comment delegation.
 
 **Remaining features:**
 
-- Agent binary auto-install: one-click npm install from within the app (PRD ready)
-- ACP agent binary bundling as Tauri sidecar (no Node.js dependency for end users)
-- External change diff fidelity: map raw-text diffs to ProseMirror transactions that preserve formatting
+- External change diff fidelity: map raw-text diffs to ProseMirror transactions that preserve formatting (PRD: `docs/prds/2026-03-01-diff-fidelity.md`)
 - ~~Agent comment delegation Part 2: agent activity strip & panel, progress streaming~~ (done)
-- Agent comment delegation Part 3: auto-apply agent suggestions to document, inline diff review for agent edits
+- Agent comment delegation Part 3: auto-apply agent suggestions to document, inline diff review for agent edits (PRD: `docs/prds/2026-03-01-agent-auto-apply.md`)
 
 ### Phase 7 — AI-Assisted Research
 
@@ -575,6 +573,27 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - Ship llama.cpp binaries with app
 - Model files (\~4GB) as optional download
 - Extends existing provider abstraction (`AIProvider` interface)
+
+### Phase 10 — Agent Binary Management & Runtime Sandboxing
+
+**Goal:** Zero-dependency agent installation, isolated runtime execution, and automatic updates — so non-developer users can set up AI agents without leaving the app.
+
+**Features:**
+
+- Managed agent binary installation to `~/.notesage/agents/` (download from GitHub Releases, no Node.js required for 4/5 agents)
+- Portable Node.js runtime for Gemini CLI (the only agent that genuinely needs it)
+- Prefer user-installed system binaries when available — only offer managed install when not found
+- OS-level filesystem sandboxing for managed installs (Seatbelt on macOS, Bubblewrap/Landlock on Linux)
+- Network sandboxing via proxy with per-agent domain allowlists (Phase 2)
+- Automatic update checking with one-click updates
+- User-configurable sandbox policies per connection (Phase 3)
+
+**Architecture considerations:**
+
+- New Rust modules: `agent_manager.rs` (install, update, resolve), `sandbox.rs` (Seatbelt profiles, bwrap args)
+- GitHub Releases API for binary downloads, npm registry fallback for Gemini
+- Defense in depth: installation isolation + runtime sandbox + ACP permissions
+- PRD: `docs/prds/2026-02-21-agent-install-wizard.md`
 
 ### Beyond — Ideas
 
