@@ -262,6 +262,11 @@ export const tauriApi = {
     await invoke("acp_permission_respond", { instanceId, requestId, optionId });
   },
 
+  // Debug logging
+  async setDebugLogging(enabled: boolean): Promise<void> {
+    await invoke("set_debug_logging", { enabled });
+  },
+
   // Tag scanning
   async scanTagsInDirectories(paths: string[]): Promise<Record<string, string[]>> {
     return await invoke<Record<string, string[]>>("scan_tags_in_directories", { paths });
