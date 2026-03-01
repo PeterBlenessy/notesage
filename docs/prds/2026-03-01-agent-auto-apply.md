@@ -88,7 +88,7 @@ function extractReplacementText(response: string): string {
 
 ### Implementation
 
-**Modified: `useCommentDelegation.ts` — `onComplete` callback**
+**Modified:** `useCommentDelegation.ts` **—** `onComplete` **callback**
 
 Currently `onComplete` just adds a reply and sets status to `done`. Add a call to show the inline suggestion:
 
@@ -114,7 +114,7 @@ onComplete: (output: string) => {
 },
 ```
 
-**New: `resolveAnchorRange()` — find the comment's anchor in the current document**
+**New:** `resolveAnchorRange()` **— find the comment's anchor in the current document**
 
 The comment stores `anchorText` and the original position range. But the document may have changed since the comment was created (user typed, other edits). We need to find the current position of the anchor text:
 
@@ -151,9 +151,10 @@ function resolveAnchorRange(
 }
 ```
 
-**Reuse: `ai-suggestion.ts` — existing decoration infrastructure**
+**Reuse:** `ai-suggestion.ts` **— existing decoration infrastructure**
 
 The AI suggestion extension already handles:
+
 - Showing red strikethrough on original text
 - Showing green insert with new text
 - Accept/reject buttons and keyboard shortcuts
@@ -165,7 +166,7 @@ No changes needed to this extension. We just call `setSuggestion()` from the del
 ### Interaction with Comment Lifecycle
 
 | Event | Comment status | Inline suggestion | Comment thread |
-|-------|---------------|-------------------|----------------|
+| --- | --- | --- | --- |
 | Delegation starts | `delegated` | — | Spinner |
 | Agent responds | `done` | Decoration appears | Reply visible |
 | User accepts suggestion | `done` (or `resolved`) | Decoration cleared, text replaced | Reply still visible |
@@ -177,7 +178,7 @@ No changes needed to this extension. We just call `setSuggestion()` from the del
 ### Edge Cases
 
 | Case | Behavior |
-|------|----------|
+| --- | --- |
 | Agent response is a question, not a replacement | Diff looks wrong — user rejects. Reply still in thread for user to read. |
 | Anchor text has been deleted since delegation | `resolveAnchorRange()` returns null — skip auto-apply, reply still visible in thread |
 | Anchor text has been modified since delegation | Decoration shows diff against current text, not original. May look odd but is functional. |
@@ -219,12 +220,21 @@ function showNextSuggestion(editor: Editor) {
 ## Quality Gates
 
 - [ ] `npx tsc --noEmit` passes
+
 - [ ] Delegate comment → agent responds → inline suggestion appears on anchor text
+
 - [ ] Accept suggestion → anchor text replaced with agent's response
+
 - [ ] Reject suggestion → anchor text unchanged
+
 - [ ] Comment reply visible in thread regardless of accept/reject
+
 - [ ] Agent response with preamble ("Here's the improved version:") → preamble stripped
+
 - [ ] Anchor text moved since delegation → suggestion still appears at correct position
+
 - [ ] Anchor text deleted since delegation → no crash, reply still in thread
+
 - [ ] Multiple delegations → suggestions queue and show one at a time
+
 - [ ] Works in both light and dark mode

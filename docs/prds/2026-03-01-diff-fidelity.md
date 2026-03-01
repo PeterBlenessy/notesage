@@ -17,7 +17,7 @@ Accepted:  The fast brown fox        ← bold lost
 This affects three code paths that all share the same flaw:
 
 | Code path | File | Accept function |
-|-----------|------|----------------|
+| --- | --- | --- |
 | External change review | `inline-diff.ts` | `acceptDiffHunk()` — `tr.insertText(hunk.insertText, from, to)` |
 | AI suggestion (Improve/Summarize/Expand) | `ai-suggestion.ts` | `acceptSuggestion()` — `.deleteRange().insertContentAt()` |
 | Future: agent auto-apply | Will use one of the above | Same issue |
@@ -43,6 +43,7 @@ This affects three code paths that all share the same flaw:
 Instead of inserting plain text, parse the replacement text through the editor's markdown parser to produce a ProseMirror `Slice`, then use `tr.replaceRange()` or `tr.replace()` which preserves document structure.
 
 **Current (broken):**
+
 ```typescript
 // inline-diff.ts — acceptDiffHunk()
 tr.insertText(hunk.insertText, hunk.from, hunk.to);
@@ -55,6 +56,7 @@ editor.chain()
 ```
 
 **Fixed:**
+
 ```typescript
 // Shared helper
 function replaceRangeWithMarkdown(
@@ -139,18 +141,20 @@ This handles the common case where a word inside a bold span is replaced with an
 
 ### Where to Apply the Fix
 
-**1. `inline-diff.ts` — `acceptDiffHunk()`**
+**1.** `inline-diff.ts` **—** `acceptDiffHunk()`
 
 Replace:
+
 ```typescript
 tr.insertText(hunk.insertText, hunk.from, hunk.to);
 ```
 
 With a call to the shared `replaceRangeWithMarkdown()` helper.
 
-**2. `ai-suggestion.ts` — `acceptSuggestion()`**
+**2.** `ai-suggestion.ts` **—** `acceptSuggestion()`
 
 Replace:
+
 ```typescript
 editor.chain()
   .deleteRange({ from, to })
@@ -159,6 +163,7 @@ editor.chain()
 ```
 
 With:
+
 ```typescript
 const tr = editor.state.tr;
 replaceRangeWithMarkdown(editor, from, to, suggestedText);
@@ -166,7 +171,7 @@ tr.setMeta(AISuggestionPluginKey, { clearSuggestion: true });
 editor.view.dispatch(tr);
 ```
 
-**3. `inline-diff.ts` — `acceptAllDiffHunks()`**
+**3.** `inline-diff.ts` **—** `acceptAllDiffHunks()`
 
 Same pattern — replace each `tr.insertText()` with the mark-preserving variant within the bottom-to-top loop.
 
@@ -189,7 +194,7 @@ Both `inline-diff.ts` and `ai-suggestion.ts` import from this shared module.
 ## Edge Cases
 
 | Case | Behavior |
-|------|----------|
+| --- | --- |
 | Replacement text has markdown (`**bold**`) | Parse through markdown parser, produce marked nodes |
 | Replacement text is plain | Copy marks from start of original range |
 | Replacement spans multiple mark boundaries (`**bold** and *italic*`) | Parser handles this naturally |
@@ -206,13 +211,22 @@ Both `inline-diff.ts` and `ai-suggestion.ts` import from this shared module.
 
 ## Quality Gates
 
-- [ ] `npx tsc --noEmit` passes
-- [ ] Accept AI suggestion on bold text: bold preserved in result
-- [ ] Accept AI suggestion with `**bold**` in response: renders as bold
-- [ ] Accept external change hunk on italic text: italic preserved
-- [ ] Accept all hunks: marks preserved across all hunks
-- [ ] Pure deletion still works
-- [ ] Pure insertion still works
-- [ ] Code block content not parsed as markdown (literal text)
-- [ ] Reject suggestion/hunk still works (no change)
-- [ ] Round-trip: accept change → save → reopen → content correct
+- [x] `npx tsc --noEmit` passes
+
+- [x] Accept AI suggestion on bold text: bold preserved in result
+
+- [x] Accept AI suggestion with `**bold**` in response: renders as bold
+
+- [x] Accept external change hunk on italic text: italic preserved
+
+- [x] Accept all hunks: marks preserved across all hunks
+
+- [x] Pure deletion still works
+
+- [x] Pure insertion still works
+
+- [x] Code block content not parsed as markdown (literal text)
+
+- [x] Reject suggestion/hunk still works (no change)
+
+- [x] Round-trip: accept change → save → reopen → content correct
