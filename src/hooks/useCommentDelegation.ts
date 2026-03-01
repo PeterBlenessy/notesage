@@ -151,6 +151,153 @@ export function useCommentDelegation() {
     [startTask, taskConnection]
   );
 
+  const delegateReply = useCallback(
+    async (comment: Comment, replyText: string, documentId: string, projectRoot: string) => {
+      if (!taskConnection) {
+        toast.error('No agent configured for tasks. Set up agent routing in Settings.');
+        return;
+      }
+
+      const store = useCommentStore.getState();
+
+      // Add user reply to thread
+      store.addReply(documentId, comment.id, replyText, 'You');
+
+      // Set status back to delegated
+      store.setCommentStatus(documentId, comment.id, 'delegated');
+      store.clearActivities(comment.id);
+      await store.saveComments(documentId, projectRoot);
+
+      // Build prompt with full conversation history
+      // Note: `comment` is a snapshot from before addReply, so we read fresh replies
+      const freshComments = useCommentStore.getState().commentsByDocument[documentId] ?? [];
+      const freshComment = freshComments.find((c) => c.id === comment.id);
+      const replies = freshComment?.replies ?? comment.replies ?? [];
+
+      const promptParts = [
+        'I have an ongoing conversation about the following text in my document:',
+        '',
+        `> ${comment.anchorText}`,
+        '',
+        `Original comment: ${comment.body}`,
+      ];
+
+      for (const reply of replies) {
+        promptParts.push('');
+        promptParts.push(`${reply.author}: ${reply.body}`);
+      }
+
+      promptParts.push('');
+      promptParts.push('Please respond to my latest message. Provide a clear, actionable response.');
+
+      const prompt = promptParts.join('\n');
+
+      const agentName = taskConnection.label || taskConnection.provider || 'Unknown agent';
+
+      store.addActivity(comment.id, {
+        label: `Sending reply to ${agentName}`,
+        detail: `"${replyText.length > 50 ? replyText.slice(0, 50) + '\u2026' : replyText}"`,
+        status: 'info',
+        timestamp: Date.now(),
+      });
+
+      const activeTab = useEditorStore.getState().tabs.find(
+        (t) => t.id === useEditorStore.getState().activeTabId
+      );
+
+      try {
+        const taskId = await startTask(
+          prompt,
+          {
+            onComplete: (output) => {
+              clearPartialReply(documentId, comment.id);
+              const s = useCommentStore.getState();
+              const responseText = output || '(No response from agent)';
+              s.addReply(documentId, comment.id, responseText, agentName);
+              s.setCommentStatus(documentId, comment.id, 'done');
+              s.saveComments(documentId, projectRoot);
+            },
+            onActivity: (activity) => {
+              const s = useCommentStore.getState();
+              if (activity.event === 'tool_call') {
+                s.addActivity(comment.id, {
+                  label: activity.label,
+                  detail: activity.detail,
+                  status: 'running',
+                  timestamp: Date.now(),
+                });
+              } else if (activity.event === 'tool_result') {
+                s.completeLastActivity(comment.id);
+              } else if (activity.event === 'agent_responding') {
+                s.addActivity(comment.id, {
+                  label: 'Agent responding',
+                  status: 'running',
+                  timestamp: Date.now(),
+                });
+              } else if (activity.event === 'agent_complete') {
+                s.completeLastActivity(comment.id);
+                s.addActivity(comment.id, {
+                  label: 'Agent finished',
+                  status: 'done',
+                  timestamp: Date.now(),
+                });
+              } else if (activity.event === 'permission_auto_approved') {
+                s.addActivity(comment.id, {
+                  label: activity.label,
+                  status: 'info',
+                  timestamp: Date.now(),
+                });
+              }
+            },
+            onError: (errorMsg) => {
+              clearPartialReply(documentId, comment.id);
+              const s = useCommentStore.getState();
+              s.addActivity(comment.id, {
+                label: `Error: ${errorMsg}`,
+                status: 'error',
+                timestamp: Date.now(),
+              });
+              // Revert to done (not open) — thread already has replies
+              s.setCommentStatus(documentId, comment.id, 'done');
+              s.saveComments(documentId, projectRoot);
+              toast.error(`Agent failed: ${errorMsg}`);
+            },
+            onChunk: (chunk) => {
+              appendPartialReply(documentId, comment.id, chunk);
+            },
+          },
+          {
+            type: 'comment',
+            label: comment.body.length > 50 ? comment.body.slice(0, 50) + '\u2026' : comment.body,
+            sourceFile: activeTab?.filePath,
+            commentId: comment.id,
+            documentId,
+            existingTaskId: comment.taskId,
+          },
+        );
+
+        // Only update taskId if this is a new task (first delegation had no taskId)
+        if (!comment.taskId) {
+          store.setTaskId(documentId, comment.id, taskId);
+          await store.saveComments(documentId, projectRoot);
+        }
+      } catch (error) {
+        clearPartialReply(documentId, comment.id);
+        const errMsg = error instanceof Error ? error.message : String(error);
+        store.addActivity(comment.id, {
+          label: `Spawn failed: ${errMsg}`,
+          status: 'error',
+          timestamp: Date.now(),
+        });
+        // Revert to done — thread already has replies
+        store.setCommentStatus(documentId, comment.id, 'done');
+        await store.saveComments(documentId, projectRoot);
+        toast.error(`Agent delegation failed: ${errMsg}`);
+      }
+    },
+    [startTask, taskConnection]
+  );
+
   const cancelDelegation = useCallback(
     async (comment: Comment, documentId: string, projectRoot: string) => {
       clearPartialReply(documentId, comment.id);
@@ -210,5 +357,5 @@ export function useCommentDelegation() {
 
   const canDelegate = !!taskConnection;
 
-  return { delegateComment, cancelDelegation, delegateAll, canDelegate };
+  return { delegateComment, delegateReply, cancelDelegation, delegateAll, canDelegate };
 }

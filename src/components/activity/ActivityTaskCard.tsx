@@ -12,11 +12,13 @@ import {
   AlertCircle,
   BotMessageSquare,
   Brain,
+  User,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MarkdownContent } from '@/components/MarkdownContent';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { useRoutingStore } from '@/stores/routing-store';
+import { useCommentStore } from '@/stores/comment-store';
 import type { AgentTask } from '@/stores/activity-store';
 
 function formatElapsed(startedAt: number, completedAt?: number): string {
@@ -44,8 +46,18 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
   const routedAgentConnection = useRoutingStore((s) => s.getConnectionForUseCase('agent_tasks'));
   const providerForLogo = task.connectionProvider ?? routedAgentConnection?.provider;
 
+  // For comment-type tasks, read the conversation thread from comment-store
+  const commentReplies = useCommentStore((s) => {
+    if (task.type !== 'comment' || !task.documentId || !task.commentId) return undefined;
+    const comments = s.commentsByDocument[task.documentId] ?? [];
+    const comment = comments.find((c) => c.id === task.commentId);
+    return comment?.replies;
+  });
+  const isConversation = task.type === 'comment' && commentReplies && commentReplies.length > 0;
+
   const [expanded, setExpanded] = useState(false);
   const [outputExpanded, setOutputExpanded] = useState(false);
+  const outputWasExpandedRef = useRef(false);
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [, setTick] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -79,11 +91,20 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
     }
   }, [task.thinkingOutput, thinkingExpanded]);
 
+  // Sticky output expansion — once expanded, stay expanded across turns
+  useEffect(() => {
+    if (outputExpanded) outputWasExpandedRef.current = true;
+  }, [outputExpanded]);
+  useEffect(() => {
+    if (task.finalOutput && outputWasExpandedRef.current && !outputExpanded) {
+      setOutputExpanded(true);
+    }
+  }, [task.finalOutput]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const isClickable = task.status !== 'running' && onClick;
   const TypeIcon = task.type === 'comment' ? BotMessageSquare : MessageCircle;
 
   const hasOutput = task.partialOutput || task.finalOutput;
-  const outputText = task.finalOutput ?? task.partialOutput ?? '';
   const isStreaming = task.status === 'running' && !!task.partialOutput;
 
   return (
@@ -171,57 +192,98 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
         </div>
       )}
 
-      {/* Agent output — streaming or final */}
-      {hasOutput && (
+      {/* Output — streaming, conversation thread, or single response */}
+      {isStreaming && (
         <div className="pl-5 min-w-0">
-          {isStreaming ? (
-            /* Live streaming preview */
-            <div className="mt-1">
-              <div className="flex items-center gap-1.5 mb-1">
-                {providerForLogo ? (
-                  <ProviderLogo provider={providerForLogo} className="h-3 w-3" />
-                ) : (
-                  <BotMessageSquare className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
-                )}
-                <span className="text-xs text-muted-foreground">responding...</span>
-              </div>
-              <div
-                ref={streamingRef}
-                className="max-h-60 overflow-y-auto overflow-x-hidden thin-scrollbar rounded-md bg-muted/40 px-2 py-1.5"
-              >
-                <MarkdownContent content={outputText} className="text-xs" />
-                <span className="streaming-cursor">▊</span>
-              </div>
-            </div>
-          ) : task.finalOutput ? (
-            /* Completed output — collapsible */
-            <div className="mt-1">
-              <Button
-                variant="ghost"
-                size="xs"
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setOutputExpanded(!outputExpanded); }}
-                className="h-auto px-0 py-0 gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent"
-              >
-                {task.connectionProvider ? (
-                  <ProviderLogo provider={task.connectionProvider} className="h-3 w-3" />
-                ) : (
-                  <BotMessageSquare className="h-3 w-3" strokeWidth={1.5} />
-                )}
-                {outputExpanded ? (
-                  <ChevronDown className="h-2.5 w-2.5" />
-                ) : (
-                  <ChevronRight className="h-2.5 w-2.5" />
-                )}
-                <span>Agent response</span>
-              </Button>
-              {outputExpanded && (
-                <div className="mt-1 max-h-80 overflow-y-auto overflow-x-hidden thin-scrollbar rounded-md bg-muted/40 px-2 py-1.5">
-                  <MarkdownContent content={task.finalOutput!} className="text-xs" />
-                </div>
+          <div className="mt-1">
+            <div className="flex items-center gap-1.5 mb-1">
+              {providerForLogo ? (
+                <ProviderLogo provider={providerForLogo} className="h-3 w-3" />
+              ) : (
+                <BotMessageSquare className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
               )}
+              <span className="text-xs text-muted-foreground">responding...</span>
             </div>
-          ) : null}
+            <div
+              ref={streamingRef}
+              className="max-h-60 overflow-y-auto overflow-x-hidden thin-scrollbar rounded-md bg-muted/40 px-2 py-1.5"
+            >
+              <MarkdownContent content={task.partialOutput!} className="text-xs" />
+              <span className="streaming-cursor">▊</span>
+            </div>
+          </div>
+        </div>
+      )}
+      {!isStreaming && isConversation && (
+        <div className="pl-5 min-w-0">
+          <div className="mt-1">
+            <Button
+              variant="ghost"
+              size="xs"
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setOutputExpanded(!outputExpanded); }}
+              className="h-auto px-0 py-0 gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent"
+            >
+              {outputExpanded ? (
+                <ChevronDown className="h-2.5 w-2.5" />
+              ) : (
+                <ChevronRight className="h-2.5 w-2.5" />
+              )}
+              <span>Conversation ({commentReplies.length} message{commentReplies.length !== 1 ? 's' : ''})</span>
+            </Button>
+            {outputExpanded && (
+              <div className="mt-1 max-h-80 overflow-y-auto overflow-x-hidden thin-scrollbar rounded-md bg-muted/40 px-2 py-1.5 space-y-2">
+                {commentReplies.map((reply) => {
+                  const isUserReply = reply.author === 'You';
+                  return (
+                    <div key={reply.id}>
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        {isUserReply ? (
+                          <User className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+                        ) : providerForLogo ? (
+                          <ProviderLogo provider={providerForLogo} className="h-3 w-3" />
+                        ) : (
+                          <BotMessageSquare className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+                        )}
+                        <span className="text-[10px] font-medium text-muted-foreground">{reply.author}</span>
+                      </div>
+                      <MarkdownContent content={reply.body} className="text-xs" />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {!isStreaming && !isConversation && hasOutput && task.finalOutput && (
+        <div className="pl-5 min-w-0">
+          <div className="mt-1">
+            <Button
+              variant="ghost"
+              size="xs"
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setOutputExpanded(!outputExpanded); }}
+              className="h-auto px-0 py-0 gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent"
+            >
+              {task.connectionProvider ? (
+                <ProviderLogo provider={task.connectionProvider} className="h-3 w-3" />
+              ) : (
+                <BotMessageSquare className="h-3 w-3" strokeWidth={1.5} />
+              )}
+              {outputExpanded ? (
+                <ChevronDown className="h-2.5 w-2.5" />
+              ) : (
+                <ChevronRight className="h-2.5 w-2.5" />
+              )}
+              <span>Agent response</span>
+            </Button>
+            {outputExpanded && (
+              <div className="mt-1 max-h-80 overflow-y-auto overflow-x-hidden thin-scrollbar rounded-md bg-muted/40 px-2 py-1.5">
+                <MarkdownContent content={task.finalOutput} className="text-xs" />
+              </div>
+            )}
+          </div>
         </div>
       )}
 

@@ -156,6 +156,8 @@ export interface TaskMeta {
   sourceFile?: string;
   commentId?: string;
   documentId?: string;
+  /** If provided, reuse this existing activity store task instead of creating a new one. */
+  existingTaskId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,7 +198,13 @@ export function useAgentTaskOperations() {
       // Each task gets its own session
       const session = await tauriApi.acpSessionNew(instanceId, cwd);
 
-      const taskId = `task-${Date.now()}`;
+      // Reuse existing activity task if provided, otherwise create a new one
+      const existingId = taskMeta?.existingTaskId;
+      const existingActivityTask = existingId
+        ? useActivityStore.getState().tasks.find((t) => t.id === existingId)
+        : undefined;
+      const taskId = existingActivityTask ? existingId! : `task-${Date.now()}`;
+
       const task: InternalTask = {
         id: taskId,
         prompt,
@@ -208,17 +216,22 @@ export function useAgentTaskOperations() {
       };
       tasksMap.set(taskId, task);
 
-      // Register in activity store for the activity strip
-      useActivityStore.getState().addTask({
-        id: taskId,
-        type: taskMeta?.type ?? 'chat',
-        label: taskMeta?.label ?? prompt.slice(0, 50),
-        status: 'running',
-        sourceFile: taskMeta?.sourceFile,
-        commentId: taskMeta?.commentId,
-        documentId: taskMeta?.documentId,
-        connectionProvider: taskConnection.provider,
-      });
+      if (existingActivityTask) {
+        // Reset the existing task for the new turn
+        useActivityStore.getState().resetTaskForContinuation(taskId);
+      } else {
+        // Register a new task in the activity store
+        useActivityStore.getState().addTask({
+          id: taskId,
+          type: taskMeta?.type ?? 'chat',
+          label: taskMeta?.label ?? prompt.slice(0, 50),
+          status: 'running',
+          sourceFile: taskMeta?.sourceFile,
+          commentId: taskMeta?.commentId,
+          documentId: taskMeta?.documentId,
+          connectionProvider: taskConnection.provider,
+        });
+      }
 
       // Listen for session updates
       let receivedFirstChunk = false;

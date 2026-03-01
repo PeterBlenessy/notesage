@@ -1,5 +1,7 @@
 import type { Editor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
+import { CommentMarkPluginKey } from "@/components/editor/extensions/comment-mark";
+import type { Comment } from "@/stores/comment-store";
 
 /**
  * Parse a markdown string to inline HTML using the editor's tiptap-markdown parser.
@@ -75,4 +77,81 @@ export function replaceRangePreservingMarks(
   } else {
     tr.insertText(text, from, to);
   }
+}
+
+/**
+ * Strip AI preamble ("Here's the improved version:", "Sure!", etc.)
+ * and trailing sign-offs ("Let me know if...") from agent response text.
+ */
+export function extractReplacementText(response: string): string {
+  let text = response.trim();
+
+  // Strip leading preamble lines (common AI intro patterns)
+  const preamblePatterns = [
+    /^(?:here(?:'s| is) (?:the |an? |my )?(?:improved|updated|revised|corrected|rewritten|edited|suggested|new) (?:version|text|content|passage|paragraph|wording)[^:]*?:?\s*)/i,
+    /^(?:sure[!,.]?\s*(?:here(?:'s| is)[^:]*?:?\s*)?)/i,
+    /^(?:certainly[!,.]?\s*(?:here(?:'s| is)[^:]*?:?\s*)?)/i,
+    /^(?:of course[!,.]?\s*(?:here(?:'s| is)[^:]*?:?\s*)?)/i,
+    /^(?:absolutely[!,.]?\s*(?:here(?:'s| is)[^:]*?:?\s*)?)/i,
+    /^(?:i(?:'ve| have) (?:improved|updated|revised|rewritten|edited)[^:]*?:?\s*)/i,
+  ];
+
+  for (const pattern of preamblePatterns) {
+    text = text.replace(pattern, '');
+  }
+
+  // Strip trailing sign-offs
+  const signoffPatterns = [
+    /\n+(?:let me know if (?:you(?:'d| would) like|this|that|there)[^\n]*?)$/i,
+    /\n+(?:feel free to (?:ask|let me know|reach out)[^\n]*?)$/i,
+    /\n+(?:i(?:'m| am) happy to (?:help|make|adjust)[^\n]*?)$/i,
+    /\n+(?:would you like (?:me to|any)[^\n]*?)$/i,
+  ];
+
+  for (const pattern of signoffPatterns) {
+    text = text.replace(pattern, '');
+  }
+
+  return text.trim();
+}
+
+/**
+ * Resolve the current document position of a comment's anchor text.
+ * Strategy 1: use CommentMark plugin state (decorations remapped through ProseMirror mapping).
+ * Strategy 2: fallback text search via doc.descendants().
+ * Returns null if the anchor text was deleted.
+ */
+export function resolveAnchorRange(
+  editor: Editor,
+  comment: Comment
+): { from: number; to: number } | null {
+  // Strategy 1: decoration positions from CommentMark plugin
+  const pluginState = CommentMarkPluginKey.getState(editor.state);
+  if (pluginState) {
+    const match = pluginState.comments.find(
+      (c: { commentId: string; from: number; to: number }) => c.commentId === comment.id
+    );
+    if (match && match.from < match.to) {
+      return { from: match.from, to: match.to };
+    }
+  }
+
+  // Strategy 2: text search fallback
+  const target = comment.anchorText;
+  if (!target) return null;
+
+  let found: { from: number; to: number } | null = null;
+  editor.state.doc.descendants((node, pos) => {
+    if (found) return false;
+    if (node.isText && node.text) {
+      const idx = node.text.indexOf(target);
+      if (idx !== -1) {
+        found = { from: pos + idx, to: pos + idx + target.length };
+        return false;
+      }
+    }
+    return true;
+  });
+
+  return found;
 }

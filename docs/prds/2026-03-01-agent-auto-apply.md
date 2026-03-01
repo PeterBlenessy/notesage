@@ -64,7 +64,7 @@ Comment body (user)        — "make this clearer"
   Reply 3 (agent)          — "Here's the revised version: ..."
 ```
 
-**Changes to `CommentReply`:**
+**Changes to** `CommentReply`**:**
 
 ```typescript
 export interface CommentReply {
@@ -77,7 +77,7 @@ export interface CommentReply {
 
 The `author` field already distinguishes user vs agent. No schema change needed — just allow user-authored replies.
 
-**New: "Reply" input in CommentPopover (view mode, status `done`)**
+**New: "Reply" input in CommentPopover (view mode, status** `done`**)**
 
 When a comment has status `done` (agent has responded), show a reply input below the thread:
 
@@ -165,9 +165,10 @@ function resolveAnchorRange(
 }
 ```
 
-**Reuse: `ai-suggestion.ts`**
+**Reuse:** `ai-suggestion.ts`
 
 The existing AI suggestion extension handles:
+
 - Red strikethrough on original text + green insert with new text
 - Accept/reject buttons and keyboard shortcuts
 - Clearing decorations after accept/reject
@@ -205,6 +206,7 @@ No changes needed — just call `setSuggestion()` from the Apply button click ha
 ### CommentPopover — View Mode (status `done`)
 
 Current:
+
 ```
 ┌──────────────────────────────────┐
 │ [avatar] User              2m ago│
@@ -220,6 +222,7 @@ Current:
 ```
 
 New:
+
 ```
 ┌──────────────────────────────────┐
 │ [avatar] User              2m ago│
@@ -237,6 +240,7 @@ New:
 ```
 
 Changes:
+
 - **Apply button** on each agent reply (right-aligned, subtle ghost button)
 - **Reply input** below the thread (text input + send button)
 - Resolve button remains (renames from "Done" to "Resolve" for clarity)
@@ -257,16 +261,28 @@ Changes:
 
 ## Quality Gates
 
-- [ ] `npx tsc --noEmit` passes
-- [ ] Delegate comment → agent responds → Apply button visible on reply
-- [ ] Click Apply → inline suggestion appears on anchor text
-- [ ] Accept suggestion → text replaced, comment can be resolved
-- [ ] Reject suggestion → text unchanged, can Apply again or Reply
-- [ ] Reply to agent → agent responds with updated suggestion → Apply new version
-- [ ] Multi-turn: user sends 3+ messages, agent responds each time
-- [ ] "Explain this" comment → agent explains → user resolves without Apply
-- [ ] Anchor text deleted → Apply button disabled or toast error
-- [ ] Another suggestion active → toast warning, Apply blocked
-- [ ] Comment reply visible in thread regardless of accept/reject
-- [ ] Agent response with preamble stripped correctly on Apply
-- [ ] Works in both light and dark mode
+- [x] `npx tsc --noEmit` passes
+
+- [x] Delegate comment → agent responds → Apply button visible on reply
+
+- [x] Click Apply → inline suggestion appears on anchor text
+
+- [x] Accept suggestion → text replaced, comment can be resolved
+
+- [x] Reject suggestion → text unchanged, can Apply again or Reply
+
+- [x] Reply to agent → agent responds with updated suggestion → Apply new version
+
+- [x] Multi-turn: user sends 3+ messages, agent responds each time
+
+- [x] "Explain this" comment → agent explains → user resolves without Apply
+
+- [x] Anchor text deleted → Apply button disabled or toast error
+
+- [x] Another suggestion active → toast warning, Apply blocked
+
+- [x] Comment reply visible in thread regardless of accept/reject
+
+- [x] Agent response with preamble stripped correctly on Apply
+
+- [x] Works in both light and dark mode

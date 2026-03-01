@@ -34,8 +34,11 @@ import {
   replaceCurrentMatch,
   replaceAllMatches,
   getSearchState,
+  setSuggestion,
+  hasActiveSuggestion,
 } from "@/components/editor/extensions";
 import { mapExternalChangeToPM } from "@/lib/external-diff";
+import { extractReplacementText, resolveAnchorRange } from "@/lib/pm-replace";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { useGitStore } from "@/stores/git-store";
 import { Button } from "@/components/ui/button";
@@ -350,7 +353,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
   // Comments
   const commentOps = useCommentOperations(editor);
-  const { delegateComment, cancelDelegation, delegateAll, canDelegate } = useCommentDelegation();
+  const { delegateComment, delegateReply, cancelDelegation, delegateAll, canDelegate } = useCommentDelegation();
   const activeCommentId = commentOps.activeComment?.id ?? null;
   const activeCommentActivities = useCommentStore((s) =>
     activeCommentId ? s.activitiesByComment[activeCommentId] : undefined
@@ -360,6 +363,15 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const [commentAnchorPos, setCommentAnchorPos] = useState<{ top: number; left: number } | null>(null);
   // Track if we generated a UUID for this popover session (to revert on cancel)
   const generatedUUIDRef = useRef(false);
+  // Track whether an AI suggestion decoration is active (for Apply collision prevention)
+  const [suggestionActive, setSuggestionActiveState] = useState(false);
+  useEffect(() => {
+    if (!editor) return;
+    const check = () => setSuggestionActiveState(hasActiveSuggestion(editor));
+    check();
+    editor.on('transaction', check);
+    return () => { editor.off('transaction', check); };
+  }, [editor]);
 
   // Listen for comment creation requests (Cmd+Shift+M or bubble menu)
   useEffect(() => {
@@ -1466,6 +1478,32 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           if (commentOps.activeComment && commentOps.commentKey && commentStorageRoot) {
             await delegateComment(commentOps.activeComment, commentOps.commentKey, commentStorageRoot);
           }
+        }}
+        suggestionActive={suggestionActive}
+        onReply={async (text) => {
+          if (commentOps.activeComment && commentOps.commentKey && commentStorageRoot) {
+            // Re-read fresh comment from store to get latest state
+            const freshComments = useCommentStore.getState().commentsByDocument[commentOps.commentKey] ?? [];
+            const freshComment = freshComments.find((c) => c.id === commentOps.activeComment!.id);
+            if (freshComment) {
+              await delegateReply(freshComment, text, commentOps.commentKey, commentStorageRoot);
+            }
+          }
+        }}
+        onApply={(reply) => {
+          if (!editor || !commentOps.activeComment) return;
+          if (hasActiveSuggestion(editor)) {
+            toast.info('Another suggestion is already active. Accept or reject it first.');
+            return;
+          }
+          const range = resolveAnchorRange(editor, commentOps.activeComment);
+          if (!range) {
+            toast.error('Cannot find the commented text in the document. It may have been deleted.');
+            return;
+          }
+          const replacementText = extractReplacementText(reply.body);
+          const currentText = editor.state.doc.textBetween(range.from, range.to, '\n');
+          setSuggestion(editor, range.from, range.to, currentText, replacementText);
         }}
         onResolve={async (commentId) => {
           if (commentOps.commentKey && commentStorageRoot) {

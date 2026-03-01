@@ -28,6 +28,7 @@ interface ActivityStore {
 
   addTask(task: Omit<AgentTask, 'activities' | 'startedAt'>): void;
   removeTask(id: string): void;
+  resetTaskForContinuation(id: string): void;
   updateTaskStatus(id: string, status: AgentTaskStatus): void;
   appendActivity(id: string, activity: DelegationActivity): void;
   completeLastActivity(id: string): void;
@@ -60,6 +61,23 @@ export const useActivityStore = create<ActivityStore>()(
       removeTask: (id) => {
         set((state) => ({
           tasks: state.tasks.filter((t) => t.id !== id),
+        }));
+      },
+
+      resetTaskForContinuation: (id) => {
+        set((state) => ({
+          tasks: state.tasks.map((t) =>
+            t.id === id
+              ? {
+                  ...t,
+                  status: 'running' as const,
+                  partialOutput: undefined,
+                  finalOutput: undefined,
+                  thinkingOutput: undefined,
+                  completedAt: undefined,
+                }
+              : t
+          ),
         }));
       },
 

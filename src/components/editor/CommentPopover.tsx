@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageSquarePlus, Pencil, Trash2, X, Check, BotMessageSquare, CheckCircle2, Loader2, ChevronDown, ChevronRight, Square, Info, AlertCircle } from 'lucide-react';
+import { MessageSquarePlus, Pencil, Trash2, X, Check, BotMessageSquare, CheckCircle2, Loader2, ChevronDown, ChevronRight, Square, Info, AlertCircle, SendHorizontal, FileOutput, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -16,7 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { useCommentStore, getPartialReply, type Comment, type DelegationActivity } from '@/stores/comment-store';
+import { useCommentStore, getPartialReply, type Comment, type CommentReply, type DelegationActivity } from '@/stores/comment-store';
 import { MarkdownContent } from '@/components/MarkdownContent';
 
 function formatRelativeTime(timestamp: number): string {
@@ -54,6 +54,12 @@ interface CommentPopoverProps {
   onCancelDelegation?: () => void;
   /** Called to resolve a comment */
   onResolve?: (commentId: string) => void;
+  /** Called when user sends a follow-up reply */
+  onReply?: (text: string) => void;
+  /** Called when user clicks Apply on an agent reply */
+  onApply?: (reply: CommentReply) => void;
+  /** Disables Apply when another suggestion is active */
+  suggestionActive?: boolean;
   /** Whether an agent is available for delegation */
   canDelegate?: boolean;
   /** Runtime activity log for active delegation */
@@ -73,6 +79,9 @@ export function CommentPopover({
   onDelegateExisting,
   onCancelDelegation,
   onResolve,
+  onReply,
+  onApply,
+  suggestionActive = false,
   canDelegate = false,
   activities = [],
   anchorPosition,
@@ -81,8 +90,10 @@ export function CommentPopover({
   const [body, setBody] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [activityExpanded, setActivityExpanded] = useState(true);
-  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
+  const [threadExpanded, setThreadExpanded] = useState(false);
+  const [replyText, setReplyText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const replyInputRef = useRef<HTMLInputElement>(null);
   const streamingEndRef = useRef<HTMLSpanElement>(null);
 
   // Subscribe to partial reply version counter — triggers re-render when chunks arrive
@@ -99,6 +110,8 @@ export function CommentPopover({
   // Reset mode when popover opens
   useEffect(() => {
     if (open) {
+      setReplyText('');
+      setThreadExpanded(false);
       if (comment) {
         setMode('view');
         setBody(comment.body);
@@ -261,7 +274,7 @@ export function CommentPopover({
                     </span>
                   </div>
                   <div className="flex items-center gap-0.5">
-                    {canDelegate && onDelegateExisting && comment.status !== 'delegated' && comment.status !== 'done' && (
+                    {canDelegate && onDelegateExisting && comment.status !== 'delegated' && (
                       <Button
                         variant="ghost"
                         size="icon-xs"
@@ -325,40 +338,55 @@ export function CommentPopover({
                 )}
                 {/* Agent replies — each individually expandable */}
                 {comment.replies?.map((reply) => {
-                  const isExpanded = expandedReplies.has(reply.id);
                   const isLong = reply.body.split('\n').length > 3 || reply.body.length > 200;
+                  const isClamped = isLong && !threadExpanded;
+                  const isUserReply = reply.author === 'You';
                   return (
                     <div key={reply.id} className="border-t border-border pt-2 mt-2">
                       <div className="flex items-center gap-1.5 mb-1">
-                        <BotMessageSquare className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+                        {isUserReply ? (
+                          <User className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+                        ) : (
+                          <BotMessageSquare className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+                        )}
                         <span className="text-xs font-medium text-foreground">{reply.author}</span>
                         <span className="text-[10px] text-muted-foreground">{formatRelativeTime(reply.timestamp)}</span>
                       </div>
-                      <div className={isLong && !isExpanded ? 'relative' : undefined}>
-                        <div className={isLong && !isExpanded ? 'line-clamp-3' : undefined}>
+                      <div className={isClamped ? 'relative' : undefined}>
+                        <div className={isClamped ? 'line-clamp-3' : undefined}>
                           <MarkdownContent content={reply.body} className="text-sm" />
                         </div>
-                        {isLong && !isExpanded && (
+                        {isClamped && (
                           <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-popover to-transparent" />
                         )}
                       </div>
-                      {isLong && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setExpandedReplies((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(reply.id)) next.delete(reply.id);
-                              else next.add(reply.id);
-                              return next;
-                            });
-                          }}
-                          className="text-[10px] text-muted-foreground hover:text-foreground active:opacity-75 transition-colors mt-0.5"
-                        >
-                          {isExpanded ? 'Show less' : 'Show more'}
-                        </button>
-                      )}
+                      <div className="flex items-center justify-between mt-0.5">
+                        {isLong && !threadExpanded ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setThreadExpanded(true);
+                            }}
+                            className="text-[10px] text-muted-foreground hover:text-foreground active:opacity-75 transition-colors"
+                          >
+                            Show more
+                          </button>
+                        ) : <span />}
+                        {!isUserReply && comment.status === 'done' && onApply && (
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            onClick={() => onApply(reply)}
+                            disabled={suggestionActive}
+                            title={suggestionActive ? 'Another suggestion is active' : 'Apply to document'}
+                            className="text-muted-foreground hover:text-foreground h-5 px-1.5 text-[10px] gap-1"
+                          >
+                            <FileOutput className="h-3 w-3" strokeWidth={1.5} />
+                            Apply
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -376,6 +404,46 @@ export function CommentPopover({
                   </div>
                 )}
               </div>
+              {/* Reply input — shown when agent has responded and delegation is complete */}
+              {comment.status === 'done' && onReply && canDelegate && (
+                <div className="px-3 pb-2 pt-0 shrink-0 border-t border-border">
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <input
+                      ref={replyInputRef}
+                      type="text"
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && replyText.trim()) {
+                          e.preventDefault();
+                          onReply(replyText.trim());
+                          setReplyText('');
+                        }
+                        if (e.key === 'Escape') {
+                          setReplyText('');
+                        }
+                      }}
+                      placeholder="Reply to agent..."
+                      className="flex-1 h-7 rounded-md border border-border bg-background text-foreground px-2 text-xs outline-none transition-colors duration-150 focus:border-foreground/30"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => {
+                        if (replyText.trim()) {
+                          onReply(replyText.trim());
+                          setReplyText('');
+                        }
+                      }}
+                      disabled={!replyText.trim()}
+                      title="Send reply"
+                      className="text-muted-foreground hover:text-foreground shrink-0"
+                    >
+                      <SendHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    </Button>
+                  </div>
+                </div>
+              )}
               {/* Activity footer — always visible, never scrolls */}
               {(comment.status === 'delegated' || activities.length > 0) && (
                 <div className="px-3 pb-3 pt-0 shrink-0">
