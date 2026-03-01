@@ -129,13 +129,17 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
   },
 
   deleteComment: (documentId: string, commentId: string) => {
+    // Clean up runtime state for the deleted comment
+    delete partialReplies[partialKey(documentId, commentId)];
     set((state) => {
       const comments = state.commentsByDocument[documentId] ?? [];
+      const { [commentId]: _, ...restActivities } = state.activitiesByComment;
       return {
         commentsByDocument: {
           ...state.commentsByDocument,
           [documentId]: comments.filter((c) => c.id !== commentId),
         },
+        activitiesByComment: restActivities,
         activeCommentId: state.activeCommentId === commentId ? null : state.activeCommentId,
       };
     });
@@ -269,12 +273,22 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
   },
 
   clearDocument: (documentId: string) => {
+    // Clean up partial replies and activities for all comments in this document
+    const comments = get().commentsByDocument[documentId] ?? [];
+    for (const c of comments) {
+      delete partialReplies[partialKey(documentId, c.id)];
+    }
     set((state) => {
       const { [documentId]: _, ...rest } = state.commentsByDocument;
+      const cleanedActivities = { ...state.activitiesByComment };
+      for (const c of comments) {
+        delete cleanedActivities[c.id];
+      }
       return {
         commentsByDocument: rest,
+        activitiesByComment: cleanedActivities,
         activeCommentId: state.activeCommentId &&
-          (state.commentsByDocument[documentId] ?? []).some((c) => c.id === state.activeCommentId)
+          comments.some((c) => c.id === state.activeCommentId)
           ? null
           : state.activeCommentId,
       };

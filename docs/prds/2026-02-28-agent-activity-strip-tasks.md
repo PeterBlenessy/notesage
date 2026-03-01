@@ -344,13 +344,13 @@ Final polish pass to meet all design quality gates.
 
 - [x] ~~Auto-hide timer resets correctly~~ (removed: strip always visible, no auto-hide)
 
-- [ ] Clean up partial reply entries when comment is deleted or document is closed
+- [x] Clean up partial reply and activity entries when comment is deleted or document is closed
 
 - [ ] Run `/review-ui` for design system compliance
 
-- [ ] All 16 functional quality gates from the PRD pass
+- [x] All functional quality gates from the PRD pass
 
-- [ ] All 8 design quality gates from the PRD pass
+- [x] All design quality gates from the PRD pass (except panel show/hide transition — deferred, same limitation as chat panel)
 
 - [x] No regressions in existing comment delegation flow
 
@@ -373,3 +373,4 @@ Tasks #2→#3→#4 (streaming plumbing) and #5→#6 (strip UI) can run in parall
 3. **Partial reply memory** — module-level `partialReplies` map needs cleanup. Clear entries when comments are deleted (`deleteComment`) and when documents are closed (`clearDocument`).
 4. **Sequential delegation timing** — "delegate all" runs comments one-by-one. The 5s auto-hide timer must wait for the *last* task to complete, not restart after each one. The `tasks.some(t => t.status === 'running')` check handles this naturally.
 5. `startTask` **API change** — switching from positional args to a callbacks object is a breaking change for `useCommentDelegation`. This is the only caller, so the blast radius is contained. Task #3 updates it in the same PR.
+6. 
