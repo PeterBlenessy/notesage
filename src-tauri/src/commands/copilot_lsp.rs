@@ -346,6 +346,11 @@ async fn handle_server_request(
             // The Copilot LSP sends this after sign-in is initiated, containing
             // the device code the user must enter on GitHub.
             if let Some(params) = params {
+                eprintln!(
+                    "[copilot-lsp] signIn server→client request received, raw params: {}",
+                    params
+                );
+
                 let user_code = params
                     .get("userCode")
                     .and_then(|v| v.as_str())
@@ -927,11 +932,15 @@ pub async fn copilot_lsp_status(
 /// Two-phase approach:
 /// 1. Try the direct `signIn` JSON-RPC method — works with older LSP versions
 ///    that return `{ userCode, verificationUri, command }` directly.
-/// 2. If step 1 returns an empty device code, fall back to executing the
-///    `github.copilot.signInInitiate` workspace command. In this case the LSP
-///    sends the device code asynchronously via a server→client `signIn` request,
-///    which is handled in `handle_server_request` and emitted as the
-///    `copilot-auth-device-code` Tauri event.
+/// 2. If step 1 fails or returns an empty device code, fall back to executing
+///    the `github.copilot.signInInitiate` workspace command. Per the official
+///    Copilot LSP docs, this returns `{ userCode, command }` in the response.
+///    The embedded command (`github.copilot.finishDeviceFlow`) is executed to
+///    start the OAuth device flow polling.
+/// 3. As a last resort, if neither phase returns a device code in the response,
+///    wait for the LSP to send the code asynchronously via a server→client
+///    `signIn` request (handled in `handle_server_request`, emitted as the
+///    `copilot-auth-device-code` Tauri event).
 ///
 /// Auth completion is signalled asynchronously via
 /// `didChangeStatus` → `copilot-status-changed` Tauri event.
@@ -946,90 +955,60 @@ pub async fn copilot_lsp_sign_in(
         .ok_or("Copilot LSP not running. Call copilot_lsp_start first.")?;
 
     // --- Phase 1: Try direct signIn RPC ---
-    let result = process
+    // Some older LSP versions support `signIn` as a client→server method.
+    // Use `match` instead of `?` so we can fall through to Phase 2 on error.
+    eprintln!("[copilot-lsp] Phase 1: Sending signIn RPC...");
+    match process
         .transport
         .send_request("signIn", Some(serde_json::json!({})))
         .await
-        .map_err(|e| format!("signIn failed: {}", e))?;
+    {
+        Ok(result) => {
+            eprintln!("[copilot-lsp] Phase 1 signIn response: {}", result);
 
-    eprintln!("[copilot-lsp] signIn response: {}", result);
+            let user_code = extract_user_code_from_result(&result);
+            let verification_uri = extract_verification_uri(&result);
 
-    // Try multiple field names for the device code (LSP versions vary)
-    let user_code = result
-        .get("userCode")
-        .and_then(|v| v.as_str())
-        .or_else(|| result.get("user_code").and_then(|v| v.as_str()))
-        .unwrap_or("")
-        .to_string();
+            if !user_code.is_empty() {
+                eprintln!(
+                    "[copilot-lsp] Phase 1 succeeded — userCode={}, verificationUri={}",
+                    user_code, verification_uri
+                );
 
-    // Try to extract verification URI from response, with fallback
-    let verification_uri = result
-        .get("verificationUri")
-        .and_then(|v| v.as_str())
-        .or_else(|| result.get("verification_uri").and_then(|v| v.as_str()))
-        .unwrap_or("https://github.com/login/device")
-        .to_string();
+                // Execute the embedded command to trigger the device flow.
+                execute_embedded_command(process, &result).await;
 
-    // If user_code is empty, try extracting from verificationUri query params
-    let user_code = if user_code.is_empty() {
-        if let Some(code) = extract_code_from_uri(&verification_uri) {
-            eprintln!("[copilot-lsp] Extracted user_code from URI: {}", code);
-            code
-        } else {
-            String::new()
-        }
-    } else {
-        user_code
-    };
+                let _ = app.emit(
+                    "copilot-auth-device-code",
+                    serde_json::json!({
+                        "userCode": user_code,
+                        "verificationUri": verification_uri,
+                    }),
+                );
 
-    if !user_code.is_empty() {
-        // Phase 1 succeeded — we have a device code from the direct response.
-        // Execute the embedded command to trigger the device flow.
-        if let Some(command) = result.get("command") {
-            let cmd_name = command
-                .get("command")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let cmd_args = command
-                .get("arguments")
-                .cloned()
-                .unwrap_or(Value::Array(vec![]));
-
-            if !cmd_name.is_empty() {
-                let _ = process
-                    .transport
-                    .send_request(
-                        "workspace/executeCommand",
-                        Some(serde_json::json!({
-                            "command": cmd_name,
-                            "arguments": cmd_args,
-                        })),
-                    )
-                    .await;
+                return Ok(SignInResponse {
+                    user_code,
+                    verification_uri,
+                });
             }
+
+            eprintln!("[copilot-lsp] Phase 1: signIn returned no device code, falling to Phase 2");
         }
-
-        let _ = app.emit(
-            "copilot-auth-device-code",
-            serde_json::json!({
-                "userCode": user_code,
-                "verificationUri": verification_uri,
-            }),
-        );
-
-        return Ok(SignInResponse {
-            user_code,
-            verification_uri,
-        });
+        Err(e) => {
+            // signIn might not be supported — fall through to Phase 2
+            eprintln!(
+                "[copilot-lsp] Phase 1: signIn RPC failed (non-fatal, falling to Phase 2): {}",
+                e
+            );
+        }
     }
 
-    // --- Phase 2: Fallback — initiate sign-in via workspace command ---
-    // Newer Copilot LSP versions return the device code asynchronously via
-    // a server→client `signIn` request (handled in handle_server_request)
-    // rather than in the direct signIn response.
-    eprintln!("[copilot-lsp] signIn returned empty device code, falling back to signInInitiate command");
+    // --- Phase 2: signInInitiate workspace command (official flow) ---
+    // Per the Copilot LSP docs, `signInInitiate` returns `{ userCode, command }`
+    // in the response. We must extract it and execute the embedded command.
+    eprintln!("[copilot-lsp] Phase 2: Sending workspace/executeCommand(signInInitiate)...");
 
-    let _ = process
+    match process
         .transport
         .send_request(
             "workspace/executeCommand",
@@ -1038,11 +1017,55 @@ pub async fn copilot_lsp_sign_in(
                 "arguments": [],
             })),
         )
-        .await;
+        .await
+    {
+        Ok(result) => {
+            eprintln!("[copilot-lsp] Phase 2 signInInitiate response: {}", result);
 
-    // The device code will arrive asynchronously via the server→client
-    // `signIn` request → handle_server_request → copilot-auth-device-code event.
-    // Return empty response; frontend will use the event.
+            let user_code = extract_user_code_from_result(&result);
+            let verification_uri = extract_verification_uri(&result);
+
+            if !user_code.is_empty() {
+                eprintln!(
+                    "[copilot-lsp] Phase 2 succeeded — userCode={}, verificationUri={}",
+                    user_code, verification_uri
+                );
+
+                // Execute the embedded command (e.g. github.copilot.finishDeviceFlow)
+                // to start OAuth polling and open the browser.
+                execute_embedded_command(process, &result).await;
+
+                let _ = app.emit(
+                    "copilot-auth-device-code",
+                    serde_json::json!({
+                        "userCode": user_code,
+                        "verificationUri": verification_uri,
+                    }),
+                );
+
+                return Ok(SignInResponse {
+                    user_code,
+                    verification_uri,
+                });
+            }
+
+            eprintln!(
+                "[copilot-lsp] Phase 2: signInInitiate returned no device code in response"
+            );
+        }
+        Err(e) => {
+            eprintln!("[copilot-lsp] Phase 2: signInInitiate command failed: {}", e);
+        }
+    }
+
+    // --- Phase 3: Wait for asynchronous device code ---
+    // Neither phase returned a device code in the response. The LSP may send
+    // the code asynchronously via a server→client `signIn` request, which is
+    // handled in `handle_server_request` and emitted as `copilot-auth-device-code`.
+    eprintln!(
+        "[copilot-lsp] Both phases returned no device code — waiting for server→client signIn request"
+    );
+
     Ok(SignInResponse {
         user_code: String::new(),
         verification_uri: "https://github.com/login/device".to_string(),
@@ -1076,6 +1099,78 @@ pub async fn copilot_lsp_sign_out(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Extract userCode from a JSON-RPC result, trying multiple field name variants.
+/// Also falls back to extracting from verificationUri query parameters.
+fn extract_user_code_from_result(result: &Value) -> String {
+    // Try direct field names (LSP versions vary between camelCase and snake_case)
+    let user_code = result
+        .get("userCode")
+        .and_then(|v| v.as_str())
+        .or_else(|| result.get("user_code").and_then(|v| v.as_str()))
+        .unwrap_or("")
+        .to_string();
+
+    if !user_code.is_empty() {
+        return user_code;
+    }
+
+    // Try extracting from verificationUri query parameters
+    let verification_uri = result
+        .get("verificationUri")
+        .and_then(|v| v.as_str())
+        .or_else(|| result.get("verification_uri").and_then(|v| v.as_str()))
+        .unwrap_or("");
+    if let Some(code) = extract_code_from_uri(verification_uri) {
+        eprintln!("[copilot-lsp] Extracted user_code from URI: {}", code);
+        return code;
+    }
+
+    String::new()
+}
+
+/// Extract verificationUri from a JSON-RPC result.
+fn extract_verification_uri(result: &Value) -> String {
+    result
+        .get("verificationUri")
+        .and_then(|v| v.as_str())
+        .or_else(|| result.get("verification_uri").and_then(|v| v.as_str()))
+        .unwrap_or("https://github.com/login/device")
+        .to_string()
+}
+
+/// Execute the embedded command from a signIn/signInInitiate response.
+/// The response typically contains a `command` object like:
+/// `{ "command": "github.copilot.finishDeviceFlow", "arguments": [...] }`
+async fn execute_embedded_command(process: &CopilotLspProcess, result: &Value) {
+    if let Some(command) = result.get("command") {
+        let cmd_name = command
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let cmd_args = command
+            .get("arguments")
+            .cloned()
+            .unwrap_or(Value::Array(vec![]));
+
+        if !cmd_name.is_empty() {
+            eprintln!(
+                "[copilot-lsp] Executing embedded command: {} with args: {}",
+                cmd_name, cmd_args
+            );
+            let _ = process
+                .transport
+                .send_request(
+                    "workspace/executeCommand",
+                    Some(serde_json::json!({
+                        "command": cmd_name,
+                        "arguments": cmd_args,
+                    })),
+                )
+                .await;
+        }
+    }
+}
 
 /// Try to extract a user code from a verification URI's query parameters.
 /// e.g. `https://github.com/login/device?user_code=ABCD-1234` → Some("ABCD-1234")

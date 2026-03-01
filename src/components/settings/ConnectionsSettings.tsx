@@ -565,7 +565,8 @@ function ConnectCopilotLsp({
           console.log('[copilot-lsp-ui] Status check failed (non-fatal):', statusErr);
         }
 
-        console.log('[copilot-lsp-ui] Calling signIn...');
+        console.log('[copilot-lsp-ui] Calling copilot_lsp_sign_in (timeout:', CONNECTION_TIMEOUT_MS, 'ms)...');
+        const signInStart = Date.now();
         const result = await withTimeout(
           invoke<{ user_code: string; verification_uri: string }>(
             'copilot_lsp_sign_in'
@@ -573,29 +574,39 @@ function ConnectCopilotLsp({
           CONNECTION_TIMEOUT_MS,
           'Sign-in',
         );
-        console.log('[copilot-lsp-ui] signIn result:', JSON.stringify(result));
+        console.log('[copilot-lsp-ui] signIn returned after', Date.now() - signInStart, 'ms — result:', JSON.stringify(result));
         if (!active) return;
 
+        // Check if the device code was already received via event while signIn was running
+        if (deviceCodeReceivedRef.current) {
+          console.log('[copilot-lsp-ui] Device code already received via event during signIn call — skipping result processing');
+          return;
+        }
+
         if (!result.user_code) {
-          // Empty user code from direct signIn RPC — the fallback path
-          // (workspace/executeCommand with signInInitiate) was triggered.
-          // The device code will arrive via copilot-auth-device-code event
-          // from the server→client signIn request handler.
+          // Neither Phase 1 (signIn) nor Phase 2 (signInInitiate) returned a
+          // device code. Wait for the LSP to send it asynchronously via a
+          // server→client signIn request → copilot-auth-device-code event.
           console.log('[copilot-lsp-ui] Empty user_code from signIn — waiting for device code event or auth completion');
           if (!authCompleted.current) {
             // Wait up to 10 seconds for either the device code event or auth completion
             for (let i = 0; i < 20; i++) {
               await new Promise((r) => setTimeout(r, 500));
-              if (!active || authCompleted.current || deviceCodeReceivedRef.current) return;
+              if (!active || authCompleted.current || deviceCodeReceivedRef.current) {
+                console.log('[copilot-lsp-ui] Wait resolved — authCompleted:', authCompleted.current, 'deviceCodeReceived:', deviceCodeReceivedRef.current);
+                return;
+              }
             }
             if (!active) return;
             // Still nothing — show error
+            console.error('[copilot-lsp-ui] Timed out waiting for device code after signIn returned empty');
             setError('Sign-in timed out waiting for device code. You may already be authenticated — try removing and re-adding the connection.');
             setPhase('error');
           }
           return;
         }
 
+        console.log('[copilot-lsp-ui] Got device code from signIn result:', result.user_code);
         setDeviceCode(result.user_code);
         setPhase('device_code');
       } catch (err) {
