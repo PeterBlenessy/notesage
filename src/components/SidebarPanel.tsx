@@ -205,8 +205,8 @@ export function SidebarPanel({
           </div>
         </div>
 
-        {/* Resize handle — only when expanded */}
-        {expanded && (
+        {/* Resize handle — only when pinned (not during hover auto-show) */}
+        {sidebarPinned && (
           <div
             className={cn(
               "absolute top-0 bottom-0 z-50 flex items-center justify-center cursor-col-resize",
