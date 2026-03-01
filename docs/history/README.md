@@ -46,3 +46,4 @@ Chronological log of major implementation milestones and changes.
 | 040 | [Release v0.16.7](040-release-v0.16.7.md) | EPUB viewer: foliate-js, dark mode, running header/footer, book-wide pages |
 | 041 | [Release v0.16.8](041-release-v0.16.8.md) | Find in document: all viewers, inline tag badges, tag search |
 | 042 | [Release v0.16.9](042-release-v0.16.9.md) | Move files, adjustable sidebar, frontmatter editing, shortcuts dialog |
+| 043 | [Release v0.16.10](043-release-v0.16.10.md) | Agent activity strip & panel, progress streaming, debug logging, UX fixes |
