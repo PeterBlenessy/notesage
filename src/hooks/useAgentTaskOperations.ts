@@ -1,10 +1,12 @@
-import { useCallback, useRef } from 'react';
+import { useCallback } from 'react';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useChatStore } from '@/stores/chat-store';
 import { usePermissionStore } from '@/stores/permission-store';
+import { useActivityStore, type AgentTaskType } from '@/stores/activity-store';
 import type { Connection } from '@/lib/ai/connections';
 import { tauriApi } from '@/lib/tauri';
 import { listen } from '@tauri-apps/api/event';
+import { formatAcpToolName, truncateDetail } from '@/hooks/useAIOperations';
 
 // ---------------------------------------------------------------------------
 // ACP event payload types
@@ -111,12 +113,12 @@ async function ensureTaskAgent(connection: Connection, cwd: string): Promise<str
 }
 
 // ---------------------------------------------------------------------------
-// Task status tracking
+// Task status tracking (module-level, shared across all hook instances)
 // ---------------------------------------------------------------------------
 
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
-export interface AgentTask {
+interface InternalTask {
   id: string;
   prompt: string;
   status: TaskStatus;
@@ -127,14 +129,40 @@ export interface AgentTask {
   createdAt: number;
 }
 
+const tasksMap = new Map<string, InternalTask>();
+const cleanupMap = new Map<string, () => void>();
+
+// ---------------------------------------------------------------------------
+// Callback & metadata types for startTask
+// ---------------------------------------------------------------------------
+
+export interface TaskActivityEvent {
+  kind: string;
+  label: string;
+  detail?: string;
+  event: 'tool_call' | 'tool_result' | 'agent_responding' | 'agent_complete' | 'permission_auto_approved';
+}
+
+export interface TaskCallbacks {
+  onComplete?: (output: string) => void;
+  onActivity?: (activity: TaskActivityEvent) => void;
+  onError?: (error: string) => void;
+  onChunk?: (chunk: string) => void;
+}
+
+export interface TaskMeta {
+  type: AgentTaskType;
+  label: string;
+  sourceFile?: string;
+  commentId?: string;
+  documentId?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
 
 export function useAgentTaskOperations() {
-  const tasksRef = useRef<Map<string, AgentTask>>(new Map());
-  const cleanupRef = useRef<Map<string, () => void>>(new Map());
-
   const { selectedProjectPaths } = useChatStore();
 
   const taskConnection = useRoutingStore((s) => {
@@ -147,18 +175,17 @@ export function useAgentTaskOperations() {
    * Start a background agent task. Returns a task ID for tracking.
    * The task runs in its own ACP session (separate from interactive chat).
    *
-   * Callbacks:
-   * - onComplete: fires when the agent finishes (with accumulated output)
-   * - onActivity: fires on tool_call / tool_result events (for activity log)
-   * - onError: fires if the prompt fails or the agent errors
+   * @param prompt - The prompt to send to the agent
+   * @param callbacks - Optional callbacks for streaming, completion, activity, and errors
+   * @param taskMeta - Optional metadata for the activity strip (type, label, source file, etc.)
    */
   const startTask = useCallback(
     async (
       prompt: string,
-      onComplete?: (output: string) => void,
-      onActivity?: (activity: { kind: string; label: string; detail?: string; event: 'tool_call' | 'tool_result' | 'agent_responding' | 'agent_complete' | 'permission_auto_approved' }) => void,
-      onError?: (error: string) => void,
+      callbacks?: TaskCallbacks,
+      taskMeta?: TaskMeta,
     ): Promise<string> => {
+      const { onComplete, onActivity, onError, onChunk } = callbacks ?? {};
       if (!taskConnection || taskConnection.authMethod !== 'agent_managed') {
         throw new Error('No agent connection configured for tasks. Set up agent routing in Settings.');
       }
@@ -170,7 +197,7 @@ export function useAgentTaskOperations() {
       const session = await tauriApi.acpSessionNew(instanceId, cwd);
 
       const taskId = `task-${Date.now()}`;
-      const task: AgentTask = {
+      const task: InternalTask = {
         id: taskId,
         prompt,
         status: 'running',
@@ -179,7 +206,18 @@ export function useAgentTaskOperations() {
         output: '',
         createdAt: Date.now(),
       };
-      tasksRef.current.set(taskId, task);
+      tasksMap.set(taskId, task);
+
+      // Register in activity store for the activity strip
+      useActivityStore.getState().addTask({
+        id: taskId,
+        type: taskMeta?.type ?? 'chat',
+        label: taskMeta?.label ?? prompt.slice(0, 50),
+        status: 'running',
+        sourceFile: taskMeta?.sourceFile,
+        commentId: taskMeta?.commentId,
+        documentId: taskMeta?.documentId,
+      });
 
       // Listen for session updates
       let receivedFirstChunk = false;
@@ -188,10 +226,12 @@ export function useAgentTaskOperations() {
         if (event.payload.sessionId !== session.session_id) return;
         const { update } = event.payload;
 
-        const current = tasksRef.current.get(taskId);
+        const current = tasksMap.get(taskId);
         if (!current) return;
 
         const eventType = update.sessionUpdate;
+
+        const activityStore = useActivityStore.getState();
 
         if (
           eventType === 'agent_message_chunk' &&
@@ -203,11 +243,30 @@ export function useAgentTaskOperations() {
             onActivity?.({ kind: 'agent_responding', label: 'Agent responding', event: 'agent_responding' });
           }
           current.output += update.content.text;
+          onChunk?.(update.content.text);
+          activityStore.appendPartialOutput(taskId, update.content.text);
+        } else if (eventType === 'agent_thought_chunk') {
+          // Agent's internal reasoning / thinking
+          const text = update.content?.text;
+          if (text) {
+            activityStore.appendThinkingOutput(taskId, text);
+          }
         } else if (eventType === 'tool_call') {
-          const label = update.title || update.kind || 'Tool call';
-          onActivity?.({ kind: update.kind || 'unknown', label, detail: update.rawInput?.slice(0, 200), event: 'tool_call' });
+          const label = formatAcpToolName(update.kind, update.title);
+          const detail = truncateDetail(update.rawInput, 200);
+          onActivity?.({ kind: update.kind || 'unknown', label, detail: detail || undefined, event: 'tool_call' });
+          activityStore.appendActivity(taskId, {
+            label,
+            detail: detail || undefined,
+            status: 'running',
+            timestamp: Date.now(),
+          });
+        } else if (eventType === 'tool_call_update') {
+          const label = formatAcpToolName(update.kind, update.title);
+          onActivity?.({ kind: update.kind || 'unknown', label, event: 'tool_call' });
         } else if (eventType === 'tool_result') {
           onActivity?.({ kind: 'tool_result', label: 'Tool result', event: 'tool_result' });
+          activityStore.completeLastActivity(taskId);
         } else if (eventType === 'agent_turn_complete') {
           current.status = 'completed';
           const responsePreview = current.output.length > 100
@@ -215,11 +274,13 @@ export function useAgentTaskOperations() {
             : current.output || '(empty response)';
           onActivity?.({ kind: 'agent_complete', label: 'Agent finished', detail: responsePreview, event: 'agent_complete' });
           onComplete?.(current.output);
+          activityStore.updateTaskStatus(taskId, 'done');
+          activityStore.setFinalOutput(taskId, current.output);
           // Clean up listeners now that the turn is done
-          const c = cleanupRef.current.get(taskId);
+          const c = cleanupMap.get(taskId);
           if (c) {
             c();
-            cleanupRef.current.delete(taskId);
+            cleanupMap.delete(taskId);
           }
         }
       });
@@ -272,7 +333,7 @@ export function useAgentTaskOperations() {
         unlisten();
         unlistenPermission();
       };
-      cleanupRef.current.set(taskId, cleanup);
+      cleanupMap.set(taskId, cleanup);
 
       // Send the prompt — resolves when the agent finishes its turn.
       // Some agents emit `agent_turn_complete` (Claude Code), others don't (Copilot CLI).
@@ -280,7 +341,7 @@ export function useAgentTaskOperations() {
       // and `.then()` catches completion when the invoke resolves (fallback).
       tauriApi.acpSessionPrompt(instanceId, session.session_id, prompt)
         .then(() => {
-          const t = tasksRef.current.get(taskId);
+          const t = tasksMap.get(taskId);
           if (t && t.status === 'running') {
             // agent_turn_complete didn't fire — complete from invoke resolution
             t.status = 'completed';
@@ -289,23 +350,27 @@ export function useAgentTaskOperations() {
               : t.output || '(empty response)';
             onActivity?.({ kind: 'agent_complete', label: 'Agent finished', detail: responsePreview, event: 'agent_complete' });
             onComplete?.(t.output);
+            const as = useActivityStore.getState();
+            as.updateTaskStatus(taskId, 'done');
+            as.setFinalOutput(taskId, t.output);
           }
         })
         .catch((error) => {
-          const t = tasksRef.current.get(taskId);
+          const t = tasksMap.get(taskId);
           if (t) {
             t.status = 'failed';
             t.error = error instanceof Error ? error.message : String(error);
           }
           const errMsg = error instanceof Error ? error.message : String(error);
           onError?.(errMsg);
+          useActivityStore.getState().updateTaskStatus(taskId, 'error');
         })
         .finally(() => {
           // Clean up event listeners
-          const c = cleanupRef.current.get(taskId);
+          const c = cleanupMap.get(taskId);
           if (c) {
             c();
-            cleanupRef.current.delete(taskId);
+            cleanupMap.delete(taskId);
           }
         });
 
@@ -317,7 +382,7 @@ export function useAgentTaskOperations() {
   /** Cancel a running task. Returns true if session was cancelled, false if already done. */
   const cancelTask = useCallback(
     async (taskId: string): Promise<boolean> => {
-      const task = tasksRef.current.get(taskId);
+      const task = tasksMap.get(taskId);
       if (!task || task.status !== 'running') return false;
 
       let cancelled = false;
@@ -329,10 +394,14 @@ export function useAgentTaskOperations() {
         // Agent may have already completed
       }
 
-      const cleanup = cleanupRef.current.get(taskId);
+      const as = useActivityStore.getState();
+      as.completeAllActivities(taskId);
+      as.updateTaskStatus(taskId, 'cancelled');
+
+      const cleanup = cleanupMap.get(taskId);
       if (cleanup) {
         cleanup();
-        cleanupRef.current.delete(taskId);
+        cleanupMap.delete(taskId);
       }
       return cancelled;
     },
@@ -340,8 +409,8 @@ export function useAgentTaskOperations() {
   );
 
   /** Get the current status of a task. */
-  const getTask = useCallback((taskId: string): AgentTask | undefined => {
-    return tasksRef.current.get(taskId);
+  const getTask = useCallback((taskId: string): InternalTask | undefined => {
+    return tasksMap.get(taskId);
   }, []);
 
   return { startTask, cancelTask, getTask, taskConnection };

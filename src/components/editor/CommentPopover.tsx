@@ -16,7 +16,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import type { Comment, DelegationActivity } from '@/stores/comment-store';
+import { useCommentStore, getPartialReply, type Comment, type DelegationActivity } from '@/stores/comment-store';
+import { MarkdownContent } from '@/components/MarkdownContent';
 
 function formatRelativeTime(timestamp: number): string {
   const now = Date.now();
@@ -82,6 +83,18 @@ export function CommentPopover({
   const [activityExpanded, setActivityExpanded] = useState(true);
   const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const streamingEndRef = useRef<HTMLSpanElement>(null);
+
+  // Subscribe to partial reply version counter — triggers re-render when chunks arrive
+  const partialReplyVersion = useCommentStore((s) => s.partialReplyVersion);
+  const partialReply = comment ? getPartialReply(comment.documentId, comment.id) : undefined;
+
+  // Auto-scroll to follow streaming text
+  useEffect(() => {
+    if (partialReply && streamingEndRef.current) {
+      streamingEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [partialReplyVersion, partialReply]);
 
   // Reset mode when popover opens
   useEffect(() => {
@@ -322,9 +335,9 @@ export function CommentPopover({
                         <span className="text-[10px] text-muted-foreground">{formatRelativeTime(reply.timestamp)}</span>
                       </div>
                       <div className={isLong && !isExpanded ? 'relative' : undefined}>
-                        <p className={`text-sm whitespace-pre-wrap text-foreground ${isLong && !isExpanded ? 'line-clamp-3' : ''}`}>
-                          {reply.body}
-                        </p>
+                        <div className={isLong && !isExpanded ? 'line-clamp-3' : undefined}>
+                          <MarkdownContent content={reply.body} className="text-sm" />
+                        </div>
                         {isLong && !isExpanded && (
                           <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-popover to-transparent" />
                         )}
@@ -349,6 +362,19 @@ export function CommentPopover({
                     </div>
                   );
                 })}
+                {/* Streaming reply — shown while agent is generating */}
+                {comment.status === 'delegated' && partialReply && (
+                  <div className="border-t border-border pt-2 mt-2">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <BotMessageSquare className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+                      <span className="text-xs font-medium text-foreground">AI Agent</span>
+                      <span className="text-[10px] text-muted-foreground">streaming...</span>
+                    </div>
+                    <MarkdownContent content={partialReply} className="text-sm" />
+                    <span className="streaming-cursor">▊</span>
+                    <span ref={streamingEndRef} />
+                  </div>
+                )}
               </div>
               {/* Activity footer — always visible, never scrolls */}
               {(comment.status === 'delegated' || activities.length > 0) && (

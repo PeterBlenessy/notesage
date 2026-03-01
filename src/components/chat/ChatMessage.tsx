@@ -1,8 +1,7 @@
 import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { MarkdownContent } from '@/components/MarkdownContent';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { useChatStore } from '@/stores/chat-store';
 import type { ChatMessage as ChatMessageType, AgentActivity } from '@/lib/ai/types';
@@ -115,10 +114,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
             <div className="h-1.5 w-1.5 rounded-full animate-pulse [animation-delay:300ms] bg-muted-foreground" />
           </div>
         ) : (
-          <div className="chat-markdown text-sm leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {message.content}
-            </ReactMarkdown>
+          <div>
+            <MarkdownContent content={message.content} />
             {isLoading && (
               <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse bg-muted-foreground" />
             )}

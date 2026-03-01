@@ -17,6 +17,7 @@ interface KeyboardShortcutCallbacks {
   onNewNote: () => void;
   onOpenFolder: () => void;
   onShortcutsOpen: () => void;
+  onToggleActivityStrip?: () => void;
   focusMode: boolean;
 }
 
@@ -99,6 +100,13 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       if (isMod && e.key === ".") {
         e.preventDefault();
         callbacks.onToggleFocusMode();
+        return;
+      }
+
+      // Cmd+Shift+T — toggle activity strip
+      if (isMod && e.shiftKey && e.key.toLowerCase() === "t") {
+        e.preventDefault();
+        callbacks.onToggleActivityStrip?.();
         return;
       }
 

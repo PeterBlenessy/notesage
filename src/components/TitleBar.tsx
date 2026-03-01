@@ -1,19 +1,23 @@
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, BotMessageSquare } from "lucide-react";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { useActivityStore } from "@/stores/activity-store";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface TitleBarProps {
   onToggleChat: () => void;
+  onToggleActivityStrip: () => void;
 }
 
-export function TitleBar({ onToggleChat }: TitleBarProps) {
+export function TitleBar({ onToggleChat, onToggleActivityStrip }: TitleBarProps) {
   const chatPanelOpen = useSettingsStore((s) => s.chatPanelOpen);
   const activeTab = useEditorStore((s) => {
     const tab = s.tabs.find((t) => t.id === s.activeTabId);
     return tab ?? null;
   });
+  const panelExpanded = useActivityStore((s) => !s.isManuallyHidden);
+  const hasRunning = useActivityStore((s) => s.tasks.some((t) => t.status === 'running'));
 
   const title = activeTab?.fileName ?? "Notesage";
 
@@ -38,8 +42,8 @@ export function TitleBar({ onToggleChat }: TitleBarProps) {
         </span>
       </div>
 
-      {/* Right: chat toggle */}
-      <div className="flex items-center pr-3 shrink-0">
+      {/* Right: chat toggle + activity strip toggle */}
+      <div className="flex items-center gap-0.5 pr-3 shrink-0">
         <Button
           variant="ghost"
           size="icon-xs"
@@ -51,6 +55,21 @@ export function TitleBar({ onToggleChat }: TitleBarProps) {
           title={`${chatPanelOpen ? "Hide" : "Show"} AI Chat (⌘⇧A)`}
         >
           <MessageSquare className="size-4" strokeWidth={1.5} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={onToggleActivityStrip}
+          className={cn(
+            "relative text-muted-foreground hover:text-foreground transition-colors duration-150",
+            panelExpanded && "text-foreground bg-accent"
+          )}
+          title={`${panelExpanded ? "Hide" : "Show"} Agent Panel (⌘⇧T)`}
+        >
+          <BotMessageSquare className="size-4" strokeWidth={1.5} />
+          {hasRunning && (
+            <span className="absolute top-0 right-0 h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+          )}
         </Button>
       </div>
     </div>

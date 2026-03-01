@@ -370,6 +370,16 @@
 }
 
 /* Chat message markdown */
+.chat-markdown {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chat-markdown * {
+  max-width: 100%;
+}
+
 .chat-markdown p {
   margin-bottom: 0.5em;
 }
@@ -777,6 +787,19 @@ mark.dom-find-highlight-active {
 }
 .dark mark.dom-find-highlight-active {
   background: oklch(50% 0 0) !important;
+}
+
+/* Streaming cursor for agent reply */
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.streaming-cursor {
+  animation: blink-cursor 530ms step-end infinite;
+  color: var(--color-muted-foreground);
+  font-size: 0.85em;
+  margin-left: 1px;
 }
 
 /* Ghost text (inline completion suggestions) */

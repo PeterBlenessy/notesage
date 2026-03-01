@@ -4,6 +4,7 @@ import { Editor } from "@/components/editor/Editor";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { CommandPalette } from "@/components/CommandPalette";
 import { ChatPanel } from "@/components/chat/ChatPanel";
+import { ActivityStrip } from "@/components/activity/ActivityStrip";
 import { SettingsDialog, type SettingsTab } from "@/components/settings/SettingsDialog";
 import { ProjectSettingsDialog } from "@/components/settings/ProjectSettingsDialog";
 import { NewNoteDialog } from "@/components/NewNoteDialog";
@@ -18,11 +19,14 @@ import { useProjectMetadata } from "@/hooks/useProjectMetadata";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { useStartWatchers } from "@/hooks/useStartWatchers";
+import { useAgentTaskOperations } from "@/hooks/useAgentTaskOperations";
+import { useActivityNavigation } from "@/hooks/useActivityNavigation";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSyncStore } from "@/stores/sync-store";
 import { useEditorStylesStore } from "@/stores/editor-styles-store";
+import { useActivityStore } from "@/stores/activity-store";
 import { tauriApi, type TagOccurrence } from "@/lib/tauri";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { getFileType, isBinaryFileType } from "@/lib/file-utils";
@@ -121,6 +125,25 @@ function App() {
 
   useProjectMetadata();
   useStartWatchers();
+
+  // Activity strip — cancel handler and navigation
+  const { cancelTask } = useAgentTaskOperations();
+  const { handleClickTask } = useActivityNavigation();
+  const isManuallyHidden = useActivityStore((s) => s.isManuallyHidden);
+
+  const handleCancelTask = useCallback(
+    async (taskId: string) => {
+      try {
+        await cancelTask(taskId);
+      } catch (error) {
+        toast.error(`Failed to cancel task: ${error}`);
+      }
+    },
+    [cancelTask]
+  );
+
+  // Narrow rail always visible; wide strip toggles via isManuallyHidden
+  const stripExpanded = !isManuallyHidden && !focusMode;
 
   // Listen for tag badge clicks → open command palette with tag occurrence results
   useEffect(() => {
@@ -578,6 +601,10 @@ function App() {
     onNewNote: handleNewNote,
     onOpenFolder: handleOpenFolder,
     onShortcutsOpen: () => setShortcutsOpen(true),
+    onToggleActivityStrip: () => {
+      const store = useActivityStore.getState();
+      store.setManuallyHidden(!store.isManuallyHidden);
+    },
     focusMode,
   });
 
@@ -602,51 +629,65 @@ function App() {
           {!focusMode && (
             <TitleBar
               onToggleChat={() => setChatPanelOpen(!chatPanelOpen)}
+              onToggleActivityStrip={() => {
+                useActivityStore.getState().setManuallyHidden(!isManuallyHidden);
+              }}
             />
           )}
 
-          <ResizablePanelGroup
-            orientation="horizontal"
-            className="flex h-full w-full"
-            onLayoutChanged={handlePanelLayout}
-          >
-            <ResizablePanel
-              id="editor"
-              defaultSize={loadPanelSize(configKey, "editor", chatPanelOpen ? 65 : 100)}
-              minSize={300}
+          <div className="flex flex-1 min-h-0 overflow-hidden">
+            <ResizablePanelGroup
+              orientation="horizontal"
+              className="flex h-full w-full"
+              onLayoutChanged={handlePanelLayout}
             >
-              <EditorArea
-                onNewNote={handleNewNote}
-                onNewProject={handleNewProject}
-                onOpenFolder={handleOpenFolder}
-                onOpenProject={handleOpenProject}
-                onOpenFile={handleOpenFile}
-                exportOpen={exportOpen}
-                onExportOpenChange={setExportOpen}
-                focusMode={focusMode}
-                outlineOpen={outlineOpen}
-                onOutlineOpenChange={setOutlineOpen}
-                updateAvailable={!!updateState.updateInfo}
-                updateVersion={updateState.updateInfo?.version ?? null}
-                onUpdateClick={() => setUpdateDialogOpen(true)}
-                onShortcutsOpen={() => setShortcutsOpen(true)}
-              />
-            </ResizablePanel>
+              <ResizablePanel
+                id="editor"
+                defaultSize={loadPanelSize(configKey, "editor", chatPanelOpen ? 65 : 100)}
+                minSize={300}
+              >
+                <EditorArea
+                  onNewNote={handleNewNote}
+                  onNewProject={handleNewProject}
+                  onOpenFolder={handleOpenFolder}
+                  onOpenProject={handleOpenProject}
+                  onOpenFile={handleOpenFile}
+                  exportOpen={exportOpen}
+                  onExportOpenChange={setExportOpen}
+                  focusMode={focusMode}
+                  outlineOpen={outlineOpen}
+                  onOutlineOpenChange={setOutlineOpen}
+                  updateAvailable={!!updateState.updateInfo}
+                  updateVersion={updateState.updateInfo?.version ?? null}
+                  onUpdateClick={() => setUpdateDialogOpen(true)}
+                  onShortcutsOpen={() => setShortcutsOpen(true)}
+                />
+              </ResizablePanel>
 
-            {chatPanelOpen && !focusMode && (
-              <>
-                <ResizableHandle withHandle />
-                <ResizablePanel
-                  id="chat"
-                  defaultSize={loadPanelSize(configKey, "chat", 35)}
-                  minSize={280}
-                  maxSize={500}
-                >
-                  <ChatPanel />
-                </ResizablePanel>
-              </>
+              {chatPanelOpen && !focusMode && (
+                <>
+                  <ResizableHandle withHandle />
+                  <ResizablePanel
+                    id="chat"
+                    defaultSize={loadPanelSize(configKey, "chat", 35)}
+                    minSize={280}
+                    maxSize={500}
+                  >
+                    <ChatPanel />
+                  </ResizablePanel>
+                </>
+              )}
+            </ResizablePanelGroup>
+
+            {/* Activity strip — narrow rail always visible, wide on toggle */}
+            {!focusMode && (
+              <ActivityStrip
+                collapsed={!stripExpanded}
+                onCancelTask={handleCancelTask}
+                onClickTask={handleClickTask}
+              />
             )}
-          </ResizablePanelGroup>
+          </div>
         </div>
 
         {/* Focus mode hint overlay */}

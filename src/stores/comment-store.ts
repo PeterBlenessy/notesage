@@ -40,6 +40,8 @@ interface CommentStore {
   activeCommentId: string | null;
   /** Runtime-only activity log per comment (not persisted) */
   activitiesByComment: Record<string, DelegationActivity[]>;
+  /** Increments when partialReplies map changes — subscribe to trigger re-renders */
+  partialReplyVersion: number;
 
   loadComments: (documentId: string, projectRoot: string) => Promise<void>;
   addComment: (comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>) => Comment;
@@ -61,6 +63,7 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
   commentsByDocument: {},
   activeCommentId: null,
   activitiesByComment: {},
+  partialReplyVersion: 0,
 
   loadComments: async (documentId: string, projectRoot: string) => {
     const filePath = `${projectRoot}/.notesage/comments/${documentId}.json`;
@@ -264,3 +267,33 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
     });
   },
 }));
+
+// ---------------------------------------------------------------------------
+// Partial reply tracking (module-level, NOT in Zustand state)
+//
+// Streaming chunks arrive very frequently. Storing them in Zustand state would
+// cause the entire comment tree to re-render on every chunk. Instead we keep
+// a module-level map and expose a Zustand counter (partialReplyVersion) that
+// components can subscribe to for efficient updates.
+// ---------------------------------------------------------------------------
+
+const partialReplies: Record<string, string> = {};
+
+function partialKey(documentId: string, commentId: string): string {
+  return `${documentId}:${commentId}`;
+}
+
+export function appendPartialReply(documentId: string, commentId: string, chunk: string): void {
+  const key = partialKey(documentId, commentId);
+  partialReplies[key] = (partialReplies[key] ?? '') + chunk;
+  useCommentStore.setState((s) => ({ partialReplyVersion: s.partialReplyVersion + 1 }));
+}
+
+export function getPartialReply(documentId: string, commentId: string): string | undefined {
+  return partialReplies[partialKey(documentId, commentId)] || undefined;
+}
+
+export function clearPartialReply(documentId: string, commentId: string): void {
+  delete partialReplies[partialKey(documentId, commentId)];
+  useCommentStore.setState((s) => ({ partialReplyVersion: s.partialReplyVersion + 1 }));
+}
