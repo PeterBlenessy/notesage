@@ -4,7 +4,7 @@ import { Editor } from "@/components/editor/Editor";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { CommandPalette } from "@/components/CommandPalette";
 import { ChatPanel } from "@/components/chat/ChatPanel";
-import { ActivityStrip } from "@/components/activity/ActivityStrip";
+import { ActivityRail, ActivityPanel } from "@/components/activity/ActivityStrip";
 import { SettingsDialog, type SettingsTab } from "@/components/settings/SettingsDialog";
 import { ProjectSettingsDialog } from "@/components/settings/ProjectSettingsDialog";
 import { NewNoteDialog } from "@/components/NewNoteDialog";
@@ -544,10 +544,11 @@ function App() {
     savePanelSizes(layout);
   }, []);
 
-  // Panel config key (editor + optional chat)
+  // Panel config key (editor + optional chat + optional activity)
   const configKey = layoutConfigKey([
     "editor",
     ...(chatPanelOpen ? ["chat"] : []),
+    ...(stripExpanded ? ["activity"] : []),
   ]);
 
   // Show toast when update becomes available
@@ -643,7 +644,7 @@ function App() {
             >
               <ResizablePanel
                 id="editor"
-                defaultSize={loadPanelSize(configKey, "editor", chatPanelOpen ? 65 : 100)}
+                defaultSize={loadPanelSize(configKey, "editor", chatPanelOpen || stripExpanded ? 65 : 100)}
                 minSize={300}
               >
                 <EditorArea
@@ -677,15 +678,28 @@ function App() {
                   </ResizablePanel>
                 </>
               )}
+
+              {stripExpanded && !focusMode && (
+                <>
+                  <ResizableHandle withHandle />
+                  <ResizablePanel
+                    id="activity"
+                    defaultSize={loadPanelSize(configKey, "activity", 25)}
+                    minSize={240}
+                    maxSize={500}
+                  >
+                    <ActivityPanel
+                      onCancelTask={handleCancelTask}
+                      onClickTask={handleClickTask}
+                    />
+                  </ResizablePanel>
+                </>
+              )}
             </ResizablePanelGroup>
 
-            {/* Activity strip — narrow rail always visible, wide on toggle */}
-            {!focusMode && (
-              <ActivityStrip
-                collapsed={!stripExpanded}
-                onCancelTask={handleCancelTask}
-                onClickTask={handleClickTask}
-              />
+            {/* Activity rail — narrow 40px strip, always visible */}
+            {!focusMode && !stripExpanded && (
+              <ActivityRail />
             )}
           </div>
         </div>

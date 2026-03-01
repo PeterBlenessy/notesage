@@ -103,15 +103,8 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         return;
       }
 
-      // Cmd+Shift+T — toggle activity strip
-      if (isMod && e.shiftKey && e.key.toLowerCase() === "t") {
-        e.preventDefault();
-        callbacks.onToggleActivityStrip?.();
-        return;
-      }
-
       // Cmd+T — toggle theme
-      if (isMod && !e.shiftKey && e.key === "t") {
+      if (isMod && e.key === "t") {
         e.preventDefault();
         const settings = useSettingsStore.getState();
         settings.setTheme(settings.theme === "dark" ? "light" : "dark");
@@ -133,8 +126,15 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         setSidebarPinned(!useSettingsStore.getState().sidebarPinned);
       }
 
-      // Cmd+Shift+A — AI chat toggle
+      // Cmd+Shift+A — agent panel toggle
       if (isMod && e.shiftKey && e.key === "a") {
+        e.preventDefault();
+        callbacks.onToggleActivityStrip?.();
+        return;
+      }
+
+      // Cmd+Shift+C — AI chat toggle
+      if (isMod && e.shiftKey && e.key.toLowerCase() === "c") {
         e.preventDefault();
         setChatPanelOpen(!useSettingsStore.getState().chatPanelOpen);
       }

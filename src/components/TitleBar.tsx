@@ -52,7 +52,7 @@ export function TitleBar({ onToggleChat, onToggleActivityStrip }: TitleBarProps)
             "text-muted-foreground hover:text-foreground transition-colors duration-150",
             chatPanelOpen && "text-foreground bg-accent"
           )}
-          title={`${chatPanelOpen ? "Hide" : "Show"} AI Chat (⌘⇧A)`}
+          title={`${chatPanelOpen ? "Hide" : "Show"} AI Chat (⌘⇧C)`}
         >
           <MessageSquare className="size-4" strokeWidth={1.5} />
         </Button>
@@ -64,7 +64,7 @@ export function TitleBar({ onToggleChat, onToggleActivityStrip }: TitleBarProps)
             "relative text-muted-foreground hover:text-foreground transition-colors duration-150",
             panelExpanded && "text-foreground bg-accent"
           )}
-          title={`${panelExpanded ? "Hide" : "Show"} Agent Panel (⌘⇧T)`}
+          title={`${panelExpanded ? "Hide" : "Show"} Agent Panel (⌘⇧A)`}
         >
           <BotMessageSquare className="size-4" strokeWidth={1.5} />
           {hasRunning && (

@@ -16,11 +16,9 @@ import {
 import { useActivityStore, type AgentTask } from '@/stores/activity-store';
 import { ActivityTaskCard } from './ActivityTaskCard';
 
-const STRIP_WIDTH = 40;
-const PANEL_WIDTH = 360;
+export const STRIP_WIDTH = 40;
 
 interface ActivityStripProps {
-  collapsed: boolean;
   onCancelTask?: (taskId: string) => void;
   onClickTask?: (task: AgentTask) => void;
 }
@@ -54,7 +52,30 @@ function RailIcon({ task }: { task: AgentTask }) {
   );
 }
 
-export function ActivityStrip({ collapsed, onCancelTask, onClickTask }: ActivityStripProps) {
+/** Narrow 40px rail — always visible, shows icon per task */
+export function ActivityRail() {
+  const tasks = useActivityStore((s) => s.tasks);
+
+  return (
+    <div
+      className="flex flex-col h-full border-l border-border bg-background shrink-0 overflow-hidden"
+      style={{ width: STRIP_WIDTH }}
+    >
+      <div className="flex-1 overflow-y-auto thin-scrollbar">
+        <TooltipProvider delayDuration={300}>
+          <div className="flex flex-col items-center pt-1">
+            {tasks.map((task) => (
+              <RailIcon key={task.id} task={task} />
+            ))}
+          </div>
+        </TooltipProvider>
+      </div>
+    </div>
+  );
+}
+
+/** Expanded agent panel content — rendered inside a ResizablePanel */
+export function ActivityPanel({ onCancelTask, onClickTask }: ActivityStripProps) {
   const tasks = useActivityStore((s) => s.tasks);
   const removeTask = useActivityStore((s) => s.removeTask);
   const clearCompleted = useActivityStore((s) => s.clearCompleted);
@@ -62,66 +83,47 @@ export function ActivityStrip({ collapsed, onCancelTask, onClickTask }: Activity
   const hasCompleted = tasks.some((t) => t.status !== 'running');
 
   return (
-    <div
-      className="flex flex-col h-full border-l border-border bg-background shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out"
-      style={{ width: collapsed ? STRIP_WIDTH : PANEL_WIDTH }}
-    >
-      {collapsed ? (
-        /* Agent strip — narrow rail with icon per task */
-        <div className="flex-1 overflow-y-auto thin-scrollbar">
-          <TooltipProvider delayDuration={300}>
-            <div className="flex flex-col items-center pt-1">
-              {tasks.map((task) => (
-                <RailIcon key={task.id} task={task} />
-              ))}
-            </div>
-          </TooltipProvider>
+    <div className="flex flex-col h-full bg-background overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center px-3 py-2 border-b border-border shrink-0">
+        <span className="text-xs font-medium text-foreground whitespace-nowrap">Agent Tasks</span>
+      </div>
+
+      {/* Task list */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden thin-scrollbar">
+        {tasks.length === 0 ? (
+          <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
+            <span className="text-xs text-muted-foreground">
+              No agent tasks yet
+            </span>
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {tasks.map((task) => (
+              <ActivityTaskCard
+                key={task.id}
+                task={task}
+                onCancel={onCancelTask}
+                onRemove={removeTask}
+                onClick={onClickTask}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Footer */}
+      {hasCompleted && (
+        <div className="px-3 py-2 border-t border-border shrink-0">
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={clearCompleted}
+            className="w-full text-[10px] text-muted-foreground hover:text-foreground"
+          >
+            Clear completed
+          </Button>
         </div>
-      ) : (
-        /* Agent panel — expanded sidebar */
-        <>
-          {/* Header */}
-          <div className="flex items-center px-3 py-2 border-b border-border shrink-0">
-            <span className="text-xs font-medium text-foreground whitespace-nowrap">Agent Tasks</span>
-          </div>
-
-          {/* Task list */}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden thin-scrollbar">
-            {tasks.length === 0 ? (
-              <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
-                <span className="text-xs text-muted-foreground">
-                  No agent tasks yet
-                </span>
-              </div>
-            ) : (
-              <div className="divide-y divide-border">
-                {tasks.map((task) => (
-                  <ActivityTaskCard
-                    key={task.id}
-                    task={task}
-                    onCancel={onCancelTask}
-                    onRemove={removeTask}
-                    onClick={onClickTask}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Footer */}
-          {hasCompleted && (
-            <div className="px-3 py-2 border-t border-border shrink-0">
-              <Button
-                variant="ghost"
-                size="xs"
-                onClick={clearCompleted}
-                className="w-full text-[10px] text-muted-foreground hover:text-foreground"
-              >
-                Clear completed
-              </Button>
-            </div>
-          )}
-        </>
       )}
     </div>
   );
