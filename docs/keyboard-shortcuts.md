@@ -79,7 +79,7 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | --- | --- | --- |
 | Command palette | `Cmd+K` | Open command palette (when no text selected) |
 | Search files | `Cmd+Shift+F` | Open command palette in file search mode |
-| Toggle sidebar | `Cmd+B` | Show/hide file sidebar |
+| Toggle sidebar | `Cmd+Shift+L` | Show/hide file sidebar |
 | Focus mode | `Cmd+.` | Toggle distraction-free focus mode |
 | Tag search | `Cmd+3` | Search for tags across all files |
 | Document outline | `Cmd+Shift+O` | Open document outline (requires active file) |

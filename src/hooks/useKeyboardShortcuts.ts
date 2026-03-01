@@ -120,8 +120,8 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         return;
       }
 
-      // Cmd+B — sidebar pin toggle
-      if (isMod && e.key === "b") {
+      // Cmd+Shift+L — sidebar pin toggle
+      if (isMod && e.shiftKey && e.key === "l") {
         e.preventDefault();
         setSidebarPinned(!useSettingsStore.getState().sidebarPinned);
       }

@@ -54,7 +54,7 @@ const categories: ShortcutCategory[] = [
       { action: "Command palette", keys: [["⌘", "K"]] },
       { action: "Search files", keys: [["⌘", "⇧", "F"]] },
       { action: "Tag search", keys: [["⌘", "3"]] },
-      { action: "Toggle sidebar", keys: [["⌘", "B"]] },
+      { action: "Toggle sidebar", keys: [["⌘", "⇧", "L"]] },
       { action: "Toggle chat", keys: [["⌘", "⇧", "A"]] },
       { action: "Focus mode", keys: [["⌘", "."]] },
       { action: "Document outline", keys: [["⌘", "⇧", "O"]] },

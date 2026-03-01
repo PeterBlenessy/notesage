@@ -1,6 +1,9 @@
 import { Extension } from '@tiptap/core';
+import type { Editor } from '@tiptap/core';
+import { DOMParser as PMDOMParser } from '@tiptap/pm/model';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { parseMarkdownToHtml } from '@/lib/pm-replace';
 
 export interface AISuggestion {
   from: number;
@@ -96,9 +99,9 @@ export const AISuggestion = Extension.create<AISuggestionOptions>({
 
 // Create decorations showing diff between original and suggested text
 function createDiffDecorations(
-  doc: any,
+  doc: import('@tiptap/pm/model').Node,
   suggestion: AISuggestion,
-  editor: any
+  editor: Editor
 ): DecorationSet {
   console.log('Creating decorations for suggestion:', suggestion);
 
@@ -170,12 +173,24 @@ function createDiffDecorations(
 }
 
 // Accept the suggestion
-function acceptSuggestion(editor: any, suggestion: AISuggestion) {
+function acceptSuggestion(editor: Editor, suggestion: AISuggestion) {
   editor
     .chain()
     .focus()
-    .deleteRange({ from: suggestion.from, to: suggestion.to })
-    .insertContentAt(suggestion.from, suggestion.suggestedText)
+    .command(({ tr }) => {
+      // Try markdown parsing to preserve formatting (bold, italic, etc.)
+      const html = parseMarkdownToHtml(editor, suggestion.suggestedText);
+      if (html) {
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = html;
+        const slice = PMDOMParser.fromSchema(editor.schema).parseSlice(wrapper);
+        tr.replace(suggestion.from, suggestion.to, slice);
+      } else {
+        // Plain text: single-step replace preserving positional marks
+        tr.insertText(suggestion.suggestedText, suggestion.from, suggestion.to);
+      }
+      return true;
+    })
     .setMeta(AISuggestionPluginKey, { clearSuggestion: true })
     .run();
 }

@@ -150,52 +150,56 @@ export function SourceBubbleMenu({ cmView }: SourceBubbleMenuProps) {
       style={{
         top: `${position.top}px`,
         left: `${position.left}px`,
-        pointerEvents: isLoading ? "none" : "auto",
-        opacity: isLoading ? 0.7 : 1,
       }}
     >
-      {isLoading ? (
-        <div className="flex items-center gap-1.5 px-2 py-0.5 text-xs text-muted-foreground">
+      <Button
+        variant="ghost"
+        size="xs"
+        onClick={() => handleAction("improve")}
+        disabled={isLoading}
+        title="Improve with AI"
+      >
+        {loadingAction === "improve" ? (
           <Loader2 className="h-3 w-3 animate-spin" />
-          <span className="capitalize">{loadingAction}...</span>
-        </div>
-      ) : (
-        <>
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => handleAction("improve")}
-            title="Improve with AI"
-          >
-            <Sparkles className="h-3 w-3" strokeWidth={1.5} />
-            Improve
-          </Button>
+        ) : (
+          <Sparkles className="h-3 w-3" strokeWidth={1.5} />
+        )}
+        Improve
+      </Button>
 
-          <Separator orientation="vertical" className="h-4 mx-0.5" />
+      <Separator orientation="vertical" className="h-4 mx-0.5" />
 
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => handleAction("summarize")}
-            title="Summarize with AI"
-          >
-            <ListChevronsDownUp className="h-3 w-3" strokeWidth={1.5} />
-            Summarize
-          </Button>
+      <Button
+        variant="ghost"
+        size="xs"
+        onClick={() => handleAction("summarize")}
+        disabled={isLoading}
+        title="Summarize with AI"
+      >
+        {loadingAction === "summarize" ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <ListChevronsDownUp className="h-3 w-3" strokeWidth={1.5} />
+        )}
+        Summarize
+      </Button>
 
-          <Separator orientation="vertical" className="h-4 mx-0.5" />
+      <Separator orientation="vertical" className="h-4 mx-0.5" />
 
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => handleAction("expand")}
-            title="Expand with AI"
-          >
-            <ListChevronsUpDown className="h-3 w-3" strokeWidth={1.5} />
-            Expand
-          </Button>
-        </>
-      )}
+      <Button
+        variant="ghost"
+        size="xs"
+        onClick={() => handleAction("expand")}
+        disabled={isLoading}
+        title="Expand with AI"
+      >
+        {loadingAction === "expand" ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <ListChevronsUpDown className="h-3 w-3" strokeWidth={1.5} />
+        )}
+        Expand
+      </Button>
     </div>
   );
 }

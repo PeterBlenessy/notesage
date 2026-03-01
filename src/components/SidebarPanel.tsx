@@ -44,7 +44,7 @@ export function SidebarPanel({
     };
   }, []);
 
-  // Reset overlay when pinned state changes (e.g. Cmd+B)
+  // Reset overlay when pinned state changes (e.g. Cmd+Shift+L)
   useEffect(() => {
     setOverlayVisible(false);
     clearTimeout(hoverTimerRef.current);
@@ -155,7 +155,7 @@ export function SidebarPanel({
         )}
         style={{ left: toggleLeft, top: 4, ...(isResizing && { transition: "none" }) }}
         onClick={handleToggle}
-        title={`${sidebarPinned ? "Collapse" : "Expand"} Sidebar (⌘B)`}
+        title={`${sidebarPinned ? "Collapse" : "Expand"} Sidebar (⌘⇧L)`}
       >
         <PanelLeft className="h-4 w-4" strokeWidth={1.5} />
       </Button>

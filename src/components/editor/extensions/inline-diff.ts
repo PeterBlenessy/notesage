@@ -4,6 +4,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { hasActiveSuggestion } from './ai-suggestion';
+import { replaceRangePreservingMarks } from '@/lib/pm-replace';
 
 /**
  * A diff hunk mapped to ProseMirror positions, ready for inline display.
@@ -312,14 +313,14 @@ export function acceptDiffHunk(editor: Editor, hunkId: string): void {
   const tr = editor.state.tr;
 
   if (hunk.deleteText && hunk.insertText) {
-    // Replacement: replace range with new text
-    tr.insertText(hunk.insertText, hunk.from, hunk.to);
+    // Replacement: replace range with new text, preserving marks
+    replaceRangePreservingMarks(editor, tr, hunk.from, hunk.to, hunk.insertText);
   } else if (hunk.deleteText) {
     // Pure deletion
     tr.delete(hunk.from, hunk.to);
   } else if (hunk.insertText) {
-    // Pure insertion
-    tr.insertText(hunk.insertText, hunk.from);
+    // Pure insertion, preserving marks
+    replaceRangePreservingMarks(editor, tr, hunk.from, hunk.from, hunk.insertText);
   }
 
   tr.setMeta(InlineDiffPluginKey, { acceptHunk: hunkId });
@@ -350,11 +351,11 @@ export function acceptAllDiffHunks(editor: Editor): void {
   const tr = editor.state.tr;
   for (const hunk of sorted) {
     if (hunk.deleteText && hunk.insertText) {
-      tr.insertText(hunk.insertText, hunk.from, hunk.to);
+      replaceRangePreservingMarks(editor, tr, hunk.from, hunk.to, hunk.insertText);
     } else if (hunk.deleteText) {
       tr.delete(hunk.from, hunk.to);
     } else if (hunk.insertText) {
-      tr.insertText(hunk.insertText, hunk.from);
+      replaceRangePreservingMarks(editor, tr, hunk.from, hunk.from, hunk.insertText);
     }
   }
   tr.setMeta(InlineDiffPluginKey, { clearDiff: true });
