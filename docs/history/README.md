@@ -48,3 +48,4 @@ Chronological log of major implementation milestones and changes.
 | 042 | [Release v0.16.9](042-release-v0.16.9.md) | Move files, adjustable sidebar, frontmatter editing, shortcuts dialog |
 | 043 | [Release v0.16.10](043-release-v0.16.10.md) | Agent activity strip & panel, progress streaming, debug logging, UX fixes |
 | 044 | [Release v0.16.11](044-release-v0.16.11.md) | Fix AI provider detection, mark-preserving diffs, provider logo in agent panel |
+| 045 | [Release v0.17.0](045-release-v0.17.0.md) | Multi-turn comment threads, Apply-to-document, Phase 6.5 complete |
