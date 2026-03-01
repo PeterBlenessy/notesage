@@ -58,7 +58,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 
 - macOS primary (arm64 + x86_64), window 1200x800 default, min 800x600
 - Native title bar, resizable
-- Light/dark mode following system preference (Cmd+Shift+T to toggle)
+- Light/dark mode following system preference (Cmd+T to toggle)
 
 ### Find in Document
 

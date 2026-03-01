@@ -94,7 +94,6 @@ interface ActivityStore {
   appendActivity(id: string, activity: DelegationActivity): void;
   appendPartialOutput(id: string, chunk: string): void;
   setStripVisible(visible: boolean): void;
-  clearCompleted(): void;
 }
 ```
 
@@ -231,7 +230,7 @@ clearPartialReply(documentId: string, commentId: string): void;
 | Task done | Visible, check on task | Full reply with timestamp |
 | Task error | Visible, X on task | Error message, status reverted to open |
 | Task cancelled | Visible, slash on task | No reply, status reverted to open |
-| All tasks complete | Visible for 5s, then auto-hide | Normal comment view with replies |
+| All tasks complete | Strip remains visible; panel stays in user's chosen state | Normal comment view with replies |
 
 ## Data Model
 
@@ -253,7 +252,6 @@ interface ActivityStore {
   setFinalOutput(id: string, output: string): void;
   setStripVisible(visible: boolean): void;
   setManuallyHidden(hidden: boolean): void;
-  clearCompleted(): void;
 }
 ```
 

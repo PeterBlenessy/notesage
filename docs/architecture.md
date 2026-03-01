@@ -194,7 +194,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 - **routing-store**: Per-use-case provider routing (interactive, agent_tasks, inline_completion)
 - **permission-store**: ACP tool call permission tracking with tiered approval (`sessionAllowed`: Set non-persisted, `alwaysAllowed`: string[] persisted); actions: `allowSession`, `removeSession`, `allowAlways`, `removeAlways`, `getToolTier` → `'none' | 'session' | 'always'`
 - **chat-store**: Chat conversation messages, loading state, errors, agent activities
-- **comment-store**: Comments per document, replies, delegation status, activity log (non-persisted activities, JSON-persisted comments)
+- **comment-store**: Comments per document, replies, delegation status, activity log (non-persisted activities, JSON-persisted comments), `scrollToCommentId` for external navigation (Editor.tsx scrolls to comment position before activating popover)
 - **epub-store**: EPUB viewer mode (scroll/paginated), per-file bookmarks keyed by file path (CFI + chapter)
 - **tag-store**: Workspace tag index — all known tags and tag-to-file mapping (non-persisted, rebuilt from scan)
 - **activity-store**: Agent task registry — background task tracking with status, activities, streaming output, thinking output (persisted; running tasks marked as error on rehydration). Controls agent activity strip (40px rail) and agent activity panel (resizable sidebar) visibility.
