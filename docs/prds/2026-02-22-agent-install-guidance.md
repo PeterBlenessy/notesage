@@ -1,119 +1,47 @@
-# Agent Install & Auth Guidance (MVP)
+## In progress
 
-**Date:** 2026-02-22
-**Status:** Complete (v0.15.0)
-**Parent:** AI Provider Architecture v2
-**Supersedes:** Partial scope of `2026-02-21-agent-install-wizard.md` (guidance portion only)
+- [x] Move files between projects and folders. Phase 1 MVP uses context menu “Move to” -&gt; “Folder in listed projects”.
 
-## Problem
+- [ ] Move files between projects and folders. Phase 2 implements dragging and dropping them in the file / project explorer.
 
-When users add a subscription-based AI connection (Claude Code, Codex, Copilot CLI, Copilot LSP, Gemini CLI), the app checks if the binary is installed. If not found, it shows a terse one-liner like `"Run: npm install -g @zed-industries/claude-agent-acp"` or the even less helpful `"Install "gemini" to continue."` — no context on what the tool is, why it's needed, or where to learn more. Auth hints are similarly sparse. The guidance is inconsistent across providers.
+## New ideas
 
-## Goals
+- [ ] Add an AI tool for fetching web pages and convert it to markdown
 
-- Clear, numbered step-by-step install and auth guides for every agent provider
-- Copyable terminal commands (click-to-copy with visual feedback)
-- Relevant URLs visible and selectable (prerequisites, subscriptions, docs)
-- Consistent presentation across all providers
-- Foundation for future auto-install wizard (same steps become executable with status indicators)
+- [ ] Search in files improvement:
 
-## Non-Goals
+  - [ ] command pallette groups the list and has a “recent” section. I would like this also in the search in files feature (cmd+shift+F)
 
-- Automated installation (future — see `2026-02-21-agent-install-wizard.md`)
-- Clickable/openable URLs (just selectable text for now)
-- Backend changes
+  - [ ] search in file searches only in file names. Can we search in the file text too?
 
-## User Stories
+- [ ] Pin notes in tabs bar or introduce a pinned notes section in the left sidebar, to quickly access important notes?
 
-- As a user adding Claude Code, I want to see exactly what npm command to run and what subscription I need, so I can get set up without searching online.
-- As a user adding Gemini CLI, I want the same quality of guidance as Claude Code, not a generic "install gemini to continue" message.
-- As a user, I want to copy terminal commands with one click, so I can paste them directly into my terminal.
+- [ ] Dashboard tab dynamically collecting and visualizing important parts of the notes distributed over all projects, e.g. based on selected tags, action items, actionable items, outstanding questions,  etc. Items are presented as cards, and clicking on them takes you to the note where they are located. This would be a great way to quickly access important information across all projects. Dashboard cards are configurable, so users can select what to see on the dashboard.
 
-## Technical Approach
+- [ ] Agents have no message history. User should be able to set this manually, or, if possible, agents should be instructed to remember on server side.
 
-### Data Model
+## [agent-install-wizard](http://agent-install-wizard.md)
 
-Structured guide data replaces plain-text hints:
+im looking at [agent-install-wizard.md](http://agent-install-wizard.md) and i think we should talk it over a bit, so we define a solution that actually does improve the user experience. I am thinking that if we do this, we cannot just automate installation of the CLI binaries, i think we need to assume that the user who needs that kind of support, has no other dependencies installed either. This means, that we would need to install nodejs, npm, and all other dependencies necessary to get the CLI up and running.
 
-```typescript
-interface GuideStep {
-  label: string;       // e.g. "Install via npm"
-  command?: string;    // copyable terminal command
-  note?: string;       // muted helper text
-  url?: string;        // selectable URL reference
-}
+Analyze what is required for each provider CLI that we support, and analyse the work that it requires.
 
-interface SetupGuide {
-  title: string;
-  steps: GuideStep[];
-}
-```
+I am also interested in “sandbox” solution, so research what could be done to not install the dependencies globally in the user’s system, but instead use some kind of sandboxing solution. I think Anthropic did this to get Claude Cowork and Claude Code working in a kind of isolated way. We do
 
-This model is designed to extend naturally to the auto-install wizard: each step gains a `status` field (`pending` | `running` | `done` | `failed`) and the guide view shows spinners/checkmarks per step.
+## Changes
 
-### Install Guides Per Agent
+- [ ] New icons for pdf, epub, log, md, etc. file types, to more clearly reflect the file type and make it easier to identify them in the file explorer.
 
-| Binary | Steps |
-|---|---|
-| `claude-agent-acp` | 1. Install Node.js (url: nodejs.org) 2. cmd: `npm install -g @zed-industries/claude-agent-acp` 3. note: Requires Claude Pro or Max (url: anthropic.com/claude) |
-| `codex-acp` | 1. Install Node.js (url: nodejs.org) 2. cmd: `npm install -g @zed-industries/codex-acp` 3. note: Requires ChatGPT Plus or Pro |
-| `copilot` | 1. Install Node.js (url: nodejs.org) 2. cmd: `npm install -g @github/copilot` 3. note: Requires GitHub Copilot subscription (url: github.com/features/copilot) |
-| `gemini` | 1. Install Node.js (url: nodejs.org) 2. cmd: `npm install -g @google/gemini-cli` 3. note: Free with Google account (url: github.com/google-gemini/gemini-cli) |
-| `copilot-language-server` | 1. Install Node.js (url: nodejs.org) 2. cmd: `npm install -g @github/copilot-language-server` 3. note: Requires GitHub Copilot subscription (url: github.com/features/copilot) |
+### Bugs
 
-### Auth Guides Per Agent
+- [ ] There seems to be an issue with comment positioning. When I add a comment then add some other text to the document, the comment position moves to the wrong text. This is a critical issue. Please investigate this issue and implement a fix to ensure that comments remain correctly positioned even when the document is edited.
 
-| Binary | Steps |
-|---|---|
-| `claude-agent-acp` | 1. cmd: `claude auth login` 2. note: Opens browser — requires Claude Pro or Max |
-| `codex-acp` | 1. cmd: `codex login --device-auth` 2. note: Requires ChatGPT Plus or Pro |
-| `copilot` | 1. cmd: `copilot auth login` 2. note: Requires GitHub Copilot subscription |
-| `gemini` | 1. cmd: `gemini auth login` 2. note: Free with Google account |
+### Needs manual verification
 
-### UI Components (file-local in ConnectionsSettings.tsx)
+- [x] There still seems to be someting wrong with the GitHub LSP authentication, which you tried to fix a couple of times now. I get redirected to the GitHub authentication page and asked to enter an 8-digit code, which should appear in the client app, but it never does. Make sure that the code follows all steps involved in setting up the GitHub LSP client and analyse the CLI providers too, so we ensure that they work when needed. Since you have tried to fix this issue a couple of times now, i want you ot log all responses from the LSP with all message object content so I can try to assist in the debugging.
 
-**`CopyableCommand`** — mono-font code block with copy button:
-- `bg-muted/50`, rounded, horizontal padding
-- Clipboard icon on right edge, swaps to Check for 2s after copy
-- `navigator.clipboard.writeText()`
+  - [x] <https://github.com/copilotlsp-nvim/copilot-lsp/pull/7/changes/348c49bc484f6ac967f9efffb8be911effcccffe>
 
-**`SetupGuideView`** — renders a `SetupGuide` as a numbered step list:
-- Title as `text-sm font-medium`
-- Numbered steps with labels, optional command/url/note
-- Commands rendered via `CopyableCommand`
-- URLs as `text-xs text-muted-foreground` plain selectable text
-- Notes as `text-xs text-muted-foreground`
+### Defered #ai
 
-### Changes to Existing Code
-
-1. Replace `not_installed` phase in `ConnectAgent` — swap alert box + `getInstallHint()` for `<SetupGuideView>`
-2. Replace `not_authenticated` phase in `ConnectAgent` — swap alert box + `getAuthHint()` for `<SetupGuideView>`
-3. Replace `not_installed` phase in `ConnectCopilotLsp` — swap hardcoded text for `<SetupGuideView>`
-4. Delete `getInstallHint()` and `getAuthHint()` functions
-
-### Files Modified
-
-- `src/components/settings/ConnectionsSettings.tsx` — sole file
-
-## Future Extension: Auto-Install Wizard
-
-The `SetupGuide` / `GuideStep` model is designed to become the auto-install wizard with minimal changes:
-
-1. Add `status?: 'pending' | 'running' | 'done' | 'failed'` to `GuideStep`
-2. `SetupGuideView` renders status icons per step (spinner, checkmark, X)
-3. An "Install" button triggers sequential step execution via a new `acp_agent_install` Tauri command
-4. npm output streams into a collapsible log area below the running step
-5. On failure, the failed step shows context-sensitive error hints
-
-The static MVP is the read-only view of this same flow.
-
-## Verification
-
-1. `npx tsc --noEmit` — type check passes
-2. `pnpm tauri dev` → Settings → Connections → Add each agent type
-3. Verify: numbered steps with correct commands for all 5 agents
-4. Verify: copy button works with visual feedback
-5. Verify: URLs visible and selectable
-6. Verify: auth guide shows correct commands
-7. Verify: Back/Retry buttons still work
-8. Check both light and dark mode
+- When accepting external changes to a document, the formatting is often messed up. Paragraph text becomes heading or code; everithing can become bold, etc. My tought is that we apply the diff on rendered text level, not raw markdown level. Markdown characters are probably thrown away messing up the document formatting in markdown. So we must separate the visualizing and applying diffs. - *defered*
