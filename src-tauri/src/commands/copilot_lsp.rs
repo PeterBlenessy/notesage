@@ -346,7 +346,7 @@ async fn handle_server_request(
             // The Copilot LSP sends this after sign-in is initiated, containing
             // the device code the user must enter on GitHub.
             if let Some(params) = params {
-                eprintln!(
+                debug_log!(
                     "[copilot-lsp] signIn server→client request received, raw params: {}",
                     params
                 );
@@ -364,7 +364,7 @@ async fn handle_server_request(
                     .unwrap_or("https://github.com/login/device")
                     .to_string();
 
-                eprintln!(
+                debug_log!(
                     "[copilot-lsp] signIn server request: userCode={}, verificationUri={}",
                     user_code, verification_uri
                 );
@@ -436,7 +436,7 @@ async fn handle_server_request(
             // Log it and return null (no action selected).
             if let Some(params) = params {
                 if let Some(message) = params.get("message").and_then(|v| v.as_str()) {
-                    eprintln!("[copilot-lsp] showMessageRequest: {}", message);
+                    debug_log!("[copilot-lsp] showMessageRequest: {}", message);
                 }
             }
             Value::Null
@@ -469,7 +469,7 @@ async fn handle_server_request(
         }
 
         _ => {
-            eprintln!("[copilot-lsp] Unhandled server request: {}", method);
+            debug_log!("[copilot-lsp] Unhandled server request: {}", method);
             Value::Null
         }
     };
@@ -530,14 +530,14 @@ async fn handle_server_notification(method: &str, params: Option<&Value>, app: &
                     3 => "INFO",
                     _ => "LOG",
                 };
-                eprintln!("[copilot-lsp] [{}] {}", level, message);
+                debug_log!("[copilot-lsp] [{}] {}", level, message);
             }
         }
 
         "window/showMessage" => {
             if let Some(params) = params {
                 if let Some(message) = params.get("message").and_then(|v| v.as_str()) {
-                    eprintln!("[copilot-lsp] showMessage: {}", message);
+                    debug_log!("[copilot-lsp] showMessage: {}", message);
                 }
             }
         }
@@ -929,7 +929,7 @@ pub async fn copilot_lsp_status(
 
 /// Sign in to GitHub Copilot via OAuth device flow.
 ///
-/// Two-phase approach:
+/// Three-phase approach:
 /// 1. Try the direct `signIn` JSON-RPC method — works with older LSP versions
 ///    that return `{ userCode, verificationUri, command }` directly.
 /// 2. If step 1 fails or returns an empty device code, fall back to executing
@@ -957,20 +957,20 @@ pub async fn copilot_lsp_sign_in(
     // --- Phase 1: Try direct signIn RPC ---
     // Some older LSP versions support `signIn` as a client→server method.
     // Use `match` instead of `?` so we can fall through to Phase 2 on error.
-    eprintln!("[copilot-lsp] Phase 1: Sending signIn RPC...");
+    debug_log!("[copilot-lsp] Phase 1: Sending signIn RPC...");
     match process
         .transport
         .send_request("signIn", Some(serde_json::json!({})))
         .await
     {
         Ok(result) => {
-            eprintln!("[copilot-lsp] Phase 1 signIn response: {}", result);
+            debug_log!("[copilot-lsp] Phase 1 signIn response: {}", result);
 
             let user_code = extract_user_code_from_result(&result);
             let verification_uri = extract_verification_uri(&result);
 
             if !user_code.is_empty() {
-                eprintln!(
+                debug_log!(
                     "[copilot-lsp] Phase 1 succeeded — userCode={}, verificationUri={}",
                     user_code, verification_uri
                 );
@@ -992,11 +992,11 @@ pub async fn copilot_lsp_sign_in(
                 });
             }
 
-            eprintln!("[copilot-lsp] Phase 1: signIn returned no device code, falling to Phase 2");
+            debug_log!("[copilot-lsp] Phase 1: signIn returned no device code, falling to Phase 2");
         }
         Err(e) => {
             // signIn might not be supported — fall through to Phase 2
-            eprintln!(
+            debug_log!(
                 "[copilot-lsp] Phase 1: signIn RPC failed (non-fatal, falling to Phase 2): {}",
                 e
             );
@@ -1006,7 +1006,7 @@ pub async fn copilot_lsp_sign_in(
     // --- Phase 2: signInInitiate workspace command (official flow) ---
     // Per the Copilot LSP docs, `signInInitiate` returns `{ userCode, command }`
     // in the response. We must extract it and execute the embedded command.
-    eprintln!("[copilot-lsp] Phase 2: Sending workspace/executeCommand(signInInitiate)...");
+    debug_log!("[copilot-lsp] Phase 2: Sending workspace/executeCommand(signInInitiate)...");
 
     match process
         .transport
@@ -1020,13 +1020,13 @@ pub async fn copilot_lsp_sign_in(
         .await
     {
         Ok(result) => {
-            eprintln!("[copilot-lsp] Phase 2 signInInitiate response: {}", result);
+            debug_log!("[copilot-lsp] Phase 2 signInInitiate response: {}", result);
 
             let user_code = extract_user_code_from_result(&result);
             let verification_uri = extract_verification_uri(&result);
 
             if !user_code.is_empty() {
-                eprintln!(
+                debug_log!(
                     "[copilot-lsp] Phase 2 succeeded — userCode={}, verificationUri={}",
                     user_code, verification_uri
                 );
@@ -1049,12 +1049,12 @@ pub async fn copilot_lsp_sign_in(
                 });
             }
 
-            eprintln!(
+            debug_log!(
                 "[copilot-lsp] Phase 2: signInInitiate returned no device code in response"
             );
         }
         Err(e) => {
-            eprintln!("[copilot-lsp] Phase 2: signInInitiate command failed: {}", e);
+            debug_log!("[copilot-lsp] Phase 2: signInInitiate command failed: {}", e);
         }
     }
 
@@ -1062,7 +1062,7 @@ pub async fn copilot_lsp_sign_in(
     // Neither phase returned a device code in the response. The LSP may send
     // the code asynchronously via a server→client `signIn` request, which is
     // handled in `handle_server_request` and emitted as `copilot-auth-device-code`.
-    eprintln!(
+    debug_log!(
         "[copilot-lsp] Both phases returned no device code — waiting for server→client signIn request"
     );
 
@@ -1122,7 +1122,7 @@ fn extract_user_code_from_result(result: &Value) -> String {
         .or_else(|| result.get("verification_uri").and_then(|v| v.as_str()))
         .unwrap_or("");
     if let Some(code) = extract_code_from_uri(verification_uri) {
-        eprintln!("[copilot-lsp] Extracted user_code from URI: {}", code);
+        debug_log!("[copilot-lsp] Extracted user_code from URI: {}", code);
         return code;
     }
 
@@ -1154,11 +1154,11 @@ async fn execute_embedded_command(process: &CopilotLspProcess, result: &Value) {
             .unwrap_or(Value::Array(vec![]));
 
         if !cmd_name.is_empty() {
-            eprintln!(
+            debug_log!(
                 "[copilot-lsp] Executing embedded command: {} with args: {}",
                 cmd_name, cmd_args
             );
-            let _ = process
+            if let Err(e) = process
                 .transport
                 .send_request(
                     "workspace/executeCommand",
@@ -1167,7 +1167,10 @@ async fn execute_embedded_command(process: &CopilotLspProcess, result: &Value) {
                         "arguments": cmd_args,
                     })),
                 )
-                .await;
+                .await
+            {
+                eprintln!("[copilot-lsp] Failed to execute embedded command '{}': {}", cmd_name, e);
+            }
         }
     }
 }

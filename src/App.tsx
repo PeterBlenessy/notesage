@@ -187,6 +187,14 @@ function App() {
     migrateV1AISettings();
   }, []);
 
+  // Sync debug logging setting to Rust backend on startup
+  useEffect(() => {
+    const { debugLogging } = useSettingsStore.getState();
+    if (debugLogging) {
+      tauriApi.setDebugLogging(true);
+    }
+  }, []);
+
   // Stop ACP agent processes on window close (supplementary to Rust exit hook)
   useEffect(() => {
     const handleBeforeUnload = () => {

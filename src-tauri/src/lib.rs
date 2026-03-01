@@ -1,3 +1,18 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
+pub static DEBUG_LOGGING: AtomicBool = AtomicBool::new(false);
+
+/// Conditional debug logging macro. Only prints when DEBUG_LOGGING is enabled.
+/// Use for diagnostic messages; keep genuine errors as `eprintln!`.
+#[macro_export]
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        if $crate::DEBUG_LOGGING.load(std::sync::atomic::Ordering::Relaxed) {
+            eprintln!($($arg)*);
+        }
+    };
+}
+
 mod commands;
 mod export;
 
@@ -7,6 +22,11 @@ use tauri::{Manager, RunEvent};
 #[tauri::command]
 fn open_devtools(webview_window: tauri::WebviewWindow) {
     webview_window.open_devtools();
+}
+
+#[tauri::command]
+fn set_debug_logging(enabled: bool) {
+    DEBUG_LOGGING.store(enabled, Ordering::Relaxed);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -24,6 +44,7 @@ pub fn run() {
         .manage(CopilotLspState::new())
         .invoke_handler(tauri::generate_handler![
             open_devtools,
+            set_debug_logging,
             read_file,
             read_binary_file,
             write_file,

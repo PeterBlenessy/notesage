@@ -120,6 +120,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
     marginRight, setMarginRight,
     gitEnabled, setGitEnabled,
     pageBreaks, setPageBreaks,
+    debugLogging, setDebugLogging,
     autoCheckUpdates, setAutoCheckUpdates,
     lastUpdateCheck,
   } = useSettingsStore();
@@ -635,6 +636,45 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                         id="auto-check-updates"
                         checked={autoCheckUpdates}
                         onCheckedChange={setAutoCheckUpdates}
+                        className="ml-auto"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="h-px bg-border" />
+
+                {/* Developer */}
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-semibold">Developer</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Troubleshooting and diagnostics
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
+                    >
+                      <div>
+                        <Label
+                          htmlFor="debug-logging"
+                          className="text-sm font-medium cursor-pointer"
+                        >
+                          Debug Logging
+                        </Label>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Log diagnostic messages to the console and stderr for troubleshooting
+                        </p>
+                      </div>
+                      <Switch
+                        id="debug-logging"
+                        checked={debugLogging}
+                        onCheckedChange={(checked) => {
+                          setDebugLogging(checked);
+                          tauriApi.setDebugLogging(checked);
+                        }}
                         className="ml-auto"
                       />
                     </div>
