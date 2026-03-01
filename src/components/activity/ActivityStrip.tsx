@@ -2,6 +2,7 @@ import {
   Loader2,
   Check,
   X,
+  Bot,
   BotMessageSquare,
   MessageCircle,
   Slash,
@@ -33,13 +34,13 @@ function RailIcon({ task }: { task: AgentTask }) {
           {/* Status badge */}
           <span className="absolute bottom-1.5 right-1.5">
             {task.status === 'running' ? (
-              <Loader2 className="h-2.5 w-2.5 animate-spin text-muted-foreground" />
+              <Loader2 className="h-2.5 w-2.5 animate-spin text-muted-foreground" strokeWidth={1.5} />
             ) : task.status === 'done' ? (
-              <Check className="h-2.5 w-2.5 text-muted-foreground" strokeWidth={2} />
+              <Check className="h-2.5 w-2.5 text-muted-foreground" strokeWidth={1.5} />
             ) : task.status === 'error' ? (
-              <X className="h-2.5 w-2.5 text-destructive" strokeWidth={2} />
+              <X className="h-2.5 w-2.5 text-destructive" strokeWidth={1.5} />
             ) : (
-              <Slash className="h-2.5 w-2.5 text-muted-foreground" strokeWidth={2} />
+              <Slash className="h-2.5 w-2.5 text-muted-foreground" strokeWidth={1.5} />
             )}
           </span>
         </div>
@@ -88,10 +89,9 @@ export function ActivityPanel({ onCancelTask, onClickTask }: ActivityStripProps)
       {/* Task list */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden thin-scrollbar">
         {tasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
-            <span className="text-xs text-muted-foreground">
-              No agent tasks yet
-            </span>
+          <div className="flex flex-col items-center justify-center px-4 py-8 text-center gap-2">
+            <Bot className="h-6 w-6 text-muted-foreground/40" strokeWidth={1.5} />
+            <span className="text-xs text-muted-foreground">No agent tasks yet</span>
           </div>
         ) : (
           <div className="divide-y divide-border">

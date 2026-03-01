@@ -68,7 +68,7 @@ export function TitleBar({ onToggleChat, onToggleActivityStrip }: TitleBarProps)
         >
           <Bot className="size-4" strokeWidth={1.5} />
           {hasRunning && (
-            <span className="absolute top-0 right-0 h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+            <span className="absolute top-0 right-0 h-1.5 w-1.5 rounded-full bg-foreground" />
           )}
         </Button>
       </div>

@@ -115,7 +115,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
           </div>
         ) : (
           <div>
-            <MarkdownContent content={message.content} />
+            <MarkdownContent content={message.content} className="text-sm" />
             {isLoading && (
               <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse bg-muted-foreground" />
             )}

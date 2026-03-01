@@ -83,7 +83,7 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
   return (
     <div
       className={`group/card px-3 py-2.5 space-y-1 min-w-0 overflow-hidden transition-colors duration-150 ${
-        isClickable ? 'cursor-pointer hover:bg-muted/50' : ''
+        isClickable ? 'cursor-pointer hover:bg-muted/50 active:bg-muted/70' : ''
       }`}
       onClick={isClickable ? () => onClick(task) : undefined}
     >
@@ -91,7 +91,7 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
       <div className="flex items-start gap-2">
         <div className="shrink-0 mt-0.5">
           {task.status === 'running' ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" strokeWidth={1.5} />
           ) : task.status === 'done' ? (
             <Check className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
           ) : task.status === 'error' ? (
@@ -105,24 +105,25 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
             {task.label}
           </p>
         </div>
-        <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
+        <span className="text-xs text-muted-foreground tabular-nums shrink-0">
           {formatElapsed(task.startedAt, task.completedAt)}
         </span>
         {task.status !== 'running' && onRemove && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-xs"
             onClick={(e) => { e.stopPropagation(); onRemove(task.id); }}
-            className="shrink-0 opacity-0 group-hover/card:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+            className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
             title="Remove task"
           >
             <X className="h-3 w-3" strokeWidth={1.5} />
-          </button>
+          </Button>
         )}
       </div>
 
       {/* Source file */}
       {task.sourceFile && (
-        <div className="flex items-center gap-2 pl-5.5">
+        <div className="flex items-center gap-2 pl-5">
           <TypeIcon className="h-3 w-3 text-muted-foreground/60 shrink-0" strokeWidth={1.5} />
           <span className="text-xs text-muted-foreground truncate">
             {basename(task.sourceFile)}
@@ -132,11 +133,13 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
 
       {/* Thinking / reasoning */}
       {task.thinkingOutput && (
-        <div className="pl-5.5 min-w-0">
-          <button
+        <div className="pl-5 min-w-0">
+          <Button
+            variant="ghost"
+            size="xs"
             type="button"
             onClick={(e) => { e.stopPropagation(); setThinkingExpanded(!thinkingExpanded); }}
-            className="flex items-center gap-1.5 text-[10px] text-muted-foreground hover:text-foreground active:opacity-75 transition-colors"
+            className="h-auto px-0 py-0 gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent"
           >
             <Brain className="h-3 w-3" strokeWidth={1.5} />
             {thinkingExpanded ? (
@@ -147,13 +150,13 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
             <span>
               {task.status === 'running' ? 'Thinking...' : 'Thinking'}
             </span>
-          </button>
+          </Button>
           {thinkingExpanded && (
             <div
               ref={thinkingRef}
               className="mt-1 max-h-60 overflow-y-auto overflow-x-hidden thin-scrollbar rounded-md bg-muted/40 px-2 py-1.5 italic"
             >
-              <MarkdownContent content={task.thinkingOutput!} className="text-xs text-muted-foreground/80" />
+              <MarkdownContent content={task.thinkingOutput!} className="text-xs text-muted-foreground" />
               {task.status === 'running' && (
                 <span className="streaming-cursor">▊</span>
               )}
@@ -164,29 +167,31 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
 
       {/* Agent output — streaming or final */}
       {hasOutput && (
-        <div className="pl-5.5 min-w-0">
+        <div className="pl-5 min-w-0">
           {isStreaming ? (
             /* Live streaming preview */
             <div className="mt-1">
               <div className="flex items-center gap-1.5 mb-1">
                 <BotMessageSquare className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
-                <span className="text-[10px] text-muted-foreground">responding...</span>
+                <span className="text-xs text-muted-foreground">responding...</span>
               </div>
               <div
                 ref={streamingRef}
                 className="max-h-60 overflow-y-auto overflow-x-hidden thin-scrollbar rounded-md bg-muted/40 px-2 py-1.5"
               >
-                <MarkdownContent content={outputText} className="text-xs text-foreground/80" />
+                <MarkdownContent content={outputText} className="text-xs" />
                 <span className="streaming-cursor">▊</span>
               </div>
             </div>
           ) : task.finalOutput ? (
             /* Completed output — collapsible */
             <div className="mt-1">
-              <button
+              <Button
+                variant="ghost"
+                size="xs"
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setOutputExpanded(!outputExpanded); }}
-                className="flex items-center gap-1.5 text-[10px] text-muted-foreground hover:text-foreground active:opacity-75 transition-colors"
+                className="h-auto px-0 py-0 gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent"
               >
                 <BotMessageSquare className="h-3 w-3" strokeWidth={1.5} />
                 {outputExpanded ? (
@@ -195,10 +200,10 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
                   <ChevronRight className="h-2.5 w-2.5" />
                 )}
                 <span>Agent response</span>
-              </button>
+              </Button>
               {outputExpanded && (
                 <div className="mt-1 max-h-80 overflow-y-auto overflow-x-hidden thin-scrollbar rounded-md bg-muted/40 px-2 py-1.5">
-                  <MarkdownContent content={task.finalOutput!} className="text-xs text-foreground/80" />
+                  <MarkdownContent content={task.finalOutput!} className="text-xs" />
                 </div>
               )}
             </div>
@@ -207,12 +212,14 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
       )}
 
       {/* Activity log toggle + stop button */}
-      <div className="flex items-center justify-between pl-5.5">
+      <div className="flex items-center justify-between pl-5">
         {task.activities.length > 0 ? (
-          <button
+          <Button
+            variant="ghost"
+            size="xs"
             type="button"
             onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-            className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground active:opacity-75 transition-colors"
+            className="h-auto px-0 py-0 gap-1 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent"
           >
             {expanded ? (
               <ChevronDown className="h-2.5 w-2.5" />
@@ -223,7 +230,7 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
               {task.activities.length} step{task.activities.length !== 1 ? 's' : ''}
               {task.status !== 'running' ? ' completed' : ''}
             </span>
-          </button>
+          </Button>
         ) : (
           <span />
         )}
@@ -232,7 +239,7 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
             variant="ghost"
             size="xs"
             onClick={(e) => { e.stopPropagation(); onCancel(task.id); }}
-            className="h-5 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
+            className="h-5 px-1.5 text-xs text-muted-foreground hover:text-foreground"
           >
             <Square className="h-2.5 w-2.5 mr-0.5" strokeWidth={1.5} />
             Stop
@@ -242,22 +249,22 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
 
       {/* Expanded activity log */}
       {expanded && task.activities.length > 0 && (
-        <div className="pl-5.5 space-y-0.5 max-h-60 overflow-y-auto thin-scrollbar">
+        <div className="pl-5 space-y-0.5 max-h-60 overflow-y-auto thin-scrollbar">
           {task.activities.map((a, i) => (
             <div
               key={`${a.timestamp}-${i}`}
-              className={`flex items-start gap-1.5 text-[10px] ${
+              className={`flex items-start gap-1.5 text-xs ${
                 a.status === 'error' ? 'text-destructive/70' : 'text-muted-foreground/70'
               }`}
             >
               {a.status === 'running' ? (
-                <Loader2 className="h-2.5 w-2.5 animate-spin shrink-0 mt-px" />
+                <Loader2 className="h-2.5 w-2.5 animate-spin shrink-0 mt-px" strokeWidth={1.5} />
               ) : a.status === 'error' ? (
-                <AlertCircle className="h-2.5 w-2.5 shrink-0 mt-px" />
+                <AlertCircle className="h-2.5 w-2.5 shrink-0 mt-px" strokeWidth={1.5} />
               ) : a.status === 'info' ? (
-                <Info className="h-2.5 w-2.5 shrink-0 mt-px" />
+                <Info className="h-2.5 w-2.5 shrink-0 mt-px" strokeWidth={1.5} />
               ) : (
-                <Check className="h-2.5 w-2.5 shrink-0 mt-px" />
+                <Check className="h-2.5 w-2.5 shrink-0 mt-px" strokeWidth={1.5} />
               )}
               <div className="min-w-0">
                 <span className="truncate block">{a.label}</span>
