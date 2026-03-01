@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MarkdownContent } from '@/components/MarkdownContent';
+import { ProviderLogo } from '@/components/ProviderLogo';
+import { useRoutingStore } from '@/stores/routing-store';
 import type { AgentTask } from '@/stores/activity-store';
 
 function formatElapsed(startedAt: number, completedAt?: number): string {
@@ -38,6 +40,10 @@ interface ActivityTaskCardProps {
 }
 
 export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: ActivityTaskCardProps) {
+  // Provider logo: stored on task, or fall back to current agent_tasks routing
+  const routedAgentConnection = useRoutingStore((s) => s.getConnectionForUseCase('agent_tasks'));
+  const providerForLogo = task.connectionProvider ?? routedAgentConnection?.provider;
+
   const [expanded, setExpanded] = useState(false);
   const [outputExpanded, setOutputExpanded] = useState(false);
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
@@ -172,7 +178,11 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
             /* Live streaming preview */
             <div className="mt-1">
               <div className="flex items-center gap-1.5 mb-1">
-                <BotMessageSquare className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+                {providerForLogo ? (
+                  <ProviderLogo provider={providerForLogo} className="h-3 w-3" />
+                ) : (
+                  <BotMessageSquare className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+                )}
                 <span className="text-xs text-muted-foreground">responding...</span>
               </div>
               <div
@@ -193,7 +203,11 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
                 onClick={(e) => { e.stopPropagation(); setOutputExpanded(!outputExpanded); }}
                 className="h-auto px-0 py-0 gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-transparent"
               >
-                <BotMessageSquare className="h-3 w-3" strokeWidth={1.5} />
+                {task.connectionProvider ? (
+                  <ProviderLogo provider={task.connectionProvider} className="h-3 w-3" />
+                ) : (
+                  <BotMessageSquare className="h-3 w-3" strokeWidth={1.5} />
+                )}
                 {outputExpanded ? (
                   <ChevronDown className="h-2.5 w-2.5" />
                 ) : (

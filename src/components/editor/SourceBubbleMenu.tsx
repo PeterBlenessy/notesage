@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useAIStore } from "@/stores/ai-store";
+import { useRoutingStore } from "@/stores/routing-store";
 import { useAIOperations } from "@/hooks/useAIOperations";
 
 interface SourceBubbleMenuProps {
@@ -17,7 +18,9 @@ export function SourceBubbleMenu({ cmView }: SourceBubbleMenuProps) {
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const selectionRef = useRef<{ from: number; to: number; text: string } | null>(null);
-  const { provider } = useAIStore();
+  const { provider: legacyProvider } = useAIStore();
+  const interactiveConnection = useRoutingStore((s) => s.getConnectionForUseCase('interactive'));
+  const hasAIProvider = !!interactiveConnection || !!legacyProvider;
   const { generateText } = useAIOperations();
 
   // Track selection changes via polling (CodeMirror doesn't expose a React-friendly selection event)
@@ -95,7 +98,7 @@ export function SourceBubbleMenu({ cmView }: SourceBubbleMenuProps) {
     async (action: "improve" | "summarize" | "expand") => {
       if (!cmView || !selectionRef.current) return;
 
-      if (!provider) {
+      if (!hasAIProvider) {
         toast.error("Please configure an AI provider in Settings first.");
         return;
       }
@@ -136,7 +139,7 @@ export function SourceBubbleMenu({ cmView }: SourceBubbleMenuProps) {
         setLoadingAction(null);
       }
     },
-    [cmView, provider, generateText],
+    [cmView, hasAIProvider, generateText],
   );
 
   if (!visible && !loadingAction) return null;

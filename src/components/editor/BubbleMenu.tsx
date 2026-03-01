@@ -11,6 +11,7 @@ import {
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useAIStore } from "@/stores/ai-store";
+import { useRoutingStore } from "@/stores/routing-store";
 import { useAIOperations } from "@/hooks/useAIOperations";
 import { setSuggestion, hasActiveSuggestion, CommentMarkPluginKey } from "@/components/editor/extensions";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,9 @@ interface BubbleMenuProps {
 export function BubbleMenu({ editor }: BubbleMenuProps) {
   const [loadingAction, setLoadingAction] = useState<'improve' | 'summarize' | 'expand' | 'custom' | null>(null);
   const [hasSuggestion, setHasSuggestion] = useState(false);
-  const { provider, customPrompts } = useAIStore();
+  const { provider: legacyProvider, customPrompts } = useAIStore();
+  const interactiveConnection = useRoutingStore((s) => s.getConnectionForUseCase('interactive'));
+  const hasAIProvider = !!interactiveConnection || !!legacyProvider;
   const { generateText } = useAIOperations();
 
   // Check for active suggestion on every editor update
@@ -52,7 +55,7 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
   }, [editor]);
 
   const handleAIAction = async (action: 'improve' | 'summarize' | 'expand') => {
-    if (!provider) {
+    if (!hasAIProvider) {
       toast.error('Please configure an AI provider in Settings first.');
       return;
     }
@@ -91,7 +94,7 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
   };
 
   const handleCustomPrompt = async (template: string) => {
-    if (!provider) {
+    if (!hasAIProvider) {
       toast.error('Please configure an AI provider in Settings first.');
       return;
     }
@@ -124,7 +127,7 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
     >
       {!hasSuggestion && (
         <>
-          {provider && (
+          {hasAIProvider && (
             <>
               <Button
                 variant="ghost"

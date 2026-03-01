@@ -217,6 +217,7 @@ export function useAgentTaskOperations() {
         sourceFile: taskMeta?.sourceFile,
         commentId: taskMeta?.commentId,
         documentId: taskMeta?.documentId,
+        connectionProvider: taskConnection.provider,
       });
 
       // Listen for session updates

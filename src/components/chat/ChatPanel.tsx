@@ -52,7 +52,7 @@ function getToolIcon(kind: string): LucideIcon {
 export function ChatPanel() {
   const { messages, isLoading, error, activeTool, clearMessages, selectedProjectPaths, setSelectedProjectPaths, toggleProjectPath, webSearchEnabled, setWebSearchEnabled } = useChatStore();
   const aiStore = useAIStore();
-  const { provider, setActivePersona } = aiStore;
+  const { provider: legacyProvider, setActivePersona } = aiStore;
   const activePersona = getActivePersona(aiStore);
   const allPersonas = getAllPersonas(aiStore);
   const projects = useWorkspaceStore((s) => s.projects);
@@ -61,6 +61,11 @@ export function ChatPanel() {
   const setRouting = useRoutingStore((s) => s.setRouting);
   const allConnections = useConnectionsStore((s) => s.connections);
   const interactiveConnections = useMemo(() => allConnections.filter((c) => c.capabilities.includes('interactive')), [allConnections]);
+
+  // AI availability: check v2 routing/connections first, fall back to v1 ai-store
+  const hasAIProvider = !!interactiveConnection || !!legacyProvider;
+  // Effective provider type for capability checks (e.g. web search support)
+  const effectiveProviderType = interactiveConnection?.provider || legacyProvider;
 
   // Goals discovery for single-project selection only
   const singleProjectPath = selectedProjectPaths.length === 1 ? selectedProjectPaths[0] : null;
@@ -137,7 +142,7 @@ export function ChatPanel() {
   }, [messages, permissionRequests.length]);
 
   const handleSend = async (content: string) => {
-    if (!provider) {
+    if (!hasAIProvider) {
       return;
     }
 
@@ -226,7 +231,7 @@ export function ChatPanel() {
         </div>
       </div>
 
-      {!provider && (
+      {!hasAIProvider && (
         <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border-b">
           <p className="text-sm text-yellow-800 dark:text-yellow-200">
             Please configure an AI provider in Settings (Cmd+,) before using chat.
@@ -285,7 +290,7 @@ export function ChatPanel() {
           onSend={handleSend}
           onStop={cancelChat}
           isLoading={isLoading}
-          disabled={!provider}
+          disabled={!hasAIProvider}
           placeholder={chatPlaceholder}
           footer={
             <>
@@ -451,17 +456,17 @@ export function ChatPanel() {
                     <TooltipTrigger asChild>
                       <button
                         onClick={() => {
-                          if (!provider) return;
-                          if (provider === 'ollama') {
+                          if (!hasAIProvider) return;
+                          if (effectiveProviderType === 'ollama') {
                             toast.info('Web search is not yet available for Ollama. Please use Anthropic or OpenAI for search.');
                             return;
                           }
                           setWebSearchEnabled(!webSearchEnabled);
                         }}
-                        disabled={!provider}
+                        disabled={!hasAIProvider}
                         className="flex items-center gap-1 text-xs transition-colors rounded px-1 py-0.5 hover:bg-accent/50 disabled:opacity-30 disabled:cursor-not-allowed"
                         style={{
-                          color: webSearchEnabled && provider && provider !== 'ollama'
+                          color: webSearchEnabled && hasAIProvider && effectiveProviderType !== 'ollama'
                             ? 'var(--color-foreground)'
                             : 'var(--color-muted-foreground)',
                         }}
@@ -472,9 +477,9 @@ export function ChatPanel() {
                     </TooltipTrigger>
                     <TooltipContent side="top" className="max-w-64">
                       <p className="text-xs">
-                        {!provider
+                        {!hasAIProvider
                           ? 'Configure an AI provider to use search'
-                          : provider === 'ollama'
+                          : effectiveProviderType === 'ollama'
                             ? 'Web search is not available for Ollama'
                             : webSearchEnabled
                               ? 'Web search enabled — AI can search the internet'

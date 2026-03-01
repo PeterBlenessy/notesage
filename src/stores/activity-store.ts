@@ -13,6 +13,7 @@ export interface AgentTask {
   sourceFile?: string;
   commentId?: string;
   documentId?: string;
+  connectionProvider?: string;
   startedAt: number;
   completedAt?: number;
   activities: DelegationActivity[];
