@@ -88,6 +88,10 @@ note-sage/
 │   │   │   ├── ChatMessage.tsx     # Individual message with activity log
 │   │   │   ├── ChatInput.tsx       # Message input
 │   │   │   └── PermissionCard.tsx  # ACP tool call approval (allow once/session/always, deny)
+│   │   ├── activity/
+│   │   │   ├── ActivityStrip.tsx   # Agent activity strip (narrow rail) + panel (wide sidebar)
+│   │   │   └── ActivityTaskCard.tsx # Individual agent task card with streaming output
+│   │   ├── MarkdownContent.tsx     # Shared markdown renderer (ReactMarkdown + remarkGfm)
 │   │   ├── editor/viewers/        # Non-markdown file viewers
 │   │   │   ├── EpubViewer.tsx     # EPUB reader (foliate-js Web Component, Cmd+F search)
 │   │   │   ├── PdfViewer.tsx      # PDF viewer (pdfjs-dist, Cmd+F search)
@@ -102,6 +106,7 @@ note-sage/
 │   │   ├── useProjectMetadata.ts   # Auto-bootstrap .notesage/project.json
 │   │   ├── useAIOperations.ts      # AI generation, chat, and ACP routing
 │   │   ├── useAgentTaskOperations.ts # Background agent task management (singleton)
+│   │   ├── useActivityNavigation.ts # Click-to-navigate from activity tasks to source comments
 │   │   ├── useCommentDelegation.ts # Comment → agent delegation flow
 │   │   ├── useCommentOperations.ts # Comment CRUD, decorations, status filtering
 │   │   └── useCopilotCompletion.ts # Copilot LSP lifecycle + ghost text completions
@@ -113,6 +118,7 @@ note-sage/
 │   │   ├── ai-store.ts             # AI provider configuration
 │   │   ├── chat-store.ts           # Chat conversation state
 │   │   ├── epub-store.ts          # EPUB viewer preferences and bookmarks
+│   │   ├── activity-store.ts      # Agent task registry (persisted)
 │   │   └── tag-store.ts           # Workspace tag index (non-persisted)
 │   ├── lib/
 │   │   ├── markdown.ts             # Markdown ↔ ProseMirror conversion
@@ -191,6 +197,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 - **comment-store**: Comments per document, replies, delegation status, activity log (non-persisted activities, JSON-persisted comments)
 - **epub-store**: EPUB viewer mode (scroll/paginated), per-file bookmarks keyed by file path (CFI + chapter)
 - **tag-store**: Workspace tag index — all known tags and tag-to-file mapping (non-persisted, rebuilt from scan)
+- **activity-store**: Agent task registry — background task tracking with status, activities, streaming output, thinking output (persisted; running tasks marked as error on rehydration)
 - **external-change-store**: Pending external file changes with hunks (non-persisted)
 
 ### Styling

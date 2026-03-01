@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useActivityStore, type AgentTask } from '@/stores/activity-store';
@@ -68,11 +69,13 @@ export function ActivityStrip({ collapsed, onCancelTask, onClickTask }: Activity
       {collapsed ? (
         /* Agent strip — narrow rail with icon per task */
         <div className="flex-1 overflow-y-auto thin-scrollbar">
-          <div className="flex flex-col items-center pt-1">
-            {tasks.map((task) => (
-              <RailIcon key={task.id} task={task} />
-            ))}
-          </div>
+          <TooltipProvider delayDuration={300}>
+            <div className="flex flex-col items-center pt-1">
+              {tasks.map((task) => (
+                <RailIcon key={task.id} task={task} />
+              ))}
+            </div>
+          </TooltipProvider>
         </div>
       ) : (
         /* Agent panel — expanded sidebar */

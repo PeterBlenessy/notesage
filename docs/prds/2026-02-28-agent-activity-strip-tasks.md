@@ -24,11 +24,11 @@ Create Zustand store (non-persisted) as the central registry for all background 
 
 **Acceptance:**
 
-- [ ] Store creates/updates/removes tasks correctly
+- [x] Store creates/updates/removes tasks correctly
 
-- [ ] `addTask` auto-shows the strip
+- [x] `addTask` auto-shows the strip
 
-- [ ] `clearCompleted` only removes non-running tasks
+- [x] `clearCompleted` only removes non-running tasks
 
 ---
 
@@ -78,11 +78,11 @@ Extend `startTask()` to support streaming chunks and register tasks in the activ
 
 **Acceptance:**
 
-- [ ] `onChunk` fires for each text chunk during streaming
+- [x] `onChunk` fires for each text chunk during streaming
 
-- [ ] Activity store stays in sync with task lifecycle (running → done/error/cancelled)
+- [x] Activity store stays in sync with task lifecycle (running → done/error/cancelled)
 
-- [ ] Existing callers (`useCommentDelegation`) still compile after signature change
+- [x] Existing callers (`useCommentDelegation`) still compile after signature change
 
 ---
 
@@ -113,13 +113,13 @@ Wire streaming chunks into the comment store and update delegation hook for the 
 
 **Acceptance:**
 
-- [ ] Partial reply accumulates chunk-by-chunk
+- [x] Partial reply accumulates chunk-by-chunk
 
-- [ ] Cleared on completion, error, or cancellation
+- [x] Cleared on completion, error, or cancellation
 
-- [ ] NOT persisted to JSON sidecar
+- [x] NOT persisted to JSON sidecar
 
-- [ ] `partialReplyVersion` increments allow efficient UI subscription
+- [x] `partialReplyVersion` increments allow efficient UI subscription
 
 ---
 
@@ -151,13 +151,13 @@ Show the agent's partial response as it streams in the comment popover.
 
 **Acceptance:**
 
-- [ ] Text appears incrementally during delegation
+- [x] Text appears incrementally during delegation
 
-- [ ] Blinking cursor animates at end of streaming text
+- [x] Blinking cursor animates at end of streaming text
 
-- [ ] Auto-scrolls to follow new text
+- [x] Auto-scrolls to follow new text
 
-- [ ] Smooth transition when reply finalizes
+- [x] Smooth transition when reply finalizes
 
 ---
 
@@ -199,15 +199,15 @@ Build the activity strip sidebar panel and individual task cards.
 
 **Acceptance:**
 
-- [ ] Tasks render with correct icons and status
+- [x] Tasks render with correct icons and status
 
-- [ ] Elapsed time updates every second
+- [x] Elapsed time updates every second
 
-- [ ] Activity log expands/collapses
+- [x] Activity log expands/collapses
 
-- [ ] Cancel button works
+- [x] Cancel button works
 
-- [ ] Looks polished in both themes
+- [x] Looks polished in both themes
 
 ---
 
@@ -233,11 +233,11 @@ Navigate to the source comment/file when clicking a completed task in the strip.
 
 **Acceptance:**
 
-- [ ] Clicking a completed comment task opens the file and highlights the comment
+- [x] Clicking a completed comment task opens the file and highlights the comment
 
-- [ ] Works for files not currently open
+- [x] Works for files not currently open
 
-- [ ] Graceful toast when comment is missing
+- [x] Graceful toast when comment is missing
 
 ---
 
@@ -278,17 +278,17 @@ Add the activity strip to the app layout and implement auto-show/hide behavior.
 
 **Acceptance:**
 
-- [ ] Strip slides in when first task starts
+- [x] Strip slides in when first task starts
 
-- [ ] Strip slides out 5s after all tasks finish
+- [x] ~~Strip slides out 5s after all tasks finish~~ (changed: strip always visible, panel toggles manually)
 
-- [ ] Manual close persists until next new task
+- [x] Manual close persists until next new task
 
-- [ ] No layout shift — editor content doesn't reflow
+- [x] No layout shift — editor content doesn't reflow
 
-- [ ] Works with chat panel both open and closed
+- [x] Works with chat panel both open and closed
 
-- [ ] Hidden in focus mode
+- [x] Hidden in focus mode
 
 ---
 
@@ -314,11 +314,11 @@ Add keyboard shortcut to toggle the activity strip.
 
 **Acceptance:**
 
-- [ ] Cmd+Shift+T toggles the strip
+- [x] Cmd+Shift+T toggles the strip
 
-- [ ] Doesn't conflict with Cmd+T (theme toggle)
+- [x] Doesn't conflict with Cmd+T (theme toggle)
 
-- [ ] Documented in keyboard shortcuts reference
+- [x] Documented in keyboard shortcuts reference
 
 ---
 
@@ -335,21 +335,21 @@ Final polish pass to meet all design quality gates.
 
 **Verify:**
 
-- [ ] Light and dark mode for all new components (strip, task cards, streaming cursor)
+- [x] Light and dark mode for all new components (strip, task cards, streaming cursor)
 
-- [ ] Smooth transitions: strip slide-in/out, streaming cursor blink, task status changes
+- [x] Smooth transitions: strip slide-in/out, streaming cursor blink, task status changes
 
-- [ ] Multiple sequential delegations (delegate-all with 3-5 comments) — strip populates correctly
+- [x] Multiple sequential delegations (delegate-all with 3-5 comments) — strip populates correctly
 
-- [ ] Cancel during streaming — partial reply clears, status reverts
+- [x] Cancel during streaming — partial reply clears, status reverts
 
-- [ ] Error during delegation — strip shows error status, popover shows error
+- [x] Error during delegation — strip shows error status, popover shows error
 
-- [ ] Elapsed time formatting edge cases (0s, 59s → 1m 0s, 9m 59s → 10m 0s)
+- [x] Elapsed time formatting edge cases (0s, 59s → 1m 0s, 9m 59s → 10m 0s)
 
-- [ ] Strip doesn't interfere with: find bar, bubble menu, slash commands, focus mode
+- [x] Strip doesn't interfere with: find bar, bubble menu, slash commands, focus mode
 
-- [ ] Auto-hide timer resets correctly when "delegate all" runs sequential tasks
+- [x] ~~Auto-hide timer resets correctly~~ (removed: strip always visible, no auto-hide)
 
 - [ ] Clean up partial reply entries when comment is deleted or document is closed
 
@@ -359,7 +359,7 @@ Final polish pass to meet all design quality gates.
 
 - [ ] All 8 design quality gates from the PRD pass
 
-- [ ] No regressions in existing comment delegation flow
+- [x] No regressions in existing comment delegation flow
 
 ---
 

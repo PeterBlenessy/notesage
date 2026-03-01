@@ -349,6 +349,17 @@ Document comments with AI agent delegation and external change tracking — foun
 - Uses existing `useAgentTaskOperations` infrastructure — routes through `agent_tasks` connection slot
 - No agent configured: toast error with guidance to set up routing in Settings
 
+**Agent activity strip & progress streaming (v0.16.10):**
+
+- Agent activity panel: persistent right sidebar (360px) showing all background agent tasks
+- Agent strip: narrow 40px rail always visible (like left sidebar strip), wide panel toggles via title bar button or Cmd+Shift+T
+- Task persistence: historical tasks survive app restart via Zustand persist middleware; interrupted tasks marked as error on rehydration
+- Per-task details: expandable thinking/reasoning output (ACP `agent_thought_chunk` events), streaming response with live markdown preview, collapsible activity log (tool calls, permissions)
+- Agent response rendering: shared `MarkdownContent` component with remarkGfm for comment replies, activity panel, and chat messages
+- Click-to-navigate: click completed comment tasks to jump to the source comment in the editor
+- Individual task removal and bulk "Clear completed" action
+- Running task indicator dot on title bar toggle button
+
 **External change detection & review:**
 
 - Tauri filesystem watcher (via `notify` crate with `notify_debouncer_full`) for watched directories
@@ -393,7 +404,7 @@ Document comments with AI agent delegation and external change tracking — foun
 - Per-hunk accept/reject from popover for non-focused files (currently navigates to file first)
 - Cross-file Accept All / Reject All (currently per-file only)
 - Agent auto-apply: agent directly modifying document content from a comment (Part 3)
-- Progress streaming: show agent response as it generates in the comment thread
+- ~~Progress streaming: show agent response as it generates in the comment thread~~ (done — v0.16.10)
 - Comment assignment to specific agents (currently always uses `agent_tasks` routing slot)
 
 ### Notesage Library & iCloud Sync
@@ -485,6 +496,7 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - Agent install & auth guidance — step-by-step guides with copyable commands and URLs for all providers (PRD: docs/prds/2026-02-22-agent-install-guidance.md)
 - Tiered permission approval UI — PermissionCard split Allow button (once/session/always), context-aware chat footer (Search for direct API, Tools popover for ACP agents), per-tool activity completion, official Copilot Octicons icon (PRD: docs/prds/2026-02-22-permission-approval-ui.md)
 - Orphaned agent process cleanup — `kill_on_drop(true)` on ACP child processes, `RunEvent::Exit` hook in Tauri builder, frontend `beforeunload` cleanup, error-path leak fixes (PRD: docs/prds/2026-02-22-orphaned-agent-cleanup.md)
+- Agent comment delegation (Part 2) — agent activity strip with persistent task history, progress streaming in comment popovers, thinking/reasoning output capture, shared MarkdownContent renderer, click-to-navigate from tasks to source comments, Cmd+Shift+T toggle (PRD: docs/prds/2026-02-28-agent-activity-strip.md)
 
 ## Roadmap
 
@@ -497,7 +509,7 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - Agent binary auto-install: one-click npm install from within the app (PRD ready)
 - ACP agent binary bundling as Tauri sidecar (no Node.js dependency for end users)
 - External change diff fidelity: map raw-text diffs to ProseMirror transactions that preserve formatting
-- Agent comment delegation Part 2: agent activity strip, progress streaming
+- ~~Agent comment delegation Part 2: agent activity strip, progress streaming~~ (done)
 - Agent comment delegation Part 3: auto-apply agent suggestions to document, inline diff review for agent edits
 
 ### Phase 7 — AI-Assisted Research
