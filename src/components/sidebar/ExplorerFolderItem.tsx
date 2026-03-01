@@ -1,4 +1,4 @@
-import { ChevronRight, Folder, FolderOpen, X, ExternalLink } from "lucide-react";
+import { ChevronRight, Folder, FolderOpen, FolderDot, X, ExternalLink } from "lucide-react";
 import { tauriApi } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { FileTree } from "./FileTree";
@@ -29,11 +29,15 @@ export function ExplorerFolderItem({
   const folder = useWorkspaceStore((s) =>
     s.explorerFolders.find((f) => f.path === folderPath)
   );
+  const projects = useWorkspaceStore((s) => s.projects);
   const { isExpanded, toggleFolder, removeExplorerFolder } = useWorkspaceStore();
 
   const folderName = folderPath.split("/").filter(Boolean).pop() || "Folder";
   const expandKey = `explorer-folder:${folderPath}`;
   const expanded = isExpanded(expandKey);
+
+  const isProjectFolder = projects.some((p) => p.path === folderPath) ||
+    folder?.fileTree.some((c) => c.name === ".notesage" && c.is_directory);
 
   if (!folder) return null;
 
@@ -97,6 +101,15 @@ export function ExplorerFolderItem({
           <ExternalLink className="mr-2 h-4 w-4" />
           Reveal in Finder
         </ContextMenuItem>
+        {onMakeProject && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem onClick={() => onMakeProject(folderPath)}>
+              <FolderDot className="mr-2 h-4 w-4" strokeWidth={1.5} />
+              {isProjectFolder ? "Open as Project" : "Make Project"}
+            </ContextMenuItem>
+          </>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => removeExplorerFolder(folderPath)}>
           <X className="mr-2 h-4 w-4" />
