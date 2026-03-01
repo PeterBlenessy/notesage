@@ -371,7 +371,7 @@ Comments can be delegated to AI agents via the `agent_tasks` routing slot. The d
 
 1. User clicks "Delegate" on a comment (create mode, view mode, or comment list)
 2. `useCommentDelegation` hook sets comment status to `delegated`, builds prompt from anchor text + comment body
-3. Hook calls `useAgentTaskOperations.startTask()` with three callbacks: `onComplete`, `onActivity`, `onError`
+3. Hook calls `useAgentTaskOperations.startTask()` with four callbacks: `onComplete`, `onActivity`, `onError`, `onChunk`
 4. `startTask` spawns/reuses the `agent_tasks` ACP agent, creates a session, sends the prompt
 5. Agent streams `acp-session-update` events: tool calls → `onActivity` → activity log entries in `comment-store`
 6. On `agent_turn_complete`: `onComplete` fires → `addReply()` with agent response → status set to `done` → saved to disk
@@ -379,12 +379,29 @@ Comments can be delegated to AI agents via the `agent_tasks` routing slot. The d
 8. User can cancel active delegation: `cancelTask()` stops ACP session → status reverted to `open`
 9. User can resolve completed comments: status set to `resolved` → decoration removed from editor
 
+**Multi-turn threads:**
+
+10. User replies to agent in comment popover → `delegateReply()` adds user reply to thread, sets status to `delegated`
+11. Prompt includes full conversation history (anchor text + original comment + all previous replies + new user reply)
+12. `existingTaskId` on `TaskMeta` reuses the same activity store task via `resetTaskForContinuation` — multi-turn conversations appear as a single task in the activity panel
+13. On error during reply: status reverts to `done` (not `open`) since thread already has replies
+
+**Apply-to-document:**
+
+14. User clicks "Apply" on an agent reply → `extractReplacementText()` strips AI preamble/sign-offs
+15. `resolveAnchorRange()` finds current anchor position via `CommentMarkPluginKey` decorations (primary) or text search (fallback)
+16. `setSuggestion()` shows inline diff decoration (red strikethrough + green insert) on the anchor text
+17. User accepts (`Cmd+Enter`) or rejects (`Cmd+Backspace`) — same UX as Improve/Summarize/Expand
+18. Collision prevention: toast warning if another suggestion is active; toast error if anchor text was deleted
+
 **Architecture:**
 
-- `useCommentDelegation` hook: encapsulates delegation flow, cancel, delegate-all
+- `useCommentDelegation` hook: encapsulates delegation flow (`delegateComment`, `delegateReply`), cancel, delegate-all
 - `comment-store.activitiesByComment`: runtime-only activity log per comment (not persisted)
 - `comment-store.replies`: persisted agent responses in sidecar JSON
-- `useAgentTaskOperations`: singleton module-level agent state, shared across all callers
+- `useAgentTaskOperations`: singleton module-level agent state, shared across all callers; supports `existingTaskId` for multi-turn task reuse
+- `pm-replace.ts`: `extractReplacementText()` (preamble stripping) and `resolveAnchorRange()` (anchor position lookup via CommentMark decorations)
+- `ai-suggestion.ts`: `setSuggestion()` / `hasActiveSuggestion()` reused for inline diff display (no changes needed)
 
 ### Filesystem Watcher (External Change Detection)
 

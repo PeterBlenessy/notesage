@@ -361,6 +361,21 @@ Document comments with AI agent delegation and external change tracking — foun
 - Individual task removal via X button on each task card
 - Running task indicator dot on title bar toggle button
 
+**Multi-turn threads & apply-to-document (v0.17.0):**
+
+- Multi-turn comment threads: user can reply to the agent, agent responds again, repeat — full conversation history included in each prompt
+- Explicit "Apply" button on each agent reply — shows the response as an inline diff on the anchor text via the existing `AISuggestion` decoration system
+- Same review UX as Improve/Summarize/Expand: accept via `Cmd+Enter`, reject via `Cmd+Backspace`
+- Preamble stripping: agent response text has introductory phrases ("Here's the improved version:", "Sure!") and trailing sign-offs ("Let me know if...") automatically removed before applying
+- Anchor range resolution: primary strategy uses `CommentMarkPluginKey` decoration positions (remapped through ProseMirror mapping), with text search fallback
+- Collision prevention: toast warning when another suggestion is already active, Apply blocked until resolved
+- Anchor-not-found handling: toast error when anchor text was deleted, Apply button disabled
+- Agent reply visible in thread after accept/reject — conversation thread preserved
+- User vs agent reply distinction in comment popover: `User` icon for user messages, `BotMessageSquare` for agent messages
+- Activity panel shows multi-turn conversations as a single task with chat-style message thread (user and agent messages individually attributed)
+- Sticky expansion: once a conversation thread is expanded in comment popover or activity panel, it stays expanded across agent turns
+- Multi-turn task reuse: `existingTaskId` on `TaskMeta` enables the activity store to reuse the same task entry across conversation turns via `resetTaskForContinuation`
+
 **External change detection & review:**
 
 - Tauri filesystem watcher (via `notify` crate with `notify_debouncer_full`) for watched directories
@@ -404,7 +419,7 @@ Document comments with AI agent delegation and external change tracking — foun
 
 - Per-hunk accept/reject from popover for non-focused files (currently navigates to file first)
 - Cross-file Accept All / Reject All (currently per-file only)
-- Agent auto-apply: agent directly modifying document content from a comment (Part 3)
+- ~~Agent auto-apply: agent directly modifying document content from a comment (Part 3)~~ (done — v0.17.0)
 - ~~Progress streaming: show agent response as it generates in the comment thread~~ (done — v0.16.10)
 - Comment assignment to specific agents (currently always uses `agent_tasks` routing slot)
 
@@ -499,18 +514,20 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - Tiered permission approval UI — PermissionCard split Allow button (once/session/always), context-aware chat footer (Search for direct API, Tools popover for ACP agents), per-tool activity completion, official Copilot Octicons icon (PRD: docs/prds/2026-02-22-permission-approval-ui.md)
 - Orphaned agent process cleanup — `kill_on_drop(true)` on ACP child processes, `RunEvent::Exit` hook in Tauri builder, frontend `beforeunload` cleanup, error-path leak fixes (PRD: docs/prds/2026-02-22-orphaned-agent-cleanup.md)
 - Agent comment delegation (Part 2) — agent activity strip (40px rail) and resizable agent activity panel with persistent task history, progress streaming in comment popovers, thinking/reasoning output capture, shared MarkdownContent renderer, click-to-navigate from tasks to source comments, Cmd+Shift+A toggle (PRD: docs/prds/2026-02-28-agent-activity-strip.md)
+- External change diff fidelity — mark-preserving inline changes: `setSuggestion` parses replacement text as HTML and maps to ProseMirror marks (bold, italic, code, links, etc.) instead of inserting plain text, preserving formatting on accept (PRD: docs/prds/2026-03-01-diff-fidelity.md)
+- Agent comment delegation (Part 3) — multi-turn comment threads with Apply-to-document: user can reply to agent and refine suggestions, explicit Apply button shows agent response as inline diff via AISuggestion decorations, preamble stripping, anchor range resolution via CommentMark decorations, conversation-aware activity panel with chat-style message threading, sticky expansion states (PRD: docs/prds/2026-03-01-agent-auto-apply.md)
 
 ## Roadmap
 
-### Phase 6.5 — Chat UX & Agent Polish
+### ~~Phase 6.5 — Chat UX & Agent Polish~~ (Complete)
 
 **Goal:** Polish the agent experience with provider-aware chat, interactive permission approval, and agent comment delegation.
 
-**Remaining features:**
+**All features completed:**
 
-- External change diff fidelity: map raw-text diffs to ProseMirror transactions that preserve formatting (PRD: `docs/prds/2026-03-01-diff-fidelity.md`)
+- ~~External change diff fidelity: map raw-text diffs to ProseMirror transactions that preserve formatting~~ (done)
 - ~~Agent comment delegation Part 2: agent activity strip & panel, progress streaming~~ (done)
-- Agent comment delegation Part 3: auto-apply agent suggestions to document, inline diff review for agent edits (PRD: `docs/prds/2026-03-01-agent-auto-apply.md`)
+- ~~Agent comment delegation Part 3: auto-apply agent suggestions to document, inline diff review for agent edits~~ (done)
 
 ### Phase 7 — AI-Assisted Research
 
