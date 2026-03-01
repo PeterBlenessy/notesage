@@ -349,15 +349,16 @@ Document comments with AI agent delegation and external change tracking — foun
 - Uses existing `useAgentTaskOperations` infrastructure — routes through `agent_tasks` connection slot
 - No agent configured: toast error with guidance to set up routing in Settings
 
-**Agent activity strip & progress streaming (v0.16.10):**
+**Agent activity strip & panel & progress streaming (v0.16.10):**
 
-- Agent activity panel: persistent right sidebar (360px) showing all background agent tasks
-- Agent strip: narrow 40px rail always visible (like left sidebar strip), wide panel toggles via title bar button or Cmd+Shift+T
+- Agent activity strip: narrow 40px rail always visible when agent tasks exist, showing per-task status icons with tooltips
+- Agent activity panel: resizable right sidebar showing all background agent tasks with full details — toggled via title bar button or Cmd+Shift+A
+- Visibility behavior: strip appears automatically when a task starts; if the user has manually opened the panel, it stays open; if hidden, activity is shown in the strip and the user can expand the panel at will
 - Task persistence: historical tasks survive app restart via Zustand persist middleware; interrupted tasks marked as error on rehydration
 - Per-task details: expandable thinking/reasoning output (ACP `agent_thought_chunk` events), streaming response with live markdown preview, collapsible activity log (tool calls, permissions)
 - Agent response rendering: shared `MarkdownContent` component with remarkGfm for comment replies, activity panel, and chat messages
-- Click-to-navigate: click completed comment tasks to jump to the source comment in the editor
-- Individual task removal and bulk "Clear completed" action
+- Click-to-navigate: click completed comment tasks to jump to the source comment in the editor and scroll into view
+- Individual task removal via X button on each task card
 - Running task indicator dot on title bar toggle button
 
 **External change detection & review:**
@@ -465,7 +466,8 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 
 **Agent activity & tasks:**
 
-- Agent activity panel: collapsible per-message activity log showing tool call steps
+- Agent activity strip: narrow 40px rail always visible when tasks exist, shows per-task status icons
+- Agent activity panel: resizable expanded sidebar with full task details, toggled via Cmd+Shift+A or title bar button
 - Background task agent hook (`useAgentTaskOperations`): separate ACP instance for delegated work
 - Task lifecycle: start, cancel, track status and output
 - Agent file changes flow through existing file watcher → external-change-store → inline diff review
@@ -496,7 +498,7 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - Agent install & auth guidance — step-by-step guides with copyable commands and URLs for all providers (PRD: docs/prds/2026-02-22-agent-install-guidance.md)
 - Tiered permission approval UI — PermissionCard split Allow button (once/session/always), context-aware chat footer (Search for direct API, Tools popover for ACP agents), per-tool activity completion, official Copilot Octicons icon (PRD: docs/prds/2026-02-22-permission-approval-ui.md)
 - Orphaned agent process cleanup — `kill_on_drop(true)` on ACP child processes, `RunEvent::Exit` hook in Tauri builder, frontend `beforeunload` cleanup, error-path leak fixes (PRD: docs/prds/2026-02-22-orphaned-agent-cleanup.md)
-- Agent comment delegation (Part 2) — agent activity strip with persistent task history, progress streaming in comment popovers, thinking/reasoning output capture, shared MarkdownContent renderer, click-to-navigate from tasks to source comments, Cmd+Shift+T toggle (PRD: docs/prds/2026-02-28-agent-activity-strip.md)
+- Agent comment delegation (Part 2) — agent activity strip (40px rail) and resizable agent activity panel with persistent task history, progress streaming in comment popovers, thinking/reasoning output capture, shared MarkdownContent renderer, click-to-navigate from tasks to source comments, Cmd+Shift+A toggle (PRD: docs/prds/2026-02-28-agent-activity-strip.md)
 
 ## Roadmap
 
@@ -509,7 +511,7 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - Agent binary auto-install: one-click npm install from within the app (PRD ready)
 - ACP agent binary bundling as Tauri sidecar (no Node.js dependency for end users)
 - External change diff fidelity: map raw-text diffs to ProseMirror transactions that preserve formatting
-- ~~Agent comment delegation Part 2: agent activity strip, progress streaming~~ (done)
+- ~~Agent comment delegation Part 2: agent activity strip & panel, progress streaming~~ (done)
 - Agent comment delegation Part 3: auto-apply agent suggestions to document, inline diff review for agent edits
 
 ### Phase 7 — AI-Assisted Research

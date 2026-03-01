@@ -38,6 +38,8 @@ export interface Comment {
 interface CommentStore {
   commentsByDocument: Record<string, Comment[]>;
   activeCommentId: string | null;
+  /** When set, Editor.tsx scrolls to this comment's position before activating it */
+  scrollToCommentId: string | null;
   /** Runtime-only activity log per comment (not persisted) */
   activitiesByComment: Record<string, DelegationActivity[]>;
   /** Increments when partialReplies map changes — subscribe to trigger re-renders */
@@ -55,6 +57,9 @@ interface CommentStore {
   completeAllActivities: (commentId: string) => void;
   clearActivities: (commentId: string) => void;
   setActiveComment: (id: string | null) => void;
+  /** Scroll to a comment's position and then activate it (used by external navigation) */
+  requestScrollToComment: (id: string) => void;
+  clearScrollToComment: () => void;
   saveComments: (documentId: string, projectRoot: string) => Promise<void>;
   clearDocument: (documentId: string) => void;
 }
@@ -62,6 +67,7 @@ interface CommentStore {
 export const useCommentStore = create<CommentStore>()((set, get) => ({
   commentsByDocument: {},
   activeCommentId: null,
+  scrollToCommentId: null,
   activitiesByComment: {},
   partialReplyVersion: 0,
 
@@ -230,6 +236,14 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
 
   setActiveComment: (id: string | null) => {
     set({ activeCommentId: id });
+  },
+
+  requestScrollToComment: (id: string) => {
+    set({ scrollToCommentId: id });
+  },
+
+  clearScrollToComment: () => {
+    set({ scrollToCommentId: null });
   },
 
   saveComments: async (documentId: string, projectRoot: string) => {

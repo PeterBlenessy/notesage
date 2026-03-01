@@ -1,4 +1,4 @@
-import { MessageSquare, BotMessageSquare } from "lucide-react";
+import { MessageSquare, Bot } from "lucide-react";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useActivityStore } from "@/stores/activity-store";
@@ -66,7 +66,7 @@ export function TitleBar({ onToggleChat, onToggleActivityStrip }: TitleBarProps)
           )}
           title={`${panelExpanded ? "Hide" : "Show"} Agent Panel (⌘⇧A)`}
         >
-          <BotMessageSquare className="size-4" strokeWidth={1.5} />
+          <Bot className="size-4" strokeWidth={1.5} />
           {hasRunning && (
             <span className="absolute top-0 right-0 h-1.5 w-1.5 rounded-full bg-muted-foreground" />
           )}

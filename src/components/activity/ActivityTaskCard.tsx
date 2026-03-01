@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  MessageSquare,
   MessageCircle,
   Loader2,
   Check,
@@ -75,7 +74,7 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
   }, [task.thinkingOutput, thinkingExpanded]);
 
   const isClickable = task.status !== 'running' && onClick;
-  const TypeIcon = task.type === 'comment' ? MessageSquare : MessageCircle;
+  const TypeIcon = task.type === 'comment' ? BotMessageSquare : MessageCircle;
 
   const hasOutput = task.partialOutput || task.finalOutput;
   const outputText = task.finalOutput ?? task.partialOutput ?? '';

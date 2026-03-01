@@ -13,38 +13,42 @@ This creates two gaps:
 
 ## Goals
 
-1. **Global activity visibility** — a dedicated right sidebar strip showing all active agent tasks (comment delegations, chat background tasks, future workflows) with real-time status
+1. **Global activity visibility** — an agent activity strip (40px rail) always visible when tasks exist, plus an expandable agent activity panel (resizable sidebar) showing all active agent tasks with real-time status
 2. **Live response streaming** — agent replies stream word-by-word into the comment popover as they generate, matching the chat panel's streaming behavior
 3. **Cross-file awareness** — users can see delegations from other files and navigate to them
-4. **Future-proof architecture** — the activity strip supports any background agent task, not just comment delegations
+4. **Future-proof architecture** — the activity strip and panel support any background agent task, not just comment delegations
 
 ## Non-Goals
 
 - Parallel comment delegation (still sequential via singleton agent — separate future work)
 - Agent auto-apply (Part 3 — agent directly modifying document content)
-- Activity persistence across app restarts (activities remain runtime-only)
 - Drag-and-drop reordering of tasks in the strip
 
 ## User Stories
 
-1. **As a user**, I want to see all active agent tasks in a sidebar strip, so I can monitor progress without opening each comment individually.
-2. **As a user**, I want to watch the agent's reply stream in real-time inside the comment popover, so I know the agent is making progress and can read partial results early.
-3. **As a user**, I want to click on a task in the activity strip to navigate to the relevant comment/file, so I can quickly review completed work.
-4. **As a user**, I want to cancel an active task from the activity strip, so I can stop work without hunting for the comment popover.
-5. **As a user**, I want the activity strip to automatically show when agent work starts and hide when everything completes, so it doesn't take up space when idle.
+1. **As a user**, I want to see all active agent tasks in a narrow activity strip, so I can monitor progress at a glance without opening each comment individually.
+2. **As a user**, I want to expand the activity strip into a full agent activity panel to see detailed task output and activity logs.
+3. **As a user**, I want to watch the agent's reply stream in real-time inside the comment popover, so I know the agent is making progress and can read partial results early.
+4. **As a user**, I want to click on a task in the activity panel to navigate to the relevant comment/file, so I can quickly review completed work.
+5. **As a user**, I want to cancel an active task from the activity panel, so I can stop work without hunting for the comment popover.
+6. **As a user**, I want the activity strip to appear automatically when agent work starts, and if I manually open the panel, it should stay open until I close it.
 
 ## Technical Approach
 
-### Activity Strip (Right Sidebar)
+### Agent Activity Strip & Panel (Right Sidebar)
 
-A new narrow sidebar panel on the right edge of the app, separate from the chat panel. It shows a vertical list of all active and recently completed agent tasks.
+Two components on the right edge of the app, separate from the chat panel:
 
-**Layout:**
+- **Agent activity strip** (`ActivityRail`): narrow 40px rail always visible when agent tasks exist, showing per-task status icons with tooltips
+- **Agent activity panel** (`ActivityPanel`): resizable sidebar (default ~25%, min 240px, max 500px) with full task details, toggled via title bar button or Cmd+Shift+A
 
-- Fixed-width strip (\~280px), positioned between the editor and the chat panel (when open)
-- Auto-shows when the first task starts, auto-hides when all tasks complete (with a brief delay so users can review results)
-- Manual toggle via keyboard shortcut (Cmd+Shift+T) or toolbar button
-- Scrollable task list with newest tasks at the top
+**Visibility behavior:**
+
+- The strip appears automatically when the first task starts
+- If the user manually opens the panel, it stays open until they explicitly close it
+- If the panel is hidden, activity is shown in the narrow strip and the user can expand the panel at will
+- The strip is always visible as long as there are tasks (no auto-hide)
+- Manual toggle via keyboard shortcut (Cmd+Shift+A) or title bar button
 
 **Task entries show:**
 
@@ -140,46 +144,60 @@ clearPartialReply(documentId: string, commentId: string): void;
 
 - Pass `onChunk` callback to `startTask()` that updates `comment-store.partialReply`
 - On `onComplete`: clear `partialReply`, add finalized reply (existing behavior)
-- Register task metadata (type, label, sourceFile, commentId) for the activity strip
+- Register task metadata (type, label, sourceFile, commentId) for the activity strip/panel
 
-**Activity strip auto-show/hide:**
+**Activity strip & panel visibility:**
 
-- Show strip when `tasks.some(t => t.status === 'running')` transitions from false to true
-- Hide strip 5 seconds after last task completes (all tasks are done/error/cancelled)
-- User can manually toggle visibility; manual hide sticks until next task starts
+- Strip (40px rail) always visible when tasks exist — no auto-hide
+- Panel manually toggled via Cmd+Shift+A or title bar button
+- If user manually opens the panel, it stays open until they explicitly close it
+- `addTask` auto-shows the strip (but does NOT force-open the panel)
+- `isManuallyHidden` only applies to the panel, not the strip
 
 ## UI/UX
 
-### Activity Strip Panel
+### Agent Activity Strip (40px Rail)
+
+```
+┌──┐
+│ ◉│  (running — spinner)
+│ ✓│  (done — check)
+│ ✗│  (error — X)
+│ ⊘│  (cancelled — slash)
+└──┘
+```
+
+- Always visible when tasks exist
+- Per-task status icons with tooltips showing task label
+- Scrollable when many tasks
+
+### Agent Activity Panel (Resizable Sidebar)
 
 ```
 ┌──────────────────────────────────────────┐
-│  Agent Tasks                    [×] hide │
+│  Agent Tasks                             │
 │─────────────────────────────────────────│
-│  ◉ Fix typo in paragraph 3        12s  │
+│  ◉ Fix typo in paragraph 3    12s  [×] │
 │    notes.md                             │
 │    ▸ 3 steps                            │
 │                                  [Stop] │
 │─────────────────────────────────────────│
-│  ✓ Clarify intro section           34s  │
+│  ✓ Clarify intro section      34s  [×] │
 │    chapter-1.md                         │
 │    ▸ 5 steps completed                  │
 │─────────────────────────────────────────│
-│  ✗ Review conclusion              1m2s  │
+│  ✗ Review conclusion         1m2s  [×] │
 │    chapter-3.md                         │
 │    Error: Agent disconnected            │
-│─────────────────────────────────────────│
-│                                         │
-│  [Clear completed]                      │
 └──────────────────────────────────────────┘
 ```
 
-- Header with title and close button
-- Each task card: icon, label (truncated), elapsed time, file name, expandable activity log, action button
+- Header with "Agent Tasks" title
+- Each task card: icon, label (truncated), elapsed time, file name, expandable activity log, action button, remove (X) button
 - Active tasks: spinner icon, "Stop" button
-- Completed tasks: check icon, click-to-navigate
+- Completed tasks: check icon, click-to-navigate to source comment
 - Error tasks: X icon, error message shown
-- "Clear completed" footer button removes done/error/cancelled tasks
+- Individual task removal via X button on each card
 
 ### Streaming Reply in Comment Popover
 
@@ -288,55 +306,55 @@ No new libraries. Uses existing:
 
 ### Functional
 
-- [ ] Activity strip appears automatically when a comment is delegated
+- [x] Agent activity strip (40px rail) appears automatically when a comment is delegated
 
-- [ ] Activity strip shows correct status (running/done/error/cancelled) for each task
+- [x] Activity strip shows correct status icons (running/done/error/cancelled) for each task
 
-- [ ] Clicking a task in the strip navigates to the comment in the correct file
+- [x] Clicking a task in the agent activity panel navigates to the comment in the correct file and scrolls into view
 
-- [ ] Cancel button in strip stops the active delegation
+- [x] Cancel button in panel stops the active delegation
 
-- [ ] Activity strip auto-hides \~5s after all tasks complete
+- [x] Agent activity strip stays visible as long as tasks exist (no auto-hide)
 
-- [ ] Manual close persists until next task starts
+- [x] If user manually opens the panel, it stays open until explicitly closed
 
-- [ ] Cmd+Shift+T toggles strip visibility
+- [x] Cmd+Shift+A toggles agent activity panel visibility
 
-- [ ] Agent reply streams word-by-word in the comment popover
+- [x] Agent reply streams word-by-word in the comment popover
 
-- [ ] Streaming reply auto-scrolls to follow new text
+- [x] Streaming reply auto-scrolls to follow new text
 
-- [ ] On completion, streaming reply transitions smoothly to finalized reply
+- [x] On completion, streaming reply transitions smoothly to finalized reply
 
-- [ ] Activity log in strip matches the one in the comment popover
+- [x] Activity log in panel matches the one in the comment popover
 
-- [ ] Strip shows tasks from multiple files correctly
+- [x] Panel shows tasks from multiple files correctly
 
-- [ ] "Clear completed" removes done/error/cancelled tasks from the strip
+- [x] Individual task removal via X button on each task card
 
-- [ ] Elapsed time updates in real-time for active tasks
+- [x] Elapsed time updates in real-time for active tasks
 
-- [ ] Multiple sequential delegations all appear in the strip
+- [x] Multiple sequential delegations all appear in the strip and panel
 
-- [ ] Error states display correctly in both strip and popover
+- [x] Error states display correctly in both panel and popover
 
 ### Design
 
-- [ ] Activity strip matches app design system (neutral palette, smooth transitions)
+- [x] Agent activity strip and panel match app design system (neutral palette, smooth transitions)
 
-- [ ] Strip entry hover/active states are polished
+- [x] Panel task card hover/active states are polished
 
-- [ ] Streaming cursor animation is subtle and professional
+- [x] Streaming cursor animation is subtle and professional
 
-- [ ] Strip width is appropriate and doesn't crowd the editor
+- [x] Panel is resizable and doesn't crowd the editor
 
-- [ ] Strip works in both light and dark mode
+- [x] Strip and panel work in both light and dark mode
 
-- [ ] Transitions for show/hide are smooth (slide in/out)
+- [ ] Transitions for panel show/hide are smooth (slide in/out)
 
-- [ ] Task status icons are clear and distinguishable
+- [x] Task status icons are clear and distinguishable
 
-- [ ] No layout shift when strip appears/disappears
+- [x] No layout shift when strip appears/disappears (strip is fixed-width)
 
 ## Out of Scope
 

@@ -1,4 +1,4 @@
-# Agent Activity Strip & Progress Streaming — Implementation Tasks
+# Agent Activity Strip & Panel & Progress Streaming — Implementation Tasks
 
 **PRD:** `docs/prds/2026-02-28-agent-activity-strip.md`**Total: 9 tasks — 2S, 4M, 3LNo backend changes — purely frontend.Suggested order:** Store → Hook plumbing → Streaming UI → Activity strip UI → Layout → Shortcut → Polish
 
@@ -161,7 +161,7 @@ Show the agent's partial response as it streams in the comment popover.
 
 ---
 
-## #5 — Build ActivityStrip and ActivityTaskCard components
+## #5 — Build ActivityRail, ActivityPanel, and ActivityTaskCard components
 
 |  |  |
 | --- | --- |
@@ -170,14 +170,20 @@ Show the agent's partial response as it streams in the comment popover.
 | **Dependencies** | #1 |
 | **Files** | `src/components/activity/ActivityStrip.tsx`, `src/components/activity/ActivityTaskCard.tsx` |
 
-Build the activity strip sidebar panel and individual task cards.
+Build the agent activity strip (narrow rail) and agent activity panel (expanded sidebar) with individual task cards.
 
-**ActivityStrip.tsx:**
+**ActivityRail (narrow 40px strip):**
 
-- Header: "Agent Tasks" title + `X` close button (calls `setManuallyHidden(true)`)
-- `ScrollArea` containing task cards from `activityStore.tasks`, newest first (reverse order)
-- Footer: "Clear completed" button, only visible when `tasks.some(t => t.status !== 'running')`
-- No empty state needed (strip hidden when no tasks)
+- Always visible when tasks exist (outside ResizablePanelGroup)
+- Per-task status icons with tooltips (running spinner, done check, error X, cancelled slash)
+- Scrollable icon list
+
+**ActivityPanel (expanded sidebar):**
+
+- Header: "Agent Tasks" title
+- Task cards from `activityStore.tasks`, newest first (reverse order)
+- Individual task removal via X button on each task card
+- Resizable via ResizablePanel (min 240px, max 500px)
 
 **ActivityTaskCard.tsx:**
 
@@ -241,7 +247,7 @@ Navigate to the source comment/file when clicking a completed task in the strip.
 
 ---
 
-## #7 — Integrate ActivityStrip into App layout with auto-show/hide
+## #7 — Integrate agent activity strip & panel into App layout
 
 |  |  |
 | --- | --- |
@@ -250,31 +256,21 @@ Navigate to the source comment/file when clicking a completed task in the strip.
 | **Dependencies** | #5, #6 |
 | **Files** | `src/App.tsx`, `src/styles/globals.css` |
 
-Add the activity strip to the app layout and implement auto-show/hide behavior.
+Add the agent activity strip (narrow rail) and agent activity panel (expanded sidebar) to the app layout.
 
 **Layout integration:**
 
-- Render `ActivityStrip` as a fixed-width panel between the editor `ResizablePanel` and the chat panel
-- Conditionally render based on `isStripVisible && !isManuallyHidden`
-- NOT a `ResizablePanel` — fixed 280px, no drag handle (keeps it simple)
+- `ActivityRail` (40px): rendered outside `ResizablePanelGroup`, always visible when tasks exist
+- `ActivityPanel`: rendered inside `ResizablePanelGroup` as a `ResizablePanel` with drag handle, toggled via title bar button or Cmd+Shift+A
+- Panel is resizable (min 240px, max 500px, default \~25%)
 - Hidden in focus mode (same as sidebar/chat)
-- Separator line on left edge (1px border)
+- Panel sizes persisted via `autoSaveId` on ResizablePanelGroup
 
-**Auto-show/hide logic (in App.tsx** `useEffect`**):**
+**Visibility behavior:**
 
-- Subscribe to `activityStore.tasks`
-- When all tasks become non-running (`!tasks.some(t => t.status === 'running')`), start 5s timeout
-- On timeout: `setStripVisible(false)`
-- If a new running task appears during timeout: cancel timeout
-- `addTask` already auto-shows (handled in store)
-- `isManuallyHidden` reset by `addTask` (handled in store)
-
-**Slide animation:**
-
-- CSS transition on the strip container: `transition: width 200ms ease, opacity 150ms ease`
-- When hidden: `width: 0, opacity: 0, overflow: hidden`
-- When visible: `width: 280px, opacity: 1`
-- Use `will-change: width` for smooth GPU compositing
+- Strip appears automatically when a task starts (via `addTask`)
+- Panel toggles manually — if user opens it, it stays open
+- `isManuallyHidden` controls panel visibility, NOT the strip
 
 **Acceptance:**
 
@@ -292,7 +288,7 @@ Add the activity strip to the app layout and implement auto-show/hide behavior.
 
 ---
 
-## #8 — Add Cmd+Shift+T keyboard shortcut
+## #8 — Add Cmd+Shift+A keyboard shortcut
 
 |  |  |
 | --- | --- |
@@ -301,22 +297,19 @@ Add the activity strip to the app layout and implement auto-show/hide behavior.
 | **Dependencies** | #7 |
 | **Files** | `src/hooks/useKeyboardShortcuts.ts`, `src/App.tsx`, `docs/keyboard-shortcuts.md` |
 
-Add keyboard shortcut to toggle the activity strip.
+Add keyboard shortcut to toggle the agent activity panel.
 
 **Implement:**
 
-- In `useKeyboardShortcuts`: add handler for `Cmd+Shift+T` (before the existing `Cmd+T` theme toggle check at line 106)
-  - If showing: clear `isManuallyHidden`, set `isStripVisible(true)`
-  - If hiding: set `isManuallyHidden(true)`
+- In `useKeyboardShortcuts`: add handler for `Cmd+Shift+A`
+  - Toggles `isManuallyHidden` in activity-store
 - Add `onToggleActivityStrip` to `KeyboardShortcutCallbacks`
 - Wire in `App.tsx`
 - Update `docs/keyboard-shortcuts.md` with new shortcut entry
 
 **Acceptance:**
 
-- [x] Cmd+Shift+T toggles the strip
-
-- [x] Doesn't conflict with Cmd+T (theme toggle)
+- [x] Cmd+Shift+A toggles the agent activity panel
 
 - [x] Documented in keyboard shortcuts reference
 
@@ -368,15 +361,15 @@ Final polish pass to meet all design quality gates.
 ```
 #1 activity-store ──┬──→ #2 useAgentTaskOperations ──→ #3 comment-store + delegation ──→ #4 streaming popover ─┐
                     │                                                                                         │
-                    └──→ #5 ActivityStrip UI ──→ #6 click-to-navigate ──→ #7 App layout ──→ #8 shortcut ──→ #9 polish
+                    └──→ #5 ActivityRail + Panel UI ──→ #6 click-to-navigate ──→ #7 App layout ──→ #8 shortcut ──→ #9 polish
 ```
 
 Tasks #2→#3→#4 (streaming plumbing) and #5→#6 (strip UI) can run in parallel after #1.
 
 ## Risks & Open Questions
 
-1. `Cmd+Shift+T` **is safe** — confirmed no conflict. `Cmd+T` (theme) is the only `T` shortcut, and the shift check comes first in the handler.
-2. **Layout approach** — inserting a fixed-width div between ResizablePanels (not itself resizable) avoids complexity. The editor panel flexes to fill remaining space.
+1. `Cmd+Shift+A` **is safe** — confirmed no conflict with other shortcuts.
+2. **Layout approach** — `ActivityRail` (40px) lives outside `ResizablePanelGroup`; `ActivityPanel` is a `ResizablePanel` inside the group with a drag handle.
 3. **Partial reply memory** — module-level `partialReplies` map needs cleanup. Clear entries when comments are deleted (`deleteComment`) and when documents are closed (`clearDocument`).
 4. **Sequential delegation timing** — "delegate all" runs comments one-by-one. The 5s auto-hide timer must wait for the *last* task to complete, not restart after each one. The `tasks.some(t => t.status === 'running')` check handles this naturally.
 5. `startTask` **API change** — switching from positional args to a callbacks object is a breaking change for `useCommentDelegation`. This is the only caller, so the blast radius is contained. Task #3 updates it in the same PR.

@@ -89,7 +89,7 @@ note-sage/
 │   │   │   ├── ChatInput.tsx       # Message input
 │   │   │   └── PermissionCard.tsx  # ACP tool call approval (allow once/session/always, deny)
 │   │   ├── activity/
-│   │   │   ├── ActivityStrip.tsx   # Agent activity strip (narrow rail) + panel (wide sidebar)
+│   │   │   ├── ActivityStrip.tsx   # Agent activity strip (ActivityRail: 40px rail) + agent activity panel (ActivityPanel: resizable sidebar)
 │   │   │   └── ActivityTaskCard.tsx # Individual agent task card with streaming output
 │   │   ├── MarkdownContent.tsx     # Shared markdown renderer (ReactMarkdown + remarkGfm)
 │   │   ├── editor/viewers/        # Non-markdown file viewers
@@ -197,7 +197,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 - **comment-store**: Comments per document, replies, delegation status, activity log (non-persisted activities, JSON-persisted comments)
 - **epub-store**: EPUB viewer mode (scroll/paginated), per-file bookmarks keyed by file path (CFI + chapter)
 - **tag-store**: Workspace tag index — all known tags and tag-to-file mapping (non-persisted, rebuilt from scan)
-- **activity-store**: Agent task registry — background task tracking with status, activities, streaming output, thinking output (persisted; running tasks marked as error on rehydration)
+- **activity-store**: Agent task registry — background task tracking with status, activities, streaming output, thinking output (persisted; running tasks marked as error on rehydration). Controls agent activity strip (40px rail) and agent activity panel (resizable sidebar) visibility.
 - **external-change-store**: Pending external file changes with hunks (non-persisted)
 
 ### Styling

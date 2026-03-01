@@ -2,11 +2,10 @@ import {
   Loader2,
   Check,
   X,
-  MessageSquare,
+  BotMessageSquare,
   MessageCircle,
   Slash,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
@@ -24,7 +23,7 @@ interface ActivityStripProps {
 }
 
 function RailIcon({ task }: { task: AgentTask }) {
-  const TypeIcon = task.type === 'comment' ? MessageSquare : MessageCircle;
+  const TypeIcon = task.type === 'comment' ? BotMessageSquare : MessageCircle;
 
   return (
     <Tooltip>
@@ -78,9 +77,6 @@ export function ActivityRail() {
 export function ActivityPanel({ onCancelTask, onClickTask }: ActivityStripProps) {
   const tasks = useActivityStore((s) => s.tasks);
   const removeTask = useActivityStore((s) => s.removeTask);
-  const clearCompleted = useActivityStore((s) => s.clearCompleted);
-
-  const hasCompleted = tasks.some((t) => t.status !== 'running');
 
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
@@ -111,20 +107,6 @@ export function ActivityPanel({ onCancelTask, onClickTask }: ActivityStripProps)
           </div>
         )}
       </div>
-
-      {/* Footer */}
-      {hasCompleted && (
-        <div className="px-3 py-2 border-t border-border shrink-0">
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={clearCompleted}
-            className="w-full text-[10px] text-muted-foreground hover:text-foreground"
-          >
-            Clear completed
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

@@ -35,14 +35,14 @@ export function useActivityNavigation() {
         }
       }
 
-      // For comment tasks, activate the comment after a delay (let editor mount)
+      // For comment tasks, scroll to the comment and activate it after a delay (let editor mount)
       if (task.type === 'comment' && task.commentId && task.documentId) {
         const delay = alreadyActive ? 50 : 300;
         setTimeout(() => {
           const comments = useCommentStore.getState().commentsByDocument[task.documentId!] ?? [];
           const exists = comments.some((c) => c.id === task.commentId);
           if (exists) {
-            useCommentStore.getState().setActiveComment(task.commentId!);
+            useCommentStore.getState().requestScrollToComment(task.commentId!);
           } else {
             toast('Comment not found — it may have been deleted');
           }

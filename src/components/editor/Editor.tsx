@@ -399,6 +399,25 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     }
   }, [commentOps.activeCommentId, commentOps.activeComment, editor]);
 
+  // Scroll-to-comment: triggered by external navigation (e.g. activity panel click)
+  const scrollToCommentId = useCommentStore((s) => s.scrollToCommentId);
+  useEffect(() => {
+    if (!scrollToCommentId || !editor) return;
+    useCommentStore.getState().clearScrollToComment();
+    const docId = commentOps.documentId;
+    if (!docId) return;
+    const comments = useCommentStore.getState().commentsByDocument[docId] ?? [];
+    const comment = comments.find((c) => c.id === scrollToCommentId);
+    if (!comment) return;
+    try {
+      const dom = editor.view.domAtPos(comment.from);
+      const node = dom.node instanceof HTMLElement ? dom.node : dom.node.parentElement;
+      node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch { /* position may be invalid */ }
+    // Delay activation so scroll completes and coordsAtPos returns correct position
+    setTimeout(() => commentOps.setActiveComment(scrollToCommentId), 300);
+  }, [scrollToCommentId, editor, commentOps]);
+
   // External change detection via editor-store
   const activeExternalContent = activeTab ? externalChanges[activeTab.filePath] : undefined;
 
