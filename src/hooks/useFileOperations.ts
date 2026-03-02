@@ -231,7 +231,7 @@ export function useFileOperations() {
         const raw = serializeFrontmatter(frontmatter, content);
         await tauriApi.markSelfWrite(filePath);
         await tauriApi.writeFile(filePath, raw);
-        markTabClean(tabId);
+        markTabClean(tabId, content);
         useEditorStore.getState().clearExternalChange(filePath);
         refreshGitForPath(filePath);
         if (filePath.endsWith(".md")) refreshTags();

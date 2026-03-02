@@ -28,6 +28,9 @@ export interface Tab {
   deleted?: boolean;
   /** Session-only: scroll to a specific tag occurrence after content loads. Cleared after use. */
   scrollToTag?: ScrollToTag;
+  /** Session-only: the markdown content at the time of the last save. Used to distinguish
+   *  self-writes from external changes when the user continues typing after a save. */
+  lastSavedContent?: string;
 }
 
 export interface RecentFile {
@@ -60,7 +63,7 @@ interface EditorStore {
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   updateTabContent: (tabId: string, content: string, isDirty: boolean) => void;
-  markTabClean: (tabId: string) => void;
+  markTabClean: (tabId: string, savedContent?: string) => void;
   markTabDeleted: (filePath: string) => void;
   setFrontmatter: (tabId: string, frontmatter: Frontmatter | null) => void;
   updateFrontmatter: (tabId: string, updates: Partial<Frontmatter>) => void;
@@ -127,6 +130,7 @@ export const useEditorStore = create<EditorStore>()(
             frontmatter: frontmatter ?? null,
             fileType: fileType ?? "markdown",
             scrollToTag,
+            lastSavedContent: content,
           };
 
           const newPersistedTabs = [...state.persistedTabs.filter((p) => p.filePath !== filePath), { filePath, fileName }];
@@ -182,15 +186,19 @@ export const useEditorStore = create<EditorStore>()(
       updateTabContent: (tabId: string, content: string, isDirty: boolean) => {
         set((state) => ({
           tabs: state.tabs.map((tab) =>
-            tab.id === tabId ? { ...tab, content, isDirty } : tab
+            tab.id === tabId
+              ? { ...tab, content, isDirty, ...(!isDirty && { lastSavedContent: content }) }
+              : tab
           ),
         }));
       },
 
-      markTabClean: (tabId: string) => {
+      markTabClean: (tabId: string, savedContent?: string) => {
         set((state) => ({
           tabs: state.tabs.map((tab) =>
-            tab.id === tabId ? { ...tab, isDirty: false } : tab
+            tab.id === tabId
+              ? { ...tab, isDirty: false, ...(savedContent !== undefined && { lastSavedContent: savedContent }) }
+              : tab
           ),
         }));
       },

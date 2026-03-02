@@ -451,7 +451,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       toast("File modified externally", {
         id: `external-change-dirty-${filePath}`,
         description: activeTab.fileName,
-        duration: Infinity,
+        duration: 8000,
         action: {
           label: "Reload",
           onClick: () => {

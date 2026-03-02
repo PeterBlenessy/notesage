@@ -99,8 +99,13 @@ async function handleModifyEvent(path: string, normalizedPath: string) {
     const raw = await tauriApi.readFile(path);
     const { content } = parseFrontmatter(raw);
 
-    // Skip if content matches what's in the tab
+    // Skip if content matches what's in the tab (no change)
     if (content === tab.content) return;
+
+    // Skip if content matches what we last saved — this handles the race where the
+    // user continues typing after a save but the watcher fires for the save event.
+    // The disk content matches our save, so it's not an external change.
+    if (tab.lastSavedContent !== undefined && content === tab.lastSavedContent) return;
 
     // If a git branch diff review is active, auto-accept silently
     if (useDiffReviewStore.getState().reviewActive) {
