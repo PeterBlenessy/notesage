@@ -441,12 +441,21 @@ Central library folder and selective iCloud sync for projects.
 - Cloud badge icon on synced files and folders in sidebar
 - "Configure then apply" pattern: toggles update pending state, Apply button triggers migration
 
+**iCloud project auto-discovery:**
+
+- On startup, scans the iCloud Notesage folder for projects synced from other machines (top-level directories with `.notesage/` metadata)
+- Newly discovered projects are added to the workspace and registered as synced projects automatically
+- At runtime, the filesystem watcher detects new projects appearing in the iCloud folder (1s debounce to account for gradual iCloud sync) and adds them to the sidebar
+- Filesystem watchers are gated behind a `startupReady` flag to prevent errors from stale paths during startup validation
+
 **Architecture:**
 
 - `sync-store` with disk-based persistence (`sync-settings.json`)
+- `scan-icloud-projects.ts`: shared helper for startup and runtime iCloud project discovery
 - Tauri commands: `migrate_to_icloud`, `migrate_from_icloud`, `migrate_quick_notes`
 - Atomic rename with copy fallback for project migration
 - `formatDisplayPath()` utility for user-friendly path labels (iCloud Drive/Notesage, \~/Notesage)
+- `startupReady` runtime-only flag in `settings-store` gates filesystem watchers until startup validation completes
 
 **Future enhancements (not yet built):**
 

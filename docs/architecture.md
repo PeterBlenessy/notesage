@@ -125,6 +125,7 @@ note-sage/
 │   │   ├── tauri.ts                # Typed Tauri invoke wrappers
 │   │   ├── utils.ts                # General utilities
 │   │   ├── dom-search.ts           # Shared DOM text search utility (DOCX, plain text viewers)
+│   │   ├── scan-icloud-projects.ts # iCloud project auto-discovery (startup + runtime)
 │   │   └── ai/                     # AI provider abstraction
 │   │       ├── types.ts            # AI interfaces and types
 │   │       ├── connections.ts      # Connection types, capabilities, routing, provider options
@@ -188,7 +189,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 - **editor-store**: Open tabs (file path + dirty state + per-tab copilotDisabled flag), active tab index
 - **workspace-store**: Explorer folders (multiple), open projects, notes tree, expanded folders, section collapse state
 - **project-metadata-store**: Project metadata from `.notesage/project.json` (name, description, AI overrides)
-- **settings-store**: Theme, window state, recent projects, UI preferences (floating toolbar toggle, external change diff review toggle)
+- **settings-store**: Theme, window state, recent projects, UI preferences (floating toolbar toggle, external change diff review toggle), runtime-only `startupReady` flag (gates filesystem watchers until startup validation completes)
 - **ai-store**: AI provider selection, API keys, Ollama URL, suggestions enabled (legacy — used as fallback)
 - **connections-store**: Multi-provider connections with auth method, status, capabilities
 - **routing-store**: Per-use-case provider routing (interactive, agent_tasks, inline_completion)
@@ -420,17 +421,18 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 
 7. `listen("file-changed")` receives events and normalizes paths (strips `/private/` prefix for macOS symlinks, trailing slashes)
 8. Create/delete: debounced `refreshFileTree()` (no target path — avoids canonicalization mismatches) + debounced git status refresh
-9. Modify: looks up open tab by normalized path comparison
-10. Content guard: reads file from disk, compares against both `tab.content` and any pending `externalChanges` entry — skips if identical (prevents self-write false positives)
-11. Clean-tab behavior gated on `settings-store.externalChangeDiffReview`:
+9. Create inside iCloud folder: debounced (1s) check for `.notesage/` metadata in the top-level subfolder — if found, auto-adds as a synced project (runtime discovery of projects from other machines)
+10. Modify: looks up open tab by normalized path comparison
+11. Content guard: reads file from disk, compares against both `tab.content` and any pending `externalChanges` entry — skips if identical (prevents self-write false positives)
+12. Clean-tab behavior gated on `settings-store.externalChangeDiffReview`:
     - **Off (default):** `editor-store.setExternalChange()` → Editor.tsx auto-reloads with toast
     - **On (beta):** `external-change-store.addChange()` → inline diff decorations for review
 
 **Editor auto-reload (`Editor.tsx`):**
 
-12. `useEffect` watches for external changes on the active tab
-13. Clean tabs: auto-reloads via `editor.commands.setContent()` (Tiptap is the source of truth — must push content to ProseMirror, not just Zustand) + shows "File updated from disk" toast
-14. Dirty tabs: shows reload/keep banner for user decision
+13. `useEffect` watches for external changes on the active tab
+14. Clean tabs: auto-reloads via `editor.commands.setContent()` (Tiptap is the source of truth — must push content to ProseMirror, not just Zustand) + shows "File updated from disk" toast
+15. Dirty tabs: shows reload/keep banner for user decision
 
 **Critical implementation notes:**
 
@@ -438,6 +440,8 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 - **Self-write TTL (5s)**: Covers the 500ms debounce window + macOS FSEvents re-reporting the same event multiple times over ~3 seconds + iCloud sync latency.
 - **Path normalization**: macOS FSEvents canonicalizes `/var` → `/private/var`, `/tmp` → `/private/tmp`. The frontend strips the `/private/` prefix for comparison.
 - **Toast dedup**: Uses stable `id: "external-change"` on toast to prevent duplicate notifications from FSEvents re-reporting.
+- **Startup gating (`startupReady`)**: `useStartWatchers` does not start filesystem watchers until `settings-store.startupReady` is `true`. This flag is set by `App.tsx` after `reloadTrees()` finishes validating paths, removing stale projects, and discovering iCloud projects — preventing watchers from firing on paths that no longer exist.
+- **iCloud project auto-discovery**: At startup, `scanICloudForProjects()` scans the iCloud Notesage folder for top-level directories with `.notesage/` metadata and adds them as synced projects. At runtime, `useFileWatcher` detects create events inside the iCloud folder and performs the same check with a 1s debounce (accounts for gradual iCloud file sync).
 
 ## Future-Proofing Decisions
 
