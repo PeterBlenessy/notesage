@@ -481,7 +481,11 @@ async fn ollama_generate(request: &AIRequest) -> Result<String, String> {
         .unwrap_or("http://localhost:11434");
     let model = request.model.as_deref().unwrap_or("llama3.2");
 
-    let client = reqwest::Client::new();
+    // Ollama may need to load the model on first request — generous timeout
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
     let mut body = serde_json::json!({
         "model": model,
@@ -532,7 +536,11 @@ async fn ollama_chat(
         .unwrap_or("http://localhost:11434");
     let model = model.as_deref().unwrap_or("llama3.2");
 
-    let client = reqwest::Client::new();
+    // Ollama may need to load the model on first request — generous timeout
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
     let api_messages: Vec<serde_json::Value> = messages
         .iter()
@@ -641,7 +649,11 @@ pub async fn ollama_fim_completion(
     let base = ollama_url.as_deref().unwrap_or("http://localhost:11434");
     let model = model.as_deref().unwrap_or("qwen2.5-coder");
 
-    let client = reqwest::Client::new();
+    // Ollama may need to load the model on first request — generous timeout
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
     let body = serde_json::json!({
         "model": model,

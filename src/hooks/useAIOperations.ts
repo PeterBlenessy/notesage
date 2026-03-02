@@ -19,9 +19,11 @@ import { listen } from '@tauri-apps/api/event';
 /**
  * Extract a user-friendly error message from AI provider errors.
  * Provider backends return raw JSON error bodies — parse out the message field.
+ * Includes provider name so the user knows which connection failed.
  */
-function friendlyAIError(error: unknown): string {
+function friendlyAIError(error: unknown, provider?: string): string {
   const raw = error instanceof Error ? error.message : String(error);
+  const prefix = provider ? `${provider}: ` : '';
 
   // Try to extract the nested JSON message from provider error strings
   // e.g. 'Anthropic API error: {"type":"error","error":{"type":"...","message":"Your credit balance..."}}'
@@ -30,7 +32,7 @@ function friendlyAIError(error: unknown): string {
     try {
       const parsed = JSON.parse(jsonMatch[0]);
       const msg = parsed?.error?.message || parsed?.message;
-      if (msg) return msg;
+      if (msg) return prefix + msg;
     } catch {
       // Not valid JSON, fall through
     }
@@ -38,7 +40,7 @@ function friendlyAIError(error: unknown): string {
 
   // Strip common prefixes like "Anthropic API error: " or "OpenAI API error: "
   const stripped = raw.replace(/^(Anthropic|OpenAI|Ollama)\s+API\s+error:\s*/i, '').trim();
-  return stripped || 'Something went wrong. Please try again.';
+  return prefix + (stripped || 'Something went wrong. Please try again.');
 }
 
 /**
@@ -745,7 +747,7 @@ export function useAIOperations() {
           }
           stopAcpAgent();
           console.error('[AI Chat] ACP error:', error);
-          setMessageError(assistantMessageId, friendlyAIError(error));
+          setMessageError(assistantMessageId, friendlyAIError(error, effectiveConnection?.label || effectiveConnection?.provider));
           setLoading(false);
           setActiveTool(null);
         }
@@ -855,7 +857,7 @@ export function useAIOperations() {
           cleanupRef.current();
         }
         console.error('[AI Chat] Stream error:', error);
-        setMessageError(assistantMessageId, friendlyAIError(error));
+        setMessageError(assistantMessageId, friendlyAIError(error, effectiveConnection?.label || resolved?.provider));
         setLoading(false);
         setActiveTool(null);
       }

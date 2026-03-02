@@ -444,7 +444,11 @@ pub async fn ollama_chat_stream(
         .unwrap_or("http://localhost:11434");
     let model = model.as_deref().unwrap_or("llama3.2");
 
-    let client = reqwest::Client::new();
+    // Ollama may need to load the model into memory on first request — use a generous timeout
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
     let api_messages: Vec<serde_json::Value> = messages
         .iter()
