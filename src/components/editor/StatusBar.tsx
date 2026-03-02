@@ -252,7 +252,7 @@ export function StatusBar({
                     />
                   </div>
                   <p className="text-[10px] text-muted-foreground/60 leading-tight">
-                    GitHub Copilot suggests code and text as you type. Press Tab to accept, Escape to dismiss.
+                    Inline completions suggest text as you type. Press Tab to accept, Escape to dismiss.
                   </p>
                   <div className="flex items-center justify-between">
                     <label htmlFor="copilot-toggle" className="text-xs text-muted-foreground">
