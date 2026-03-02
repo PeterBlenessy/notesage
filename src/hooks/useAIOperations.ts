@@ -4,13 +4,42 @@ import { useRoutingStore } from '@/stores/routing-store';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { useChatStore } from '@/stores/chat-store';
 import { useProjectMetadataStore, type ProjectMetadata } from '@/stores/project-metadata-store';
+import { useSettingsStore } from '@/stores/settings-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useEditorStore } from '@/stores/editor-store';
 import { getAIProvider } from '@/lib/ai';
 import type { AIProviderType, ChatMessage, Citation } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
+import type { FileEntry } from '@/lib/tauri';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+
+/**
+ * Extract a user-friendly error message from AI provider errors.
+ * Provider backends return raw JSON error bodies — parse out the message field.
+ */
+function friendlyAIError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+
+  // Try to extract the nested JSON message from provider error strings
+  // e.g. 'Anthropic API error: {"type":"error","error":{"type":"...","message":"Your credit balance..."}}'
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      const msg = parsed?.error?.message || parsed?.message;
+      if (msg) return msg;
+    } catch {
+      // Not valid JSON, fall through
+    }
+  }
+
+  // Strip common prefixes like "Anthropic API error: " or "OpenAI API error: "
+  const stripped = raw.replace(/^(Anthropic|OpenAI|Ollama)\s+API\s+error:\s*/i, '').trim();
+  return stripped || 'Something went wrong. Please try again.';
+}
 
 /**
  * Build a context string from discovered goal files.
@@ -28,12 +57,55 @@ function buildGoalsContext(goalFiles: { name: string; content: string }[]): stri
 /**
  * Build a context block for a single project (name, description, custom context).
  */
-function buildProjectHeader(metadata: ProjectMetadata): string {
+function buildProjectHeader(metadata: ProjectMetadata, rootPath?: string): string {
   const lines: string[] = [];
   if (metadata.name) lines.push(`Project: ${metadata.name}`);
+  if (rootPath) lines.push(`Project root: ${rootPath}`);
   if (metadata.description) lines.push(`Description: ${metadata.description}`);
   if (metadata.ai.projectContext) lines.push(`Project context: ${metadata.ai.projectContext}`);
   return lines.join('\n');
+}
+
+/** Directories to skip when building file tree context for AI. */
+const IGNORED_DIRS = new Set([
+  'node_modules', '.git', '.next', '.nuxt', '.svelte-kit',
+  'dist', 'build', 'out', '.output', 'target',
+  '.cache', '.turbo', '.parcel-cache',
+  '__pycache__', '.venv', 'venv',
+  '.notesage',
+]);
+
+/**
+ * Build a compact text representation of a file tree for AI context.
+ * Limits depth and total file count to avoid bloating the system message.
+ */
+function buildFileTreeContext(tree: FileEntry[], rootPath: string, maxDepth = 3, maxFiles = 100): string {
+  const lines: string[] = [];
+  let fileCount = 0;
+
+  function walk(entries: FileEntry[], depth: number, prefix: string) {
+    if (depth > maxDepth || fileCount >= maxFiles) return;
+    for (const entry of entries) {
+      if (fileCount >= maxFiles) {
+        lines.push(`${prefix}... (truncated)`);
+        return;
+      }
+      if (entry.is_directory && IGNORED_DIRS.has(entry.name)) continue;
+      const icon = entry.is_directory ? '/' : '';
+      lines.push(`${prefix}${entry.name}${icon}`);
+      fileCount++;
+      if (entry.is_directory && entry.children) {
+        walk(entry.children, depth + 1, prefix + '  ');
+      }
+    }
+  }
+
+  walk(tree, 0, '  ');
+
+  if (lines.length === 0) return '';
+
+  const rootName = rootPath.split('/').pop() || rootPath;
+  return `## Project Files\n\n${rootName}/\n${lines.join('\n')}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -251,7 +323,7 @@ function resolveWithConfig(
 export function useAIOperations() {
   const aiStore = useAIStore();
   const { apiKeys, ollamaUrl } = aiStore;
-  const { addMessage, updateMessage, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, selectedProjectPaths, webSearchEnabled } = useChatStore();
+  const { addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, selectedProjectPaths, webSearchEnabled } = useChatStore();
   const cleanupRef = useRef<(() => void) | null>(null);
 
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
@@ -342,39 +414,67 @@ export function useAIOperations() {
   const { goalFiles } = useGoalsDiscovery(singleProjectPath);
   const goalsContext = useMemo(() => buildGoalsContext(goalFiles), [goalFiles]);
 
+  // Project file tree for single-project context
+  const singleProject = useWorkspaceStore((s) =>
+    singleProjectPath ? s.projects.find((p) => p.path === singleProjectPath) : undefined
+  );
+
+  // Active file for file awareness
+  const activeTab = useEditorStore((s) => {
+    if (!s.activeTabId) return null;
+    return s.tabs.find((t) => t.id === s.activeTabId) ?? null;
+  });
+
   // Compose system message based on selected projects
   const composedSystemMessage = useMemo(() => {
     const parts: string[] = [];
 
     if (selectedProjectPaths.length === 1) {
-      // Single project — full context + goals
+      // Single project — full context + goals + file tree
       if (singleMetadata) {
-        const header = buildProjectHeader(singleMetadata);
+        const header = buildProjectHeader(singleMetadata, singleProjectPath!);
         if (header) parts.push(header);
+      } else if (singleProjectPath) {
+        parts.push(`Project root: ${singleProjectPath}`);
       }
       if (goalsContext) parts.push(goalsContext);
+      if (singleProject?.fileTree) {
+        const treeContext = buildFileTreeContext(singleProject.fileTree, singleProjectPath!);
+        if (treeContext) parts.push(treeContext);
+      }
     } else if (selectedProjectPaths.length > 1) {
       // Multiple projects — include each project's summary
       const summaries: string[] = [];
       for (const path of selectedProjectPaths) {
         const meta = metadataMap[path];
         if (meta) {
-          summaries.push(buildProjectHeader(meta));
+          summaries.push(buildProjectHeader(meta, path));
         } else {
           const name = path.split('/').pop() || path;
-          summaries.push(`Project: ${name}`);
+          summaries.push(`Project: ${name}\nProject root: ${path}`);
         }
       }
       parts.push(`The user has the following projects selected:\n\n${summaries.join('\n\n')}`);
     }
     // selectedProjectPaths.length === 0 → no project context
 
+    // Active file awareness
+    if (activeTab) {
+      let fileContext = `Currently editing: ${activeTab.filePath}`;
+      if (activeTab.fileType === 'markdown' && activeTab.content) {
+        const snippet = activeTab.content.slice(0, 500);
+        const truncated = activeTab.content.length > 500 ? '...' : '';
+        fileContext += `\n\nFile content preview:\n${snippet}${truncated}`;
+      }
+      parts.push(fileContext);
+    }
+
     if (parts.length > 0) {
       return `${parts.join('\n\n')}\n\n${effectivePersona.systemMessage}`;
     }
 
     return effectivePersona.systemMessage;
-  }, [selectedProjectPaths, singleMetadata, goalsContext, metadataMap, effectivePersona.systemMessage]);
+  }, [selectedProjectPaths, singleProjectPath, singleMetadata, goalsContext, singleProject, activeTab, metadataMap, effectivePersona.systemMessage]);
 
   const generateText = useCallback(
     async (prompt: string): Promise<string> => {
@@ -644,8 +744,8 @@ export function useAIOperations() {
             cleanupRef.current();
           }
           stopAcpAgent();
-          const msg = error instanceof Error ? error.message : String(error);
-          setError(msg || 'Something went wrong with the AI agent. Please try again.');
+          console.error('[AI Chat] ACP error:', error);
+          setMessageError(assistantMessageId, friendlyAIError(error));
           setLoading(false);
           setActiveTool(null);
         }
@@ -733,9 +833,13 @@ export function useAIOperations() {
           content: composedSystemMessage,
         };
 
+        // Apply history limit (system message and new user message always included)
+        const historyLimit = useSettingsStore.getState().chatHistoryLimit;
+        const effectiveHistory = historyLimit > 0 ? messages.slice(-historyLimit) : messages;
+
         // Start streaming
         await invoke('ai_chat_stream', {
-          messages: [systemMessage, ...messages, userMessage],
+          messages: [systemMessage, ...effectiveHistory, userMessage],
           provider: resolved.provider,
           apiKey: resolved.apiKey,
           ollamaUrl: resolved.ollamaUrl,
@@ -750,12 +854,13 @@ export function useAIOperations() {
         if (cleanupRef.current) {
           cleanupRef.current();
         }
-        setError(error instanceof Error ? error.message : 'Unknown error');
+        console.error('[AI Chat] Stream error:', error);
+        setMessageError(assistantMessageId, friendlyAIError(error));
         setLoading(false);
         setActiveTool(null);
       }
     },
-    [resolved, composedSystemMessage, webSearchEnabled, addMessage, updateMessage, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, effectiveConnection, selectedProjectPaths]
+    [resolved, composedSystemMessage, webSearchEnabled, addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, effectiveConnection, selectedProjectPaths]
   );
 
   const cancelChat = useCallback(() => {

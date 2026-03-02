@@ -121,6 +121,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
     marginRight, setMarginRight,
     gitEnabled, setGitEnabled,
     pageBreaks, setPageBreaks,
+    chatHistoryLimit, setChatHistoryLimit,
     debugLogging, setDebugLogging,
     autoCheckUpdates, setAutoCheckUpdates,
     lastUpdateCheck,
@@ -222,6 +223,42 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                 <ConnectionsSettings />
                 <div className="h-px bg-border" />
                 <UseCaseRoutingSettings />
+                <div className="h-px bg-border" />
+
+                {/* Chat History Limit */}
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-semibold">Chat History</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Limit how many messages are sent to AI providers
+                    </p>
+                  </div>
+                  <div
+                    className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
+                  >
+                    <div>
+                      <Label className="text-sm font-medium">Message Limit</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        For Direct API connections only. ACP agents manage their own context.
+                      </p>
+                    </div>
+                    <Select
+                      value={String(chatHistoryLimit)}
+                      onValueChange={(v) => setChatHistoryLimit(Number(v))}
+                    >
+                      <SelectTrigger className="ml-auto w-40 text-left">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0">Unlimited</SelectItem>
+                        <SelectItem value="10">Last 10</SelectItem>
+                        <SelectItem value="20">Last 20</SelectItem>
+                        <SelectItem value="50">Last 50</SelectItem>
+                        <SelectItem value="100">Last 100</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
             )}
 

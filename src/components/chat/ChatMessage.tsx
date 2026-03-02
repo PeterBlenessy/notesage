@@ -1,4 +1,4 @@
-import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2 } from 'lucide-react';
+import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2, X, AlertTriangle } from 'lucide-react';
 import { useState } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { MarkdownContent } from '@/components/MarkdownContent';
@@ -64,7 +64,7 @@ interface ChatMessageProps {
 
 export function ChatMessage({ message }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
-  const { isLoading } = useChatStore();
+  const { isLoading, deleteMessage } = useChatStore();
 
   const isUser = message.role === 'user';
   const isStreaming = !isUser && isLoading && message.content.length === 0;
@@ -92,6 +92,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
       <div className="h-6 w-6 rounded-full shrink-0 flex items-center justify-center mt-0.5 bg-muted">
         {isUser ? (
           <User className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+        ) : message.isError ? (
+          <AlertTriangle className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
         ) : (
           <Sparkles className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
         )}
@@ -107,6 +109,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
       >
         {isUser ? (
           <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+        ) : message.isError ? (
+          <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{message.content}</p>
         ) : isStreaming ? (
           <div className="flex items-center gap-1.5 py-1">
             <div className="h-1.5 w-1.5 rounded-full animate-pulse bg-muted-foreground" />
@@ -161,6 +165,17 @@ export function ChatMessage({ message }: ChatMessageProps) {
               ))}
             </ol>
           </div>
+        )}
+
+        {/* Delete button — circular, positioned like macOS notification dismiss */}
+        {!isLoading && message.timestamp && (
+          <button
+            className={`absolute -top-2 ${isUser ? '-left-2' : '-right-2'} h-5 w-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-card border border-border`}
+            onClick={() => deleteMessage(message.timestamp!)}
+            title="Delete message"
+          >
+            <X className="h-2.5 w-2.5 text-muted-foreground" strokeWidth={1.5} />
+          </button>
         )}
 
         {/* Copy button */}

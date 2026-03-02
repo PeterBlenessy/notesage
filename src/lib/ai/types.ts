@@ -26,6 +26,8 @@ export interface ChatMessage {
   connectionLabel?: string;
   /** Snapshot of provider name at generation time (for logo rendering) */
   connectionProvider?: string;
+  /** True when this message represents an error instead of a response */
+  isError?: boolean;
 }
 
 export interface GenerateOptions {

@@ -50,7 +50,7 @@ function getToolIcon(kind: string): LucideIcon {
 }
 
 export function ChatPanel() {
-  const { messages, isLoading, error, activeTool, clearMessages, selectedProjectPaths, setSelectedProjectPaths, toggleProjectPath, webSearchEnabled, setWebSearchEnabled } = useChatStore();
+  const { messages, isLoading, activeTool, clearMessages, selectedProjectPaths, setSelectedProjectPaths, toggleProjectPath, webSearchEnabled, setWebSearchEnabled } = useChatStore();
   const aiStore = useAIStore();
   const { provider: legacyProvider, setActivePersona } = aiStore;
   const activePersona = getActivePersona(aiStore);
@@ -278,12 +278,6 @@ export function ChatPanel() {
         )}
         <div ref={messagesEndRef} />
       </div>
-
-      {error && (
-        <div className="px-4 py-2 bg-destructive/10 border-t border-destructive/20">
-          <p className="text-sm text-destructive">{error}</p>
-        </div>
-      )}
 
       <div className="border-t border-border px-3 py-3">
         <ChatInput

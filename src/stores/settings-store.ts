@@ -29,6 +29,7 @@ interface SettingsStore {
   externalChangeDiffReview: boolean;
   sourceWordWrap: boolean;
   copilotMaxCompletionChars: number;
+  chatHistoryLimit: number;
   debugLogging: boolean;
   autoCheckUpdates: boolean;
   lastUpdateCheck: string | null;
@@ -60,6 +61,7 @@ interface SettingsStore {
   setExternalChangeDiffReview: (enabled: boolean) => void;
   setSourceWordWrap: (enabled: boolean) => void;
   setCopilotMaxCompletionChars: (chars: number) => void;
+  setChatHistoryLimit: (limit: number) => void;
   setDebugLogging: (enabled: boolean) => void;
   setAutoCheckUpdates: (enabled: boolean) => void;
   setLastUpdateCheck: (timestamp: string | null) => void;
@@ -97,6 +99,7 @@ export const useSettingsStore = create<SettingsStore>()(
       externalChangeDiffReview: false,
       sourceWordWrap: true,
       copilotMaxCompletionChars: 80,
+      chatHistoryLimit: 0,
       debugLogging: false,
       autoCheckUpdates: true,
       lastUpdateCheck: null,
@@ -184,6 +187,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setCopilotMaxCompletionChars: (chars: number) => {
         set({ copilotMaxCompletionChars: chars });
+      },
+
+      setChatHistoryLimit: (limit: number) => {
+        set({ chatHistoryLimit: limit });
       },
 
       setDebugLogging: (enabled: boolean) => {

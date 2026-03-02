@@ -14,6 +14,7 @@ interface ChatStore {
 
   addMessage: (message: ChatMessage) => void;
   updateMessage: (timestamp: number, content: string, citations?: Citation[]) => void;
+  deleteMessage: (timestamp: number) => void;
   clearMessages: () => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -21,6 +22,7 @@ interface ChatStore {
   setSelectedProjectPaths: (paths: string[]) => void;
   toggleProjectPath: (path: string) => void;
   setWebSearchEnabled: (enabled: boolean) => void;
+  setMessageError: (timestamp: number, error: string) => void;
   addActivity: (messageTimestamp: number, activity: AgentActivity) => void;
   completeLastActivity: (messageTimestamp: number) => void;
   completeAllActivities: (messageTimestamp: number) => void;
@@ -50,6 +52,11 @@ export const useChatStore = create<ChatStore>()(
           ),
         })),
 
+      deleteMessage: (timestamp) =>
+        set((state) => ({
+          messages: state.messages.filter((msg) => msg.timestamp !== timestamp),
+        })),
+
       clearMessages: () => set({ messages: [], isLoading: false, error: null, activeTool: null }),
       setLoading: (loading) => set({ isLoading: loading }),
       setError: (error) => set({ error }),
@@ -65,6 +72,15 @@ export const useChatStore = create<ChatStore>()(
           };
         }),
       setWebSearchEnabled: (enabled) => set({ webSearchEnabled: enabled }),
+
+      setMessageError: (timestamp, error) =>
+        set((state) => ({
+          messages: state.messages.map((msg) =>
+            msg.timestamp === timestamp
+              ? { ...msg, content: error, isError: true }
+              : msg
+          ),
+        })),
 
       addActivity: (messageTimestamp, activity) =>
         set((state) => ({
