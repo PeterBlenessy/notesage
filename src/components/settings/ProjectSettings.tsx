@@ -139,13 +139,22 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
     setApplying(true);
     try {
       if (pendingSync && icloudNotesagePath) {
-        // Enable sync: move to iCloud
-        const newPath = await tauriApi.migrateToICloud(projectPath, icloudNotesagePath);
-        await migrateProjectPath(projectPath, newPath);
-        addSyncedProject(newPath);
-        await saveSettings(notesRootPath);
-        onPathChanged?.(newPath);
-        toast.success("Project synced to iCloud");
+        // Check if the project is already in the iCloud Notesage folder
+        const alreadyInICloud = projectPath.startsWith(icloudNotesagePath + "/");
+        if (alreadyInICloud) {
+          // Already in iCloud — just register as synced, no migration needed
+          addSyncedProject(projectPath);
+          await saveSettings(notesRootPath);
+          toast.success("Project marked as synced to iCloud");
+        } else {
+          // Enable sync: move to iCloud
+          const newPath = await tauriApi.migrateToICloud(projectPath, icloudNotesagePath);
+          await migrateProjectPath(projectPath, newPath);
+          addSyncedProject(newPath);
+          await saveSettings(notesRootPath);
+          onPathChanged?.(newPath);
+          toast.success("Project synced to iCloud");
+        }
       } else if (!pendingSync && notesRootPath) {
         // Disable sync: move back to local
         const newPath = await tauriApi.migrateFromICloud(projectPath, notesRootPath);
@@ -163,21 +172,19 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
     }
   }, [pendingSync, projectPath, icloudNotesagePath, notesRootPath, addSyncedProject, removeSyncedProject, saveSettings, onPathChanged]);
 
-  if (!metadata) {
-    return (
-      <div className="p-8 text-center border border-dashed border-border rounded-lg">
-        <p className="text-sm text-muted-foreground">
-          Loading project metadata...
-        </p>
-      </div>
-    );
-  }
-
-  const allPersonas = getAllPersonas(aiStore);
-  const selectedConnection = connections.find((c) => c.id === metadata.ai.provider);
+  const allPersonas = metadata ? getAllPersonas(aiStore) : [];
+  const selectedConnection = metadata ? connections.find((c) => c.id === metadata.ai.provider) : undefined;
 
   return (
     <div className="space-y-6">
+      {!metadata ? (
+        <div className="p-8 text-center border border-dashed border-border rounded-lg">
+          <p className="text-sm text-muted-foreground">
+            Loading project metadata...
+          </p>
+        </div>
+      ) : (
+      <>
       {/* Project Info */}
       <div className="space-y-4">
         <div>
@@ -405,6 +412,9 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
           </div>
         </div>
       </div>
+
+      </>
+      )}
 
       {/* Sync Section */}
       {showSyncSection && (

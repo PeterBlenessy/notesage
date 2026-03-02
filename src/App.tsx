@@ -208,6 +208,27 @@ function App() {
     };
   }, []);
 
+  // Prevent browser default drop behavior (WKWebView navigates on unhandled drops)
+  useEffect(() => {
+    const preventDrop = (e: DragEvent) => {
+      // Only prevent if no Notesage drag data — allow our handled drops through
+      if (!e.defaultPrevented) {
+        e.preventDefault();
+      }
+    };
+    const preventDragOver = (e: DragEvent) => {
+      if (!e.defaultPrevented) {
+        e.preventDefault();
+      }
+    };
+    document.addEventListener('drop', preventDrop);
+    document.addEventListener('dragover', preventDragOver);
+    return () => {
+      document.removeEventListener('drop', preventDrop);
+      document.removeEventListener('dragover', preventDragOver);
+    };
+  }, []);
+
   // Reload file trees for all persisted projects on startup
   useEffect(() => {
     async function reloadTrees() {

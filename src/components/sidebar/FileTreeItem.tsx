@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown } from "lucide-react";
 import { SyncedIcon } from "./SyncedIcon";
 import { toast } from "sonner";
@@ -50,12 +50,17 @@ const GIT_STATUS_CONFIG: Record<GitStatus, { label: string; color: string; toolt
   conflicted: { label: "C", color: "text-destructive", tooltip: "Conflicted — merge conflict" },
 };
 
-function FolderPickerItem({ folder, onMoveTo }: { folder: FileEntry; onMoveTo: (path: string) => void }) {
-  const subfolders = (folder.children ?? []).filter((e) => e.is_directory && e.name !== ".notesage" && e.name !== ".git");
+function FolderPickerItem({ folder, onMoveTo, entryPath, entryIsDirectory, currentParent }: { folder: FileEntry; onMoveTo: (path: string) => void; entryPath: string; entryIsDirectory: boolean; currentParent: string }) {
+  // Filter out the entry itself and its descendants from subfolders
+  const subfolders = (folder.children ?? []).filter((e) =>
+    e.is_directory && e.name !== ".notesage" && e.name !== ".git" &&
+    !(entryIsDirectory && (e.path === entryPath || e.path.startsWith(entryPath + "/")))
+  );
+  const isCurrentParent = folder.path === currentParent;
   if (subfolders.length === 0) {
     return (
-      <ContextMenuItem onClick={() => onMoveTo(folder.path)}>
-        {folder.name}
+      <ContextMenuItem onClick={() => onMoveTo(folder.path)} disabled={isCurrentParent}>
+        {folder.name}{isCurrentParent ? <span className="ml-1 text-muted-foreground text-xs">(current)</span> : null}
       </ContextMenuItem>
     );
   }
@@ -63,12 +68,12 @@ function FolderPickerItem({ folder, onMoveTo }: { folder: FileEntry; onMoveTo: (
     <ContextMenuSub>
       <ContextMenuSubTrigger>{folder.name}</ContextMenuSubTrigger>
       <ContextMenuSubContent>
-        <ContextMenuItem onClick={() => onMoveTo(folder.path)}>
-          <span className="text-muted-foreground">(here)</span>
+        <ContextMenuItem onClick={() => onMoveTo(folder.path)} disabled={isCurrentParent}>
+          <span className="text-muted-foreground">(here){isCurrentParent ? " — current location" : ""}</span>
         </ContextMenuItem>
         <ContextMenuSeparator />
         {subfolders.map((child) => (
-          <FolderPickerItem key={child.path} folder={child} onMoveTo={onMoveTo} />
+          <FolderPickerItem key={child.path} folder={child} onMoveTo={onMoveTo} entryPath={entryPath} entryIsDirectory={entryIsDirectory} currentParent={currentParent} />
         ))}
       </ContextMenuSubContent>
     </ContextMenuSub>
@@ -96,7 +101,10 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(entry.name);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const dragLeaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dragExpandTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const projects = useWorkspaceStore((s) => s.projects);
   const explorerFolders = useWorkspaceStore((s) => s.explorerFolders);
@@ -219,7 +227,14 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
     }
   };
 
+  const currentParent = entry.path.substring(0, entry.path.lastIndexOf("/"));
+
   const handleMoveTo = async (destFolderPath: string) => {
+    if (destFolderPath === currentParent) return;
+    if (entry.is_directory && (destFolderPath === entry.path || destFolderPath.startsWith(entry.path + "/"))) {
+      toast.error("Cannot move a folder into itself");
+      return;
+    }
     const destPath = `${destFolderPath}/${entry.name}`;
     try {
       const exists = await tauriApi.pathExists(destPath);
@@ -241,10 +256,107 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
     }
   };
 
-  const paddingLeft = `${level * 14 + 6}px`;
+  // Drag-and-drop: use text/plain MIME type for WKWebView compatibility
+  const DRAG_MIME = "text/plain";
+
+  const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    const payload = JSON.stringify({
+      _notesage: true,
+      path: entry.path,
+      name: entry.name,
+      isDirectory: entry.is_directory,
+    });
+    e.dataTransfer.setData(DRAG_MIME, payload);
+    e.dataTransfer.effectAllowed = "move";
+    e.currentTarget.style.opacity = "0.5";
+  }, [entry.path, entry.name, entry.is_directory]);
+
+  const handleDragEnd = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.currentTarget.style.opacity = "";
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (dragExpandTimeout.current) {
+      clearTimeout(dragExpandTimeout.current);
+      dragExpandTimeout.current = null;
+    }
+    if (!entry.is_directory) return;
+
+    const raw = e.dataTransfer.getData(DRAG_MIME);
+    if (!raw) return;
+
+    let dragged: { _notesage?: boolean; path: string; name: string; isDirectory: boolean };
+    try {
+      dragged = JSON.parse(raw);
+    } catch { return; }
+    if (!dragged._notesage) return;
+
+    // Don't drop onto self
+    if (dragged.path === entry.path) return;
+    // Don't drop into current parent (no-op)
+    const draggedParent = dragged.path.substring(0, dragged.path.lastIndexOf("/"));
+    if (draggedParent === entry.path) return;
+    // Don't drop a directory into its own descendant
+    if (dragged.isDirectory && entry.path.startsWith(dragged.path + "/")) {
+      toast.error("Cannot move a folder into itself");
+      return;
+    }
+    const destPath = `${entry.path}/${dragged.name}`;
+    try {
+      const exists = await tauriApi.pathExists(destPath);
+      if (exists) {
+        toast.error(`"${dragged.name}" already exists in "${entry.name}"`);
+        return;
+      }
+      await renamePath(dragged.path, destPath);
+    } catch (error) {
+      console.error("Failed to move:", error);
+    }
+  }, [entry.path, entry.name, entry.is_directory, renamePath]);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (dragLeaveTimeout.current) clearTimeout(dragLeaveTimeout.current);
+      if (dragExpandTimeout.current) clearTimeout(dragExpandTimeout.current);
+    };
+  }, []);
+
+  const paddingLeft = `${level * 16 + 12}px`;
 
   return (
     <div>
+      <div
+        draggable={!isRenaming}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragOver={(e) => {
+          if (!entry.is_directory) return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = "move";
+        }}
+        onDragEnter={(e) => {
+          if (!entry.is_directory) return;
+          e.preventDefault();
+          e.stopPropagation();
+          if (dragLeaveTimeout.current) { clearTimeout(dragLeaveTimeout.current); dragLeaveTimeout.current = null; }
+          setIsDragOver(true);
+          if (!expanded) {
+            dragExpandTimeout.current = setTimeout(() => toggleFolder(expandKey), 600);
+          }
+        }}
+        onDragLeave={(e) => {
+          if (!entry.is_directory) return;
+          e.stopPropagation();
+          dragLeaveTimeout.current = setTimeout(() => setIsDragOver(false), 50);
+          if (dragExpandTimeout.current) { clearTimeout(dragExpandTimeout.current); dragExpandTimeout.current = null; }
+        }}
+        onDrop={handleDrop}
+      >
       <ContextMenu>
         <ContextMenuTrigger>
           <div
@@ -254,7 +366,8 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
               isActive
                 ? "bg-accent text-foreground font-medium"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              isDragOver && entry.is_directory && "bg-accent ring-2 ring-ring/30"
             )}
             style={{ paddingLeft }}
             onClick={handleClick}
@@ -392,18 +505,30 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
               seen.add(d.path);
               return true;
             });
-            // Filter out the container the file is already in
-            const valid = unique.filter((d) => !entry.path.startsWith(d.path + "/"));
+            // Filter out the entry itself if it's a directory (can't move into self)
+            const valid = unique.filter((d) => !(entry.is_directory && d.path === entry.path));
             if (valid.length === 0) return null;
 
             const hasMultipleCategories = new Set(valid.map((d) => d.category)).size > 1;
 
             const renderDestination = (d: typeof valid[number]) => {
-              const subfolders = d.tree.filter((e) => e.is_directory && e.name !== ".notesage" && e.name !== ".git");
-              if (subfolders.length === 0) {
+              const subfolders = d.tree.filter((e) =>
+                e.is_directory && e.name !== ".notesage" && e.name !== ".git" &&
+                !(entry.is_directory && (e.path === entry.path || e.path.startsWith(entry.path + "/")))
+              );
+              const isRootCurrentParent = d.path === currentParent;
+              if (subfolders.length === 0 && !entry.path.startsWith(d.path + "/")) {
                 return (
                   <ContextMenuItem key={d.path} onClick={() => handleMoveTo(d.path)}>
                     {d.label}
+                  </ContextMenuItem>
+                );
+              }
+              // If entry is not inside this destination and there are no subfolders, just show root
+              if (subfolders.length === 0) {
+                return (
+                  <ContextMenuItem key={d.path} onClick={() => handleMoveTo(d.path)} disabled={isRootCurrentParent}>
+                    {d.label}{isRootCurrentParent ? <span className="ml-1 text-muted-foreground text-xs">(current)</span> : null}
                   </ContextMenuItem>
                 );
               }
@@ -411,12 +536,12 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
                 <ContextMenuSub key={d.path}>
                   <ContextMenuSubTrigger>{d.label}</ContextMenuSubTrigger>
                   <ContextMenuSubContent>
-                    <ContextMenuItem onClick={() => handleMoveTo(d.path)}>
-                      <span className="text-muted-foreground">(root)</span>
+                    <ContextMenuItem onClick={() => handleMoveTo(d.path)} disabled={isRootCurrentParent}>
+                      <span className="text-muted-foreground">(root){isRootCurrentParent ? " — current location" : ""}</span>
                     </ContextMenuItem>
                     <ContextMenuSeparator />
                     {subfolders.map((folder) => (
-                      <FolderPickerItem key={folder.path} folder={folder} onMoveTo={handleMoveTo} />
+                      <FolderPickerItem key={folder.path} folder={folder} onMoveTo={handleMoveTo} entryPath={entry.path} entryIsDirectory={entry.is_directory} currentParent={currentParent} />
                     ))}
                   </ContextMenuSubContent>
                 </ContextMenuSub>
@@ -495,6 +620,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
+      </div>
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
