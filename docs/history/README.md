@@ -49,3 +49,4 @@ Chronological log of major implementation milestones and changes.
 | 043 | [Release v0.16.10](043-release-v0.16.10.md) | Agent activity strip & panel, progress streaming, debug logging, UX fixes |
 | 044 | [Release v0.16.11](044-release-v0.16.11.md) | Fix AI provider detection, mark-preserving diffs, provider logo in agent panel |
 | 045 | [Release v0.17.0](045-release-v0.17.0.md) | Multi-turn comment threads, Apply-to-document, Phase 6.5 complete |
+| 046 | [Release v0.17.1](046-release-v0.17.1.md) | Chat agent improvements, AI error display, Ollama timeouts, UI fixes |
