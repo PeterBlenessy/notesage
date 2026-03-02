@@ -103,7 +103,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
-  const dragLeaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dragCounter = useRef(0);
   const dragExpandTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const projects = useWorkspaceStore((s) => s.projects);
@@ -278,6 +278,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    dragCounter.current = 0;
     setIsDragOver(false);
     if (dragExpandTimeout.current) {
       clearTimeout(dragExpandTimeout.current);
@@ -320,7 +321,6 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
   // Cleanup timeouts on unmount
   useEffect(() => {
     return () => {
-      if (dragLeaveTimeout.current) clearTimeout(dragLeaveTimeout.current);
       if (dragExpandTimeout.current) clearTimeout(dragExpandTimeout.current);
     };
   }, []);
@@ -343,17 +343,22 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
           if (!entry.is_directory) return;
           e.preventDefault();
           e.stopPropagation();
-          if (dragLeaveTimeout.current) { clearTimeout(dragLeaveTimeout.current); dragLeaveTimeout.current = null; }
-          setIsDragOver(true);
-          if (!expanded) {
-            dragExpandTimeout.current = setTimeout(() => toggleFolder(expandKey), 600);
+          dragCounter.current++;
+          if (dragCounter.current === 1) {
+            setIsDragOver(true);
+            if (!expanded) {
+              dragExpandTimeout.current = setTimeout(() => toggleFolder(expandKey), 600);
+            }
           }
         }}
         onDragLeave={(e) => {
           if (!entry.is_directory) return;
           e.stopPropagation();
-          dragLeaveTimeout.current = setTimeout(() => setIsDragOver(false), 50);
-          if (dragExpandTimeout.current) { clearTimeout(dragExpandTimeout.current); dragExpandTimeout.current = null; }
+          dragCounter.current--;
+          if (dragCounter.current === 0) {
+            setIsDragOver(false);
+            if (dragExpandTimeout.current) { clearTimeout(dragExpandTimeout.current); dragExpandTimeout.current = null; }
+          }
         }}
         onDrop={handleDrop}
       >

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ChevronRight, Folder, FolderOpen, FolderDot, X, ExternalLink, FilePlus, FolderPlus } from "lucide-react";
 import { toast } from "sonner";
 import { tauriApi } from "@/lib/tauri";
@@ -36,13 +36,13 @@ export function ExplorerFolderItem({
   const { isExpanded, toggleFolder, removeExplorerFolder } = useWorkspaceStore();
   const { createFolder, renamePath } = useFileOperations();
   const [isDragOver, setIsDragOver] = useState(false);
-  const dragLeaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dragCounter = useRef(0);
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    dragCounter.current = 0;
     setIsDragOver(false);
-    if (dragLeaveTimeout.current) { clearTimeout(dragLeaveTimeout.current); dragLeaveTimeout.current = null; }
 
     const raw = e.dataTransfer.getData("text/plain");
     if (!raw) return;
@@ -70,9 +70,6 @@ export function ExplorerFolderItem({
     }
   }, [folderPath, renamePath]);
 
-  useEffect(() => {
-    return () => { if (dragLeaveTimeout.current) clearTimeout(dragLeaveTimeout.current); };
-  }, []);
 
   const handleNewFolder = async () => {
     const folderName = window.prompt("Enter folder name:", "New Folder");
@@ -100,12 +97,13 @@ export function ExplorerFolderItem({
         onDragEnter={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          if (dragLeaveTimeout.current) { clearTimeout(dragLeaveTimeout.current); dragLeaveTimeout.current = null; }
-          setIsDragOver(true);
+          dragCounter.current++;
+          if (dragCounter.current === 1) setIsDragOver(true);
         }}
         onDragLeave={(e) => {
           e.stopPropagation();
-          dragLeaveTimeout.current = setTimeout(() => setIsDragOver(false), 50);
+          dragCounter.current--;
+          if (dragCounter.current === 0) setIsDragOver(false);
         }}
         onDrop={handleDrop}
       >
