@@ -9,6 +9,7 @@ import { useSyncStore } from "@/stores/sync-store";
  * Called once at startup, re-runs when workspace changes.
  */
 export function useStartWatchers() {
+  const startupReady = useSettingsStore((s) => s.startupReady);
   const notesRootPath = useSettingsStore((s) => s.notesRootPath);
   const icloudNotesagePath = useSettingsStore((s) => s.icloudNotesagePath);
   const icloudEnabled = useSyncStore((s) => s.icloudEnabled);
@@ -16,6 +17,9 @@ export function useStartWatchers() {
   const explorerFolders = useWorkspaceStore((s) => s.explorerFolders);
 
   useEffect(() => {
+    // Wait until reloadTrees() has finished validating/cleaning up paths
+    if (!startupReady) return;
+
     const paths: string[] = [];
 
     // Notes root (~/Notesage)
@@ -44,5 +48,5 @@ export function useStartWatchers() {
         console.error(`Failed to watch ${path}:`, err);
       });
     }
-  }, [notesRootPath, icloudNotesagePath, icloudEnabled, projects, explorerFolders]);
+  }, [startupReady, notesRootPath, icloudNotesagePath, icloudEnabled, projects, explorerFolders]);
 }

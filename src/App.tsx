@@ -33,6 +33,7 @@ import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { setBinaryData } from "@/lib/binary-cache";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { migrateV1AISettings } from "@/lib/ai/migration";
+import { scanICloudForProjects } from "@/lib/scan-icloud-projects";
 import { stopAcpAgent } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { refreshTags } from "@/hooks/useFileOperations";
@@ -336,6 +337,16 @@ function App() {
               }
             }
 
+            // Discover projects synced from other machines
+            try {
+              const found = await scanICloudForProjects(icloudNotesagePath);
+              if (found) {
+                await syncStore.saveSettings(notesRoot);
+              }
+            } catch {
+              // iCloud scan failed, non-critical
+            }
+
             // Save any cleanup (removed stale projects)
             await syncStore.saveSettings(notesRoot);
           }
@@ -348,6 +359,9 @@ function App() {
 
       // Initial workspace tag scan (for tag autocomplete)
       refreshTags();
+
+      // Signal that startup tree validation is complete — watchers can now start
+      settings.setStartupReady(true);
 
       // Re-open persisted tabs in order, then restore active tab
       const { persistedTabs, persistedActiveFilePath } = useEditorStore.getState();

@@ -5,6 +5,8 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useExternalChangeStore } from "@/stores/external-change-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useSyncStore } from "@/stores/sync-store";
 import { useFileOperations, refreshGitForPath } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
 
@@ -41,6 +43,8 @@ export function useFileWatcher() {
   const gitDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Per-file debounce for modify events — macOS FSEvents often fires duplicates
   const modifyDebounce = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // Per-project debounce for iCloud project discovery
+  const icloudDiscoveryDebounce = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {
     const unlisten = listen<FileChangedPayload>("file-changed", (event) => {
@@ -54,6 +58,49 @@ export function useFileWatcher() {
         refreshDebounce.current = setTimeout(() => {
           refreshFileTree();
         }, 300);
+      }
+
+      // Runtime iCloud project discovery — detect new projects synced from other machines
+      if (kind === "create") {
+        const icloudPath = useSettingsStore.getState().icloudNotesagePath;
+        if (icloudPath && path.startsWith(icloudPath + "/")) {
+          // Extract the top-level subfolder (potential project root)
+          const relative = path.slice(icloudPath.length + 1);
+          const topFolder = relative.split("/")[0];
+          if (topFolder) {
+            const projectRoot = `${icloudPath}/${topFolder}`;
+            const knownPaths = new Set(
+              useWorkspaceStore.getState().projects.map((p) => p.path)
+            );
+            if (!knownPaths.has(projectRoot)) {
+              // Debounce per-project — iCloud syncs files gradually
+              clearTimeout(icloudDiscoveryDebounce.current[projectRoot]);
+              icloudDiscoveryDebounce.current[projectRoot] = setTimeout(async () => {
+                delete icloudDiscoveryDebounce.current[projectRoot];
+                try {
+                  // Re-check: project may have been added by another event
+                  const ws = useWorkspaceStore.getState();
+                  if (ws.projects.some((p) => p.path === projectRoot)) return;
+
+                  const hasMetadata = await tauriApi.pathExists(`${projectRoot}/.notesage`);
+                  if (!hasMetadata) return;
+
+                  const tree = await tauriApi.listDirectory(projectRoot);
+                  ws.addProject(projectRoot, tree);
+
+                  const syncStore = useSyncStore.getState();
+                  syncStore.addSyncedProject(projectRoot);
+                  const notesRoot = useSettingsStore.getState().notesRootPath;
+                  if (notesRoot) {
+                    await syncStore.saveSettings(notesRoot);
+                  }
+                } catch {
+                  // Discovery failed for this path — non-critical
+                }
+              }, 1000);
+            }
+          }
+        }
       }
 
       // Debounced git status refresh for any external change
@@ -78,6 +125,7 @@ export function useFileWatcher() {
       clearTimeout(refreshDebounce.current);
       clearTimeout(gitDebounce.current);
       for (const t of Object.values(modifyDebounce.current)) clearTimeout(t);
+      for (const t of Object.values(icloudDiscoveryDebounce.current)) clearTimeout(t);
     };
   }, [refreshFileTree]);
 }
