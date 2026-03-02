@@ -60,6 +60,8 @@ pub fn run() {
             ai_generate_text,
             ai_chat,
             ai_chat_stream,
+            ollama_fim_completion,
+            list_models,
             get_home_dir,
             reveal_in_finder,
             git_check_available,

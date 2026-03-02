@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/popover';
 import { Plus, Check, Eye, EyeOff, Loader2, AlertCircle, RefreshCw, Copy } from 'lucide-react';
 import { ProviderLogo } from '@/components/ProviderLogo';
+import { ConnectionConfigDialog } from './ConnectionConfigDialog';
 import type { Connection, ProviderOption } from '@/lib/ai/connections';
 import { PROVIDER_OPTIONS, CAPABILITY_LABELS } from '@/lib/ai/connections';
 import { invoke } from '@tauri-apps/api/core';
@@ -62,6 +63,10 @@ export function ConnectionsSettings() {
   const [inputValue, setInputValue] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [configDialogConnection, setConfigDialogConnection] = useState<Connection | null>(null);
+  // Extra fields for OpenAI-Compatible provider
+  const [oaiBaseUrl, setOaiBaseUrl] = useState('');
+  const [oaiModel, setOaiModel] = useState('');
 
   const resetFlow = useCallback(() => {
     setFlow({ step: 'pick' });
@@ -69,6 +74,8 @@ export function ConnectionsSettings() {
     setShowKey(false);
     setSavedFlash(false);
     setPopoverOpen(false);
+    setOaiBaseUrl('');
+    setOaiModel('');
   }, []);
 
   const handleBack = useCallback(() => {
@@ -98,6 +105,27 @@ export function ConnectionsSettings() {
 
     const value = inputValue.trim();
 
+    // OpenAI-Compatible needs base URL + API key + model
+    if (option.provider === 'openai_compatible') {
+      if (!value || !oaiBaseUrl.trim() || !oaiModel.trim()) return;
+      const connectionId = addConnection({
+        provider: 'openai_compatible',
+        authMethod: 'api_key',
+        status: 'connected',
+        label: option.label,
+        credentials: { type: 'api_key', key: value },
+      });
+      // Set config with base URL and model
+      const updateConnection = useConnectionsStore.getState().updateConnection;
+      updateConnection(connectionId, {
+        config: { baseUrl: oaiBaseUrl.trim(), model: oaiModel.trim() },
+      });
+      autoAssign(connectionId);
+      setSavedFlash(true);
+      setTimeout(() => resetFlow(), 600);
+      return;
+    }
+
     // API keys are required; local (Ollama) falls back to default URL
     if (option.authMethod === 'api_key' && !value) return;
     const localDefault = 'http://localhost:11434';
@@ -125,7 +153,7 @@ export function ConnectionsSettings() {
     autoAssign(connectionId);
     setSavedFlash(true);
     setTimeout(() => resetFlow(), 600);
-  }, [flow, inputValue, addConnection, autoAssign, resetFlow]);
+  }, [flow, inputValue, oaiBaseUrl, oaiModel, addConnection, autoAssign, resetFlow]);
 
   const handleAgentConnected = useCallback(
     (option: ProviderOption) => {
@@ -290,6 +318,10 @@ export function ConnectionsSettings() {
                 onToggleShow={() => setShowKey(!showKey)}
                 onSave={handleSave}
                 savedFlash={savedFlash}
+                baseUrl={oaiBaseUrl}
+                onBaseUrlChange={setOaiBaseUrl}
+                model={oaiModel}
+                onModelChange={setOaiModel}
               />
             )}
             {flow.step === 'connecting' && flow.option.lspBinary && (
@@ -317,6 +349,7 @@ export function ConnectionsSettings() {
             <ConnectionCard
               key={conn.id}
               connection={conn}
+              onConfigure={setConfigDialogConnection}
               onDisconnect={handleDisconnect}
             />
           ))}
@@ -332,6 +365,15 @@ export function ConnectionsSettings() {
           </p>
         </div>
       )}
+
+      {/* Connection config dialog */}
+      <ConnectionConfigDialog
+        connection={configDialogConnection}
+        open={!!configDialogConnection}
+        onOpenChange={(open) => {
+          if (!open) setConfigDialogConnection(null);
+        }}
+      />
     </div>
   );
 }
@@ -346,6 +388,10 @@ function ConfigureForm({
   onToggleShow,
   onSave,
   savedFlash,
+  baseUrl,
+  onBaseUrlChange,
+  model,
+  onModelChange,
 }: {
   option: ProviderOption;
   value: string;
@@ -354,20 +400,35 @@ function ConfigureForm({
   onToggleShow: () => void;
   onSave: () => void;
   savedFlash: boolean;
+  baseUrl?: string;
+  onBaseUrlChange?: (v: string) => void;
+  model?: string;
+  onModelChange?: (v: string) => void;
 }) {
   const isApiKey = option.authMethod === 'api_key';
+  const isOaiCompat = option.provider === 'openai_compatible';
 
-  const placeholder = isApiKey
-    ? option.provider === 'anthropic'
-      ? 'sk-ant-...'
-      : 'sk-...'
-    : 'http://localhost:11434';
+  const placeholder = isOaiCompat
+    ? 'API key'
+    : isApiKey
+      ? option.provider === 'anthropic'
+        ? 'sk-ant-...'
+        : 'sk-...'
+      : 'http://localhost:11434';
 
-  const helpText = isApiKey
-    ? option.provider === 'anthropic'
-      ? 'Get your key from console.anthropic.com'
-      : 'Get your key from platform.openai.com'
-    : 'Default: http://localhost:11434';
+  const helpText = isOaiCompat
+    ? 'vLLM, LiteLLM, Together AI, Groq, or any compatible API'
+    : isApiKey
+      ? option.provider === 'anthropic'
+        ? 'Get your key from console.anthropic.com'
+        : 'Get your key from platform.openai.com'
+      : 'Default: http://localhost:11434';
+
+  const canSave = isOaiCompat
+    ? value.trim() && baseUrl?.trim() && model?.trim()
+    : isApiKey
+      ? value.trim()
+      : true;
 
   return (
     <div className="p-3 space-y-3">
@@ -376,11 +437,41 @@ function ConfigureForm({
         <span className="text-sm font-medium">{option.label}</span>
       </div>
 
-      <div className="space-y-1.5">
+      <p className="text-xs text-muted-foreground">{helpText}</p>
+
+      {/* Base URL — OpenAI-Compatible only */}
+      {isOaiCompat && onBaseUrlChange && (
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Base URL</Label>
+          <Input
+            type="url"
+            placeholder="https://api.example.com"
+            value={baseUrl ?? ''}
+            onChange={(e) => onBaseUrlChange(e.target.value)}
+            className="text-sm"
+            autoFocus
+          />
+        </div>
+      )}
+
+      {/* Model — OpenAI-Compatible only */}
+      {isOaiCompat && onModelChange && (
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Model</Label>
+          <Input
+            type="text"
+            placeholder="gpt-4o, llama-3.1-70b, etc."
+            value={model ?? ''}
+            onChange={(e) => onModelChange(e.target.value)}
+            className="text-sm"
+          />
+        </div>
+      )}
+
+      <div className="space-y-1">
         <Label className="text-xs text-muted-foreground">
           {isApiKey ? 'API Key' : 'Server URL'}
         </Label>
-        <p className="text-xs text-muted-foreground">{helpText}</p>
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Input
@@ -390,7 +481,7 @@ function ConfigureForm({
               onChange={(e) => onChange(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') onSave(); }}
               className="font-mono text-sm pr-9"
-              autoFocus
+              autoFocus={!isOaiCompat}
             />
             {isApiKey && (
               <Button
@@ -405,7 +496,7 @@ function ConfigureForm({
               </Button>
             )}
           </div>
-          <Button onClick={onSave} size="sm" disabled={isApiKey && !value.trim()}>
+          <Button onClick={onSave} size="sm" disabled={!canSave}>
             <Check
               className={`h-4 w-4 mr-1 transition-colors ${savedFlash ? 'text-green-500' : ''}`}
             />

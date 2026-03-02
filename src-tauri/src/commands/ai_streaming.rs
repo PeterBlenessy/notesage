@@ -47,8 +47,18 @@ pub async fn anthropic_chat_stream(
     messages: &[ChatMessage],
     api_key: &Option<String>,
     web_search_enabled: bool,
+    model: &Option<String>,
+    temperature: Option<f64>,
+    max_tokens: Option<u32>,
+    base_url: &Option<String>,
 ) -> Result<(), String> {
     let api_key = api_key.as_ref().ok_or("Anthropic API key is required")?;
+    let model = model.as_deref().unwrap_or("claude-sonnet-4-5-20250929");
+    let max_tokens = max_tokens.unwrap_or(4096);
+    let api_url = format!(
+        "{}/v1/messages",
+        base_url.as_deref().unwrap_or("https://api.anthropic.com")
+    );
     let client = reqwest::Client::new();
 
     // Extract system message for Anthropic's top-level "system" parameter
@@ -69,14 +79,18 @@ pub async fn anthropic_chat_stream(
         .collect();
 
     let mut body = serde_json::json!({
-        "model": "claude-sonnet-4-5-20250929",
-        "max_tokens": 4096,
+        "model": model,
+        "max_tokens": max_tokens,
         "messages": api_messages,
         "stream": true,
     });
 
     if let Some(ref system) = system_content {
         body["system"] = serde_json::json!(system);
+    }
+
+    if let Some(temp) = temperature {
+        body["temperature"] = serde_json::json!(temp);
     }
 
     // Add web search tool when enabled
@@ -88,13 +102,8 @@ pub async fn anthropic_chat_stream(
         }]);
     }
 
-    // Note: web_search_20250305 does not require a beta header.
-    // web_search_20260209 with dynamic filtering would require:
-    //   anthropic-beta: code-execution-web-tools-2026-02-09
-    // Using the stable version for now.
-
     let response = client
-        .post("https://api.anthropic.com/v1/messages")
+        .post(&api_url)
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
         .header("content-type", "application/json")
@@ -198,9 +207,6 @@ pub async fn anthropic_chat_stream(
                             // Check for pause_turn stop reason
                             if let Some(stop_reason) = json["delta"]["stop_reason"].as_str() {
                                 if stop_reason == "pause_turn" {
-                                    // The API paused a long-running turn. The text streamed
-                                    // so far is already emitted. The user can continue by
-                                    // sending a follow-up message.
                                     eprintln!("[notesage] Anthropic returned pause_turn — response may be incomplete");
                                 }
                             }
@@ -252,8 +258,17 @@ pub async fn openai_chat_stream(
     messages: &[ChatMessage],
     api_key: &Option<String>,
     web_search_enabled: bool,
+    model: &Option<String>,
+    temperature: Option<f64>,
+    max_tokens: Option<u32>,
+    base_url: &Option<String>,
 ) -> Result<(), String> {
     let api_key = api_key.as_ref().ok_or("OpenAI API key is required")?;
+    let model = model.as_deref().unwrap_or("gpt-4o");
+    let api_url = format!(
+        "{}/v1/responses",
+        base_url.as_deref().unwrap_or("https://api.openai.com")
+    );
 
     let client = reqwest::Client::new();
 
@@ -288,7 +303,7 @@ pub async fn openai_chat_stream(
         .collect();
 
     let mut body = serde_json::json!({
-        "model": "gpt-4o",
+        "model": model,
         "input": input,
         "stream": true,
         "store": false,
@@ -296,6 +311,13 @@ pub async fn openai_chat_stream(
 
     if let Some(ref inst) = instructions {
         body["instructions"] = serde_json::json!(inst);
+    }
+
+    if let Some(temp) = temperature {
+        body["temperature"] = serde_json::json!(temp);
+    }
+    if let Some(max) = max_tokens {
+        body["max_output_tokens"] = serde_json::json!(max);
     }
 
     if web_search_enabled {
@@ -306,7 +328,7 @@ pub async fn openai_chat_stream(
     }
 
     let response = client
-        .post("https://api.openai.com/v1/responses")
+        .post(&api_url)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("content-type", "application/json")
         .json(&body)
@@ -412,8 +434,15 @@ pub async fn ollama_chat_stream(
     window: &tauri::Window,
     messages: &[ChatMessage],
     ollama_url: &Option<String>,
+    model: &Option<String>,
+    temperature: Option<f64>,
+    _max_tokens: Option<u32>,
+    base_url: &Option<String>,
 ) -> Result<(), String> {
-    let ollama_url = ollama_url.as_deref().unwrap_or("http://localhost:11434");
+    let base = base_url.as_deref()
+        .or(ollama_url.as_deref())
+        .unwrap_or("http://localhost:11434");
+    let model = model.as_deref().unwrap_or("llama3.2");
 
     let client = reqwest::Client::new();
 
@@ -427,14 +456,20 @@ pub async fn ollama_chat_stream(
         })
         .collect();
 
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": api_messages,
+        "stream": true
+    });
+
+    if let Some(temp) = temperature {
+        body["options"] = serde_json::json!({ "temperature": temp });
+    }
+
     let response = client
-        .post(format!("{}/api/chat", ollama_url))
+        .post(format!("{}/api/chat", base))
         .header("content-type", "application/json")
-        .json(&serde_json::json!({
-            "model": "llama2",
-            "messages": api_messages,
-            "stream": true
-        }))
+        .json(&body)
         .send()
         .await
         .map_err(|e| format!("Ollama API request failed: {}", e))?;
@@ -464,6 +499,108 @@ pub async fn ollama_chat_stream(
                                 window
                                     .emit("ai-stream-chunk", content)
                                     .map_err(|e| format!("Failed to emit event: {}", e))?;
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                return Err(format!("Stream error: {}", e));
+            }
+        }
+    }
+
+    window
+        .emit("ai-stream-done", ())
+        .map_err(|e| format!("Failed to emit done event: {}", e))?;
+
+    Ok(())
+}
+
+// OpenAI-Compatible streaming implementation (standard Chat Completions SSE format)
+pub async fn openai_compatible_chat_stream(
+    window: &tauri::Window,
+    messages: &[ChatMessage],
+    api_key: &Option<String>,
+    model: &Option<String>,
+    temperature: Option<f64>,
+    max_tokens: Option<u32>,
+    base_url: &Option<String>,
+) -> Result<(), String> {
+    let api_key = api_key.as_ref().ok_or("API key is required")?;
+    let base_url = base_url.as_ref().ok_or("Base URL is required for OpenAI-Compatible provider")?;
+    let model = model.as_deref().ok_or("Model is required for OpenAI-Compatible provider")?;
+
+    let client = reqwest::Client::new();
+
+    let api_messages: Vec<serde_json::Value> = messages
+        .iter()
+        .map(|m| {
+            serde_json::json!({
+                "role": m.role,
+                "content": m.content
+            })
+        })
+        .collect();
+
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": api_messages,
+        "stream": true
+    });
+
+    if let Some(temp) = temperature {
+        body["temperature"] = serde_json::json!(temp);
+    }
+    if let Some(max) = max_tokens {
+        body["max_tokens"] = serde_json::json!(max);
+    }
+
+    let response = client
+        .post(format!("{}/v1/chat/completions", base_url.trim_end_matches('/')))
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("API request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(format!("API error: {}", error_text));
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut buffer = String::new();
+
+    while let Some(chunk) = stream.next().await {
+        match chunk {
+            Ok(bytes) => {
+                let text = String::from_utf8_lossy(&bytes);
+                buffer.push_str(&text);
+
+                // SSE format: "data: {...}\n\n" or "data: [DONE]\n\n"
+                while let Some(line_end) = buffer.find('\n') {
+                    let line = buffer[..line_end].to_string();
+                    buffer = buffer[line_end + 1..].to_string();
+
+                    let line = line.trim();
+                    if line.is_empty() {
+                        continue;
+                    }
+
+                    if let Some(data) = line.strip_prefix("data: ") {
+                        if data == "[DONE]" {
+                            break;
+                        }
+
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                            if let Some(content) = json["choices"][0]["delta"]["content"].as_str() {
+                                if !content.is_empty() {
+                                    window
+                                        .emit("ai-stream-chunk", content)
+                                        .map_err(|e| format!("Failed to emit chunk: {}", e))?;
+                                }
                             }
                         }
                     }

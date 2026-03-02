@@ -1,12 +1,15 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { AIProvider, ChatMessage, GenerateOptions } from '../types';
+import type { ConnectionConfig } from '../connections';
 
 export class OpenAIProvider implements AIProvider {
   name: 'openai' = 'openai';
   private apiKey: string;
+  private config?: ConnectionConfig;
 
-  constructor(apiKey?: string) {
+  constructor(apiKey?: string, config?: ConnectionConfig) {
     this.apiKey = apiKey || '';
+    this.config = config;
   }
 
   async generateText(prompt: string, _options?: GenerateOptions): Promise<string> {
@@ -22,6 +25,10 @@ export class OpenAIProvider implements AIProvider {
           api_key: this.apiKey,
           ollama_url: null,
           stream: false,
+          model: this.config?.model ?? null,
+          temperature: this.config?.temperature ?? null,
+          max_tokens: this.config?.maxTokens ?? null,
+          base_url: this.config?.baseUrl ?? null,
         },
       });
 
@@ -45,6 +52,10 @@ export class OpenAIProvider implements AIProvider {
         provider: 'openai',
         apiKey: this.apiKey,
         ollamaUrl: null,
+        model: this.config?.model ?? null,
+        temperature: this.config?.temperature ?? null,
+        maxTokens: this.config?.maxTokens ?? null,
+        baseUrl: this.config?.baseUrl ?? null,
       });
 
       return result;

@@ -5,6 +5,7 @@ import { usePermissionStore } from '@/stores/permission-store';
 import { useActivityStore, type AgentTaskType } from '@/stores/activity-store';
 import type { Connection } from '@/lib/ai/connections';
 import { tauriApi } from '@/lib/tauri';
+import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { formatAcpToolName, truncateDetail } from '@/hooks/useAIOperations';
 
@@ -88,9 +89,14 @@ async function ensureTaskAgent(connection: Connection, cwd: string): Promise<str
   }
 
   const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[] };
+  // Inject --model flag if the connection has a model configured
+  const args = [...(creds.agentArgs ?? [])];
+  if (connection.config?.model) {
+    args.push('--model', connection.config.model);
+  }
   const result = await tauriApi.acpAgentSpawn(
     creds.agentBinary,
-    creds.agentArgs ?? null,
+    args.length > 0 ? args : null,
     'task',
     cwd,
   );
@@ -122,8 +128,8 @@ interface InternalTask {
   id: string;
   prompt: string;
   status: TaskStatus;
-  instanceId: string;
-  sessionId: string;
+  instanceId: string | null;
+  sessionId: string | null;
   output: string;
   error?: string;
   createdAt: number;
@@ -161,6 +167,300 @@ export interface TaskMeta {
 }
 
 // ---------------------------------------------------------------------------
+// Shared task setup helper
+// ---------------------------------------------------------------------------
+
+function setupTask(
+  prompt: string,
+  taskMeta: TaskMeta | undefined,
+  connection: Connection,
+): { taskId: string; task: InternalTask } {
+  const existingId = taskMeta?.existingTaskId;
+  const existingActivityTask = existingId
+    ? useActivityStore.getState().tasks.find((t) => t.id === existingId)
+    : undefined;
+  const taskId = existingActivityTask ? existingId! : `task-${Date.now()}`;
+
+  const task: InternalTask = {
+    id: taskId,
+    prompt,
+    status: 'running',
+    instanceId: null,
+    sessionId: null,
+    output: '',
+    createdAt: Date.now(),
+  };
+  tasksMap.set(taskId, task);
+
+  if (existingActivityTask) {
+    useActivityStore.getState().resetTaskForContinuation(taskId);
+  } else {
+    useActivityStore.getState().addTask({
+      id: taskId,
+      type: taskMeta?.type ?? 'chat',
+      label: taskMeta?.label ?? prompt.slice(0, 50),
+      status: 'running',
+      sourceFile: taskMeta?.sourceFile,
+      commentId: taskMeta?.commentId,
+      documentId: taskMeta?.documentId,
+      connectionProvider: connection.provider,
+    });
+  }
+
+  return { taskId, task };
+}
+
+// ---------------------------------------------------------------------------
+// ACP path (agent_managed connections)
+// ---------------------------------------------------------------------------
+
+async function startAcpTask(
+  prompt: string,
+  callbacks: TaskCallbacks | undefined,
+  taskMeta: TaskMeta | undefined,
+  connection: Connection,
+  selectedProjectPaths: string[],
+): Promise<string> {
+  const { onComplete, onActivity, onError, onChunk } = callbacks ?? {};
+
+  const cwd = selectedProjectPaths[0] || '/tmp';
+  const instanceId = await ensureTaskAgent(connection, cwd);
+  const session = await tauriApi.acpSessionNew(instanceId, cwd);
+
+  const { taskId, task } = setupTask(prompt, taskMeta, connection);
+  task.instanceId = instanceId;
+  task.sessionId = session.session_id;
+
+  // Listen for session updates
+  let receivedFirstChunk = false;
+  const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
+    if (event.payload.instanceId !== instanceId) return;
+    if (event.payload.sessionId !== session.session_id) return;
+    const { update } = event.payload;
+
+    const current = tasksMap.get(taskId);
+    if (!current) return;
+
+    const eventType = update.sessionUpdate;
+    const activityStore = useActivityStore.getState();
+
+    if (
+      eventType === 'agent_message_chunk' &&
+      update.content?.type === 'text' &&
+      update.content.text
+    ) {
+      if (!receivedFirstChunk) {
+        receivedFirstChunk = true;
+        onActivity?.({ kind: 'agent_responding', label: 'Agent responding', event: 'agent_responding' });
+      }
+      current.output += update.content.text;
+      onChunk?.(update.content.text);
+      activityStore.appendPartialOutput(taskId, update.content.text);
+    } else if (eventType === 'agent_thought_chunk') {
+      const text = update.content?.text;
+      if (text) {
+        activityStore.appendThinkingOutput(taskId, text);
+      }
+    } else if (eventType === 'tool_call') {
+      const label = formatAcpToolName(update.kind, update.title);
+      const detail = truncateDetail(update.rawInput, 200);
+      onActivity?.({ kind: update.kind || 'unknown', label, detail: detail || undefined, event: 'tool_call' });
+      activityStore.appendActivity(taskId, {
+        label,
+        detail: detail || undefined,
+        status: 'running',
+        timestamp: Date.now(),
+      });
+    } else if (eventType === 'tool_call_update') {
+      const label = formatAcpToolName(update.kind, update.title);
+      onActivity?.({ kind: update.kind || 'unknown', label, event: 'tool_call' });
+    } else if (eventType === 'tool_result') {
+      onActivity?.({ kind: 'tool_result', label: 'Tool result', event: 'tool_result' });
+      activityStore.completeLastActivity(taskId);
+    } else if (eventType === 'agent_turn_complete') {
+      current.status = 'completed';
+      const responsePreview = current.output.length > 100
+        ? current.output.slice(0, 100) + '\u2026'
+        : current.output || '(empty response)';
+      onActivity?.({ kind: 'agent_complete', label: 'Agent finished', detail: responsePreview, event: 'agent_complete' });
+      onComplete?.(current.output);
+      activityStore.updateTaskStatus(taskId, 'done');
+      activityStore.setFinalOutput(taskId, current.output);
+      const c = cleanupMap.get(taskId);
+      if (c) { c(); cleanupMap.delete(taskId); }
+    }
+  });
+
+  const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
+    if (event.payload.instanceId !== instanceId) return;
+    const payload = event.payload;
+    const rawOptions = payload.options;
+    let firstOptionId: string | null = null;
+    if (Array.isArray(rawOptions) && rawOptions.length > 0) {
+      const opt = rawOptions[0];
+      firstOptionId = String(opt?.optionId ?? opt?.id ?? '');
+    }
+
+    const tc = payload.toolCall;
+    const toolKind = String(tc?.kind ?? tc?.type ?? 'unknown');
+    const readOnly = ['read', 'read_file', 'glob', 'list', 'grep', 'fetch', 'web_search'];
+    if (!readOnly.includes(toolKind)) {
+      const options = Array.isArray(rawOptions)
+        ? rawOptions.map((o) => ({
+            optionId: String(o?.optionId ?? o?.id ?? ''),
+            kind: String(o?.kind ?? ''),
+            name: String(o?.name ?? ''),
+          }))
+        : [];
+      usePermissionStore.getState().addRequest({
+        id: `${payload.requestId}-${Date.now()}`,
+        instanceId,
+        sessionId: payload.sessionId,
+        requestId: payload.requestId,
+        toolKind,
+        toolTitle: String(tc?.title ?? tc?.name ?? ''),
+        toolInput: String(tc?.rawInput ?? '').slice(0, 200),
+        options,
+        timestamp: Date.now(),
+      });
+    }
+
+    const toolLabel = String(tc?.title ?? tc?.name ?? toolKind);
+    onActivity?.({ kind: 'permission', label: `Auto-approved: ${toolLabel}`, event: 'permission_auto_approved' });
+    tauriApi.acpPermissionRespond(instanceId, payload.requestId, firstOptionId).catch(() => {});
+  });
+
+  const cleanup = () => { unlisten(); unlistenPermission(); };
+  cleanupMap.set(taskId, cleanup);
+
+  tauriApi.acpSessionPrompt(instanceId, session.session_id, prompt)
+    .then(() => {
+      const t = tasksMap.get(taskId);
+      if (t && t.status === 'running') {
+        t.status = 'completed';
+        const responsePreview = t.output.length > 100
+          ? t.output.slice(0, 100) + '\u2026'
+          : t.output || '(empty response)';
+        onActivity?.({ kind: 'agent_complete', label: 'Agent finished', detail: responsePreview, event: 'agent_complete' });
+        onComplete?.(t.output);
+        const as = useActivityStore.getState();
+        as.updateTaskStatus(taskId, 'done');
+        as.setFinalOutput(taskId, t.output);
+      }
+    })
+    .catch((error) => {
+      const t = tasksMap.get(taskId);
+      if (t) {
+        t.status = 'failed';
+        t.error = error instanceof Error ? error.message : String(error);
+      }
+      onError?.(error instanceof Error ? error.message : String(error));
+      useActivityStore.getState().updateTaskStatus(taskId, 'error');
+    })
+    .finally(() => {
+      const c = cleanupMap.get(taskId);
+      if (c) { c(); cleanupMap.delete(taskId); }
+    });
+
+  return taskId;
+}
+
+// ---------------------------------------------------------------------------
+// Direct API path (api_key / local connections — streaming chat)
+// ---------------------------------------------------------------------------
+
+async function startDirectApiTask(
+  prompt: string,
+  callbacks: TaskCallbacks | undefined,
+  taskMeta: TaskMeta | undefined,
+  connection: Connection,
+): Promise<string> {
+  const { onComplete, onActivity, onError, onChunk } = callbacks ?? {};
+
+  const { taskId } = setupTask(prompt, taskMeta, connection);
+
+  // Resolve provider credentials
+  let provider: string;
+  let apiKey: string | null = null;
+  let ollamaUrl: string | null = null;
+  const config = connection.config;
+
+  if (connection.credentials.type === 'api_key') {
+    provider = connection.provider;
+    apiKey = connection.credentials.key;
+  } else if (connection.credentials.type === 'local') {
+    provider = connection.provider;
+    ollamaUrl = connection.credentials.url;
+  } else {
+    throw new Error('Unsupported credential type for direct API task');
+  }
+
+  // Build messages: system + user prompt
+  const messages = [
+    { role: 'system', content: 'You are a helpful AI assistant working on a delegated task. Respond with your analysis or the requested content.' },
+    { role: 'user', content: prompt },
+  ];
+
+  // Listen for stream events
+  const unlistenChunk = await listen<string>('ai-stream-chunk', (event) => {
+    const current = tasksMap.get(taskId);
+    if (!current || current.status !== 'running') return;
+
+    current.output += event.payload;
+    onChunk?.(event.payload);
+    useActivityStore.getState().appendPartialOutput(taskId, event.payload);
+  });
+
+  const unlistenDone = await listen('ai-stream-done', () => {
+    const current = tasksMap.get(taskId);
+    if (!current || current.status !== 'running') return;
+
+    current.status = 'completed';
+    const responsePreview = current.output.length > 100
+      ? current.output.slice(0, 100) + '\u2026'
+      : current.output || '(empty response)';
+    onActivity?.({ kind: 'agent_complete', label: 'Agent finished', detail: responsePreview, event: 'agent_complete' });
+    onComplete?.(current.output);
+    const as = useActivityStore.getState();
+    as.updateTaskStatus(taskId, 'done');
+    as.setFinalOutput(taskId, current.output);
+  });
+
+  const cleanup = () => { unlistenChunk(); unlistenDone(); };
+  cleanupMap.set(taskId, cleanup);
+
+  onActivity?.({ kind: 'agent_responding', label: 'Agent responding', event: 'agent_responding' });
+
+  // Start streaming
+  invoke('ai_chat_stream', {
+    messages,
+    provider,
+    apiKey,
+    ollamaUrl,
+    webSearchEnabled: false,
+    model: config?.model ?? null,
+    temperature: config?.temperature ?? null,
+    maxTokens: config?.maxTokens ?? null,
+    baseUrl: config?.baseUrl ?? null,
+  })
+    .catch((error) => {
+      const t = tasksMap.get(taskId);
+      if (t) {
+        t.status = 'failed';
+        t.error = error instanceof Error ? error.message : String(error);
+      }
+      onError?.(error instanceof Error ? error.message : String(error));
+      useActivityStore.getState().updateTaskStatus(taskId, 'error');
+    })
+    .finally(() => {
+      const c = cleanupMap.get(taskId);
+      if (c) { c(); cleanupMap.delete(taskId); }
+    });
+
+  return taskId;
+}
+
+// ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
 
@@ -168,14 +468,17 @@ export function useAgentTaskOperations() {
   const { selectedProjectPaths } = useChatStore();
 
   const taskConnection = useRoutingStore((s) => {
-    const id = s.routing.agent_tasks;
-    if (!id) return null;
+    const slot = s.routing.agent_tasks;
+    if (!slot?.connectionId) return null;
     return s.getConnectionForUseCase('agent_tasks');
   });
 
   /**
    * Start a background agent task. Returns a task ID for tracking.
-   * The task runs in its own ACP session (separate from interactive chat).
+   *
+   * Routes automatically based on the connection's auth method:
+   * - `agent_managed`: runs via ACP agent session (full tool use)
+   * - `api_key` / `local`: runs via direct API streaming chat (single-turn)
    *
    * @param prompt - The prompt to send to the agent
    * @param callbacks - Optional callbacks for streaming, completion, activity, and errors
@@ -187,208 +490,15 @@ export function useAgentTaskOperations() {
       callbacks?: TaskCallbacks,
       taskMeta?: TaskMeta,
     ): Promise<string> => {
-      const { onComplete, onActivity, onError, onChunk } = callbacks ?? {};
-      if (!taskConnection || taskConnection.authMethod !== 'agent_managed') {
-        throw new Error('No agent connection configured for tasks. Set up agent routing in Settings.');
+      if (!taskConnection) {
+        throw new Error('No connection configured for agent tasks. Set up routing in Settings.');
       }
 
-      const cwd = selectedProjectPaths[0] || '/tmp';
-      const instanceId = await ensureTaskAgent(taskConnection, cwd);
-
-      // Each task gets its own session
-      const session = await tauriApi.acpSessionNew(instanceId, cwd);
-
-      // Reuse existing activity task if provided, otherwise create a new one
-      const existingId = taskMeta?.existingTaskId;
-      const existingActivityTask = existingId
-        ? useActivityStore.getState().tasks.find((t) => t.id === existingId)
-        : undefined;
-      const taskId = existingActivityTask ? existingId! : `task-${Date.now()}`;
-
-      const task: InternalTask = {
-        id: taskId,
-        prompt,
-        status: 'running',
-        instanceId,
-        sessionId: session.session_id,
-        output: '',
-        createdAt: Date.now(),
-      };
-      tasksMap.set(taskId, task);
-
-      if (existingActivityTask) {
-        // Reset the existing task for the new turn
-        useActivityStore.getState().resetTaskForContinuation(taskId);
-      } else {
-        // Register a new task in the activity store
-        useActivityStore.getState().addTask({
-          id: taskId,
-          type: taskMeta?.type ?? 'chat',
-          label: taskMeta?.label ?? prompt.slice(0, 50),
-          status: 'running',
-          sourceFile: taskMeta?.sourceFile,
-          commentId: taskMeta?.commentId,
-          documentId: taskMeta?.documentId,
-          connectionProvider: taskConnection.provider,
-        });
+      // Route based on auth method
+      if (taskConnection.authMethod === 'agent_managed') {
+        return startAcpTask(prompt, callbacks, taskMeta, taskConnection, selectedProjectPaths);
       }
-
-      // Listen for session updates
-      let receivedFirstChunk = false;
-      const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
-        if (event.payload.instanceId !== instanceId) return;
-        if (event.payload.sessionId !== session.session_id) return;
-        const { update } = event.payload;
-
-        const current = tasksMap.get(taskId);
-        if (!current) return;
-
-        const eventType = update.sessionUpdate;
-
-        const activityStore = useActivityStore.getState();
-
-        if (
-          eventType === 'agent_message_chunk' &&
-          update.content?.type === 'text' &&
-          update.content.text
-        ) {
-          if (!receivedFirstChunk) {
-            receivedFirstChunk = true;
-            onActivity?.({ kind: 'agent_responding', label: 'Agent responding', event: 'agent_responding' });
-          }
-          current.output += update.content.text;
-          onChunk?.(update.content.text);
-          activityStore.appendPartialOutput(taskId, update.content.text);
-        } else if (eventType === 'agent_thought_chunk') {
-          // Agent's internal reasoning / thinking
-          const text = update.content?.text;
-          if (text) {
-            activityStore.appendThinkingOutput(taskId, text);
-          }
-        } else if (eventType === 'tool_call') {
-          const label = formatAcpToolName(update.kind, update.title);
-          const detail = truncateDetail(update.rawInput, 200);
-          onActivity?.({ kind: update.kind || 'unknown', label, detail: detail || undefined, event: 'tool_call' });
-          activityStore.appendActivity(taskId, {
-            label,
-            detail: detail || undefined,
-            status: 'running',
-            timestamp: Date.now(),
-          });
-        } else if (eventType === 'tool_call_update') {
-          const label = formatAcpToolName(update.kind, update.title);
-          onActivity?.({ kind: update.kind || 'unknown', label, event: 'tool_call' });
-        } else if (eventType === 'tool_result') {
-          onActivity?.({ kind: 'tool_result', label: 'Tool result', event: 'tool_result' });
-          activityStore.completeLastActivity(taskId);
-        } else if (eventType === 'agent_turn_complete') {
-          current.status = 'completed';
-          const responsePreview = current.output.length > 100
-            ? current.output.slice(0, 100) + '\u2026'
-            : current.output || '(empty response)';
-          onActivity?.({ kind: 'agent_complete', label: 'Agent finished', detail: responsePreview, event: 'agent_complete' });
-          onComplete?.(current.output);
-          activityStore.updateTaskStatus(taskId, 'done');
-          activityStore.setFinalOutput(taskId, current.output);
-          // Clean up listeners now that the turn is done
-          const c = cleanupMap.get(taskId);
-          if (c) {
-            c();
-            cleanupMap.delete(taskId);
-          }
-        }
-      });
-
-      // Track and auto-approve permission requests for task agents.
-      // All write/edit tool calls are stored in permission-store for visibility.
-      // Phase 6.5 will add interactive approval UI.
-      const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
-        if (event.payload.instanceId !== instanceId) return;
-        const payload = event.payload;
-        const rawOptions = payload.options;
-        let firstOptionId: string | null = null;
-        if (Array.isArray(rawOptions) && rawOptions.length > 0) {
-          const opt = rawOptions[0];
-          firstOptionId = String(opt?.optionId ?? opt?.id ?? '');
-        }
-
-        // Track all task agent permission requests in the store
-        const tc = payload.toolCall;
-        const toolKind = String(tc?.kind ?? tc?.type ?? 'unknown');
-        const readOnly = ['read', 'read_file', 'glob', 'list', 'grep', 'fetch', 'web_search'];
-        if (!readOnly.includes(toolKind)) {
-          const options = Array.isArray(rawOptions)
-            ? rawOptions.map((o) => ({
-                optionId: String(o?.optionId ?? o?.id ?? ''),
-                kind: String(o?.kind ?? ''),
-                name: String(o?.name ?? ''),
-              }))
-            : [];
-          usePermissionStore.getState().addRequest({
-            id: `${payload.requestId}-${Date.now()}`,
-            instanceId,
-            sessionId: payload.sessionId,
-            requestId: payload.requestId,
-            toolKind,
-            toolTitle: String(tc?.title ?? tc?.name ?? ''),
-            toolInput: String(tc?.rawInput ?? '').slice(0, 200),
-            options,
-            timestamp: Date.now(),
-          });
-        }
-
-        // Auto-approve all for now
-        const toolLabel = String(tc?.title ?? tc?.name ?? toolKind);
-        onActivity?.({ kind: 'permission', label: `Auto-approved: ${toolLabel}`, event: 'permission_auto_approved' });
-        tauriApi.acpPermissionRespond(instanceId, payload.requestId, firstOptionId).catch(() => {});
-      });
-
-      const cleanup = () => {
-        unlisten();
-        unlistenPermission();
-      };
-      cleanupMap.set(taskId, cleanup);
-
-      // Send the prompt — resolves when the agent finishes its turn.
-      // Some agents emit `agent_turn_complete` (Claude Code), others don't (Copilot CLI).
-      // We handle both: the event listener catches `agent_turn_complete` if it arrives,
-      // and `.then()` catches completion when the invoke resolves (fallback).
-      tauriApi.acpSessionPrompt(instanceId, session.session_id, prompt)
-        .then(() => {
-          const t = tasksMap.get(taskId);
-          if (t && t.status === 'running') {
-            // agent_turn_complete didn't fire — complete from invoke resolution
-            t.status = 'completed';
-            const responsePreview = t.output.length > 100
-              ? t.output.slice(0, 100) + '\u2026'
-              : t.output || '(empty response)';
-            onActivity?.({ kind: 'agent_complete', label: 'Agent finished', detail: responsePreview, event: 'agent_complete' });
-            onComplete?.(t.output);
-            const as = useActivityStore.getState();
-            as.updateTaskStatus(taskId, 'done');
-            as.setFinalOutput(taskId, t.output);
-          }
-        })
-        .catch((error) => {
-          const t = tasksMap.get(taskId);
-          if (t) {
-            t.status = 'failed';
-            t.error = error instanceof Error ? error.message : String(error);
-          }
-          const errMsg = error instanceof Error ? error.message : String(error);
-          onError?.(errMsg);
-          useActivityStore.getState().updateTaskStatus(taskId, 'error');
-        })
-        .finally(() => {
-          // Clean up event listeners
-          const c = cleanupMap.get(taskId);
-          if (c) {
-            c();
-            cleanupMap.delete(taskId);
-          }
-        });
-
-      return taskId;
+      return startDirectApiTask(prompt, callbacks, taskMeta, taskConnection);
     },
     [taskConnection, selectedProjectPaths]
   );
@@ -400,13 +510,18 @@ export function useAgentTaskOperations() {
       if (!task || task.status !== 'running') return false;
 
       let cancelled = false;
-      try {
-        await tauriApi.acpSessionCancel(task.instanceId, task.sessionId);
-        task.status = 'cancelled';
-        cancelled = true;
-      } catch {
-        // Agent may have already completed
+
+      // ACP tasks have instanceId + sessionId; direct-API tasks don't
+      if (task.instanceId && task.sessionId) {
+        try {
+          await tauriApi.acpSessionCancel(task.instanceId, task.sessionId);
+          cancelled = true;
+        } catch {
+          // Agent may have already completed
+        }
       }
+
+      task.status = 'cancelled';
 
       const as = useActivityStore.getState();
       as.completeAllActivities(taskId);

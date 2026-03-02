@@ -1,4 +1,4 @@
-export type AIProviderType = 'anthropic' | 'openai' | 'ollama' | 'google';
+export type AIProviderType = 'anthropic' | 'openai' | 'ollama' | 'google' | 'openai_compatible';
 
 export interface Citation {
   url: string;

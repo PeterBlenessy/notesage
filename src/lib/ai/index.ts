@@ -1,8 +1,9 @@
 import type { AIProvider, AIProviderType } from './types';
-import type { Connection } from './connections';
+import type { Connection, ConnectionConfig } from './connections';
 import { AnthropicProvider } from './providers/anthropic';
 import { OpenAIProvider } from './providers/openai';
 import { OllamaProvider } from './providers/ollama';
+import { OpenAICompatibleProvider } from './providers/openai-compatible';
 
 export * from './types';
 export * from './connections';
@@ -22,11 +23,11 @@ export function getAIProviderFromConnection(connection: Connection): AIProvider 
 
   if (connection.credentials.type === 'api_key') {
     const provider = connection.provider as AIProviderType;
-    return getAIProvider(provider, connection.credentials.key);
+    return getAIProvider(provider, connection.credentials.key, undefined, connection.config);
   }
 
   if (connection.credentials.type === 'local') {
-    return getAIProvider('ollama', undefined, connection.credentials.url);
+    return getAIProvider('ollama', undefined, connection.credentials.url, connection.config);
   }
 
   throw new Error(`Unsupported credentials type for connection "${connection.label}"`);
@@ -39,15 +40,18 @@ export function getAIProviderFromConnection(connection: Connection): AIProvider 
 export function getAIProvider(
   provider: AIProviderType,
   apiKey?: string,
-  ollamaUrl?: string
+  ollamaUrl?: string,
+  config?: ConnectionConfig
 ): AIProvider {
   switch (provider) {
     case 'anthropic':
-      return new AnthropicProvider(apiKey);
+      return new AnthropicProvider(apiKey, config);
     case 'openai':
-      return new OpenAIProvider(apiKey);
+      return new OpenAIProvider(apiKey, config);
     case 'ollama':
-      return new OllamaProvider(ollamaUrl);
+      return new OllamaProvider(ollamaUrl, config);
+    case 'openai_compatible':
+      return new OpenAICompatibleProvider(apiKey, config);
     default:
       throw new Error(`Unknown provider: ${provider}`);
   }

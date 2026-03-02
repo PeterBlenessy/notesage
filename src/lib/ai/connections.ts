@@ -11,11 +11,12 @@ export type AuthMethod =
 // --- Providers ---
 
 export type ConnectionProvider =
-  | 'anthropic'    // API key (direct API) or agent-managed subscription (Claude Code via ACP)
-  | 'openai'       // API key (direct API) or agent-managed subscription (Codex via ACP)
-  | 'github'       // Agent-managed subscription (Copilot via ACP + LSP)
-  | 'google'       // Agent-managed subscription (Gemini CLI via ACP)
-  | 'ollama';      // Local, no auth
+  | 'anthropic'          // API key (direct API) or agent-managed subscription (Claude Code via ACP)
+  | 'openai'             // API key (direct API) or agent-managed subscription (Codex via ACP)
+  | 'github'             // Agent-managed subscription (Copilot via ACP + LSP)
+  | 'google'             // Agent-managed subscription (Gemini CLI via ACP)
+  | 'ollama'             // Local, no auth
+  | 'openai_compatible'; // Any OpenAI-compatible API (vLLM, LiteLLM, Together AI, Groq)
 
 // --- Credentials ---
 
@@ -56,13 +57,25 @@ export const PROVIDER_CAPABILITIES: Record<ConnectionProvider, Partial<Record<Au
     agent_managed: ['interactive', 'agent_tasks'],
   },
   ollama: {
-    local:         ['interactive'],
+    local:         ['interactive', 'agent_tasks', 'inline_completion'],
+  },
+  openai_compatible: {
+    api_key:       ['interactive', 'agent_tasks'],
   },
 };
 
 /** Resolve capabilities for a given provider + auth method */
 export function getCapabilities(provider: ConnectionProvider, authMethod: AuthMethod): AICapability[] {
   return PROVIDER_CAPABILITIES[provider]?.[authMethod] ?? [];
+}
+
+// --- Connection Config ---
+
+export interface ConnectionConfig {
+  model?: string;        // Default model for this connection
+  temperature?: number;  // 0.0 - 2.0
+  maxTokens?: number;    // Provider-specific max
+  baseUrl?: string;      // Custom API endpoint override
 }
 
 // --- Connections ---
@@ -77,22 +90,28 @@ export interface Connection {
   label: string;                    // User-facing label, e.g., "Claude Code (Pro subscription)"
   credentials: ConnectionCredentials;
   capabilities: AICapability[];     // Resolved from PROVIDER_CAPABILITIES
+  config?: ConnectionConfig;        // Optional model/temperature/maxTokens/baseUrl configuration
   createdAt: number;
 }
 
 // --- Use Case Routing ---
 
+export interface UseCaseSlot {
+  connectionId: string | null;
+  model?: string;  // Overrides connection's default model for this use case
+}
+
 export interface UseCaseRouting {
-  interactive: string | null;        // Connection ID — handles chat + inline actions
-  agent_tasks: string | null;        // Connection ID — handles delegated multi-step work
-  inline_completion: string | null;  // Connection ID — handles ghost text (Copilot LSP)
+  interactive: UseCaseSlot;
+  agent_tasks: UseCaseSlot;
+  inline_completion: UseCaseSlot;
 }
 
 /** Empty routing — no providers assigned */
 export const EMPTY_ROUTING: UseCaseRouting = {
-  interactive: null,
-  agent_tasks: null,
-  inline_completion: null,
+  interactive: { connectionId: null },
+  agent_tasks: { connectionId: null },
+  inline_completion: { connectionId: null },
 };
 
 // --- Provider metadata (for UI display) ---
@@ -171,9 +190,24 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     authMethod: 'local',
     label: 'Ollama',
     description: 'Free, runs locally',
-    capabilities: ['interactive'],
+    capabilities: ['interactive', 'agent_tasks', 'inline_completion'],
+  },
+  {
+    provider: 'openai_compatible',
+    authMethod: 'api_key',
+    label: 'OpenAI-Compatible',
+    description: 'vLLM, LiteLLM, Together AI, Groq, or any compatible API',
+    capabilities: ['interactive', 'agent_tasks'],
   },
 ];
+
+// --- Default models per provider ---
+
+export const DEFAULT_MODELS: Partial<Record<ConnectionProvider, string>> = {
+  anthropic: 'claude-sonnet-4-5-20250929',
+  openai: 'gpt-4o',
+  ollama: 'llama3.2',
+};
 
 // --- Capability display labels ---
 

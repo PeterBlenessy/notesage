@@ -154,9 +154,14 @@ async function ensureAcpAgent(connection: Connection, cwd: string): Promise<stri
   }
 
   const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[] };
+  // Inject --model flag if the connection has a model configured
+  const args = [...(creds.agentArgs ?? [])];
+  if (connection.config?.model) {
+    args.push('--model', connection.config.model);
+  }
   const result = await invoke<AcpSpawnResult>('acp_agent_spawn', {
     agentBinary: creds.agentBinary,
-    agentArgs: creds.agentArgs ?? null,
+    agentArgs: args.length > 0 ? args : null,
     role: 'interactive',
     workingDirectory: cwd,
   });
@@ -184,13 +189,14 @@ async function ensureAcpAgent(connection: Connection, cwd: string): Promise<stri
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve provider type, API key, and Ollama URL from a Connection.
+ * Resolve provider type, API key, Ollama URL, and config from a Connection.
  * Returns null for agent_managed connections (handled via ACP in callbacks).
  */
-function resolveConnectionCredentials(connection: Connection): {
+function resolveConnectionCredentials(connection: Connection, useCaseModelOverride?: string): {
   provider: AIProviderType;
   apiKey: string | undefined;
   ollamaUrl: string | undefined;
+  config: import('@/lib/ai/connections').ConnectionConfig | undefined;
 } | null {
   if (connection.authMethod === 'agent_managed') {
     // ACP connections are routed separately in generateText / sendChatMessage
@@ -199,14 +205,46 @@ function resolveConnectionCredentials(connection: Connection): {
 
   const provider = connection.provider as AIProviderType;
 
+  // Merge config: use-case model override > connection config model > provider default
+  const config = connection.config
+    ? { ...connection.config }
+    : undefined;
+  if (useCaseModelOverride) {
+    if (config) {
+      config.model = useCaseModelOverride;
+    } else {
+      return resolveWithConfig(provider, connection, { model: useCaseModelOverride });
+    }
+  }
+
   if (connection.credentials.type === 'api_key') {
-    return { provider, apiKey: connection.credentials.key, ollamaUrl: undefined };
+    return { provider, apiKey: connection.credentials.key, ollamaUrl: undefined, config };
   }
 
   if (connection.credentials.type === 'local') {
-    return { provider, apiKey: undefined, ollamaUrl: connection.credentials.url };
+    return { provider, apiKey: undefined, ollamaUrl: connection.credentials.url, config };
   }
 
+  return null;
+}
+
+function resolveWithConfig(
+  provider: AIProviderType,
+  connection: Connection,
+  configOverride: import('@/lib/ai/connections').ConnectionConfig
+): {
+  provider: AIProviderType;
+  apiKey: string | undefined;
+  ollamaUrl: string | undefined;
+  config: import('@/lib/ai/connections').ConnectionConfig | undefined;
+} | null {
+  const config = { ...connection.config, ...configOverride };
+  if (connection.credentials.type === 'api_key') {
+    return { provider, apiKey: connection.credentials.key, ollamaUrl: undefined, config };
+  }
+  if (connection.credentials.type === 'local') {
+    return { provider, apiKey: undefined, ollamaUrl: connection.credentials.url, config };
+  }
   return null;
 }
 
@@ -220,10 +258,13 @@ export function useAIOperations() {
 
   // Resolve interactive connection from routing store
   const interactiveConnection = useRoutingStore((s) => {
-    const id = s.routing.interactive;
-    if (!id) return null;
+    const slot = s.routing.interactive;
+    if (!slot?.connectionId) return null;
     return s.getConnectionForUseCase('interactive');
   });
+
+  // Resolve use-case model override from routing store
+  const useCaseModel = useRoutingStore((s) => s.routing.interactive?.model);
 
   // Provider/persona overrides only apply when exactly one project is selected
   const singleProjectPath = selectedProjectPaths.length === 1 ? selectedProjectPaths[0] : null;
@@ -256,7 +297,7 @@ export function useAIOperations() {
       // Try resolving as a connection ID (v2)
       const conn = useConnectionsStore.getState().getConnection(projectProviderOverride);
       if (conn) {
-        const fromConn = resolveConnectionCredentials(conn);
+        const fromConn = resolveConnectionCredentials(conn, useCaseModel);
         if (fromConn) return fromConn;
         // agent_managed → falls through, handled via ACP
       }
@@ -268,13 +309,14 @@ export function useAIOperations() {
           provider: legacyProvider,
           apiKey: legacyProvider === 'ollama' ? undefined : apiKeys[legacyProvider],
           ollamaUrl,
+          config: undefined,
         };
       }
     }
 
     // Try routing store
     if (interactiveConnection) {
-      const fromConnection = resolveConnectionCredentials(interactiveConnection);
+      const fromConnection = resolveConnectionCredentials(interactiveConnection, useCaseModel);
       if (fromConnection) return fromConnection;
       // agent_managed → handled via ACP in callbacks, fall through to ai-store
     }
@@ -285,11 +327,12 @@ export function useAIOperations() {
         provider: aiStore.provider,
         apiKey: aiStore.provider === 'ollama' ? undefined : apiKeys[aiStore.provider],
         ollamaUrl,
+        config: undefined,
       };
     }
 
     return null;
-  }, [singleMetadata, interactiveConnection, aiStore.provider, apiKeys, ollamaUrl]);
+  }, [singleMetadata, interactiveConnection, aiStore.provider, apiKeys, ollamaUrl, useCaseModel]);
 
   const effectivePersonaId = singleMetadata?.ai.personaId ?? aiStore.activePersonaId;
   const allPersonas = getAllPersonas(aiStore);
@@ -408,7 +451,8 @@ export function useAIOperations() {
         const aiProvider = getAIProvider(
           resolved.provider,
           resolved.apiKey,
-          resolved.ollamaUrl
+          resolved.ollamaUrl,
+          resolved.config
         );
 
         const fullPrompt = `${composedSystemMessage}\n\n${prompt}`;
@@ -696,6 +740,10 @@ export function useAIOperations() {
           apiKey: resolved.apiKey,
           ollamaUrl: resolved.ollamaUrl,
           webSearchEnabled: webSearchEnabled && resolved.provider !== 'ollama',
+          model: resolved.config?.model ?? null,
+          temperature: resolved.config?.temperature ?? null,
+          maxTokens: resolved.config?.maxTokens ?? null,
+          baseUrl: resolved.config?.baseUrl ?? null,
         });
       } catch (error) {
         // Clean up listeners on error

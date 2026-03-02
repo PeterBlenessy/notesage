@@ -2,24 +2,31 @@ import { invoke } from '@tauri-apps/api/core';
 import type { AIProvider, ChatMessage, GenerateOptions } from '../types';
 import type { ConnectionConfig } from '../connections';
 
-export class OllamaProvider implements AIProvider {
-  name: 'ollama' = 'ollama';
-  private ollamaUrl: string;
+export class OpenAICompatibleProvider implements AIProvider {
+  name: 'openai_compatible' = 'openai_compatible';
+  private apiKey: string;
   private config?: ConnectionConfig;
 
-  constructor(ollamaUrl?: string, config?: ConnectionConfig) {
-    this.ollamaUrl = ollamaUrl || 'http://localhost:11434';
+  constructor(apiKey?: string, config?: ConnectionConfig) {
+    this.apiKey = apiKey || '';
     this.config = config;
   }
 
   async generateText(prompt: string, _options?: GenerateOptions): Promise<string> {
+    if (!this.apiKey) {
+      throw new Error('API key is required');
+    }
+    if (!this.config?.baseUrl) {
+      throw new Error('Base URL is required for OpenAI-Compatible provider');
+    }
+
     try {
       const result = await invoke<string>('ai_generate_text', {
         request: {
-          provider: 'ollama',
+          provider: 'openai_compatible',
           prompt,
-          api_key: null,
-          ollama_url: this.ollamaUrl,
+          api_key: this.apiKey,
+          ollama_url: null,
           stream: false,
           model: this.config?.model ?? null,
           temperature: this.config?.temperature ?? null,
@@ -30,20 +37,27 @@ export class OllamaProvider implements AIProvider {
 
       return result;
     } catch (error) {
-      console.error('Ollama generation failed:', error);
+      console.error('OpenAI-Compatible generation failed:', error);
       throw new Error(
-        error instanceof Error ? error.message : 'Failed to generate text with Ollama'
+        error instanceof Error ? error.message : 'Failed to generate text'
       );
     }
   }
 
   async chat(messages: ChatMessage[]): Promise<string> {
+    if (!this.apiKey) {
+      throw new Error('API key is required');
+    }
+    if (!this.config?.baseUrl) {
+      throw new Error('Base URL is required for OpenAI-Compatible provider');
+    }
+
     try {
       const result = await invoke<string>('ai_chat', {
         messages,
-        provider: 'ollama',
-        apiKey: null,
-        ollamaUrl: this.ollamaUrl,
+        provider: 'openai_compatible',
+        apiKey: this.apiKey,
+        ollamaUrl: null,
         model: this.config?.model ?? null,
         temperature: this.config?.temperature ?? null,
         maxTokens: this.config?.maxTokens ?? null,
@@ -52,9 +66,9 @@ export class OllamaProvider implements AIProvider {
 
       return result;
     } catch (error) {
-      console.error('Ollama chat failed:', error);
+      console.error('OpenAI-Compatible chat failed:', error);
       throw new Error(
-        error instanceof Error ? error.message : 'Failed to chat with Ollama'
+        error instanceof Error ? error.message : 'Failed to chat'
       );
     }
   }

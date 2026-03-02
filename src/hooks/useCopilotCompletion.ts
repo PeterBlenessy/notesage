@@ -38,10 +38,14 @@ interface InlineCompletionItem {
  * - Requests completions on typing pauses and renders ghost text
  */
 export function useCopilotCompletion(editor: Editor | null) {
-  const connection = useRoutingStore((s) => s.getConnectionForUseCase('inline_completion'));
+  const rawConnection = useRoutingStore((s) => s.getConnectionForUseCase('inline_completion'));
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const tabs = useEditorStore((s) => s.tabs);
   const projects = useWorkspaceStore((s) => s.projects);
+
+  // Only activate for agent_managed connections (Copilot LSP).
+  // Non-LSP providers (e.g., Ollama local) use their own hooks.
+  const connection = rawConnection?.authMethod === 'agent_managed' ? rawConnection : null;
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const workingDir = projects[0]?.path ?? null;

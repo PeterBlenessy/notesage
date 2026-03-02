@@ -52,6 +52,11 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect }: Connec
           <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
             {AUTH_BADGES[connection.authMethod] ?? connection.authMethod}
           </span>
+          {connection.config?.model && (
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0 max-w-[140px] truncate" title={connection.config.model}>
+              {connection.config.model}
+            </span>
+          )}
         </div>
         {/* Capability badges */}
         <div className="flex items-center gap-1.5 mt-1">

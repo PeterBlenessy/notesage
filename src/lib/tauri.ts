@@ -262,6 +262,25 @@ export const tauriApi = {
     await invoke("acp_permission_respond", { instanceId, requestId, optionId });
   },
 
+  // Ollama FIM completion
+  async ollamaFimCompletion(prefix: string, suffix: string, model?: string, ollamaUrl?: string): Promise<string> {
+    return await invoke<string>("ollama_fim_completion", {
+      prefix,
+      suffix,
+      model: model ?? null,
+      ollamaUrl: ollamaUrl ?? null,
+    });
+  },
+
+  // AI model listing
+  async listModels(provider: string, apiKey?: string, baseUrl?: string): Promise<string[]> {
+    return await invoke<string[]>("list_models", {
+      provider,
+      apiKey: apiKey ?? null,
+      baseUrl: baseUrl ?? null,
+    });
+  },
+
   // Debug logging
   async setDebugLogging(enabled: boolean): Promise<void> {
     await invoke("set_debug_logging", { enabled });
