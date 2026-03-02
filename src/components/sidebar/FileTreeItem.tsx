@@ -1,8 +1,11 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown } from "lucide-react";
 import { SyncedIcon } from "./SyncedIcon";
+import { FolderPickerItem } from "./FolderPickerItem";
+import { NewFolderDialog } from "./NewFolderDialog";
 import { toast } from "sonner";
 import { FileEntry, tauriApi } from "@/lib/tauri";
+import { NOTESAGE_DRAG_MIME, parseNotesageDrop } from "@/lib/drag-utils";
 import type { GitStatus } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
@@ -50,36 +53,6 @@ const GIT_STATUS_CONFIG: Record<GitStatus, { label: string; color: string; toolt
   conflicted: { label: "C", color: "text-destructive", tooltip: "Conflicted — merge conflict" },
 };
 
-function FolderPickerItem({ folder, onMoveTo, entryPath, entryIsDirectory, currentParent }: { folder: FileEntry; onMoveTo: (path: string) => void; entryPath: string; entryIsDirectory: boolean; currentParent: string }) {
-  // Filter out the entry itself and its descendants from subfolders
-  const subfolders = (folder.children ?? []).filter((e) =>
-    e.is_directory && e.name !== ".notesage" && e.name !== ".git" &&
-    !(entryIsDirectory && (e.path === entryPath || e.path.startsWith(entryPath + "/")))
-  );
-  const isCurrentParent = folder.path === currentParent;
-  if (subfolders.length === 0) {
-    return (
-      <ContextMenuItem onClick={() => onMoveTo(folder.path)} disabled={isCurrentParent}>
-        {folder.name}{isCurrentParent ? <span className="ml-1 text-muted-foreground text-xs">(current)</span> : null}
-      </ContextMenuItem>
-    );
-  }
-  return (
-    <ContextMenuSub>
-      <ContextMenuSubTrigger>{folder.name}</ContextMenuSubTrigger>
-      <ContextMenuSubContent>
-        <ContextMenuItem onClick={() => onMoveTo(folder.path)} disabled={isCurrentParent}>
-          <span className="text-muted-foreground">(here){isCurrentParent ? " — current location" : ""}</span>
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        {subfolders.map((child) => (
-          <FolderPickerItem key={child.path} folder={child} onMoveTo={onMoveTo} entryPath={entryPath} entryIsDirectory={entryIsDirectory} currentParent={currentParent} />
-        ))}
-      </ContextMenuSubContent>
-    </ContextMenuSub>
-  );
-}
-
 interface FileTreeItemProps {
   entry: FileEntry;
   level: number;
@@ -95,13 +68,14 @@ interface FileTreeItemProps {
 export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProject, expandKeyPrefix = "", gitRepoRoot, onCommitFile, onExportFile }: FileTreeItemProps) {
   const { isExpanded, toggleFolder } = useWorkspaceStore();
   const { tabs, activeTabId } = useEditorStore();
-  const { createFolder, renamePath, deletePath } = useFileOperations();
+  const { renamePath, deletePath } = useFileOperations();
   const expandKey = expandKeyPrefix + entry.path;
   const expanded = isExpanded(expandKey);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(entry.name);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const dragCounter = useRef(0);
   const dragExpandTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -181,18 +155,10 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
     }
   };
 
-  const handleNewFolder = async () => {
+  const handleNewFolder = useCallback(() => {
     if (!entry.is_directory) return;
-
-    const folderName = window.prompt("Enter folder name:", "New Folder");
-    if (!folderName) return;
-
-    try {
-      await createFolder(entry.path, folderName);
-    } catch (error) {
-      toast.error(`Failed to create folder: ${error}`);
-    }
-  };
+    setNewFolderDialogOpen(true);
+  }, [entry.is_directory]);
 
   const startRename = () => {
     setRenameValue(entry.name);
@@ -256,9 +222,6 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
     }
   };
 
-  // Drag-and-drop: use text/plain MIME type for WKWebView compatibility
-  const DRAG_MIME = "text/plain";
-
   const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     const payload = JSON.stringify({
       _notesage: true,
@@ -266,7 +229,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
       name: entry.name,
       isDirectory: entry.is_directory,
     });
-    e.dataTransfer.setData(DRAG_MIME, payload);
+    e.dataTransfer.setData(NOTESAGE_DRAG_MIME, payload);
     e.dataTransfer.effectAllowed = "move";
     e.currentTarget.style.opacity = "0.5";
   }, [entry.path, entry.name, entry.is_directory]);
@@ -286,14 +249,8 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
     }
     if (!entry.is_directory) return;
 
-    const raw = e.dataTransfer.getData(DRAG_MIME);
-    if (!raw) return;
-
-    let dragged: { _notesage?: boolean; path: string; name: string; isDirectory: boolean };
-    try {
-      dragged = JSON.parse(raw);
-    } catch { return; }
-    if (!dragged._notesage) return;
+    const dragged = parseNotesageDrop(e);
+    if (!dragged) return;
 
     // Don't drop onto self
     if (dragged.path === entry.path) return;
@@ -647,6 +604,15 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {entry.is_directory && (
+        <NewFolderDialog
+          open={newFolderDialogOpen}
+          onOpenChange={setNewFolderDialogOpen}
+          parentPath={entry.path}
+          onCreated={() => {}}
+        />
+      )}
 
       {entry.is_directory && expanded && entry.children && (
         <div>

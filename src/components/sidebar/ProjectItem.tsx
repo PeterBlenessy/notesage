@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronRight, Folder, FolderOpen, Settings, X, ExternalLink, GitCommitVertical, GitBranch, Target, FilePlus, FolderPlus } from "lucide-react";
+import { parseNotesageDrop } from "@/lib/drag-utils";
 import { SyncedIcon } from "./SyncedIcon";
 import { tauriApi } from "@/lib/tauri";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
@@ -11,6 +12,7 @@ import { useFileOperations } from "@/hooks/useFileOperations";
 import { toast } from "sonner";
 import { FileTree } from "./FileTree";
 import { BranchIndicator } from "./BranchIndicator";
+import { NewFolderDialog } from "./NewFolderDialog";
 import { CommitDialog } from "@/components/git/CommitDialog";
 import { GoalTemplateDialog } from "@/components/goals/GoalTemplateDialog";
 import { cn } from "@/lib/utils";
@@ -58,7 +60,8 @@ export function ProjectItem({
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
   const [commitPreSelected, setCommitPreSelected] = useState<string[]>([]);
   const [goalsDialogOpen, setGoalsDialogOpen] = useState(false);
-  const { refreshFileTree, openFile, createFolder, renamePath } = useFileOperations();
+  const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
+  const { refreshFileTree, openFile, renamePath } = useFileOperations();
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounter = useRef(0);
 
@@ -68,11 +71,8 @@ export function ProjectItem({
     dragCounter.current = 0;
     setIsDragOver(false);
 
-    const raw = e.dataTransfer.getData("text/plain");
-    if (!raw) return;
-    let dragged: { _notesage?: boolean; path: string; name: string; isDirectory: boolean };
-    try { dragged = JSON.parse(raw); } catch { return; }
-    if (!dragged._notesage) return;
+    const dragged = parseNotesageDrop(e);
+    if (!dragged) return;
 
     if (dragged.path === projectPath) return;
     const draggedParent = dragged.path.substring(0, dragged.path.lastIndexOf("/"));
@@ -90,20 +90,13 @@ export function ProjectItem({
       }
       await renamePath(dragged.path, destPath);
     } catch (error) {
-      console.error("Failed to move:", error);
+      toast.error(`Failed to move "${dragged.name}": ${error}`);
     }
   }, [projectPath, renamePath]);
 
-
-  const handleNewFolder = async () => {
-    const folderName = window.prompt("Enter folder name:", "New Folder");
-    if (!folderName) return;
-    try {
-      await createFolder(projectPath, folderName);
-    } catch (error) {
-      toast.error(`Failed to create folder: ${error}`);
-    }
-  };
+  const handleNewFolder = useCallback(() => {
+    setNewFolderDialogOpen(true);
+  }, []);
 
   // Determine if this project has active git data
   const isGitActive = gitEnabled && isGitRepo;
@@ -259,6 +252,13 @@ export function ProjectItem({
         const fileName = filePath.split("/").pop() || filePath;
         openFile(filePath, fileName);
       }}
+    />
+
+    <NewFolderDialog
+      open={newFolderDialogOpen}
+      onOpenChange={setNewFolderDialogOpen}
+      parentPath={projectPath}
+      onCreated={() => refreshFileTree(projectPath)}
     />
     </>
   );

@@ -2,9 +2,11 @@ import { useCallback, useRef, useState } from "react";
 import { ChevronRight, Folder, FolderOpen, FolderDot, X, ExternalLink, FilePlus, FolderPlus } from "lucide-react";
 import { toast } from "sonner";
 import { tauriApi } from "@/lib/tauri";
+import { parseNotesageDrop } from "@/lib/drag-utils";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { FileTree } from "./FileTree";
+import { NewFolderDialog } from "./NewFolderDialog";
 import { cn } from "@/lib/utils";
 import {
   ContextMenu,
@@ -34,8 +36,9 @@ export function ExplorerFolderItem({
   );
   const projects = useWorkspaceStore((s) => s.projects);
   const { isExpanded, toggleFolder, removeExplorerFolder } = useWorkspaceStore();
-  const { createFolder, renamePath } = useFileOperations();
+  const { renamePath } = useFileOperations();
   const [isDragOver, setIsDragOver] = useState(false);
+  const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   const dragCounter = useRef(0);
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
@@ -44,11 +47,8 @@ export function ExplorerFolderItem({
     dragCounter.current = 0;
     setIsDragOver(false);
 
-    const raw = e.dataTransfer.getData("text/plain");
-    if (!raw) return;
-    let dragged: { _notesage?: boolean; path: string; name: string; isDirectory: boolean };
-    try { dragged = JSON.parse(raw); } catch { return; }
-    if (!dragged._notesage) return;
+    const dragged = parseNotesageDrop(e);
+    if (!dragged) return;
 
     if (dragged.path === folderPath) return;
     const draggedParent = dragged.path.substring(0, dragged.path.lastIndexOf("/"));
@@ -66,20 +66,13 @@ export function ExplorerFolderItem({
       }
       await renamePath(dragged.path, destPath);
     } catch (error) {
-      console.error("Failed to move:", error);
+      toast.error(`Failed to move "${dragged.name}": ${error}`);
     }
   }, [folderPath, renamePath]);
 
-
-  const handleNewFolder = async () => {
-    const folderName = window.prompt("Enter folder name:", "New Folder");
-    if (!folderName) return;
-    try {
-      await createFolder(folderPath, folderName);
-    } catch (error) {
-      toast.error(`Failed to create folder: ${error}`);
-    }
-  };
+  const handleNewFolder = useCallback(() => {
+    setNewFolderDialogOpen(true);
+  }, []);
 
   const folderName = folderPath.split("/").filter(Boolean).pop() || "Folder";
   const expandKey = `explorer-folder:${folderPath}`;
@@ -88,9 +81,12 @@ export function ExplorerFolderItem({
   const isProjectFolder = projects.some((p) => p.path === folderPath) ||
     folder?.fileTree.some((c) => c.name === ".notesage" && c.is_directory);
 
+  const { refreshFileTree } = useFileOperations();
+
   if (!folder) return null;
 
   return (
+    <>
     <div>
       <div
         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "move"; }}
@@ -186,5 +182,13 @@ export function ExplorerFolderItem({
         </div>
       )}
     </div>
+
+    <NewFolderDialog
+      open={newFolderDialogOpen}
+      onOpenChange={setNewFolderDialogOpen}
+      parentPath={folderPath}
+      onCreated={() => refreshFileTree(folderPath)}
+    />
+    </>
   );
 }

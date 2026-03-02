@@ -71,8 +71,7 @@ function loadPanelSize(configKey: string, panel: string, fallback: number): numb
   }
 }
 
-// Editor area with document-style presentation
-function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick, onShortcutsOpen }: {
+interface EditorAreaProps {
   onNewNote?: () => void;
   onNewProject?: () => void;
   onOpenFolder?: () => void;
@@ -87,7 +86,10 @@ function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOp
   updateVersion?: string | null;
   onUpdateClick?: () => void;
   onShortcutsOpen?: () => void;
-}) {
+}
+
+// Editor area with document-style presentation
+function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick, onShortcutsOpen }: EditorAreaProps) {
   return (
     <div className="flex flex-col h-full overflow-hidden bg-muted">
       {!focusMode && <TabBar />}
