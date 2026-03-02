@@ -62,13 +62,22 @@ export function ChatPanel() {
   const allConnections = useConnectionsStore((s) => s.connections);
   const interactiveConnections = useMemo(() => allConnections.filter((c) => c.capabilities.includes('interactive')), [allConnections]);
 
+  // Resolve effective connection: project override takes priority over global routing
+  const singleProjectPath = selectedProjectPaths.length === 1 ? selectedProjectPaths[0] : null;
+  const singleMetadata = singleProjectPath ? metadataMap[singleProjectPath] ?? null : null;
+  const projectProviderOverride = singleMetadata?.ai.provider ?? null;
+  const projectOverrideConnection = useMemo(() => {
+    if (!projectProviderOverride) return null;
+    return allConnections.find((c) => c.id === projectProviderOverride) ?? null;
+  }, [projectProviderOverride, allConnections]);
+  const effectiveConnection = projectOverrideConnection ?? interactiveConnection;
+
   // AI availability: check v2 routing/connections first, fall back to v1 ai-store
-  const hasAIProvider = !!interactiveConnection || !!legacyProvider;
+  const hasAIProvider = !!effectiveConnection || !!legacyProvider;
   // Effective provider type for capability checks (e.g. web search support)
-  const effectiveProviderType = interactiveConnection?.provider || legacyProvider;
+  const effectiveProviderType = effectiveConnection?.provider || legacyProvider;
 
   // Goals discovery for single-project selection only
-  const singleProjectPath = selectedProjectPaths.length === 1 ? selectedProjectPaths[0] : null;
   const { goalFiles } = useGoalsDiscovery(singleProjectPath);
   const { sendChatMessage, cancelChat } = useAIOperations();
   const permissionRequests = usePermissionStore((s) => s.requests);
@@ -80,7 +89,8 @@ export function ChatPanel() {
   const [projectOpen, setProjectOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
 
-  const isAcpConnection = interactiveConnection?.authMethod === 'agent_managed';
+  const isAcpConnection = effectiveConnection?.authMethod === 'agent_managed';
+  const hasProjectOverride = !!projectOverrideConnection;
 
   // Compute tools list: pre-populated + any dynamic session/always approvals
   const toolsList = useMemo(() => {
@@ -288,19 +298,25 @@ export function ChatPanel() {
           placeholder={chatPlaceholder}
           footer={
             <>
-              {interactiveConnections.length > 0 && (
-                <Popover open={providerOpen} onOpenChange={setProviderOpen}>
+              {(interactiveConnections.length > 0 || hasProjectOverride) && (
+                <Popover open={providerOpen} onOpenChange={hasProjectOverride ? undefined : setProviderOpen}>
                   <PopoverTrigger asChild>
-                    <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent/50">
-                      {interactiveConnection && (
-                        <ProviderLogo provider={interactiveConnection.provider} className="w-3.5 h-3.5" />
+                    <button
+                      className={`flex items-center gap-1.5 text-xs text-muted-foreground transition-colors rounded px-1 py-0.5 ${
+                        hasProjectOverride ? 'cursor-default' : 'hover:text-foreground hover:bg-accent/50'
+                      }`}
+                      title={hasProjectOverride ? `Set by project: ${singleMetadata?.name || singleProjectPath}` : undefined}
+                    >
+                      {effectiveConnection && (
+                        <ProviderLogo provider={effectiveConnection.provider} className="w-3.5 h-3.5" />
                       )}
                       <span className="max-w-[80px] truncate">
-                        {interactiveConnection?.label ?? 'Select provider'}
+                        {effectiveConnection?.label ?? 'Select provider'}
                       </span>
-                      <ChevronUp className="h-3 w-3 opacity-50" />
+                      {!hasProjectOverride && <ChevronUp className="h-3 w-3 opacity-50" />}
                     </button>
                   </PopoverTrigger>
+                  {!hasProjectOverride && (
                   <PopoverContent side="top" align="start" className="w-52 p-1">
                     {interactiveConnections.map((conn) => (
                       <button
@@ -310,7 +326,7 @@ export function ChatPanel() {
                           setProviderOpen(false);
                         }}
                         className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${
-                          interactiveConnection?.id === conn.id
+                          effectiveConnection?.id === conn.id
                             ? 'bg-accent text-accent-foreground'
                             : 'text-foreground hover:bg-accent/50'
                         }`}
@@ -320,6 +336,7 @@ export function ChatPanel() {
                       </button>
                     ))}
                   </PopoverContent>
+                  )}
                 </Popover>
               )}
               <Popover open={personaOpen} onOpenChange={setPersonaOpen}>
