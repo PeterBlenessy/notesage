@@ -12,6 +12,8 @@ import {
   Settings,
   Clock,
   Focus,
+  FileText,
+  Loader2,
 } from "lucide-react";
 import {
   CommandDialog,
@@ -27,7 +29,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
-import { FileEntry, TagOccurrence, tauriApi } from "@/lib/tauri";
+import { FileEntry, TagOccurrence, ContentMatch, tauriApi } from "@/lib/tauri";
 
 const MAX_FILE_RESULTS = 50;
 
@@ -125,6 +127,56 @@ export function CommandPalette({
     };
   }, [tagSearchMode, open, search]);
 
+  // Content search state (filesOnly mode): debounced backend call for grep-like search
+  const [contentMatches, setContentMatches] = useState<ContentMatch[]>([]);
+  const [contentSearching, setContentSearching] = useState(false);
+  const contentSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounced file content search for filesOnly mode (⌘⇧F)
+  useEffect(() => {
+    if (!filesOnly || !open || tagSearchMode) {
+      setContentMatches([]);
+      setContentSearching(false);
+      return;
+    }
+
+    const q = search.trim();
+    if (q.length < 3) {
+      setContentMatches([]);
+      setContentSearching(false);
+      return;
+    }
+
+    setContentSearching(true);
+    if (contentSearchTimerRef.current) clearTimeout(contentSearchTimerRef.current);
+    contentSearchTimerRef.current = setTimeout(async () => {
+      contentSearchTimerRef.current = null;
+      try {
+        const ws = useWorkspaceStore.getState();
+        const settings = useSettingsStore.getState();
+        const searchPaths: string[] = [];
+        for (const folder of ws.explorerFolders) searchPaths.push(folder.path);
+        for (const project of ws.projects) searchPaths.push(project.path);
+        if (settings.notesRootPath) searchPaths.push(settings.notesRootPath);
+        if (searchPaths.length > 0) {
+          const matches = await tauriApi.searchFileContent(q, searchPaths);
+          setContentMatches(matches);
+        } else {
+          setContentMatches([]);
+        }
+      } catch (error) {
+        console.error("Failed to search file content:", error);
+        setContentMatches([]);
+      } finally {
+        setContentSearching(false);
+      }
+    }, 300);
+
+    return () => {
+      if (contentSearchTimerRef.current) clearTimeout(contentSearchTimerRef.current);
+    };
+  }, [filesOnly, open, search, tagSearchMode]);
+
   const { recentFiles, activeTabId } = useEditorStore();
   const { explorerFolders, projects, notesTree } = useWorkspaceStore();
   const { theme, setTheme, sidebarPinned, setSidebarPinned, chatPanelOpen, setChatPanelOpen } = useSettingsStore();
@@ -176,7 +228,7 @@ export function CommandPalette({
     if (!q && !filesOnly) return [];
     const results: FileEntry[] = [];
     for (const file of allFiles) {
-      if (!filesOnly && recentPaths.has(file.path)) continue;
+      if (recentPaths.has(file.path)) continue;
       if (!q || file.name.toLowerCase().includes(q) || file.path.toLowerCase().includes(q)) {
         results.push(file);
         if (results.length >= MAX_FILE_RESULTS) break;
@@ -224,14 +276,14 @@ export function CommandPalette({
       title="Command Palette"
       description="Search for files and actions"
       showCloseButton={false}
-      shouldFilter={tagSearchMode || tagOccurrences || tagFiles ? false : undefined}
+      shouldFilter={tagSearchMode || tagOccurrences || tagFiles || filesOnly ? false : undefined}
     >
       <CommandInput
         placeholder={
           tagSearchMode
             ? "Type a tag name to search..."
             : filesOnly
-              ? `Search ${allFiles.length.toLocaleString()} files...`
+              ? `Search ${allFiles.length.toLocaleString()} files by name or content...`
               : allFiles.length > 0
                 ? `Type a command or search ${allFiles.length.toLocaleString()} files...`
                 : "Type a command or file name..."
@@ -303,8 +355,8 @@ export function CommandPalette({
           </CommandGroup>
         )}
 
-        {/* Recent Files — hidden in filesOnly mode */}
-        {!filesOnly && recentFiles.length > 0 && (
+        {/* Recent Files */}
+        {!tagSearchMode && !tagOccurrences && !tagFiles && recentFiles.length > 0 && (
           <CommandGroup heading="Recent">
             {recentFiles.map((file) => (
               <CommandItem
@@ -322,7 +374,7 @@ export function CommandPalette({
           </CommandGroup>
         )}
 
-        {!filesOnly && recentFiles.length > 0 && <CommandSeparator />}
+        {!tagSearchMode && !tagOccurrences && !tagFiles && recentFiles.length > 0 && <CommandSeparator />}
 
         {/* Actions — hidden in filesOnly mode */}
         {!filesOnly && <CommandGroup heading="Actions">
@@ -410,7 +462,7 @@ export function CommandPalette({
         {!tagSearchMode && !tagOccurrences && !tagFiles && filteredFiles.length > 0 && (
           <>
             {!filesOnly && <CommandSeparator />}
-            <CommandGroup heading={filesOnly ? undefined : "Files"}>
+            <CommandGroup heading="Files">
               {filteredFiles.map((file) => (
                 <CommandItem
                   key={`file-${file.path}`}
@@ -422,6 +474,39 @@ export function CommandPalette({
                   <span className="text-xs text-muted-foreground truncate max-w-[200px]">
                     {file.path}
                   </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </>
+        )}
+
+        {/* Content Matches — grep-like results in filesOnly mode */}
+        {filesOnly && !tagSearchMode && (contentSearching || contentMatches.length > 0) && (
+          <>
+            <CommandSeparator />
+            <CommandGroup heading={
+              contentSearching
+                ? "Searching content..."
+                : `Content Matches (${contentMatches.length})`
+            }>
+              {contentSearching && (
+                <div className="flex items-center justify-center py-3">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                </div>
+              )}
+              {!contentSearching && contentMatches.map((match, idx) => (
+                <CommandItem
+                  key={`content-${match.path}-${match.line_number}-${idx}`}
+                  value={`content ${match.file_name} ${match.path} ${match.snippet}`}
+                  onSelect={() => handleOpenFile(match.path, match.file_name)}
+                  className="flex-col items-start gap-0.5"
+                >
+                  <div className="flex items-center gap-2 w-full">
+                    <FileText className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+                    <span className="flex-1 truncate">{match.file_name}</span>
+                    <span className="text-xs text-muted-foreground tabular-nums">:{match.line_number}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground truncate w-full pl-6">{match.snippet}</span>
                 </CommandItem>
               ))}
             </CommandGroup>

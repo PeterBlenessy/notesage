@@ -335,6 +335,138 @@ fn scan_dir_for_tag_occurrences(
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ContentMatch {
+    pub path: String,
+    pub file_name: String,
+    pub line_number: usize,
+    pub snippet: String,
+}
+
+const TEXT_EXTENSIONS: &[&str] = &[
+    "md", "txt", "json", "yaml", "yml", "toml", "csv", "xml", "html", "htm",
+    "css", "js", "ts", "jsx", "tsx", "rs", "py", "rb", "go", "java", "c",
+    "cpp", "h", "hpp", "sh", "bash", "zsh", "fish", "sql", "graphql", "svg",
+    "ini", "cfg", "conf", "env", "log", "tex", "typ", "lua", "swift",
+];
+
+const MAX_FILE_SIZE: u64 = 1_048_576; // 1 MB
+const MAX_CONTENT_RESULTS: usize = 100;
+
+/// Search file contents across the given directories for a case-insensitive substring match.
+/// Returns per-line matches with context snippets, capped at MAX_CONTENT_RESULTS.
+#[tauri::command]
+pub async fn search_file_content(
+    query: String,
+    paths: Vec<String>,
+) -> Result<Vec<ContentMatch>, String> {
+    let q = query.to_lowercase();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut results: Vec<ContentMatch> = Vec::new();
+
+    for dir_path in &paths {
+        let path = Path::new(dir_path);
+        if !path.is_dir() {
+            continue;
+        }
+        scan_dir_for_content(path, &q, &mut results);
+        if results.len() >= MAX_CONTENT_RESULTS {
+            break;
+        }
+    }
+
+    results.sort_by(|a, b| {
+        a.file_name
+            .to_lowercase()
+            .cmp(&b.file_name.to_lowercase())
+            .then(a.line_number.cmp(&b.line_number))
+    });
+
+    results.truncate(MAX_CONTENT_RESULTS);
+    Ok(results)
+}
+
+fn scan_dir_for_content(
+    dir: &Path,
+    query: &str,
+    results: &mut Vec<ContentMatch>,
+) {
+    if results.len() >= MAX_CONTENT_RESULTS {
+        return;
+    }
+
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        if results.len() >= MAX_CONTENT_RESULTS {
+            return;
+        }
+
+        let path = entry.path();
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+
+        if name_str.starts_with('.') {
+            continue;
+        }
+
+        if path.is_dir() {
+            scan_dir_for_content(&path, query, results);
+        } else {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if !TEXT_EXTENSIONS.contains(&ext) {
+                continue;
+            }
+
+            // Skip files larger than 1 MB
+            if let Ok(meta) = fs::metadata(&path) {
+                if meta.len() > MAX_FILE_SIZE {
+                    continue;
+                }
+            }
+
+            if let Ok(content) = fs::read_to_string(&path) {
+                let file_path = path.to_string_lossy().to_string();
+                let file_name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+
+                for (idx, line) in content.lines().enumerate() {
+                    if results.len() >= MAX_CONTENT_RESULTS {
+                        return;
+                    }
+                    if line.to_lowercase().contains(query) {
+                        let trimmed = line.trim();
+                        let snippet = if trimmed.chars().count() > 120 {
+                            let end = trimmed
+                                .char_indices()
+                                .nth(117)
+                                .map(|(i, _)| i)
+                                .unwrap_or(trimmed.len());
+                            format!("{}...", &trimmed[..end])
+                        } else {
+                            trimmed.to_string()
+                        };
+                        results.push(ContentMatch {
+                            path: file_path.clone(),
+                            file_name: file_name.clone(),
+                            line_number: idx + 1,
+                            snippet,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn scan_dir_for_tags(
     dir: &Path,
     tag_re: &Regex,

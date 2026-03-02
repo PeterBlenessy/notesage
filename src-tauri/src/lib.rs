@@ -115,6 +115,7 @@ pub fn run() {
             copilot_lsp_accept_completion,
             scan_tags_in_directories,
             find_tag_occurrences,
+            search_file_content,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

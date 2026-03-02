@@ -49,6 +49,13 @@ export interface TagOccurrence {
   snippet: string;
 }
 
+export interface ContentMatch {
+  path: string;
+  file_name: string;
+  line_number: number;
+  snippet: string;
+}
+
 export interface AcpSpawnResult {
   instance_id: string;
   agent_name: string | null;
@@ -293,5 +300,9 @@ export const tauriApi = {
 
   async findTagOccurrences(tag: string, paths: string[]): Promise<TagOccurrence[]> {
     return await invoke<TagOccurrence[]>("find_tag_occurrences", { tag, paths });
+  },
+
+  async searchFileContent(query: string, paths: string[]): Promise<ContentMatch[]> {
+    return await invoke<ContentMatch[]>("search_file_content", { query, paths });
   },
 };
