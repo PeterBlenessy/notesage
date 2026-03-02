@@ -51,3 +51,4 @@ Chronological log of major implementation milestones and changes.
 | 045 | [Release v0.17.0](045-release-v0.17.0.md) | Multi-turn comment threads, Apply-to-document, Phase 6.5 complete |
 | 046 | [Release v0.17.1](046-release-v0.17.1.md) | Chat agent improvements, AI error display, Ollama timeouts, UI fixes |
 | 047 | [Release v0.17.2](047-release-v0.17.2.md) | iCloud project auto-discovery, startup watcher fix |
+| 048 | [Release v0.17.3](048-release-v0.17.3.md) | File content search in command palette, Recent in file search |
