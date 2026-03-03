@@ -52,9 +52,8 @@ export function useCommentDelegation() {
       });
 
       // Resolve source file path for the activity strip
-      const activeTab = useEditorStore.getState().tabs.find(
-        (t) => t.id === useEditorStore.getState().activeTabId
-      );
+      const editorState = useEditorStore.getState();
+      const activeTab = editorState.tabs.find((t) => t.id === editorState.activeTabId);
 
       try {
         const taskId = await startTask(
@@ -208,9 +207,8 @@ export function useCommentDelegation() {
         timestamp: Date.now(),
       });
 
-      const activeTab = useEditorStore.getState().tabs.find(
-        (t) => t.id === useEditorStore.getState().activeTabId
-      );
+      const editorState = useEditorStore.getState();
+      const activeTab = editorState.tabs.find((t) => t.id === editorState.activeTabId);
 
       try {
         const taskId = await startTask(
@@ -389,10 +387,10 @@ export function useCommentDelegation() {
 
       const contextMessage = contextParts.join('\n');
 
-      // Inject into chat panel
+      // Inject into chat panel as a user message with context prefix
+      // (system role would render as an AI bubble, confusing users)
       const chatStore = useChatStore.getState();
-      chatStore.addMessage({ role: 'system', content: contextMessage });
-      chatStore.addMessage({ role: 'user', content: `Continue the conversation about: "${anchorSnippet}"` });
+      chatStore.addMessage({ role: 'user', content: `${contextMessage}\n\nContinue the conversation about: "${anchorSnippet}"` });
 
       // Open chat panel
       useSettingsStore.getState().setChatPanelOpen(true);
