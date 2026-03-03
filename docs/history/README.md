@@ -52,3 +52,4 @@ Chronological log of major implementation milestones and changes.
 | 046 | [Release v0.17.1](046-release-v0.17.1.md) | Chat agent improvements, AI error display, Ollama timeouts, UI fixes |
 | 047 | [Release v0.17.2](047-release-v0.17.2.md) | iCloud project auto-discovery, startup watcher fix |
 | 048 | [Release v0.17.3](048-release-v0.17.3.md) | File content search in command palette, Recent in file search |
+| 049 | [Release v0.17.4](049-release-v0.17.4.md) | Sync badge icon, check-for-updates button UX |
