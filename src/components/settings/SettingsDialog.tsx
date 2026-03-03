@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, UserCircle2, FileText, GitBranch, Cloud, Info, Loader2, Check, ArrowUpCircle, ScrollText, Code } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, UserCircle2, FileText, GitBranch, Cloud, Info, Loader2, ArrowUpCircle, ScrollText, Code, Download } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -681,14 +681,12 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                           >
                             {updateState?.status === 'checking' ? (
                               <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />
-                            ) : updateState?.status === 'idle' && lastUpdateCheck && !updateState.updateInfo ? (
-                              <Check className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
-                            ) : null}
+                            ) : (
+                              <Download className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+                            )}
                             {updateState?.status === 'checking'
                               ? 'Checking...'
-                              : updateState?.status === 'idle' && lastUpdateCheck && !updateState.updateInfo
-                                ? "You're up to date"
-                                : 'Check Now'}
+                              : 'Check for Updates'}
                           </Button>
                         )}
                       </div>
