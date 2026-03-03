@@ -10,6 +10,7 @@ export interface CommentReply {
 }
 
 export type CommentStatus = 'open' | 'delegated' | 'done' | 'resolved';
+export type DelegationMode = 'chat' | 'delegate';
 
 export interface DelegationActivity {
   label: string;
@@ -42,6 +43,8 @@ interface CommentStore {
   scrollToCommentId: string | null;
   /** Runtime-only activity log per comment (not persisted) */
   activitiesByComment: Record<string, DelegationActivity[]>;
+  /** Runtime-only delegation mode per comment: 'chat' (popover stays open) or 'delegate' (background) */
+  delegationModeByComment: Record<string, DelegationMode>;
   /** Increments when partialReplies map changes — subscribe to trigger re-renders */
   partialReplyVersion: number;
 
@@ -56,6 +59,8 @@ interface CommentStore {
   completeLastActivity: (commentId: string) => void;
   completeAllActivities: (commentId: string) => void;
   clearActivities: (commentId: string) => void;
+  setDelegationMode: (commentId: string, mode: DelegationMode) => void;
+  clearDelegationMode: (commentId: string) => void;
   setActiveComment: (id: string | null) => void;
   /** Scroll to a comment's position and then activate it (used by external navigation) */
   requestScrollToComment: (id: string) => void;
@@ -69,6 +74,7 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
   activeCommentId: null,
   scrollToCommentId: null,
   activitiesByComment: {},
+  delegationModeByComment: {},
   partialReplyVersion: 0,
 
   loadComments: async (documentId: string, projectRoot: string) => {
@@ -134,12 +140,14 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
     set((state) => {
       const comments = state.commentsByDocument[documentId] ?? [];
       const { [commentId]: _, ...restActivities } = state.activitiesByComment;
+      const { [commentId]: __, ...restModes } = state.delegationModeByComment;
       return {
         commentsByDocument: {
           ...state.commentsByDocument,
           [documentId]: comments.filter((c) => c.id !== commentId),
         },
         activitiesByComment: restActivities,
+        delegationModeByComment: restModes,
         activeCommentId: state.activeCommentId === commentId ? null : state.activeCommentId,
       };
     });
@@ -238,6 +246,19 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
     });
   },
 
+  setDelegationMode: (commentId: string, mode: DelegationMode) => {
+    set((state) => ({
+      delegationModeByComment: { ...state.delegationModeByComment, [commentId]: mode },
+    }));
+  },
+
+  clearDelegationMode: (commentId: string) => {
+    set((state) => {
+      const { [commentId]: _, ...rest } = state.delegationModeByComment;
+      return { delegationModeByComment: rest };
+    });
+  },
+
   setActiveComment: (id: string | null) => {
     set({ activeCommentId: id });
   },
@@ -273,7 +294,7 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
   },
 
   clearDocument: (documentId: string) => {
-    // Clean up partial replies and activities for all comments in this document
+    // Clean up partial replies, activities, and delegation modes for all comments in this document
     const comments = get().commentsByDocument[documentId] ?? [];
     for (const c of comments) {
       delete partialReplies[partialKey(documentId, c.id)];
@@ -281,12 +302,15 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
     set((state) => {
       const { [documentId]: _, ...rest } = state.commentsByDocument;
       const cleanedActivities = { ...state.activitiesByComment };
+      const cleanedModes = { ...state.delegationModeByComment };
       for (const c of comments) {
         delete cleanedActivities[c.id];
+        delete cleanedModes[c.id];
       }
       return {
         commentsByDocument: rest,
         activitiesByComment: cleanedActivities,
+        delegationModeByComment: cleanedModes,
         activeCommentId: state.activeCommentId &&
           comments.some((c) => c.id === state.activeCommentId)
           ? null

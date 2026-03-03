@@ -1,7 +1,9 @@
 import { useCallback } from 'react';
 import { toast } from 'sonner';
 import { useAgentTaskOperations } from '@/hooks/useAgentTaskOperations';
-import { useCommentStore, appendPartialReply, clearPartialReply, type Comment } from '@/stores/comment-store';
+import { useCommentStore, appendPartialReply, clearPartialReply, type Comment, type DelegationMode } from '@/stores/comment-store';
+import { useChatStore } from '@/stores/chat-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { useEditorStore } from '@/stores/editor-store';
 
 /**
@@ -12,7 +14,7 @@ export function useCommentDelegation() {
   const { startTask, cancelTask, taskConnection } = useAgentTaskOperations();
 
   const delegateComment = useCallback(
-    async (comment: Comment, documentId: string, projectRoot: string) => {
+    async (comment: Comment, documentId: string, projectRoot: string, mode: DelegationMode = 'delegate') => {
       if (!taskConnection) {
         toast.error('No agent configured for tasks. Set up agent routing in Settings.');
         return;
@@ -20,8 +22,9 @@ export function useCommentDelegation() {
 
       const store = useCommentStore.getState();
 
-      // Set status to delegated
+      // Set status to delegated and track delegation mode
       store.setCommentStatus(documentId, comment.id, 'delegated');
+      store.setDelegationMode(comment.id, mode);
       store.clearActivities(comment.id);
       await store.saveComments(documentId, projectRoot);
 
@@ -63,6 +66,7 @@ export function useCommentDelegation() {
               const responseText = output || '(No response from agent)';
               s.addReply(documentId, comment.id, responseText, agentName);
               s.setCommentStatus(documentId, comment.id, 'done');
+              s.clearDelegationMode(comment.id);
               s.saveComments(documentId, projectRoot);
             },
             onActivity: (activity) => {
@@ -107,6 +111,7 @@ export function useCommentDelegation() {
                 timestamp: Date.now(),
               });
               s.setCommentStatus(documentId, comment.id, 'open');
+              s.clearDelegationMode(comment.id);
               s.saveComments(documentId, projectRoot);
               toast.error(`Agent failed: ${errorMsg}`);
             },
@@ -144,6 +149,7 @@ export function useCommentDelegation() {
           timestamp: Date.now(),
         });
         store.setCommentStatus(documentId, comment.id, 'open');
+        store.clearDelegationMode(comment.id);
         await store.saveComments(documentId, projectRoot);
         toast.error(`Agent delegation failed: ${errMsg}`);
       }
@@ -152,7 +158,7 @@ export function useCommentDelegation() {
   );
 
   const delegateReply = useCallback(
-    async (comment: Comment, replyText: string, documentId: string, projectRoot: string) => {
+    async (comment: Comment, replyText: string, documentId: string, projectRoot: string, mode: DelegationMode = 'chat') => {
       if (!taskConnection) {
         toast.error('No agent configured for tasks. Set up agent routing in Settings.');
         return;
@@ -163,8 +169,9 @@ export function useCommentDelegation() {
       // Add user reply to thread
       store.addReply(documentId, comment.id, replyText, 'You');
 
-      // Set status back to delegated
+      // Set status back to delegated and track delegation mode
       store.setCommentStatus(documentId, comment.id, 'delegated');
+      store.setDelegationMode(comment.id, mode);
       store.clearActivities(comment.id);
       await store.saveComments(documentId, projectRoot);
 
@@ -215,6 +222,7 @@ export function useCommentDelegation() {
               const responseText = output || '(No response from agent)';
               s.addReply(documentId, comment.id, responseText, agentName);
               s.setCommentStatus(documentId, comment.id, 'done');
+              s.clearDelegationMode(comment.id);
               s.saveComments(documentId, projectRoot);
             },
             onActivity: (activity) => {
@@ -259,6 +267,7 @@ export function useCommentDelegation() {
               });
               // Revert to done (not open) — thread already has replies
               s.setCommentStatus(documentId, comment.id, 'done');
+              s.clearDelegationMode(comment.id);
               s.saveComments(documentId, projectRoot);
               toast.error(`Agent failed: ${errorMsg}`);
             },
@@ -291,6 +300,7 @@ export function useCommentDelegation() {
         });
         // Revert to done — thread already has replies
         store.setCommentStatus(documentId, comment.id, 'done');
+        store.clearDelegationMode(comment.id);
         await store.saveComments(documentId, projectRoot);
         toast.error(`Agent delegation failed: ${errMsg}`);
       }
@@ -322,6 +332,7 @@ export function useCommentDelegation() {
       }
 
       s.setCommentStatus(documentId, comment.id, 'open');
+      s.clearDelegationMode(comment.id);
       await s.saveComments(documentId, projectRoot);
       toast('Delegation cancelled');
     },
@@ -349,13 +360,47 @@ export function useCommentDelegation() {
       toast(`Delegating ${delegatable.length} comment${delegatable.length === 1 ? '' : 's'} to agent...`);
 
       for (const comment of delegatable) {
-        await delegateComment(comment, documentId, projectRoot);
+        await delegateComment(comment, documentId, projectRoot, 'delegate');
       }
     },
     [delegateComment, taskConnection]
   );
 
+  /** Move a comment conversation to the chat panel for more room. */
+  const moveToChat = useCallback(
+    (comment: Comment) => {
+      const anchorSnippet = comment.anchorText.length > 80
+        ? comment.anchorText.slice(0, 80) + '\u2026'
+        : comment.anchorText;
+
+      // Build context message from the full thread
+      const contextParts = [
+        'Continuing a conversation about the following text:',
+        '',
+        `> ${comment.anchorText}`,
+        '',
+        `Original comment: ${comment.body}`,
+      ];
+
+      for (const reply of comment.replies ?? []) {
+        contextParts.push('');
+        contextParts.push(`${reply.author}: ${reply.body}`);
+      }
+
+      const contextMessage = contextParts.join('\n');
+
+      // Inject into chat panel
+      const chatStore = useChatStore.getState();
+      chatStore.addMessage({ role: 'system', content: contextMessage });
+      chatStore.addMessage({ role: 'user', content: `Continue the conversation about: "${anchorSnippet}"` });
+
+      // Open chat panel
+      useSettingsStore.getState().setChatPanelOpen(true);
+    },
+    []
+  );
+
   const canDelegate = !!taskConnection;
 
-  return { delegateComment, delegateReply, cancelDelegation, delegateAll, canDelegate };
+  return { delegateComment, delegateReply, cancelDelegation, delegateAll, moveToChat, canDelegate };
 }

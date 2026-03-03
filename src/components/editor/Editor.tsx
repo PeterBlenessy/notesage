@@ -355,7 +355,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
   // Comments
   const commentOps = useCommentOperations(editor);
-  const { delegateComment, delegateReply, cancelDelegation, delegateAll, canDelegate } = useCommentDelegation();
+  const { delegateComment, delegateReply, cancelDelegation, delegateAll, moveToChat, canDelegate } = useCommentDelegation();
   const activeCommentId = commentOps.activeComment?.id ?? null;
   const activeCommentActivities = useCommentStore((s) =>
     activeCommentId ? s.activitiesByComment[activeCommentId] : undefined
@@ -1375,7 +1375,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           onRejectHunk={handleExternalRejectHunk}
           onDelegateComment={async (comment) => {
             if (commentOps.commentKey && commentStorageRoot) {
-              await delegateComment(comment, commentOps.commentKey, commentStorageRoot);
+              await delegateComment(comment, commentOps.commentKey, commentStorageRoot, 'delegate');
             }
           }}
           onDelegateAll={async () => {
@@ -1465,6 +1465,18 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             setPendingCommentRange(null);
           }
         }}
+        onChat={async (body) => {
+          if (pendingCommentRange && editor && commentOps.commentKey && commentStorageRoot) {
+            generatedUUIDRef.current = false;
+            const comment = await commentOps.createComment(body, pendingCommentRange.from, pendingCommentRange.to);
+            if (editor) setPendingRangeDecoration(editor, null);
+            setPendingCommentRange(null);
+            if (comment) {
+              commentOps.setActiveComment(comment.id);
+              await delegateComment(comment, commentOps.commentKey, commentStorageRoot, 'chat');
+            }
+          }
+        }}
         onDelegate={async (body) => {
           if (pendingCommentRange && editor && commentOps.commentKey && commentStorageRoot) {
             generatedUUIDRef.current = false;
@@ -1472,23 +1484,33 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             if (editor) setPendingRangeDecoration(editor, null);
             setPendingCommentRange(null);
             if (comment) {
-              await delegateComment(comment, commentOps.commentKey, commentStorageRoot);
+              await delegateComment(comment, commentOps.commentKey, commentStorageRoot, 'delegate');
             }
+          }
+        }}
+        onChatExisting={async () => {
+          if (commentOps.activeComment && commentOps.commentKey && commentStorageRoot) {
+            await delegateComment(commentOps.activeComment, commentOps.commentKey, commentStorageRoot, 'chat');
           }
         }}
         onDelegateExisting={async () => {
           if (commentOps.activeComment && commentOps.commentKey && commentStorageRoot) {
-            await delegateComment(commentOps.activeComment, commentOps.commentKey, commentStorageRoot);
+            await delegateComment(commentOps.activeComment, commentOps.commentKey, commentStorageRoot, 'delegate');
           }
         }}
         suggestionActive={suggestionActive}
+        onMoveToChat={() => {
+          if (commentOps.activeComment) {
+            moveToChat(commentOps.activeComment);
+          }
+        }}
         onReply={async (text) => {
           if (commentOps.activeComment && commentOps.commentKey && commentStorageRoot) {
             // Re-read fresh comment from store to get latest state
             const freshComments = useCommentStore.getState().commentsByDocument[commentOps.commentKey] ?? [];
             const freshComment = freshComments.find((c) => c.id === commentOps.activeComment!.id);
             if (freshComment) {
-              await delegateReply(freshComment, text, commentOps.commentKey, commentStorageRoot);
+              await delegateReply(freshComment, text, commentOps.commentKey, commentStorageRoot, 'chat');
             }
           }
         }}

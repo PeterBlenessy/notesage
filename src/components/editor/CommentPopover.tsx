@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageSquarePlus, Pencil, Trash2, X, Check, BotMessageSquare, CheckCircle2, Loader2, ChevronDown, ChevronRight, Square, Info, AlertCircle, SendHorizontal, FileOutput, User } from 'lucide-react';
+import { MessageSquare, MessageSquarePlus, Pencil, Trash2, X, Check, BotMessageSquare, CheckCircle2, Loader2, ChevronDown, ChevronRight, Square, Info, AlertCircle, SendHorizontal, FileOutput, User, ArrowUpRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -46,14 +46,20 @@ interface CommentPopoverProps {
   onEdit?: (commentId: string, body: string) => void;
   /** Called when deleting a comment */
   onDelete?: (commentId: string) => void;
-  /** Called when creating a new comment AND delegating to agent */
+  /** Called when creating a new comment AND chatting with agent inline (popover stays open) */
+  onChat?: (body: string) => void;
+  /** Called when creating a new comment AND delegating to agent (popover closes) */
   onDelegate?: (body: string) => void;
-  /** Called to delegate an existing comment to agent */
+  /** Called to chat with agent on an existing comment (popover stays open) */
+  onChatExisting?: () => void;
+  /** Called to delegate an existing comment to agent (popover closes) */
   onDelegateExisting?: () => void;
   /** Called to cancel an active delegation */
   onCancelDelegation?: () => void;
   /** Called to resolve a comment */
   onResolve?: (commentId: string) => void;
+  /** Called to move the conversation to the chat panel */
+  onMoveToChat?: () => void;
   /** Called when user sends a follow-up reply */
   onReply?: (text: string) => void;
   /** Called when user clicks Apply on an agent reply */
@@ -75,10 +81,13 @@ export function CommentPopover({
   onCreate,
   onEdit,
   onDelete,
+  onChat,
   onDelegate,
+  onChatExisting,
   onDelegateExisting,
   onCancelDelegation,
   onResolve,
+  onMoveToChat,
   onReply,
   onApply,
   suggestionActive = false,
@@ -99,6 +108,8 @@ export function CommentPopover({
   // Subscribe to partial reply version counter — triggers re-render when chunks arrive
   const partialReplyVersion = useCommentStore((s) => s.partialReplyVersion);
   const partialReply = comment ? getPartialReply(comment.documentId, comment.id) : undefined;
+  // Subscribe to delegation mode for dismiss guard
+  const delegationMode = useCommentStore((s) => comment ? s.delegationModeByComment[comment.id] : undefined);
 
   // Auto-scroll to follow streaming text
   useEffect(() => {
@@ -173,6 +184,8 @@ export function CommentPopover({
       <Popover open={open} onOpenChange={(newOpen) => {
         // Don't close when the delete confirmation dialog is open
         if (!newOpen && deleteDialogOpen) return;
+        // Don't dismiss during active chat streaming (outside clicks, Escape)
+        if (!newOpen && delegationMode === 'chat' && comment?.status === 'delegated') return;
         onOpenChange(newOpen);
       }}>
         <PopoverAnchor asChild>
@@ -228,6 +241,23 @@ export function CommentPopover({
                       Cancel
                     </Button>
                   )}
+                  {mode === 'create' && canDelegate && onChat && (
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      onClick={() => {
+                        const trimmed = body.trim();
+                        if (trimmed) {
+                          onChat(trimmed);
+                        }
+                      }}
+                      disabled={!body.trim()}
+                      title="Add comment and chat with AI agent"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      Chat
+                    </Button>
+                  )}
                   {mode === 'create' && canDelegate && onDelegate && (
                     <Button
                       variant="outline"
@@ -240,9 +270,9 @@ export function CommentPopover({
                         }
                       }}
                       disabled={!body.trim()}
-                      title="Add comment and send to AI agent"
+                      title="Add comment and delegate to AI agent"
                     >
-                      <BotMessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      <SendHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
                       Delegate
                     </Button>
                   )}
@@ -274,15 +304,37 @@ export function CommentPopover({
                     </span>
                   </div>
                   <div className="flex items-center gap-0.5">
+                    {canDelegate && onChatExisting && comment.status !== 'delegated' && (
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => { onChatExisting(); }}
+                        title="Chat with AI agent"
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      </Button>
+                    )}
                     {canDelegate && onDelegateExisting && comment.status !== 'delegated' && (
                       <Button
                         variant="ghost"
                         size="icon-xs"
-                        onClick={() => { onDelegateExisting(); }}
+                        onClick={() => { onDelegateExisting(); onOpenChange(false); }}
                         title="Delegate to AI agent"
                         className="text-muted-foreground hover:text-foreground"
                       >
-                        <BotMessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        <SendHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      </Button>
+                    )}
+                    {onMoveToChat && comment.status === 'done' && comment.replies && comment.replies.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => { onMoveToChat(); onOpenChange(false); }}
+                        title="Move to Chat"
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.5} />
                       </Button>
                     )}
                     {onResolve && comment.status !== 'resolved' && (
