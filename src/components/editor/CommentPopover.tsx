@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageSquare, MessageSquarePlus, Pencil, Trash2, X, Check, BotMessageSquare, CheckCircle2, Loader2, ChevronDown, ChevronRight, Square, Info, AlertCircle, SendHorizontal, FileOutput, User, ArrowUpRight } from 'lucide-react';
+import { MessageSquare, MessageSquarePlus, Pencil, Trash2, X, Check, BotMessageSquare, CheckCircle2, Loader2, ChevronDown, ChevronRight, Square, Info, AlertCircle, SendHorizontal, FileOutput, User, MessagesSquare, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Popover,
   PopoverAnchor,
@@ -16,6 +17,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useCommentStore, getPartialReply, type Comment, type CommentReply, type DelegationActivity } from '@/stores/comment-store';
 import { MarkdownContent } from '@/components/MarkdownContent';
 
@@ -242,39 +256,51 @@ export function CommentPopover({
                     </Button>
                   )}
                   {mode === 'create' && canDelegate && onChat && (
-                    <Button
-                      variant="outline"
-                      size="xs"
-                      onClick={() => {
-                        const trimmed = body.trim();
-                        if (trimmed) {
-                          onChat(trimmed);
-                        }
-                      }}
-                      disabled={!body.trim()}
-                      title="Add comment and chat with AI agent"
-                    >
-                      <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
-                      Chat
-                    </Button>
+                    <TooltipProvider delayDuration={300}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            onClick={() => {
+                              const trimmed = body.trim();
+                              if (trimmed) {
+                                onChat(trimmed);
+                              }
+                            }}
+                            disabled={!body.trim()}
+                          >
+                            <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            Chat
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="text-xs">Add comment and chat with AI agent</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   )}
                   {mode === 'create' && canDelegate && onDelegate && (
-                    <Button
-                      variant="outline"
-                      size="xs"
-                      onClick={() => {
-                        const trimmed = body.trim();
-                        if (trimmed) {
-                          onDelegate(trimmed);
-                          onOpenChange(false);
-                        }
-                      }}
-                      disabled={!body.trim()}
-                      title="Add comment and delegate to AI agent"
-                    >
-                      <SendHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
-                      Delegate
-                    </Button>
+                    <TooltipProvider delayDuration={300}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            onClick={() => {
+                              const trimmed = body.trim();
+                              if (trimmed) {
+                                onDelegate(trimmed);
+                                onOpenChange(false);
+                              }
+                            }}
+                            disabled={!body.trim()}
+                          >
+                            <SendHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            Delegate
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="text-xs">Add comment and delegate to AI agent</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   )}
                   <Button
                     variant="default"
@@ -303,79 +329,92 @@ export function CommentPopover({
                       {formatRelativeTime(comment.createdAt)}
                     </span>
                   </div>
-                  <div className="flex items-center gap-0.5">
-                    {canDelegate && onChatExisting && comment.status !== 'delegated' && (
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => { onChatExisting(); }}
-                        title="Chat with AI agent"
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
-                      </Button>
-                    )}
-                    {canDelegate && onDelegateExisting && comment.status !== 'delegated' && (
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => { onDelegateExisting(); onOpenChange(false); }}
-                        title="Delegate to AI agent"
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        <SendHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
-                      </Button>
-                    )}
-                    {onMoveToChat && comment.status === 'done' && comment.replies && comment.replies.length > 0 && (
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => { onMoveToChat(); onOpenChange(false); }}
-                        title="Move to Chat"
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.5} />
-                      </Button>
-                    )}
-                    {onResolve && comment.status !== 'resolved' && (
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => { onResolve(comment.id); onOpenChange(false); }}
-                        title="Resolve"
-                        className="text-muted-foreground"
-                      >
-                        <CheckCircle2 className="h-3 w-3" strokeWidth={1.5} />
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => { setMode('edit'); setBody(comment.body); }}
-                      title="Edit"
-                      className="text-muted-foreground"
-                    >
-                      <Pencil className="h-3 w-3" strokeWidth={1.5} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => setDeleteDialogOpen(true)}
-                      title="Delete"
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-3 w-3" strokeWidth={1.5} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => onOpenChange(false)}
-                      title="Close"
-                      className="text-muted-foreground"
-                    >
-                      <X className="h-3 w-3" strokeWidth={1.5} />
-                    </Button>
-                  </div>
+                  <TooltipProvider delayDuration={300}>
+                    <div className="flex items-center gap-1">
+                      {canDelegate && onChatExisting && comment.status !== 'delegated' && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              onClick={() => { onChatExisting(); }}
+                              className="text-muted-foreground hover:text-foreground"
+                            >
+                              <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="text-xs">Chat with AI agent</TooltipContent>
+                        </Tooltip>
+                      )}
+                      {canDelegate && onDelegateExisting && comment.status !== 'delegated' && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              onClick={() => { onDelegateExisting(); onOpenChange(false); }}
+                              className="text-muted-foreground hover:text-foreground"
+                            >
+                              <SendHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="text-xs">Delegate to AI agent</TooltipContent>
+                        </Tooltip>
+                      )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-40">
+                          {onMoveToChat && comment.status === 'done' && comment.replies && comment.replies.length > 0 && (
+                            <>
+                              <DropdownMenuItem onClick={() => { onMoveToChat(); onOpenChange(false); }}>
+                                <MessagesSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
+                                Move to Chat
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                            </>
+                          )}
+                          {onResolve && comment.status !== 'resolved' && (
+                            <DropdownMenuItem onClick={() => { onResolve(comment.id); onOpenChange(false); }}>
+                              <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                              Resolve
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem onClick={() => { setMode('edit'); setBody(comment.body); }}>
+                            <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => setDeleteDialogOpen(true)}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => onOpenChange(false)}
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            <X className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="text-xs">Close</TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </TooltipProvider>
                 </div>
               </div>
               {/* Scrollable content — comment body + replies */}
@@ -420,7 +459,7 @@ export function CommentPopover({
                               e.stopPropagation();
                               setThreadExpanded(true);
                             }}
-                            className="text-[10px] text-muted-foreground hover:text-foreground active:opacity-75 transition-colors"
+                            className="text-[10px] text-muted-foreground hover:text-foreground active:opacity-75 transition-colors rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                           >
                             Show more
                           </button>
@@ -432,9 +471,9 @@ export function CommentPopover({
                             onClick={() => onApply(reply)}
                             disabled={suggestionActive}
                             title={suggestionActive ? 'Another suggestion is active' : 'Apply to document'}
-                            className="text-muted-foreground hover:text-foreground h-5 px-1.5 text-[10px] gap-1"
+                            className="text-muted-foreground hover:text-foreground h-5 px-1.5 text-xs gap-0.5"
                           >
-                            <FileOutput className="h-3 w-3" strokeWidth={1.5} />
+                            <FileOutput className="h-3.5 w-3.5" strokeWidth={1.5} />
                             Apply
                           </Button>
                         )}
@@ -460,9 +499,8 @@ export function CommentPopover({
               {comment.status === 'done' && onReply && canDelegate && (
                 <div className="px-3 pb-2 pt-0 shrink-0 border-t border-border">
                   <div className="flex items-center gap-1.5 mt-2">
-                    <input
+                    <Input
                       ref={replyInputRef}
-                      type="text"
                       value={replyText}
                       onChange={(e) => setReplyText(e.target.value)}
                       onKeyDown={(e) => {
@@ -476,23 +514,29 @@ export function CommentPopover({
                         }
                       }}
                       placeholder="Reply to agent..."
-                      className="flex-1 h-7 rounded-md border border-border bg-background text-foreground px-2 text-xs outline-none transition-colors duration-150 focus:border-foreground/30"
+                      className="flex-1 h-7 text-xs"
                     />
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => {
-                        if (replyText.trim()) {
-                          onReply(replyText.trim());
-                          setReplyText('');
-                        }
-                      }}
-                      disabled={!replyText.trim()}
-                      title="Send reply"
-                      className="text-muted-foreground hover:text-foreground shrink-0"
-                    >
-                      <SendHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    </Button>
+                    <TooltipProvider delayDuration={300}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => {
+                              if (replyText.trim()) {
+                                onReply(replyText.trim());
+                                setReplyText('');
+                              }
+                            }}
+                            disabled={!replyText.trim()}
+                            className="text-muted-foreground hover:text-foreground shrink-0"
+                          >
+                            <SendHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="text-xs">Send reply</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                 </div>
               )}
@@ -504,7 +548,7 @@ export function CommentPopover({
                       <button
                         type="button"
                         onClick={() => setActivityExpanded(!activityExpanded)}
-                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground active:opacity-75 transition-colors"
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground active:opacity-75 transition-colors rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       >
                         {comment.status === 'delegated' ? (
                           <Loader2 className="h-3 w-3 animate-spin shrink-0" />
@@ -523,7 +567,7 @@ export function CommentPopover({
                           type="button"
                           onClick={onCancelDelegation}
                           title="Cancel delegation"
-                          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground active:opacity-75 transition-colors px-1.5 py-0.5 rounded hover:bg-muted"
+                          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground active:opacity-75 transition-colors px-1.5 py-0.5 rounded hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         >
                           <Square className="h-2.5 w-2.5" strokeWidth={1.5} />
                           Stop
