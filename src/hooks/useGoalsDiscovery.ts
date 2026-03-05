@@ -70,6 +70,13 @@ export function useGoalsDiscovery(projectPath: string | null): {
     setIsLoading(true);
 
     try {
+      const exists = await tauriApi.pathExists(path);
+      if (!exists) {
+        if (!mountedRef.current) return;
+        setGoalFiles([]);
+        return;
+      }
+
       const entries = await tauriApi.listDirectory(path);
       const mdPaths = collectMdPaths(entries);
 

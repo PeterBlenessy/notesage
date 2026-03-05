@@ -54,6 +54,9 @@ interface ChatStore {
   addActivity: (messageTimestamp: number, activity: AgentActivity) => void;
   completeLastActivity: (messageTimestamp: number) => void;
   completeAllActivities: (messageTimestamp: number) => void;
+
+  /** Remove project paths that no longer exist from all conversations. */
+  pruneStaleProjectPaths: (validPaths: Set<string>) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +254,18 @@ export const useChatStore = create<ChatStore>()(
             return { ...msg, activities };
           }),
         }))),
+
+      pruneStaleProjectPaths: (validPaths) =>
+        set((state) => {
+          let changed = false;
+          const conversations = state.conversations.map((c) => {
+            const filtered = c.projectPaths.filter((p) => validPaths.has(p));
+            if (filtered.length === c.projectPaths.length) return c;
+            changed = true;
+            return { ...c, projectPaths: filtered };
+          });
+          return changed ? { conversations } : {};
+        }),
     }),
     {
       name: 'notesage-chat-history',

@@ -28,6 +28,7 @@ import { useSyncStore } from "@/stores/sync-store";
 import { useEditorStylesStore } from "@/stores/editor-styles-store";
 import { useActivityStore } from "@/stores/activity-store";
 import { useCommentStore, clearPartialReply } from "@/stores/comment-store";
+import { useChatStore } from "@/stores/chat-store";
 import { tauriApi, type TagOccurrence } from "@/lib/tauri";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { getFileType, isBinaryFileType } from "@/lib/file-utils";
@@ -374,6 +375,16 @@ function App() {
             await syncStore.saveSettings(notesRoot);
           }
         }
+      }
+
+      // Prune stale project paths from chat conversations
+      {
+        const wsNow = useWorkspaceStore.getState();
+        const validProjectPaths = new Set([
+          ...wsNow.projects.map((p) => p.path),
+          ...wsNow.explorerFolders.map((f) => f.path),
+        ]);
+        useChatStore.getState().pruneStaleProjectPaths(validProjectPaths);
       }
 
       // Load Quick Notes tree (after iCloud + sync settings are known, so we

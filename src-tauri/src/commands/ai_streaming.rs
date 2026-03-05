@@ -560,8 +560,13 @@ pub async fn openai_compatible_chat_stream(
         body["max_tokens"] = serde_json::json!(max);
     }
 
+    // Normalize base_url: strip trailing /v1 or /v1/ to prevent double /v1/v1/...
+    let normalized_base = base_url
+        .trim_end_matches('/')
+        .trim_end_matches("/v1");
+
     let response = client
-        .post(format!("{}/v1/chat/completions", base_url.trim_end_matches('/')))
+        .post(format!("{}/v1/chat/completions", normalized_base))
         .header("Authorization", format!("Bearer {}", api_key))
         .header("content-type", "application/json")
         .json(&body)
