@@ -7,6 +7,7 @@ export interface CommentReply {
   body: string;
   author: string;
   timestamp: number;
+  activities?: DelegationActivity[];
 }
 
 export type CommentStatus = 'open' | 'delegated' | 'done' | 'resolved';
@@ -34,6 +35,7 @@ export interface Comment {
   replies?: CommentReply[];
   status?: CommentStatus;
   taskId?: string;
+  linkedConversationId?: string;
 }
 
 interface CommentStore {
@@ -52,9 +54,10 @@ interface CommentStore {
   addComment: (comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>) => Comment;
   updateComment: (documentId: string, commentId: string, body: string) => void;
   deleteComment: (documentId: string, commentId: string) => void;
-  addReply: (documentId: string, commentId: string, body: string, author: string) => void;
+  addReply: (documentId: string, commentId: string, body: string, author: string, activities?: DelegationActivity[]) => void;
   setCommentStatus: (documentId: string, commentId: string, status: CommentStatus) => void;
   setTaskId: (documentId: string, commentId: string, taskId: string) => void;
+  setLinkedConversation: (documentId: string, commentId: string, conversationId: string) => void;
   addActivity: (commentId: string, activity: DelegationActivity) => void;
   completeLastActivity: (commentId: string) => void;
   completeAllActivities: (commentId: string) => void;
@@ -153,7 +156,7 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
     });
   },
 
-  addReply: (documentId: string, commentId: string, body: string, author: string) => {
+  addReply: (documentId: string, commentId: string, body: string, author: string, activities?: DelegationActivity[]) => {
     set((state) => {
       const comments = state.commentsByDocument[documentId] ?? [];
       return {
@@ -165,7 +168,7 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
                   ...c,
                   replies: [
                     ...(c.replies ?? []),
-                    { id: crypto.randomUUID(), body, author, timestamp: Date.now() },
+                    { id: crypto.randomUUID(), body, author, timestamp: Date.now(), activities },
                   ],
                   updatedAt: Date.now(),
                 }
@@ -198,6 +201,20 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
           ...state.commentsByDocument,
           [documentId]: comments.map((c) =>
             c.id === commentId ? { ...c, taskId, updatedAt: Date.now() } : c
+          ),
+        },
+      };
+    });
+  },
+
+  setLinkedConversation: (documentId: string, commentId: string, conversationId: string) => {
+    set((state) => {
+      const comments = state.commentsByDocument[documentId] ?? [];
+      return {
+        commentsByDocument: {
+          ...state.commentsByDocument,
+          [documentId]: comments.map((c) =>
+            c.id === commentId ? { ...c, linkedConversationId: conversationId, updatedAt: Date.now() } : c
           ),
         },
       };

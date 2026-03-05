@@ -62,8 +62,11 @@ export function useCommentDelegation() {
             onComplete: (output) => {
               clearPartialReply(documentId, comment.id);
               const s = useCommentStore.getState();
+              s.completeAllActivities(comment.id);
+              // Snapshot activities before clearing — attach to the reply
+              const replyActivities = [...(s.activitiesByComment[comment.id] ?? [])];
               const responseText = output || '(No response from agent)';
-              s.addReply(documentId, comment.id, responseText, agentName);
+              s.addReply(documentId, comment.id, responseText, agentName, replyActivities);
               s.setCommentStatus(documentId, comment.id, 'done');
               s.clearDelegationMode(comment.id);
               s.saveComments(documentId, projectRoot);
@@ -86,8 +89,7 @@ export function useCommentDelegation() {
                   timestamp: Date.now(),
                 });
               } else if (activity.event === 'agent_complete') {
-                // Mark any remaining running activities as done
-                s.completeLastActivity(comment.id);
+                s.completeAllActivities(comment.id);
                 s.addActivity(comment.id, {
                   label: 'Agent finished',
                   status: 'done',
@@ -104,6 +106,7 @@ export function useCommentDelegation() {
             onError: (errorMsg) => {
               clearPartialReply(documentId, comment.id);
               const s = useCommentStore.getState();
+              s.completeAllActivities(comment.id);
               s.addActivity(comment.id, {
                 label: `Error: ${errorMsg}`,
                 status: 'error',
@@ -124,6 +127,7 @@ export function useCommentDelegation() {
             sourceFile: activeTab?.filePath,
             commentId: comment.id,
             documentId,
+            trackInActivityStore: mode === 'delegate',
           },
         );
 
@@ -141,6 +145,7 @@ export function useCommentDelegation() {
       } catch (error) {
         // startTask itself threw (e.g. agent spawn failed)
         clearPartialReply(documentId, comment.id);
+        store.completeAllActivities(comment.id);
         const errMsg = error instanceof Error ? error.message : String(error);
         store.addActivity(comment.id, {
           label: `Spawn failed: ${errMsg}`,
@@ -217,8 +222,11 @@ export function useCommentDelegation() {
             onComplete: (output) => {
               clearPartialReply(documentId, comment.id);
               const s = useCommentStore.getState();
+              s.completeAllActivities(comment.id);
+              // Snapshot activities before clearing — attach to the reply
+              const replyActivities = [...(s.activitiesByComment[comment.id] ?? [])];
               const responseText = output || '(No response from agent)';
-              s.addReply(documentId, comment.id, responseText, agentName);
+              s.addReply(documentId, comment.id, responseText, agentName, replyActivities);
               s.setCommentStatus(documentId, comment.id, 'done');
               s.clearDelegationMode(comment.id);
               s.saveComments(documentId, projectRoot);
@@ -241,7 +249,7 @@ export function useCommentDelegation() {
                   timestamp: Date.now(),
                 });
               } else if (activity.event === 'agent_complete') {
-                s.completeLastActivity(comment.id);
+                s.completeAllActivities(comment.id);
                 s.addActivity(comment.id, {
                   label: 'Agent finished',
                   status: 'done',
@@ -258,6 +266,7 @@ export function useCommentDelegation() {
             onError: (errorMsg) => {
               clearPartialReply(documentId, comment.id);
               const s = useCommentStore.getState();
+              s.completeAllActivities(comment.id);
               s.addActivity(comment.id, {
                 label: `Error: ${errorMsg}`,
                 status: 'error',
@@ -280,6 +289,7 @@ export function useCommentDelegation() {
             commentId: comment.id,
             documentId,
             existingTaskId: comment.taskId,
+            trackInActivityStore: mode === 'delegate',
           },
         );
 
@@ -290,6 +300,7 @@ export function useCommentDelegation() {
         }
       } catch (error) {
         clearPartialReply(documentId, comment.id);
+        store.completeAllActivities(comment.id);
         const errMsg = error instanceof Error ? error.message : String(error);
         store.addActivity(comment.id, {
           label: `Spawn failed: ${errMsg}`,
@@ -364,33 +375,50 @@ export function useCommentDelegation() {
     [delegateComment, taskConnection]
   );
 
-  /** Move a comment conversation to the chat panel for more room. */
+  /** Move a comment conversation to the chat panel as a new conversation. */
   const moveToChat = useCallback(
-    (comment: Comment) => {
-      const anchorSnippet = comment.anchorText.length > 80
-        ? comment.anchorText.slice(0, 80) + '\u2026'
+    (comment: Comment, projectPath?: string, storageRoot?: string) => {
+      const anchorSnippet = comment.anchorText.length > 50
+        ? comment.anchorText.slice(0, 50) + '\u2026'
         : comment.anchorText;
 
-      // Build context message from the full thread
-      const contextParts = [
-        'Continuing a conversation about the following text:',
-        '',
-        `> ${comment.anchorText}`,
-        '',
-        `Original comment: ${comment.body}`,
-      ];
+      const chatStore = useChatStore.getState();
+      const commentStore = useCommentStore.getState();
 
-      for (const reply of comment.replies ?? []) {
-        contextParts.push('');
-        contextParts.push(`${reply.author}: ${reply.body}`);
+      // Create a new conversation with comment metadata
+      const convId = chatStore.createConversation({
+        title: `Comment: ${anchorSnippet}`,
+        projectPaths: projectPath ? [projectPath] : [],
+        sourceCommentId: comment.id,
+        sourceDocumentId: comment.documentId,
+      });
+
+      // Link the comment to this conversation
+      commentStore.setLinkedConversation(comment.documentId, comment.id, convId);
+      if (storageRoot) {
+        commentStore.saveComments(comment.documentId, storageRoot);
       }
 
-      const contextMessage = contextParts.join('\n');
+      // Map original comment as the first user message
+      chatStore.addMessage({
+        role: 'user',
+        content: `Comment on:\n> ${comment.anchorText}\n\n${comment.body}`,
+      });
 
-      // Inject into chat panel as a user message with context prefix
-      // (system role would render as an AI bubble, confusing users)
-      const chatStore = useChatStore.getState();
-      chatStore.addMessage({ role: 'user', content: `${contextMessage}\n\nContinue the conversation about: "${anchorSnippet}"` });
+      // Map each reply (carry over per-reply activities)
+      for (const reply of comment.replies ?? []) {
+        chatStore.addMessage({
+          role: reply.author === 'You' ? 'user' : 'assistant',
+          content: reply.body,
+          activities: reply.activities?.map((a) => ({
+            kind: a.status,
+            label: a.label,
+            detail: a.detail,
+            status: (a.status === 'running' ? 'done' : a.status === 'info' || a.status === 'error' ? 'done' : a.status) as 'running' | 'done',
+            timestamp: a.timestamp,
+          })),
+        });
+      }
 
       // Open chat panel
       useSettingsStore.getState().setChatPanelOpen(true);

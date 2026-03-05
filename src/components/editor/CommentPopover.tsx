@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageSquare, MessageSquarePlus, Pencil, Trash2, X, Check, BotMessageSquare, CheckCircle2, Loader2, ChevronDown, ChevronRight, Square, Info, AlertCircle, SendHorizontal, FileOutput, User, MessagesSquare, MoreHorizontal } from 'lucide-react';
+import { MessageSquare, MessageSquarePlus, Pencil, Trash2, X, Check, BotMessageSquare, CheckCircle2, Loader2, ChevronDown, Square, Info, AlertCircle, SendHorizontal, FileOutput, User, MessageSquareShare, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Popover,
   PopoverAnchor,
@@ -21,7 +22,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -30,7 +30,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { useCommentStore, getPartialReply, type Comment, type CommentReply, type DelegationActivity } from '@/stores/comment-store';
+import { useCommentStore, getPartialReply, type Comment, type DelegationActivity } from '@/stores/comment-store';
+import { useChatStore } from '@/stores/chat-store';
 import { MarkdownContent } from '@/components/MarkdownContent';
 
 function formatRelativeTime(timestamp: number): string {
@@ -46,6 +47,57 @@ function formatRelativeTime(timestamp: number): string {
   if (hours < 24) return `${hours}h ago`;
   if (days < 30) return `${days}d ago`;
   return new Date(timestamp).toLocaleDateString();
+}
+
+/** Collapsible activity log rendered inline within each agent message. */
+function InlineActivityLog({ activities }: { activities: DelegationActivity[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasRunning = activities.some((a) => a.status === 'running');
+
+  return (
+    <div className="mt-1.5 pt-1 border-t border-border/50">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      >
+        <ChevronDown
+          className={`h-3 w-3 transition-transform duration-150 ${expanded ? '' : '-rotate-90'}`}
+          strokeWidth={1.5}
+        />
+        <span>
+          {hasRunning
+            ? `Working (${activities.length} ${activities.length === 1 ? 'step' : 'steps'})`
+            : `${activities.length} ${activities.length === 1 ? 'step' : 'steps'} completed`}
+        </span>
+      </button>
+      {expanded && (
+        <div className="mt-0.5 flex flex-col gap-0.5">
+          {activities.map((a, i) => (
+            <div key={`${a.timestamp}-${i}`} className={`flex items-start gap-1.5 pl-1 py-0.5 text-xs ${a.status === 'error' ? 'text-destructive/70' : 'text-muted-foreground/70'}`}>
+              <span className="mt-px shrink-0">
+                {a.status === 'running' ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : a.status === 'error' ? (
+                  <AlertCircle className="h-3 w-3" />
+                ) : a.status === 'info' ? (
+                  <Info className="h-3 w-3" />
+                ) : (
+                  <Check className="h-3 w-3" />
+                )}
+              </span>
+              <span className="leading-tight min-w-0">
+                <span className="font-medium">{a.label}</span>
+                {a.detail && (
+                  <span className="opacity-70"> — {a.detail.length > 60 ? a.detail.slice(0, 60) + '\u2026' : a.detail}</span>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface CommentPopoverProps {
@@ -64,20 +116,22 @@ interface CommentPopoverProps {
   onChat?: (body: string) => void;
   /** Called when creating a new comment AND delegating to agent (popover closes) */
   onDelegate?: (body: string) => void;
-  /** Called to chat with agent on an existing comment (popover stays open) */
-  onChatExisting?: () => void;
   /** Called to delegate an existing comment to agent (popover closes) */
   onDelegateExisting?: () => void;
+  /** Called to start an inline chat on an existing comment (popover stays open) */
+  onChatExisting?: () => void;
   /** Called to cancel an active delegation */
   onCancelDelegation?: () => void;
   /** Called to resolve a comment */
   onResolve?: (commentId: string) => void;
   /** Called to move the conversation to the chat panel */
   onMoveToChat?: () => void;
-  /** Called when user sends a follow-up reply */
+  /** Called when user sends a follow-up reply (chat mode — inline) */
   onReply?: (text: string) => void;
+  /** Called when user sends a reply and delegates to agent (background) */
+  onDelegateReply?: (text: string) => void;
   /** Called when user clicks Apply on an agent reply */
-  onApply?: (reply: CommentReply) => void;
+  onApply?: (reply: { body: string }) => void;
   /** Disables Apply when another suggestion is active */
   suggestionActive?: boolean;
   /** Whether an agent is available for delegation */
@@ -97,12 +151,13 @@ export function CommentPopover({
   onDelete,
   onChat,
   onDelegate,
-  onChatExisting,
   onDelegateExisting,
+  onChatExisting,
   onCancelDelegation,
   onResolve,
   onMoveToChat,
   onReply,
+  onDelegateReply,
   onApply,
   suggestionActive = false,
   canDelegate = false,
@@ -112,7 +167,6 @@ export function CommentPopover({
   const [mode, setMode] = useState<'view' | 'create' | 'edit'>('view');
   const [body, setBody] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [activityExpanded, setActivityExpanded] = useState(true);
   const [threadExpanded, setThreadExpanded] = useState(false);
   const [replyText, setReplyText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -124,6 +178,12 @@ export function CommentPopover({
   const partialReply = comment ? getPartialReply(comment.documentId, comment.id) : undefined;
   // Subscribe to delegation mode for dismiss guard
   const delegationMode = useCommentStore((s) => comment ? s.delegationModeByComment[comment.id] : undefined);
+
+  // Read linked conversation from chat store (if comment was moved to chat)
+  const linkedConversation = useChatStore((s) => {
+    if (!comment?.linkedConversationId) return null;
+    return s.conversations.find((c) => c.id === comment.linkedConversationId) ?? null;
+  });
 
   // Auto-scroll to follow streaming text
   useEffect(() => {
@@ -232,17 +292,17 @@ export function CommentPopover({
                   {mode === 'create' ? 'Add comment' : 'Edit comment'}
                 </span>
               </div>
-              <textarea
+              <Textarea
                 ref={textareaRef}
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Write a comment..."
                 rows={3}
-                className="w-full resize-none rounded-md border border-border bg-background text-foreground px-3 py-2 text-sm outline-none transition-colors duration-150 focus:border-foreground/30"
+                className="resize-none min-h-0 text-sm"
               />
               <div className="flex justify-between items-center">
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   {navigator.userAgent.includes('Mac') ? '⌘' : 'Ctrl'}+Enter to submit
                 </span>
                 <div className="flex gap-1.5">
@@ -294,7 +354,7 @@ export function CommentPopover({
                             }}
                             disabled={!body.trim()}
                           >
-                            <SendHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            <BotMessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
                             Delegate
                           </Button>
                         </TooltipTrigger>
@@ -325,19 +385,20 @@ export function CommentPopover({
                     <span className="text-xs font-medium text-foreground">
                       {comment.author || 'You'}
                     </span>
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-xs text-muted-foreground">
                       {formatRelativeTime(comment.createdAt)}
                     </span>
                   </div>
                   <TooltipProvider delayDuration={300}>
                     <div className="flex items-center gap-1">
-                      {canDelegate && onChatExisting && comment.status !== 'delegated' && (
+                      {/* Chat + Delegate: only when no conversation yet (no replies) */}
+                      {canDelegate && onChatExisting && (!comment.status || comment.status === 'open') && !comment.replies?.length && (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
                               variant="ghost"
                               size="icon-xs"
-                              onClick={() => { onChatExisting(); }}
+                              onClick={onChatExisting}
                               className="text-muted-foreground hover:text-foreground"
                             >
                               <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -346,7 +407,7 @@ export function CommentPopover({
                           <TooltipContent side="bottom" className="text-xs">Chat with AI agent</TooltipContent>
                         </Tooltip>
                       )}
-                      {canDelegate && onDelegateExisting && comment.status !== 'delegated' && (
+                      {canDelegate && onDelegateExisting && (!comment.status || comment.status === 'open') && !comment.replies?.length && (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
@@ -355,10 +416,25 @@ export function CommentPopover({
                               onClick={() => { onDelegateExisting(); onOpenChange(false); }}
                               className="text-muted-foreground hover:text-foreground"
                             >
-                              <SendHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+                              <BotMessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent side="bottom" className="text-xs">Delegate to AI agent</TooltipContent>
+                        </Tooltip>
+                      )}
+                      {onMoveToChat && comment.status === 'done' && !comment.linkedConversationId && comment.replies && comment.replies.length > 0 && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              onClick={() => { onMoveToChat(); onOpenChange(false); }}
+                              className="text-muted-foreground hover:text-foreground"
+                            >
+                              <MessageSquareShare className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="text-xs">Move to Chat</TooltipContent>
                         </Tooltip>
                       )}
                       <DropdownMenu>
@@ -372,15 +448,6 @@ export function CommentPopover({
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-40">
-                          {onMoveToChat && comment.status === 'done' && comment.replies && comment.replies.length > 0 && (
-                            <>
-                              <DropdownMenuItem onClick={() => { onMoveToChat(); onOpenChange(false); }}>
-                                <MessagesSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
-                                Move to Chat
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                            </>
-                          )}
                           {onResolve && comment.status !== 'resolved' && (
                             <DropdownMenuItem onClick={() => { onResolve(comment.id); onOpenChange(false); }}>
                               <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -422,16 +489,40 @@ export function CommentPopover({
                 <p className="text-sm whitespace-pre-wrap text-foreground">
                   {comment.body}
                 </p>
-                {comment.updatedAt > comment.createdAt && !comment.replies?.length && (
-                  <span className="text-[10px] text-muted-foreground">
+                {comment.updatedAt > comment.createdAt && !comment.replies?.length && !linkedConversation && (
+                  <span className="text-xs text-muted-foreground">
                     edited {formatRelativeTime(comment.updatedAt)}
                   </span>
                 )}
-                {/* Agent replies — each individually expandable */}
-                {comment.replies?.map((reply) => {
+                {/* Replies — from linked conversation or comment.replies */}
+                {(() => {
+                  // Compute effective replies: linked conversation messages (skip first = original comment) or comment.replies
+                  type EffectiveReply = { id: string; body: string; author: string; timestamp: number; msgActivities?: DelegationActivity[] };
+                  const effectiveReplies: EffectiveReply[] =
+                    linkedConversation
+                      ? linkedConversation.messages.slice(1).map((msg) => ({
+                          id: String(msg.timestamp),
+                          body: msg.content,
+                          author: msg.role === 'user' ? 'You' : (msg.connectionLabel || 'AI'),
+                          timestamp: msg.timestamp ?? 0,
+                          // Map AgentActivity → DelegationActivity shape
+                          msgActivities: msg.activities?.map((a) => ({
+                            label: a.label,
+                            detail: a.detail,
+                            status: a.status as DelegationActivity['status'],
+                            timestamp: a.timestamp,
+                          })),
+                        }))
+                      : (comment.replies ?? []).map((reply) => ({
+                            ...reply,
+                            msgActivities: reply.activities,
+                          }));
+
+                  return effectiveReplies.map((reply) => {
                   const isLong = reply.body.split('\n').length > 3 || reply.body.length > 200;
                   const isClamped = isLong && !threadExpanded;
                   const isUserReply = reply.author === 'You';
+                  const replyActivities = reply.msgActivities;
                   return (
                     <div key={reply.id} className="border-t border-border pt-2 mt-2">
                       <div className="flex items-center gap-1.5 mb-1">
@@ -441,7 +532,7 @@ export function CommentPopover({
                           <BotMessageSquare className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
                         )}
                         <span className="text-xs font-medium text-foreground">{reply.author}</span>
-                        <span className="text-[10px] text-muted-foreground">{formatRelativeTime(reply.timestamp)}</span>
+                        <span className="text-xs text-muted-foreground">{formatRelativeTime(reply.timestamp)}</span>
                       </div>
                       <div className={isClamped ? 'relative' : undefined}>
                         <div className={isClamped ? 'line-clamp-3' : undefined}>
@@ -451,6 +542,10 @@ export function CommentPopover({
                           <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-popover to-transparent" />
                         )}
                       </div>
+                      {/* Per-message activity log */}
+                      {replyActivities && replyActivities.length > 0 && (
+                        <InlineActivityLog activities={replyActivities} />
+                      )}
                       <div className="flex items-center justify-between mt-0.5">
                         {isLong && !threadExpanded ? (
                           <button
@@ -459,12 +554,12 @@ export function CommentPopover({
                               e.stopPropagation();
                               setThreadExpanded(true);
                             }}
-                            className="text-[10px] text-muted-foreground hover:text-foreground active:opacity-75 transition-colors rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            className="text-xs text-muted-foreground hover:text-foreground active:opacity-75 transition-colors rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                           >
                             Show more
                           </button>
                         ) : <span />}
-                        {!isUserReply && comment.status === 'done' && onApply && (
+                        {!isUserReply && (comment.status === 'done' || linkedConversation) && onApply && (
                           <Button
                             variant="ghost"
                             size="xs"
@@ -480,23 +575,41 @@ export function CommentPopover({
                       </div>
                     </div>
                   );
-                })}
+                  });
+                })()}
                 {/* Streaming reply — shown while agent is generating */}
                 {comment.status === 'delegated' && partialReply && (
                   <div className="border-t border-border pt-2 mt-2">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <BotMessageSquare className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
-                      <span className="text-xs font-medium text-foreground">AI Agent</span>
-                      <span className="text-[10px] text-muted-foreground">streaming...</span>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-1.5">
+                        <BotMessageSquare className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+                        <span className="text-xs font-medium text-foreground">AI Agent</span>
+                        <span className="text-xs text-muted-foreground">streaming...</span>
+                      </div>
+                      {onCancelDelegation && (
+                        <button
+                          type="button"
+                          onClick={onCancelDelegation}
+                          title="Stop"
+                          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:opacity-75 transition-colors px-1.5 py-0.5 rounded hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        >
+                          <Square className="h-3 w-3" strokeWidth={1.5} />
+                          Stop
+                        </button>
+                      )}
                     </div>
                     <MarkdownContent content={partialReply} className="text-sm" />
                     <span className="streaming-cursor">▊</span>
                     <span ref={streamingEndRef} />
+                    {/* Activity log during streaming */}
+                    {activities.length > 0 && (
+                      <InlineActivityLog activities={activities} />
+                    )}
                   </div>
                 )}
               </div>
-              {/* Reply input — shown when agent has responded and delegation is complete */}
-              {comment.status === 'done' && onReply && canDelegate && (
+              {/* Reply input — shown when agent has responded or conversation is linked to chat */}
+              {((comment.status === 'done' && canDelegate) || linkedConversation) && onReply && (
                 <div className="px-3 pb-2 pt-0 shrink-0 border-t border-border">
                   <div className="flex items-center gap-1.5 mt-2">
                     <Input
@@ -534,70 +647,55 @@ export function CommentPopover({
                             <SendHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent side="bottom" className="text-xs">Send reply</TooltipContent>
+                        <TooltipContent side="bottom" className="text-xs">Send reply (chat)</TooltipContent>
                       </Tooltip>
+                      {onDelegateReply && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              onClick={() => {
+                                if (replyText.trim()) {
+                                  onDelegateReply(replyText.trim());
+                                  setReplyText('');
+                                  onOpenChange(false);
+                                }
+                              }}
+                              disabled={!replyText.trim()}
+                              className="text-muted-foreground hover:text-foreground shrink-0"
+                            >
+                              <BotMessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="text-xs">Delegate reply (background)</TooltipContent>
+                        </Tooltip>
+                      )}
                     </TooltipProvider>
                   </div>
                 </div>
               )}
-              {/* Activity footer — always visible, never scrolls */}
-              {(comment.status === 'delegated' || activities.length > 0) && (
+              {/* Delegation status bar — activity log + stop button, shown while delegated without partial reply */}
+              {comment.status === 'delegated' && !partialReply && onCancelDelegation && (
                 <div className="px-3 pb-3 pt-0 shrink-0">
-                  <div className="border-t border-border pt-2 space-y-1.5">
+                  <div className="border-t border-border pt-2">
                     <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                        <span>AI is working on this...</span>
+                      </div>
                       <button
                         type="button"
-                        onClick={() => setActivityExpanded(!activityExpanded)}
-                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground active:opacity-75 transition-colors rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        onClick={onCancelDelegation}
+                        title="Cancel delegation"
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:opacity-75 transition-colors px-1.5 py-0.5 rounded hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       >
-                        {comment.status === 'delegated' ? (
-                          <Loader2 className="h-3 w-3 animate-spin shrink-0" />
-                        ) : (
-                          <BotMessageSquare className="h-3 w-3 shrink-0" strokeWidth={1.5} />
-                        )}
-                        <span>{comment.status === 'delegated' ? 'AI is working on this...' : 'Agent activity'}</span>
-                        {activities.length > 0 && (
-                          activityExpanded
-                            ? <ChevronDown className="h-3 w-3" />
-                            : <ChevronRight className="h-3 w-3" />
-                        )}
+                        <Square className="h-3 w-3" strokeWidth={1.5} />
+                        Stop
                       </button>
-                      {comment.status === 'delegated' && onCancelDelegation && (
-                        <button
-                          type="button"
-                          onClick={onCancelDelegation}
-                          title="Cancel delegation"
-                          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground active:opacity-75 transition-colors px-1.5 py-0.5 rounded hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        >
-                          <Square className="h-2.5 w-2.5" strokeWidth={1.5} />
-                          Stop
-                        </button>
-                      )}
                     </div>
-                    {activityExpanded && activities.length > 0 && (
-                      <div className="pl-1 space-y-0.5 max-h-32 overflow-y-auto thin-scrollbar">
-                        {activities.map((a, i) => (
-                          <div key={`${a.timestamp}-${i}`} className={`flex items-start gap-1.5 text-[10px] ${a.status === 'error' ? 'text-destructive/70' : 'text-muted-foreground/70'}`}>
-                            {a.status === 'running' ? (
-                              <Loader2 className="h-2.5 w-2.5 animate-spin shrink-0 mt-px" />
-                            ) : a.status === 'error' ? (
-                              <AlertCircle className="h-2.5 w-2.5 shrink-0 mt-px" />
-                            ) : a.status === 'info' ? (
-                              <Info className="h-2.5 w-2.5 shrink-0 mt-px" />
-                            ) : (
-                              <Check className="h-2.5 w-2.5 shrink-0 mt-px" />
-                            )}
-                            <div className="min-w-0">
-                              <span className="truncate block">{a.label}</span>
-                              {a.detail && (
-                                <span className="truncate block text-muted-foreground/50" title={a.detail}>
-                                  {a.detail.length > 60 ? a.detail.slice(0, 60) + '\u2026' : a.detail}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                    {activities.length > 0 && (
+                      <InlineActivityLog activities={activities} />
                     )}
                   </div>
                 </div>
