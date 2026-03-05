@@ -185,7 +185,7 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
             >
               <MarkdownContent content={task.thinkingOutput!} className="text-xs text-muted-foreground" />
               {task.status === 'running' && (
-                <span className="streaming-cursor">▊</span>
+                <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse bg-muted-foreground" />
               )}
             </div>
           )}
@@ -209,7 +209,7 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
               className="max-h-60 overflow-y-auto overflow-x-hidden thin-scrollbar rounded-md bg-muted/40 px-2 py-1.5"
             >
               <MarkdownContent content={task.partialOutput!} className="text-xs" />
-              <span className="streaming-cursor">▊</span>
+              <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse bg-muted-foreground" />
             </div>
           </div>
         </div>
