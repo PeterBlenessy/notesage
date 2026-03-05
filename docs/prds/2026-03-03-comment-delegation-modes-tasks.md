@@ -1,247 +1,307 @@
-# Task Breakdown: Comment Delegation Modes
+# Task Breakdown: Comment Delegation Modes (v2)
 
-**PRD:** `docs/prds/2026-03-03-comment-delegation-modes.md`**Total:** 7 tasks (2S, 4M, 1L) **Estimated effort:** \~6-8 hours
+**PRD:** `docs/prds/2026-03-03-comment-delegation-modes.md` **Total:** 9 tasks (2S, 5M, 1L, 1M-verify) **Status:** Complete
+
+**Note:** Tasks #1–#7 from the v1 breakdown are complete (committed in 258ff74, fb6c9e3, 9078741). All v2 tasks below are also complete — verified against codebase 2026-03-05.
 
 ## Implementation Order
 
-1. State layer first (comment-store)
-2. Hook layer (useCommentDelegation)
-3. UI layer (CommentPopover, then CommentListPopover)
-4. Escalation feature (move to chat)
-5. Verification pass
+1. Bug fix: cancel from activity panel updates comment store (#1)
+2. Bug fix: agent panel does not auto-expand on new tasks (#2)
+3. Chat store — conversation model with migration (#3)
+4. Activity isolation in useAgentTaskOperations (#4)
+5. useCommentDelegation — activity isolation + moveToChat rewrite (#5)
+6. CommentPopover — button layout + reply delegate + activity default (#6)
+7. ChatPanel — conversation management UI (#7)
+8. Editor.tsx — wiring updates (#8)
+9. End-to-end verification (#9)
 
 ## Risks / Open Questions
 
-- **Popover dismiss behavior**: The comment popover currently auto-closes on outside clicks. Chat mode needs the popover to stay open while the agent streams — must ensure no accidental dismissals during streaming. Verify that clicking in the editor while popover is open doesn't close it during chat mode.
-- **Reply input mode**: PRD notes that reply sends could default to chat (stay open) vs delegate (close). For v1, default to chat since the user is already in the popover. A dropdown on Send is deferred.
+- **Persist migration**: Chat store uses Zustand persist middleware. The v1→v2 migration must handle both empty and non-empty old message arrays gracefully. Test with existing persisted data.
+- **Activity isolation edge cases**: When `trackInActivityStore: false`, the `cancelTask()` flow must check whether the task exists in the activity store before trying to update it.
+- **Conversation selector UX**: The chat panel header conversation list could get long. For v1, a simple scrollable list is sufficient — search/filter deferred.
 
 ---
 
 ## Tasks
 
-### #1 — Add `delegationMode` to comment-store runtime state
+### #1 — Fix: Cancel from activity panel must update comment store
 
-**Complexity:** S **Category:** frontend **Dependencies:** None **Files:** `src/stores/comment-store.ts`
+**Complexity:** S **Category:** frontend **Dependencies:** None **Files:** `src/App.tsx`, `src/stores/comment-store.ts`
 
-**Description**:Add runtime-only (non-persisted) state to track the active delegation mode per comment.
+**Description**: When a user cancels a running task from the agent activity panel's Stop button, the comment store is not updated — spinners keep spinning in the comment popover and comment list. The `cancelTask()` in `useAgentTaskOperations` only updates the activity store; it has no knowledge of the associated comment.
 
-- Add `delegationModeByComment: Record<string, 'chat' | 'delegate'>` to the store state (alongside `activitiesByComment`)
-- Add actions:
-  - `setDelegationMode(commentId: string, mode: 'chat' | 'delegate'): void`
-  - `clearDelegationMode(commentId: string): void`
-- Clear the mode entry in `deleteComment` and `clearDocument` cleanup actions
-- Do NOT persist — this is ephemeral UI state, same pattern as `activitiesByComment`
+**Root cause:** `handleCancelTask` in `App.tsx` calls `cancelTask(taskId)` which updates only `activity-store`. The comment-store is never notified.
 
-**Acceptance criteria:**
+**Fix:** In `handleCancelTask` (App.tsx), after `cancelTask()` completes:
 
-- `setDelegationMode` / `clearDelegationMode` work correctly
-- Mode is cleaned up on comment deletion and document close
-- No changes to persisted comment JSON
-
----
-
-### #2 — Update useCommentDelegation to accept delegation mode
-
-**Complexity:** M **Category:** frontend **Dependencies:** #1 **Files:** `src/hooks/useCommentDelegation.ts`
-
-**Description**:Extend `delegateComment` and `delegateReply` to accept and track the delegation mode.
-
-- Add `mode: 'chat' | 'delegate'` parameter to `delegateComment(comment, documentId, projectRoot, mode)`
-- Add `mode: 'chat' | 'delegate'` parameter to `delegateReply(comment, replyText, documentId, projectRoot, mode)` — default to `'chat'`
-- At the start of each function, call `commentStore.setDelegationMode(comment.id, mode)`
-- On completion (both success and error), call `commentStore.clearDelegationMode(comment.id)`
-- On cancellation in `cancelDelegation`, call `commentStore.clearDelegationMode(comment.id)`
-- `delegateAll` always passes `mode: 'delegate'` (background/bulk)
+1. Look up the cancelled task in `activity-store` by `taskId`
+2. If the task has `commentId` and `documentId` in its metadata, update the comment store:
+   - `clearPartialReply(documentId, commentId)`
+   - `completeAllActivities(commentId)`
+   - `setCommentStatus(documentId, commentId, hasReplies ? 'done' : 'open')`
+   - `clearDelegationMode(commentId)`
+   - `saveComments(documentId, projectRoot)`
 
 **Acceptance criteria:**
 
-- Mode is tracked in comment-store during delegation lifecycle
-- Mode is cleared on completion, error, and cancellation
-- `delegateAll` uses delegate mode exclusively
-- No behavioral change to existing delegation — delegate mode behaves identically to current behavior
+- Cancelling from the activity panel stops spinners in both the comment popover and comment list
+- Comment status reverts to `open` (no replies) or `done` (has replies)
+- Delegation mode is cleared
+- Existing cancel from comment popover still works (no regression)
 
 ---
 
-### #3 — Update CommentPopover create mode with Chat and Delegate buttons
+### #2 — Fix: Agent panel does not auto-expand on new tasks
 
-**Complexity:** M **Category:** frontend **Dependencies:** #2 **Files:** `src/components/editor/CommentPopover.tsx`, `src/components/editor/Editor.tsx`
+**Complexity:** S **Category:** frontend **Dependencies:** None **Files:** `src/stores/activity-store.ts`
 
-**Description**:Replace the single "Delegate" button in create mode with two buttons: "Chat" and "Delegate".
+**Description**: When new tasks are delegated, the agent activity panel auto-expands. The strip should just show a new icon — the user decides when to open the panel.
 
-**CommentPopover changes:**
+**Root cause:** `addTask()` in `activity-store.ts` sets `isManuallyHidden: false` on every new task, which causes the full panel to expand.
 
-- Add new prop: `onChat?: (body: string) => void` — create + chat mode (popover stays open)
-- Rename existing `onDelegate` to keep it as-is (create + delegate mode, popover closes)
-- Create mode button layout: `[Chat] [Delegate] [Add]`
-  - Chat: `MessageSquare` icon, calls `onChat(trimmedBody)`, does NOT close popover
-  - Delegate: `SendHorizonal` icon, calls `onDelegate(trimmedBody)`, closes popover (existing behavior)
-  - Add: unchanged
-- Both Chat and Delegate disabled if body is empty or `!canDelegate`
-- After Chat click, switch the internal popover mode from `'create'` to `'view'` so the streaming response and activity footer render inline
-
-**Editor.tsx wiring:**
-
-- Add `onChat` handler that mirrors the existing `onDelegate` handler but passes `mode: 'chat'` to `delegateComment`
-- Existing `onDelegate` handler passes `mode: 'delegate'`
-- When `mode === 'chat'`, do NOT call `popoverControls.close()` — popover stays open
+**Fix:** Remove `isManuallyHidden: false` from the `addTask()` action. The rail (40px strip) will still show icons for active tasks. The user can click to expand the panel when they want to monitor progress.
 
 **Acceptance criteria:**
 
-- Create mode shows three buttons: Chat, Delegate, Add
-- Chat saves comment, starts delegation, popover stays open, response streams inline
-- Delegate saves comment, starts delegation, popover closes (existing behavior)
-- Add unchanged
+- Delegating a comment does NOT auto-expand the agent activity panel
+- The activity strip (rail) shows icons for active tasks as before
+- User can manually open the panel via the title bar button or Cmd+Shift+A
+- If the user has already opened the panel, it stays open (no change)
 
 ---
 
-### #4 — Update CommentPopover view mode with Chat and Delegate buttons
+### #3 — Chat store conversation model
 
-**Complexity:** L **Category:** frontend **Dependencies:** #2, #3 **Files:** `src/components/editor/CommentPopover.tsx`, `src/components/editor/Editor.tsx`
+**Complexity:** L **Category:** frontend **Dependencies:** None **Files:** `src/stores/chat-store.ts`
 
-**Description**:Replace the single bot icon delegate button in view mode with two mode-specific buttons. Update reply behavior.
+**Description**: Replace the flat `messages[]` array with a multi-conversation model.
 
-**View mode (status:** `open`**) — header action buttons:**
+**New interface:**
 
-- Replace single `BotMessageSquare` delegate button with two buttons:
-  - Chat icon (`MessageSquare`): calls new `onChatExisting?: () => void` prop — starts interactive delegation, popover stays open
-  - Delegate icon (`SendHorizonal`): calls existing `onDelegateExisting` — background delegation, popover closes
-- Both hidden when `status === 'delegated'` (delegation in progress)
+```typescript
+interface Conversation {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: number;
+  updatedAt: number;
+  projectPaths: string[];
+  sourceCommentId?: string;
+  sourceDocumentId?: string;
+}
+```
 
-**View mode (status:** `done`**) — reply input:**
+**Store changes:**
 
-- Current behavior: Enter in reply input calls `onReply(text)` which triggers `delegateReply` (always background)
-- New behavior: `onReply` continues to call `delegateReply` but with `mode: 'chat'` by default (popover stays open, response streams inline)
-- The popover already shows streaming state when `status === 'delegated'` — chat mode just means we don't close first
+- Replace `messages: ChatMessage[]` with `conversations: Conversation[]` + `activeConversationId: string | null`
+- Remove top-level `selectedProjectPaths` — now per-conversation (`conv.projectPaths`)
+- Scope all message methods to active conversation: `addMessage`, `updateMessage`, `deleteMessage`, `clearMessages`, `setMessageError`, `addActivity`, `completeLastActivity`, `completeAllActivities`
+- Scope `setSelectedProjectPaths` / `toggleProjectPath` to active conversation's `projectPaths`
+- New methods:
+  - `createConversation(opts?: { title?, projectPaths?, sourceCommentId?, sourceDocumentId? }) → string` — returns ID, sets as active
+  - `deleteConversation(id: string)` — removes, switches active to next or null
+  - `setActiveConversation(id: string | null)`
+  - `renameConversation(id: string, title: string)`
+- Auto-title: first user message truncated to \~50 chars when title is empty
+- `updatedAt` bumped on every `addMessage`
 
-**View mode (status:** `delegated`**, chat mode active):**
+**Persist migration** (version 1 → 2):
 
-- Popover remains open (the `delegationMode` for this comment is `'chat'`)
-- Streaming response, activity log, stop button all render as they do today
-- When delegation completes (`status` → `done`, `delegationMode` cleared), reply input reappears
-
-**Editor.tsx wiring:**
-
-- Add `onChatExisting` handler: reads comment from store, calls `delegateComment(comment, docId, root, 'chat')`
-- Existing `onDelegateExisting` handler: calls `delegateComment(comment, docId, root, 'delegate')`
-- Update `onReply` handler: calls `delegateReply(comment, text, docId, root, 'chat')`
-- When `delegationMode === 'chat'`, suppress popover auto-close logic
-
-**Popover dismiss guard:**
-
-- Read `delegationModeByComment[comment.id]` from comment-store
-- When mode is `'chat'` and status is `'delegated'`, prevent popover from closing on outside clicks (override `onOpenChange` to ignore close requests during active chat streaming)
+- Old `messages[]` non-empty → wrap in conversation `{ id: 'migrated-default', title: 'Chat History', messages: [...], projectPaths: oldSelectedProjectPaths }`
+- Empty → `conversations: []`
+- Preserve `isLoading`, `error` fields as-is
 
 **Acceptance criteria:**
 
-- Open comments show both chat and delegate icons
-- Chat mode: delegation starts, popover stays open, response streams inline, reply input appears on completion
-- Delegate mode: delegation starts, popover closes (existing behavior)
-- Reply input in done state sends with chat mode (stays open)
-- Popover does not accidentally dismiss during active chat streaming
-- Multi-turn works: user can reply → agent responds → user replies again, all within the open popover
+- All existing message methods work scoped to active conversation
+- `createConversation` / `deleteConversation` / `setActiveConversation` work correctly
+- Per-conversation `projectPaths` replaces top-level `selectedProjectPaths`
+- Persist migration correctly wraps old flat messages
+- App loads without errors when upgrading from v1 persisted data
 
 ---
 
-### #5 — Add "Move to Chat" escalation action
+### #4 — Activity isolation in useAgentTaskOperations
 
-**Complexity:** M **Category:** frontend **Dependencies:** #4 **Files:** `src/hooks/useCommentDelegation.ts`, `src/components/editor/CommentPopover.tsx`, `src/components/editor/Editor.tsx`, `src/stores/chat-store.ts`
+**Complexity:** M **Category:** frontend **Dependencies:** None **Files:** `src/hooks/useAgentTaskOperations.ts`
 
-**Description**:Add a "Move to Chat" button that transfers a comment conversation to the chat panel.
+**Description**: Add `trackInActivityStore?: boolean` to `TaskMeta` so chat mode tasks stay invisible to the agent panel.
 
-**useCommentDelegation — new** `moveToChat` **function:**
-
-- Takes `comment: Comment`
-
-- Builds a context message from the full thread:
-
-  ```
-  Continuing a conversation about the following text:
-  > [anchorText]
-  
-  Original comment: [body]
-  [For each reply: Author: reply.body]
-  ```
-
-- Calls `chatStore.addMessage({ role: 'system', content: contextMessage })`
-
-- Calls `chatStore.addMessage({ role: 'user', content: 'Continue the conversation about: "[anchorText snippet]"' })`
-
-- Opens chat panel via `settingsStore.setChatPanelOpen(true)`
-
-- Returns the function from the hook
-
-**CommentPopover changes:**
-
-- Add prop: `onMoveToChat?: () => void`
-- Show "Move to Chat" button (`ArrowUpRight` icon + "Move to Chat" label) in the header area
-- Only visible when: `status === 'done' && comment.replies && comment.replies.length > 0`
-- On click: calls `onMoveToChat`, then closes the popover
-
-**Editor.tsx wiring:**
-
-- Wire `onMoveToChat` to call `moveToChat(comment)` then close the popover
+- Add `trackInActivityStore?: boolean` to `TaskMeta` interface (default `true`)
+- `setupTask()`: skip `activityStore.addTask()` / `resetTaskForContinuation()` when `trackInActivityStore === false`
+- `startAcpTask()`: guard all `activityStore.*` calls with `if (track)`:
+  - `appendPartialOutput`, `appendThinkingOutput`, `appendActivity`, `completeLastActivity`, `updateTaskStatus`, `setFinalOutput`
+  - Callbacks (`onChunk`, `onActivity`, `onComplete`, `onError`) remain unconditional
+- `startDirectApiTask()`: same guards as `startAcpTask()`
+- `cancelTask()`: check if task exists in activity-store before calling `updateTaskStatus`
 
 **Acceptance criteria:**
 
-- "Move to Chat" button appears only on comments with agent replies (status: done)
-- Clicking it injects the full conversation context into the chat panel
-- Chat panel opens with the context visible
-- Comment popover closes
-- Comment thread remains intact in comment-store
-- Chat panel uses `interactive` routing slot (its normal path)
+- When `trackInActivityStore: false`, no entries appear in the activity store or agent panel
+- When `trackInActivityStore: true` (default), behavior is identical to current
+- Callbacks still fire regardless of tracking flag
+- `cancelTask()` doesn't crash when task isn't in activity store
+- Type check passes
 
 ---
 
-### #6 — Ensure CommentListPopover bulk delegation unchanged
+### #5 — useCommentDelegation — activity isolation + moveToChat rewrite
 
-**Complexity:** S **Category:** frontend **Dependencies:** #2 **Files:** `src/components/editor/CommentListPopover.tsx`, `src/components/editor/Editor.tsx`
+**Complexity:** M **Category:** frontend **Dependencies:** #3, #4 **Files:** `src/hooks/useCommentDelegation.ts`
 
-**Description**:Verify and ensure that the comment list popover continues to work with the updated hook signatures.
+**Description**: Wire activity isolation into delegation flow and rewrite `moveToChat` to create a new conversation.
 
-- `CommentListPopover` per-comment delegate button: wired through Editor.tsx `onDelegateComment` handler — ensure it passes `mode: 'delegate'` to `delegateComment`
-- `CommentListPopover` "Delegate all" button: wired through Editor.tsx `onDelegateAll` handler — already uses `delegateAll()` which internally passes `mode: 'delegate'`
-- Both buttons should close the popover as they do today
-- No UI changes to `CommentListPopover` itself
+**Activity isolation:**
+
+- In `delegateComment`: pass `trackInActivityStore: mode === 'delegate'` in `taskMeta`
+- In `delegateReply`: pass `trackInActivityStore: mode === 'delegate'` in `taskMeta`
+- Chat mode tasks now invisible to agent panel; delegate mode tasks visible as before
+
+`moveToChat` **rewrite** — new signature: `moveToChat(comment: Comment, projectPath?: string)`:
+
+- Map comment thread to `ChatMessage[]`:
+  - Original comment → `{ role: 'user', content: "Comment on:\n> {anchorText}\n\n{body}" }`
+  - Each reply → `{ role: reply.author === 'You' ? 'user' : 'assistant', content: reply.body }`
+- Determine title: truncated anchor text (\~50 chars)
+- Call `chatStore.createConversation({ title, projectPaths: projectPath ? [projectPath] : [], sourceCommentId: comment.id, sourceDocumentId: comment.documentId })`
+- Call `chatStore.addMessage()` for each mapped message
+- Open chat panel via `settingsStore.setChatPanelOpen(true)`
 
 **Acceptance criteria:**
 
-- Per-comment delegate from comment list triggers background delegation
-- "Delegate all" triggers sequential background delegation
-- Both close the popover
-- Progress visible in activity panel
-- No visual or behavioral regression
+- Chat mode delegation: no agent panel activity
+- Delegate mode delegation: agent panel shows task as before
+- `moveToChat` creates a new conversation with correct messages, title, and project
+- Old `moveToChat` behavior (single injected message) replaced entirely
 
 ---
 
-### #7 — End-to-end verification and polish
+### #6 — CommentPopover — button layout + reply delegate + activity default
 
-**Complexity:** M **Category:** frontend **Dependencies:** #1–#6 **Files:** All modified files
+**Complexity:** M **Category:** frontend **Dependencies:** #4, #5 **Files:** `src/components/editor/CommentPopover.tsx`
 
-**Description**:Full verification pass against PRD quality gates.
+**Description**: Fix button layout, add reply delegate option, collapse activity by default.
+
+**Remove** `onChatExisting` **prop** — no Chat button in view mode header.
+
+**View mode header buttons** (updated layout):
+
+- Delegate (SendHorizontal): only when `status === 'open'` (fresh comments without replies)
+- Move to Chat (MessagesSquare): promoted to direct icon button, visible when `status === 'done' && has replies`
+- DropdownMenu: Resolve, Edit, Delete (Move to Chat removed from dropdown)
+- Close (X)
+
+**Reply input** — add `onDelegateReply?: (text: string) => void` prop:
+
+- Send button (SendHorizontal): existing, calls `onReply` (chat mode — stays open)
+- Delegate button (BotMessageSquare): new, calls `onDelegateReply(text)`, popover closes
+- Both disabled when input empty
+
+**Activity section**: `activityExpanded` initial state → `false` (collapsed by default).
+
+**Acceptance criteria:**
+
+- No Chat button in view mode header (removed)
+- Move to Chat is a visible icon button (not in dropdown)
+- Reply input has both Send (chat) and Delegate (background) buttons
+- Activity section starts collapsed
+- Type check passes
+
+---
+
+### #7 — ChatPanel — conversation management UI
+
+**Complexity:** M **Category:** frontend **Dependencies:** #3 **Files:** `src/components/chat/ChatPanel.tsx`
+
+**Description**: Replace static "AI Chat" header with conversation management.
+
+**Header redesign:**
+
+- Left: conversation title (clickable) → Popover with conversation list
+  - "New Chat" button at top with Plus icon
+  - List of conversations — click to switch, hover to show delete (X) button
+  - Active conversation highlighted with `bg-accent`
+- Right: New Chat (Plus) button
+
+**State references:**
+
+- `messages` derived from `conversations[activeConversationId].messages`
+- `selectedProjectPaths` derived from `conversations[activeConversationId].projectPaths`
+
+**Auto-create**: `handleSend` creates a conversation if none active.
+
+`handleClear`: Delete active conversation instead of clearing all history.
+
+**Acceptance criteria:**
+
+- Conversation list shows all conversations with titles
+- Click to switch, hover to delete
+- New Chat button creates empty conversation
+- Messages and project paths scoped to active conversation
+- Sending a message auto-creates a conversation if none exists
+- Type check passes
+
+---
+
+### #8 — Editor.tsx — wiring updates
+
+**Complexity:** S **Category:** frontend **Dependencies:** #5, #6 **Files:** `src/components/editor/Editor.tsx`
+
+**Description**: Update Editor.tsx to wire the new props and handlers.
+
+- Remove `onChatExisting` prop and handler
+- `onMoveToChat`: pass `projectPath` → `moveToChat(comment, projectPath)`
+- Add `onDelegateReply` handler: calls `delegateReply(comment, text, docId, root, 'delegate')`, then closes popover
+- `onReply` unchanged (already uses `'chat'` mode)
+
+**Acceptance criteria:**
+
+- `onChatExisting` removed — no separate Chat button in view mode header
+- `onMoveToChat` passes project path for auto-selection
+- `onDelegateReply` delegates with full history in background mode
+- Type check passes
+
+---
+
+### #9 — End-to-end verification and polish
+
+**Complexity:** M **Category:** frontend **Dependencies:** #1–#8 **Files:** All modified files
+
+**Description**: Full verification pass against PRD quality gates.
 
 **Functional checks:**
 
-- [ ] Chat button in create mode: saves, streams inline, popover stays open
+- [ ] Chat button in create mode: saves, streams inline, popover stays open, NO agent panel activity
 
-- [ ] Delegate button in create mode: saves, closes, activity panel
+- [ ] Delegate button in create mode: saves, closes, visible in activity panel
 
 - [ ] Add button: unchanged
 
-- [ ] View mode: both chat and delegate icons for open comments
+- [ ] View mode header: Delegate icon for open comments, Move to Chat for done comments (no Chat button)
 
-- [ ] Chat mode streaming: popover open, reply input on completion
+- [ ] Chat mode streaming: popover open, reply input on completion, activity collapsed
 
-- [ ] Delegate mode: popover closes, activity panel
+- [ ] Delegate mode: popover closes, activity panel shows task
 
-- [ ] Multi-turn in chat mode: reply → stream → reply → stream, all in popover
+- [ ] Reply + Send: chat mode, popover stays open, no agent panel
 
-- [ ] Multi-turn in delegate mode: reopen popover to see response, reply sends as delegate
+- [ ] Reply + Delegate: delegate mode, full history sent, visible in agent panel, popover closes
 
-- [ ] "Move to Chat": injects context, opens chat panel, closes popover
+- [ ] "Move to Chat": creates NEW conversation thread with mapped messages + project auto-selected
+
+- [ ] Conversation management: create, switch, delete conversations in chat panel
+
+- [ ] Persist migration: old flat chat history wrapped in conversation
 
 - [ ] Bulk delegation: unchanged behavior
 
 - [ ] Cancel/Stop: works in both modes, clears delegation mode
+
+- [ ] Cancel from activity panel: spinners stop in comment popover and comment list
+
+- [ ] Agent panel does NOT auto-expand when tasks are delegated — strip shows icon only
 
 - [ ] Error handling: chat mode shows error inline, delegate mode shows toast
 
@@ -250,6 +310,8 @@
 **Design checks:**
 
 - [ ] Button icons communicate intent clearly
+
+- [ ] Conversation selector in chat panel is clean and intuitive
 
 - [ ] No visual regression in comment list popover
 
