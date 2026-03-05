@@ -51,6 +51,7 @@ interface ChatStore {
   toggleProjectPath: (path: string) => void;
   setWebSearchEnabled: (enabled: boolean) => void;
   setMessageError: (timestamp: number, error: string) => void;
+  updateMessageThinking: (timestamp: number, thinking: string) => void;
   addActivity: (messageTimestamp: number, activity: AgentActivity) => void;
   completeLastActivity: (messageTimestamp: number) => void;
   completeAllActivities: (messageTimestamp: number) => void;
@@ -217,6 +218,16 @@ export const useChatStore = create<ChatStore>()(
               : msg
           ),
           updatedAt: Date.now(),
+        }))),
+
+      updateMessageThinking: (timestamp, thinking) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          messages: c.messages.map((msg) =>
+            msg.timestamp === timestamp
+              ? { ...msg, thinking: (msg.thinking || '') + thinking }
+              : msg
+          ),
         }))),
 
       addActivity: (messageTimestamp, activity) =>

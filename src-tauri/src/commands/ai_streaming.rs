@@ -463,25 +463,56 @@ pub async fn ollama_chat_stream(
     let mut body = serde_json::json!({
         "model": model,
         "messages": api_messages,
-        "stream": true
+        "stream": true,
+        "think": true
     });
 
     if let Some(temp) = temperature {
         body["options"] = serde_json::json!({ "temperature": temp });
     }
 
-    let response = client
-        .post(format!("{}/api/chat", base))
-        .header("content-type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Ollama API request failed: {}", e))?;
+    // Track whether the model produced native thinking output via `message.thinking`.
+    // If it didn't, we fall back to parsing `<think>` tags from `message.content`.
+    let mut received_native_thinking = false;
+    // State machine for <think> tag fallback parsing across chunk boundaries.
+    let mut in_think_tag = false;
+    // Buffer for content that arrives while we're uncertain about tag boundaries.
+    let mut tag_scan_buf = String::new();
 
-    if !response.status().is_success() {
-        let error_text = response.text().await.unwrap_or_default();
-        return Err(format!("Ollama API error: {}", error_text));
-    }
+    // Try with think:true first; if the model doesn't support it, retry without.
+    let response = {
+        let resp = client
+            .post(format!("{}/api/chat", base))
+            .header("content-type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Ollama API request failed: {}", e))?;
+
+        if !resp.status().is_success() {
+            let error_text = resp.text().await.unwrap_or_default();
+            // If the model doesn't support thinking, retry without think:true
+            if error_text.contains("does not support thinking") {
+                body.as_object_mut().unwrap().remove("think");
+                let retry = client
+                    .post(format!("{}/api/chat", base))
+                    .header("content-type", "application/json")
+                    .json(&body)
+                    .send()
+                    .await
+                    .map_err(|e| format!("Ollama API request failed: {}", e))?;
+                if !retry.status().is_success() {
+                    let retry_err = retry.text().await.unwrap_or_default();
+                    return Err(format!("Ollama API error: {}", retry_err));
+                }
+                retry
+            } else {
+                return Err(format!("Ollama API error: {}", error_text));
+            }
+        } else {
+            resp
+        }
+    };
 
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
@@ -498,11 +529,79 @@ pub async fn ollama_chat_stream(
                     buffer = buffer[line_end + 1..].to_string();
 
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                        // Native thinking field (produced when think:true is set)
+                        if let Some(thinking) = json["message"]["thinking"].as_str() {
+                            if !thinking.is_empty() {
+                                received_native_thinking = true;
+                                window
+                                    .emit("ai-stream-thinking-chunk", thinking)
+                                    .map_err(|e| format!("Failed to emit thinking event: {}", e))?;
+                            }
+                        }
+
                         if let Some(content) = json["message"]["content"].as_str() {
                             if !content.is_empty() {
-                                window
-                                    .emit("ai-stream-chunk", content)
-                                    .map_err(|e| format!("Failed to emit event: {}", e))?;
+                                if received_native_thinking {
+                                    // Model uses native thinking — emit content as-is
+                                    window
+                                        .emit("ai-stream-chunk", content)
+                                        .map_err(|e| format!("Failed to emit event: {}", e))?;
+                                } else {
+                                    // Fallback: parse <think> tags from content stream
+                                    tag_scan_buf.push_str(content);
+                                    while !tag_scan_buf.is_empty() {
+                                        if in_think_tag {
+                                            if let Some(end) = tag_scan_buf.find("</think>") {
+                                                let thinking_text = &tag_scan_buf[..end];
+                                                if !thinking_text.is_empty() {
+                                                    window
+                                                        .emit("ai-stream-thinking-chunk", thinking_text)
+                                                        .map_err(|e| format!("Failed to emit thinking event: {}", e))?;
+                                                }
+                                                tag_scan_buf = tag_scan_buf[end + 8..].to_string();
+                                                in_think_tag = false;
+                                            } else {
+                                                // Might have a partial </think> at the end
+                                                // Keep last 7 chars (len("</think")-1) in buffer
+                                                let safe = if tag_scan_buf.len() > 7 { tag_scan_buf.len() - 7 } else { 0 };
+                                                if safe > 0 {
+                                                    let to_emit = &tag_scan_buf[..safe];
+                                                    if !to_emit.is_empty() {
+                                                        window
+                                                            .emit("ai-stream-thinking-chunk", to_emit)
+                                                            .map_err(|e| format!("Failed to emit thinking event: {}", e))?;
+                                                    }
+                                                    tag_scan_buf = tag_scan_buf[safe..].to_string();
+                                                }
+                                                break; // Wait for more data
+                                            }
+                                        } else {
+                                            if let Some(start) = tag_scan_buf.find("<think>") {
+                                                let before = &tag_scan_buf[..start];
+                                                if !before.is_empty() {
+                                                    window
+                                                        .emit("ai-stream-chunk", before)
+                                                        .map_err(|e| format!("Failed to emit event: {}", e))?;
+                                                }
+                                                tag_scan_buf = tag_scan_buf[start + 7..].to_string();
+                                                in_think_tag = true;
+                                            } else {
+                                                // Might have a partial <think at the end
+                                                let safe = if tag_scan_buf.len() > 6 { tag_scan_buf.len() - 6 } else { 0 };
+                                                if safe > 0 {
+                                                    let to_emit = &tag_scan_buf[..safe];
+                                                    if !to_emit.is_empty() {
+                                                        window
+                                                            .emit("ai-stream-chunk", to_emit)
+                                                            .map_err(|e| format!("Failed to emit event: {}", e))?;
+                                                    }
+                                                    tag_scan_buf = tag_scan_buf[safe..].to_string();
+                                                }
+                                                break; // Wait for more data
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -511,6 +610,19 @@ pub async fn ollama_chat_stream(
             Err(e) => {
                 return Err(format!("Stream error: {}", e));
             }
+        }
+    }
+
+    // Flush any remaining content from the tag scan buffer
+    if !tag_scan_buf.is_empty() {
+        if in_think_tag {
+            window
+                .emit("ai-stream-thinking-chunk", &tag_scan_buf)
+                .map_err(|e| format!("Failed to emit thinking event: {}", e))?;
+        } else {
+            window
+                .emit("ai-stream-chunk", &tag_scan_buf)
+                .map_err(|e| format!("Failed to emit event: {}", e))?;
         }
     }
 

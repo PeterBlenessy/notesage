@@ -325,7 +325,7 @@ function resolveWithConfig(
 export function useAIOperations() {
   const aiStore = useAIStore();
   const { apiKeys, ollamaUrl } = aiStore;
-  const { addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, webSearchEnabled } = useChatStore();
+  const { addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, webSearchEnabled } = useChatStore();
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const cleanupRef = useRef<(() => void) | null>(null);
 
@@ -793,6 +793,11 @@ export function useAIOperations() {
           updateMessage(assistantMessageId, streamedContent);
         });
 
+        // Listen for thinking chunks (Ollama thinking models)
+        const unlistenThinking = await listen<string>('ai-stream-thinking-chunk', (event) => {
+          updateMessageThinking(assistantMessageId, event.payload);
+        });
+
         // Listen for tool use events
         const unlistenTool = await listen<{ tool: string; status: string }>('ai-tool-use', (event) => {
           if (event.payload.status === 'start') {
@@ -810,6 +815,7 @@ export function useAIOperations() {
 
         const cleanup = () => {
           unlistenChunk();
+          unlistenThinking();
           unlistenTool();
           unlistenCitation();
           // Attach collected citations to the final message
@@ -863,7 +869,7 @@ export function useAIOperations() {
         setActiveTool(null);
       }
     },
-    [resolved, composedSystemMessage, webSearchEnabled, addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, effectiveConnection, selectedProjectPaths]
+    [resolved, composedSystemMessage, webSearchEnabled, addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, effectiveConnection, selectedProjectPaths]
   );
 
   const cancelChat = useCallback(() => {

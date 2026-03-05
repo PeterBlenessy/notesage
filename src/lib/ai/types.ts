@@ -28,6 +28,8 @@ export interface ChatMessage {
   connectionProvider?: string;
   /** True when this message represents an error instead of a response */
   isError?: boolean;
+  /** Thinking/reasoning output from models that support it (e.g. Ollama thinking models) */
+  thinking?: string;
 }
 
 export interface GenerateOptions {

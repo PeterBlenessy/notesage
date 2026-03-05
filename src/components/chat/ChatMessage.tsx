@@ -1,4 +1,4 @@
-import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2, X, AlertTriangle } from 'lucide-react';
+import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2, X, AlertTriangle, Brain } from 'lucide-react';
 import { useState } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { MarkdownContent } from '@/components/MarkdownContent';
@@ -66,10 +66,14 @@ export function ChatMessage({ message }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const { isLoading, deleteMessage } = useChatStore();
 
+  const [thinkingExpanded, setThinkingExpanded] = useState(false);
+
   const isUser = message.role === 'user';
   const isStreaming = !isUser && isLoading && message.content.length === 0;
   const hasCitations = !isUser && message.citations && message.citations.length > 0;
   const hasActivities = !isUser && message.activities && message.activities.length > 0;
+  const hasThinking = !isUser && !!message.thinking;
+  const isThinkingOnly = hasThinking && !message.content;
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(message.content);
@@ -107,6 +111,33 @@ export function ChatMessage({ message }: ChatMessageProps) {
             : 'rounded-tl-sm bg-muted'
         }`}
       >
+        {/* Thinking / reasoning section */}
+        {hasThinking && (
+          <div className={message.content ? 'mb-2' : ''}>
+            <button
+              onClick={() => setThinkingExpanded(!thinkingExpanded)}
+              className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Brain className="h-3 w-3" strokeWidth={1.5} />
+              <ChevronDown
+                className={`h-2.5 w-2.5 transition-transform duration-150 ${thinkingExpanded ? '' : '-rotate-90'}`}
+                strokeWidth={1.5}
+              />
+              <span>
+                {isLoading && isThinkingOnly ? 'Thinking...' : 'Thinking'}
+              </span>
+            </button>
+            {thinkingExpanded && (
+              <div className="mt-1 max-h-60 overflow-y-auto thin-scrollbar rounded-md bg-muted/40 px-2 py-1.5 italic">
+                <MarkdownContent content={message.thinking!} className="text-xs text-muted-foreground" />
+                {isLoading && isThinkingOnly && (
+                  <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse bg-muted-foreground" />
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {isUser ? (
           <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
         ) : message.isError ? (
