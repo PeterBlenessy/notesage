@@ -611,6 +611,33 @@
   background-color: var(--color-foreground);
 }
 
+/* Tab bar horizontal scrollbar — overlays on hover, matches active tab indicator */
+.tabbar-scrollbar {
+  overflow-x: overlay;
+  --_sb-opacity: 0;
+}
+
+.tabbar-scrollbar:hover {
+  --_sb-opacity: 1;
+}
+
+.tabbar-scrollbar::-webkit-scrollbar {
+  height: 2px;
+}
+
+.tabbar-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tabbar-scrollbar::-webkit-scrollbar-thumb {
+  background-color: oklch(45% 0 0 / var(--_sb-opacity));
+  border-radius: 1px;
+}
+
+.dark .tabbar-scrollbar::-webkit-scrollbar-thumb {
+  background-color: oklch(55% 0 0 / var(--_sb-opacity));
+}
+
 /* Tag badges */
 .tag-badge {
   background-color: var(--color-muted);

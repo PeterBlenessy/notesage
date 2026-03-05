@@ -52,7 +52,7 @@ export function TabBar() {
 
   return (
     <div
-      className="h-9 border-b border-border flex items-end shrink-0 overflow-x-auto overflow-y-hidden gap-0.5 px-2 bg-background"
+      className="h-9 border-b border-border flex items-end shrink-0 overflow-x-auto overflow-y-hidden tabbar-scrollbar gap-0.5 px-2 bg-background"
     >
       {tabs.map((tab) => {
         const isActive = activeTabId === tab.id;
