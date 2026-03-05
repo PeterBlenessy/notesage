@@ -18,7 +18,9 @@ import { useCopilotCompletionCM } from "@/hooks/useCopilotCompletionCM";
 import { useOllamaCompletion } from "@/hooks/useOllamaCompletion";
 import type { EditorView as CMEditorView } from "@codemirror/view";
 import { useCommentDelegation } from "@/hooks/useCommentDelegation";
+import { useAIOperations } from "@/hooks/useAIOperations";
 import { useCommentStore, type DelegationActivity } from "@/stores/comment-store";
+import { useChatStore } from "@/stores/chat-store";
 import {
   setPendingCommentRange as setPendingRangeDecoration,
   showInlineDiff,
@@ -356,6 +358,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   // Comments
   const commentOps = useCommentOperations(editor);
   const { delegateComment, delegateReply, cancelDelegation, delegateAll, moveToChat, canDelegate } = useCommentDelegation();
+  const { sendChatMessage } = useAIOperations();
   const activeCommentId = commentOps.activeComment?.id ?? null;
   const activeCommentActivities = useCommentStore((s) =>
     activeCommentId ? s.activitiesByComment[activeCommentId] : undefined
@@ -1488,29 +1491,55 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             }
           }
         }}
-        onChatExisting={async () => {
-          if (commentOps.activeComment && commentOps.commentKey && commentStorageRoot) {
-            await delegateComment(commentOps.activeComment, commentOps.commentKey, commentStorageRoot, 'chat');
-          }
-        }}
         onDelegateExisting={async () => {
           if (commentOps.activeComment && commentOps.commentKey && commentStorageRoot) {
             await delegateComment(commentOps.activeComment, commentOps.commentKey, commentStorageRoot, 'delegate');
           }
         }}
+        onChatExisting={async () => {
+          if (commentOps.activeComment && commentOps.commentKey && commentStorageRoot) {
+            await delegateComment(commentOps.activeComment, commentOps.commentKey, commentStorageRoot, 'chat');
+          }
+        }}
         suggestionActive={suggestionActive}
         onMoveToChat={() => {
           if (commentOps.activeComment) {
-            moveToChat(commentOps.activeComment);
+            // Find project path for this document
+            const ws = useWorkspaceStore.getState();
+            const tab = useEditorStore.getState().tabs.find((t) => t.id === useEditorStore.getState().activeTabId);
+            const projectPath = ws.projects.find((p) => tab?.filePath?.startsWith(p.path + '/'))?.path;
+            moveToChat(commentOps.activeComment, projectPath, commentStorageRoot ?? undefined);
           }
         }}
         onReply={async (text) => {
+          if (!commentOps.activeComment) return;
+
+          // If comment is linked to a chat conversation, route reply through chat
+          const freshComments = useCommentStore.getState().commentsByDocument[commentOps.commentKey ?? ''] ?? [];
+          const freshComment = freshComments.find((c) => c.id === commentOps.activeComment!.id);
+
+          if (freshComment?.linkedConversationId) {
+            const chatStore = useChatStore.getState();
+            const conv = chatStore.conversations.find((c) => c.id === freshComment.linkedConversationId);
+            if (conv) {
+              chatStore.setActiveConversation(conv.id);
+              await sendChatMessage(text, conv.messages);
+              useSettingsStore.getState().setChatPanelOpen(true);
+              return;
+            }
+          }
+
+          // Fallback: existing delegation reply flow
+          if (commentOps.commentKey && commentStorageRoot && freshComment) {
+            await delegateReply(freshComment, text, commentOps.commentKey, commentStorageRoot, 'chat');
+          }
+        }}
+        onDelegateReply={async (text) => {
           if (commentOps.activeComment && commentOps.commentKey && commentStorageRoot) {
-            // Re-read fresh comment from store to get latest state
             const freshComments = useCommentStore.getState().commentsByDocument[commentOps.commentKey] ?? [];
             const freshComment = freshComments.find((c) => c.id === commentOps.activeComment!.id);
             if (freshComment) {
-              await delegateReply(freshComment, text, commentOps.commentKey, commentStorageRoot, 'chat');
+              await delegateReply(freshComment, text, commentOps.commentKey, commentStorageRoot, 'delegate');
             }
           }
         }}

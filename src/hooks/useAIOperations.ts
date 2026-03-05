@@ -2,7 +2,7 @@ import { useCallback, useRef, useMemo } from 'react';
 import { useAIStore, getAllPersonas, BUILT_IN_PERSONAS } from '@/stores/ai-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
-import { useChatStore } from '@/stores/chat-store';
+import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
 import { useProjectMetadataStore, type ProjectMetadata } from '@/stores/project-metadata-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -325,7 +325,8 @@ function resolveWithConfig(
 export function useAIOperations() {
   const aiStore = useAIStore();
   const { apiKeys, ollamaUrl } = aiStore;
-  const { addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, selectedProjectPaths, webSearchEnabled } = useChatStore();
+  const { addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, webSearchEnabled } = useChatStore();
+  const selectedProjectPaths = useChatStore(selectProjectPaths);
   const cleanupRef = useRef<(() => void) | null>(null);
 
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);

@@ -3,7 +3,7 @@ import type { Editor } from '@tiptap/core';
 import { DOMParser as PMDOMParser } from '@tiptap/pm/model';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
-import { parseMarkdownToHtml } from '@/lib/pm-replace';
+import { parseMarkdownToHtmlFull } from '@/lib/pm-replace';
 
 export interface AISuggestion {
   from: number;
@@ -122,11 +122,16 @@ function createDiffDecorations(
       container.className = 'ai-suggestion-widget';
       container.style.cssText = 'display: inline; white-space: normal;';
 
-      // New text (inline, only color changes)
+      // New text — render parsed markdown HTML so formatting is visible
       const newText = document.createElement('span');
       newText.className = 'ai-suggestion-insert';
       newText.style.cssText = 'background-color: rgba(34, 197, 94, 0.2); color: rgb(21, 128, 61);';
-      newText.textContent = suggestion.suggestedText;
+      const parsedHtml = parseMarkdownToHtmlFull(editor, suggestion.suggestedText);
+      if (parsedHtml) {
+        newText.innerHTML = parsedHtml;
+      } else {
+        newText.textContent = suggestion.suggestedText;
+      }
 
       // Controls (small inline buttons)
       const controls = document.createElement('span');
@@ -178,15 +183,15 @@ function acceptSuggestion(editor: Editor, suggestion: AISuggestion) {
     .chain()
     .focus()
     .command(({ tr }) => {
-      // Try markdown parsing to preserve formatting (bold, italic, etc.)
-      const html = parseMarkdownToHtml(editor, suggestion.suggestedText);
+      // Parse markdown to full HTML for proper formatting (bold, tables, code, etc.)
+      const html = parseMarkdownToHtmlFull(editor, suggestion.suggestedText);
       if (html) {
         const wrapper = document.createElement('div');
         wrapper.innerHTML = html;
         const slice = PMDOMParser.fromSchema(editor.schema).parseSlice(wrapper);
         tr.replace(suggestion.from, suggestion.to, slice);
       } else {
-        // Plain text: single-step replace preserving positional marks
+        // Plain text fallback: single-step replace preserving positional marks
         tr.insertText(suggestion.suggestedText, suggestion.from, suggestion.to);
       }
       return true;

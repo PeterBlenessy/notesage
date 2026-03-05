@@ -27,6 +27,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useSyncStore } from "@/stores/sync-store";
 import { useEditorStylesStore } from "@/stores/editor-styles-store";
 import { useActivityStore } from "@/stores/activity-store";
+import { useCommentStore, clearPartialReply } from "@/stores/comment-store";
 import { tauriApi, type TagOccurrence } from "@/lib/tauri";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { getFileType, isBinaryFileType } from "@/lib/file-utils";
@@ -138,6 +139,28 @@ function App() {
     async (taskId: string) => {
       try {
         await cancelTask(taskId);
+
+        // Sync comment store when cancelling a comment-related task
+        const task = useActivityStore.getState().tasks.find((t) => t.id === taskId);
+        if (task?.commentId && task?.documentId) {
+          const cs = useCommentStore.getState();
+          clearPartialReply(task.documentId, task.commentId);
+          cs.completeAllActivities(task.commentId);
+          const comments = cs.commentsByDocument[task.documentId] ?? [];
+          const comment = comments.find((c) => c.id === task.commentId);
+          const hasReplies = (comment?.replies?.length ?? 0) > 0;
+          cs.setCommentStatus(task.documentId, task.commentId, hasReplies ? 'done' : 'open');
+          cs.clearDelegationMode(task.commentId);
+
+          // Resolve project root for saving
+          const ws = useWorkspaceStore.getState();
+          const settings = useSettingsStore.getState();
+          const projectRoot = ws.projects.find((p) => task.sourceFile?.startsWith(p.path + '/'))?.path
+            ?? settings.notesRootPath;
+          if (projectRoot) {
+            cs.saveComments(task.documentId, projectRoot);
+          }
+        }
       } catch (error) {
         toast.error(`Failed to cancel task: ${error}`);
       }

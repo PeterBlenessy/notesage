@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe, Shield, Terminal, Pencil, FileOutput, FileInput, FolderSearch, TextSearch, Download, type LucideIcon } from 'lucide-react';
+import { Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe, Shield, Terminal, Pencil, FileOutput, FileInput, FolderSearch, TextSearch, Download, Plus, X, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { PersonaIcon } from '@/components/PersonaIcon';
 import { ProviderLogo } from '@/components/ProviderLogo';
-import { useChatStore } from '@/stores/chat-store';
+import { useChatStore, selectMessages, selectProjectPaths } from '@/stores/chat-store';
 import { useAIStore, getActivePersona, getAllPersonas } from '@/stores/ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
@@ -50,7 +50,9 @@ function getToolIcon(kind: string): LucideIcon {
 }
 
 export function ChatPanel() {
-  const { messages, isLoading, activeTool, clearMessages, selectedProjectPaths, setSelectedProjectPaths, toggleProjectPath, webSearchEnabled, setWebSearchEnabled } = useChatStore();
+  const { isLoading, activeTool, clearMessages, setSelectedProjectPaths, toggleProjectPath, webSearchEnabled, setWebSearchEnabled, conversations, activeConversationId, createConversation, deleteConversation, setActiveConversation } = useChatStore();
+  const messages = useChatStore(selectMessages);
+  const selectedProjectPaths = useChatStore(selectProjectPaths);
   const aiStore = useAIStore();
   const { provider: legacyProvider, setActivePersona } = aiStore;
   const activePersona = getActivePersona(aiStore);
@@ -88,6 +90,7 @@ export function ChatPanel() {
   const [personaOpen, setPersonaOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [convListOpen, setConvListOpen] = useState(false);
 
   const isAcpConnection = effectiveConnection?.authMethod === 'agent_managed';
   const hasProjectOverride = !!projectOverrideConnection;
@@ -156,24 +159,38 @@ export function ChatPanel() {
       return;
     }
 
+    // Auto-create conversation if none active
+    if (!activeConversationId) {
+      createConversation();
+    }
+
     await sendChatMessage(content, messages);
   };
 
   const handleClear = () => {
-    if (confirm('Clear all chat history?')) {
-      // Deny any pending permission requests before clearing
-      const pending = usePermissionStore.getState().requests;
-      for (const req of pending) {
-        invoke('acp_permission_respond', {
-          instanceId: req.instanceId,
-          requestId: req.requestId,
-          optionId: null,
-        }).catch(() => {});
-      }
-      usePermissionStore.getState().clearAll();
-      clearMessages();
+    if (!activeConversationId) return;
+    // Deny any pending permission requests before clearing
+    const pending = usePermissionStore.getState().requests;
+    for (const req of pending) {
+      invoke('acp_permission_respond', {
+        instanceId: req.instanceId,
+        requestId: req.requestId,
+        optionId: null,
+      }).catch(() => {});
     }
+    usePermissionStore.getState().clearAll();
+    clearMessages();
   };
+
+  const handleNewChat = () => {
+    createConversation();
+  };
+
+  const activeConvTitle = useMemo(() => {
+    if (!activeConversationId) return 'New Chat';
+    const conv = conversations.find((c) => c.id === activeConversationId);
+    return conv?.title || 'New Chat';
+  }, [activeConversationId, conversations]);
 
   const allSelected = projects.length > 0 && selectedProjectPaths.length === projects.length;
 
@@ -229,21 +246,84 @@ export function ChatPanel() {
   return (
     <div className="h-full w-full bg-card flex flex-col">
       <div className="h-9 px-3 flex items-center justify-between shrink-0 bg-card">
-        <h2 className="text-sm font-semibold tracking-tight">AI Chat</h2>
+        <Popover open={convListOpen} onOpenChange={setConvListOpen}>
+          <PopoverTrigger asChild>
+            <button className="flex items-center gap-1.5 text-sm font-semibold tracking-tight hover:text-muted-foreground transition-colors rounded px-1 py-0.5 min-w-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+              <span className="truncate max-w-[160px]">{activeConvTitle}</span>
+              <ChevronUp className="h-3 w-3 opacity-50 shrink-0 rotate-180" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent side="bottom" align="start" className="w-60 p-1">
+            <button
+              onClick={() => { handleNewChat(); setConvListOpen(false); }}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+              New Chat
+            </button>
+            {conversations.length > 0 && (
+              <div className="mx-2 my-1 border-t border-border" />
+            )}
+            <div className="max-h-64 overflow-y-auto thin-scrollbar">
+              {conversations.map((conv) => (
+                <button
+                  type="button"
+                  key={conv.id}
+                  className={`group w-full flex items-center justify-between gap-1 px-2 py-1.5 rounded text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                    conv.id === activeConversationId
+                      ? 'bg-accent text-accent-foreground'
+                      : 'text-foreground hover:bg-accent/50'
+                  }`}
+                  onClick={() => { setActiveConversation(conv.id); setConvListOpen(false); }}
+                >
+                  <span className="truncate min-w-0 text-left">{conv.title || 'New Chat'}</span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); deleteConversation(conv.id); } }}
+                    className="opacity-0 group-hover:opacity-100 shrink-0 h-5 w-5 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground active:opacity-75 transition-opacity focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <X className="h-3 w-3" strokeWidth={1.5} />
+                  </span>
+                </button>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
         <div className="flex items-center gap-0.5">
-          <button
-            onClick={handleClear}
-            className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors duration-150 text-muted-foreground hover:text-foreground hover:bg-accent"
-            title="Clear chat history"
-          >
-            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-          </button>
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={handleNewChat}
+                  className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors duration-150 text-muted-foreground hover:text-foreground hover:bg-accent active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">New Chat</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors duration-150 text-muted-foreground hover:text-foreground hover:bg-accent active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">Delete conversation</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
 
       {!hasAIProvider && (
-        <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border-b">
-          <p className="text-sm text-yellow-800 dark:text-yellow-200">
+        <div className="p-4 bg-muted border-b">
+          <p className="text-sm text-muted-foreground">
             Please configure an AI provider in Settings (Cmd+,) before using chat.
           </p>
         </div>
@@ -302,8 +382,9 @@ export function ChatPanel() {
                 <Popover open={providerOpen} onOpenChange={hasProjectOverride ? undefined : setProviderOpen}>
                   <PopoverTrigger asChild>
                     <button
-                      className={`flex items-center gap-1.5 text-xs text-muted-foreground transition-colors rounded px-1 py-0.5 ${
-                        hasProjectOverride ? 'cursor-default' : 'hover:text-foreground hover:bg-accent/50'
+                      type="button"
+                      className={`flex items-center gap-1.5 text-xs text-muted-foreground transition-colors rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                        hasProjectOverride ? 'cursor-default' : 'hover:text-foreground hover:bg-accent/50 active:opacity-75'
                       }`}
                       title={hasProjectOverride ? `Set by project: ${singleMetadata?.name || singleProjectPath}` : undefined}
                     >
@@ -341,7 +422,7 @@ export function ChatPanel() {
               )}
               <Popover open={personaOpen} onOpenChange={setPersonaOpen}>
                 <PopoverTrigger asChild>
-                  <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent/50">
+                  <button type="button" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent/50 active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
                     <PersonaIcon persona={activePersona} size={14} />
                     <span>{activePersona.name}</span>
                     <ChevronUp className="h-3 w-3 opacity-50" />
@@ -369,7 +450,7 @@ export function ChatPanel() {
               </Popover>
               <Popover open={projectOpen} onOpenChange={setProjectOpen}>
                 <PopoverTrigger asChild>
-                  <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent/50">
+                  <button type="button" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent/50 active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
                     <FolderOpen className="h-3 w-3" strokeWidth={1.5} />
                     <span className="max-w-[100px] truncate">{projectLabel}</span>
                     <ChevronUp className="h-3 w-3 opacity-50" />
@@ -414,19 +495,21 @@ export function ChatPanel() {
                 <Popover open={toolsOpen} onOpenChange={setToolsOpen}>
                   <PopoverTrigger asChild>
                     <button
-                      className="flex items-center gap-1 text-xs transition-colors rounded px-1 py-0.5 hover:bg-accent/50"
-                      style={{ color: approvedCount > 0 ? 'var(--color-foreground)' : 'var(--color-muted-foreground)' }}
+                      type="button"
+                      className={`flex items-center gap-1 text-xs transition-colors rounded px-1 py-0.5 hover:bg-accent/50 active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                        approvedCount > 0 ? 'text-foreground' : 'text-muted-foreground'
+                      }`}
                     >
                       <Shield className="h-3 w-3" strokeWidth={1.5} />
                       <span>Tools</span>
                       {approvedCount > 0 && (
-                        <span className="text-[10px] text-muted-foreground">({approvedCount})</span>
+                        <span className="text-xs text-muted-foreground">({approvedCount})</span>
                       )}
                       <ChevronUp className="h-3 w-3 opacity-50" />
                     </button>
                   </PopoverTrigger>
                   <PopoverContent side="top" align="start" className="w-56 p-1">
-                    <div className="px-2 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       Agent tool permissions
                     </div>
                     {toolsList.map((kind) => {
@@ -448,7 +531,7 @@ export function ChatPanel() {
                           </span>
                           <span className="flex items-center gap-1.5 shrink-0">
                             {tier !== 'none' && (
-                              <span className="text-[10px] text-muted-foreground">
+                              <span className="text-xs text-muted-foreground">
                                 {tier === 'session' ? 'Session' : 'Always'}
                               </span>
                             )}
@@ -466,6 +549,7 @@ export function ChatPanel() {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
+                        type="button"
                         onClick={() => {
                           if (!hasAIProvider) return;
                           if (effectiveProviderType === 'ollama') {
@@ -475,12 +559,11 @@ export function ChatPanel() {
                           setWebSearchEnabled(!webSearchEnabled);
                         }}
                         disabled={!hasAIProvider}
-                        className="flex items-center gap-1 text-xs transition-colors rounded px-1 py-0.5 hover:bg-accent/50 disabled:opacity-30 disabled:cursor-not-allowed"
-                        style={{
-                          color: webSearchEnabled && hasAIProvider && effectiveProviderType !== 'ollama'
-                            ? 'var(--color-foreground)'
-                            : 'var(--color-muted-foreground)',
-                        }}
+                        className={`flex items-center gap-1 text-xs transition-colors rounded px-1 py-0.5 hover:bg-accent/50 active:opacity-75 disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                          webSearchEnabled && hasAIProvider && effectiveProviderType !== 'ollama'
+                            ? 'text-foreground'
+                            : 'text-muted-foreground'
+                        }`}
                       >
                         <Globe className="h-3 w-3" strokeWidth={1.5} />
                         <span>Search</span>

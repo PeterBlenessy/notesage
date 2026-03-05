@@ -54,7 +54,6 @@ export const useActivityStore = create<ActivityStore>()(
         };
         set((state) => ({
           tasks: [task, ...state.tasks],
-          isManuallyHidden: false,
         }));
       },
 

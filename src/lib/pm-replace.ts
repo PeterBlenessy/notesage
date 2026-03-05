@@ -49,6 +49,36 @@ export function parseMarkdownToHtml(
 }
 
 /**
+ * Parse a markdown string to full HTML using the editor's tiptap-markdown parser.
+ * Unlike `parseMarkdownToHtml`, this returns the complete HTML output including
+ * block-level elements (paragraphs, tables, code blocks, lists, etc.).
+ * Used for AI suggestion previews and full-content replacement.
+ * Returns null if the parser is unavailable or parsing fails.
+ */
+export function parseMarkdownToHtmlFull(
+  editor: Editor,
+  markdown: string
+): string | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mdStorage = (editor.storage as any).markdown as
+      | Record<string, unknown>
+      | undefined;
+    const parser = mdStorage?.parser as
+      | { parse: (content: string) => string }
+      | undefined;
+    if (!parser) return null;
+
+    const html = parser.parse(markdown);
+    if (typeof html !== "string" || !html.trim()) return null;
+
+    return html;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Replace a range in a transaction while preserving ProseMirror marks.
  *
  * Uses `tr.insertText` which inherits marks from the resolved position.
