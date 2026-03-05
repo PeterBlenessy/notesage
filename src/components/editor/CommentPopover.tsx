@@ -167,7 +167,6 @@ export function CommentPopover({
   const [mode, setMode] = useState<'view' | 'create' | 'edit'>('view');
   const [body, setBody] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [threadExpanded, setThreadExpanded] = useState(false);
   const [replyText, setReplyText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const replyInputRef = useRef<HTMLInputElement>(null);
@@ -196,7 +195,6 @@ export function CommentPopover({
   useEffect(() => {
     if (open) {
       setReplyText('');
-      setThreadExpanded(false);
       if (comment) {
         setMode('view');
         setBody(comment.body);
@@ -522,8 +520,6 @@ export function CommentPopover({
                           }));
 
                   return effectiveReplies.map((reply) => {
-                  const isLong = reply.body.split('\n').length > 3 || reply.body.length > 200;
-                  const isClamped = isLong && !threadExpanded;
                   const isUserReply = reply.author === 'You';
                   const replyActivities = reply.msgActivities;
                   return (
@@ -537,31 +533,12 @@ export function CommentPopover({
                         <span className="text-xs font-medium text-foreground">{reply.author}</span>
                         <span className="text-xs text-muted-foreground">{formatRelativeTime(reply.timestamp)}</span>
                       </div>
-                      <div className={isClamped ? 'relative' : undefined}>
-                        <div className={isClamped ? 'line-clamp-3' : undefined}>
-                          <MarkdownContent content={reply.body} className="text-sm" />
-                        </div>
-                        {isClamped && (
-                          <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-popover to-transparent" />
-                        )}
-                      </div>
+                      <MarkdownContent content={reply.body} className="text-sm" />
                       {/* Per-message activity log */}
                       {replyActivities && replyActivities.length > 0 && (
                         <InlineActivityLog activities={replyActivities} />
                       )}
-                      <div className="flex items-center justify-between mt-0.5">
-                        {isLong && !threadExpanded ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setThreadExpanded(true);
-                            }}
-                            className="text-xs text-muted-foreground hover:text-foreground active:opacity-75 transition-colors rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                          >
-                            Show more
-                          </button>
-                        ) : <span />}
+                      <div className="flex items-center justify-end mt-0.5">
                         {!isUserReply && (comment.status === 'done' || linkedConversation) && onApply && (
                           <Button
                             variant="ghost"
