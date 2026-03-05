@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useRoutingStore } from '@/stores/routing-store';
-import { useChatStore } from '@/stores/chat-store';
+import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import { useActivityStore, type AgentTaskType } from '@/stores/activity-store';
 import type { Connection } from '@/lib/ai/connections';
@@ -164,6 +164,8 @@ export interface TaskMeta {
   documentId?: string;
   /** If provided, reuse this existing activity store task instead of creating a new one. */
   existingTaskId?: string;
+  /** When false, skips activity-store tracking (chat mode stays invisible to the agent panel). Default: true. */
+  trackInActivityStore?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -174,9 +176,10 @@ function setupTask(
   prompt: string,
   taskMeta: TaskMeta | undefined,
   connection: Connection,
-): { taskId: string; task: InternalTask } {
+): { taskId: string; task: InternalTask; track: boolean } {
+  const track = taskMeta?.trackInActivityStore !== false;
   const existingId = taskMeta?.existingTaskId;
-  const existingActivityTask = existingId
+  const existingActivityTask = track && existingId
     ? useActivityStore.getState().tasks.find((t) => t.id === existingId)
     : undefined;
   const taskId = existingActivityTask ? existingId! : `task-${Date.now()}`;
@@ -192,22 +195,24 @@ function setupTask(
   };
   tasksMap.set(taskId, task);
 
-  if (existingActivityTask) {
-    useActivityStore.getState().resetTaskForContinuation(taskId);
-  } else {
-    useActivityStore.getState().addTask({
-      id: taskId,
-      type: taskMeta?.type ?? 'chat',
-      label: taskMeta?.label ?? prompt.slice(0, 50),
-      status: 'running',
-      sourceFile: taskMeta?.sourceFile,
-      commentId: taskMeta?.commentId,
-      documentId: taskMeta?.documentId,
-      connectionProvider: connection.provider,
-    });
+  if (track) {
+    if (existingActivityTask) {
+      useActivityStore.getState().resetTaskForContinuation(taskId);
+    } else {
+      useActivityStore.getState().addTask({
+        id: taskId,
+        type: taskMeta?.type ?? 'chat',
+        label: taskMeta?.label ?? prompt.slice(0, 50),
+        status: 'running',
+        sourceFile: taskMeta?.sourceFile,
+        commentId: taskMeta?.commentId,
+        documentId: taskMeta?.documentId,
+        connectionProvider: connection.provider,
+      });
+    }
   }
 
-  return { taskId, task };
+  return { taskId, task, track };
 }
 
 // ---------------------------------------------------------------------------
@@ -227,7 +232,7 @@ async function startAcpTask(
   const instanceId = await ensureTaskAgent(connection, cwd);
   const session = await tauriApi.acpSessionNew(instanceId, cwd);
 
-  const { taskId, task } = setupTask(prompt, taskMeta, connection);
+  const { taskId, task, track } = setupTask(prompt, taskMeta, connection);
   task.instanceId = instanceId;
   task.sessionId = session.session_id;
 
@@ -242,7 +247,6 @@ async function startAcpTask(
     if (!current) return;
 
     const eventType = update.sessionUpdate;
-    const activityStore = useActivityStore.getState();
 
     if (
       eventType === 'agent_message_chunk' &&
@@ -255,28 +259,30 @@ async function startAcpTask(
       }
       current.output += update.content.text;
       onChunk?.(update.content.text);
-      activityStore.appendPartialOutput(taskId, update.content.text);
+      if (track) useActivityStore.getState().appendPartialOutput(taskId, update.content.text);
     } else if (eventType === 'agent_thought_chunk') {
       const text = update.content?.text;
-      if (text) {
-        activityStore.appendThinkingOutput(taskId, text);
+      if (text && track) {
+        useActivityStore.getState().appendThinkingOutput(taskId, text);
       }
     } else if (eventType === 'tool_call') {
       const label = formatAcpToolName(update.kind, update.title);
       const detail = truncateDetail(update.rawInput, 200);
       onActivity?.({ kind: update.kind || 'unknown', label, detail: detail || undefined, event: 'tool_call' });
-      activityStore.appendActivity(taskId, {
-        label,
-        detail: detail || undefined,
-        status: 'running',
-        timestamp: Date.now(),
-      });
+      if (track) {
+        useActivityStore.getState().appendActivity(taskId, {
+          label,
+          detail: detail || undefined,
+          status: 'running',
+          timestamp: Date.now(),
+        });
+      }
     } else if (eventType === 'tool_call_update') {
       const label = formatAcpToolName(update.kind, update.title);
       onActivity?.({ kind: update.kind || 'unknown', label, event: 'tool_call' });
     } else if (eventType === 'tool_result') {
       onActivity?.({ kind: 'tool_result', label: 'Tool result', event: 'tool_result' });
-      activityStore.completeLastActivity(taskId);
+      if (track) useActivityStore.getState().completeLastActivity(taskId);
     } else if (eventType === 'agent_turn_complete') {
       current.status = 'completed';
       const responsePreview = current.output.length > 100
@@ -284,8 +290,12 @@ async function startAcpTask(
         : current.output || '(empty response)';
       onActivity?.({ kind: 'agent_complete', label: 'Agent finished', detail: responsePreview, event: 'agent_complete' });
       onComplete?.(current.output);
-      activityStore.updateTaskStatus(taskId, 'done');
-      activityStore.setFinalOutput(taskId, current.output);
+      if (track) {
+        const activityStore = useActivityStore.getState();
+        activityStore.completeAllActivities(taskId);
+        activityStore.updateTaskStatus(taskId, 'done');
+        activityStore.setFinalOutput(taskId, current.output);
+      }
       const c = cleanupMap.get(taskId);
       if (c) { c(); cleanupMap.delete(taskId); }
     }
@@ -343,9 +353,12 @@ async function startAcpTask(
           : t.output || '(empty response)';
         onActivity?.({ kind: 'agent_complete', label: 'Agent finished', detail: responsePreview, event: 'agent_complete' });
         onComplete?.(t.output);
-        const as = useActivityStore.getState();
-        as.updateTaskStatus(taskId, 'done');
-        as.setFinalOutput(taskId, t.output);
+        if (track) {
+          const as = useActivityStore.getState();
+          as.completeAllActivities(taskId);
+          as.updateTaskStatus(taskId, 'done');
+          as.setFinalOutput(taskId, t.output);
+        }
       }
     })
     .catch((error) => {
@@ -355,7 +368,11 @@ async function startAcpTask(
         t.error = error instanceof Error ? error.message : String(error);
       }
       onError?.(error instanceof Error ? error.message : String(error));
-      useActivityStore.getState().updateTaskStatus(taskId, 'error');
+      if (track) {
+        const as = useActivityStore.getState();
+        as.completeAllActivities(taskId);
+        as.updateTaskStatus(taskId, 'error');
+      }
     })
     .finally(() => {
       const c = cleanupMap.get(taskId);
@@ -377,7 +394,7 @@ async function startDirectApiTask(
 ): Promise<string> {
   const { onComplete, onActivity, onError, onChunk } = callbacks ?? {};
 
-  const { taskId } = setupTask(prompt, taskMeta, connection);
+  const { taskId, track } = setupTask(prompt, taskMeta, connection);
 
   // Resolve provider credentials
   let provider: string;
@@ -408,7 +425,7 @@ async function startDirectApiTask(
 
     current.output += event.payload;
     onChunk?.(event.payload);
-    useActivityStore.getState().appendPartialOutput(taskId, event.payload);
+    if (track) useActivityStore.getState().appendPartialOutput(taskId, event.payload);
   });
 
   const unlistenDone = await listen('ai-stream-done', () => {
@@ -421,9 +438,12 @@ async function startDirectApiTask(
       : current.output || '(empty response)';
     onActivity?.({ kind: 'agent_complete', label: 'Agent finished', detail: responsePreview, event: 'agent_complete' });
     onComplete?.(current.output);
-    const as = useActivityStore.getState();
-    as.updateTaskStatus(taskId, 'done');
-    as.setFinalOutput(taskId, current.output);
+    if (track) {
+      const as = useActivityStore.getState();
+      as.completeAllActivities(taskId);
+      as.updateTaskStatus(taskId, 'done');
+      as.setFinalOutput(taskId, current.output);
+    }
   });
 
   const cleanup = () => { unlistenChunk(); unlistenDone(); };
@@ -450,7 +470,11 @@ async function startDirectApiTask(
         t.error = error instanceof Error ? error.message : String(error);
       }
       onError?.(error instanceof Error ? error.message : String(error));
-      useActivityStore.getState().updateTaskStatus(taskId, 'error');
+      if (track) {
+        const as = useActivityStore.getState();
+        as.completeAllActivities(taskId);
+        as.updateTaskStatus(taskId, 'error');
+      }
     })
     .finally(() => {
       const c = cleanupMap.get(taskId);
@@ -465,7 +489,7 @@ async function startDirectApiTask(
 // ---------------------------------------------------------------------------
 
 export function useAgentTaskOperations() {
-  const { selectedProjectPaths } = useChatStore();
+  const selectedProjectPaths = useChatStore(selectProjectPaths);
 
   const taskConnection = useRoutingStore((s) => {
     const slot = s.routing.agent_tasks;
@@ -523,9 +547,12 @@ export function useAgentTaskOperations() {
 
       task.status = 'cancelled';
 
+      // Only update activity-store if this task is tracked there
       const as = useActivityStore.getState();
-      as.completeAllActivities(taskId);
-      as.updateTaskStatus(taskId, 'cancelled');
+      if (as.tasks.some((t) => t.id === taskId)) {
+        as.completeAllActivities(taskId);
+        as.updateTaskStatus(taskId, 'cancelled');
+      }
 
       const cleanup = cleanupMap.get(taskId);
       if (cleanup) {

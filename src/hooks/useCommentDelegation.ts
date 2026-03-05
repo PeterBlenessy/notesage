@@ -63,8 +63,9 @@ export function useCommentDelegation() {
               clearPartialReply(documentId, comment.id);
               const s = useCommentStore.getState();
               s.completeAllActivities(comment.id);
-              // Snapshot activities before clearing — attach to the reply
-              const replyActivities = [...(s.activitiesByComment[comment.id] ?? [])];
+              // Snapshot activities — force all to terminal status for persistence
+              const replyActivities = (useCommentStore.getState().activitiesByComment[comment.id] ?? [])
+                .map((a) => a.status === 'running' ? { ...a, status: 'done' as const } : a);
               const responseText = output || '(No response from agent)';
               s.addReply(documentId, comment.id, responseText, agentName, replyActivities);
               s.setCommentStatus(documentId, comment.id, 'done');
@@ -223,8 +224,9 @@ export function useCommentDelegation() {
               clearPartialReply(documentId, comment.id);
               const s = useCommentStore.getState();
               s.completeAllActivities(comment.id);
-              // Snapshot activities before clearing — attach to the reply
-              const replyActivities = [...(s.activitiesByComment[comment.id] ?? [])];
+              // Snapshot activities — force all to terminal status for persistence
+              const replyActivities = (useCommentStore.getState().activitiesByComment[comment.id] ?? [])
+                .map((a) => a.status === 'running' ? { ...a, status: 'done' as const } : a);
               const responseText = output || '(No response from agent)';
               s.addReply(documentId, comment.id, responseText, agentName, replyActivities);
               s.setCommentStatus(documentId, comment.id, 'done');

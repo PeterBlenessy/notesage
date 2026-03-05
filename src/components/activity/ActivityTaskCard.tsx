@@ -326,18 +326,21 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
       {/* Expanded activity log */}
       {expanded && task.activities.length > 0 && (
         <div className="pl-5 space-y-0.5 max-h-60 overflow-y-auto thin-scrollbar">
-          {task.activities.map((a, i) => (
+          {task.activities.map((a, i) => {
+            // If the task itself is finished, no activity should show a spinner
+            const effectiveStatus = a.status === 'running' && task.status !== 'running' ? 'done' : a.status;
+            return (
             <div
               key={`${a.timestamp}-${i}`}
               className={`flex items-start gap-1.5 text-xs ${
-                a.status === 'error' ? 'text-destructive/70' : 'text-muted-foreground/70'
+                effectiveStatus === 'error' ? 'text-destructive/70' : 'text-muted-foreground/70'
               }`}
             >
-              {a.status === 'running' ? (
+              {effectiveStatus === 'running' ? (
                 <Loader2 className="h-2.5 w-2.5 animate-spin shrink-0 mt-px" strokeWidth={1.5} />
-              ) : a.status === 'error' ? (
+              ) : effectiveStatus === 'error' ? (
                 <AlertCircle className="h-2.5 w-2.5 shrink-0 mt-px" strokeWidth={1.5} />
-              ) : a.status === 'info' ? (
+              ) : effectiveStatus === 'info' ? (
                 <Info className="h-2.5 w-2.5 shrink-0 mt-px" strokeWidth={1.5} />
               ) : (
                 <Check className="h-2.5 w-2.5 shrink-0 mt-px" strokeWidth={1.5} />
@@ -354,7 +357,8 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

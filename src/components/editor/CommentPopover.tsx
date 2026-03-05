@@ -515,7 +515,10 @@ export function CommentPopover({
                         }))
                       : (comment.replies ?? []).map((reply) => ({
                             ...reply,
-                            msgActivities: reply.activities,
+                            // Persisted activities are historical — force any stale 'running' to 'done'
+                            msgActivities: reply.activities?.map((a) =>
+                              a.status === 'running' ? { ...a, status: 'done' as const } : a
+                            ),
                           }));
 
                   return effectiveReplies.map((reply) => {
