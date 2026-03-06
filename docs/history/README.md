@@ -55,3 +55,4 @@ Chronological log of major implementation milestones and changes.
 | 049 | [Release v0.17.4](049-release-v0.17.4.md) | Sync badge icon, check-for-updates button UX |
 | 050 | [Release v0.17.5](050-release-v0.17.5.md) | Comment delegation modes, per-reply activity logs, activity spinner fixes |
 | 051 | [Release v0.17.6](051-release-v0.17.6.md) | Skills & Agents Platform PRD, roadmap restructure, tab bar fixes, Ollama thinking |
+| 052 | [Release v0.18.0](052-release-v0.18.0.md) | Skills & Agents Platform — skill discovery, script execution, bundled skills, wizard UI (Phase 7 Step A) |

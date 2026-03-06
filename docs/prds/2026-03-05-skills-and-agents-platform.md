@@ -1,6 +1,6 @@
 # PRD: Skills & Agents Platform
 
-**Date:** 2026-03-05 **Status:** Draft **Parent:** Phase 7 (replaces AI-Assisted Research as standalone phase)
+**Date:** 2026-03-05 **Status:** Step A Complete (v0.18.0) **Parent:** Phase 7 (replaces AI-Assisted Research as standalone phase)
 
 ## Problem
 
