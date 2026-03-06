@@ -13,6 +13,7 @@ import type { Connection } from '@/lib/ai/connections';
 import type { FileEntry } from '@/lib/tauri';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { usePermissionStore } from '@/stores/permission-store';
+import { useSkillStore } from '@/stores/skill-store';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
@@ -183,6 +184,10 @@ export function formatAcpToolName(kind?: string, title?: string): string {
       return 'Searching files';
     case 'grep':
       return 'Searching content';
+    case 'execute_skill_script':
+      return 'Running skill script';
+    case 'read_skill_content':
+      return 'Loading skill';
     default:
       // Fall back to title if available, otherwise generic label
       if (title) return title;
@@ -428,6 +433,12 @@ export function useAIOperations() {
     return s.tabs.find((t) => t.id === s.activeTabId) ?? null;
   });
 
+  // Skill context for AI prompts
+  const skillDescriptions = useSkillStore((s) => s.getSkillDescriptionsForPrompt());
+  const notesageSkillDescriptions = useSkillStore((s) => s.getNotesageSkillDescriptionsForPrompt());
+  const agentInstructions = useSkillStore((s) => s.getMergedAgentInstructions());
+  const notesageAgentInstructions = useSkillStore((s) => s.getNotesageAgentInstructions());
+
   // Compose system message based on selected projects
   const composedSystemMessage = useMemo(() => {
     const parts: string[] = [];
@@ -472,12 +483,81 @@ export function useAIOperations() {
       parts.push(fileContext);
     }
 
+    // Inject agent instructions (before persona, so persona can override)
+    if (agentInstructions) {
+      parts.push(agentInstructions);
+    }
+
+    // Inject skill descriptions
+    if (skillDescriptions) {
+      parts.push(skillDescriptions);
+    }
+
     if (parts.length > 0) {
       return `${parts.join('\n\n')}\n\n${effectivePersona.systemMessage}`;
     }
 
     return effectivePersona.systemMessage;
-  }, [selectedProjectPaths, singleProjectPath, singleMetadata, goalsContext, singleProject, activeTab, metadataMap, effectivePersona.systemMessage]);
+  }, [selectedProjectPaths, singleProjectPath, singleMetadata, goalsContext, singleProject, activeTab, metadataMap, effectivePersona.systemMessage, agentInstructions, skillDescriptions]);
+
+  // ACP-specific system message: only Notesage-specific skills and instructions
+  // (the ACP agent discovers its own provider-specific skills and CLAUDE.md/AGENTS.md independently)
+  const acpSystemMessage = useMemo(() => {
+    const parts: string[] = [];
+
+    // Same project/goals/file-tree/active-file context as direct API
+    if (selectedProjectPaths.length === 1) {
+      if (singleMetadata) {
+        const header = buildProjectHeader(singleMetadata, singleProjectPath!);
+        if (header) parts.push(header);
+      } else if (singleProjectPath) {
+        parts.push(`Project root: ${singleProjectPath}`);
+      }
+      if (goalsContext) parts.push(goalsContext);
+      if (singleProject?.fileTree) {
+        const treeContext = buildFileTreeContext(singleProject.fileTree, singleProjectPath!);
+        if (treeContext) parts.push(treeContext);
+      }
+    } else if (selectedProjectPaths.length > 1) {
+      const summaries: string[] = [];
+      for (const path of selectedProjectPaths) {
+        const meta = metadataMap[path];
+        if (meta) {
+          summaries.push(buildProjectHeader(meta, path));
+        } else {
+          const name = path.split('/').pop() || path;
+          summaries.push(`Project: ${name}\nProject root: ${path}`);
+        }
+      }
+      parts.push(`The user has the following projects selected:\n\n${summaries.join('\n\n')}`);
+    }
+
+    if (activeTab) {
+      let fileContext = `Currently editing: ${activeTab.filePath}`;
+      if (activeTab.fileType === 'markdown' && activeTab.content) {
+        const snippet = activeTab.content.slice(0, 500);
+        const truncated = activeTab.content.length > 500 ? '...' : '';
+        fileContext += `\n\nFile content preview:\n${snippet}${truncated}`;
+      }
+      parts.push(fileContext);
+    }
+
+    // Only Notesage-specific agent instructions (not CLAUDE.md/AGENTS.md — ACP agent loads those itself)
+    if (notesageAgentInstructions) {
+      parts.push(notesageAgentInstructions);
+    }
+
+    // Only Notesage-specific skills (not provider skills — ACP agent discovers those itself)
+    if (notesageSkillDescriptions) {
+      parts.push(notesageSkillDescriptions);
+    }
+
+    if (parts.length > 0) {
+      return `${parts.join('\n\n')}\n\n${effectivePersona.systemMessage}`;
+    }
+
+    return effectivePersona.systemMessage;
+  }, [selectedProjectPaths, singleProjectPath, singleMetadata, goalsContext, singleProject, activeTab, metadataMap, effectivePersona.systemMessage, notesageAgentInstructions, notesageSkillDescriptions]);
 
   const generateText = useCallback(
     async (prompt: string): Promise<string> => {
@@ -529,7 +609,7 @@ export function useAIOperations() {
         });
 
         try {
-          const fullPrompt = `${composedSystemMessage}\n\n${prompt}`;
+          const fullPrompt = `${acpSystemMessage}\n\n${prompt}`;
           await invoke('acp_session_prompt', {
             instanceId,
             sessionId: session.session_id,
@@ -565,7 +645,7 @@ export function useAIOperations() {
         throw error;
       }
     },
-    [resolved, composedSystemMessage, effectiveConnection, selectedProjectPaths]
+    [resolved, composedSystemMessage, acpSystemMessage, effectiveConnection, selectedProjectPaths]
   );
 
   const sendChatMessage = useCallback(
@@ -730,7 +810,7 @@ export function useAIOperations() {
           try {
             // Prepend system prompt on the first message of a new session
             const promptContent = isNewSession
-              ? `${composedSystemMessage}\n\n${content}`
+              ? `${acpSystemMessage}\n\n${content}`
               : content;
             await invoke('acp_session_prompt', {
               instanceId,
@@ -869,7 +949,7 @@ export function useAIOperations() {
         setActiveTool(null);
       }
     },
-    [resolved, composedSystemMessage, webSearchEnabled, addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, effectiveConnection, selectedProjectPaths]
+    [resolved, composedSystemMessage, acpSystemMessage, webSearchEnabled, addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, effectiveConnection, selectedProjectPaths]
   );
 
   const cancelChat = useCallback(() => {
