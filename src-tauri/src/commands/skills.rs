@@ -515,3 +515,434 @@ fn resolve_interpreter(script_path: &Path) -> Result<(String, Vec<String>), Stri
         )),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    fn create_temp_dir() -> tempfile::TempDir {
+        tempfile::tempdir().expect("Failed to create temp dir")
+    }
+
+    // --- parse_frontmatter tests ---
+
+    #[test]
+    fn parse_frontmatter_full() {
+        let content = "---\nname: web-research\ndescription: Downloads web pages\nlicense: MIT\n---\nBody content here.";
+        let (fm, body) = parse_frontmatter(content);
+        let fm = fm.expect("should parse frontmatter");
+        assert_eq!(fm.name.unwrap(), "web-research");
+        assert_eq!(fm.description.unwrap(), "Downloads web pages");
+        assert_eq!(fm.license.unwrap(), "MIT");
+        assert_eq!(body, "Body content here.");
+    }
+
+    #[test]
+    fn parse_frontmatter_with_hyphenated_keys() {
+        let content = "---\nname: test\ndescription: test skill\nuser-invocable: false\ndisable-model-invocation: true\nallowed-tools:\n  - bash\n  - read\n---\nBody";
+        let (fm, _body) = parse_frontmatter(content);
+        let fm = fm.expect("should parse frontmatter");
+        assert_eq!(fm.user_invocable, Some(false));
+        assert_eq!(fm.disable_model_invocation, Some(true));
+        assert_eq!(fm.allowed_tools, Some(vec!["bash".to_string(), "read".to_string()]));
+    }
+
+    #[test]
+    fn parse_frontmatter_no_frontmatter() {
+        let content = "Just a regular markdown file.";
+        let (fm, body) = parse_frontmatter(content);
+        assert!(fm.is_none());
+        assert_eq!(body, content);
+    }
+
+    #[test]
+    fn parse_frontmatter_malformed_yaml() {
+        let content = "---\n: invalid: yaml: [[\n---\nBody";
+        let (fm, body) = parse_frontmatter(content);
+        assert!(fm.is_none());
+        assert_eq!(body, content);
+    }
+
+    #[test]
+    fn parse_frontmatter_no_closing_delimiter() {
+        let content = "---\nname: test\nNo closing delimiter";
+        let (fm, body) = parse_frontmatter(content);
+        assert!(fm.is_none());
+        assert_eq!(body, content);
+    }
+
+    #[test]
+    fn parse_frontmatter_multiline_body() {
+        let content = "---\nname: test\ndescription: a skill\n---\nLine 1\n\nLine 3";
+        let (fm, body) = parse_frontmatter(content);
+        assert!(fm.is_some());
+        assert_eq!(body, "Line 1\n\nLine 3");
+    }
+
+    // --- determine_source tests ---
+
+    #[test]
+    fn determine_source_bundled() {
+        assert_eq!(determine_source("/Users/me/.notesage/bundled-skills"), "bundled");
+        assert_eq!(determine_source("/app/bundled_skills"), "bundled");
+    }
+
+    #[test]
+    fn determine_source_providers() {
+        assert_eq!(determine_source("/Users/me/.claude/skills"), "claude");
+        assert_eq!(determine_source("/Users/me/.codex/skills"), "codex");
+        assert_eq!(determine_source("/Users/me/.gemini/skills"), "gemini");
+        assert_eq!(determine_source("/Users/me/.agents/skills"), "agents");
+    }
+
+    #[test]
+    fn determine_source_notesage_project() {
+        assert_eq!(determine_source("/projects/my-app/.notesage/skills"), "notesage-project");
+    }
+
+    #[test]
+    fn determine_source_unknown() {
+        assert_eq!(determine_source("/some/random/path"), "external");
+    }
+
+    // --- discover_skills tests (filesystem) ---
+
+    #[test]
+    fn discover_skills_finds_valid_skill() {
+        let tmp = create_temp_dir();
+        let skill_dir = tmp.path().join("my-skill");
+        fs::create_dir(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: my-skill\ndescription: A test skill\n---\nInstructions here.",
+        ).unwrap();
+        fs::create_dir(skill_dir.join("scripts")).unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(discover_skills(vec![tmp.path().to_string_lossy().to_string()]));
+        let skills = result.unwrap();
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].name, "my-skill");
+        assert_eq!(skills[0].description, "A test skill");
+        assert!(skills[0].has_scripts);
+        assert!(!skills[0].has_references);
+    }
+
+    #[test]
+    fn discover_skills_uses_dir_name_as_fallback() {
+        let tmp = create_temp_dir();
+        let skill_dir = tmp.path().join("fallback-name");
+        fs::create_dir(&skill_dir).unwrap();
+        fs::write(skill_dir.join("SKILL.md"), "---\ndescription: No name field\n---\n").unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(discover_skills(vec![tmp.path().to_string_lossy().to_string()]));
+        let skills = result.unwrap();
+        assert_eq!(skills[0].name, "fallback-name");
+    }
+
+    #[test]
+    fn discover_skills_skips_dirs_without_skill_md() {
+        let tmp = create_temp_dir();
+        fs::create_dir(tmp.path().join("not-a-skill")).unwrap();
+        fs::write(tmp.path().join("not-a-skill").join("README.md"), "hi").unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(discover_skills(vec![tmp.path().to_string_lossy().to_string()]));
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn discover_skills_skips_nonexistent_base_dir() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(discover_skills(vec!["/nonexistent/path/12345".to_string()]));
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    // --- read_skill_content tests ---
+
+    #[test]
+    fn read_skill_content_returns_body_and_files() {
+        let tmp = create_temp_dir();
+        let skill_dir = tmp.path().join("test-skill");
+        fs::create_dir(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: test-skill\ndescription: test\n---\nThe body content.\n\nMore body.",
+        ).unwrap();
+        let scripts_dir = skill_dir.join("scripts");
+        fs::create_dir(&scripts_dir).unwrap();
+        fs::write(scripts_dir.join("run.sh"), "#!/bin/bash\necho hi").unwrap();
+        let refs_dir = skill_dir.join("references");
+        fs::create_dir(&refs_dir).unwrap();
+        fs::write(refs_dir.join("spec.md"), "# Spec").unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(read_skill_content(skill_dir.to_string_lossy().to_string()));
+        let content = result.unwrap();
+        assert_eq!(content.name, "test-skill");
+        assert_eq!(content.body, "The body content.\n\nMore body.");
+        assert_eq!(content.scripts, vec!["scripts/run.sh"]);
+        assert_eq!(content.references, vec!["references/spec.md"]);
+        assert!(content.assets.is_empty());
+    }
+
+    #[test]
+    fn read_skill_content_errors_when_missing() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(read_skill_content("/nonexistent/skill".to_string()));
+        assert!(result.is_err());
+    }
+
+    // --- execute_skill_script tests ---
+
+    #[test]
+    fn execute_script_runs_bash() {
+        let tmp = create_temp_dir();
+        let scripts_dir = tmp.path().join("scripts");
+        fs::create_dir(&scripts_dir).unwrap();
+        fs::write(scripts_dir.join("hello.sh"), "#!/bin/bash\necho \"hello world\"").unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(execute_skill_script(
+            tmp.path().to_string_lossy().to_string(),
+            "scripts/hello.sh".to_string(),
+            vec![],
+            Some(tmp.path().to_string_lossy().to_string()),
+            None,
+            None,
+        ));
+        let res = result.unwrap();
+        assert_eq!(res.stdout.trim(), "hello world");
+        assert_eq!(res.exit_code, 0);
+        assert!(!res.timed_out);
+    }
+
+    #[test]
+    fn execute_script_captures_args() {
+        let tmp = create_temp_dir();
+        let scripts_dir = tmp.path().join("scripts");
+        fs::create_dir(&scripts_dir).unwrap();
+        fs::write(scripts_dir.join("echo_args.sh"), "#!/bin/bash\necho \"$1 $2\"").unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(execute_skill_script(
+            tmp.path().to_string_lossy().to_string(),
+            "scripts/echo_args.sh".to_string(),
+            vec!["foo".to_string(), "bar".to_string()],
+            Some(tmp.path().to_string_lossy().to_string()),
+            None,
+            None,
+        ));
+        let res = result.unwrap();
+        assert_eq!(res.stdout.trim(), "foo bar");
+    }
+
+    #[test]
+    fn execute_script_captures_stderr() {
+        let tmp = create_temp_dir();
+        let scripts_dir = tmp.path().join("scripts");
+        fs::create_dir(&scripts_dir).unwrap();
+        fs::write(scripts_dir.join("err.sh"), "#!/bin/bash\necho \"oops\" >&2\nexit 1").unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(execute_skill_script(
+            tmp.path().to_string_lossy().to_string(),
+            "scripts/err.sh".to_string(),
+            vec![],
+            Some(tmp.path().to_string_lossy().to_string()),
+            None,
+            None,
+        ));
+        let res = result.unwrap();
+        assert_eq!(res.stderr.trim(), "oops");
+        assert_eq!(res.exit_code, 1);
+    }
+
+    #[test]
+    fn execute_script_rejects_path_traversal() {
+        let tmp = create_temp_dir();
+        let scripts_dir = tmp.path().join("scripts");
+        fs::create_dir(&scripts_dir).unwrap();
+        fs::write(scripts_dir.join("ok.sh"), "echo ok").unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(execute_skill_script(
+            tmp.path().to_string_lossy().to_string(),
+            "../../../etc/passwd".to_string(),
+            vec![],
+            None,
+            None,
+            None,
+        ));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn execute_script_timeout() {
+        let tmp = create_temp_dir();
+        let scripts_dir = tmp.path().join("scripts");
+        fs::create_dir(&scripts_dir).unwrap();
+        fs::write(scripts_dir.join("slow.sh"), "#!/bin/bash\nsleep 60").unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(execute_skill_script(
+            tmp.path().to_string_lossy().to_string(),
+            "scripts/slow.sh".to_string(),
+            vec![],
+            Some(tmp.path().to_string_lossy().to_string()),
+            None,
+            Some(500), // 500ms timeout
+        ));
+        let res = result.unwrap();
+        assert!(res.timed_out);
+        assert_eq!(res.exit_code, -1);
+    }
+
+    #[test]
+    fn execute_script_with_env_vars() {
+        let tmp = create_temp_dir();
+        let scripts_dir = tmp.path().join("scripts");
+        fs::create_dir(&scripts_dir).unwrap();
+        fs::write(scripts_dir.join("env.sh"), "#!/bin/bash\necho $MY_VAR").unwrap();
+
+        let mut env = HashMap::new();
+        env.insert("MY_VAR".to_string(), "custom_value".to_string());
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(execute_skill_script(
+            tmp.path().to_string_lossy().to_string(),
+            "scripts/env.sh".to_string(),
+            vec![],
+            Some(tmp.path().to_string_lossy().to_string()),
+            Some(env),
+            None,
+        ));
+        let res = result.unwrap();
+        assert_eq!(res.stdout.trim(), "custom_value");
+    }
+
+    // --- resolve_interpreter tests ---
+
+    #[test]
+    fn resolve_interpreter_by_extension() {
+        let tmp = create_temp_dir();
+
+        let sh = tmp.path().join("test.sh");
+        fs::write(&sh, "echo hi").unwrap();
+        let (prog, args) = resolve_interpreter(&sh).unwrap();
+        assert_eq!(prog, "bash");
+        assert_eq!(args.len(), 1);
+
+        let py = tmp.path().join("test.py");
+        fs::write(&py, "print('hi')").unwrap();
+        let (prog, _) = resolve_interpreter(&py).unwrap();
+        assert_eq!(prog, "python3");
+
+        let js = tmp.path().join("test.js");
+        fs::write(&js, "console.log('hi')").unwrap();
+        let (prog, _) = resolve_interpreter(&js).unwrap();
+        assert_eq!(prog, "node");
+
+        let ts = tmp.path().join("test.ts");
+        fs::write(&ts, "console.log('hi')").unwrap();
+        let (prog, args) = resolve_interpreter(&ts).unwrap();
+        assert_eq!(prog, "npx");
+        assert_eq!(args[0], "tsx");
+    }
+
+    #[test]
+    fn resolve_interpreter_by_shebang() {
+        let tmp = create_temp_dir();
+        let script = tmp.path().join("run");
+        fs::write(&script, "#!/usr/bin/env python3\nprint('hi')").unwrap();
+        let (prog, args) = resolve_interpreter(&script).unwrap();
+        assert_eq!(prog, "python3");
+        assert!(args.last().unwrap().contains("run"));
+    }
+
+    #[test]
+    fn resolve_interpreter_shebang_direct_path() {
+        let tmp = create_temp_dir();
+        let script = tmp.path().join("run");
+        fs::write(&script, "#!/bin/bash\necho hi").unwrap();
+        let (prog, args) = resolve_interpreter(&script).unwrap();
+        assert_eq!(prog, "/bin/bash");
+        assert!(args.last().unwrap().contains("run"));
+    }
+
+    #[test]
+    fn resolve_interpreter_unknown_extension() {
+        let tmp = create_temp_dir();
+        let script = tmp.path().join("test.rb");
+        fs::write(&script, "puts 'hi'").unwrap();
+        let result = resolve_interpreter(&script);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains(".rb"));
+    }
+
+    #[test]
+    fn resolve_interpreter_no_extension_direct_exec() {
+        let tmp = create_temp_dir();
+        let script = tmp.path().join("myscript");
+        fs::write(&script, "no shebang, no extension").unwrap();
+        let (prog, args) = resolve_interpreter(&script).unwrap();
+        assert!(prog.contains("myscript"));
+        assert!(args.is_empty());
+    }
+
+    // --- read_agent_instructions tests ---
+
+    #[test]
+    fn read_agent_instructions_discovers_files() {
+        let tmp = create_temp_dir();
+        let root = tmp.path();
+
+        fs::write(root.join("AGENTS.md"), "# Agents instructions").unwrap();
+        fs::write(root.join("CLAUDE.md"), "# Claude instructions").unwrap();
+
+        let notesage_dir = root.join(".notesage");
+        fs::create_dir(&notesage_dir).unwrap();
+        fs::write(notesage_dir.join("agents.md"), "# Project agent instructions").unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(read_agent_instructions(
+            Some(root.to_string_lossy().to_string()),
+            vec!["claude-code".to_string()],
+        ));
+        let instructions = result.unwrap();
+
+        assert_eq!(instructions.len(), 3);
+        assert_eq!(instructions[0].source_type, "agents-md");
+        assert_eq!(instructions[0].priority, 1);
+        assert_eq!(instructions[1].source_type, "claude-md");
+        assert_eq!(instructions[1].priority, 2);
+        assert_eq!(instructions[2].source_type, "notesage-project");
+        assert_eq!(instructions[2].priority, 5);
+    }
+
+    #[test]
+    fn read_agent_instructions_skips_claude_when_not_connected() {
+        let tmp = create_temp_dir();
+        let root = tmp.path();
+        fs::write(root.join("CLAUDE.md"), "# Claude").unwrap();
+        fs::write(root.join("AGENTS.md"), "# Agents").unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(read_agent_instructions(
+            Some(root.to_string_lossy().to_string()),
+            vec![], // no providers connected
+        ));
+        let instructions = result.unwrap();
+        assert_eq!(instructions.len(), 1);
+        assert_eq!(instructions[0].source_type, "agents-md");
+    }
+
+    #[test]
+    fn read_agent_instructions_no_project_root() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(read_agent_instructions(None, vec![]));
+        // Should succeed with only global instructions (if they exist)
+        assert!(result.is_ok());
+    }
+}

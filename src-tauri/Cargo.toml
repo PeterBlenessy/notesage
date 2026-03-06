@@ -66,3 +66,6 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-http = "2.5.7"
 
+[dev-dependencies]
+tempfile = "3"
+
