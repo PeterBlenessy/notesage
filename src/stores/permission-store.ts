@@ -25,6 +25,12 @@ interface PermissionStore {
   /** Tool kinds always allowed (persisted across restarts). */
   alwaysAllowed: string[];
 
+  /** Skill names allowed to run scripts for the current session (non-persisted). */
+  skillScriptSession: Set<string>;
+
+  /** Skill names always allowed to run scripts (persisted). */
+  skillScriptAlways: string[];
+
   addRequest: (request: PermissionRequest) => void;
   removeRequest: (requestId: string) => void;
   clearRequestsForInstance: (instanceId: string) => void;
@@ -47,6 +53,18 @@ interface PermissionStore {
 
   /** Get the current permission tier for a tool kind. */
   getToolTier: (toolKind: string) => PermissionTier;
+
+  /** Check if a skill is allowed to execute scripts. */
+  isSkillScriptAllowed: (skillName: string) => PermissionTier;
+
+  /** Allow a skill to run scripts for this session. */
+  allowSkillScriptSession: (skillName: string) => void;
+
+  /** Always allow a skill to run scripts (persisted). */
+  allowSkillScriptAlways: (skillName: string) => void;
+
+  /** Remove a skill from the persistent always-allow list. */
+  removeSkillScriptAlways: (skillName: string) => void;
 }
 
 export const usePermissionStore = create<PermissionStore>()(
@@ -55,6 +73,8 @@ export const usePermissionStore = create<PermissionStore>()(
       requests: [],
       sessionAllowed: new Set<string>(),
       alwaysAllowed: [],
+      skillScriptSession: new Set<string>(),
+      skillScriptAlways: [],
 
       addRequest: (request) =>
         set((state) => ({
@@ -109,10 +129,38 @@ export const usePermissionStore = create<PermissionStore>()(
         if (state.sessionAllowed.has(toolKind)) return 'session';
         return 'none';
       },
+
+      isSkillScriptAllowed: (skillName) => {
+        const state = get();
+        if (state.skillScriptAlways.includes(skillName)) return 'always';
+        if (state.skillScriptSession.has(skillName)) return 'session';
+        return 'none';
+      },
+
+      allowSkillScriptSession: (skillName) =>
+        set((state) => {
+          const next = new Set(state.skillScriptSession);
+          next.add(skillName);
+          return { skillScriptSession: next };
+        }),
+
+      allowSkillScriptAlways: (skillName) =>
+        set((state) => {
+          if (state.skillScriptAlways.includes(skillName)) return state;
+          return { skillScriptAlways: [...state.skillScriptAlways, skillName] };
+        }),
+
+      removeSkillScriptAlways: (skillName) =>
+        set((state) => ({
+          skillScriptAlways: state.skillScriptAlways.filter((n) => n !== skillName),
+        })),
     }),
     {
       name: 'notesage-permissions',
-      partialize: (state) => ({ alwaysAllowed: state.alwaysAllowed }),
+      partialize: (state) => ({
+        alwaysAllowed: state.alwaysAllowed,
+        skillScriptAlways: state.skillScriptAlways,
+      }),
     }
   )
 );
