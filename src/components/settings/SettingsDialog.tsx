@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, UserCircle2, FileText, GitBranch, Cloud, Info, Loader2, ArrowUpCircle, ScrollText, Code, Download } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, UserCircle2, FileText, GitBranch, Cloud, Info, Loader2, ArrowUpCircle, ScrollText, Code, Download, Blocks } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -11,6 +11,7 @@ import { UseCaseRoutingSettings } from './UseCaseRoutingSettings';
 import { PersonasSettings } from './PersonasSettings';
 import { PromptsSettings } from './PromptsSettings';
 import { SyncSettings } from './SyncSettings';
+import { SkillsSettings } from './SkillsSettings';
 import { ChangelogDialog } from './ChangelogDialog';
 import { useSettingsStore, type MeasurementUnit } from '@/stores/settings-store';
 import { Label } from '@/components/ui/label';
@@ -29,7 +30,7 @@ import { cn } from '@/lib/utils';
 import { tauriApi } from '@/lib/tauri';
 import type { UpdateState } from '@/hooks/useAutoUpdate';
 
-export type SettingsTab = 'ai' | 'personas' | 'prompts' | 'editor' | 'git' | 'sync' | 'developer' | 'about';
+export type SettingsTab = 'ai' | 'personas' | 'prompts' | 'skills' | 'editor' | 'git' | 'sync' | 'developer' | 'about';
 
 interface SettingsDialogProps {
   open?: boolean;
@@ -45,6 +46,7 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
   { id: 'ai', label: 'AI Providers', icon: Sparkles },
   { id: 'personas', label: 'AI Personas', icon: UserCircle2 },
   { id: 'prompts', label: 'Custom Prompts', icon: FileText },
+  { id: 'skills', label: 'Skills & Agents', icon: Blocks },
   { id: 'git', label: 'Version Control', icon: GitBranch },
   { id: 'sync', label: 'Sync', icon: Cloud },
   { id: 'developer', label: 'Developer', icon: Code },
@@ -271,6 +273,12 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
             {activeTab === 'prompts' && (
               <div className="p-6">
                 <PromptsSettings />
+              </div>
+            )}
+
+            {activeTab === 'skills' && (
+              <div className="p-6">
+                <SkillsSettings />
               </div>
             )}
 

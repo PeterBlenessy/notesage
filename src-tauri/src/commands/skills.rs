@@ -436,6 +436,90 @@ pub async fn read_agent_instructions(
     Ok(instructions)
 }
 
+/// Bundled skill file content embedded at compile time.
+struct BundledFile {
+    relative_path: &'static str,
+    content: &'static str,
+    executable: bool,
+}
+
+/// Extract bundled skills to ~/.notesage/bundled-skills/.
+/// Always overwrites to ensure bundled skills stay up-to-date with app version.
+#[tauri::command]
+pub async fn extract_bundled_skills() -> Result<String, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Cannot determine home directory".to_string())?;
+    let bundled_dir = home.join(".notesage").join("bundled-skills");
+
+    let bundled_files: Vec<BundledFile> = vec![
+        // create-skill
+        BundledFile {
+            relative_path: "create-skill/SKILL.md",
+            content: include_str!("../../../bundled-skills/create-skill/SKILL.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "create-skill/scripts/scaffold.sh",
+            content: include_str!("../../../bundled-skills/create-skill/scripts/scaffold.sh"),
+            executable: true,
+        },
+        BundledFile {
+            relative_path: "create-skill/scripts/validate.sh",
+            content: include_str!("../../../bundled-skills/create-skill/scripts/validate.sh"),
+            executable: true,
+        },
+        BundledFile {
+            relative_path: "create-skill/references/SKILL-SPEC.md",
+            content: include_str!("../../../bundled-skills/create-skill/references/SKILL-SPEC.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "create-skill/references/EXAMPLES.md",
+            content: include_str!("../../../bundled-skills/create-skill/references/EXAMPLES.md"),
+            executable: false,
+        },
+        // create-agent
+        BundledFile {
+            relative_path: "create-agent/SKILL.md",
+            content: include_str!("../../../bundled-skills/create-agent/SKILL.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "create-agent/scripts/scaffold.sh",
+            content: include_str!("../../../bundled-skills/create-agent/scripts/scaffold.sh"),
+            executable: true,
+        },
+        BundledFile {
+            relative_path: "create-agent/references/AGENT-PATTERNS.md",
+            content: include_str!("../../../bundled-skills/create-agent/references/AGENT-PATTERNS.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "create-agent/references/EXAMPLES.md",
+            content: include_str!("../../../bundled-skills/create-agent/references/EXAMPLES.md"),
+            executable: false,
+        },
+    ];
+
+    for file in &bundled_files {
+        let target = bundled_dir.join(file.relative_path);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create directory for {}: {}", file.relative_path, e))?;
+        }
+        fs::write(&target, file.content)
+            .map_err(|e| format!("Failed to write {}: {}", file.relative_path, e))?;
+
+        #[cfg(unix)]
+        if file.executable {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&target, fs::Permissions::from_mode(0o755));
+        }
+    }
+
+    Ok(bundled_dir.to_string_lossy().to_string())
+}
+
 fn try_read_instruction(
     root: &Path,
     filename: &str,

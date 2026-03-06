@@ -1,5 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { ArrowUp, Square } from 'lucide-react';
+import { SkillCommandMenu, type SkillCommandMenuHandle } from './SkillCommandMenu';
+import type { SkillEntry } from '@/stores/skill-store';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -12,7 +14,10 @@ interface ChatInputProps {
 
 export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = 'Ask anything...', footer }: ChatInputProps) {
   const [message, setMessage] = useState('');
+  const [showSkillMenu, setShowSkillMenu] = useState(false);
+  const [skillQuery, setSkillQuery] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const menuRef = useRef<SkillCommandMenuHandle>(null);
 
   const autoResize = useCallback(() => {
     const el = textareaRef.current;
@@ -25,6 +30,7 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
     if (message.trim() && !disabled) {
       onSend(message.trim());
       setMessage('');
+      setShowSkillMenu(false);
       requestAnimationFrame(() => {
         const el = textareaRef.current;
         if (el) {
@@ -34,7 +40,30 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
     }
   };
 
+  const handleChange = (value: string) => {
+    setMessage(value);
+
+    // Show skill menu when input starts with / and has no spaces or newlines
+    if (value.startsWith('/') && !value.includes(' ') && !value.includes('\n')) {
+      setShowSkillMenu(true);
+      setSkillQuery(value.slice(1));
+    } else {
+      setShowSkillMenu(false);
+    }
+  };
+
+  const handleSkillSelect = (skill: SkillEntry) => {
+    setMessage(`/${skill.name} `);
+    setShowSkillMenu(false);
+    textareaRef.current?.focus();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Let skill menu handle keys first
+    if (showSkillMenu && menuRef.current?.handleKeyDown(e)) {
+      return;
+    }
+
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       handleSubmit();
@@ -65,15 +94,21 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
   ) : null;
 
   return (
-    <div
-      className="rounded-xl border border-border bg-background transition-colors"
-    >
+    <div className="relative rounded-xl border border-border bg-background transition-colors">
+      {showSkillMenu && (
+        <SkillCommandMenu
+          ref={menuRef}
+          query={skillQuery}
+          onSelect={handleSkillSelect}
+          onClose={() => setShowSkillMenu(false)}
+        />
+      )}
       <div className="flex items-end gap-2 px-3 py-2">
         <textarea
           ref={textareaRef}
           value={message}
           onChange={(e) => {
-            setMessage(e.target.value);
+            handleChange(e.target.value);
             autoResize();
           }}
           onKeyDown={handleKeyDown}

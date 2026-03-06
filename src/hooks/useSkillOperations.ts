@@ -79,6 +79,13 @@ export function useSkillDiscovery() {
     if (!startupReady) return;
 
     const run = async () => {
+      // Extract bundled skills to ~/.notesage/bundled-skills/ (always overwrites to stay current)
+      try {
+        await invoke<string>('extract_bundled_skills');
+      } catch (e) {
+        console.warn('Failed to extract bundled skills:', e);
+      }
+
       const baseDirs: string[] = [];
 
       // Always include Notesage global skills

@@ -1,5 +1,5 @@
 import type { Editor } from "@tiptap/core";
-import { ArrowUpCircle, Command, GitBranch } from "lucide-react";
+import { ArrowUpCircle, Command, GitBranch, ScrollText } from "lucide-react";
 import type { ViewMode } from "@/lib/file-utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useSkillStore } from "@/stores/skill-store";
 import { CommentListPopover } from "./CommentListPopover";
 import { ChangeListPopover } from "./ChangeListPopover";
 import type { Comment } from "@/stores/comment-store";
@@ -44,6 +45,60 @@ function CopilotMaxCharsSlider() {
         className="w-full"
       />
     </div>
+  );
+}
+
+function AgentInstructionsIndicator() {
+  const agentInstructions = useSkillStore((s) => s.agentInstructions);
+  const count = agentInstructions.length;
+
+  if (count === 0) return null;
+
+  return (
+    <>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+            title="Agent instructions"
+          >
+            <ScrollText className="h-3 w-3" strokeWidth={1.5} />
+            <span>{count}</span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-56 p-3" sideOffset={6}>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <ScrollText className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+              <span className="text-xs font-medium">Agent Instructions</span>
+            </div>
+            <p className="text-[10px] text-muted-foreground/60 leading-tight">
+              {count} {count === 1 ? 'file' : 'files'} loaded into AI context
+            </p>
+            <div className="space-y-1">
+              {agentInstructions
+                .slice()
+                .sort((a, b) => b.priority - a.priority)
+                .map((inst) => {
+                  const filename = inst.source.split('/').pop() || inst.source;
+                  return (
+                    <div
+                      key={`${inst.source_type}-${inst.priority}`}
+                      className="flex items-center gap-1.5 text-[10px] text-muted-foreground"
+                    >
+                      <span className="tabular-nums text-muted-foreground/40 w-3 text-right shrink-0">
+                        {inst.priority}
+                      </span>
+                      <span className="truncate">{filename}</span>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+      <span className="w-px h-2.5 bg-border" />
+    </>
   );
 }
 
@@ -227,6 +282,7 @@ export function StatusBar({
             <span className="w-px h-2.5 bg-border" />
           </>
         )}
+        <AgentInstructionsIndicator />
         {copilotActive && onToggleCopilot && (
           <>
             <Popover>

@@ -1,0 +1,306 @@
+import { RefreshCw, ScrollText, ChevronDown, Plus } from 'lucide-react';
+import { useState } from 'react';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { useSkillStore, type SkillEntry } from '@/stores/skill-store';
+import { cn } from '@/lib/utils';
+import { NewSkillWizard } from '@/components/NewSkillWizard';
+import { NewAgentWizard } from '@/components/NewAgentWizard';
+
+/** Source label and badge styling */
+function sourceLabel(source: string): string {
+  switch (source) {
+    case 'notesage-project': return 'Project';
+    case 'notesage-global': return 'Global';
+    case 'bundled': return 'Built-in';
+    case 'claude': return 'Claude Code';
+    case 'codex': return 'Codex';
+    case 'gemini': return 'Gemini';
+    case 'agents': return 'Agents';
+    default: return 'External';
+  }
+}
+
+function sourceBadgeClass(source: string): string {
+  const base = 'text-[10px] px-1.5 py-0.5 rounded-full border';
+  switch (source) {
+    case 'notesage-project':
+    case 'notesage-global':
+      return `${base} border-foreground/20 text-foreground/70`;
+    case 'bundled':
+      return `${base} border-foreground/15 text-muted-foreground`;
+    default:
+      return `${base} border-border text-muted-foreground`;
+  }
+}
+
+/** Check if a skill is overridden by a higher-priority same-name skill. */
+function isOverridden(skill: SkillEntry, allSkills: SkillEntry[]): SkillEntry | null {
+  const priorities: Record<string, number> = {
+    'bundled': 0, 'external': 1, 'agents': 2, 'gemini': 2,
+    'codex': 2, 'claude': 2, 'notesage-global': 3, 'notesage-project': 4,
+  };
+  const myPriority = priorities[skill.source] ?? 1;
+  for (const other of allSkills) {
+    if (other.name === skill.name && other.path !== skill.path) {
+      const otherPriority = priorities[other.source] ?? 1;
+      if (otherPriority > myPriority) return other;
+    }
+  }
+  return null;
+}
+
+function SkillCard({ skill, allSkills }: { skill: SkillEntry; allSkills: SkillEntry[] }) {
+  const { enabledOverrides, toggleSkill } = useSkillStore();
+  const overriddenBy = isOverridden(skill, allSkills);
+  const isEnabled = enabledOverrides[skill.path] !== false;
+  const isExternal = !['notesage-project', 'notesage-global', 'bundled'].includes(skill.source);
+
+  return (
+    <div
+      className={cn(
+        'flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg border border-border transition-colors duration-150',
+        overriddenBy ? 'opacity-50' : 'hover:border-muted-foreground',
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium truncate">{skill.name}</span>
+          {skill.has_scripts && (
+            <span className="text-[10px] text-muted-foreground/60">scripts</span>
+          )}
+        </div>
+        {skill.description && (
+          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+            {skill.description}
+          </p>
+        )}
+        {overriddenBy && (
+          <p className="text-[10px] text-muted-foreground/60 mt-1">
+            Overridden by {sourceLabel(overriddenBy.source)}
+          </p>
+        )}
+      </div>
+      {!overriddenBy && !isExternal && (
+        <Switch
+          checked={isEnabled}
+          onCheckedChange={(checked) => toggleSkill(skill.path, checked)}
+          className="scale-75 origin-center shrink-0 mt-0.5"
+        />
+      )}
+    </div>
+  );
+}
+
+function SkillGroup({
+  title,
+  skills,
+  allSkills,
+  readOnly,
+}: {
+  title: string;
+  skills: SkillEntry[];
+  allSkills: SkillEntry[];
+  readOnly?: boolean;
+}) {
+  if (skills.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          {title}
+        </span>
+        {readOnly && (
+          <span className="text-[10px] text-muted-foreground/60">read-only</span>
+        )}
+      </div>
+      <div className="space-y-1.5">
+        {skills.map((skill) => (
+          <SkillCard key={skill.path} skill={skill} allSkills={allSkills} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function SkillsSettings() {
+  const { skills, agentInstructions, isScanning, scanSkills, lastScanTimestamp } = useSkillStore();
+
+  // Group skills by source
+  const projectSkills = skills.filter((s) => s.source === 'notesage-project');
+  const globalSkills = skills.filter((s) => s.source === 'notesage-global');
+  const bundledSkills = skills.filter((s) => s.source === 'bundled');
+  const claudeSkills = skills.filter((s) => s.source === 'claude');
+  const codexSkills = skills.filter((s) => s.source === 'codex');
+  const geminiSkills = skills.filter((s) => s.source === 'gemini');
+  const agentsSkills = skills.filter((s) => s.source === 'agents');
+
+  const [instructionsExpanded, setInstructionsExpanded] = useState(false);
+  const [skillWizardOpen, setSkillWizardOpen] = useState(false);
+  const [agentWizardOpen, setAgentWizardOpen] = useState(false);
+
+  const handleRescan = async () => {
+    // Trigger a rescan (the hook manages which directories to scan)
+    // For now, re-use the last scan's directories via the store
+    // The useSkillDiscovery hook will handle the actual rescan on next render
+    const store = useSkillStore.getState();
+    if (store.skills.length > 0) {
+      // Extract unique base dirs from existing skill paths
+      const baseDirs = new Set<string>();
+      for (const skill of store.skills) {
+        const parent = skill.path.substring(0, skill.path.lastIndexOf('/'));
+        baseDirs.add(parent);
+      }
+      await scanSkills(Array.from(baseDirs));
+    }
+  };
+
+  const sortedInstructions = [...agentInstructions].sort((a, b) => b.priority - a.priority);
+
+  return (
+    <div className="space-y-6">
+      {/* Skills Section */}
+      <div className="space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <Label className="text-sm font-semibold">Skills</Label>
+            <p className="text-xs text-muted-foreground mt-1">
+              Discovered skills from your projects, global config, and connected providers
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSkillWizardOpen(true)}
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
+              New Skill
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRescan}
+              disabled={isScanning}
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', isScanning && 'animate-spin')} strokeWidth={1.5} />
+              {isScanning ? 'Scanning...' : 'Rescan'}
+            </Button>
+          </div>
+        </div>
+
+        {skills.length === 0 ? (
+          <div className="px-4 py-8 text-center rounded-lg border border-dashed border-border">
+            <p className="text-sm text-muted-foreground">No skills discovered</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">
+              Add skills to <code className="text-[11px]">.notesage/skills/</code> in your project
+              or <code className="text-[11px]">~/.notesage/skills/</code> globally
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <SkillGroup title="Project (.notesage/skills/)" skills={projectSkills} allSkills={skills} />
+            <SkillGroup title="Global (~/.notesage/skills/)" skills={globalSkills} allSkills={skills} />
+            <SkillGroup title="Built-in" skills={bundledSkills} allSkills={skills} />
+            <SkillGroup title="Claude Code (~/.claude/skills/)" skills={claudeSkills} allSkills={skills} readOnly />
+            <SkillGroup title="Codex (~/.codex/skills/)" skills={codexSkills} allSkills={skills} readOnly />
+            <SkillGroup title="Gemini (~/.gemini/skills/)" skills={geminiSkills} allSkills={skills} readOnly />
+            <SkillGroup title="Agents (~/.agents/skills/)" skills={agentsSkills} allSkills={skills} readOnly />
+          </div>
+        )}
+      </div>
+
+      <div className="h-px bg-border" />
+
+      {/* Agent Instructions Section */}
+      <div className="space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <Label className="text-sm font-semibold">Agent Instructions</Label>
+            <p className="text-xs text-muted-foreground mt-1">
+              Instruction files injected into AI context. Higher priority files take precedence.
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setAgentWizardOpen(true)}
+            className="shrink-0"
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
+            New
+          </Button>
+        </div>
+
+        {agentInstructions.length === 0 ? (
+          <div className="px-4 py-8 text-center rounded-lg border border-dashed border-border">
+            <p className="text-sm text-muted-foreground">No agent instruction files found</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">
+              Create <code className="text-[11px]">.notesage/agents.md</code> in your project
+              or <code className="text-[11px]">~/.notesage/agents.md</code> globally
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {sortedInstructions.map((inst) => {
+              const isNotesage = inst.source_type === 'notesage-project' || inst.source_type === 'notesage-global';
+              const filename = inst.source.split('/').pop() || inst.source;
+
+              return (
+                <div
+                  key={`${inst.source_type}-${inst.priority}`}
+                  className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[10px] font-medium text-muted-foreground/60 tabular-nums w-4 shrink-0 text-right">
+                      {inst.priority}
+                    </span>
+                    <ScrollText className="h-3.5 w-3.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                    <span className="text-sm truncate">{filename}</span>
+                    <span className={sourceBadgeClass(inst.source_type)}>
+                      {sourceLabel(inst.source_type)}
+                    </span>
+                  </div>
+                  {!isNotesage && (
+                    <span className="text-[10px] text-muted-foreground/60 shrink-0">read-only</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Preview merged context */}
+        {agentInstructions.length > 0 && (
+          <Collapsible open={instructionsExpanded} onOpenChange={setInstructionsExpanded}>
+            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+              <ChevronDown
+                className={cn('h-3 w-3 transition-transform duration-150', !instructionsExpanded && '-rotate-90')}
+                strokeWidth={1.5}
+              />
+              Preview merged context
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <pre className="mt-2 p-3 rounded-lg bg-muted text-xs text-muted-foreground whitespace-pre-wrap max-h-48 overflow-y-auto thin-scrollbar">
+                {useSkillStore.getState().getMergedAgentInstructions()}
+              </pre>
+            </CollapsibleContent>
+          </Collapsible>
+        )}
+      </div>
+
+      {/* Last scan info */}
+      {lastScanTimestamp > 0 && (
+        <p className="text-[10px] text-muted-foreground/40">
+          Last scanned: {new Date(lastScanTimestamp).toLocaleTimeString()}
+        </p>
+      )}
+
+      <NewSkillWizard open={skillWizardOpen} onOpenChange={setSkillWizardOpen} />
+      <NewAgentWizard open={agentWizardOpen} onOpenChange={setAgentWizardOpen} />
+    </div>
+  );
+}

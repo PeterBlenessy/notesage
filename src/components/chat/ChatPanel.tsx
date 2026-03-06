@@ -13,6 +13,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useAIOperations } from '@/hooks/useAIOperations';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { usePermissionStore, type PermissionTier } from '@/stores/permission-store';
+import { useSkillStore, type SkillContent } from '@/stores/skill-store';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { PermissionCard } from './PermissionCard';
@@ -164,7 +165,25 @@ export function ChatPanel() {
       createConversation();
     }
 
-    await sendChatMessage(content, messages);
+    // Detect /skill-name prefix and expand with skill body
+    let expandedContent = content;
+    const slashMatch = content.match(/^\/([a-z0-9][a-z0-9-]*)\s*(.*)/s);
+    if (slashMatch) {
+      const skillName = slashMatch[1];
+      const restOfMessage = slashMatch[2];
+      const skill = useSkillStore.getState().skills.find((s) => s.name === skillName);
+      if (skill) {
+        try {
+          const skillContent = await invoke<SkillContent>('read_skill_content', { skillPath: skill.path });
+          expandedContent = `[Using skill: ${skillName}]\n\n${skillContent.body}\n\n---\n\nUser request: ${restOfMessage}`;
+        } catch {
+          toast.error(`Failed to load skill "${skillName}"`);
+          return;
+        }
+      }
+    }
+
+    await sendChatMessage(expandedContent, messages);
   };
 
   const handleClear = () => {
