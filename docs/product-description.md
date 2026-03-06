@@ -509,49 +509,58 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 
 ## Roadmap
 
-### Phase 7 — AI-Assisted Research
+### Phase 7 — Skills & Agents Platform
 
-**Goal:** AI-powered research workflow — collect, store, synthesize, and draft from web sources.
+**Goal:** Extensible AI capability system based on open standards — users can add new AI skills and agent behaviors by dropping folders, with no app rebuild required.
 
-**Features:**
+**Step A — Agent Skills & Script Execution:**
 
-- Research reference management
-  - Save web URLs as references in `.notesage/research/`
-  - Download and convert web pages to markdown files for offline access
-  - Reference metadata (URL, title, date captured, tags)
-- AI synthesis
-  - Distill multiple research sources into concise summaries
-  - Extract key findings, quotes, and data points
-  - Cross-reference research with project goals
-- Content drafting
-  - Generate drafts from collected research
-  - Summarize project content based on research corpus
-  - Insert citations linking back to source material
+- Discover existing skills from connected providers' filesystem paths (`~/.claude/skills/`, `~/.codex/skills/`, `~/.gemini/skills/`, etc.)
+- Notesage skill hierarchy: project `.notesage/skills/` overrides global `~/.notesage/skills/`, which overrides external provider skills
+- Agent instruction files: `.notesage/agents.md` (project/global) injected into AI context, with discovery of existing AGENTS.md/CLAUDE.md/GEMINI.md
+- Script execution runtime: Tauri command for running skill scripts (bash, python, node), available to all connection types (ACP and direct API)
+- Built-in meta-skills: `create-skill` and `create-agent` ship with the app — the system dogfoods itself
+- Wizard UI for non-technical users + prompt-based creation for advanced users
+- Skills browser in settings for viewing, enabling/disabling, and managing discovered skills
+- Progressive disclosure: only skill descriptions loaded initially (~100 tokens each), full body and scripts loaded on demand
+- Permission model: per-execution, per-session, or always-allow for script execution, extending existing ACP permission tiers
 
-**Architecture considerations:**
+**Step B — MCP Client Integration:**
 
-- New Tauri commands for web page fetching and HTML-to-markdown conversion
-- Research store with search/filter capabilities
-- Builds on web search and document identity infrastructure
-
-### Phase 8 — Workflows & Automation
-
-**Goal:** User-defined automation for repetitive AI-assisted tasks.
-
-**Features:**
-
-- YAML-defined custom workflows
-  - Multi-step AI operations
-  - Conditional logic and branching
-  - File transformations and batch processing
-- Workflow engine in Rust backend
-- Workflow templates (e.g., "review all documents", "update summaries", "check goals progress")
+- MCP (Model Context Protocol) client in Rust backend using stdio transport
+- Spawn and manage MCP servers as child processes
+- Tool discovery from connected servers, merged with skill registry
+- Import existing MCP server configurations from Claude Desktop, Cursor, VS Code, etc.
+- `.notesage/mcp.json` (project) and `~/.notesage/mcp.json` (global) for Notesage-specific servers
+- Settings UI for MCP server management
 
 **Architecture considerations:**
 
-- Workflow engine in Rust backend
-- New store: `workflow-store`
-- Workflow definitions in `.notesage/workflows/`
+- Adopts two complementary open standards: Agent Skills (SKILL.md) for capabilities/workflows, MCP for callable tool servers
+- Agent Skills adopted by Claude Code, Codex CLI, Gemini CLI, VS Code Copilot, Cursor, and 30+ tools (350,000+ skills available)
+- MCP adopted by all major AI tools with 5,800+ servers and 300+ clients
+- Script execution via `std::process::Command` with timeout, path traversal protection, and interpreter resolution
+- Phase 10 sandboxing wraps the script execution layer with OS-level isolation
+- PRD: `docs/prds/2026-03-05-skills-and-agents-platform.md`
+
+### Phase 8 — AI-Assisted Research (Skill Pack)
+
+**Goal:** AI-powered research workflow — collect, store, synthesize, and draft from web sources. Implemented as a skill pack using the Phase 7 Skills & Agents Platform.
+
+**Features:**
+
+- Ships as bundled skills in the app, using the same Agent Skills format as user-created skills
+- `download-webpage` skill: fetch URL, extract content, convert to markdown, save to `.notesage/research/`
+- `save-research` skill: organize research files with metadata (URL, title, date, tags)
+- `synthesize-sources` skill: read multiple research files, generate summaries, extract key findings
+- `insert-citation` skill: add reference links into documents from research corpus
+- Users can customize or extend the research skills like any other skill
+
+**Architecture considerations:**
+
+- No custom hardcoded features — entirely built on Phase 7 infrastructure
+- Skills have scripts for deterministic operations (web fetching, file organization)
+- Research files stored in `.notesage/research/` (already part of the metadata directory pattern)
 
 ### Phase 9 — Local AI
 
@@ -580,22 +589,24 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - Managed agent binary installation to `~/.notesage/agents/` (download from GitHub Releases, no Node.js required for 4/5 agents)
 - Portable Node.js runtime for Gemini CLI (the only agent that genuinely needs it)
 - Prefer user-installed system binaries when available — only offer managed install when not found
-- OS-level filesystem sandboxing for managed installs (Seatbelt on macOS, Bubblewrap/Landlock on Linux)
-- Network sandboxing via proxy with per-agent domain allowlists (Phase 2)
+- OS-level filesystem sandboxing for managed installs and skill script execution (Seatbelt on macOS, Bubblewrap/Landlock on Linux)
+- Network sandboxing via proxy with per-agent domain allowlists
 - Automatic update checking with one-click updates
-- User-configurable sandbox policies per connection (Phase 3)
+- User-configurable sandbox policies per connection
 
 **Architecture considerations:**
 
 - New Rust modules: `agent_manager.rs` (install, update, resolve), `sandbox.rs` (Seatbelt profiles, bwrap args)
 - GitHub Releases API for binary downloads, npm registry fallback for Gemini
-- Defense in depth: installation isolation + runtime sandbox + ACP permissions
+- Defense in depth: installation isolation + runtime sandbox + ACP permissions + skill script sandboxing
+- Phase 7's `execute_skill_script` is the primary target for sandboxing — scripts gain OS-level isolation with no changes to the skill format
 - PRD: `docs/prds/2026-02-21-agent-install-wizard.md`
 
 ### Beyond — Ideas
 
 Not committed, but potential future features:
 
+- **Workflows & Automation:** User-defined YAML workflows for repetitive AI tasks — implementable as a `workflow-runner` skill using Phase 7 infrastructure
 - **Collaboration:** Real-time collaborative editing (CRDT-based), share notes via link, version history with visual diff
 - **Mobile apps:** iOS app (Swift + Tauri Mobile), Android, sync across devices
 - **Plugins:** Plugin API (Rust or WASM), community marketplace, custom AI providers and export formats
@@ -608,12 +619,13 @@ Not committed, but potential future features:
 These choices from earlier work enable the roadmap ahead:
 
 1. **ProseMirror over simpler editors** — Decoration system enables inline diffs and AI suggestion overlays. Plugin system allows comment marks without rewriting the editor. CRDT-friendly for future real-time collaboration.
-2. **Tauri commands for all I/O** — Pattern established for file/git operations extends to filesystem watching, agent task management, and web page fetching. Security boundary for AI and agent operations.
-3. **Zustand stores with clear boundaries** — Easy to add new stores (comment-store, workflow-store). Persist middleware supports offline-first approach.
-4. `.notesage/` **metadata directory** — Supports sidecar comments, research storage, workflow definitions, agent task queues. Project-relative paths keep everything portable.
+2. **Tauri commands for all I/O** — Pattern established for file/git operations extends to filesystem watching, agent task management, skill script execution, and web page fetching. Security boundary for AI and agent operations.
+3. **Zustand stores with clear boundaries** — Easy to add new stores (comment-store, skill-store). Persist middleware supports offline-first approach.
+4. `.notesage/` **metadata directory** — Supports sidecar comments, skill directories, agent instructions, research storage, workflow definitions. Project-relative paths keep everything portable.
 5. **YAML frontmatter with lazy document UUID** — Stable document identity enables comments that survive renames, cross-document references, and AI task assignments.
-6. **Provider abstraction (**`AIProvider` **interface)** — Extends to Anthropic Agent SDK, local AI. Web search already implemented as provider-native tools.
-7. **Component modularity** — Sidebar, editor, tabs, chat panel are separate — easy to add comment panel, research panel. shadcn/ui components are composable.
+6. **Provider abstraction (**`AIProvider` **interface)** — Extends to local AI, new providers. Web search already implemented as provider-native tools.
+7. **Component modularity** — Sidebar, editor, tabs, chat panel are separate — easy to add skills browser, research panel. shadcn/ui components are composable.
+8. **Open standards adoption (Agent Skills + MCP)** — Skills and tools follow widely adopted cross-tool standards rather than a proprietary format. Users can leverage existing skills from Claude Code, Codex, Gemini CLI, and 30+ tools without migration. New capabilities are added by dropping folders, not rebuilding the app.
 
 ## Implementation Philosophy
 
