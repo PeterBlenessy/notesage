@@ -367,6 +367,8 @@
 
 .ProseMirror ul[data-type="taskList"] li > div {
   flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 /* Chat message markdown */
