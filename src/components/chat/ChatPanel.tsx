@@ -17,6 +17,7 @@ import { useSkillStore, type SkillContent } from '@/stores/skill-store';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { PermissionCard } from './PermissionCard';
+import { QuickReplies } from './QuickReplies';
 import {
   Tooltip,
   TooltipContent,
@@ -379,9 +380,17 @@ export function ChatPanel() {
           </div>
         ) : (
           <>
-            {messages.map((message, index) => (
-              <ChatMessage key={index} message={message} />
-            ))}
+            {messages.map((message, index) => {
+              const isLastAssistant = !isLoading && message.role === 'assistant' && index === messages.length - 1;
+              return (
+                <div key={index}>
+                  <ChatMessage message={message} />
+                  {isLastAssistant && message.content && (
+                    <QuickReplies content={message.content} onSelect={handleSend} />
+                  )}
+                </div>
+              );
+            })}
             {isLoading && !activeTool && (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
