@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
 import { tauriApi } from "@/lib/tauri";
 import { useEditorStore } from "@/stores/editor-store";
 import { useExternalChangeStore } from "@/stores/external-change-store";
@@ -16,7 +15,7 @@ import { parseFrontmatter } from "@/lib/frontmatter";
 let cachedHomeDir: string | undefined;
 async function getHomeDir(): Promise<string> {
   if (!cachedHomeDir) {
-    cachedHomeDir = await invoke<string>("get_home_dir");
+    cachedHomeDir = await tauriApi.getHomeDir();
   }
   return cachedHomeDir;
 }

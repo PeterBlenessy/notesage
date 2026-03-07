@@ -5,31 +5,9 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import { useAIStore } from '@/stores/ai-store';
-import { invoke } from '@tauri-apps/api/core';
+import { tauriApi } from '@/lib/tauri';
 import { toast } from 'sonner';
 import type { ConnectionProvider } from '@/lib/ai/connections';
-
-/** Map connection provider to skill discovery filesystem paths. */
-function getSkillPathsForProvider(provider: ConnectionProvider): string[] {
-  switch (provider) {
-    case 'anthropic':
-      // Only scan claude skills if the connection is agent_managed (Claude Code)
-      // API key connections don't have a local skills directory
-      return [];
-    case 'openai':
-      return [];
-    case 'github':
-      return ['~/.agents/skills'];
-    case 'google':
-      return ['~/.gemini/skills', '~/.agents/skills'];
-    case 'ollama':
-      return [];
-    case 'openai_compatible':
-      return [];
-    default:
-      return [];
-  }
-}
 
 /** Map connection provider + auth method to skill paths. */
 function getSkillPathsForConnection(provider: ConnectionProvider, authMethod: string): string[] {
@@ -39,7 +17,7 @@ function getSkillPathsForConnection(provider: ConnectionProvider, authMethod: st
     case 'openai': return ['~/.codex/skills'];
     case 'github': return ['~/.agents/skills'];
     case 'google': return ['~/.gemini/skills', '~/.agents/skills'];
-    default: return getSkillPathsForProvider(provider);
+    default: return [];
   }
 }
 
@@ -62,7 +40,7 @@ function getAgentPathsForConnection(provider: ConnectionProvider, authMethod: st
 /** Resolve ~ to the home directory. */
 async function expandHome(path: string): Promise<string> {
   if (!path.startsWith('~/')) return path;
-  const home = await invoke<string>('get_home_dir');
+  const home = await tauriApi.getHomeDir();
   return path.replace('~', home);
 }
 
@@ -82,6 +60,11 @@ function getConnectedProviderTypes(): string[] {
     }
   }
   return types;
+}
+
+/** Convert a persona name to a filesystem-safe slug for agent file naming. */
+function personaToSlug(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
 /** Built-in persona ID → bundled agent name mapping. */
@@ -116,10 +99,10 @@ async function migratePersonasToAgents(home: string) {
     let allExist = personasMigrated;
     if (personasMigrated) {
       for (const persona of customPersonas) {
-        const slug = persona.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const slug = personaToSlug(persona.name);
         const filePath = `${agentsDir}/${slug}.md`;
         try {
-          const exists = await invoke<boolean>('path_exists', { path: filePath });
+          const exists = await tauriApi.pathExists(filePath);
           if (!exists) { allExist = false; break; }
         } catch { allExist = false; break; }
       }
@@ -128,14 +111,14 @@ async function migratePersonasToAgents(home: string) {
 
     // Ensure directory exists
     try {
-      await invoke('create_directory', { path: agentsDir });
+      await tauriApi.createDirectory(agentsDir);
     } catch {
       // Directory may already exist
     }
 
     let migratedCount = 0;
     for (const persona of customPersonas) {
-      const slug = persona.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const slug = personaToSlug(persona.name);
       const filePath = `${agentsDir}/${slug}.md`;
 
       // Build agent file content
@@ -150,9 +133,9 @@ async function migratePersonasToAgents(home: string) {
       const content = `${frontmatter}\n\n${persona.systemMessage}`;
 
       try {
-        const exists = await invoke<boolean>('path_exists', { path: filePath });
+        const exists = await tauriApi.pathExists(filePath);
         if (!exists) {
-          await invoke('write_file', { path: filePath, content });
+          await tauriApi.writeFile(filePath, content);
           migratedCount++;
         }
       } catch (e) {
@@ -200,17 +183,17 @@ export function useSkillDiscovery() {
     const run = async () => {
       // Extract bundled skills and agents (always overwrites to stay current)
       try {
-        await invoke<string>('extract_bundled_skills');
+        await tauriApi.extractBundledSkills();
       } catch (e) {
         console.warn('Failed to extract bundled skills:', e);
       }
       try {
-        await invoke<string>('extract_bundled_agents');
+        await tauriApi.extractBundledAgents();
       } catch (e) {
         console.warn('Failed to extract bundled agents:', e);
       }
 
-      const home = await invoke<string>('get_home_dir');
+      const home = await tauriApi.getHomeDir();
 
       // One-time migration: custom personas → agent files
       await migratePersonasToAgents(home);
@@ -283,11 +266,11 @@ export function useSkillDiscovery() {
  */
 export function useSkillOperations() {
   const readSkillContent = useCallback(async (skillPath: string): Promise<SkillContent> => {
-    return invoke<SkillContent>('read_skill_content', { skillPath });
+    return tauriApi.readSkillContent(skillPath);
   }, []);
 
   const readAgentContent = useCallback(async (agentPath: string): Promise<AgentContent> => {
-    return invoke<AgentContent>('read_agent_content', { agentPath });
+    return tauriApi.readAgentContent(agentPath);
   }, []);
 
   const executeScript = useCallback(async (
@@ -304,7 +287,7 @@ export function useSkillOperations() {
       throw new Error(`PERMISSION_REQUIRED:${skillName}`);
     }
 
-    return invoke<ScriptResult>('execute_skill_script', {
+    return tauriApi.executeSkillScript({
       skillPath,
       script,
       args,

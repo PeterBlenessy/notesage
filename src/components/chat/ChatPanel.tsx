@@ -9,11 +9,11 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
-import { invoke } from '@tauri-apps/api/core';
+import { tauriApi } from '@/lib/tauri';
 import { useAIOperations } from '@/hooks/useAIOperations';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { usePermissionStore, type PermissionTier } from '@/stores/permission-store';
-import { useSkillStore, type SkillContent } from '@/stores/skill-store';
+import { useSkillStore } from '@/stores/skill-store';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { PermissionCard } from './PermissionCard';
@@ -196,7 +196,7 @@ export function ChatPanel() {
       const skill = useSkillStore.getState().skills.find((s) => s.name === matchedName);
       if (skill) {
         try {
-          const skillContent = await invoke<SkillContent>('read_skill_content', { skillPath: skill.path });
+          const skillContent = await tauriApi.readSkillContent(skill.path);
           skillName = matchedName;
           expandedContent = `[Using skill: ${matchedName}]\n\n${skillContent.body}\n\n---\n\nUser request: ${restOfMessage}`;
         } catch {
@@ -214,11 +214,9 @@ export function ChatPanel() {
     // Deny any pending permission requests before clearing
     const pending = usePermissionStore.getState().requests;
     for (const req of pending) {
-      invoke('acp_permission_respond', {
-        instanceId: req.instanceId,
-        requestId: req.requestId,
-        optionId: null,
-      }).catch(() => {});
+      tauriApi.acpPermissionRespond(req.instanceId, req.requestId, null).catch((e) => {
+        console.warn('Failed to deny permission on clear:', e);
+      });
     }
     usePermissionStore.getState().clearAll();
     clearMessages();

@@ -251,7 +251,7 @@ export function ChatMessage({ message, isLast = false }: ChatMessageProps) {
             title="Copy message"
           >
             {copied ? (
-              <Check className="h-3 w-3 text-green-500" strokeWidth={1.5} />
+              <Check className="h-3 w-3 text-foreground" strokeWidth={1.5} />
             ) : (
               <Copy className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
             )}

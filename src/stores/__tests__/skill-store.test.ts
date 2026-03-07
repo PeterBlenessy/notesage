@@ -29,6 +29,10 @@ describe('skill-store', () => {
       agentInstructions: [],
       lastScanTimestamp: 0,
       isScanning: false,
+      rescanCounter: 0,
+      agents: [],
+      activeAgentName: 'general-assistant',
+      agentEnabledOverrides: {},
     });
   });
 

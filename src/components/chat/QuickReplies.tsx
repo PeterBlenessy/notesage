@@ -135,7 +135,7 @@ export function QuickReplies({ replies, onSelect }: QuickRepliesProps) {
     <div className="flex flex-col gap-1.5 mt-1 mb-3 ml-[34px]">
       {replies.map((reply, i) => (
         <button
-          key={reply}
+          key={`${i}-${reply}`}
           type="button"
           onClick={() => onSelect(reply)}
           className="flex items-center gap-2 self-start px-2.5 py-1 text-xs text-left rounded-lg border border-border bg-background text-foreground hover:bg-accent hover:border-muted-foreground active:opacity-75 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"

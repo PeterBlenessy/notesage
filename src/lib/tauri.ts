@@ -38,6 +38,65 @@ export interface SyncSettings {
 }
 
 // ---------------------------------------------------------------------------
+// Skill & Agent types
+// ---------------------------------------------------------------------------
+
+export interface SkillEntry {
+  name: string;
+  description: string;
+  path: string;
+  source: string;
+  license?: string;
+  compatibility?: string;
+  metadata?: Record<string, string>;
+  allowed_tools?: string[];
+  user_invocable?: boolean;
+  disable_model_invocation?: boolean;
+  has_scripts: boolean;
+  has_references: boolean;
+}
+
+export interface SkillContent {
+  name: string;
+  body: string;
+  scripts: string[];
+  references: string[];
+  assets: string[];
+}
+
+export interface ScriptResult {
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+  timed_out: boolean;
+}
+
+export interface AgentEntry {
+  name: string;
+  description: string;
+  path: string;
+  source: string;
+  model?: string;
+  icon?: string;
+  allowed_tools?: string[];
+  user_invocable?: boolean;
+  disable_model_invocation?: boolean;
+}
+
+export interface AgentContent {
+  name: string;
+  body: string;
+  path: string;
+}
+
+export interface AgentInstruction {
+  source: string;
+  source_type: string;
+  content: string;
+  priority: number;
+}
+
+// ---------------------------------------------------------------------------
 // ACP (Agent Client Protocol) types
 // ---------------------------------------------------------------------------
 
@@ -304,5 +363,45 @@ export const tauriApi = {
 
   async searchFileContent(query: string, paths: string[]): Promise<ContentMatch[]> {
     return await invoke<ContentMatch[]>("search_file_content", { query, paths });
+  },
+
+  // Skill & agent operations
+  async discoverSkills(baseDirs: string[]): Promise<SkillEntry[]> {
+    return await invoke<SkillEntry[]>("discover_skills", { baseDirs });
+  },
+
+  async readSkillContent(skillPath: string): Promise<SkillContent> {
+    return await invoke<SkillContent>("read_skill_content", { skillPath });
+  },
+
+  async executeSkillScript(options: {
+    skillPath: string;
+    script: string;
+    args: string[];
+    workingDir: string | null;
+    env: Record<string, string> | null;
+    timeoutMs: number | null;
+  }): Promise<ScriptResult> {
+    return await invoke<ScriptResult>("execute_skill_script", options);
+  },
+
+  async discoverAgents(baseDirs: string[]): Promise<AgentEntry[]> {
+    return await invoke<AgentEntry[]>("discover_agents", { baseDirs });
+  },
+
+  async readAgentContent(agentPath: string): Promise<AgentContent> {
+    return await invoke<AgentContent>("read_agent_content", { agentPath });
+  },
+
+  async readAgentInstructions(projectRoot: string | null, connectedProviders: string[]): Promise<AgentInstruction[]> {
+    return await invoke<AgentInstruction[]>("read_agent_instructions", { projectRoot, connectedProviders });
+  },
+
+  async extractBundledSkills(): Promise<string> {
+    return await invoke<string>("extract_bundled_skills");
+  },
+
+  async extractBundledAgents(): Promise<string> {
+    return await invoke<string>("extract_bundled_agents");
   },
 };

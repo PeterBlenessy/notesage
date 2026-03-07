@@ -209,7 +209,7 @@ function AgentGroup({
 }
 
 export function SkillsSettings() {
-  const { skills, agents, agentInstructions, isScanning, scanSkills, scanAgents, lastScanTimestamp } = useSkillStore();
+  const { skills, agents, agentInstructions, isScanning, lastScanTimestamp } = useSkillStore();
   const mergedAgentInstructions = useSkillStore((s) => s.getMergedAgentInstructions());
 
   // Group skills by source
@@ -234,24 +234,17 @@ export function SkillsSettings() {
   const [skillWizardOpen, setSkillWizardOpen] = useState(false);
   const [agentWizardOpen, setAgentWizardOpen] = useState(false);
 
-  const handleRescan = async () => {
-    // Re-derive base dirs from existing skills and agents, then rescan both
-    const store = useSkillStore.getState();
-    const baseDirs = new Set<string>();
-    for (const skill of store.skills) {
-      const parent = skill.path.substring(0, skill.path.lastIndexOf('/'));
-      baseDirs.add(parent);
-    }
-    const agentDirs = new Set<string>();
-    for (const agent of store.agents) {
-      const parent = agent.path.substring(0, agent.path.lastIndexOf('/'));
-      agentDirs.add(parent);
-    }
-    await Promise.all([
-      baseDirs.size > 0 ? scanSkills(Array.from(baseDirs)) : Promise.resolve(),
-      agentDirs.size > 0 ? scanAgents(Array.from(agentDirs)) : Promise.resolve(),
-    ]);
+  const [rescanSpinning, setRescanSpinning] = useState(false);
+
+  const handleRescan = () => {
+    // Trigger the full discovery flow via rescanCounter (observed by useSkillDiscovery)
+    useSkillStore.getState().requestRescan();
+    // Show spinner for at least 600ms so the user sees feedback
+    setRescanSpinning(true);
+    setTimeout(() => setRescanSpinning(false), 600);
   };
+
+  const showSpinner = isScanning || rescanSpinning;
 
   const sortedInstructions = [...agentInstructions].sort((a, b) => b.priority - a.priority);
 
@@ -279,10 +272,10 @@ export function SkillsSettings() {
               variant="ghost"
               size="sm"
               onClick={handleRescan}
-              disabled={isScanning}
+              disabled={showSpinner}
             >
-              <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', isScanning && 'animate-spin')} strokeWidth={1.5} />
-              {isScanning ? 'Scanning...' : 'Rescan'}
+              <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', showSpinner && 'animate-spin')} strokeWidth={1.5} />
+              Rescan
             </Button>
           </div>
         </div>

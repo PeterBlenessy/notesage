@@ -1,63 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { invoke } from '@tauri-apps/api/core';
+import { tauriApi } from '@/lib/tauri';
+import type { SkillEntry, AgentInstruction, AgentEntry } from '@/lib/tauri';
 
-// --- Types matching Rust structs ---
-
-export interface SkillEntry {
-  name: string;
-  description: string;
-  path: string;
-  source: string;
-  license?: string;
-  compatibility?: string;
-  metadata?: Record<string, string>;
-  allowed_tools?: string[];
-  user_invocable?: boolean;
-  disable_model_invocation?: boolean;
-  has_scripts: boolean;
-  has_references: boolean;
-}
-
-export interface SkillContent {
-  name: string;
-  body: string;
-  scripts: string[];
-  references: string[];
-  assets: string[];
-}
-
-export interface ScriptResult {
-  stdout: string;
-  stderr: string;
-  exit_code: number;
-  timed_out: boolean;
-}
-
-export interface AgentInstruction {
-  source: string;
-  source_type: string;
-  content: string;
-  priority: number;
-}
-
-export interface AgentEntry {
-  name: string;
-  description: string;
-  path: string;
-  source: string;
-  model?: string;
-  icon?: string;
-  allowed_tools?: string[];
-  user_invocable?: boolean;
-  disable_model_invocation?: boolean;
-}
-
-export interface AgentContent {
-  name: string;
-  body: string;
-  path: string;
-}
+// Re-export types from tauri.ts for consumers that import from skill-store
+export type { SkillEntry, SkillContent, ScriptResult, AgentInstruction, AgentEntry, AgentContent } from '@/lib/tauri';
 
 // --- Store ---
 
@@ -150,7 +97,7 @@ interface SkillStore {
   requestRescan: () => void;
 }
 
-/** Known skill source labels. */
+/** Known skill source labels. Must match Rust `determine_source` / `determine_agent_source` in commands/skills.rs. */
 export type SkillSource = 'external' | 'agents' | 'gemini' | 'codex' | 'claude' | 'github' | 'notesage-global' | 'notesage-project';
 
 /** Source priority for hierarchy resolution (higher = wins). */
@@ -256,7 +203,7 @@ export const useSkillStore = create<SkillStore>()(
       scanSkills: async (baseDirs) => {
         set({ isScanning: true });
         try {
-          const skills = await invoke<SkillEntry[]>('discover_skills', { baseDirs });
+          const skills = await tauriApi.discoverSkills(baseDirs);
           set({ skills, lastScanTimestamp: Date.now(), isScanning: false });
         } catch (e) {
           console.error('Skill discovery failed:', e);
@@ -266,10 +213,7 @@ export const useSkillStore = create<SkillStore>()(
 
       scanAgentInstructions: async (projectRoot, providers) => {
         try {
-          const agentInstructions = await invoke<AgentInstruction[]>(
-            'read_agent_instructions',
-            { projectRoot, connectedProviders: providers }
-          );
+          const agentInstructions = await tauriApi.readAgentInstructions(projectRoot, providers);
           set({ agentInstructions });
         } catch (e) {
           console.error('Agent instruction discovery failed:', e);
@@ -322,7 +266,7 @@ export const useSkillStore = create<SkillStore>()(
 
       scanAgents: async (baseDirs) => {
         try {
-          const agents = await invoke<AgentEntry[]>('discover_agents', { baseDirs });
+          const agents = await tauriApi.discoverAgents(baseDirs);
           set({ agents });
         } catch (e) {
           console.error('Agent discovery failed:', e);

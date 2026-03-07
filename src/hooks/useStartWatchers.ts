@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 import { tauriApi } from "@/lib/tauri";
-import { invoke } from "@tauri-apps/api/core";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useSyncStore } from "@/stores/sync-store";
@@ -51,7 +50,7 @@ export function useStartWatchers() {
     }
 
     // Watch ~/.notesage/ for skill/agent changes (created by agents or manually)
-    invoke<string>("get_home_dir").then((home) => {
+    tauriApi.getHomeDir().then((home) => {
       const notesageDir = `${home}/.notesage`;
       tauriApi.watchDirectory(notesageDir).catch((err) => {
         console.error(`Failed to watch ${notesageDir}:`, err);

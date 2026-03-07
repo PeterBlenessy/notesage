@@ -593,25 +593,38 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
 
 /// Determine the source label for agents found in a given base directory.
 fn determine_agent_source(base_dir: &str) -> String {
-    if base_dir.contains(".notesage/agents") {
+    let path = Path::new(base_dir);
+    let components: Vec<&str> = path
+        .components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .collect();
+
+    // Check for .notesage/agents path — distinguish project vs global
+    if components.windows(2).any(|w| w[0] == ".notesage" && w[1] == "agents") {
         if let Some(home) = dirs::home_dir() {
             let global_path = home.join(".notesage").join("agents");
             if base_dir == global_path.to_string_lossy() {
                 return "notesage-global".to_string();
             }
         }
-        "notesage-project".to_string()
-    } else if base_dir.contains("/.claude/agents") {
-        "claude".to_string()
-    } else if base_dir.contains("/.codex/agents") {
-        "codex".to_string()
-    } else if base_dir.contains("/.gemini/agents") {
-        "gemini".to_string()
-    } else if base_dir.contains("/.github/agents") || base_dir.contains(".github/agents") {
-        "github".to_string()
-    } else {
-        "external".to_string()
+        return "notesage-project".to_string();
     }
+
+    // Check for provider-specific agent directories by matching .<provider>/agents components
+    let provider_pairs: &[(&str, &str)] = &[
+        (".claude", "claude"),
+        (".codex", "codex"),
+        (".gemini", "gemini"),
+        (".github", "github"),
+    ];
+
+    for &(dir_name, source) in provider_pairs {
+        if components.windows(2).any(|w| w[0] == dir_name && w[1] == "agents") {
+            return source.to_string();
+        }
+    }
+
+    "external".to_string()
 }
 
 /// Discover addressable agent files from specified base directories.
