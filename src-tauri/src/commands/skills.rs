@@ -455,6 +455,21 @@ pub async fn read_agent_instructions(
 
     let home = dirs::home_dir();
 
+    // Priority 0: ~/.notesage/bundled-agents.md (always — shipped with app, overwritable by user files)
+    if let Some(ref home_dir) = home {
+        let bundled_instructions = home_dir.join(".notesage").join("bundled-agents.md");
+        if bundled_instructions.is_file() {
+            if let Ok(content) = fs::read_to_string(&bundled_instructions) {
+                instructions.push(AgentInstruction {
+                    source: bundled_instructions.to_string_lossy().to_string(),
+                    source_type: "bundled".to_string(),
+                    content,
+                    priority: 0,
+                });
+            }
+        }
+    }
+
     if let Some(ref root) = project_root {
         let root_path = Path::new(root);
 
@@ -776,6 +791,14 @@ pub async fn extract_bundled_agents() -> Result<String, String> {
         fs::write(&target, file.content)
             .map_err(|e| format!("Failed to write {}: {}", file.relative_path, e))?;
     }
+
+    // Extract bundled agent instructions file alongside the agents directory
+    let bundled_instructions = home.join(".notesage").join("bundled-agents.md");
+    fs::write(
+        &bundled_instructions,
+        include_str!("../../../bundled-agents/agents.md"),
+    )
+    .map_err(|e| format!("Failed to write bundled-agents.md: {}", e))?;
 
     Ok(bundled_dir.to_string_lossy().to_string())
 }
@@ -1481,13 +1504,18 @@ mod tests {
         ));
         let instructions = result.unwrap();
 
-        assert_eq!(instructions.len(), 3);
-        assert_eq!(instructions[0].source_type, "agents-md");
-        assert_eq!(instructions[0].priority, 1);
-        assert_eq!(instructions[1].source_type, "claude-md");
-        assert_eq!(instructions[1].priority, 2);
-        assert_eq!(instructions[2].source_type, "notesage-project");
-        assert_eq!(instructions[2].priority, 5);
+        // Filter out bundled/global instructions that may exist on the host machine
+        let project_instructions: Vec<_> = instructions.iter()
+            .filter(|i| i.source_type != "bundled" && i.source_type != "notesage-global")
+            .collect();
+
+        assert_eq!(project_instructions.len(), 3);
+        assert_eq!(project_instructions[0].source_type, "agents-md");
+        assert_eq!(project_instructions[0].priority, 1);
+        assert_eq!(project_instructions[1].source_type, "claude-md");
+        assert_eq!(project_instructions[1].priority, 2);
+        assert_eq!(project_instructions[2].source_type, "notesage-project");
+        assert_eq!(project_instructions[2].priority, 5);
     }
 
     #[test]
@@ -1503,8 +1531,13 @@ mod tests {
             vec![], // no providers connected
         ));
         let instructions = result.unwrap();
-        assert_eq!(instructions.len(), 1);
-        assert_eq!(instructions[0].source_type, "agents-md");
+
+        // Filter out bundled/global instructions that may exist on the host machine
+        let project_instructions: Vec<_> = instructions.iter()
+            .filter(|i| i.source_type != "bundled" && i.source_type != "notesage-global")
+            .collect();
+        assert_eq!(project_instructions.len(), 1);
+        assert_eq!(project_instructions[0].source_type, "agents-md");
     }
 
     #[test]

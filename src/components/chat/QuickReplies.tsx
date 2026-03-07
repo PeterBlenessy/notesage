@@ -1,51 +1,53 @@
-import { useMemo } from 'react';
-
 /**
- * Extracts quick-reply options from the end of an assistant message.
+ * Parse `<quick-replies>` blocks from AI message content.
+ * Returns extracted reply options and the content with the block stripped.
  *
- * Detects numbered lists (1. Option), bulleted lists (- Option / * Option),
- * and lettered lists (A. Option) at the tail of the content. Items must be
- * short (≤120 chars) and there must be 2–8 of them in an uninterrupted block.
+ * Format the AI is instructed to use:
+ * ```
+ * <quick-replies>
+ * Option one
+ * Option two
+ * Option three
+ * </quick-replies>
+ * ```
  */
-export function extractQuickReplies(content: string): string[] {
-  const lines = content.trimEnd().split('\n');
 
-  // Walk backwards to collect consecutive list items
-  const items: string[] = [];
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i].trim();
-    if (!line) {
-      // Allow one blank line between items, but stop at two
-      if (i > 0 && lines[i - 1].trim() === '') break;
-      continue;
-    }
+const QUICK_REPLY_REGEX = /<quick-replies>\s*([\s\S]*?)\s*<\/quick-replies>/g;
 
-    // Match: "1. text", "- text", "* text", "A. text"
-    const match = line.match(/^(?:\d+\.|[A-Z]\.|[-*•])\s+(.+)/);
-    if (match) {
-      const text = match[1].replace(/\*\*/g, '').trim();
-      if (text.length <= 120) {
-        items.unshift(text);
-      } else {
-        break;
-      }
-    } else {
-      break;
-    }
+export interface ParsedQuickReplies {
+  /** Message content with <quick-replies> blocks removed */
+  strippedContent: string;
+  /** Extracted reply options */
+  replies: string[];
+}
+
+export function parseQuickReplies(content: string): ParsedQuickReplies {
+  const replies: string[] = [];
+  let lastMatch = false;
+
+  const strippedContent = content.replace(QUICK_REPLY_REGEX, (_match, inner: string) => {
+    lastMatch = true;
+    const lines = inner
+      .split('\n')
+      .map((line: string) => line.replace(/^[-*•\d.]+\s*/, '').trim())
+      .filter((line: string) => line.length > 0 && line.length <= 120);
+    replies.push(...lines);
+    return '';
+  }).trimEnd();
+
+  if (!lastMatch) {
+    return { strippedContent: content, replies: [] };
   }
 
-  if (items.length < 2 || items.length > 8) return [];
-  return items;
+  return { strippedContent, replies };
 }
 
 interface QuickRepliesProps {
-  content: string;
+  replies: string[];
   onSelect: (reply: string) => void;
 }
 
-export function QuickReplies({ content, onSelect }: QuickRepliesProps) {
-  const replies = useMemo(() => extractQuickReplies(content), [content]);
-
+export function QuickReplies({ replies, onSelect }: QuickRepliesProps) {
   if (replies.length === 0) return null;
 
   return (
@@ -55,7 +57,7 @@ export function QuickReplies({ content, onSelect }: QuickRepliesProps) {
           key={reply}
           type="button"
           onClick={() => onSelect(reply)}
-          className="px-2.5 py-1 text-xs rounded-lg border border-border bg-background text-foreground hover:bg-accent hover:border-muted-foreground active:opacity-75 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-w-[280px] truncate"
+          className="px-2.5 py-1 text-xs rounded-lg border border-border bg-background text-foreground hover:bg-accent hover:border-muted-foreground active:opacity-75 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           {reply}
         </button>

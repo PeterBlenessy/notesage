@@ -17,7 +17,7 @@ import { useSkillStore, type SkillContent } from '@/stores/skill-store';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { PermissionCard } from './PermissionCard';
-import { QuickReplies } from './QuickReplies';
+import { QuickReplies, parseQuickReplies } from './QuickReplies';
 import {
   Tooltip,
   TooltipContent,
@@ -382,11 +382,17 @@ export function ChatPanel() {
           <>
             {messages.map((message, index) => {
               const isLastAssistant = !isLoading && message.role === 'assistant' && index === messages.length - 1;
+              // Parse quick-reply tags from assistant messages — strip from rendered content
+              const isAssistant = message.role === 'assistant';
+              const parsed = isAssistant && message.content ? parseQuickReplies(message.content) : null;
+              const displayMessage = parsed && parsed.strippedContent !== message.content
+                ? { ...message, content: parsed.strippedContent }
+                : message;
               return (
                 <div key={index}>
-                  <ChatMessage message={message} />
-                  {isLastAssistant && message.content && (
-                    <QuickReplies content={message.content} onSelect={handleSend} />
+                  <ChatMessage message={displayMessage} />
+                  {isLastAssistant && parsed && parsed.replies.length > 0 && (
+                    <QuickReplies replies={parsed.replies} onSelect={handleSend} />
                   )}
                 </div>
               );
