@@ -656,7 +656,7 @@ export function useAIOperations() {
   );
 
   const sendChatMessage = useCallback(
-    async (content: string, messages: ChatMessage[]) => {
+    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string }) => {
       // Clean up any stale listeners from a previous streaming call
       if (cleanupRef.current) {
         cleanupRef.current();
@@ -669,7 +669,7 @@ export function useAIOperations() {
         setError(null);
 
         const userTimestamp = Date.now();
-        const userMessage: ChatMessage = { role: 'user', content, timestamp: userTimestamp };
+        const userMessage: ChatMessage = { role: 'user', content, timestamp: userTimestamp, displayContent: opts?.displayContent, skillName: opts?.skillName };
         addMessage(userMessage);
         const assistantMessageId = userTimestamp + 1;
         addMessage({
@@ -852,7 +852,7 @@ export function useAIOperations() {
       setError(null);
 
       const userTimestamp = Date.now();
-      const userMessage: ChatMessage = { role: 'user', content, timestamp: userTimestamp };
+      const userMessage: ChatMessage = { role: 'user', content, timestamp: userTimestamp, displayContent: opts?.displayContent, skillName: opts?.skillName };
       addMessage(userMessage);
 
       // Add placeholder message for streaming - ensure unique timestamp

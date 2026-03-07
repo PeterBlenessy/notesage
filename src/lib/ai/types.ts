@@ -30,6 +30,10 @@ export interface ChatMessage {
   isError?: boolean;
   /** Thinking/reasoning output from models that support it (e.g. Ollama thinking models) */
   thinking?: string;
+  /** Display-only content for the UI (e.g. original user text when skill body is injected into content) */
+  displayContent?: string;
+  /** Skill name used in this message (for collapsible indicator) */
+  skillName?: string;
 }
 
 export interface GenerateOptions {

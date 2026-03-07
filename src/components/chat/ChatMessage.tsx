@@ -1,4 +1,4 @@
-import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2, X, AlertTriangle, Brain } from 'lucide-react';
+import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2, X, AlertTriangle, Brain, Zap } from 'lucide-react';
 import { useState } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { MarkdownContent } from '@/components/MarkdownContent';
@@ -56,6 +56,37 @@ function ActivityLog({ activities, isActive }: { activities: AgentActivity[]; is
       )}
     </div>
   );
+}
+
+function UserContent({ message }: { message: ChatMessageType }) {
+  const [skillExpanded, setSkillExpanded] = useState(false);
+  const displayText = message.displayContent ?? message.content;
+
+  if (message.skillName) {
+    return (
+      <div>
+        <button
+          onClick={() => setSkillExpanded(!skillExpanded)}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-1.5"
+        >
+          <Zap className="h-3 w-3" strokeWidth={1.5} />
+          <ChevronDown
+            className={`h-2.5 w-2.5 transition-transform duration-150 ${skillExpanded ? '' : '-rotate-90'}`}
+            strokeWidth={1.5}
+          />
+          <span>Using skill: {message.skillName}</span>
+        </button>
+        {skillExpanded && (
+          <div className="mb-2 max-h-40 overflow-y-auto thin-scrollbar rounded-md bg-muted/40 px-2 py-1.5">
+            <MarkdownContent content={message.content} className="text-xs text-muted-foreground" />
+          </div>
+        )}
+        <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed">{displayText}</p>
+      </div>
+    );
+  }
+
+  return <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed">{displayText}</p>;
 }
 
 interface ChatMessageProps {
@@ -139,7 +170,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
         )}
 
         {isUser ? (
-          <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+          <UserContent message={message} />
         ) : message.isError ? (
           <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{message.content}</p>
         ) : isStreaming ? (

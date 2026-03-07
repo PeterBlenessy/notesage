@@ -187,23 +187,25 @@ export function ChatPanel() {
     }
 
     // Detect /skill-name prefix and expand with skill body
+    let skillName: string | undefined;
     const slashMatch = expandedContent.match(/^\/([a-z0-9][a-z0-9-]*)\s*(.*)/s);
     if (slashMatch) {
-      const skillName = slashMatch[1];
+      const matchedName = slashMatch[1];
       const restOfMessage = slashMatch[2];
-      const skill = useSkillStore.getState().skills.find((s) => s.name === skillName);
+      const skill = useSkillStore.getState().skills.find((s) => s.name === matchedName);
       if (skill) {
         try {
           const skillContent = await invoke<SkillContent>('read_skill_content', { skillPath: skill.path });
-          expandedContent = `[Using skill: ${skillName}]\n\n${skillContent.body}\n\n---\n\nUser request: ${restOfMessage}`;
+          skillName = matchedName;
+          expandedContent = `[Using skill: ${matchedName}]\n\n${skillContent.body}\n\n---\n\nUser request: ${restOfMessage}`;
         } catch {
-          toast.error(`Failed to load skill "${skillName}"`);
+          toast.error(`Failed to load skill "${matchedName}"`);
           return;
         }
       }
     }
 
-    await sendChatMessage(expandedContent, messages);
+    await sendChatMessage(expandedContent, messages, skillName ? { displayContent: content, skillName } : undefined);
   };
 
   const handleClear = () => {
