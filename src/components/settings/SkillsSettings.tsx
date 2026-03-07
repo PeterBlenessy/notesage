@@ -4,7 +4,8 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { useSkillStore, type SkillEntry } from '@/stores/skill-store';
+import { useSkillStore, type SkillEntry, type AgentEntry } from '@/stores/skill-store';
+import { AgentIcon } from '@/components/AgentIcon';
 import { cn } from '@/lib/utils';
 import { NewSkillWizard } from '@/components/NewSkillWizard';
 import { NewAgentWizard } from '@/components/NewAgentWizard';
@@ -19,6 +20,7 @@ function sourceLabel(source: string): string {
     case 'codex': return 'Codex';
     case 'gemini': return 'Gemini';
     case 'agents': return 'Agents';
+    case 'github': return 'GitHub Copilot';
     default: return 'External';
   }
 }
@@ -126,8 +128,98 @@ function SkillGroup({
   );
 }
 
+/** Check if an agent is overridden by a higher-priority same-name agent. */
+function isAgentOverridden(agent: AgentEntry, allAgents: AgentEntry[]): AgentEntry | null {
+  const priorities: Record<string, number> = {
+    'bundled': 0, 'external': 1, 'agents': 2, 'gemini': 2,
+    'codex': 2, 'claude': 2, 'github': 2, 'notesage-global': 3, 'notesage-project': 4,
+  };
+  const myPriority = priorities[agent.source] ?? 1;
+  for (const other of allAgents) {
+    if (other.name === agent.name && other.path !== agent.path) {
+      const otherPriority = priorities[other.source] ?? 1;
+      if (otherPriority > myPriority) return other;
+    }
+  }
+  return null;
+}
+
+function AgentCard({ agent, allAgents }: { agent: AgentEntry; allAgents: AgentEntry[] }) {
+  const { agentEnabledOverrides, toggleAgent } = useSkillStore();
+  const overriddenBy = isAgentOverridden(agent, allAgents);
+  const isEnabled = agentEnabledOverrides[agent.path] !== false;
+
+  return (
+    <div
+      className={cn(
+        'flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg border border-border transition-colors duration-150',
+        overriddenBy ? 'opacity-50' : 'hover:border-muted-foreground',
+      )}
+    >
+      <div className="flex items-start gap-2.5 min-w-0 flex-1">
+        <AgentIcon icon={agent.icon} size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
+        <div className="min-w-0">
+          <span className="text-sm font-medium truncate block">{agent.name}</span>
+          {agent.description && (
+            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+              {agent.description}
+            </p>
+          )}
+          {agent.model && (
+            <span className="text-[10px] text-muted-foreground/60 mt-0.5 block">
+              model: {agent.model}
+            </span>
+          )}
+          {overriddenBy && (
+            <p className="text-[10px] text-muted-foreground/60 mt-1">
+              Overridden by {sourceLabel(overriddenBy.source)}
+            </p>
+          )}
+        </div>
+      </div>
+      {!overriddenBy && (
+        <Switch
+          checked={isEnabled}
+          onCheckedChange={(checked) => toggleAgent(agent.path, checked)}
+          className="scale-75 origin-center shrink-0 mt-0.5"
+        />
+      )}
+    </div>
+  );
+}
+
+function AgentGroup({
+  title,
+  agents,
+  allAgents,
+  action,
+}: {
+  title: string;
+  agents: AgentEntry[];
+  allAgents: AgentEntry[];
+  action?: React.ReactNode;
+}) {
+  if (agents.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          {title}
+        </span>
+        {action}
+      </div>
+      <div className="space-y-1.5">
+        {agents.map((agent) => (
+          <AgentCard key={agent.path} agent={agent} allAgents={allAgents} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function SkillsSettings() {
-  const { skills, agentInstructions, isScanning, scanSkills, lastScanTimestamp } = useSkillStore();
+  const { skills, agents, agentInstructions, isScanning, scanSkills, lastScanTimestamp } = useSkillStore();
 
   // Group skills by source
   const projectSkills = skills.filter((s) => s.source === 'notesage-project');
@@ -137,6 +229,15 @@ export function SkillsSettings() {
   const codexSkills = skills.filter((s) => s.source === 'codex');
   const geminiSkills = skills.filter((s) => s.source === 'gemini');
   const agentsSkills = skills.filter((s) => s.source === 'agents');
+
+  // Group agents by source
+  const projectAgents = agents.filter((a) => a.source === 'notesage-project');
+  const globalAgents = agents.filter((a) => a.source === 'notesage-global');
+  const bundledAgents = agents.filter((a) => a.source === 'bundled');
+  const claudeAgents = agents.filter((a) => a.source === 'claude');
+  const codexAgents = agents.filter((a) => a.source === 'codex');
+  const geminiAgents = agents.filter((a) => a.source === 'gemini');
+  const githubAgents = agents.filter((a) => a.source === 'github');
 
   const [instructionsExpanded, setInstructionsExpanded] = useState(false);
   const [skillWizardOpen, setSkillWizardOpen] = useState(false);
@@ -209,6 +310,40 @@ export function SkillsSettings() {
             <SkillGroup title="Codex (~/.codex/skills/)" skills={codexSkills} allSkills={skills} readOnly />
             <SkillGroup title="Gemini (~/.gemini/skills/)" skills={geminiSkills} allSkills={skills} readOnly />
             <SkillGroup title="Agents (~/.agents/skills/)" skills={agentsSkills} allSkills={skills} readOnly />
+          </div>
+        )}
+      </div>
+
+      <div className="h-px bg-border" />
+
+      {/* Agents Section */}
+      <div className="space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <Label className="text-sm font-semibold">Agents</Label>
+            <p className="text-xs text-muted-foreground mt-1">
+              Addressable AI agents from your projects, global config, and connected providers
+            </p>
+          </div>
+        </div>
+
+        {agents.length === 0 ? (
+          <div className="px-4 py-8 text-center rounded-lg border border-dashed border-border">
+            <p className="text-sm text-muted-foreground">No agents discovered</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">
+              Add agent files to <code className="text-[11px]">.notesage/agents/</code> in your project
+              or <code className="text-[11px]">~/.notesage/agents/</code> globally
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <AgentGroup title="Project (.notesage/agents/)" agents={projectAgents} allAgents={agents} />
+            <AgentGroup title="Global (~/.notesage/agents/)" agents={globalAgents} allAgents={agents} />
+            <AgentGroup title="Built-in" agents={bundledAgents} allAgents={agents} />
+            <AgentGroup title="Claude Code (~/.claude/agents/)" agents={claudeAgents} allAgents={agents} />
+            <AgentGroup title="Codex (~/.codex/agents/)" agents={codexAgents} allAgents={agents} />
+            <AgentGroup title="Gemini (~/.gemini/agents/)" agents={geminiAgents} allAgents={agents} />
+            <AgentGroup title="GitHub Copilot (.github/agents/)" agents={githubAgents} allAgents={agents} />
           </div>
         )}
       </div>

@@ -38,6 +38,8 @@ interface SettingsStore {
   lastExportPageSize: ExportPageSize;
   lastExportIncludeToC: boolean;
   lastExportIncludePageNumbers: boolean;
+  /** Whether custom personas have been migrated to agent files. Persisted. */
+  personasMigrated: boolean;
   // Runtime-only (not persisted) — detected on startup
   startupReady: boolean;
   icloudAvailable: boolean;
@@ -74,6 +76,7 @@ interface SettingsStore {
   setStartupReady: (ready: boolean) => void;
   setICloudAvailable: (available: boolean) => void;
   setICloudNotesagePath: (path: string | null) => void;
+  setPersonasMigrated: (migrated: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -94,6 +97,7 @@ export const useSettingsStore = create<SettingsStore>()(
       chatPanelOpen: false,
       notesRootPath: "~/Notesage",
       gitEnabled: false,
+      personasMigrated: false,
       startupReady: false,
       icloudAvailable: false,
       icloudNotesagePath: null,
@@ -238,6 +242,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setICloudNotesagePath: (path: string | null) => {
         set({ icloudNotesagePath: path });
+      },
+
+      setPersonasMigrated: (migrated: boolean) => {
+        set({ personasMigrated: migrated });
       },
     }),
     {

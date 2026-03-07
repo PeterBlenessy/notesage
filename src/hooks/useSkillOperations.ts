@@ -1,10 +1,12 @@
 import { useEffect, useCallback } from 'react';
-import { useSkillStore, type SkillContent, type ScriptResult } from '@/stores/skill-store';
+import { useSkillStore, type SkillContent, type ScriptResult, type AgentContent } from '@/stores/skill-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { usePermissionStore } from '@/stores/permission-store';
+import { useAIStore } from '@/stores/ai-store';
 import { invoke } from '@tauri-apps/api/core';
+import { toast } from 'sonner';
 import type { ConnectionProvider } from '@/lib/ai/connections';
 
 /** Map connection provider to skill discovery filesystem paths. */
@@ -41,6 +43,22 @@ function getSkillPathsForConnection(provider: ConnectionProvider, authMethod: st
   }
 }
 
+/** Map connection provider + auth method to agent discovery paths. */
+function getAgentPathsForConnection(provider: ConnectionProvider, authMethod: string): string[] {
+  if (authMethod === 'agent_managed') {
+    switch (provider) {
+      case 'anthropic': return ['~/.claude/agents'];
+      case 'openai': return ['~/.codex/agents'];
+      case 'github': return ['~/.github/agents'];
+      case 'google': return ['~/.gemini/agents'];
+      default: return [];
+    }
+  }
+  // Copilot LSP also has agents
+  if (provider === 'github') return ['~/.github/agents'];
+  return [];
+}
+
 /** Resolve ~ to the home directory. */
 async function expandHome(path: string): Promise<string> {
   if (!path.startsWith('~/')) return path;
@@ -66,6 +84,106 @@ function getConnectedProviderTypes(): string[] {
   return types;
 }
 
+/** Built-in persona ID → bundled agent name mapping. */
+const PERSONA_TO_AGENT: Record<string, string> = {
+  'general': 'general-assistant',
+  'creative': 'creative-writer',
+  'technical': 'technical-editor',
+  'fact-checker': 'fact-checker',
+  'academic': 'academic-writer',
+  'copywriter': 'copywriter',
+  'proofreader': 'proofreader',
+};
+
+/**
+ * One-time migration: writes custom personas as agent `.md` files,
+ * maps activePersonaId → activeAgentName, and sets the migration flag.
+ *
+ * Re-runs if any custom persona file is missing (handles failed first attempts).
+ */
+async function migratePersonasToAgents(home: string) {
+  const { personasMigrated, setPersonasMigrated } = useSettingsStore.getState();
+  const aiStore = useAIStore.getState();
+  const customPersonas = aiStore.customPersonas;
+
+  // Check if migration is needed: either flag not set, or files are missing
+  if (personasMigrated && customPersonas.length === 0) return;
+
+  const agentsDir = `${home}/.notesage/agents`;
+
+  if (customPersonas.length > 0) {
+    // Check if all expected files exist
+    let allExist = personasMigrated;
+    if (personasMigrated) {
+      for (const persona of customPersonas) {
+        const slug = persona.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const filePath = `${agentsDir}/${slug}.md`;
+        try {
+          const exists = await invoke<boolean>('path_exists', { path: filePath });
+          if (!exists) { allExist = false; break; }
+        } catch { allExist = false; break; }
+      }
+      if (allExist) return; // All files present, nothing to do
+    }
+
+    // Ensure directory exists
+    try {
+      await invoke('create_directory', { path: agentsDir });
+    } catch {
+      // Directory may already exist
+    }
+
+    let migratedCount = 0;
+    for (const persona of customPersonas) {
+      const slug = persona.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const filePath = `${agentsDir}/${slug}.md`;
+
+      // Build agent file content
+      const frontmatter = [
+        '---',
+        `name: "${persona.name}"`,
+        `description: "Migrated from custom persona"`,
+        persona.icon ? `icon: "${persona.icon}"` : null,
+        '---',
+      ].filter(Boolean).join('\n');
+
+      const content = `${frontmatter}\n\n${persona.systemMessage}`;
+
+      try {
+        const exists = await invoke<boolean>('path_exists', { path: filePath });
+        if (!exists) {
+          await invoke('write_file', { path: filePath, content });
+          migratedCount++;
+        }
+      } catch (e) {
+        console.warn(`Failed to migrate persona "${persona.name}":`, e);
+      }
+    }
+
+    if (migratedCount > 0) {
+      toast.success(`Migrated ${migratedCount} custom persona${migratedCount === 1 ? '' : 's'} to agent files`);
+    }
+  }
+
+  // Map activePersonaId to activeAgentName (only on first migration)
+  if (!personasMigrated) {
+    const skillStore = useSkillStore.getState();
+    const activePersonaId = aiStore.activePersonaId;
+    const mappedAgentName = PERSONA_TO_AGENT[activePersonaId];
+    if (mappedAgentName) {
+      skillStore.setActiveAgent(mappedAgentName);
+    } else if (activePersonaId) {
+      const customPersona = customPersonas.find((p) => p.id === activePersonaId);
+      if (customPersona) {
+        const slug = customPersona.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        skillStore.setActiveAgent(slug);
+      }
+    }
+  }
+
+  setPersonasMigrated(true);
+}
+
 /**
  * Hook that manages skill discovery lifecycle.
  * Runs initial scan after startupReady, rescans on connection or project changes.
@@ -79,17 +197,24 @@ export function useSkillDiscovery() {
     if (!startupReady) return;
 
     const run = async () => {
-      // Extract bundled skills to ~/.notesage/bundled-skills/ (always overwrites to stay current)
+      // Extract bundled skills and agents (always overwrites to stay current)
       try {
         await invoke<string>('extract_bundled_skills');
       } catch (e) {
         console.warn('Failed to extract bundled skills:', e);
       }
+      try {
+        await invoke<string>('extract_bundled_agents');
+      } catch (e) {
+        console.warn('Failed to extract bundled agents:', e);
+      }
+
+      const home = await invoke<string>('get_home_dir');
+
+      // One-time migration: custom personas → agent files
+      await migratePersonasToAgents(home);
 
       const baseDirs: string[] = [];
-
-      // Always include Notesage global skills
-      const home = await invoke<string>('get_home_dir');
       baseDirs.push(`${home}/.notesage/skills`);
       baseDirs.push(`${home}/.notesage/bundled-skills`);
 
@@ -115,6 +240,35 @@ export function useSkillDiscovery() {
       // Scan skills
       await useSkillStore.getState().scanSkills(baseDirs);
 
+      // Build agent base dirs
+      const agentBaseDirs: string[] = [];
+      agentBaseDirs.push(`${home}/.notesage/agents`);
+      agentBaseDirs.push(`${home}/.notesage/bundled-agents`);
+
+      // Project-level agents
+      for (const project of projects) {
+        agentBaseDirs.push(`${project.path}/.notesage/agents`);
+        // Also scan .github/agents for Copilot project agents
+        agentBaseDirs.push(`${project.path}/.github/agents`);
+      }
+
+      // Provider-specific agents based on active connections
+      const agentSeen = new Set<string>();
+      for (const conn of connections) {
+        if (conn.status !== 'connected' && conn.status !== 'expired') continue;
+        const paths = getAgentPathsForConnection(conn.provider, conn.authMethod);
+        for (const p of paths) {
+          const expanded = await expandHome(p);
+          if (!agentSeen.has(expanded)) {
+            agentSeen.add(expanded);
+            agentBaseDirs.push(expanded);
+          }
+        }
+      }
+
+      // Scan agents
+      await useSkillStore.getState().scanAgents(agentBaseDirs);
+
       // Scan agent instructions (use first project as root, or null)
       const projectRoot = projects.length > 0 ? projects[0].path : null;
       const providerTypes = getConnectedProviderTypes();
@@ -131,6 +285,10 @@ export function useSkillDiscovery() {
 export function useSkillOperations() {
   const readSkillContent = useCallback(async (skillPath: string): Promise<SkillContent> => {
     return invoke<SkillContent>('read_skill_content', { skillPath });
+  }, []);
+
+  const readAgentContent = useCallback(async (agentPath: string): Promise<AgentContent> => {
+    return invoke<AgentContent>('read_agent_content', { agentPath });
   }, []);
 
   const executeScript = useCallback(async (
@@ -157,5 +315,5 @@ export function useSkillOperations() {
     });
   }, []);
 
-  return { readSkillContent, executeScript };
+  return { readSkillContent, readAgentContent, executeScript };
 }

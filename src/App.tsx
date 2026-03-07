@@ -19,6 +19,7 @@ import { useProjectMetadata } from "@/hooks/useProjectMetadata";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { useStartWatchers } from "@/hooks/useStartWatchers";
+import { useSkillDiscovery } from "@/hooks/useSkillOperations";
 import { useAgentTaskOperations } from "@/hooks/useAgentTaskOperations";
 import { useActivityNavigation } from "@/hooks/useActivityNavigation";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -130,6 +131,7 @@ function App() {
 
   useProjectMetadata();
   useStartWatchers();
+  useSkillDiscovery();
 
   // Activity strip — cancel handler and navigation
   const { cancelTask } = useAgentTaskOperations();

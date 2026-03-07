@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback } from 'react';
 import { ArrowUp, Square } from 'lucide-react';
 import { SkillCommandMenu, type SkillCommandMenuHandle } from './SkillCommandMenu';
-import type { SkillEntry } from '@/stores/skill-store';
+import { AgentCommandMenu, type AgentCommandMenuHandle } from './AgentCommandMenu';
+import type { SkillEntry, AgentEntry } from '@/stores/skill-store';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -16,8 +17,11 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
   const [message, setMessage] = useState('');
   const [showSkillMenu, setShowSkillMenu] = useState(false);
   const [skillQuery, setSkillQuery] = useState('');
+  const [showAgentMenu, setShowAgentMenu] = useState(false);
+  const [agentQuery, setAgentQuery] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<SkillCommandMenuHandle>(null);
+  const agentMenuRef = useRef<AgentCommandMenuHandle>(null);
 
   const autoResize = useCallback(() => {
     const el = textareaRef.current;
@@ -31,6 +35,7 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
       onSend(message.trim());
       setMessage('');
       setShowSkillMenu(false);
+      setShowAgentMenu(false);
       requestAnimationFrame(() => {
         const el = textareaRef.current;
         if (el) {
@@ -47,8 +52,18 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
     if (value.startsWith('/') && !value.includes(' ') && !value.includes('\n')) {
       setShowSkillMenu(true);
       setSkillQuery(value.slice(1));
+      setShowAgentMenu(false);
     } else {
       setShowSkillMenu(false);
+    }
+
+    // Show agent menu when input starts with @ and has no spaces or newlines
+    if (value.startsWith('@') && !value.includes(' ') && !value.includes('\n')) {
+      setShowAgentMenu(true);
+      setAgentQuery(value.slice(1));
+      setShowSkillMenu(false);
+    } else if (!value.startsWith('@')) {
+      setShowAgentMenu(false);
     }
   };
 
@@ -58,9 +73,19 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
     textareaRef.current?.focus();
   };
 
+  const handleAgentSelect = (agent: AgentEntry) => {
+    setMessage(`@${agent.name} `);
+    setShowAgentMenu(false);
+    textareaRef.current?.focus();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Let skill menu handle keys first
     if (showSkillMenu && menuRef.current?.handleKeyDown(e)) {
+      return;
+    }
+    // Let agent menu handle keys
+    if (showAgentMenu && agentMenuRef.current?.handleKeyDown(e)) {
       return;
     }
 
@@ -101,6 +126,14 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
           query={skillQuery}
           onSelect={handleSkillSelect}
           onClose={() => setShowSkillMenu(false)}
+        />
+      )}
+      {showAgentMenu && (
+        <AgentCommandMenu
+          ref={agentMenuRef}
+          query={agentQuery}
+          onSelect={handleAgentSelect}
+          onClose={() => setShowAgentMenu(false)}
         />
       )}
       <div className="flex items-end gap-2 px-3 py-2">

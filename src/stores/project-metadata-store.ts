@@ -6,7 +6,9 @@ export interface ProjectMetadata {
   description: string;
   ai: {
     provider: string | null; // Connection ID (v2) or legacy provider name
-    personaId: string | null;
+    /** @deprecated Use agentName instead. Kept for migration compatibility. */
+    personaId?: string | null;
+    agentName: string | null;
     projectContext: string;
   };
 }
@@ -18,7 +20,7 @@ export function createDefaultMetadata(folderName: string): ProjectMetadata {
     description: '',
     ai: {
       provider: null,
-      personaId: null,
+      agentName: null,
       projectContext: '',
     },
   };

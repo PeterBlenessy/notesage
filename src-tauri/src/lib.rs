@@ -121,6 +121,9 @@ pub fn run() {
             execute_skill_script,
             read_agent_instructions,
             extract_bundled_skills,
+            discover_agents,
+            read_agent_content,
+            extract_bundled_agents,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { ArrowRight, Check, Cloud, FolderOpen, Loader2, X } from 'lucide-react';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
-import { useAIStore, getAllPersonas } from '@/stores/ai-store';
+import { useSkillStore } from '@/stores/skill-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useSyncStore } from '@/stores/sync-store';
 import { useConnectionsStore } from '@/stores/connections-store';
@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ProviderLogo } from '@/components/ProviderLogo';
-import { PersonaIcon } from '@/components/PersonaIcon';
+import { AgentIcon } from '@/components/AgentIcon';
 import { formatDisplayPath } from '@/lib/utils';
 
 interface ProjectSettingsProps {
@@ -39,8 +39,8 @@ interface ProjectSettingsProps {
 export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }: ProjectSettingsProps) {
   const metadata = useProjectMetadataStore((s) => s.metadataMap[projectPath]);
   const { updateMetadata, updateAI } = useProjectMetadataStore();
-  const aiStore = useAIStore();
   const connections = useConnectionsStore((s) => s.connections);
+  const getUserInvocableAgents = useSkillStore((s) => s.getUserInvocableAgents);
   const { icloudAvailable, icloudNotesagePath, notesRootPath } = useSettingsStore();
   const {
     icloudEnabled,
@@ -172,7 +172,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
     }
   }, [pendingSync, projectPath, icloudNotesagePath, notesRootPath, addSyncedProject, removeSyncedProject, saveSettings, onPathChanged]);
 
-  const allPersonas = metadata ? getAllPersonas(aiStore) : [];
+  const allAgents = metadata ? getUserInvocableAgents() : [];
   const selectedConnection = metadata ? connections.find((c) => c.id === metadata.ai.provider) : undefined;
 
   return (
@@ -344,34 +344,36 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
             )}
           </div>
 
-          {/* Persona Override */}
+          {/* Agent Override */}
           <div
             className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
           >
             <div>
-              <Label className="text-sm font-medium">Persona</Label>
+              <Label className="text-sm font-medium">Agent</Label>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Override the global AI persona for this project
+                Override the global AI agent for this project
               </p>
             </div>
             <Select
-              value={metadata.ai.personaId || '_global'}
+              value={metadata.ai.agentName || '_global'}
               onValueChange={(value) =>
-                updateAI(projectPath, { personaId: value === '_global' ? null : value })
+                updateAI(projectPath, { agentName: value === '_global' ? null : value })
               }
             >
               <SelectTrigger className="ml-auto w-56 text-left">
                 <SelectValue>
-                  {metadata.ai.personaId === null ? (
+                  {metadata.ai.agentName == null ? (
                     <span className="text-muted-foreground">Use Global Default</span>
                   ) : (() => {
-                    const p = allPersonas.find((p) => p.id === metadata.ai.personaId);
-                    return p ? (
+                    const a = allAgents.find((a) => a.name === metadata.ai.agentName);
+                    return a ? (
                       <span className="flex items-center gap-2">
-                        <PersonaIcon persona={p} size={14} />
-                        {p.name}
+                        <AgentIcon icon={a.icon} size={14} />
+                        {a.name}
                       </span>
-                    ) : null;
+                    ) : (
+                      <span>{metadata.ai.agentName}</span>
+                    );
                   })()}
                 </SelectValue>
               </SelectTrigger>
@@ -379,11 +381,11 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
                 <SelectItem value="_global">
                   <span className="text-muted-foreground">Use Global Default</span>
                 </SelectItem>
-                {allPersonas.map((persona) => (
-                  <SelectItem key={persona.id} value={persona.id}>
+                {allAgents.map((agent) => (
+                  <SelectItem key={agent.path} value={agent.name}>
                     <span className="flex items-center gap-2">
-                      <PersonaIcon persona={persona} size={14} />
-                      {persona.name}
+                      <AgentIcon icon={agent.icon} size={14} />
+                      {agent.name}
                     </span>
                   </SelectItem>
                 ))}

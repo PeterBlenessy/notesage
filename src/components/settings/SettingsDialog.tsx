@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, UserCircle2, FileText, GitBranch, Cloud, Info, Loader2, ArrowUpCircle, ScrollText, Code, Download, Blocks } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, FileText, GitBranch, Cloud, Info, Loader2, ArrowUpCircle, ScrollText, Code, Download, Blocks } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -8,7 +8,6 @@ import {
 } from '@/components/ui/dialog';
 import { ConnectionsSettings } from './ConnectionsSettings';
 import { UseCaseRoutingSettings } from './UseCaseRoutingSettings';
-import { PersonasSettings } from './PersonasSettings';
 import { PromptsSettings } from './PromptsSettings';
 import { SyncSettings } from './SyncSettings';
 import { SkillsSettings } from './SkillsSettings';
@@ -30,7 +29,7 @@ import { cn } from '@/lib/utils';
 import { tauriApi } from '@/lib/tauri';
 import type { UpdateState } from '@/hooks/useAutoUpdate';
 
-export type SettingsTab = 'ai' | 'personas' | 'prompts' | 'skills' | 'editor' | 'git' | 'sync' | 'developer' | 'about';
+export type SettingsTab = 'ai' | 'prompts' | 'skills' | 'editor' | 'git' | 'sync' | 'developer' | 'about';
 
 interface SettingsDialogProps {
   open?: boolean;
@@ -44,7 +43,6 @@ interface SettingsDialogProps {
 const TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
   { id: 'editor', label: 'Editor', icon: Sliders },
   { id: 'ai', label: 'AI Providers', icon: Sparkles },
-  { id: 'personas', label: 'AI Personas', icon: UserCircle2 },
   { id: 'prompts', label: 'Custom Prompts', icon: FileText },
   { id: 'skills', label: 'Skills & Agents', icon: Blocks },
   { id: 'git', label: 'Version Control', icon: GitBranch },
@@ -261,12 +259,6 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                     </Select>
                   </div>
                 </div>
-              </div>
-            )}
-
-            {activeTab === 'personas' && (
-              <div className="p-6">
-                <PersonasSettings />
               </div>
             )}
 

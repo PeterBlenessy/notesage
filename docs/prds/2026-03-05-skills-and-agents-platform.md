@@ -34,6 +34,18 @@ Notesage should adopt these standards rather than build a proprietary system, so
 4. Import existing MCP servers from other tools' config files
 5. Settings UI for MCP server management
 
+### Step C — Addressable Agents (✅ Implemented, separate PRD)
+
+Replace the hardcoded persona system with discoverable, file-based agents aligned with the industry standard (GitHub Copilot, Claude Code, VS Code Copilot). Agents are markdown files with YAML frontmatter in `agents/` directories, selectable via dropdown or `@agent-name` in chat. See `docs/prds/2026-03-07-addressable-agents.md` for full specification.
+
+1. Discover agent files from `agents/` directories (same scanning pattern as skills)
+2. Replace persona picker with agent dropdown
+3. `@agent-name` addressing in chat input
+4. Agent-to-skill connection via `allowed-tools` frontmatter
+5. Per-agent model preference via `model` frontmatter
+6. Migrate built-in personas to bundled agent files
+7. One-time migration of custom personas to agent `.md` files
+
 ## Non-Goals
 
 - Building a proprietary skill format (use the open Agent Skills standard)

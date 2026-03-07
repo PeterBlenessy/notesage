@@ -28,6 +28,7 @@ note-sage/
 │   │   │   ├── ai.rs       # AI provider commands (direct API)
 │   │   │   ├── acp.rs      # ACP agent management (spawn, auth, sessions, permissions, cleanup)
 │   │   │   ├── copilot_lsp.rs # Copilot Language Server (JSON-RPC, inline completions)
+│   │   │   ├── skills.rs   # Skill/agent discovery, script execution, bundled extraction
 │   │   │   ├── export.rs   # PDF export commands
 │   │   │   ├── git.rs      # Git operations
 │   │   │   └── watcher.rs  # Filesystem watcher (notify crate)
@@ -82,15 +83,19 @@ note-sage/
 │   │   │   ├── ConnectionsSettings.tsx # Multi-provider connections management
 │   │   │   ├── ConnectionCard.tsx  # Single connection display card
 │   │   │   ├── UseCaseRoutingSettings.tsx # Per-use-case provider routing
+│   │   │   ├── SkillsSettings.tsx  # Skills & Agents settings tab (skills browser, agents, agent instructions)
 │   │   │   └── ProjectSettings.tsx # Project-level settings
 │   │   ├── chat/
 │   │   │   ├── ChatPanel.tsx       # AI chat sidebar (context-aware footer: Tools popover for ACP, Search toggle for direct API)
 │   │   │   ├── ChatMessage.tsx     # Individual message with activity log
-│   │   │   ├── ChatInput.tsx       # Message input
+│   │   │   ├── ChatInput.tsx       # Message input (/ for skills, @ for agents)
+│   │   │   ├── SkillCommandMenu.tsx # Skill slash command autocomplete (/skill-name)
+│   │   │   ├── AgentCommandMenu.tsx # Agent @ command autocomplete (@agent-name)
 │   │   │   └── PermissionCard.tsx  # ACP tool call approval (allow once/session/always, deny)
 │   │   ├── activity/
 │   │   │   ├── ActivityStrip.tsx   # Agent activity strip (ActivityRail: 40px rail) + agent activity panel (ActivityPanel: resizable sidebar)
 │   │   │   └── ActivityTaskCard.tsx # Individual agent task card with streaming output
+│   │   ├── AgentIcon.tsx           # Agent icon renderer (Lucide name or emoji, fallback to UserRound)
 │   │   ├── MarkdownContent.tsx     # Shared markdown renderer (ReactMarkdown + remarkGfm)
 │   │   ├── editor/viewers/        # Non-markdown file viewers
 │   │   │   ├── EpubViewer.tsx     # EPUB reader (foliate-js Web Component, Cmd+F search)
@@ -109,14 +114,16 @@ note-sage/
 │   │   ├── useActivityNavigation.ts # Click-to-navigate from activity tasks to source comments
 │   │   ├── useCommentDelegation.ts # Comment → agent delegation flow
 │   │   ├── useCommentOperations.ts # Comment CRUD, decorations, status filtering
-│   │   └── useCopilotCompletion.ts # Copilot LSP lifecycle + ghost text completions
+│   │   ├── useCopilotCompletion.ts # Copilot LSP lifecycle + ghost text completions
+│   │   └── useSkillOperations.ts   # Skill/agent discovery orchestration (useSkillDiscovery mounted in App.tsx), persona migration, skill-aware prompt building
 │   ├── stores/
 │   │   ├── editor-store.ts         # Open tabs, active file
 │   │   ├── workspace-store.ts       # Explorer folders, projects, notes tree
 │   │   ├── project-metadata-store.ts # Project metadata (.notesage/project.json)
 │   │   ├── settings-store.ts       # App settings, theme
-│   │   ├── ai-store.ts             # AI provider configuration
+│   │   ├── ai-store.ts             # AI provider configuration (personas deprecated — replaced by addressable agents)
 │   │   ├── chat-store.ts           # Chat conversation state
+│   │   ├── skill-store.ts         # Skills registry, agent entries, agent instructions (persisted overrides)
 │   │   ├── epub-store.ts          # EPUB viewer preferences and bookmarks
 │   │   ├── activity-store.ts      # Agent task registry (persisted)
 │   │   └── tag-store.ts           # Workspace tag index (non-persisted)
@@ -150,6 +157,12 @@ note-sage/
 │       ├── openai.svg
 │       ├── google.svg
 │       └── ollama-official.png
+├── bundled-skills/                 # Built-in skills shipped with app (extracted to ~/.notesage/bundled-skills/)
+│   ├── create-skill/              # Meta-skill for scaffolding new skills
+│   └── create-agent/              # Meta-skill for creating agent instruction files
+├── bundled-agents/                 # Built-in agents shipped with app (extracted to ~/.notesage/bundled-agents/)
+│   ├── general-assistant.md       # Default agent (replaces General Assistant persona)
+│   └── ...                        # 6 more bundled agents (creative-writer, technical-editor, etc.)
 ├── docs/                           # Documentation
 ├── CLAUDE.md                       # Project spec (this references docs/)
 ├── package.json
@@ -190,7 +203,8 @@ All state stores use Zustand with the persist middleware for localStorage:
 - **workspace-store**: Explorer folders (multiple), open projects, notes tree, expanded folders, section collapse state
 - **project-metadata-store**: Project metadata from `.notesage/project.json` (name, description, AI overrides)
 - **settings-store**: Theme, window state, recent projects, UI preferences (floating toolbar toggle, external change diff review toggle), runtime-only `startupReady` flag (gates filesystem watchers until startup validation completes)
-- **ai-store**: AI provider selection, API keys, Ollama URL, suggestions enabled (legacy — used as fallback)
+- **ai-store**: AI provider selection, API keys, Ollama URL, suggestions enabled (legacy — used as fallback). Personas deprecated — replaced by addressable agents in skill-store. Custom persona data kept for one-time migration to agent `.md` files.
+- **skill-store**: Discovered skills registry with enable/disable overrides, discovered addressable agents (from `bundled-agents/`, `agents/` directories, provider-specific paths), agent instruction files, active agent name. Skills, agents, and instructions rebuilt from scan; enable/disable overrides and active agent name persisted. Agent discovery replaces the legacy persona system.
 - **connections-store**: Multi-provider connections with auth method, status, capabilities
 - **routing-store**: Per-use-case provider routing (interactive, agent_tasks, inline_completion)
 - **permission-store**: ACP tool call permission tracking with tiered approval (`sessionAllowed`: Set non-persisted, `alwaysAllowed`: string[] persisted); actions: `allowSession`, `removeSession`, `allowAlways`, `removeAlways`, `getToolTier` → `'none' | 'session' | 'always'`
@@ -225,7 +239,7 @@ interface AIProvider {
 
 - Anthropic: Claude Sonnet 4.5 (Messages API with server-side web search via `web_search_20250305`)
 - OpenAI: GPT-4o (Responses API `/v1/responses` with `web_search_preview` tool)
-- Ollama: Local AI models (no web search support)
+- Ollama: Local AI models (no web search support). Generic thinking/reasoning model support via runtime capability detection — queries `/api/show` before streaming to determine whether the model supports native `think: true` (separate `message.thinking` field), has thinking tags in its template (`{{.Thinking}}`), or uses `<think>` tags by convention. No hardcoded model-specific tags.
 
 **Path 2: ACP (Agent Client Protocol)** (for `agent_managed` connections)
 
@@ -307,10 +321,11 @@ interface AIProvider {
 3. Frontend calls `useAIOperations.sendChatMessage(content, messages)`
 4. Hook calls Tauri command `ai_chat_stream(messages, provider, apiKey, webSearchEnabled)`
 5. Rust makes streaming HTTP request to AI provider API (SSE)
-6. Text deltas emitted via `ai-stream-chunk` events, citations via `ai-citation` events
-7. Frontend accumulates content and updates assistant message via `useChatStore.updateMessage`
-8. On stream completion (`ai-stream-done`), citations attached to final message
-9. Chat history persisted to localStorage
+6. For Ollama: `detect_thinking_support()` queries `/api/show` before streaming to determine thinking tag structure; thinking content emitted via `ai-stream-thinking-chunk` events, regular content via `ai-stream-chunk` events
+7. For Anthropic/OpenAI: text deltas emitted via `ai-stream-chunk` events, citations via `ai-citation` events
+8. Frontend accumulates tokens locally (50ms throttled flush) and updates assistant message via `useChatStore.updateMessage` and `updateMessageThinking`
+9. On stream completion (`ai-stream-done`), citations attached to final message
+10. Chat history persisted to localStorage
 
 **ACP path:**
 

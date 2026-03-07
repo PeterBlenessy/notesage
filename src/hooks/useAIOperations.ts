@@ -1,5 +1,5 @@
-import { useCallback, useRef, useMemo } from 'react';
-import { useAIStore, getAllPersonas, BUILT_IN_PERSONAS } from '@/stores/ai-store';
+import { useCallback, useRef, useMemo, useState, useEffect } from 'react';
+import { useAIStore } from '@/stores/ai-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
@@ -414,9 +414,29 @@ export function useAIOperations() {
     return null;
   }, [singleMetadata, interactiveConnection, aiStore.provider, apiKeys, ollamaUrl, useCaseModel]);
 
-  const effectivePersonaId = singleMetadata?.ai.personaId ?? aiStore.activePersonaId;
-  const allPersonas = getAllPersonas(aiStore);
-  const effectivePersona = allPersonas.find((p) => p.id === effectivePersonaId) || BUILT_IN_PERSONAS[0];
+  // Active agent body — loaded and stored in state so changes trigger re-render
+  const activeAgent = useSkillStore((s) => s.getActiveAgent());
+  const [agentBody, setAgentBody] = useState<{ name: string; body: string }>({ name: '', body: '' });
+
+  // Keep agent body in sync with the active agent
+  useEffect(() => {
+    const agentName = activeAgent?.name ?? '';
+    if (!activeAgent || !agentName) {
+      setAgentBody({ name: '', body: '' });
+      return;
+    }
+    // Skip if already loaded for this agent
+    if (agentBody.name === agentName) return;
+
+    let cancelled = false;
+    invoke<{ name: string; body: string; path: string }>('read_agent_content', { agentPath: activeAgent.path })
+      .then((content) => { if (!cancelled) setAgentBody({ name: agentName, body: content.body }); })
+      .catch(() => { if (!cancelled) setAgentBody({ name: agentName, body: '' }); });
+    return () => { cancelled = true; };
+  }, [activeAgent?.name, activeAgent?.path]);
+
+  // Build the agent system message (replaces persona systemMessage)
+  const agentSystemMessage = agentBody.body || 'You are a helpful writing assistant.';
 
   // Discover goal files (only when exactly one project is selected)
   const { goalFiles } = useGoalsDiscovery(singleProjectPath);
@@ -433,9 +453,28 @@ export function useAIOperations() {
     return s.tabs.find((t) => t.id === s.activeTabId) ?? null;
   });
 
-  // Skill context for AI prompts
-  const skillDescriptions = useSkillStore((s) => s.getSkillDescriptionsForPrompt());
-  const notesageSkillDescriptions = useSkillStore((s) => s.getNotesageSkillDescriptionsForPrompt());
+  // Skill context for AI prompts — filtered by active agent's allowed-tools
+  const agentAllowedTools = activeAgent?.allowed_tools;
+  const skillDescriptions = useSkillStore((s) => {
+    const desc = s.getSkillDescriptionsForPrompt();
+    if (!agentAllowedTools || agentAllowedTools.length === 0) return desc;
+    // Filter to only allowed skills
+    const active = s.getActiveSkills().filter((sk) => agentAllowedTools.includes(sk.name));
+    if (active.length === 0) return '';
+    const lines = active.map((sk) => `- **${sk.name}**: ${sk.description}${sk.has_scripts ? ' (has scripts)' : ''}`);
+    return `\n\nAvailable skills:\n${lines.join('\n')}`;
+  });
+  const notesageSkillDescriptions = useSkillStore((s) => {
+    const desc = s.getNotesageSkillDescriptionsForPrompt();
+    if (!agentAllowedTools || agentAllowedTools.length === 0) return desc;
+    const active = s.getActiveSkills().filter(
+      (sk) => agentAllowedTools.includes(sk.name) &&
+        (sk.source === 'notesage-project' || sk.source === 'notesage-global' || sk.source === 'bundled')
+    );
+    if (active.length === 0) return '';
+    const lines = active.map((sk) => `- **${sk.name}**: ${sk.description}${sk.has_scripts ? ' (has scripts)' : ''}`);
+    return `\n\nNotesage skills:\n${lines.join('\n')}`;
+  });
   const agentInstructions = useSkillStore((s) => s.getMergedAgentInstructions());
   const notesageAgentInstructions = useSkillStore((s) => s.getNotesageAgentInstructions());
 
@@ -483,22 +522,23 @@ export function useAIOperations() {
       parts.push(fileContext);
     }
 
-    // Inject agent instructions (before persona, so persona can override)
+    // Inject agent instructions (always-on context)
     if (agentInstructions) {
       parts.push(agentInstructions);
     }
 
-    // Inject skill descriptions
+    // Active agent body — the selected agent's role and behavior instructions
+    if (agentSystemMessage) {
+      parts.unshift(agentSystemMessage);
+    }
+
+    // Inject skill descriptions (filtered by agent's allowed-tools if set)
     if (skillDescriptions) {
       parts.push(skillDescriptions);
     }
 
-    if (parts.length > 0) {
-      return `${parts.join('\n\n')}\n\n${effectivePersona.systemMessage}`;
-    }
-
-    return effectivePersona.systemMessage;
-  }, [selectedProjectPaths, singleProjectPath, singleMetadata, goalsContext, singleProject, activeTab, metadataMap, effectivePersona.systemMessage, agentInstructions, skillDescriptions]);
+    return parts.join('\n\n') || 'You are a helpful writing assistant.';
+  }, [selectedProjectPaths, singleProjectPath, singleMetadata, goalsContext, singleProject, activeTab, metadataMap, agentSystemMessage, agentInstructions, skillDescriptions]);
 
   // ACP-specific system message: only Notesage-specific skills and instructions
   // (the ACP agent discovers its own provider-specific skills and CLAUDE.md/AGENTS.md independently)
@@ -547,17 +587,18 @@ export function useAIOperations() {
       parts.push(notesageAgentInstructions);
     }
 
-    // Only Notesage-specific skills (not provider skills — ACP agent discovers those itself)
+    // Active agent body — framed as a mandatory role instruction so ACP agents adopt it
+    if (agentSystemMessage) {
+      parts.push(`<role-instructions>\nYou MUST adopt the following role for all responses in this conversation. This is your primary identity and overrides your default behavior:\n\n${agentSystemMessage}\n</role-instructions>`);
+    }
+
+    // Only Notesage-specific skills (filtered by agent's allowed-tools)
     if (notesageSkillDescriptions) {
       parts.push(notesageSkillDescriptions);
     }
 
-    if (parts.length > 0) {
-      return `${parts.join('\n\n')}\n\n${effectivePersona.systemMessage}`;
-    }
-
-    return effectivePersona.systemMessage;
-  }, [selectedProjectPaths, singleProjectPath, singleMetadata, goalsContext, singleProject, activeTab, metadataMap, effectivePersona.systemMessage, notesageAgentInstructions, notesageSkillDescriptions]);
+    return parts.join('\n\n') || 'You are a helpful writing assistant.';
+  }, [selectedProjectPaths, singleProjectPath, singleMetadata, goalsContext, singleProject, activeTab, metadataMap, agentSystemMessage, notesageAgentInstructions, notesageSkillDescriptions]);
 
   const generateText = useCallback(
     async (prompt: string): Promise<string> => {
@@ -865,17 +906,33 @@ export function useAIOperations() {
 
       try {
         let streamedContent = '';
+        let streamedThinking = '';
         const collectedCitations: Citation[] = [];
+
+        // Throttle UI updates to avoid overwhelming React with rapid token streams
+        let contentDirty = false;
+        let thinkingDirty = false;
+        const flushInterval = setInterval(() => {
+          if (thinkingDirty) {
+            updateMessageThinking(assistantMessageId, streamedThinking);
+            thinkingDirty = false;
+          }
+          if (contentDirty) {
+            updateMessage(assistantMessageId, streamedContent);
+            contentDirty = false;
+          }
+        }, 50);
 
         // Listen for stream chunks
         const unlistenChunk = await listen<string>('ai-stream-chunk', (event) => {
           streamedContent += event.payload;
-          updateMessage(assistantMessageId, streamedContent);
+          contentDirty = true;
         });
 
         // Listen for thinking chunks (Ollama thinking models)
         const unlistenThinking = await listen<string>('ai-stream-thinking-chunk', (event) => {
-          updateMessageThinking(assistantMessageId, event.payload);
+          streamedThinking += event.payload;
+          thinkingDirty = true;
         });
 
         // Listen for tool use events
@@ -894,13 +951,18 @@ export function useAIOperations() {
         });
 
         const cleanup = () => {
+          clearInterval(flushInterval);
           unlistenChunk();
           unlistenThinking();
           unlistenTool();
           unlistenCitation();
+          // Final flush of any pending content
+          if (streamedThinking) {
+            updateMessageThinking(assistantMessageId, streamedThinking);
+          }
           // Attach collected citations to the final message
-          if (collectedCitations.length > 0) {
-            updateMessage(assistantMessageId, streamedContent, collectedCitations);
+          if (collectedCitations.length > 0 || streamedContent) {
+            updateMessage(assistantMessageId, streamedContent, collectedCitations.length > 0 ? collectedCitations : undefined);
           }
           setLoading(false);
           setActiveTool(null);
@@ -916,7 +978,7 @@ export function useAIOperations() {
           cleanup();
         });
 
-        // System message with composed content (project context + goals + persona)
+        // System message with composed content (project context + goals + agent)
         const systemMessage: ChatMessage = {
           role: 'system',
           content: composedSystemMessage,

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe, Shield, Terminal, Pencil, FileOutput, FileInput, FolderSearch, TextSearch, Download, Plus, X, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { PersonaIcon } from '@/components/PersonaIcon';
+import { AgentIcon } from '@/components/AgentIcon';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { useChatStore, selectMessages, selectProjectPaths } from '@/stores/chat-store';
-import { useAIStore, getActivePersona, getAllPersonas } from '@/stores/ai-store';
+import { useAIStore } from '@/stores/ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -54,10 +54,10 @@ export function ChatPanel() {
   const { isLoading, activeTool, clearMessages, setSelectedProjectPaths, toggleProjectPath, webSearchEnabled, setWebSearchEnabled, conversations, activeConversationId, createConversation, deleteConversation, setActiveConversation } = useChatStore();
   const messages = useChatStore(selectMessages);
   const selectedProjectPaths = useChatStore(selectProjectPaths);
-  const aiStore = useAIStore();
-  const { provider: legacyProvider, setActivePersona } = aiStore;
-  const activePersona = getActivePersona(aiStore);
-  const allPersonas = getAllPersonas(aiStore);
+  const legacyProvider = useAIStore((s) => s.provider);
+  const getUserInvocableAgents = useSkillStore((s) => s.getUserInvocableAgents);
+  const activeAgent = useSkillStore((s) => s.getActiveAgent());
+  const setActiveAgent = useSkillStore((s) => s.setActiveAgent);
   const projects = useWorkspaceStore((s) => s.projects);
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
   const interactiveConnection = useRoutingStore((s) => s.getConnectionForUseCase('interactive'));
@@ -88,7 +88,7 @@ export function ChatPanel() {
   const sessionAllowed = usePermissionStore((s) => s.sessionAllowed);
   const alwaysAllowed = usePermissionStore((s) => s.alwaysAllowed);
   const [providerOpen, setProviderOpen] = useState(false);
-  const [personaOpen, setPersonaOpen] = useState(false);
+  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [convListOpen, setConvListOpen] = useState(false);
@@ -165,9 +165,26 @@ export function ChatPanel() {
       createConversation();
     }
 
-    // Detect /skill-name prefix and expand with skill body
+    // Detect @agent-name prefix — switch active agent, strip prefix from message
     let expandedContent = content;
-    const slashMatch = content.match(/^\/([a-z0-9][a-z0-9-]*)\s*(.*)/s);
+    const atMatch = content.match(/^@([a-z0-9][a-z0-9-]*)\s*(.*)/s);
+    if (atMatch) {
+      const agentName = atMatch[1];
+      const restOfMessage = atMatch[2];
+      const agent = useSkillStore.getState().getAgentByName(agentName);
+      if (agent) {
+        // Switch active agent — body will be injected as system message by useAIOperations
+        setActiveAgent(agentName);
+        if (!restOfMessage.trim()) {
+          // Just "@agent-name" with no text — only switch, don't send
+          return;
+        }
+        expandedContent = restOfMessage;
+      }
+    }
+
+    // Detect /skill-name prefix and expand with skill body
+    const slashMatch = expandedContent.match(/^\/([a-z0-9][a-z0-9-]*)\s*(.*)/s);
     if (slashMatch) {
       const skillName = slashMatch[1];
       const restOfMessage = slashMatch[2];
@@ -439,32 +456,45 @@ export function ChatPanel() {
                   )}
                 </Popover>
               )}
-              <Popover open={personaOpen} onOpenChange={setPersonaOpen}>
+              <Popover open={agentPickerOpen} onOpenChange={setAgentPickerOpen}>
                 <PopoverTrigger asChild>
                   <button type="button" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent/50 active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-                    <PersonaIcon persona={activePersona} size={14} />
-                    <span>{activePersona.name}</span>
+                    <AgentIcon icon={activeAgent?.icon} size={14} />
+                    <span>{activeAgent?.name ?? 'No agent'}</span>
                     <ChevronUp className="h-3 w-3 opacity-50" />
                   </button>
                 </PopoverTrigger>
-                <PopoverContent side="top" align="start" className="w-48 p-1">
-                  {allPersonas.map((persona) => (
+                <PopoverContent side="top" align="start" className="w-56 p-1 max-h-64 overflow-y-auto thin-scrollbar">
+                  {getUserInvocableAgents().map((agent) => (
                     <button
-                      key={persona.id}
+                      key={agent.path}
                       onClick={() => {
-                        setActivePersona(persona.id);
-                        setPersonaOpen(false);
+                        setActiveAgent(agent.name);
+                        setAgentPickerOpen(false);
                       }}
-                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${
-                        persona.id === activePersona.id
+                      className={`w-full flex items-start gap-2 px-2 py-1.5 rounded text-xs transition-colors ${
+                        agent.name === activeAgent?.name
                           ? 'bg-accent text-accent-foreground'
                           : 'text-foreground hover:bg-accent/50'
                       }`}
                     >
-                      <PersonaIcon persona={persona} size={14} />
-                      <span>{persona.name}</span>
+                      <AgentIcon icon={agent.icon} size={14} className="mt-0.5 shrink-0" />
+                      <div className="min-w-0 text-left">
+                        <div className="truncate font-medium">{agent.name}</div>
+                        {agent.description && (
+                          <div className="text-muted-foreground line-clamp-1 mt-0.5">{agent.description}</div>
+                        )}
+                      </div>
+                      {agent.name === activeAgent?.name && (
+                        <Check className="h-3 w-3 shrink-0 mt-0.5 text-muted-foreground" />
+                      )}
                     </button>
                   ))}
+                  {getUserInvocableAgents().length === 0 && (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                      No agents discovered
+                    </div>
+                  )}
                 </PopoverContent>
               </Popover>
               <Popover open={projectOpen} onOpenChange={setProjectOpen}>

@@ -45,6 +45,62 @@ pub struct AgentInstruction {
     pub priority: u8,
 }
 
+// --- Agent types ---
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AgentEntry {
+    pub name: String,
+    pub description: String,
+    pub path: String,
+    pub source: String, // "notesage-project" | "notesage-global" | "bundled" | "claude" | "codex" | "gemini" | "github"
+    pub model: Option<String>,
+    pub icon: Option<String>,
+    pub allowed_tools: Option<Vec<String>>,
+    pub user_invocable: Option<bool>,
+    pub disable_model_invocation: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AgentContent {
+    pub name: String,
+    pub body: String,
+    pub path: String,
+}
+
+/// YAML frontmatter shape for agent .md files
+#[derive(Deserialize, Debug, Default)]
+struct AgentFrontmatter {
+    name: Option<String>,
+    description: Option<String>,
+    model: Option<String>,
+    icon: Option<String>,
+    #[serde(rename = "allowed-tools")]
+    allowed_tools: Option<Vec<String>>,
+    #[serde(rename = "user-invocable")]
+    user_invocable: Option<bool>,
+    #[serde(rename = "disable-model-invocation")]
+    disable_model_invocation: Option<bool>,
+}
+
+/// Parse YAML frontmatter from a markdown file (generic).
+/// Returns (yaml_str, body) where body is the content after the closing `---`.
+fn parse_frontmatter_raw(content: &str) -> (Option<&str>, &str) {
+    let trimmed = content.trim_start();
+    if !trimmed.starts_with("---") {
+        return (None, content);
+    }
+
+    let after_first = &trimmed[3..];
+    if let Some(end_idx) = after_first.find("\n---") {
+        let yaml_str = &after_first[..end_idx];
+        let body_start = end_idx + 4; // skip \n---
+        let body = after_first[body_start..].trim_start_matches('\n');
+        (Some(yaml_str), body)
+    } else {
+        (None, content)
+    }
+}
+
 /// YAML frontmatter shape for SKILL.md files
 #[derive(Deserialize, Debug, Default)]
 struct SkillFrontmatter {
@@ -64,24 +120,25 @@ struct SkillFrontmatter {
 /// Parse YAML frontmatter from a SKILL.md file.
 /// Returns (frontmatter, body) where body is the content after the closing `---`.
 fn parse_frontmatter(content: &str) -> (Option<SkillFrontmatter>, String) {
-    let trimmed = content.trim_start();
-    if !trimmed.starts_with("---") {
-        return (None, content.to_string());
-    }
-
-    // Find the closing ---
-    let after_first = &trimmed[3..];
-    if let Some(end_idx) = after_first.find("\n---") {
-        let yaml_str = &after_first[..end_idx];
-        let body_start = end_idx + 4; // skip \n---
-        let body = after_first[body_start..].trim_start_matches('\n').to_string();
-
-        match serde_yaml::from_str::<SkillFrontmatter>(yaml_str) {
-            Ok(fm) => (Some(fm), body),
+    let (yaml_str, body) = parse_frontmatter_raw(content);
+    match yaml_str {
+        Some(yaml) => match serde_yaml::from_str::<SkillFrontmatter>(yaml) {
+            Ok(fm) => (Some(fm), body.to_string()),
             Err(_) => (None, content.to_string()),
-        }
-    } else {
-        (None, content.to_string())
+        },
+        None => (None, content.to_string()),
+    }
+}
+
+/// Parse YAML frontmatter from an agent .md file.
+fn parse_agent_frontmatter(content: &str) -> (Option<AgentFrontmatter>, String) {
+    let (yaml_str, body) = parse_frontmatter_raw(content);
+    match yaml_str {
+        Some(yaml) => match serde_yaml::from_str::<AgentFrontmatter>(yaml) {
+            Ok(fm) => (Some(fm), body.to_string()),
+            Err(_) => (None, content.to_string()),
+        },
+        None => (None, content.to_string()),
     }
 }
 
@@ -515,6 +572,197 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
             use std::os::unix::fs::PermissionsExt;
             let _ = fs::set_permissions(&target, fs::Permissions::from_mode(0o755));
         }
+    }
+
+    Ok(bundled_dir.to_string_lossy().to_string())
+}
+
+/// Determine the source label for agents found in a given base directory.
+fn determine_agent_source(base_dir: &str) -> String {
+    if base_dir.contains("bundled-agents") || base_dir.contains("bundled_agents") {
+        "bundled".to_string()
+    } else if base_dir.contains(".notesage/agents") {
+        if let Some(home) = dirs::home_dir() {
+            let global_path = home.join(".notesage").join("agents");
+            if base_dir == global_path.to_string_lossy() {
+                return "notesage-global".to_string();
+            }
+        }
+        "notesage-project".to_string()
+    } else if base_dir.contains("/.claude/agents") {
+        "claude".to_string()
+    } else if base_dir.contains("/.codex/agents") {
+        "codex".to_string()
+    } else if base_dir.contains("/.gemini/agents") {
+        "gemini".to_string()
+    } else if base_dir.contains("/.github/agents") || base_dir.contains(".github/agents") {
+        "github".to_string()
+    } else {
+        "external".to_string()
+    }
+}
+
+/// Discover addressable agent files from specified base directories.
+///
+/// Each base directory is scanned for `*.md` and `*.agent.md` files with valid YAML
+/// frontmatter containing at least `name` and `description`.
+#[tauri::command]
+pub async fn discover_agents(
+    base_dirs: Vec<String>,
+) -> Result<Vec<AgentEntry>, String> {
+    let mut agents = Vec::new();
+
+    for base_dir in &base_dirs {
+        let base_path = Path::new(base_dir);
+        if !base_path.is_dir() {
+            continue;
+        }
+
+        let entries = match fs::read_dir(base_path) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        let source = determine_agent_source(base_dir);
+
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            if !entry_path.is_file() {
+                continue;
+            }
+
+            let file_name = entry_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            // Match *.md and *.agent.md files
+            if !file_name.ends_with(".md") {
+                continue;
+            }
+
+            let content = match fs::read_to_string(&entry_path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let (frontmatter, _body) = parse_agent_frontmatter(&content);
+            let fm = match frontmatter {
+                Some(fm) => fm,
+                None => continue, // Skip files without valid frontmatter
+            };
+
+            // Both name and description are required
+            let name = match fm.name {
+                Some(n) => n,
+                None => continue,
+            };
+            let description = match fm.description {
+                Some(d) => d,
+                None => continue,
+            };
+
+            agents.push(AgentEntry {
+                name,
+                description,
+                path: entry_path.to_string_lossy().to_string(),
+                source: source.clone(),
+                model: fm.model,
+                icon: fm.icon,
+                allowed_tools: fm.allowed_tools,
+                user_invocable: fm.user_invocable,
+                disable_model_invocation: fm.disable_model_invocation,
+            });
+        }
+    }
+
+    Ok(agents)
+}
+
+/// Read the full body of an agent file (markdown after frontmatter).
+#[tauri::command]
+pub async fn read_agent_content(
+    agent_path: String,
+) -> Result<AgentContent, String> {
+    let path = Path::new(&agent_path);
+
+    if !path.is_file() {
+        return Err(format!("Agent file not found: {}", agent_path));
+    }
+
+    let content = fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read agent file: {}", e))?;
+
+    let (frontmatter, body) = parse_agent_frontmatter(&content);
+    let name = frontmatter
+        .and_then(|fm| fm.name)
+        .unwrap_or_else(|| {
+            path.file_stem()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default()
+        });
+
+    Ok(AgentContent {
+        name,
+        body,
+        path: agent_path,
+    })
+}
+
+/// Extract bundled agents to ~/.notesage/bundled-agents/.
+/// Always overwrites to ensure bundled agents stay up-to-date with app version.
+#[tauri::command]
+pub async fn extract_bundled_agents() -> Result<String, String> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Cannot determine home directory".to_string())?;
+    let bundled_dir = home.join(".notesage").join("bundled-agents");
+
+    let bundled_files: Vec<BundledFile> = vec![
+        BundledFile {
+            relative_path: "general-assistant.md",
+            content: include_str!("../../../bundled-agents/general-assistant.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "creative-writer.md",
+            content: include_str!("../../../bundled-agents/creative-writer.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "technical-editor.md",
+            content: include_str!("../../../bundled-agents/technical-editor.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "fact-checker.md",
+            content: include_str!("../../../bundled-agents/fact-checker.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "academic-writer.md",
+            content: include_str!("../../../bundled-agents/academic-writer.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "copywriter.md",
+            content: include_str!("../../../bundled-agents/copywriter.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "proofreader.md",
+            content: include_str!("../../../bundled-agents/proofreader.md"),
+            executable: false,
+        },
+    ];
+
+    for file in &bundled_files {
+        let target = bundled_dir.join(file.relative_path);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create directory for {}: {}", file.relative_path, e))?;
+        }
+        fs::write(&target, file.content)
+            .map_err(|e| format!("Failed to write {}: {}", file.relative_path, e))?;
     }
 
     Ok(bundled_dir.to_string_lossy().to_string())
@@ -973,6 +1221,231 @@ mod tests {
         let (prog, args) = resolve_interpreter(&script).unwrap();
         assert!(prog.contains("myscript"));
         assert!(args.is_empty());
+    }
+
+    // --- discover_agents tests ---
+
+    #[test]
+    fn discover_agents_finds_valid_agent() {
+        let tmp = create_temp_dir();
+        fs::write(
+            tmp.path().join("editor.md"),
+            "---\nname: editor\ndescription: Specialist in editorial consistency\nicon: pen-line\n---\nYou are an editor.",
+        ).unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(discover_agents(vec![tmp.path().to_string_lossy().to_string()]));
+        let agents = result.unwrap();
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0].name, "editor");
+        assert_eq!(agents[0].description, "Specialist in editorial consistency");
+        assert_eq!(agents[0].icon.as_deref(), Some("pen-line"));
+    }
+
+    #[test]
+    fn discover_agents_finds_agent_md_extension() {
+        let tmp = create_temp_dir();
+        fs::write(
+            tmp.path().join("reviewer.agent.md"),
+            "---\nname: reviewer\ndescription: Reviews code\n---\nYou review code.",
+        ).unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(discover_agents(vec![tmp.path().to_string_lossy().to_string()]));
+        let agents = result.unwrap();
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0].name, "reviewer");
+    }
+
+    #[test]
+    fn discover_agents_skips_missing_name() {
+        let tmp = create_temp_dir();
+        fs::write(
+            tmp.path().join("noname.md"),
+            "---\ndescription: Has no name\n---\nBody",
+        ).unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(discover_agents(vec![tmp.path().to_string_lossy().to_string()]));
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn discover_agents_skips_missing_description() {
+        let tmp = create_temp_dir();
+        fs::write(
+            tmp.path().join("nodesc.md"),
+            "---\nname: nodesc\n---\nBody",
+        ).unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(discover_agents(vec![tmp.path().to_string_lossy().to_string()]));
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn discover_agents_skips_invalid_frontmatter() {
+        let tmp = create_temp_dir();
+        fs::write(
+            tmp.path().join("bad.md"),
+            "---\n: invalid: yaml: [[\n---\nBody",
+        ).unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(discover_agents(vec![tmp.path().to_string_lossy().to_string()]));
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn discover_agents_skips_no_frontmatter() {
+        let tmp = create_temp_dir();
+        fs::write(
+            tmp.path().join("plain.md"),
+            "Just a regular markdown file.",
+        ).unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(discover_agents(vec![tmp.path().to_string_lossy().to_string()]));
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn discover_agents_parses_all_frontmatter_fields() {
+        let tmp = create_temp_dir();
+        fs::write(
+            tmp.path().join("full.md"),
+            "---\nname: full-agent\ndescription: Full agent\nmodel: sonnet\nicon: star\nallowed-tools:\n  - bash\n  - read\nuser-invocable: false\ndisable-model-invocation: true\n---\nBody",
+        ).unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(discover_agents(vec![tmp.path().to_string_lossy().to_string()]));
+        let agents = result.unwrap();
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0].model.as_deref(), Some("sonnet"));
+        assert_eq!(agents[0].icon.as_deref(), Some("star"));
+        assert_eq!(agents[0].allowed_tools, Some(vec!["bash".to_string(), "read".to_string()]));
+        assert_eq!(agents[0].user_invocable, Some(false));
+        assert_eq!(agents[0].disable_model_invocation, Some(true));
+    }
+
+    #[test]
+    fn discover_agents_source_attribution() {
+        let tmp = create_temp_dir();
+
+        // Create a bundled-agents subdirectory
+        let bundled = tmp.path().join("bundled-agents");
+        fs::create_dir(&bundled).unwrap();
+        fs::write(
+            bundled.join("assistant.md"),
+            "---\nname: assistant\ndescription: General assistant\n---\nBody",
+        ).unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(discover_agents(vec![bundled.to_string_lossy().to_string()]));
+        let agents = result.unwrap();
+        assert_eq!(agents[0].source, "bundled");
+    }
+
+    #[test]
+    fn discover_agents_skips_nonexistent_dir() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(discover_agents(vec!["/nonexistent/path/12345".to_string()]));
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn discover_agents_skips_directories() {
+        let tmp = create_temp_dir();
+        fs::create_dir(tmp.path().join("subdir.md")).unwrap(); // directory with .md name
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(discover_agents(vec![tmp.path().to_string_lossy().to_string()]));
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn discover_agents_multiple_dirs() {
+        let tmp1 = create_temp_dir();
+        let tmp2 = create_temp_dir();
+        fs::write(
+            tmp1.path().join("a.md"),
+            "---\nname: agent-a\ndescription: Agent A\n---\nBody",
+        ).unwrap();
+        fs::write(
+            tmp2.path().join("b.md"),
+            "---\nname: agent-b\ndescription: Agent B\n---\nBody",
+        ).unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(discover_agents(vec![
+            tmp1.path().to_string_lossy().to_string(),
+            tmp2.path().to_string_lossy().to_string(),
+        ]));
+        let agents = result.unwrap();
+        assert_eq!(agents.len(), 2);
+    }
+
+    // --- read_agent_content tests ---
+
+    #[test]
+    fn read_agent_content_returns_body() {
+        let tmp = create_temp_dir();
+        let agent_file = tmp.path().join("editor.md");
+        fs::write(
+            &agent_file,
+            "---\nname: editor\ndescription: An editor\n---\nYou are an editor.\n\nBe thorough.",
+        ).unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(read_agent_content(agent_file.to_string_lossy().to_string()));
+        let content = result.unwrap();
+        assert_eq!(content.name, "editor");
+        assert_eq!(content.body, "You are an editor.\n\nBe thorough.");
+        assert!(content.path.contains("editor.md"));
+    }
+
+    #[test]
+    fn read_agent_content_uses_stem_as_fallback_name() {
+        let tmp = create_temp_dir();
+        let agent_file = tmp.path().join("my-agent.md");
+        fs::write(&agent_file, "No frontmatter, just body.").unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(read_agent_content(agent_file.to_string_lossy().to_string()));
+        let content = result.unwrap();
+        assert_eq!(content.name, "my-agent");
+    }
+
+    #[test]
+    fn read_agent_content_errors_when_missing() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(read_agent_content("/nonexistent/agent.md".to_string()));
+        assert!(result.is_err());
+    }
+
+    // --- determine_agent_source tests ---
+
+    #[test]
+    fn determine_agent_source_bundled() {
+        assert_eq!(determine_agent_source("/Users/me/.notesage/bundled-agents"), "bundled");
+    }
+
+    #[test]
+    fn determine_agent_source_providers() {
+        assert_eq!(determine_agent_source("/Users/me/.claude/agents"), "claude");
+        assert_eq!(determine_agent_source("/Users/me/.codex/agents"), "codex");
+        assert_eq!(determine_agent_source("/Users/me/.gemini/agents"), "gemini");
+        assert_eq!(determine_agent_source("/project/.github/agents"), "github");
+    }
+
+    #[test]
+    fn determine_agent_source_notesage_project() {
+        assert_eq!(determine_agent_source("/projects/my-app/.notesage/agents"), "notesage-project");
+    }
+
+    #[test]
+    fn determine_agent_source_unknown() {
+        assert_eq!(determine_agent_source("/some/random/path"), "external");
     }
 
     // --- read_agent_instructions tests ---

@@ -41,6 +41,24 @@ export interface AgentInstruction {
   priority: number;
 }
 
+export interface AgentEntry {
+  name: string;
+  description: string;
+  path: string;
+  source: string;
+  model?: string;
+  icon?: string;
+  allowed_tools?: string[];
+  user_invocable?: boolean;
+  disable_model_invocation?: boolean;
+}
+
+export interface AgentContent {
+  name: string;
+  body: string;
+  path: string;
+}
+
 // --- Store ---
 
 interface SkillStore {
@@ -58,6 +76,19 @@ interface SkillStore {
 
   /** Whether a scan is currently in progress. */
   isScanning: boolean;
+
+  // --- Agent state ---
+
+  /** All discovered addressable agents (rebuilt from scan, not persisted). */
+  agents: AgentEntry[];
+
+  /** Currently active agent name. Persisted. */
+  activeAgentName: string;
+
+  /** User overrides for agent enabled state (agent path → enabled). Persisted. */
+  agentEnabledOverrides: Record<string, boolean>;
+
+  // --- Skill methods ---
 
   /** Get active skills: enabled, respecting hierarchy (same-name: project > global > external). */
   getActiveSkills: () => SkillEntry[];
@@ -88,6 +119,29 @@ interface SkillStore {
 
   /** Reset all user overrides. */
   resetOverrides: () => void;
+
+  // --- Agent methods ---
+
+  /** Get hierarchy-resolved agents (same-name: project > global > bundled > external). */
+  getActiveAgents: () => AgentEntry[];
+
+  /** Get user-invocable agents (filtered by user_invocable !== false and enabled). */
+  getUserInvocableAgents: () => AgentEntry[];
+
+  /** Get a specific agent by name from hierarchy-resolved agents. */
+  getAgentByName: (name: string) => AgentEntry | undefined;
+
+  /** Get the currently active agent entry. Falls back to general-assistant. */
+  getActiveAgent: () => AgentEntry | undefined;
+
+  /** Scan for addressable agent files. */
+  scanAgents: (baseDirs: string[]) => Promise<void>;
+
+  /** Set the active agent by name. */
+  setActiveAgent: (name: string) => void;
+
+  /** Toggle an agent's enabled state. */
+  toggleAgent: (agentPath: string, enabled: boolean) => void;
 }
 
 /** Source priority for hierarchy resolution (higher = wins). */
@@ -98,6 +152,7 @@ const SOURCE_PRIORITY: Record<string, number> = {
   'gemini': 2,
   'codex': 2,
   'claude': 2,
+  'github': 2,
   'notesage-global': 3,
   'notesage-project': 4,
 };
@@ -114,6 +169,9 @@ export const useSkillStore = create<SkillStore>()(
       agentInstructions: [],
       lastScanTimestamp: 0,
       isScanning: false,
+      agents: [],
+      activeAgentName: 'general-assistant',
+      agentEnabledOverrides: {},
 
       getActiveSkills: () => {
         const { skills, enabledOverrides } = get();
@@ -215,10 +273,67 @@ export const useSkillStore = create<SkillStore>()(
         })),
 
       resetOverrides: () => set({ enabledOverrides: {} }),
+
+      // --- Agent methods ---
+
+      getActiveAgents: () => {
+        const { agents, agentEnabledOverrides } = get();
+
+        // Group by name, keep highest priority
+        const byName = new Map<string, AgentEntry>();
+        for (const agent of agents) {
+          const existing = byName.get(agent.name);
+          if (!existing || getSourcePriority(agent.source) > getSourcePriority(existing.source)) {
+            byName.set(agent.name, agent);
+          }
+        }
+
+        // Filter by enabled state
+        return Array.from(byName.values()).filter((agent) => {
+          const override = agentEnabledOverrides[agent.path];
+          return override !== false;
+        });
+      },
+
+      getUserInvocableAgents: () => {
+        return get().getActiveAgents().filter((a) => a.user_invocable !== false);
+      },
+
+      getAgentByName: (name) => {
+        return get().getActiveAgents().find((a) => a.name === name);
+      },
+
+      getActiveAgent: () => {
+        const { activeAgentName } = get();
+        const agent = get().getAgentByName(activeAgentName);
+        if (agent) return agent;
+        // Fallback to general-assistant
+        return get().getAgentByName('general-assistant');
+      },
+
+      scanAgents: async (baseDirs) => {
+        try {
+          const agents = await invoke<AgentEntry[]>('discover_agents', { baseDirs });
+          set({ agents });
+        } catch (e) {
+          console.error('Agent discovery failed:', e);
+        }
+      },
+
+      setActiveAgent: (name) => set({ activeAgentName: name }),
+
+      toggleAgent: (agentPath, enabled) =>
+        set((state) => ({
+          agentEnabledOverrides: { ...state.agentEnabledOverrides, [agentPath]: enabled },
+        })),
     }),
     {
       name: 'notesage-skills',
-      partialize: (state) => ({ enabledOverrides: state.enabledOverrides }),
+      partialize: (state) => ({
+        enabledOverrides: state.enabledOverrides,
+        activeAgentName: state.activeAgentName,
+        agentEnabledOverrides: state.agentEnabledOverrides,
+      }),
     }
   )
 );

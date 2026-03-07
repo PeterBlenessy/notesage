@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AIProviderType } from '@/lib/ai/types';
 
+/** @deprecated Use addressable agents (skill-store) instead. Kept for migration compatibility. */
 export interface AIPersona {
   id: string;
   name: string;
@@ -17,7 +18,7 @@ export interface CustomPrompt {
   template: string;
 }
 
-// Built-in AI personas
+/** @deprecated Use bundled agents instead. Kept for migration compatibility. */
 export const BUILT_IN_PERSONAS: AIPersona[] = [
   {
     id: 'general',
@@ -76,8 +77,9 @@ interface AIStore {
   ollamaUrl: string;
   suggestionsEnabled: boolean;
 
-  // Personas
+  /** @deprecated Use skill-store activeAgentName instead. */
   activePersonaId: string;
+  /** @deprecated Use addressable agents (agent .md files) instead. Read by migration. */
   customPersonas: AIPersona[];
 
   // Custom Prompts
@@ -88,7 +90,7 @@ interface AIStore {
   setOllamaUrl: (url: string) => void;
   toggleSuggestions: () => void;
 
-  // Persona actions
+  /** @deprecated Use skill-store setActiveAgent instead. */
   setActivePersona: (personaId: string) => void;
   addCustomPersona: (persona: Omit<AIPersona, 'id' | 'builtIn'>) => void;
   updateCustomPersona: (id: string, persona: Partial<AIPersona>) => void;
@@ -163,13 +165,13 @@ export const useAIStore = create<AIStore>()(
   )
 );
 
-// Helper to get all personas (built-in + custom)
+/** @deprecated Use skill-store getUserInvocableAgents instead. */
 export const getAllPersonas = (store: AIStore): AIPersona[] => [
   ...BUILT_IN_PERSONAS,
   ...store.customPersonas,
 ];
 
-// Helper to get active persona
+/** @deprecated Use skill-store getActiveAgent instead. */
 export const getActivePersona = (store: AIStore): AIPersona => {
   const allPersonas = getAllPersonas(store);
   return allPersonas.find((p) => p.id === store.activePersonaId) || BUILT_IN_PERSONAS[0];

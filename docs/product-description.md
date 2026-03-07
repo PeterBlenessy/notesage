@@ -140,25 +140,43 @@ Multi-provider AI integration with chat and inline actions.
 
 - Anthropic Claude (Messages API with server-side web search via `web_search_20250305`)
 - OpenAI (Responses API `/v1/responses` with `web_search_preview` tool)
-- Ollama (local models, no web search)
+- Ollama (local models, no web search, generic thinking/reasoning model support)
 
 **Features:**
 
 - Chat panel as collapsible right sidebar (Cmd+Shift+A) with streaming responses
 - Inline AI actions via BubbleMenu: Improve, Summarize, Expand selected text
-- AI personas with configurable system messages
+- Addressable agents: file-based agent system replacing legacy personas — discovered from `bundled-agents/`, `~/.notesage/agents/`, project `.notesage/agents/`, `.github/agents/`, and provider-specific directories
+- Agent picker dropdown in chat footer; `@agent-name` addressing in chat input for per-message agent scoping
+- 7 bundled agents (General Assistant, Creative Writer, Technical Editor, Fact Checker, Academic Writer, Copywriter, Proofreader) with YAML frontmatter and markdown body
+- Agent-to-skill connection: `allowed-tools` frontmatter filters which skills an agent can access
+- Agents section in Settings > Skills & Agents for viewing, enabling/disabling discovered agents
+- One-time migration: custom personas auto-converted to agent `.md` files on first launch
 - Custom prompts/templates for AI actions
-- Project-scoped AI context (provider, persona, and context overrides per project)
+- Project-scoped AI context (provider, agent, and context overrides per project)
 - Provider logos with dark mode support
 - All AI calls through Tauri backend (Rust) for security
 - API keys stored in localStorage via Zustand persist
+- Ollama thinking model support: collapsible reasoning display with generic runtime detection (no hardcoded model tags)
+
+**Ollama thinking/reasoning model support:**
+
+- Before streaming, queries `/api/show` to detect model capabilities at runtime
+- Models with native `thinking` capability (e.g., DeepSeek-R1 with updated Ollama): uses `think: true` parameter, thinking returned in separate `message.thinking` JSON field
+- Models without native support but with thinking tag patterns in template (e.g., `{{.Thinking}}`): extracts opening/closing tags from model template and parses them from the content stream
+- Models with reasoning in name/family (e.g., `phi4-mini-reasoning`) but no template tags: falls back to `<think>...</think>` tag parsing
+- Non-reasoning models: content passed through without any tag parsing
+- Thinking content displayed in a collapsible section above the assistant response in the chat panel
+- Throttled UI updates (50ms flush interval) prevent rendering storms from token-by-token thinking output
 
 **Architecture:**
 
 - Provider interface: `AIProvider` with `generateText()` and `chat()` methods
 - Three implementations: AnthropicProvider, OpenAIProvider, OllamaProvider
-- State stores: ai-store (config), chat-store (messages)
-- Tauri commands: ai_generate_text, ai_chat, ai_chat_stream
+- State stores: ai-store (config, legacy personas deprecated), chat-store (messages), skill-store (agents, skills, instructions)
+- Tauri commands: ai_generate_text, ai_chat, ai_chat_stream, discover_agents, read_agent_content, extract_bundled_agents
+- Agent discovery: `useSkillDiscovery` hook (mounted in `App.tsx`) orchestrates extraction, migration, and scanning at startup
+- Ollama thinking detection: `detect_thinking_support()` in `ai_streaming.rs` — queries `/api/show` for capabilities, template, and model metadata
 
 **Future enhancements (not yet built):**
 
@@ -534,14 +552,30 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - `.notesage/mcp.json` (project) and `~/.notesage/mcp.json` (global) for Notesage-specific servers
 - Settings UI for MCP server management
 
+**Step C — Addressable Agents (Personas to Agents):** ✅ Implemented
+
+- Replaced hardcoded persona system with discoverable, file-based agents aligned with industry standards (GitHub Copilot, Claude Code, VS Code Copilot)
+- Discover agent files from `agents/` directories: `.notesage/agents/`, `~/.notesage/agents/`, `~/.claude/agents/`, `.github/agents/`, etc.
+- Agent files: markdown with YAML frontmatter (`name`, `description`, `model`, `icon`, `allowed-tools`)
+- Agent picker dropdown replaces persona picker in chat footer
+- `@agent-name` addressing in chat input for per-message agent scoping
+- Agent-to-skill connection: `allowed-tools` filters which skills an agent can access
+- Per-agent model preference: `model` field maps to available connections
+- 7 built-in personas migrated to bundled agent files; custom personas auto-migrated on first launch
+- Two distinct layers preserved: agent instructions (`agents.md`) = always-on context; agents (`agents/*.md`) = selectable roles
+- `useSkillDiscovery` hook mounted in `App.tsx` orchestrates the full discovery lifecycle
+- `PersonasSettings.tsx` and `PersonaIcon.tsx` removed; personas tab removed from Settings
+- PRD: `docs/prds/2026-03-07-addressable-agents.md`
+
 **Architecture considerations:**
 
 - Adopts two complementary open standards: Agent Skills (SKILL.md) for capabilities/workflows, MCP for callable tool servers
 - Agent Skills adopted by Claude Code, Codex CLI, Gemini CLI, VS Code Copilot, Cursor, and 30+ tools (350,000+ skills available)
 - MCP adopted by all major AI tools with 5,800+ servers and 300+ clients
+- Addressable agents follow the cross-tool standard: `.github/agents/*.md` (Copilot), `.claude/agents/*.md` (Claude Code), with shared frontmatter fields
 - Script execution via `std::process::Command` with timeout, path traversal protection, and interpreter resolution
 - Phase 10 sandboxing wraps the script execution layer with OS-level isolation
-- PRD: `docs/prds/2026-03-05-skills-and-agents-platform.md`
+- PRDs: `docs/prds/2026-03-05-skills-and-agents-platform.md`, `docs/prds/2026-03-07-addressable-agents.md`
 
 ### Phase 8 — AI-Assisted Research (Skill Pack)
 

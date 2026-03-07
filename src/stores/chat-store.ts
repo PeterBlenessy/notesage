@@ -225,7 +225,7 @@ export const useChatStore = create<ChatStore>()(
           ...c,
           messages: c.messages.map((msg) =>
             msg.timestamp === timestamp
-              ? { ...msg, thinking: (msg.thinking || '') + thinking }
+              ? { ...msg, thinking }
               : msg
           ),
         }))),

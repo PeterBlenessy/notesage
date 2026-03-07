@@ -12,6 +12,144 @@ pub struct Citation {
     pub cited_text: String,
 }
 
+/// Thinking tag pair inferred from a model's capabilities or template.
+#[derive(Debug, Clone)]
+struct ThinkingTags {
+    opening: String,
+    closing: String,
+}
+
+/// Query the Ollama `/api/show` endpoint for a model and return:
+/// - whether the model natively supports `think: true`
+/// - the thinking tags to look for in the content stream (if any)
+///
+/// Ollama detects thinking capability from the model template. When a model
+/// doesn't support native `think: true`, it may still emit thinking tags like
+/// `<think>...</think>` in its content. We detect these by inspecting the
+/// model template for common patterns rather than hardcoding model-specific tags.
+async fn detect_thinking_support(
+    client: &reqwest::Client,
+    base_url: &str,
+    model: &str,
+) -> (bool, Option<ThinkingTags>) {
+    let url = format!("{}/api/show", base_url);
+    let resp = client
+        .post(&url)
+        .json(&serde_json::json!({ "name": model }))
+        .send()
+        .await;
+
+    let json = match resp {
+        Ok(r) if r.status().is_success() => r.json::<serde_json::Value>().await.ok(),
+        _ => None,
+    };
+
+    let json = match json {
+        Some(j) => j,
+        None => return (false, None),
+    };
+
+    // Check if capabilities include "thinking"
+    let has_native_thinking = json["capabilities"]
+        .as_array()
+        .map(|arr| arr.iter().any(|v| v.as_str() == Some("thinking")))
+        .unwrap_or(false);
+
+    if has_native_thinking {
+        return (true, None); // Ollama handles it — no need for tag parsing
+    }
+
+    // Model doesn't support native thinking. Inspect the template for thinking
+    // tag patterns. Common patterns across models:
+    //   <think>...</think>       (DeepSeek-R1, Qwen, phi4)
+    //   <thinking>...</thinking> (some models)
+    //   <thought>...</thought>   (some models)
+    let template_str = json["template"].as_str().unwrap_or("");
+
+    // Look for {{.Thinking}} or {{ .Thinking }} references in the Go template
+    // which indicate the model is designed for thinking but may not be registered
+    // with Ollama's parser system yet.
+    let has_thinking_field = template_str.contains(".Thinking");
+
+    if has_thinking_field {
+        // The model template references Thinking but Ollama didn't detect it.
+        // Try to extract the tags surrounding the Thinking field reference.
+        // Common template patterns:
+        //   <think>{{.Thinking}}</think>
+        //   <|think|>{{.Thinking}}<|/think|>
+        if let Some(tags) = extract_tags_from_template(template_str) {
+            return (false, Some(tags));
+        }
+    }
+
+    // Fallback: check if the model family/name suggests reasoning capability
+    // and use standard <think>...</think> tags as a best guess.
+    let model_lower = model.to_lowercase();
+    let model_family = json["details"]["family"].as_str().unwrap_or("");
+    let model_type = json["model_info"]["general.basename"].as_str().unwrap_or("");
+    let is_reasoning_model = model_lower.contains("reason")
+        || model_lower.contains("think")
+        || model_lower.contains("deepseek-r1")
+        || model_lower.contains("qwen")
+        || model_family.contains("deepseek")
+        || model_type.contains("reason")
+        || model_type.contains("think");
+
+    if is_reasoning_model {
+        return (false, Some(ThinkingTags {
+            opening: "<think>".to_string(),
+            closing: "</think>".to_string(),
+        }));
+    }
+
+    (false, None)
+}
+
+/// Try to extract opening/closing tags from a Go template string by finding
+/// text surrounding a `{{.Thinking}}` reference.
+fn extract_tags_from_template(template: &str) -> Option<ThinkingTags> {
+    // Find the position of .Thinking in the template
+    let think_pos = template.find(".Thinking")?;
+
+    // Walk backward from .Thinking to find the nearest non-template text
+    // that looks like an XML-ish opening tag
+    let before = &template[..think_pos];
+    let after = &template[think_pos..];
+
+    // Look for patterns like `<think>`, `<|think|>`, etc. before .Thinking
+    // by finding the last `<` before the template action
+    let opening = extract_tag_before(before)?;
+    let closing = extract_tag_after(after)?;
+
+    Some(ThinkingTags { opening, closing })
+}
+
+fn extract_tag_before(s: &str) -> Option<String> {
+    // Find the last line/segment that contains a `<` before the template action
+    // Look for pattern: <tagname> or <|tagname|>
+    let trimmed = s.trim_end_matches(|c: char| c == '{' || c == ' ' || c == '-');
+    let last_line = trimmed.lines().last().unwrap_or("").trim();
+    if last_line.starts_with('<') && last_line.ends_with('>') {
+        return Some(last_line.to_string());
+    }
+    None
+}
+
+fn extract_tag_after(s: &str) -> Option<String> {
+    // Skip past the `{{.Thinking}}` action and find the closing tag
+    let after_action = s.find("}}")? + 2;
+    let rest = s[after_action..].trim_start();
+    let first_line = rest.lines().next().unwrap_or("").trim();
+    if first_line.starts_with("</") && first_line.ends_with('>') {
+        return Some(first_line.to_string());
+    }
+    // Also match <|/tagname|> style
+    if first_line.starts_with("<|/") && first_line.ends_with("|>") {
+        return Some(first_line.to_string());
+    }
+    None
+}
+
 /// Parse SSE events from a buffer. Extracts complete events (terminated by \n\n)
 /// and returns them as (event_type, data) pairs. Mutates the buffer to remove
 /// consumed events.
@@ -460,26 +598,30 @@ pub async fn ollama_chat_stream(
         })
         .collect();
 
+    // Query model capabilities before streaming to determine thinking support.
+    // This avoids hardcoding model-specific tag patterns.
+    let (has_native_thinking, thinking_tags) =
+        detect_thinking_support(&client, base, model).await;
+
     let mut body = serde_json::json!({
         "model": model,
         "messages": api_messages,
-        "stream": true,
-        "think": true
+        "stream": true
     });
+
+    // Only send think:true when the model natively supports it
+    if has_native_thinking {
+        body["think"] = serde_json::json!(true);
+    }
 
     if let Some(temp) = temperature {
         body["options"] = serde_json::json!({ "temperature": temp });
     }
 
-    // Track whether the model produced native thinking output via `message.thinking`.
-    // If it didn't, we fall back to parsing `<think>` tags from `message.content`.
-    let mut received_native_thinking = false;
-    // State machine for <think> tag fallback parsing across chunk boundaries.
+    // State for tag-based thinking parsing (only used when thinking_tags is Some)
     let mut in_think_tag = false;
-    // Buffer for content that arrives while we're uncertain about tag boundaries.
     let mut tag_scan_buf = String::new();
 
-    // Try with think:true first; if the model doesn't support it, retry without.
     let response = {
         let resp = client
             .post(format!("{}/api/chat", base))
@@ -491,27 +633,9 @@ pub async fn ollama_chat_stream(
 
         if !resp.status().is_success() {
             let error_text = resp.text().await.unwrap_or_default();
-            // If the model doesn't support thinking, retry without think:true
-            if error_text.contains("does not support thinking") {
-                body.as_object_mut().unwrap().remove("think");
-                let retry = client
-                    .post(format!("{}/api/chat", base))
-                    .header("content-type", "application/json")
-                    .json(&body)
-                    .send()
-                    .await
-                    .map_err(|e| format!("Ollama API request failed: {}", e))?;
-                if !retry.status().is_success() {
-                    let retry_err = retry.text().await.unwrap_or_default();
-                    return Err(format!("Ollama API error: {}", retry_err));
-                }
-                retry
-            } else {
-                return Err(format!("Ollama API error: {}", error_text));
-            }
-        } else {
-            resp
+            return Err(format!("Ollama API error: {}", error_text));
         }
+        resp
     };
 
     let mut stream = response.bytes_stream();
@@ -529,41 +653,44 @@ pub async fn ollama_chat_stream(
                     buffer = buffer[line_end + 1..].to_string();
 
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-                        // Native thinking field (produced when think:true is set)
-                        if let Some(thinking) = json["message"]["thinking"].as_str() {
-                            if !thinking.is_empty() {
-                                received_native_thinking = true;
-                                window
-                                    .emit("ai-stream-thinking-chunk", thinking)
-                                    .map_err(|e| format!("Failed to emit thinking event: {}", e))?;
+                        // Native thinking field (produced when think:true is set and model supports it)
+                        if has_native_thinking {
+                            if let Some(thinking) = json["message"]["thinking"].as_str() {
+                                if !thinking.is_empty() {
+                                    window
+                                        .emit("ai-stream-thinking-chunk", thinking)
+                                        .map_err(|e| format!("Failed to emit thinking event: {}", e))?;
+                                }
                             }
                         }
 
                         if let Some(content) = json["message"]["content"].as_str() {
                             if !content.is_empty() {
-                                if received_native_thinking {
-                                    // Model uses native thinking — emit content as-is
+                                if has_native_thinking || thinking_tags.is_none() {
+                                    // Native thinking handled above, or no thinking tags detected —
+                                    // emit content as-is
                                     window
                                         .emit("ai-stream-chunk", content)
                                         .map_err(|e| format!("Failed to emit event: {}", e))?;
                                 } else {
-                                    // Fallback: parse <think> tags from content stream
+                                    // Tag-based thinking: parse using the detected opening/closing tags
+                                    let tags = thinking_tags.as_ref().unwrap();
                                     tag_scan_buf.push_str(content);
                                     while !tag_scan_buf.is_empty() {
                                         if in_think_tag {
-                                            if let Some(end) = tag_scan_buf.find("</think>") {
+                                            if let Some(end) = tag_scan_buf.find(&tags.closing) {
                                                 let thinking_text = &tag_scan_buf[..end];
                                                 if !thinking_text.is_empty() {
                                                     window
                                                         .emit("ai-stream-thinking-chunk", thinking_text)
                                                         .map_err(|e| format!("Failed to emit thinking event: {}", e))?;
                                                 }
-                                                tag_scan_buf = tag_scan_buf[end + 8..].to_string();
+                                                tag_scan_buf = tag_scan_buf[end + tags.closing.len()..].to_string();
                                                 in_think_tag = false;
                                             } else {
-                                                // Might have a partial </think> at the end
-                                                // Keep last 7 chars (len("</think")-1) in buffer
-                                                let safe = if tag_scan_buf.len() > 7 { tag_scan_buf.len() - 7 } else { 0 };
+                                                // Might have a partial closing tag at the end
+                                                let hold = tags.closing.len() - 1;
+                                                let safe = if tag_scan_buf.len() > hold { tag_scan_buf.len() - hold } else { 0 };
                                                 if safe > 0 {
                                                     let to_emit = &tag_scan_buf[..safe];
                                                     if !to_emit.is_empty() {
@@ -575,30 +702,29 @@ pub async fn ollama_chat_stream(
                                                 }
                                                 break; // Wait for more data
                                             }
+                                        } else if let Some(start) = tag_scan_buf.find(&tags.opening) {
+                                            let before = &tag_scan_buf[..start];
+                                            if !before.is_empty() {
+                                                window
+                                                    .emit("ai-stream-chunk", before)
+                                                    .map_err(|e| format!("Failed to emit event: {}", e))?;
+                                            }
+                                            tag_scan_buf = tag_scan_buf[start + tags.opening.len()..].to_string();
+                                            in_think_tag = true;
                                         } else {
-                                            if let Some(start) = tag_scan_buf.find("<think>") {
-                                                let before = &tag_scan_buf[..start];
-                                                if !before.is_empty() {
+                                            // Might have a partial opening tag at the end
+                                            let hold = tags.opening.len() - 1;
+                                            let safe = if tag_scan_buf.len() > hold { tag_scan_buf.len() - hold } else { 0 };
+                                            if safe > 0 {
+                                                let to_emit = &tag_scan_buf[..safe];
+                                                if !to_emit.is_empty() {
                                                     window
-                                                        .emit("ai-stream-chunk", before)
+                                                        .emit("ai-stream-chunk", to_emit)
                                                         .map_err(|e| format!("Failed to emit event: {}", e))?;
                                                 }
-                                                tag_scan_buf = tag_scan_buf[start + 7..].to_string();
-                                                in_think_tag = true;
-                                            } else {
-                                                // Might have a partial <think at the end
-                                                let safe = if tag_scan_buf.len() > 6 { tag_scan_buf.len() - 6 } else { 0 };
-                                                if safe > 0 {
-                                                    let to_emit = &tag_scan_buf[..safe];
-                                                    if !to_emit.is_empty() {
-                                                        window
-                                                            .emit("ai-stream-chunk", to_emit)
-                                                            .map_err(|e| format!("Failed to emit event: {}", e))?;
-                                                    }
-                                                    tag_scan_buf = tag_scan_buf[safe..].to_string();
-                                                }
-                                                break; // Wait for more data
+                                                tag_scan_buf = tag_scan_buf[safe..].to_string();
                                             }
+                                            break; // Wait for more data
                                         }
                                     }
                                 }

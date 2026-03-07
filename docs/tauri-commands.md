@@ -289,7 +289,7 @@ pub async fn ai_chat(
 
 ### ai_chat_stream
 
-Streaming multi-turn chat with an AI provider. Emits events: `ai-stream-chunk` (text delta), `ai-stream-done` (completion), `ai-tool-use` (tool status), `ai-citation` (web search citations).
+Streaming multi-turn chat with an AI provider. Emits events: `ai-stream-chunk` (text delta), `ai-stream-thinking-chunk` (thinking/reasoning delta), `ai-stream-done` (completion), `ai-tool-use` (tool status), `ai-citation` (web search citations).
 
 ```rust
 #[tauri::command]
@@ -320,9 +320,20 @@ pub async fn ai_chat_stream(
 **Events emitted:**
 
 - `ai-stream-chunk` (String): Text delta to append
+- `ai-stream-thinking-chunk` (String): Thinking/reasoning delta (for Ollama thinking models). Emitted when the model produces reasoning traces — either via native `message.thinking` field (`think: true`) or via tag-based parsing (`<think>...</think>` and similar tags detected from the model template at runtime)
 - `ai-stream-done` (()): Stream completed
 - `ai-tool-use` ({ tool: string, status: string }): Tool usage (e.g., web_search started)
 - `ai-citation` ({ url: string, title: string, cited_text: string }): Citation from web search
+
+**Ollama thinking model detection:**
+
+Before streaming, the Ollama backend calls `/api/show` to detect thinking support at runtime:
+1. If the model's capabilities include `"thinking"` → sends `think: true`, uses native `message.thinking` field
+2. If the model template contains `{{.Thinking}}` → extracts opening/closing tags from template text
+3. If the model name/family contains reasoning indicators (e.g., `reason`, `think`, `deepseek-r1`) → uses `<think>...</think>` as fallback
+4. Otherwise → no tag parsing, all content emitted as `ai-stream-chunk`
+
+This avoids hardcoding model-specific tag patterns and follows the same detection strategy as Ollama itself (`thinking/template.go` → `InferTags()`).
 
 ### AIRequest Struct
 
