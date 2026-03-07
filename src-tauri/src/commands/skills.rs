@@ -785,15 +785,13 @@ pub async fn extract_bundled_agents() -> Result<String, String> {
     }
 
     // Extract bundled agent instructions to ~/.notesage/agents.md
-    // Only write if file doesn't exist (preserves user customizations)
+    // Always overwrite to keep in sync with app version (same as bundled agents/skills)
     let agents_md = home.join(".notesage").join("agents.md");
-    if !agents_md.is_file() {
-        fs::write(
-            &agents_md,
-            include_str!("../../../bundled-agents/agents.md"),
-        )
-        .map_err(|e| format!("Failed to write agents.md: {}", e))?;
-    }
+    fs::write(
+        &agents_md,
+        include_str!("../../../bundled-agents/agents.md"),
+    )
+    .map_err(|e| format!("Failed to write agents.md: {}", e))?;
 
     // Clean up legacy bundled-agents.md
     let legacy_instructions = home.join(".notesage").join("bundled-agents.md");

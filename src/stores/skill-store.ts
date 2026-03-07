@@ -77,6 +77,9 @@ interface SkillStore {
   /** Whether a scan is currently in progress. */
   isScanning: boolean;
 
+  /** Counter bumped to trigger a rescan from external events (e.g. file watcher). */
+  rescanCounter: number;
+
   // --- Agent state ---
 
   /** All discovered addressable agents (rebuilt from scan, not persisted). */
@@ -142,6 +145,9 @@ interface SkillStore {
 
   /** Toggle an agent's enabled state. */
   toggleAgent: (agentPath: string, enabled: boolean) => void;
+
+  /** Request a rescan of skills/agents (bumps counter, observed by useSkillDiscovery). */
+  requestRescan: () => void;
 }
 
 /** Known skill source labels. */
@@ -171,6 +177,7 @@ export const useSkillStore = create<SkillStore>()(
       agentInstructions: [],
       lastScanTimestamp: 0,
       isScanning: false,
+      rescanCounter: 0,
       agents: [],
       activeAgentName: 'general-assistant',
       agentEnabledOverrides: {},
@@ -328,6 +335,8 @@ export const useSkillStore = create<SkillStore>()(
         set((state) => ({
           agentEnabledOverrides: { ...state.agentEnabledOverrides, [agentPath]: enabled },
         })),
+
+      requestRescan: () => set((state) => ({ rescanCounter: state.rescanCounter + 1 })),
     }),
     {
       name: 'notesage-skills',

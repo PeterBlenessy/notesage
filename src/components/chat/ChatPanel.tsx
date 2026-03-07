@@ -381,7 +381,8 @@ export function ChatPanel() {
         ) : (
           <>
             {messages.map((message, index) => {
-              const isLastAssistant = !isLoading && message.role === 'assistant' && index === messages.length - 1;
+              const isLast = index === messages.length - 1;
+              const isLastAssistant = !isLoading && message.role === 'assistant' && isLast;
               // Parse quick-reply tags from assistant messages — strip from rendered content
               const isAssistant = message.role === 'assistant';
               const parsed = isAssistant && message.content ? parseQuickReplies(message.content) : null;
@@ -390,7 +391,7 @@ export function ChatPanel() {
                 : message;
               return (
                 <div key={index}>
-                  <ChatMessage message={displayMessage} />
+                  <ChatMessage message={displayMessage} isLast={isLast} />
                   {isLastAssistant && parsed && parsed.replies.length > 0 && (
                     <QuickReplies replies={parsed.replies} onSelect={handleSend} />
                   )}

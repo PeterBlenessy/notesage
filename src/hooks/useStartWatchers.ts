@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { tauriApi } from "@/lib/tauri";
+import { invoke } from "@tauri-apps/api/core";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useSyncStore } from "@/stores/sync-store";
@@ -48,5 +49,13 @@ export function useStartWatchers() {
         console.error(`Failed to watch ${path}:`, err);
       });
     }
+
+    // Watch ~/.notesage/ for skill/agent changes (created by agents or manually)
+    invoke<string>("get_home_dir").then((home) => {
+      const notesageDir = `${home}/.notesage`;
+      tauriApi.watchDirectory(notesageDir).catch((err) => {
+        console.error(`Failed to watch ${notesageDir}:`, err);
+      });
+    });
   }, [startupReady, notesRootPath, icloudNotesagePath, icloudEnabled, projects, explorerFolders]);
 }

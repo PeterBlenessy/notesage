@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { tauriApi } from "@/lib/tauri";
 import { useEditorStore } from "@/stores/editor-store";
 import { useExternalChangeStore } from "@/stores/external-change-store";
@@ -7,8 +8,18 @@ import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSyncStore } from "@/stores/sync-store";
+import { useSkillStore } from "@/stores/skill-store";
 import { useFileOperations, refreshGitForPath } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
+
+/** Cached home dir for skill/agent path matching (set once on first event). */
+let cachedHomeDir: string | undefined;
+async function getHomeDir(): Promise<string> {
+  if (!cachedHomeDir) {
+    cachedHomeDir = await invoke<string>("get_home_dir");
+  }
+  return cachedHomeDir;
+}
 
 interface FileChangedPayload {
   path: string;
@@ -41,6 +52,7 @@ export function useFileWatcher() {
   const { refreshFileTree } = useFileOperations();
   const refreshDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
   const gitDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const skillRescanDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Per-file debounce for modify events — macOS FSEvents often fires duplicates
   const modifyDebounce = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   // Per-project debounce for iCloud project discovery
@@ -109,6 +121,27 @@ export function useFileWatcher() {
         refreshGitForPath(path);
       }, 500);
 
+      // Detect changes inside skills/ or agents/ directories → rescan
+      if (kind === "create" || kind === "delete" || kind === "modify") {
+        getHomeDir().then((home) => {
+          const isSkillOrAgent =
+            path.includes("/skills/") ||
+            path.includes("/agents/") ||
+            path.endsWith("/agents.md") ||
+            // Global paths
+            path.startsWith(`${home}/.notesage/skills/`) ||
+            path.startsWith(`${home}/.notesage/agents/`) ||
+            path === `${home}/.notesage/agents.md`;
+
+          if (isSkillOrAgent) {
+            clearTimeout(skillRescanDebounce.current);
+            skillRescanDebounce.current = setTimeout(() => {
+              useSkillStore.getState().requestRescan();
+            }, 500);
+          }
+        });
+      }
+
       // For modify events, debounce per-file to collapse duplicate FSEvents
       if (kind === "modify") {
         const normalizedPath = normalizePath(path);
@@ -124,6 +157,7 @@ export function useFileWatcher() {
       unlisten.then((fn) => fn());
       clearTimeout(refreshDebounce.current);
       clearTimeout(gitDebounce.current);
+      clearTimeout(skillRescanDebounce.current);
       for (const t of Object.values(modifyDebounce.current)) clearTimeout(t);
       for (const t of Object.values(icloudDiscoveryDebounce.current)) clearTimeout(t);
     };

@@ -91,16 +91,19 @@ function UserContent({ message }: { message: ChatMessageType }) {
 
 interface ChatMessageProps {
   message: ChatMessageType;
+  /** Whether this is the last message in the list (controls streaming cursor) */
+  isLast?: boolean;
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, isLast = false }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const { isLoading, deleteMessage } = useChatStore();
 
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
 
   const isUser = message.role === 'user';
-  const isStreaming = !isUser && isLoading && message.content.length === 0;
+  const isActivelyStreaming = isLoading && isLast;
+  const isStreaming = !isUser && isActivelyStreaming && message.content.length === 0;
   const hasCitations = !isUser && message.citations && message.citations.length > 0;
   const hasActivities = !isUser && message.activities && message.activities.length > 0;
   const hasThinking = !isUser && !!message.thinking;
@@ -155,13 +158,13 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 strokeWidth={1.5}
               />
               <span>
-                {isLoading && isThinkingOnly ? 'Thinking...' : 'Thinking'}
+                {isActivelyStreaming && isThinkingOnly ? 'Thinking...' : 'Thinking'}
               </span>
             </button>
             {thinkingExpanded && (
               <div className="mt-1 max-h-60 overflow-y-auto thin-scrollbar rounded-md bg-muted/40 px-2 py-1.5 italic">
                 <MarkdownContent content={message.thinking!} className="text-xs text-muted-foreground" />
-                {isLoading && isThinkingOnly && (
+                {isActivelyStreaming && isThinkingOnly && (
                   <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse bg-muted-foreground" />
                 )}
               </div>
@@ -182,7 +185,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
         ) : (
           <div>
             <MarkdownContent content={message.content} className="text-sm" />
-            {isLoading && (
+            {isActivelyStreaming && (
               <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse bg-muted-foreground" />
             )}
           </div>
@@ -198,7 +201,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
         {/* Agent Activity Log */}
         {hasActivities && (
-          <ActivityLog activities={message.activities!} isActive={isLoading} />
+          <ActivityLog activities={message.activities!} isActive={isActivelyStreaming} />
         )}
 
         {/* Citations / Sources */}

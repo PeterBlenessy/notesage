@@ -192,6 +192,7 @@ export function useSkillDiscovery() {
   const startupReady = useSettingsStore((s) => s.startupReady);
   const connections = useConnectionsStore((s) => s.connections);
   const projects = useWorkspaceStore((s) => s.projects);
+  const rescanCounter = useSkillStore((s) => s.rescanCounter);
 
   useEffect(() => {
     if (!startupReady) return;
@@ -274,7 +275,7 @@ export function useSkillDiscovery() {
     };
 
     run();
-  }, [startupReady, connections, projects]);
+  }, [startupReady, connections, projects, rescanCounter]);
 }
 
 /**
