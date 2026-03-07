@@ -53,6 +53,7 @@ pub fn run() {
             create_file,
             create_directory,
             copy_file,
+            copy_directory,
             rename_path,
             delete_path,
             path_exists,

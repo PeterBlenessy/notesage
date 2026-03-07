@@ -159,6 +159,10 @@ export const tauriApi = {
     await invoke("rename_path", { oldPath, newPath });
   },
 
+  async copyDirectory(source: string, destination: string): Promise<void> {
+    await invoke("copy_directory", { source, destination });
+  },
+
   async deletePath(path: string): Promise<void> {
     await invoke("delete_path", { path });
   },

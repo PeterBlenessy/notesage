@@ -204,6 +204,37 @@ pub async fn copy_file(source: String, destination: String) -> Result<(), String
 }
 
 #[tauri::command]
+pub async fn copy_directory(source: String, destination: String) -> Result<(), String> {
+    let src = Path::new(&source);
+    if !src.exists() {
+        return Err(format!("Source directory does not exist: {}", source));
+    }
+    if !src.is_dir() {
+        return Err(format!("Source is not a directory: {}", source));
+    }
+    if Path::new(&destination).exists() {
+        return Err(format!("Destination already exists: {}", destination));
+    }
+    copy_dir_recursive(src, Path::new(&destination))
+        .map_err(|e| format!("Failed to copy directory: {}", e))
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let entry_type = entry.file_type()?;
+        let dest_path = dst.join(entry.file_name());
+        if entry_type.is_dir() {
+            copy_dir_recursive(&entry.path(), &dest_path)?;
+        } else {
+            fs::copy(entry.path(), &dest_path)?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_home_dir() -> Result<String, String> {
     dirs::home_dir()
         .map(|p| p.to_string_lossy().to_string())

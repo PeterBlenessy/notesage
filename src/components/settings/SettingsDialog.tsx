@@ -47,7 +47,7 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
   { id: 'skills', label: 'Skills & Agents', icon: Blocks },
   { id: 'git', label: 'Version Control', icon: GitBranch },
   { id: 'sync', label: 'Sync', icon: Cloud },
-  { id: 'developer', label: 'Developer', icon: Code },
+  { id: 'developer', label: 'Advanced', icon: Code },
   { id: 'about', label: 'About', icon: Info },
 ];
 
@@ -122,6 +122,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
     gitEnabled, setGitEnabled,
     pageBreaks, setPageBreaks,
     chatHistoryLimit, setChatHistoryLimit,
+    skillManagement, setSkillManagement,
     debugLogging, setDebugLogging,
     autoCheckUpdates, setAutoCheckUpdates,
     lastUpdateCheck,
@@ -572,9 +573,9 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
               <div className="p-6 space-y-6">
                 <div className="space-y-4">
                   <div>
-                    <Label className="text-sm font-semibold">Developer</Label>
+                    <Label className="text-sm font-semibold">Advanced</Label>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Troubleshooting and diagnostics
+                      Power user features and diagnostics
                     </p>
                   </div>
 
@@ -600,6 +601,28 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                           setDebugLogging(checked);
                           tauriApi.setDebugLogging(checked);
                         }}
+                        className="ml-auto"
+                      />
+                    </div>
+
+                    <div
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
+                    >
+                      <div>
+                        <Label
+                          htmlFor="skill-management"
+                          className="text-sm font-medium cursor-pointer"
+                        >
+                          Skill &amp; Agent Management
+                        </Label>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Enable delete and move actions for custom skills and agents in Settings
+                        </p>
+                      </div>
+                      <Switch
+                        id="skill-management"
+                        checked={skillManagement}
+                        onCheckedChange={setSkillManagement}
                         className="ml-auto"
                       />
                     </div>

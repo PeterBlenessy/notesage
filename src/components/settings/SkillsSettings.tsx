@@ -1,14 +1,41 @@
-import { RefreshCw, ScrollText, ChevronDown, Plus } from 'lucide-react';
+import { RefreshCw, ScrollText, ChevronDown, Plus, MoreHorizontal, Trash2, ArrowUpFromLine, ArrowDownToLine } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useSkillStore, SOURCE_PRIORITY, type SkillEntry, type AgentEntry } from '@/stores/skill-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { AgentIcon } from '@/components/AgentIcon';
+import { tauriApi } from '@/lib/tauri';
 import { cn } from '@/lib/utils';
 import { NewSkillWizard } from '@/components/NewSkillWizard';
 import { NewAgentWizard } from '@/components/NewAgentWizard';
+
+/** Bundled skill names — always overwritten on startup, not user-manageable. */
+const BUNDLED_SKILL_NAMES = new Set(['create-skill', 'create-agent']);
+
+/** Bundled agent names — always overwritten on startup, not user-manageable. */
+const BUNDLED_AGENT_NAMES = new Set([
+  'general-assistant', 'creative-writer', 'technical-editor',
+  'fact-checker', 'academic-writer', 'copywriter', 'proofreader',
+]);
+
+/** Check if a skill/agent is user-manageable (notesage source, not bundled). */
+function isManageable(source: string, name: string, type: 'skill' | 'agent'): boolean {
+  if (source !== 'notesage-global' && source !== 'notesage-project') return false;
+  if (type === 'skill') return !BUNDLED_SKILL_NAMES.has(name);
+  return !BUNDLED_AGENT_NAMES.has(name);
+}
 
 /** Source label and badge styling */
 function sourceLabel(source: string): string {
@@ -48,11 +75,17 @@ function isOverridden(skill: SkillEntry, allSkills: SkillEntry[]): SkillEntry | 
   return null;
 }
 
-function SkillCard({ skill, allSkills }: { skill: SkillEntry; allSkills: SkillEntry[] }) {
+function SkillCard({ skill, allSkills, onDelete, onMove }: {
+  skill: SkillEntry;
+  allSkills: SkillEntry[];
+  onDelete?: (skill: SkillEntry) => void;
+  onMove?: (skill: SkillEntry, direction: 'to-global' | 'to-project') => void;
+}) {
   const { enabledOverrides, toggleSkill } = useSkillStore();
   const overriddenBy = isOverridden(skill, allSkills);
   const isEnabled = enabledOverrides[skill.path] !== false;
   const isExternal = !['notesage-project', 'notesage-global'].includes(skill.source);
+  const manageable = isManageable(skill.source, skill.name, 'skill');
 
   return (
     <div
@@ -79,13 +112,47 @@ function SkillCard({ skill, allSkills }: { skill: SkillEntry; allSkills: SkillEn
           </p>
         )}
       </div>
-      {!overriddenBy && !isExternal && (
-        <Switch
-          checked={isEnabled}
-          onCheckedChange={(checked) => toggleSkill(skill.path, checked)}
-          className="shrink-0"
-        />
-      )}
+      <div className="flex items-center gap-1.5 shrink-0">
+        {manageable && (onDelete || onMove) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {skill.source === 'notesage-project' && onMove && (
+                <DropdownMenuItem onClick={() => onMove(skill, 'to-global')}>
+                  <ArrowUpFromLine className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
+                  Move to Global
+                </DropdownMenuItem>
+              )}
+              {skill.source === 'notesage-global' && onMove && (
+                <DropdownMenuItem onClick={() => onMove(skill, 'to-project')}>
+                  <ArrowDownToLine className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
+                  Move to Project
+                </DropdownMenuItem>
+              )}
+              {onMove && onDelete && <DropdownMenuSeparator />}
+              {onDelete && (
+                <DropdownMenuItem
+                  onClick={() => onDelete(skill)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
+                  Delete
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        {!overriddenBy && !isExternal && (
+          <Switch
+            checked={isEnabled}
+            onCheckedChange={(checked) => toggleSkill(skill.path, checked)}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -95,11 +162,15 @@ function SkillGroup({
   skills,
   allSkills,
   readOnly,
+  onDelete,
+  onMove,
 }: {
   title: string;
   skills: SkillEntry[];
   allSkills: SkillEntry[];
   readOnly?: boolean;
+  onDelete?: (skill: SkillEntry) => void;
+  onMove?: (skill: SkillEntry, direction: 'to-global' | 'to-project') => void;
 }) {
   if (skills.length === 0) return null;
 
@@ -115,7 +186,7 @@ function SkillGroup({
       </div>
       <div className="space-y-1.5">
         {skills.map((skill) => (
-          <SkillCard key={skill.path} skill={skill} allSkills={allSkills} />
+          <SkillCard key={skill.path} skill={skill} allSkills={allSkills} onDelete={onDelete} onMove={onMove} />
         ))}
       </div>
     </div>
@@ -134,10 +205,16 @@ function isAgentOverridden(agent: AgentEntry, allAgents: AgentEntry[]): AgentEnt
   return null;
 }
 
-function AgentCard({ agent, allAgents }: { agent: AgentEntry; allAgents: AgentEntry[] }) {
+function AgentCard({ agent, allAgents, onDelete, onMove }: {
+  agent: AgentEntry;
+  allAgents: AgentEntry[];
+  onDelete?: (agent: AgentEntry) => void;
+  onMove?: (agent: AgentEntry, direction: 'to-global' | 'to-project') => void;
+}) {
   const { agentEnabledOverrides, toggleAgent } = useSkillStore();
   const overriddenBy = isAgentOverridden(agent, allAgents);
   const isEnabled = agentEnabledOverrides[agent.path] !== false;
+  const manageable = isManageable(agent.source, agent.name, 'agent');
 
   return (
     <div
@@ -167,13 +244,47 @@ function AgentCard({ agent, allAgents }: { agent: AgentEntry; allAgents: AgentEn
           )}
         </div>
       </div>
-      {!overriddenBy && (
-        <Switch
-          checked={isEnabled}
-          onCheckedChange={(checked) => toggleAgent(agent.path, checked)}
-          className="shrink-0"
-        />
-      )}
+      <div className="flex items-center gap-1.5 shrink-0">
+        {manageable && (onDelete || onMove) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.5} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {agent.source === 'notesage-project' && onMove && (
+                <DropdownMenuItem onClick={() => onMove(agent, 'to-global')}>
+                  <ArrowUpFromLine className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
+                  Move to Global
+                </DropdownMenuItem>
+              )}
+              {agent.source === 'notesage-global' && onMove && (
+                <DropdownMenuItem onClick={() => onMove(agent, 'to-project')}>
+                  <ArrowDownToLine className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
+                  Move to Project
+                </DropdownMenuItem>
+              )}
+              {onMove && onDelete && <DropdownMenuSeparator />}
+              {onDelete && (
+                <DropdownMenuItem
+                  onClick={() => onDelete(agent)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
+                  Delete
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        {!overriddenBy && (
+          <Switch
+            checked={isEnabled}
+            onCheckedChange={(checked) => toggleAgent(agent.path, checked)}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -183,11 +294,15 @@ function AgentGroup({
   agents,
   allAgents,
   action,
+  onDelete,
+  onMove,
 }: {
   title: string;
   agents: AgentEntry[];
   allAgents: AgentEntry[];
   action?: React.ReactNode;
+  onDelete?: (agent: AgentEntry) => void;
+  onMove?: (agent: AgentEntry, direction: 'to-global' | 'to-project') => void;
 }) {
   if (agents.length === 0) return null;
 
@@ -201,7 +316,7 @@ function AgentGroup({
       </div>
       <div className="space-y-1.5">
         {agents.map((agent) => (
-          <AgentCard key={agent.path} agent={agent} allAgents={allAgents} />
+          <AgentCard key={agent.path} agent={agent} allAgents={allAgents} onDelete={onDelete} onMove={onMove} />
         ))}
       </div>
     </div>
@@ -246,38 +361,141 @@ export function SkillsSettings() {
 
   const showSpinner = isScanning || rescanSpinning;
 
+  const skillManagement = useSettingsStore((s) => s.skillManagement);
+  const projects = useWorkspaceStore((s) => s.projects);
+  const firstProjectPath = projects.length > 0 ? projects[0].path : null;
+
+  const requestRescan = () => useSkillStore.getState().requestRescan();
+
+  const handleDeleteSkill = async (skill: SkillEntry) => {
+    try {
+      await tauriApi.deletePath(skill.path);
+      toast.success(`Deleted skill "${skill.name}"`);
+      requestRescan();
+    } catch (e) {
+      toast.error(`Failed to delete skill: ${e}`);
+    }
+  };
+
+  const handleMoveSkill = async (skill: SkillEntry, direction: 'to-global' | 'to-project') => {
+    const home = await tauriApi.getHomeDir();
+    const skillName = skill.path.split('/').pop()!;
+
+    if (direction === 'to-global') {
+      const destDir = `${home}/.notesage/skills`;
+      const dest = `${destDir}/${skillName}`;
+      try {
+        await tauriApi.createDirectory(destDir).catch(() => {});
+        // Skill is a directory — try rename first (same filesystem), fall back to copy+delete
+        try {
+          await tauriApi.renamePath(skill.path, dest);
+        } catch {
+          await tauriApi.copyDirectory(skill.path, dest);
+          await tauriApi.deletePath(skill.path);
+        }
+        toast.success(`Moved "${skill.name}" to Global`);
+        requestRescan();
+      } catch (e) {
+        toast.error(`Failed to move skill: ${e}`);
+      }
+    } else {
+      if (!firstProjectPath) {
+        toast.error('No project open — open a project first');
+        return;
+      }
+      const destDir = `${firstProjectPath}/.notesage/skills`;
+      const dest = `${destDir}/${skillName}`;
+      try {
+        await tauriApi.createDirectory(destDir).catch(() => {});
+        try {
+          await tauriApi.renamePath(skill.path, dest);
+        } catch {
+          await tauriApi.copyDirectory(skill.path, dest);
+          await tauriApi.deletePath(skill.path);
+        }
+        toast.success(`Moved "${skill.name}" to Project`);
+        requestRescan();
+      } catch (e) {
+        toast.error(`Failed to move skill: ${e}`);
+      }
+    }
+  };
+
+  const handleDeleteAgent = async (agent: AgentEntry) => {
+    try {
+      await tauriApi.deletePath(agent.path);
+      toast.success(`Deleted agent "${agent.name}"`);
+      requestRescan();
+    } catch (e) {
+      toast.error(`Failed to delete agent: ${e}`);
+    }
+  };
+
+  const handleMoveAgent = async (agent: AgentEntry, direction: 'to-global' | 'to-project') => {
+    const home = await tauriApi.getHomeDir();
+    const fileName = agent.path.split('/').pop()!;
+
+    if (direction === 'to-global') {
+      const destDir = `${home}/.notesage/agents`;
+      const dest = `${destDir}/${fileName}`;
+      try {
+        await tauriApi.createDirectory(destDir).catch(() => {});
+        await tauriApi.renamePath(agent.path, dest);
+        toast.success(`Moved "${agent.name}" to Global`);
+        requestRescan();
+      } catch (e) {
+        toast.error(`Failed to move agent: ${e}`);
+      }
+    } else {
+      if (!firstProjectPath) {
+        toast.error('No project open — open a project first');
+        return;
+      }
+      const destDir = `${firstProjectPath}/.notesage/agents`;
+      const dest = `${destDir}/${fileName}`;
+      try {
+        await tauriApi.createDirectory(destDir).catch(() => {});
+        await tauriApi.renamePath(agent.path, dest);
+        toast.success(`Moved "${agent.name}" to Project`);
+        requestRescan();
+      } catch (e) {
+        toast.error(`Failed to move agent: ${e}`);
+      }
+    }
+  };
+
   const sortedInstructions = [...agentInstructions].sort((a, b) => b.priority - a.priority);
 
   return (
     <div className="space-y-6">
       {/* Skills Section */}
       <div className="space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
+        <div>
+          <div className="flex items-center justify-between">
             <Label className="text-sm font-semibold">Skills</Label>
-            <p className="text-xs text-muted-foreground mt-1">
-              Discovered skills from your projects, global config, and connected providers
-            </p>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSkillWizardOpen(true)}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
+                New Skill
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRescan}
+                disabled={showSpinner}
+              >
+                <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', showSpinner && 'animate-spin')} strokeWidth={1.5} />
+                Rescan
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSkillWizardOpen(true)}
-            >
-              <Plus className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
-              New Skill
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleRescan}
-              disabled={showSpinner}
-            >
-              <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', showSpinner && 'animate-spin')} strokeWidth={1.5} />
-              Rescan
-            </Button>
-          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            Discovered skills from your projects, global config, and connected providers
+          </p>
         </div>
 
         {skills.length === 0 ? (
@@ -290,8 +508,8 @@ export function SkillsSettings() {
           </div>
         ) : (
           <div className="space-y-4">
-            <SkillGroup title="Project (.notesage/skills/)" skills={projectSkills} allSkills={skills} />
-            <SkillGroup title="Global (~/.notesage/skills/)" skills={globalSkills} allSkills={skills} />
+            <SkillGroup title="Project (.notesage/skills/)" skills={projectSkills} allSkills={skills} onDelete={skillManagement ? handleDeleteSkill : undefined} onMove={skillManagement ? handleMoveSkill : undefined} />
+            <SkillGroup title="Global (~/.notesage/skills/)" skills={globalSkills} allSkills={skills} onDelete={skillManagement ? handleDeleteSkill : undefined} onMove={skillManagement ? handleMoveSkill : undefined} />
             <SkillGroup title="Claude Code (~/.claude/skills/)" skills={claudeSkills} allSkills={skills} readOnly />
             <SkillGroup title="Codex (~/.codex/skills/)" skills={codexSkills} allSkills={skills} readOnly />
             <SkillGroup title="Gemini (~/.gemini/skills/)" skills={geminiSkills} allSkills={skills} readOnly />
@@ -323,8 +541,8 @@ export function SkillsSettings() {
           </div>
         ) : (
           <div className="space-y-4">
-            <AgentGroup title="Project (.notesage/agents/)" agents={projectAgents} allAgents={agents} />
-            <AgentGroup title="Global (~/.notesage/agents/)" agents={globalAgents} allAgents={agents} />
+            <AgentGroup title="Project (.notesage/agents/)" agents={projectAgents} allAgents={agents} onDelete={skillManagement ? handleDeleteAgent : undefined} onMove={skillManagement ? handleMoveAgent : undefined} />
+            <AgentGroup title="Global (~/.notesage/agents/)" agents={globalAgents} allAgents={agents} onDelete={skillManagement ? handleDeleteAgent : undefined} onMove={skillManagement ? handleMoveAgent : undefined} />
             <AgentGroup title="Claude Code (~/.claude/agents/)" agents={claudeAgents} allAgents={agents} />
             <AgentGroup title="Codex (~/.codex/agents/)" agents={codexAgents} allAgents={agents} />
             <AgentGroup title="Gemini (~/.gemini/agents/)" agents={geminiAgents} allAgents={agents} />

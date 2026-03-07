@@ -30,6 +30,7 @@ interface SettingsStore {
   sourceWordWrap: boolean;
   copilotMaxCompletionChars: number;
   chatHistoryLimit: number;
+  skillManagement: boolean;
   debugLogging: boolean;
   autoCheckUpdates: boolean;
   lastUpdateCheck: string | null;
@@ -65,6 +66,7 @@ interface SettingsStore {
   setSourceWordWrap: (enabled: boolean) => void;
   setCopilotMaxCompletionChars: (chars: number) => void;
   setChatHistoryLimit: (limit: number) => void;
+  setSkillManagement: (enabled: boolean) => void;
   setDebugLogging: (enabled: boolean) => void;
   setAutoCheckUpdates: (enabled: boolean) => void;
   setLastUpdateCheck: (timestamp: string | null) => void;
@@ -107,6 +109,7 @@ export const useSettingsStore = create<SettingsStore>()(
       sourceWordWrap: true,
       copilotMaxCompletionChars: 80,
       chatHistoryLimit: 0,
+      skillManagement: false,
       debugLogging: false,
       autoCheckUpdates: true,
       lastUpdateCheck: null,
@@ -198,6 +201,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setChatHistoryLimit: (limit: number) => {
         set({ chatHistoryLimit: limit });
+      },
+
+      setSkillManagement: (enabled: boolean) => {
+        set({ skillManagement: enabled });
       },
 
       setDebugLogging: (enabled: boolean) => {
