@@ -58,3 +58,4 @@ Chronological log of major implementation milestones and changes.
 | 052 | [Release v0.18.0](052-release-v0.18.0.md) | Skills & Agents Platform — skill discovery, script execution, bundled skills, wizard UI (Phase 7 Step A) |
 | 053 | [Release v0.18.1](053-release-v0.18.1.md) | Addressable agents, quick replies, skill/agent management, Ollama thinking, bug fixes (Phase 7 Step C) |
 | 054 | [Release v0.18.2](054-release-v0.18.2.md) | Download-webpage bundled skill, chat panel empty state fix, bundled extraction cleanup |
+| 055 | [Release v0.18.3](055-release-v0.18.3.md) | MCP client integration, skill/agent editing, creation improvements |
