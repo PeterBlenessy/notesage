@@ -507,6 +507,25 @@ struct BundledFile {
     executable: bool,
 }
 
+/// Write a bundled file to disk. In debug builds, skip files that already exist
+/// to allow live-editing bundled skills/agents during development.
+fn write_bundled_file(target: &Path, content: &str, executable: bool) -> Result<(), String> {
+    #[cfg(debug_assertions)]
+    if target.exists() {
+        return Ok(());
+    }
+
+    fs::write(target, content).map_err(|e| e.to_string())?;
+
+    #[cfg(unix)]
+    if executable {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(target, fs::Permissions::from_mode(0o755));
+    }
+
+    Ok(())
+}
+
 /// Extract bundled skills to ~/.notesage/skills/.
 /// Always overwrites to ensure bundled skills stay up-to-date with app version.
 /// Lives alongside user-created skills; the hierarchy system handles overrides.
@@ -549,6 +568,27 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
             content: include_str!("../../../bundled-skills/create-skill/references/EXAMPLES.md"),
             executable: false,
         },
+        // download-webpage
+        BundledFile {
+            relative_path: "download-webpage/SKILL.md",
+            content: include_str!("../../../bundled-skills/download-webpage/SKILL.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "download-webpage/scripts/download.mjs",
+            content: include_str!("../../../bundled-skills/download-webpage/scripts/download.mjs"),
+            executable: true,
+        },
+        BundledFile {
+            relative_path: "download-webpage/scripts/setup.sh",
+            content: include_str!("../../../bundled-skills/download-webpage/scripts/setup.sh"),
+            executable: true,
+        },
+        BundledFile {
+            relative_path: "download-webpage/scripts/package.json",
+            content: include_str!("../../../bundled-skills/download-webpage/scripts/package.json"),
+            executable: false,
+        },
         // create-agent
         BundledFile {
             relative_path: "create-agent/SKILL.md",
@@ -578,14 +618,9 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
             fs::create_dir_all(parent)
                 .map_err(|e| format!("Failed to create directory for {}: {}", file.relative_path, e))?;
         }
-        fs::write(&target, file.content)
-            .map_err(|e| format!("Failed to write {}: {}", file.relative_path, e))?;
 
-        #[cfg(unix)]
-        if file.executable {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = fs::set_permissions(&target, fs::Permissions::from_mode(0o755));
-        }
+        write_bundled_file(&target, file.content, file.executable)
+            .map_err(|e| format!("Failed to write {}: {}", file.relative_path, e))?;
     }
 
     Ok(bundled_dir.to_string_lossy().to_string())
@@ -793,7 +828,8 @@ pub async fn extract_bundled_agents() -> Result<String, String> {
             fs::create_dir_all(parent)
                 .map_err(|e| format!("Failed to create directory for {}: {}", file.relative_path, e))?;
         }
-        fs::write(&target, file.content)
+
+        write_bundled_file(&target, file.content, file.executable)
             .map_err(|e| format!("Failed to write {}: {}", file.relative_path, e))?;
     }
 

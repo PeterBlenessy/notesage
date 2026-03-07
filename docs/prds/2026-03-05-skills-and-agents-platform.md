@@ -763,7 +763,7 @@ interface PermissionStore {
 
 - [x] Bundled skills (`create-skill`, `create-agent`) are always discovered
 
-- [x] Same-name skills are resolved by hierarchy (project > global > external)
+- [x] Same-name skills are resolved by hierarchy (project &gt; global &gt; external)
 
 - [x] Overridden skills shown as greyed out in skills browser
 

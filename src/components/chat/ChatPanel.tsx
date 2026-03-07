@@ -159,14 +159,16 @@ export function ChatPanel() {
     scrollToBottom();
   }, [messages, permissionRequests.length]);
 
+  // Auto-create a conversation when none exists (e.g. after deleting the last one)
+  useEffect(() => {
+    if (!activeConversationId && conversations.length === 0) {
+      createConversation();
+    }
+  }, [activeConversationId, conversations.length, createConversation]);
+
   const handleSend = async (content: string) => {
     if (!hasAIProvider) {
       return;
-    }
-
-    // Auto-create conversation if none active
-    if (!activeConversationId) {
-      createConversation();
     }
 
     // Detect @agent-name prefix — switch active agent, strip prefix from message
