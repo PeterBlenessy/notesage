@@ -790,7 +790,7 @@ function App() {
           <div
             className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-opacity duration-500 ${focusHintVisible ? "opacity-100" : "opacity-0"}`}
           >
-            <div className="px-3 py-1.5 rounded-md text-xs bg-muted text-muted-foreground border border-border">
+            <div className="px-3 py-1.5 rounded-md text-xs bg-popover text-popover-foreground border border-border shadow-md">
               Press <kbd className="font-mono font-semibold">Esc</kbd> to exit focus mode
             </div>
           </div>

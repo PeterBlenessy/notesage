@@ -55,8 +55,11 @@ export function ChatPanel() {
   const messages = useChatStore(selectMessages);
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const legacyProvider = useAIStore((s) => s.provider);
-  const invocableAgents = useSkillStore((s) => s.getUserInvocableAgents());
-  const activeAgent = useSkillStore((s) => s.getActiveAgent());
+  const agents = useSkillStore((s) => s.agents);
+  const agentEnabledOverrides = useSkillStore((s) => s.agentEnabledOverrides);
+  const activeAgentName = useSkillStore((s) => s.activeAgentName);
+  const invocableAgents = useMemo(() => useSkillStore.getState().getUserInvocableAgents(), [agents, agentEnabledOverrides]);
+  const activeAgent = useMemo(() => useSkillStore.getState().getActiveAgent(), [agents, agentEnabledOverrides, activeAgentName]);
   const setActiveAgent = useSkillStore((s) => s.setActiveAgent);
   const projects = useWorkspaceStore((s) => s.projects);
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
@@ -313,15 +316,13 @@ export function ChatPanel() {
                   onClick={() => { setActiveConversation(conv.id); setConvListOpen(false); }}
                 >
                   <span className="truncate min-w-0 text-left">{conv.title || 'New Chat'}</span>
-                  <span
-                    role="button"
-                    tabIndex={0}
+                  <button
+                    type="button"
                     onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); deleteConversation(conv.id); } }}
                     className="opacity-0 group-hover:opacity-100 shrink-0 h-5 w-5 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground active:opacity-75 transition-opacity focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   >
                     <X className="h-3 w-3" strokeWidth={1.5} />
-                  </span>
+                  </button>
                 </button>
               ))}
             </div>
@@ -358,7 +359,7 @@ export function ChatPanel() {
       </div>
 
       {!hasAIProvider && (
-        <div className="p-4 bg-muted border-b">
+        <div className="p-4 bg-muted border-b border-border">
           <p className="text-sm text-muted-foreground">
             Please configure an AI provider in Settings (Cmd+,) before using chat.
           </p>

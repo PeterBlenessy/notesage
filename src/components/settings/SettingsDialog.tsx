@@ -180,7 +180,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
         {/* Header */}
         <DialogHeader className="px-6 py-4 border-b shrink-0 bg-card">
           <div className="flex items-center gap-3">
-            <Settings className="h-10 w-10 text-foreground" strokeWidth={1.5} />
+            <Settings className="h-5 w-5 text-foreground" strokeWidth={1.5} />
             <div>
               <DialogTitle className="text-xl">Settings</DialogTitle>
               <DialogDescription className="text-xs">
@@ -553,7 +553,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                             <span className="font-medium text-foreground">git-scm.com</span>
                             {' '}or via Homebrew:
                           </p>
-                          <pre className="rounded bg-muted px-2 py-1.5 font-mono text-[11px] select-all">
+                          <pre className="rounded bg-muted px-2 py-1.5 font-mono text-xs select-all">
                             brew install git
                           </pre>
                         </div>

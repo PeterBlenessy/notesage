@@ -26,13 +26,13 @@ function sourceLabel(source: string): string {
 }
 
 function sourceBadgeClass(source: string): string {
-  const base = 'text-[10px] px-1.5 py-0.5 rounded-full border';
+  const base = 'text-xs px-1.5 py-0.5 rounded-md border';
   switch (source) {
     case 'notesage-project':
     case 'notesage-global':
-      return `${base} border-foreground/20 text-foreground/70`;
+      return `${base} border-border text-foreground`;
     case 'bundled':
-      return `${base} border-foreground/15 text-muted-foreground`;
+      return `${base} border-border text-muted-foreground`;
     default:
       return `${base} border-border text-muted-foreground`;
   }
@@ -67,7 +67,7 @@ function SkillCard({ skill, allSkills }: { skill: SkillEntry; allSkills: SkillEn
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium truncate">{skill.name}</span>
           {skill.has_scripts && (
-            <span className="text-[10px] text-muted-foreground/60">scripts</span>
+            <span className="text-xs text-muted-foreground">scripts</span>
           )}
         </div>
         {skill.description && (
@@ -76,7 +76,7 @@ function SkillCard({ skill, allSkills }: { skill: SkillEntry; allSkills: SkillEn
           </p>
         )}
         {overriddenBy && (
-          <p className="text-[10px] text-muted-foreground/60 mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             Overridden by {sourceLabel(overriddenBy.source)}
           </p>
         )}
@@ -85,7 +85,7 @@ function SkillCard({ skill, allSkills }: { skill: SkillEntry; allSkills: SkillEn
         <Switch
           checked={isEnabled}
           onCheckedChange={(checked) => toggleSkill(skill.path, checked)}
-          className="scale-75 origin-center shrink-0 mt-0.5"
+          className="shrink-0"
         />
       )}
     </div>
@@ -112,7 +112,7 @@ function SkillGroup({
           {title}
         </span>
         {readOnly && (
-          <span className="text-[10px] text-muted-foreground/60">read-only</span>
+          <span className="text-xs text-muted-foreground">read-only</span>
         )}
       </div>
       <div className="space-y-1.5">
@@ -158,12 +158,12 @@ function AgentCard({ agent, allAgents }: { agent: AgentEntry; allAgents: AgentEn
             </p>
           )}
           {agent.model && (
-            <span className="text-[10px] text-muted-foreground/60 mt-0.5 block">
+            <span className="text-xs text-muted-foreground mt-0.5 block">
               model: {agent.model}
             </span>
           )}
           {overriddenBy && (
-            <p className="text-[10px] text-muted-foreground/60 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Overridden by {sourceLabel(overriddenBy.source)}
             </p>
           )}
@@ -173,7 +173,7 @@ function AgentCard({ agent, allAgents }: { agent: AgentEntry; allAgents: AgentEn
         <Switch
           checked={isEnabled}
           onCheckedChange={(checked) => toggleAgent(agent.path, checked)}
-          className="scale-75 origin-center shrink-0 mt-0.5"
+          className="shrink-0"
         />
       )}
     </div>
@@ -292,9 +292,9 @@ export function SkillsSettings() {
         {skills.length === 0 ? (
           <div className="px-4 py-8 text-center rounded-lg border border-dashed border-border">
             <p className="text-sm text-muted-foreground">No skills discovered</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">
-              Add skills to <code className="text-[11px]">.notesage/skills/</code> in your project
-              or <code className="text-[11px]">~/.notesage/skills/</code> globally
+            <p className="text-xs text-muted-foreground mt-1">
+              Add skills to <code className="text-xs">.notesage/skills/</code> in your project
+              or <code className="text-xs">~/.notesage/skills/</code> globally
             </p>
           </div>
         ) : (
@@ -326,9 +326,9 @@ export function SkillsSettings() {
         {agents.length === 0 ? (
           <div className="px-4 py-8 text-center rounded-lg border border-dashed border-border">
             <p className="text-sm text-muted-foreground">No agents discovered</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">
-              Add agent files to <code className="text-[11px]">.notesage/agents/</code> in your project
-              or <code className="text-[11px]">~/.notesage/agents/</code> globally
+            <p className="text-xs text-muted-foreground mt-1">
+              Add agent files to <code className="text-xs">.notesage/agents/</code> in your project
+              or <code className="text-xs">~/.notesage/agents/</code> globally
             </p>
           </div>
         ) : (
@@ -369,9 +369,9 @@ export function SkillsSettings() {
         {agentInstructions.length === 0 ? (
           <div className="px-4 py-8 text-center rounded-lg border border-dashed border-border">
             <p className="text-sm text-muted-foreground">No agent instruction files found</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">
-              Create <code className="text-[11px]">.notesage/agents.md</code> in your project
-              or <code className="text-[11px]">~/.notesage/agents.md</code> globally
+            <p className="text-xs text-muted-foreground mt-1">
+              Create <code className="text-xs">.notesage/agents.md</code> in your project
+              or <code className="text-xs">~/.notesage/agents.md</code> globally
             </p>
           </div>
         ) : (
@@ -386,7 +386,7 @@ export function SkillsSettings() {
                   className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
                 >
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-[10px] font-medium text-muted-foreground/60 tabular-nums w-4 shrink-0 text-right">
+                    <span className="text-xs font-medium text-muted-foreground tabular-nums w-4 shrink-0 text-right">
                       {inst.priority}
                     </span>
                     <ScrollText className="h-3.5 w-3.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
@@ -396,7 +396,7 @@ export function SkillsSettings() {
                     </span>
                   </div>
                   {!isNotesage && (
-                    <span className="text-[10px] text-muted-foreground/60 shrink-0">read-only</span>
+                    <span className="text-xs text-muted-foreground shrink-0">read-only</span>
                   )}
                 </div>
               );
@@ -407,7 +407,7 @@ export function SkillsSettings() {
         {/* Preview merged context */}
         {agentInstructions.length > 0 && (
           <Collapsible open={instructionsExpanded} onOpenChange={setInstructionsExpanded}>
-            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
               <ChevronDown
                 className={cn('h-3 w-3 transition-transform duration-150', !instructionsExpanded && '-rotate-90')}
                 strokeWidth={1.5}
@@ -425,7 +425,7 @@ export function SkillsSettings() {
 
       {/* Last scan info */}
       {lastScanTimestamp > 0 && (
-        <p className="text-[10px] text-muted-foreground/40">
+        <p className="text-xs text-muted-foreground">
           Last scanned: {new Date(lastScanTimestamp).toLocaleTimeString()}
         </p>
       )}

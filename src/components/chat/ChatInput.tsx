@@ -124,7 +124,7 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
   ) : null;
 
   return (
-    <div className="relative rounded-xl border border-border bg-background transition-colors">
+    <div className="relative rounded-xl border border-border bg-background transition-colors focus-within:ring-1 focus-within:ring-ring">
       {showSkillMenu && (
         <SkillCommandMenu
           ref={menuRef}
