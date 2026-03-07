@@ -20,6 +20,8 @@ The Google Cloud "always-on-memory-agent" demonstrates a compelling architecture
 4. **On-demand recall** — Users and AI can query memories with source citations (which conversation/file the fact came from)
 5. **Provider-agnostic** — Works with any configured AI provider (Anthropic, OpenAI, Ollama, ACP agents), not locked to Gemini
 
+6. **Per-project privacy boundaries** — Confidential projects can fully opt out of memory (no capture, no recall, no cross-contamination), with project-scoped isolation for projects that want memory internally but not globally
+
 ## Non-Goals
 
 - **Multimodal ingestion** — The original supports images/audio/video. Notesage is a text editor; we only ingest text (markdown, chat messages). Media support deferred.
@@ -28,6 +30,7 @@ The Google Cloud "always-on-memory-agent" demonstrates a compelling architecture
 - **Vector embeddings or RAG** — Following the original's design, we use the LLM itself to read, summarize, and connect memories. No embedding model or vector DB.
 - **Real-time collaboration** — Memory is per-user, local-first. Shared memory across users is out of scope.
 - **Automatic AI response injection** — Memory context is injected into the system prompt, but the system does NOT automatically answer questions from memory without the AI provider being involved.
+- **Cross-project memory access** — A project-scoped memory DB is never readable by other projects. No "merge" or "share" between project memory stores.
 
 ## User Stories
 
@@ -42,6 +45,14 @@ The Google Cloud "always-on-memory-agent" demonstrates a compelling architecture
 5. **As a user**, I want to ask "what do you know about X?" and get answers with citations back to source conversations, so that I can trace where information came from.
 
 6. **As a user**, I want memory to be opt-in and per-project configurable, so that sensitive projects can opt out entirely.
+
+7. **As a user working on confidential client projects**, I want to completely disable memory for specific projects, so that no information from those projects is ever captured, stored, recalled, or leaked into other conversations.
+
+8. **As a user**, I want a middle ground where a project has its own private memory (the AI remembers things within that project but doesn't share them globally), so that I get the benefit of persistent context without cross-project contamination.
+
+9. **As a user**, I want to control whether global memories (from other projects) are surfaced when I'm working in a specific project, so that I can keep a strict information boundary for sensitive work.
+
+10. **As a user**, I want the memory privacy settings to be stored in the project's `.notesage/` directory, so that when I share a project folder with collaborators or sync it, the privacy intent travels with the project.
 
 ## Technical Approach
 
@@ -58,11 +69,62 @@ The original Python system has 4 agents (IngestAgent, ConsolidateAgent, QueryAge
 | SQLite (Python) | `rusqlite` in Rust backend — same 3-table schema |
 | Google ADK | Existing `AIProvider` abstraction via `ai_generate_text` Tauri command |
 
+### Per-Project Memory Isolation
+
+Each project can independently control its memory behavior via settings stored in `.notesage/project.json`. This is critical for users handling confidential client work where information must never leak between projects.
+
+**Three memory modes per project:**
+
+| Mode | `memory.scope` | Ingestion | Recall | Consolidation | DB location |
+|------|----------------|-----------|--------|---------------|-------------|
+| **Global** (default) | `"global"` | Facts stored in `~/.notesage/memory.db` | Global + project memories surfaced | Global consolidation includes this project's memories | `~/.notesage/memory.db` |
+| **Project-scoped** | `"project"` | Facts stored in `.notesage/memory.db` inside project | Only this project's memories surfaced, global memories excluded | Consolidation runs only on this project's memories, isolated | `.notesage/memory.db` |
+| **Disabled** | `"none"` | No memories captured from any conversation or file save | No memories surfaced in AI context | No consolidation | No DB created |
+
+**Project metadata extension** (`.notesage/project.json`):
+
+```typescript
+interface ProjectMetadata {
+  version: 1;
+  name: string;
+  description: string;
+  ai: { /* existing */ };
+  memory?: {
+    scope: 'global' | 'project' | 'none';  // default: 'global'
+    recall: boolean;                         // default: true — when false, even global memories are hidden in this project
+  };
+}
+```
+
+**Enforcement rules:**
+
+1. **`scope: "none"`** — All memory operations are no-ops for this project. `memory_ingest` rejects calls with this project path. `memory_get_context` returns empty string. Consolidation timer skips this project. The `remember` / `recall` / `forget` skills are hidden from the agent when this project is active. No `.notesage/memory.db` is created.
+
+2. **`scope: "project"`** — A separate SQLite database lives at `<project>/.notesage/memory.db`. This DB is never read by other projects. Global consolidation ignores it. When building AI context, only this project's DB is queried. If the project folder is deleted, shared, or moved, its memory goes with it.
+
+3. **`recall: false`** (independent of scope) — Even if the global DB has relevant memories, they are NOT injected into this project's AI system prompt. Useful for projects where you want the AI to learn (scope: global) but not be influenced by memories from other projects.
+
+**Cross-contamination prevention:**
+
+- `memory_ingest` checks project memory settings BEFORE processing. If disabled, returns early with no side effects.
+- `memory_get_context` scopes its query based on the active project's settings. For `scope: "project"`, it ONLY reads `<project>/.notesage/memory.db`. For `scope: "none"`, it returns `""`.
+- `memory_consolidate` processes each DB independently. Global consolidation never reads project-scoped DBs. Project consolidation never reads the global DB.
+- The background consolidation timer maintains a list of active project DBs and their scopes. Disabled projects are skipped entirely.
+- When multiple projects are selected in the chat footer's project context, each project's memory settings are respected independently — a disabled project contributes no memories even if other selected projects have memory enabled.
+
+**UI surface:**
+
+- Project Settings (sidebar cog icon or Settings > Project) gains a "Memory" section
+- Toggle with three states: "Off", "Project only", "Global" (segmented control)
+- When "Off" is selected, a brief explanation: *"No conversations or files in this project will be remembered. Memories from other projects will not appear in this project's AI context."*
+- When "Project only" is selected: *"The AI remembers things within this project but doesn't share them with other projects."*
+- Recall toggle (checkbox): *"Show memories from other projects"* — only visible when scope is `"project"` or `"global"`
+
 ### Storage
 
 SQLite database stored at:
 - **Global:** `~/.notesage/memory.db` — cross-project memories
-- **Per-project:** `.notesage/memory.db` — project-scoped memories (higher priority in queries)
+- **Per-project:** `.notesage/memory.db` — project-scoped memories (only created when `scope: "project"`)
 
 Three tables, adapted from the original:
 
@@ -180,6 +242,25 @@ interface MemoryStore {
 }
 ```
 
+**Per-project memory settings** are stored in `ProjectMetadata` (not in memory-store), following the existing pattern where project-level overrides live in `.notesage/project.json`:
+
+```typescript
+// In project-metadata-store.ts — extended ProjectMetadata interface
+interface ProjectMetadata {
+  version: 1;
+  name: string;
+  description: string;
+  ai: { /* existing */ };
+  memory?: {
+    scope: 'global' | 'project' | 'none';  // default: 'global' (inherits global setting)
+    recall: boolean;                         // default: true
+  };
+}
+
+// New action on ProjectMetadataStore:
+updateMemory: (projectPath: string, updates: Partial<NonNullable<ProjectMetadata['memory']>>) => void;
+```
+
 **`src/hooks/useMemoryOperations.ts`** — orchestration hook:
 
 - `ingestFromChat(conversationId)` — extracts key facts from a completed conversation
@@ -189,25 +270,48 @@ interface MemoryStore {
 
 **Integration points with existing code:**
 
-1. **`useAIOperations.ts`** — Inject memory context into `composedSystemMessage`:
+1. **`useAIOperations.ts`** — Inject memory context into `composedSystemMessage`, respecting project memory scope:
    ```typescript
    // In composedSystemMessage useMemo:
-   if (memoryContext) {
+   // Check each active project's memory settings
+   const memorySettings = getEffectiveMemorySettings(activeProjectPaths);
+   if (memorySettings.contextEnabled && memoryContext) {
      parts.push(memoryContext);
    }
    ```
 
-2. **`useAIOperations.ts` → `sendChatMessage`** — After a conversation turn completes, auto-ingest if enabled:
+2. **`useAIOperations.ts` → `sendChatMessage`** — After a conversation turn completes, auto-ingest if enabled AND project allows it:
    ```typescript
    if (memoryStore.autoIngestChat && memoryStore.enabled) {
-     await ingestFromChat(conversationId);
+     // Only ingest for projects with scope !== 'none'
+     const projectMemory = getProjectMemoryScope(activeProjectPath);
+     if (projectMemory.scope !== 'none') {
+       await ingestFromChat(conversationId, projectMemory.scope === 'project' ? activeProjectPath : undefined);
+     }
    }
    ```
 
-3. **`useFileOperations.ts` → `saveFile`** — After file save, auto-ingest if enabled:
+3. **`useFileOperations.ts` → `saveFile`** — After file save, auto-ingest if enabled AND the file's project allows it:
    ```typescript
    if (memoryStore.autoIngestFiles && memoryStore.enabled) {
-     await ingestFromFile(filePath, content);
+     const projectMemory = getProjectMemoryScope(projectPathForFile);
+     if (projectMemory.scope !== 'none') {
+       await ingestFromFile(filePath, content, projectMemory.scope === 'project' ? projectPathForFile : undefined);
+     }
+   }
+   ```
+
+4. **`useMemoryOperations.ts` → `getEffectiveMemorySettings`** — Resolves the combined memory policy for the active project(s):
+   ```typescript
+   function getEffectiveMemorySettings(projectPaths: string[]): {
+     contextEnabled: boolean;       // Should memory context be injected?
+     ingestTarget: string | null;   // Which DB to write to (null = skip)
+     queryScopes: string[];         // Which DBs to read from
+   } {
+     // If ANY active project has scope: 'none', that project contributes nothing
+     // If ALL active projects have scope: 'none', contextEnabled = false
+     // If a project has recall: false, global memories are excluded for its context
+     // Project-scoped DBs are only queried for their own project
    }
    ```
 
@@ -430,8 +534,24 @@ All UI built with existing shadcn/ui components. No new npm packages.
 - [ ] Clear all memories works with confirmation
 - [ ] Memory persists across app restarts
 - [ ] Works with all three provider paths: Anthropic, OpenAI, Ollama
-- [ ] Opt-in: no memory operations when disabled
+- [ ] Opt-in: no memory operations when globally disabled
 - [ ] No performance degradation — ingestion and consolidation are async, non-blocking
+
+### Per-Project Privacy
+
+- [ ] Project with `scope: "none"` — no memories ingested from chat or file saves
+- [ ] Project with `scope: "none"` — no memories recalled in AI system prompt
+- [ ] Project with `scope: "none"` — no `.notesage/memory.db` created
+- [ ] Project with `scope: "none"` — `remember` / `recall` / `forget` skills hidden from agent
+- [ ] Project with `scope: "none"` — consolidation timer skips this project entirely
+- [ ] Project with `scope: "project"` — memories stored in `<project>/.notesage/memory.db`, not global DB
+- [ ] Project with `scope: "project"` — memories from this project never appear in other projects' AI context
+- [ ] Project with `scope: "project"` — global consolidation does not read or process this project's memories
+- [ ] Project with `recall: false` — global memories excluded from AI context even if this project's scope is `"global"`
+- [ ] Multi-project chat context — disabled projects contribute zero memories even when other projects have memory enabled
+- [ ] Memory settings persisted in `.notesage/project.json` — travels with project folder (sync, share, move)
+- [ ] Default behavior for new projects: `scope: "global"`, `recall: true` (inherits global memory setting)
+- [ ] Project Settings UI shows memory controls with clear explanations of each mode
 
 ### Design
 
@@ -452,3 +572,6 @@ All UI built with existing shadcn/ui components. No new npm packages.
 - **Selective conversation ingestion** — Currently all-or-nothing per conversation. Per-message "remember this" is possible via the skill.
 - **Memory size limits / pruning** — No automatic cleanup of old/low-importance memories. Manual delete only for now.
 - **ACP agent memory routing** — Memory ingestion/query uses direct API path only. ACP agents don't have memory tools exposed yet.
+- **Cross-project memory merging** — No ability to merge a project-scoped DB into global or vice versa. Deliberate separation.
+- **Memory encryption at rest** — SQLite DBs are stored as plaintext files. Users handling classified material should rely on OS-level disk encryption (FileVault, BitLocker). In-app encryption is a potential future enhancement.
+- **Audit logging** — No log of which memories were accessed or when. Could be added for compliance-heavy environments.
