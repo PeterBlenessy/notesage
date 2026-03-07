@@ -22,6 +22,38 @@ export interface ParsedQuickReplies {
 }
 
 /**
+ * Strip a trailing numbered/bulleted list from content when its items match
+ * the quick-reply options. Handles the common AI mistake of listing options
+ * in the body AND in <quick-replies> tags.
+ */
+function stripDuplicateList(content: string, replies: string[]): string {
+  const lines = content.split('\n');
+  const listItemRegex = /^(\s*[-*•]|\s*\d+[.)]\s)/;
+
+  // Find the last contiguous block of list items
+  let blockEnd = lines.length - 1;
+  while (blockEnd >= 0 && lines[blockEnd].trim() === '') blockEnd--;
+  if (blockEnd < 0 || !listItemRegex.test(lines[blockEnd])) return content;
+
+  let blockStart = blockEnd;
+  while (blockStart > 0 && listItemRegex.test(lines[blockStart - 1])) {
+    blockStart--;
+  }
+
+  // Extract text from list items
+  const listItems = lines.slice(blockStart, blockEnd + 1).map((line) =>
+    line.replace(/^\s*[-*•]\s*/, '').replace(/^\s*\d+[.)]\s*/, '').trim().toLowerCase()
+  );
+
+  // Check if most list items overlap with the quick replies
+  const replySet = new Set(replies.map((r) => r.toLowerCase()));
+  const matchCount = listItems.filter((item) => replySet.has(item)).length;
+  if (matchCount < listItems.length * 0.5) return content;
+
+  return lines.slice(0, blockStart).join('\n').trimEnd();
+}
+
+/**
  * Heuristic: detect a trailing numbered/bulleted list where most items end with "?"
  * These are clearly options the AI is presenting to the user.
  * Returns null if no such pattern is found.
@@ -77,9 +109,9 @@ export function parseQuickReplies(content: string): ParsedQuickReplies {
     return '';
   }).trimEnd();
 
-  // If tag-based parsing found replies, use those
+  // If tag-based parsing found replies, also strip any duplicate list in the body
   if (replies.length > 0) {
-    return { strippedContent, replies };
+    return { strippedContent: stripDuplicateList(strippedContent, replies), replies };
   }
 
   // Fallback: detect trailing question-style list items

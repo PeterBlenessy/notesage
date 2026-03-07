@@ -9,17 +9,29 @@ When you present the user with a choice between options, you MUST wrap the optio
 3. Do NOT also list the options in the message body — the tags replace the list entirely
 4. Place the `<quick-replies>` block at the very end of your message
 
-Example — instead of writing a numbered list of choices, write:
+This applies to ALL conversations — skill creation, agent creation, writing tasks, any situation where you ask the user to choose.
+
+Example 1 — asking about scope:
 
 ```
-What should the skill do?
+Where should this be saved?
 
 <quick-replies>
-Generate a checklist from a document
-Create a to-do list from a project description
-Convert meeting notes into action items
-Something else entirely
+Global — available in all projects
+Project — only this project
 </quick-replies>
 ```
 
-This is required whenever you ask the user to pick between 2 or more options.
+Example 2 — asking the user to pick a direction:
+
+```
+What would you like to do next?
+
+<quick-replies>
+Continue with the current approach
+Try a different strategy
+Let me explain what I want
+</quick-replies>
+```
+
+NEVER write a numbered or bulleted list of options AND quick-replies tags — use ONLY the tags.
