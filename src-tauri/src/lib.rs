@@ -42,6 +42,7 @@ pub fn run() {
         .manage(WatcherState::new())
         .manage(AcpState::new())
         .manage(CopilotLspState::new())
+        .manage(McpState::new())
         .invoke_handler(tauri::generate_handler![
             open_devtools,
             set_debug_logging,
@@ -125,6 +126,16 @@ pub fn run() {
             discover_agents,
             read_agent_content,
             extract_bundled_agents,
+            mcp_start_server,
+            mcp_stop_server,
+            mcp_restart_server,
+            mcp_list_tools,
+            mcp_call_tool,
+            mcp_get_server_status,
+            mcp_discover_configs,
+            mcp_import_configs,
+            mcp_save_config,
+            mcp_check_import_sources,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -132,6 +143,8 @@ pub fn run() {
             if let RunEvent::Exit = event {
                 // Stop all ACP agent subprocesses
                 app_handle.state::<AcpState>().stop_all_sync();
+                // Stop all MCP server subprocesses
+                app_handle.state::<McpState>().stop_all_sync();
             }
         });
 }

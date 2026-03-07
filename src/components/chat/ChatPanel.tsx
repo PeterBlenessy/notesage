@@ -13,6 +13,7 @@ import { tauriApi } from '@/lib/tauri';
 import { useAIOperations } from '@/hooks/useAIOperations';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { usePermissionStore, type PermissionTier } from '@/stores/permission-store';
+import { useMcpStore } from '@/stores/mcp-store';
 import { useSkillStore } from '@/stores/skill-store';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
@@ -107,6 +108,12 @@ export function ChatPanel() {
     for (const k of alwaysAllowed) kinds.add(k);
     return Array.from(kinds);
   }, [sessionAllowed, alwaysAllowed]);
+
+  const mcpServers = useMcpStore((s) => s.servers);
+  const mcpActiveTools = useMemo(
+    () => mcpServers.filter((sv) => sv.enabled && sv.status === 'running').flatMap((sv) => sv.tools),
+    [mcpServers]
+  );
 
   const approvedCount = useMemo(() => {
     let count = 0;
@@ -570,8 +577,8 @@ export function ChatPanel() {
                     >
                       <Shield className="h-3 w-3" strokeWidth={1.5} />
                       <span>Tools</span>
-                      {approvedCount > 0 && (
-                        <span className="text-xs text-muted-foreground">({approvedCount})</span>
+                      {(approvedCount > 0 || mcpActiveTools.length > 0) && (
+                        <span className="text-xs text-muted-foreground">({approvedCount + mcpActiveTools.length})</span>
                       )}
                       <ChevronUp className="h-3 w-3 opacity-50" />
                     </button>
@@ -610,6 +617,26 @@ export function ChatPanel() {
                         </button>
                       );
                     })}
+                    {mcpActiveTools.length > 0 && (
+                      <>
+                        <div className="h-px bg-border my-1" />
+                        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          MCP Tools
+                        </div>
+                        {mcpActiveTools.map((tool) => (
+                          <div
+                            key={`${tool.server_id}:${tool.name}`}
+                            className="flex items-center gap-2 px-2 py-1.5 text-xs text-foreground"
+                          >
+                            <div className="h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
+                            <span className="truncate">
+                              <span className="text-muted-foreground">{tool.server_id.split(':').pop()}/</span>
+                              {tool.name}
+                            </span>
+                          </div>
+                        ))}
+                      </>
+                    )}
                   </PopoverContent>
                 </Popover>
               ) : (

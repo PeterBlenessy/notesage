@@ -31,19 +31,26 @@ Help the user create a new Agent Skill by gathering requirements and scaffolding
    execute_skill_script("create-skill", "scripts/scaffold.sh", [name, target_dir])
    ```
 
-6. **Generate the SKILL.md content.** Write the file with:
-   - YAML frontmatter: `name`, `description`, optionally `user-invocable: true`
+6. **Ask about advanced options** (optional — skip if the user wants defaults):
+   - **Allowed tools**: Should this skill restrict which tools/skills the AI can use? If yes, list them (e.g., `Read`, `Grep`, `Bash`). Leave empty for no restrictions.
+   - **Disable model invocation**: Should the AI be prevented from auto-discovering this skill? Default: no.
+
+7. **Generate the SKILL.md content.** Write the file with:
+   - YAML frontmatter: `name`, `description`
+   - Optionally `user-invocable: true` if the skill should appear in the `/` command menu
+   - Optionally `disable-model-invocation: true` if it should be hidden from auto-discovery
+   - Optionally `allowed-tools:` as a YAML list if tool restrictions were requested
    - Markdown body with clear instructions for how the AI should use this skill
    - Reference the SKILL-SPEC.md if you need format guidance
 
-7. **If scripts were requested**, generate starter script files in `scripts/`.
+8. **If scripts were requested**, generate starter script files in `scripts/`.
 
-8. **Run the validation script** to verify the skill is well-formed:
+9. **Run the validation script** to verify the skill is well-formed:
    ```
    execute_skill_script("create-skill", "scripts/validate.sh", [skill_dir])
    ```
 
-9. **Report the result.** Tell the user:
+10. **Report the result.** Tell the user:
    - Where the skill was created
    - How to use it (mention it by name in chat, or type `/name` if user-invocable)
    - That they can edit the SKILL.md to refine behavior

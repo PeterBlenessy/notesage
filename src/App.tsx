@@ -20,6 +20,7 @@ import { useActiveProject } from "@/hooks/useActiveProject";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { useStartWatchers } from "@/hooks/useStartWatchers";
 import { useSkillDiscovery } from "@/hooks/useSkillOperations";
+import { useMcpDiscovery } from "@/hooks/useMcpOperations";
 import { useAgentTaskOperations } from "@/hooks/useAgentTaskOperations";
 import { useActivityNavigation } from "@/hooks/useActivityNavigation";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -132,6 +133,7 @@ function App() {
   useProjectMetadata();
   useStartWatchers();
   useSkillDiscovery();
+  useMcpDiscovery();
 
   // Activity strip — cancel handler and navigation
   const { cancelTask } = useAgentTaskOperations();
@@ -225,6 +227,7 @@ function App() {
   }, []);
 
   // Stop ACP agent processes on window close (supplementary to Rust exit hook)
+  // MCP servers rely solely on McpState::stop_all_sync() in RunEvent::Exit
   useEffect(() => {
     const handleBeforeUnload = () => {
       stopAcpAgent();

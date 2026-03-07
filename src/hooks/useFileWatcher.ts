@@ -8,6 +8,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSyncStore } from "@/stores/sync-store";
 import { useSkillStore } from "@/stores/skill-store";
+import { useMcpStore } from "@/stores/mcp-store";
 import { useFileOperations, refreshGitForPath } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
 
@@ -52,6 +53,7 @@ export function useFileWatcher() {
   const refreshDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
   const gitDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
   const skillRescanDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const mcpRescanDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Per-file debounce for modify events — macOS FSEvents often fires duplicates
   const modifyDebounce = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   // Per-project debounce for iCloud project discovery
@@ -138,6 +140,19 @@ export function useFileWatcher() {
               useSkillStore.getState().requestRescan();
             }, 500);
           }
+
+          // Detect mcp.json changes → rescan MCP configs
+          const isMcpConfig =
+            path.endsWith("/mcp.json") &&
+            (path.includes("/.notesage/") ||
+              path.startsWith(`${home}/.notesage/`));
+
+          if (isMcpConfig) {
+            clearTimeout(mcpRescanDebounce.current);
+            mcpRescanDebounce.current = setTimeout(() => {
+              useMcpStore.getState().requestRescan();
+            }, 500);
+          }
         });
       }
 
@@ -157,6 +172,7 @@ export function useFileWatcher() {
       clearTimeout(refreshDebounce.current);
       clearTimeout(gitDebounce.current);
       clearTimeout(skillRescanDebounce.current);
+      clearTimeout(mcpRescanDebounce.current);
       for (const t of Object.values(modifyDebounce.current)) clearTimeout(t);
       for (const t of Object.values(icloudDiscoveryDebounce.current)) clearTimeout(t);
     };

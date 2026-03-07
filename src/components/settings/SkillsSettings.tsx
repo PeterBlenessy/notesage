@@ -1,9 +1,19 @@
-import { RefreshCw, ScrollText, ChevronDown, Plus, MoreHorizontal, Trash2, ArrowUpFromLine, ArrowDownToLine } from 'lucide-react';
-import { useState } from 'react';
+import { RefreshCw, ScrollText, ChevronDown, Plus, MoreHorizontal, Trash2, ArrowUpFromLine, ArrowDownToLine, Pencil } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   DropdownMenu,
@@ -17,9 +27,11 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { AgentIcon } from '@/components/AgentIcon';
 import { tauriApi } from '@/lib/tauri';
+import { parseFrontmatter, serializeFrontmatter } from '@/lib/frontmatter';
 import { cn } from '@/lib/utils';
 import { NewSkillWizard } from '@/components/NewSkillWizard';
 import { NewAgentWizard } from '@/components/NewAgentWizard';
+import { McpServersSettings } from '@/components/settings/McpServersSettings';
 
 /** Bundled skill names — always overwritten on startup, not user-manageable. */
 const BUNDLED_SKILL_NAMES = new Set(['create-skill', 'create-agent']);
@@ -75,11 +87,12 @@ function isOverridden(skill: SkillEntry, allSkills: SkillEntry[]): SkillEntry | 
   return null;
 }
 
-function SkillCard({ skill, allSkills, onDelete, onMove }: {
+function SkillCard({ skill, allSkills, onDelete, onMove, onEdit }: {
   skill: SkillEntry;
   allSkills: SkillEntry[];
   onDelete?: (skill: SkillEntry) => void;
   onMove?: (skill: SkillEntry, direction: 'to-global' | 'to-project') => void;
+  onEdit?: (skill: SkillEntry) => void;
 }) {
   const { enabledOverrides, toggleSkill } = useSkillStore();
   const overriddenBy = isOverridden(skill, allSkills);
@@ -113,7 +126,7 @@ function SkillCard({ skill, allSkills, onDelete, onMove }: {
         )}
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
-        {manageable && (onDelete || onMove) && (
+        {manageable && (onEdit || onDelete || onMove) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
@@ -121,6 +134,12 @@ function SkillCard({ skill, allSkills, onDelete, onMove }: {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
+              {onEdit && (
+                <DropdownMenuItem onClick={() => onEdit(skill)}>
+                  <Pencil className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
+                  Edit
+                </DropdownMenuItem>
+              )}
               {skill.source === 'notesage-project' && onMove && (
                 <DropdownMenuItem onClick={() => onMove(skill, 'to-global')}>
                   <ArrowUpFromLine className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
@@ -133,12 +152,9 @@ function SkillCard({ skill, allSkills, onDelete, onMove }: {
                   Move to Project
                 </DropdownMenuItem>
               )}
-              {onMove && onDelete && <DropdownMenuSeparator />}
+              {(onEdit || onMove) && onDelete && <DropdownMenuSeparator />}
               {onDelete && (
-                <DropdownMenuItem
-                  onClick={() => onDelete(skill)}
-                  className=""
-                >
+                <DropdownMenuItem onClick={() => onDelete(skill)}>
                   <Trash2 className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
                   Delete
                 </DropdownMenuItem>
@@ -164,6 +180,7 @@ function SkillGroup({
   readOnly,
   onDelete,
   onMove,
+  onEdit,
 }: {
   title: string;
   skills: SkillEntry[];
@@ -171,6 +188,7 @@ function SkillGroup({
   readOnly?: boolean;
   onDelete?: (skill: SkillEntry) => void;
   onMove?: (skill: SkillEntry, direction: 'to-global' | 'to-project') => void;
+  onEdit?: (skill: SkillEntry) => void;
 }) {
   if (skills.length === 0) return null;
 
@@ -186,7 +204,7 @@ function SkillGroup({
       </div>
       <div className="space-y-1.5">
         {skills.map((skill) => (
-          <SkillCard key={skill.path} skill={skill} allSkills={allSkills} onDelete={onDelete} onMove={onMove} />
+          <SkillCard key={skill.path} skill={skill} allSkills={allSkills} onDelete={onDelete} onMove={onMove} onEdit={onEdit} />
         ))}
       </div>
     </div>
@@ -205,11 +223,12 @@ function isAgentOverridden(agent: AgentEntry, allAgents: AgentEntry[]): AgentEnt
   return null;
 }
 
-function AgentCard({ agent, allAgents, onDelete, onMove }: {
+function AgentCard({ agent, allAgents, onDelete, onMove, onEdit }: {
   agent: AgentEntry;
   allAgents: AgentEntry[];
   onDelete?: (agent: AgentEntry) => void;
   onMove?: (agent: AgentEntry, direction: 'to-global' | 'to-project') => void;
+  onEdit?: (agent: AgentEntry) => void;
 }) {
   const { agentEnabledOverrides, toggleAgent } = useSkillStore();
   const overriddenBy = isAgentOverridden(agent, allAgents);
@@ -245,7 +264,7 @@ function AgentCard({ agent, allAgents, onDelete, onMove }: {
         </div>
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
-        {manageable && (onDelete || onMove) && (
+        {manageable && (onEdit || onDelete || onMove) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="h-6 w-6 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
@@ -253,6 +272,12 @@ function AgentCard({ agent, allAgents, onDelete, onMove }: {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
+              {onEdit && (
+                <DropdownMenuItem onClick={() => onEdit(agent)}>
+                  <Pencil className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
+                  Edit
+                </DropdownMenuItem>
+              )}
               {agent.source === 'notesage-project' && onMove && (
                 <DropdownMenuItem onClick={() => onMove(agent, 'to-global')}>
                   <ArrowUpFromLine className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
@@ -265,12 +290,9 @@ function AgentCard({ agent, allAgents, onDelete, onMove }: {
                   Move to Project
                 </DropdownMenuItem>
               )}
-              {onMove && onDelete && <DropdownMenuSeparator />}
+              {(onEdit || onMove) && onDelete && <DropdownMenuSeparator />}
               {onDelete && (
-                <DropdownMenuItem
-                  onClick={() => onDelete(agent)}
-                  className=""
-                >
+                <DropdownMenuItem onClick={() => onDelete(agent)}>
                   <Trash2 className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
                   Delete
                 </DropdownMenuItem>
@@ -296,6 +318,7 @@ function AgentGroup({
   action,
   onDelete,
   onMove,
+  onEdit,
 }: {
   title: string;
   agents: AgentEntry[];
@@ -303,6 +326,7 @@ function AgentGroup({
   action?: React.ReactNode;
   onDelete?: (agent: AgentEntry) => void;
   onMove?: (agent: AgentEntry, direction: 'to-global' | 'to-project') => void;
+  onEdit?: (agent: AgentEntry) => void;
 }) {
   if (agents.length === 0) return null;
 
@@ -316,7 +340,7 @@ function AgentGroup({
       </div>
       <div className="space-y-1.5">
         {agents.map((agent) => (
-          <AgentCard key={agent.path} agent={agent} allAgents={allAgents} onDelete={onDelete} onMove={onMove} />
+          <AgentCard key={agent.path} agent={agent} allAgents={allAgents} onDelete={onDelete} onMove={onMove} onEdit={onEdit} />
         ))}
       </div>
     </div>
@@ -327,27 +351,38 @@ export function SkillsSettings() {
   const { skills, agents, agentInstructions, isScanning, lastScanTimestamp } = useSkillStore();
   const mergedAgentInstructions = useSkillStore((s) => s.getMergedAgentInstructions());
 
-  // Group skills by source
-  const projectSkills = skills.filter((s) => s.source === 'notesage-project');
-  const globalSkills = skills.filter((s) => s.source === 'notesage-global');
-  // 'bundled' removed — bundled items are now 'notesage-global'
-  const claudeSkills = skills.filter((s) => s.source === 'claude');
-  const codexSkills = skills.filter((s) => s.source === 'codex');
-  const geminiSkills = skills.filter((s) => s.source === 'gemini');
-  const agentsSkills = skills.filter((s) => s.source === 'agents');
+  // Group skills by source (memoized to avoid re-filtering on unrelated state changes)
+  const skillsBySource = useMemo(() => {
+    const groups: Record<string, SkillEntry[]> = {};
+    for (const s of skills) (groups[s.source] ??= []).push(s);
+    return groups;
+  }, [skills]);
+  const projectSkills = skillsBySource['notesage-project'] ?? [];
+  const globalSkills = skillsBySource['notesage-global'] ?? [];
+  const claudeSkills = skillsBySource['claude'] ?? [];
+  const codexSkills = skillsBySource['codex'] ?? [];
+  const geminiSkills = skillsBySource['gemini'] ?? [];
+  const agentsSkills = skillsBySource['agents'] ?? [];
 
-  // Group agents by source
-  const projectAgents = agents.filter((a) => a.source === 'notesage-project');
-  const globalAgents = agents.filter((a) => a.source === 'notesage-global');
-  // 'bundled' removed — bundled agents are now 'notesage-global'
-  const claudeAgents = agents.filter((a) => a.source === 'claude');
-  const codexAgents = agents.filter((a) => a.source === 'codex');
-  const geminiAgents = agents.filter((a) => a.source === 'gemini');
-  const githubAgents = agents.filter((a) => a.source === 'github');
+  // Group agents by source (memoized)
+  const agentsBySource = useMemo(() => {
+    const groups: Record<string, AgentEntry[]> = {};
+    for (const a of agents) (groups[a.source] ??= []).push(a);
+    return groups;
+  }, [agents]);
+  const projectAgents = agentsBySource['notesage-project'] ?? [];
+  const globalAgents = agentsBySource['notesage-global'] ?? [];
+  const claudeAgents = agentsBySource['claude'] ?? [];
+  const codexAgents = agentsBySource['codex'] ?? [];
+  const geminiAgents = agentsBySource['gemini'] ?? [];
+  const githubAgents = agentsBySource['github'] ?? [];
 
   const [instructionsExpanded, setInstructionsExpanded] = useState(false);
   const [skillWizardOpen, setSkillWizardOpen] = useState(false);
   const [agentWizardOpen, setAgentWizardOpen] = useState(false);
+  const [newAgentOpen, setNewAgentOpen] = useState(false);
+  const [editingSkill, setEditingSkill] = useState<SkillEntry | null>(null);
+  const [editingAgent, setEditingAgent] = useState<AgentEntry | null>(null);
 
   const [rescanSpinning, setRescanSpinning] = useState(false);
 
@@ -365,13 +400,11 @@ export function SkillsSettings() {
   const projects = useWorkspaceStore((s) => s.projects);
   const firstProjectPath = projects.length > 0 ? projects[0].path : null;
 
-  const requestRescan = () => useSkillStore.getState().requestRescan();
-
   const handleDeleteSkill = async (skill: SkillEntry) => {
     try {
       await tauriApi.deletePath(skill.path);
       toast.success(`Deleted skill "${skill.name}"`);
-      requestRescan();
+      useSkillStore.getState().requestRescan();
     } catch (e) {
       toast.error(`Failed to delete skill: ${e}`);
     }
@@ -394,7 +427,7 @@ export function SkillsSettings() {
           await tauriApi.deletePath(skill.path);
         }
         toast.success(`Moved "${skill.name}" to Global`);
-        requestRescan();
+        useSkillStore.getState().requestRescan();
       } catch (e) {
         toast.error(`Failed to move skill: ${e}`);
       }
@@ -414,7 +447,7 @@ export function SkillsSettings() {
           await tauriApi.deletePath(skill.path);
         }
         toast.success(`Moved "${skill.name}" to Project`);
-        requestRescan();
+        useSkillStore.getState().requestRescan();
       } catch (e) {
         toast.error(`Failed to move skill: ${e}`);
       }
@@ -425,7 +458,7 @@ export function SkillsSettings() {
     try {
       await tauriApi.deletePath(agent.path);
       toast.success(`Deleted agent "${agent.name}"`);
-      requestRescan();
+      useSkillStore.getState().requestRescan();
     } catch (e) {
       toast.error(`Failed to delete agent: ${e}`);
     }
@@ -442,7 +475,7 @@ export function SkillsSettings() {
         await tauriApi.createDirectory(destDir).catch(() => {});
         await tauriApi.renamePath(agent.path, dest);
         toast.success(`Moved "${agent.name}" to Global`);
-        requestRescan();
+        useSkillStore.getState().requestRescan();
       } catch (e) {
         toast.error(`Failed to move agent: ${e}`);
       }
@@ -457,7 +490,7 @@ export function SkillsSettings() {
         await tauriApi.createDirectory(destDir).catch(() => {});
         await tauriApi.renamePath(agent.path, dest);
         toast.success(`Moved "${agent.name}" to Project`);
-        requestRescan();
+        useSkillStore.getState().requestRescan();
       } catch (e) {
         toast.error(`Failed to move agent: ${e}`);
       }
@@ -480,7 +513,7 @@ export function SkillsSettings() {
                 onClick={() => setSkillWizardOpen(true)}
               >
                 <Plus className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
-                New Skill
+                Add
               </Button>
               <Button
                 variant="ghost"
@@ -488,8 +521,7 @@ export function SkillsSettings() {
                 onClick={handleRescan}
                 disabled={showSpinner}
               >
-                <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', showSpinner && 'animate-spin')} strokeWidth={1.5} />
-                Rescan
+                <RefreshCw className={cn('h-3.5 w-3.5', showSpinner && 'animate-spin')} strokeWidth={1.5} />
               </Button>
             </div>
           </div>
@@ -508,8 +540,8 @@ export function SkillsSettings() {
           </div>
         ) : (
           <div className="space-y-4">
-            <SkillGroup title="Project (.notesage/skills/)" skills={projectSkills} allSkills={skills} onDelete={skillManagement ? handleDeleteSkill : undefined} onMove={skillManagement ? handleMoveSkill : undefined} />
-            <SkillGroup title="Global (~/.notesage/skills/)" skills={globalSkills} allSkills={skills} onDelete={skillManagement ? handleDeleteSkill : undefined} onMove={skillManagement ? handleMoveSkill : undefined} />
+            <SkillGroup title="Project (.notesage/skills/)" skills={projectSkills} allSkills={skills} onDelete={skillManagement ? handleDeleteSkill : undefined} onMove={skillManagement ? handleMoveSkill : undefined} onEdit={setEditingSkill} />
+            <SkillGroup title="Global (~/.notesage/skills/)" skills={globalSkills} allSkills={skills} onDelete={skillManagement ? handleDeleteSkill : undefined} onMove={skillManagement ? handleMoveSkill : undefined} onEdit={setEditingSkill} />
             <SkillGroup title="Claude Code (~/.claude/skills/)" skills={claudeSkills} allSkills={skills} readOnly />
             <SkillGroup title="Codex (~/.codex/skills/)" skills={codexSkills} allSkills={skills} readOnly />
             <SkillGroup title="Gemini (~/.gemini/skills/)" skills={geminiSkills} allSkills={skills} readOnly />
@@ -522,13 +554,31 @@ export function SkillsSettings() {
 
       {/* Agents Section */}
       <div className="space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
+        <div>
+          <div className="flex items-center justify-between">
             <Label className="text-sm font-semibold">Agents</Label>
-            <p className="text-xs text-muted-foreground mt-1">
-              Addressable AI agents from your projects, global config, and connected providers
-            </p>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setNewAgentOpen(true)}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
+                Add
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRescan}
+                disabled={showSpinner}
+              >
+                <RefreshCw className={cn('h-3.5 w-3.5', showSpinner && 'animate-spin')} strokeWidth={1.5} />
+              </Button>
+            </div>
           </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            Addressable AI agents from your projects, global config, and connected providers
+          </p>
         </div>
 
         {agents.length === 0 ? (
@@ -541,8 +591,8 @@ export function SkillsSettings() {
           </div>
         ) : (
           <div className="space-y-4">
-            <AgentGroup title="Project (.notesage/agents/)" agents={projectAgents} allAgents={agents} onDelete={skillManagement ? handleDeleteAgent : undefined} onMove={skillManagement ? handleMoveAgent : undefined} />
-            <AgentGroup title="Global (~/.notesage/agents/)" agents={globalAgents} allAgents={agents} onDelete={skillManagement ? handleDeleteAgent : undefined} onMove={skillManagement ? handleMoveAgent : undefined} />
+            <AgentGroup title="Project (.notesage/agents/)" agents={projectAgents} allAgents={agents} onDelete={skillManagement ? handleDeleteAgent : undefined} onMove={skillManagement ? handleMoveAgent : undefined} onEdit={setEditingAgent} />
+            <AgentGroup title="Global (~/.notesage/agents/)" agents={globalAgents} allAgents={agents} onDelete={skillManagement ? handleDeleteAgent : undefined} onMove={skillManagement ? handleMoveAgent : undefined} onEdit={setEditingAgent} />
             <AgentGroup title="Claude Code (~/.claude/agents/)" agents={claudeAgents} allAgents={agents} />
             <AgentGroup title="Codex (~/.codex/agents/)" agents={codexAgents} allAgents={agents} />
             <AgentGroup title="Gemini (~/.gemini/agents/)" agents={geminiAgents} allAgents={agents} />
@@ -569,7 +619,7 @@ export function SkillsSettings() {
             className="shrink-0"
           >
             <Plus className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
-            New
+            Add
           </Button>
         </div>
 
@@ -630,6 +680,11 @@ export function SkillsSettings() {
         )}
       </div>
 
+      <div className="h-px bg-border" />
+
+      {/* MCP Servers Section */}
+      <McpServersSettings />
+
       {/* Last scan info */}
       {lastScanTimestamp > 0 && (
         <p className="text-xs text-muted-foreground">
@@ -639,6 +694,574 @@ export function SkillsSettings() {
 
       <NewSkillWizard open={skillWizardOpen} onOpenChange={setSkillWizardOpen} />
       <NewAgentWizard open={agentWizardOpen} onOpenChange={setAgentWizardOpen} />
+      <NewAddressableAgentDialog open={newAgentOpen} onOpenChange={setNewAgentOpen} />
+      {editingSkill && (
+        <EditSkillDialog
+          skill={editingSkill}
+          open={!!editingSkill}
+          onOpenChange={(open) => { if (!open) setEditingSkill(null); }}
+        />
+      )}
+      {editingAgent && (
+        <EditAgentDialog
+          agent={editingAgent}
+          open={!!editingAgent}
+          onOpenChange={(open) => { if (!open) setEditingAgent(null); }}
+        />
+      )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// New Addressable Agent Dialog
+// ---------------------------------------------------------------------------
+
+function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [instructions, setInstructions] = useState('');
+  const [model, setModel] = useState('');
+  const [icon, setIcon] = useState('');
+  const [allowedTools, setAllowedTools] = useState('');
+  const [userInvocable, setUserInvocable] = useState(true);
+  const [disableModelInvocation, setDisableModelInvocation] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+
+  const reset = () => {
+    setName('');
+    setDescription('');
+    setInstructions('');
+    setModel('');
+    setIcon('');
+    setAllowedTools('');
+    setUserInvocable(true);
+    setDisableModelInvocation(false);
+    setAdvancedOpen(false);
+  };
+
+  const handleSave = async () => {
+    if (!name.trim() || !description.trim()) {
+      toast.error('Name and description are required');
+      return;
+    }
+    if (!slug) {
+      toast.error('Name must contain at least one letter or number');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const home = await tauriApi.getHomeDir();
+      const dir = `${home}/.notesage/agents`;
+      const filePath = `${dir}/${slug}.md`;
+
+      // Check if file already exists
+      const exists = await tauriApi.pathExists(filePath);
+      if (exists) {
+        toast.error(`Agent "${slug}" already exists`);
+        setSaving(false);
+        return;
+      }
+
+      // Build frontmatter
+      const fm: Record<string, unknown> = {
+        name: slug,
+        description: description.trim(),
+      };
+      if (model.trim()) fm.model = model.trim();
+      if (icon.trim()) fm.icon = icon.trim();
+      if (!userInvocable) fm['user-invocable'] = false;
+      if (disableModelInvocation) fm['disable-model-invocation'] = true;
+      const toolsList = allowedTools.split(',').map((t) => t.trim()).filter(Boolean);
+      if (toolsList.length > 0) fm['allowed-tools'] = toolsList;
+
+      const body = instructions.trim() || '';
+      const content = serializeFrontmatter(fm, body + '\n');
+
+      await tauriApi.createDirectory(dir).catch(() => {});
+      await tauriApi.writeFile(filePath, content);
+      toast.success(`Created agent "${slug}"`);
+      useSkillStore.getState().requestRescan();
+      onOpenChange(false);
+      reset();
+    } catch (err) {
+      toast.error(`Failed to create agent: ${err}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>New Agent</DialogTitle>
+          <DialogDescription>Create an addressable agent with custom instructions.</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2 overflow-y-auto max-h-[60vh]">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Name</Label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Code Reviewer"
+              className="text-sm"
+              autoFocus
+            />
+            {slug && (
+              <p className="text-xs text-muted-foreground">
+                File: <code className="text-xs">~/.notesage/agents/{slug}.md</code>
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Description</Label>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="When to use this agent and what it does"
+              className="text-sm"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Instructions</Label>
+            <Textarea
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+              placeholder="System prompt — tell the agent how to behave (optional, edit later)"
+              className="text-sm min-h-[100px] resize-y"
+            />
+          </div>
+
+          {/* Advanced options */}
+          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none">
+              <ChevronDown
+                className={cn('h-3 w-3 transition-transform duration-150', !advancedOpen && '-rotate-90')}
+                strokeWidth={1.5}
+              />
+              Advanced options
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="space-y-4 pt-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Allowed tools</Label>
+                  <Input
+                    value={allowedTools}
+                    onChange={(e) => setAllowedTools(e.target.value)}
+                    placeholder="e.g., Read, Grep, Glob (comma-separated)"
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Restrict which tools/skills this agent can use. Leave empty for no restrictions.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Model preference</Label>
+                  <Input
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder="e.g., sonnet, opus, haiku"
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Preferred model. Matched against available connections.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Icon</Label>
+                  <Input
+                    value={icon}
+                    onChange={(e) => setIcon(e.target.value)}
+                    placeholder="Lucide icon name or emoji (e.g., sparkles, 🔍)"
+                    className="text-sm"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm">User-invocable</Label>
+                    <p className="text-xs text-muted-foreground">Show in the agent picker and @ menu</p>
+                  </div>
+                  <Switch checked={userInvocable} onCheckedChange={setUserInvocable} />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm">Disable model invocation</Label>
+                    <p className="text-xs text-muted-foreground">Prevent AI from auto-selecting this agent</p>
+                  </div>
+                  <Switch checked={disableModelInvocation} onCheckedChange={setDisableModelInvocation} />
+                </div>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave} disabled={saving || !name.trim() || !description.trim()}>
+            {saving ? 'Creating...' : 'Create'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Edit Skill Dialog
+// ---------------------------------------------------------------------------
+
+function EditSkillDialog({ skill, open, onOpenChange }: {
+  skill: SkillEntry;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [description, setDescription] = useState('');
+  const [instructions, setInstructions] = useState('');
+  const [allowedTools, setAllowedTools] = useState('');
+  const [userInvocable, setUserInvocable] = useState(true);
+  const [disableModelInvocation, setDisableModelInvocation] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await tauriApi.readFile(`${skill.path}/SKILL.md`);
+        if (cancelled) return;
+        const { frontmatter: fm, content } = parseFrontmatter(raw);
+
+        setDescription(typeof fm?.description === 'string' ? fm.description : skill.description);
+        setInstructions(content.trim());
+        setAllowedTools(Array.isArray(fm?.['allowed-tools']) ? fm['allowed-tools'].join(', ') : '');
+        setUserInvocable(fm?.['user-invocable'] !== false);
+        setDisableModelInvocation(fm?.['disable-model-invocation'] === true);
+        setAdvancedOpen(false);
+        setLoaded(true);
+      } catch (e) {
+        if (!cancelled) {
+          toast.error(`Failed to read skill: ${e}`);
+          onOpenChange(false);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [skill.path]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSave = async () => {
+    if (!description.trim()) {
+      toast.error('Description is required');
+      return;
+    }
+    setSaving(true);
+    try {
+      const fm: Record<string, unknown> = {
+        name: skill.name,
+        description: description.trim(),
+      };
+      if (userInvocable) fm['user-invocable'] = true;
+      if (disableModelInvocation) fm['disable-model-invocation'] = true;
+      const toolsList = allowedTools.split(',').map((t) => t.trim()).filter(Boolean);
+      if (toolsList.length > 0) fm['allowed-tools'] = toolsList;
+
+      const body = instructions.trim() || '';
+      const content = serializeFrontmatter(fm, body + '\n');
+
+      await tauriApi.writeFile(`${skill.path}/SKILL.md`, content);
+      toast.success(`Updated skill "${skill.name}"`);
+      useSkillStore.getState().requestRescan();
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(`Failed to save skill: ${e}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Skill</DialogTitle>
+          <DialogDescription>
+            <code className="text-xs">{skill.name}</code> — {sourceLabel(skill.source)}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2 overflow-y-auto max-h-[60vh]">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Description</Label>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              className="text-sm resize-y"
+              autoFocus
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Instructions</Label>
+            <Textarea
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+              rows={6}
+              className="text-sm resize-y min-h-[100px]"
+            />
+          </div>
+
+          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none">
+              <ChevronDown
+                className={cn('h-3 w-3 transition-transform duration-150', !advancedOpen && '-rotate-90')}
+                strokeWidth={1.5}
+              />
+              Advanced options
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="space-y-4 pt-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Allowed tools</Label>
+                  <Input
+                    value={allowedTools}
+                    onChange={(e) => setAllowedTools(e.target.value)}
+                    placeholder="e.g., Read, Edit, Bash (comma-separated)"
+                    className="font-mono text-sm"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm">User-invocable</Label>
+                    <p className="text-xs text-muted-foreground">Show in the / command menu</p>
+                  </div>
+                  <Switch checked={userInvocable} onCheckedChange={setUserInvocable} />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm">Disable model invocation</Label>
+                    <p className="text-xs text-muted-foreground">Prevent AI from auto-discovering this skill</p>
+                  </div>
+                  <Switch checked={disableModelInvocation} onCheckedChange={setDisableModelInvocation} />
+                </div>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving || !description.trim()}>
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Edit Agent Dialog
+// ---------------------------------------------------------------------------
+
+function EditAgentDialog({ agent, open, onOpenChange }: {
+  agent: AgentEntry;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [description, setDescription] = useState('');
+  const [instructions, setInstructions] = useState('');
+  const [model, setModel] = useState('');
+  const [icon, setIcon] = useState('');
+  const [allowedTools, setAllowedTools] = useState('');
+  const [userInvocable, setUserInvocable] = useState(true);
+  const [disableModelInvocation, setDisableModelInvocation] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await tauriApi.readFile(agent.path);
+        if (cancelled) return;
+        const { frontmatter: fm, content } = parseFrontmatter(raw);
+
+        setDescription(typeof fm?.description === 'string' ? fm.description : agent.description);
+        setInstructions(content.trim());
+        setModel(typeof fm?.model === 'string' ? fm.model : agent.model ?? '');
+        setIcon(typeof fm?.icon === 'string' ? fm.icon : agent.icon ?? '');
+        setAllowedTools(Array.isArray(fm?.['allowed-tools']) ? fm['allowed-tools'].join(', ') : '');
+        setUserInvocable(fm?.['user-invocable'] !== false);
+        setDisableModelInvocation(fm?.['disable-model-invocation'] === true);
+        setAdvancedOpen(false);
+        setLoaded(true);
+      } catch (e) {
+        if (!cancelled) {
+          toast.error(`Failed to read agent: ${e}`);
+          onOpenChange(false);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [agent.path]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSave = async () => {
+    if (!description.trim()) {
+      toast.error('Description is required');
+      return;
+    }
+    setSaving(true);
+    try {
+      const fm: Record<string, unknown> = {
+        name: agent.name,
+        description: description.trim(),
+      };
+      if (model.trim()) fm.model = model.trim();
+      if (icon.trim()) fm.icon = icon.trim();
+      if (!userInvocable) fm['user-invocable'] = false;
+      if (disableModelInvocation) fm['disable-model-invocation'] = true;
+      const toolsList = allowedTools.split(',').map((t) => t.trim()).filter(Boolean);
+      if (toolsList.length > 0) fm['allowed-tools'] = toolsList;
+
+      const body = instructions.trim() || '';
+      const content = serializeFrontmatter(fm, body + '\n');
+
+      await tauriApi.writeFile(agent.path, content);
+      toast.success(`Updated agent "${agent.name}"`);
+      useSkillStore.getState().requestRescan();
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(`Failed to save agent: ${e}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Agent</DialogTitle>
+          <DialogDescription>
+            <code className="text-xs">{agent.name}</code> — {sourceLabel(agent.source)}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2 overflow-y-auto max-h-[60vh]">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Description</Label>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="text-sm"
+              autoFocus
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Instructions</Label>
+            <Textarea
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+              rows={6}
+              className="text-sm resize-y min-h-[100px]"
+            />
+          </div>
+
+          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none">
+              <ChevronDown
+                className={cn('h-3 w-3 transition-transform duration-150', !advancedOpen && '-rotate-90')}
+                strokeWidth={1.5}
+              />
+              Advanced options
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="space-y-4 pt-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Allowed tools</Label>
+                  <Input
+                    value={allowedTools}
+                    onChange={(e) => setAllowedTools(e.target.value)}
+                    placeholder="e.g., Read, Grep, Glob (comma-separated)"
+                    className="font-mono text-sm"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Model preference</Label>
+                  <Input
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder="e.g., sonnet, opus, haiku"
+                    className="font-mono text-sm"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Icon</Label>
+                  <Input
+                    value={icon}
+                    onChange={(e) => setIcon(e.target.value)}
+                    placeholder="Lucide icon name or emoji"
+                    className="text-sm"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm">User-invocable</Label>
+                    <p className="text-xs text-muted-foreground">Show in the agent picker and @ menu</p>
+                  </div>
+                  <Switch checked={userInvocable} onCheckedChange={setUserInvocable} />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm">Disable model invocation</Label>
+                    <p className="text-xs text-muted-foreground">Prevent AI from auto-selecting this agent</p>
+                  </div>
+                  <Switch checked={disableModelInvocation} onCheckedChange={setDisableModelInvocation} />
+                </div>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving || !description.trim()}>
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

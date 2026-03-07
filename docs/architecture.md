@@ -28,6 +28,7 @@ note-sage/
 │   │   │   ├── ai.rs       # AI provider commands (direct API)
 │   │   │   ├── acp.rs      # ACP agent management (spawn, auth, sessions, permissions, cleanup)
 │   │   │   ├── copilot_lsp.rs # Copilot Language Server (JSON-RPC, inline completions)
+│   │   │   ├── mcp.rs      # MCP client (JSON-RPC stdio transport, server lifecycle, tool discovery/call)
 │   │   │   ├── skills.rs   # Skill/agent discovery, script execution, bundled extraction
 │   │   │   ├── export.rs   # PDF export commands
 │   │   │   ├── git.rs      # Git operations
@@ -84,6 +85,7 @@ note-sage/
 │   │   │   ├── ConnectionCard.tsx  # Single connection display card
 │   │   │   ├── UseCaseRoutingSettings.tsx # Per-use-case provider routing
 │   │   │   ├── SkillsSettings.tsx  # Skills & Agents settings tab (skills browser, agents, agent instructions, management)
+│   │   │   ├── McpServersSettings.tsx # MCP Servers section (server cards, add/edit/import dialogs)
 │   │   │   └── ProjectSettings.tsx # Project-level settings
 │   │   ├── chat/
 │   │   │   ├── ChatPanel.tsx       # AI chat sidebar (context-aware footer: Tools popover for ACP, Search toggle for direct API)
@@ -116,6 +118,7 @@ note-sage/
 │   │   ├── useCommentDelegation.ts # Comment → agent delegation flow
 │   │   ├── useCommentOperations.ts # Comment CRUD, decorations, status filtering
 │   │   ├── useCopilotCompletion.ts # Copilot LSP lifecycle + ghost text completions
+│   │   ├── useMcpOperations.ts  # MCP server discovery (useMcpDiscovery mounted in App.tsx), start/stop/restart/callTool operations
 │   │   └── useSkillOperations.ts   # Skill/agent discovery orchestration (useSkillDiscovery mounted in App.tsx), persona migration, skill-aware prompt building
 │   ├── stores/
 │   │   ├── editor-store.ts         # Open tabs, active file
@@ -125,6 +128,7 @@ note-sage/
 │   │   ├── ai-store.ts             # AI provider configuration (personas deprecated — replaced by addressable agents)
 │   │   ├── chat-store.ts           # Chat conversation state
 │   │   ├── skill-store.ts         # Skills registry, agent entries, agent instructions (persisted overrides)
+│   │   ├── mcp-store.ts           # MCP server registry, enabled overrides (partially persisted)
 │   │   ├── epub-store.ts          # EPUB viewer preferences and bookmarks
 │   │   ├── activity-store.ts      # Agent task registry (persisted)
 │   │   └── tag-store.ts           # Workspace tag index (non-persisted)
@@ -211,6 +215,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 - **permission-store**: ACP tool call permission tracking with tiered approval (`sessionAllowed`: Set non-persisted, `alwaysAllowed`: string[] persisted); actions: `allowSession`, `removeSession`, `allowAlways`, `removeAlways`, `getToolTier` → `'none' | 'session' | 'always'`
 - **chat-store**: Chat conversation messages, loading state, errors, agent activities
 - **comment-store**: Comments per document, replies, delegation status, activity log (non-persisted activities, JSON-persisted comments), `scrollToCommentId` for external navigation (Editor.tsx scrolls to comment position before activating popover)
+- **mcp-store**: MCP server registry with enabled overrides (persisted), server list rebuilt from config scan, `rescanCounter` for re-discovery, `getActiveTools()` for all tools from running servers
 - **epub-store**: EPUB viewer mode (scroll/paginated), per-file bookmarks keyed by file path (CFI + chapter)
 - **tag-store**: Workspace tag index — all known tags and tag-to-file mapping (non-persisted, rebuilt from scan)
 - **activity-store**: Agent task registry — background task tracking with status, activities, streaming output, thinking output (persisted; running tasks marked as error on rehydration). Controls agent activity strip (40px rail) and agent activity panel (resizable sidebar) visibility.

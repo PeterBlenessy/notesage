@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
+import { serializeFrontmatter } from '@/lib/frontmatter';
 import {
   Dialog,
   DialogContent,
@@ -14,18 +15,23 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { ChevronDown } from 'lucide-react';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSkillStore } from '@/stores/skill-store';
+import { cn } from '@/lib/utils';
 
 interface NewSkillWizardProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-type Step = 'describe' | 'name' | 'scope' | 'review';
-
-function suggestName(description: string): string {
-  return description
+function slugify(text: string): string {
+  return text
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, '')
     .trim()
@@ -48,28 +54,43 @@ function isValidName(name: string): string | null {
 }
 
 export function NewSkillWizard({ open, onOpenChange }: NewSkillWizardProps) {
-  const [step, setStep] = useState<Step>('describe');
-  const [description, setDescription] = useState('');
   const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [instructions, setInstructions] = useState('');
   const [scope, setScope] = useState<'project' | 'global'>('project');
   const [includeScripts, setIncludeScripts] = useState(false);
+  const [userInvocable, setUserInvocable] = useState(true);
+  const [disableModelInvocation, setDisableModelInvocation] = useState(false);
+  const [allowedTools, setAllowedTools] = useState('');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
   const projects = useWorkspaceStore((s) => s.projects);
   const hasProject = projects.length > 0;
 
   const reset = () => {
-    setStep('describe');
-    setDescription('');
     setName('');
+    setDescription('');
+    setInstructions('');
     setScope('project');
     setIncludeScripts(false);
+    setUserInvocable(true);
+    setDisableModelInvocation(false);
+    setAllowedTools('');
+    setAdvancedOpen(false);
     setIsCreating(false);
   };
 
   const handleClose = () => {
     reset();
     onOpenChange(false);
+  };
+
+  // Auto-suggest name from description on blur
+  const handleDescriptionBlur = () => {
+    if (description.trim() && !name) {
+      setName(slugify(description));
+    }
   };
 
   const handleCreate = async () => {
@@ -91,30 +112,26 @@ export function NewSkillWizard({ open, onOpenChange }: NewSkillWizardProps) {
         await invoke('create_directory', { path: `${skillDir}/scripts` });
       }
 
-      // Generate and write SKILL.md
-      const frontmatter = [
-        '---',
-        `name: ${name}`,
-        `description: ${description}`,
-        'user-invocable: true',
-        '---',
-      ].join('\n');
+      // Build frontmatter
+      const fm: Record<string, unknown> = {
+        name,
+        description: description.trim(),
+      };
+      if (userInvocable) fm['user-invocable'] = true;
+      if (disableModelInvocation) fm['disable-model-invocation'] = true;
+      const toolsList = allowedTools.split(',').map((t) => t.trim()).filter(Boolean);
+      if (toolsList.length > 0) fm['allowed-tools'] = toolsList;
 
-      const body = `\n# ${name}\n\nTODO — Write instructions for how the AI should use this skill.\n`;
+      const body = instructions.trim()
+        || `# ${name}\n\nTODO — Write instructions for how the AI should use this skill.`;
 
       await invoke('write_file', {
         path: `${skillDir}/SKILL.md`,
-        content: `${frontmatter}\n${body}`,
+        content: serializeFrontmatter(fm, body + '\n'),
       });
 
       // Trigger rescan
-      const baseDirs = new Set<string>();
-      for (const skill of useSkillStore.getState().skills) {
-        const parent = skill.path.substring(0, skill.path.lastIndexOf('/'));
-        baseDirs.add(parent);
-      }
-      baseDirs.add(targetDir);
-      await useSkillStore.getState().scanSkills(Array.from(baseDirs));
+      useSkillStore.getState().requestRescan();
 
       toast.success(`Skill "${name}" created`, {
         description: scope === 'project' ? 'Available in this project' : 'Available in all projects',
@@ -129,9 +146,7 @@ export function NewSkillWizard({ open, onOpenChange }: NewSkillWizardProps) {
   };
 
   const nameError = name ? isValidName(name) : null;
-  const canProceedToName = description.trim().length > 0;
-  const canProceedToScope = name.trim().length > 0 && !nameError;
-  const canCreate = canProceedToScope;
+  const canCreate = name.trim().length > 0 && description.trim().length > 0 && !nameError;
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -139,156 +154,141 @@ export function NewSkillWizard({ open, onOpenChange }: NewSkillWizardProps) {
         <DialogHeader>
           <DialogTitle>Create Skill</DialogTitle>
           <DialogDescription>
-            {step === 'describe' && 'Describe what this skill should do.'}
-            {step === 'name' && 'Choose a name for your skill.'}
-            {step === 'scope' && 'Where should this skill be saved?'}
-            {step === 'review' && 'Review and create your skill.'}
+            Create an Agent Skill with instructions, optional scripts, and tool access.
           </DialogDescription>
         </DialogHeader>
 
-        {step === 'describe' && (
-          <div className="space-y-3">
-            <div>
-              <Label htmlFor="skill-desc">Description</Label>
-              <Textarea
-                id="skill-desc"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="e.g., Proofread text for grammar and clarity"
-                rows={3}
-                className="mt-1.5"
-                autoFocus
-              />
-            </div>
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={includeScripts}
-                onCheckedChange={setIncludeScripts}
-                id="include-scripts"
-              />
-              <Label htmlFor="include-scripts" className="text-sm">Include scripts directory</Label>
-            </div>
+        <div className="space-y-4 py-2 overflow-y-auto max-h-[60vh]">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Description</Label>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              onBlur={handleDescriptionBlur}
+              placeholder="e.g., Proofread text for grammar and clarity"
+              rows={2}
+              className="text-sm resize-y"
+              autoFocus
+            />
           </div>
-        )}
 
-        {step === 'name' && (
-          <div className="space-y-3">
-            <div>
-              <Label htmlFor="skill-name">Skill name</Label>
-              <Input
-                id="skill-name"
-                value={name}
-                onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-                placeholder="e.g., proofread"
-                className="mt-1.5 font-mono text-sm"
-                autoFocus
-              />
-              {nameError && <p className="text-xs text-destructive mt-1">{nameError}</p>}
-              <p className="text-xs text-muted-foreground mt-1">
-                Lowercase letters, digits, and hyphens. 1-64 characters.
-              </p>
-            </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Name</Label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+              placeholder="e.g., proofread"
+              className="font-mono text-sm"
+            />
+            {nameError && <p className="text-xs text-destructive mt-1">{nameError}</p>}
+            <p className="text-xs text-muted-foreground">
+              Lowercase letters, digits, and hyphens. Auto-suggested from description.
+            </p>
           </div>
-        )}
 
-        {step === 'scope' && (
-          <div className="space-y-3">
-            <div className="space-y-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Instructions</Label>
+            <Textarea
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+              placeholder="Markdown body — tell the AI how to use this skill (optional, edit later)"
+              rows={3}
+              className="text-sm resize-y min-h-[72px]"
+            />
+          </div>
+
+          {/* Scope */}
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Scope</Label>
+            <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setScope('project')}
                 disabled={!hasProject}
-                className={`w-full text-left px-3 py-2.5 rounded-lg border transition-colors ${
+                className={cn(
+                  'flex-1 text-left px-3 py-2 rounded-lg border transition-colors text-sm',
                   scope === 'project'
                     ? 'border-foreground/30 bg-accent'
-                    : 'border-border hover:border-muted-foreground'
-                } ${!hasProject ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    : 'border-border hover:border-muted-foreground',
+                  !hasProject && 'opacity-40 cursor-not-allowed',
+                )}
               >
-                <div className="text-sm font-medium">This project</div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  Saved to <code className="text-[11px]">.notesage/skills/</code>
-                </div>
+                <div className="font-medium">Project</div>
+                <div className="text-xs text-muted-foreground">.notesage/skills/</div>
               </button>
               <button
                 type="button"
                 onClick={() => setScope('global')}
-                className={`w-full text-left px-3 py-2.5 rounded-lg border transition-colors ${
+                className={cn(
+                  'flex-1 text-left px-3 py-2 rounded-lg border transition-colors text-sm',
                   scope === 'global'
                     ? 'border-foreground/30 bg-accent'
-                    : 'border-border hover:border-muted-foreground'
-                }`}
+                    : 'border-border hover:border-muted-foreground',
+                )}
               >
-                <div className="text-sm font-medium">Global</div>
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  Saved to <code className="text-[11px]">~/.notesage/skills/</code> — available in all projects
-                </div>
+                <div className="font-medium">Global</div>
+                <div className="text-xs text-muted-foreground">~/.notesage/skills/</div>
               </button>
             </div>
           </div>
-        )}
 
-        {step === 'review' && (
-          <div className="space-y-3">
-            <div className="rounded-lg border border-border p-3 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Name</span>
-                <span className="font-mono">{name}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Scope</span>
-                <span>{scope === 'project' ? 'Project' : 'Global'}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Scripts</span>
-                <span>{includeScripts ? 'Yes' : 'No'}</span>
-              </div>
-              <div className="text-sm">
-                <span className="text-muted-foreground">Description</span>
-                <p className="mt-0.5 text-xs">{description}</p>
-              </div>
-            </div>
-          </div>
-        )}
+          {/* Advanced options */}
+          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none">
+              <ChevronDown
+                className={cn('h-3 w-3 transition-transform duration-150', !advancedOpen && '-rotate-90')}
+                strokeWidth={1.5}
+              />
+              Advanced options
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="space-y-4 pt-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Allowed tools</Label>
+                  <Input
+                    value={allowedTools}
+                    onChange={(e) => setAllowedTools(e.target.value)}
+                    placeholder="e.g., Read, Edit, Bash (comma-separated)"
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Restrict which tools this skill may use. Leave empty for no restrictions.
+                  </p>
+                </div>
 
-        <DialogFooter className="gap-2">
-          {step !== 'describe' && (
-            <Button
-              variant="ghost"
-              onClick={() => {
-                const steps: Step[] = ['describe', 'name', 'scope', 'review'];
-                const idx = steps.indexOf(step);
-                if (idx > 0) setStep(steps[idx - 1]);
-              }}
-            >
-              Back
-            </Button>
-          )}
-          <div className="flex-1" />
-          <Button variant="ghost" onClick={handleClose}>Cancel</Button>
-          {step === 'describe' && (
-            <Button
-              disabled={!canProceedToName}
-              onClick={() => {
-                if (!name) setName(suggestName(description));
-                setStep('name');
-              }}
-            >
-              Next
-            </Button>
-          )}
-          {step === 'name' && (
-            <Button disabled={!canProceedToScope} onClick={() => setStep('scope')}>
-              Next
-            </Button>
-          )}
-          {step === 'scope' && (
-            <Button onClick={() => setStep('review')}>Next</Button>
-          )}
-          {step === 'review' && (
-            <Button disabled={!canCreate || isCreating} onClick={handleCreate}>
-              {isCreating ? 'Creating...' : 'Create Skill'}
-            </Button>
-          )}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm">Include scripts directory</Label>
+                    <p className="text-xs text-muted-foreground">Create a scripts/ folder for executable scripts</p>
+                  </div>
+                  <Switch checked={includeScripts} onCheckedChange={setIncludeScripts} />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm">User-invocable</Label>
+                    <p className="text-xs text-muted-foreground">Show in the / command menu</p>
+                  </div>
+                  <Switch checked={userInvocable} onCheckedChange={setUserInvocable} />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm">Disable model invocation</Label>
+                    <p className="text-xs text-muted-foreground">Prevent AI from auto-discovering this skill</p>
+                  </div>
+                  <Switch checked={disableModelInvocation} onCheckedChange={setDisableModelInvocation} />
+                </div>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose}>Cancel</Button>
+          <Button disabled={!canCreate || isCreating} onClick={handleCreate}>
+            {isCreating ? 'Creating...' : 'Create'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

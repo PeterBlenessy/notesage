@@ -150,8 +150,8 @@ Multi-provider AI integration with chat and inline actions.
 - Agent picker dropdown in chat footer; `@agent-name` addressing in chat input for per-message agent scoping
 - 7 bundled agents (General Assistant, Creative Writer, Technical Editor, Fact Checker, Academic Writer, Copywriter, Proofreader) with YAML frontmatter and markdown body
 - Agent-to-skill connection: `allowed-tools` frontmatter filters which skills an agent can access
-- Agents section in Settings > Skills & Agents for viewing, enabling/disabling discovered agents
-- Skill & agent management (Settings > Advanced toggle): delete and move custom skills/agents between global and project scope
+- Agents section in Settings &gt; Skills & Agents for viewing, enabling/disabling discovered agents
+- Skill & agent management (Settings &gt; Advanced toggle): delete and move custom skills/agents between global and project scope
 - One-time migration: custom personas auto-converted to agent `.md` files on first launch
 - Quick reply chips: AI responses can include `<quick-replies>` tags with suggested follow-up prompts, rendered as clickable chips below the message
 - Custom prompts/templates for AI actions
@@ -543,19 +543,24 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - Built-in meta-skills: `create-skill` and `create-agent` ship with the app — the system dogfoods itself
 - Wizard UI for non-technical users + prompt-based creation for advanced users
 - Skills browser in settings for viewing, enabling/disabling, and managing discovered skills
-- Skill & agent management: delete and move (global ↔ project) for custom skills/agents, gated behind Settings > Advanced toggle
+- Skill & agent management: delete and move (global ↔ project) for custom skills/agents, gated behind Settings &gt; Advanced toggle
 - Auto-rescan: filesystem watcher triggers skill/agent re-discovery via `rescanCounter` in skill-store; manual rescan button with spinner feedback
-- Progressive disclosure: only skill descriptions loaded initially (~100 tokens each), full body and scripts loaded on demand
+- Progressive disclosure: only skill descriptions loaded initially (\~100 tokens each), full body and scripts loaded on demand
 - Permission model: per-execution, per-session, or always-allow for script execution, extending existing ACP permission tiers
 
-**Step B — MCP Client Integration:**
+**Step B — MCP Client Integration:** ✅ Implemented
 
-- MCP (Model Context Protocol) client in Rust backend using stdio transport
-- Spawn and manage MCP servers as child processes
-- Tool discovery from connected servers, merged with skill registry
-- Import existing MCP server configurations from Claude Desktop, Cursor, VS Code, etc.
-- `.notesage/mcp.json` (project) and `~/.notesage/mcp.json` (global) for Notesage-specific servers
-- Settings UI for MCP server management
+- MCP (Model Context Protocol) client in Rust backend using stdio transport with JSON-RPC 2.0 over Content-Length framing
+- Spawn and manage MCP servers as child processes with `kill_on_drop(true)` — SIGKILL on app exit via `McpState::stop_all_sync()`
+- MCP protocol handshake: `initialize` → `initialized` → `tools/list` for tool discovery
+- `tools/call` for invoking tools with JSON arguments, returning content arrays (text, image, resource)
+- Tool discovery from connected servers, displayed in Tools popover alongside ACP agent tools
+- Import existing MCP server configurations from Claude Desktop (`~/.claude/claude_desktop_config.json`), Cursor (`~/.cursor/mcp.json`), VS Code settings
+- `.notesage/mcp.json` (project) and `~/.notesage/mcp.json` (global) for Notesage-specific servers — Claude Desktop-compatible format
+- Settings UI: MCP Servers section in Skills & Agents tab with server cards (status dots, tool count, enable/disable, context menu), Add Server dialog, Import dialog with source preview
+- Auto-start enabled servers on app launch with staggered 100ms delays
+- Filesystem watcher triggers MCP config rescan on `.notesage/mcp.json` changes
+- `mcp-store` (Zustand, partially persisted): server registry with `enabledOverrides` persisted, server list rebuilt from config scan
 
 **Step C — Addressable Agents (Personas to Agents):** ✅ Implemented
 

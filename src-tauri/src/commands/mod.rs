@@ -10,6 +10,7 @@ pub mod acp;
 pub mod copilot_lsp;
 pub mod shell_path;
 pub mod skills;
+pub mod mcp;
 
 pub use file::*;
 pub use dialog::*;
@@ -21,3 +22,4 @@ pub use sync::*;
 pub use acp::*;
 pub use copilot_lsp::*;
 pub use skills::*;
+pub use mcp::*;
