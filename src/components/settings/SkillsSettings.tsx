@@ -137,7 +137,7 @@ function SkillCard({ skill, allSkills, onDelete, onMove }: {
               {onDelete && (
                 <DropdownMenuItem
                   onClick={() => onDelete(skill)}
-                  className="text-destructive focus:text-destructive"
+                  className=""
                 >
                   <Trash2 className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
                   Delete
@@ -269,7 +269,7 @@ function AgentCard({ agent, allAgents, onDelete, onMove }: {
               {onDelete && (
                 <DropdownMenuItem
                   onClick={() => onDelete(agent)}
-                  className="text-destructive focus:text-destructive"
+                  className=""
                 >
                   <Trash2 className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
                   Delete
