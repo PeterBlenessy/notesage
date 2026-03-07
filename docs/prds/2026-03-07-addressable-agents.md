@@ -35,7 +35,7 @@ Personas become agents. The concept is the same — a named AI role with specifi
 |----------------|-----------------|
 | Name + icon | `name` + `description` in frontmatter |
 | System message | Markdown body (instructions) |
-| Built-in presets | Bundled agent files in `~/.notesage/bundled-agents/` |
+| Built-in presets | Bundled agent files in `~/.notesage/agents/` |
 | Custom personas | User-created `.md` files in `agents/` directories |
 | Persona picker dropdown | Agent picker dropdown |
 | Per-project persona override | Agent files in project `.notesage/agents/` |
@@ -132,16 +132,15 @@ Scans filesystem paths to build an agent registry, mirroring skill discovery:
 | Gemini CLI (ACP) | `~/.gemini/agents/` |
 | Copilot CLI (ACP) | `~/.github/agents/`, `.github/agents/` (project) |
 | Copilot LSP | `~/.github/agents/`, `.github/agents/` (project) |
-| (always) | `~/.notesage/agents/`, `.notesage/agents/` (per open project), `~/.notesage/bundled-agents/` |
+| (always) | `~/.notesage/agents/`, `.notesage/agents/` (per open project), `~/.notesage/agents/` |
 
 **File matching:** `*.md` and `*.agent.md` files with valid YAML frontmatter containing `name` and `description`.
 
 **Hierarchy resolution** (later overrides earlier, same-name agents shadow):
 
-1. Bundled agents (`~/.notesage/bundled-agents/`) — lowest priority
-2. External provider agents (e.g., `~/.claude/agents/`)
-3. `~/.notesage/agents/` (global Notesage)
-4. `.notesage/agents/` per project (highest priority)
+1. External provider agents (e.g., `~/.claude/agents/`) — lowest priority
+2. `~/.notesage/agents/` (global Notesage — includes bundled agents extracted here at startup)
+3. `.notesage/agents/` per project (highest priority)
 
 When multiple sources provide an agent with the same name, the highest-priority version is used. Lower-priority versions are visible in settings (greyed out, showing "overridden by [source]").
 
@@ -160,7 +159,7 @@ Agent instruction files (`agents.md`) continue to work exactly as in Step A. Add
 
 ### Bundled Agents (Replacing Built-in Personas)
 
-The 7 built-in personas become bundled agent files, extracted to `~/.notesage/bundled-agents/` at startup (same pattern as bundled skills):
+The 7 built-in personas become bundled agent files, extracted to `~/.notesage/agents/` at startup (same directory as global user agents; bundled files are always overwritten on startup to ensure updates):
 
 | Current Persona | Agent File | Icon |
 |----------------|-----------|------|
@@ -172,7 +171,7 @@ The 7 built-in personas become bundled agent files, extracted to `~/.notesage/bu
 | Copywriter | `copywriter.md` | `megaphone` |
 | Proofreader | `proofreader.md` | `spell-check` |
 
-Each bundled agent file contains the same system message as the current persona, formatted as a proper agent markdown file with frontmatter. Users can override any bundled agent by creating a same-named file in `~/.notesage/agents/` or `.notesage/agents/`.
+Each bundled agent file contains the same system message as the current persona, formatted as a proper agent markdown file with frontmatter. Users can override any bundled agent by creating a same-named file in project `.notesage/agents/` (project-level agents take priority over global).
 
 ### Custom Persona Migration
 
@@ -267,7 +266,7 @@ Global (~/.notesage/agents/)               [+ New Agent]
 |    Meticulous grammar and style checker             |
 +---------------------------------------------------+
 
-Bundled (~/.notesage/bundled-agents/)
+Bundled (~/.notesage/agents/)
 +---------------------------------------------------+
 |  general-assistant                                 |
 |    Helpful writing assistant                       |
@@ -304,7 +303,7 @@ pub struct AgentEntry {
     pub name: String,
     pub description: String,
     pub path: String,              // absolute path to agent file
-    pub source: String,            // "notesage-project" | "notesage-global" | "bundled" | "claude" | "codex" | "gemini" | "github"
+    pub source: String,            // "notesage-project" | "notesage-global" | "claude" | "codex" | "gemini" | "github"
     pub model: Option<String>,
     pub icon: Option<String>,      // Lucide icon name or emoji
     pub allowed_tools: Option<Vec<String>>,
@@ -370,58 +369,58 @@ interface AgentState {
 
 ### Functional — Agent Discovery
 
-- [ ] Agent files in `.notesage/agents/` (project) are discovered
-- [ ] Agent files in `~/.notesage/agents/` (global) are discovered
-- [ ] Agent files in `~/.claude/agents/` are discovered when Claude is connected
-- [ ] Agent files in `.github/agents/` are discovered when Copilot is connected
-- [ ] Bundled agents are extracted and discovered at startup
-- [ ] Same-name agents resolved by hierarchy (project > global > bundled > external)
-- [ ] Overridden agents shown greyed out in settings
-- [ ] Adding/removing an agent file triggers re-discovery
+- [x] Agent files in `.notesage/agents/` (project) are discovered
+- [x] Agent files in `~/.notesage/agents/` (global) are discovered
+- [x] Agent files in `~/.claude/agents/` are discovered when Claude is connected
+- [x] Agent files in `.github/agents/` are discovered when Copilot is connected
+- [x] Bundled agents are extracted and discovered at startup
+- [x] Same-name agents resolved by hierarchy (project > global > external)
+- [x] Overridden agents shown greyed out in settings
+- [x] Adding/removing an agent file triggers re-discovery
 
 ### Functional — Agent Picker
 
-- [ ] Agent picker shows all user-invocable agents grouped by source
-- [ ] Selecting an agent changes the active agent
-- [ ] Active agent's instructions injected into AI prompts
-- [ ] Active agent persists across app restarts
-- [ ] Fallback to `general-assistant` if active agent is no longer found
+- [x] Agent picker shows all user-invocable agents grouped by source
+- [x] Selecting an agent changes the active agent
+- [x] Active agent's instructions injected into AI prompts
+- [x] Active agent persists across app restarts
+- [x] Fallback to `general-assistant` if active agent is no longer found
 
 ### Functional — `@agent-name` Addressing
 
-- [ ] Typing `@` in chat input shows agent autocomplete menu
-- [ ] Selecting an agent inserts `@agent-name` into message
-- [ ] `@agent-name` in sent message scopes that message to the agent
-- [ ] Agent picker dropdown is not changed by `@` mentions
-- [ ] Menu keyboard navigation (arrow keys, Enter, Escape)
+- [x] Typing `@` in chat input shows agent autocomplete menu
+- [x] Selecting an agent inserts `@agent-name` into message
+- [x] `@agent-name` in sent message scopes that message to the agent
+- [x] Agent picker dropdown is not changed by `@` mentions
+- [x] Menu keyboard navigation (arrow keys, Enter, Escape)
 
 ### Functional — Skill Filtering
 
-- [ ] Agent with `allowed-tools` only sees listed skills in context
-- [ ] Agent without `allowed-tools` sees all active skills
-- [ ] `execute_skill_script` tool respects agent's `allowed-tools`
+- [x] Agent with `allowed-tools` only sees listed skills in context
+- [x] Agent without `allowed-tools` sees all active skills
+- [x] `execute_skill_script` tool respects agent's `allowed-tools`
 
 ### Functional — Model Preference
 
-- [ ] Agent with `model` field attempts to route to matching connection
-- [ ] Falls back to default routing if no match
-- [ ] Model preference shown in agent picker tooltip
+- [x] Agent with `model` field attempts to route to matching connection
+- [x] Falls back to default routing if no match
+- [x] Model preference shown in agent picker tooltip
 
 ### Functional — Migration
 
-- [ ] Custom personas migrated to `~/.notesage/agents/` files on first launch
-- [ ] Active persona mapped to active agent
-- [ ] Migration runs only once (`personasMigrated` flag)
-- [ ] Migration failure doesn't break the app
-- [ ] Per-project `personaId` mapped to `agentName`
+- [x] Custom personas migrated to `~/.notesage/agents/` files on first launch
+- [x] Active persona mapped to active agent
+- [x] Migration runs only once (`personasMigrated` flag)
+- [x] Migration failure doesn't break the app
+- [x] Per-project `personaId` mapped to `agentName`
 
 ### Design
 
-- [ ] Agent picker matches existing persona picker style
-- [ ] `@` autocomplete menu matches `/` skill menu style
-- [ ] Agents section in settings matches skills section layout
-- [ ] Agent icons render correctly (Lucide names + emoji fallback)
-- [ ] All UI works in both light and dark mode
+- [x] Agent picker matches existing persona picker style
+- [x] `@` autocomplete menu matches `/` skill menu style
+- [x] Agents section in settings matches skills section layout
+- [x] Agent icons render correctly (Lucide names + emoji fallback)
+- [x] All UI works in both light and dark mode
 
 ## Implementation Tasks
 
@@ -478,7 +477,7 @@ Add `AgentEntry` Rust struct (name, description, path, source, model, icon, allo
 Read full body of an agent file (markdown after frontmatter). Returns `AgentContent { name, body, path }`. Follow `read_skill_content` pattern.
 
 **Task 3 — Add `extract_bundled_agents` command:**
-Embed 7 bundled agent files via `include_str!`. Write to `~/.notesage/bundled-agents/` at startup (always overwrite). Same pattern as `extract_bundled_skills`.
+Embed 7 bundled agent files via `include_str!`. Write to `~/.notesage/agents/` at startup (always overwrite). Same pattern as `extract_bundled_skills`.
 
 **Task 4 — Create bundled agent files:**
 Create `bundled-agents/` directory with 7 `.md` files. Each has frontmatter (name, description, icon as Lucide name) and body from current persona `systemMessage`. Files: `general-assistant.md`, `creative-writer.md`, `technical-editor.md`, `fact-checker.md`, `academic-writer.md`, `copywriter.md`, `proofreader.md`.

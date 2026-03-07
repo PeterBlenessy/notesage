@@ -23,7 +23,7 @@ note-sage/
 │   │   ├── lib.rs          # Tauri builder + RunEvent::Exit cleanup hook
 │   │   ├── commands/       # Tauri IPC commands
 │   │   │   ├── mod.rs
-│   │   │   ├── file.rs     # File read/write/list operations
+│   │   │   ├── file.rs     # File read/write/list/copy operations
 │   │   │   ├── dialog.rs   # Native file/folder dialogs
 │   │   │   ├── ai.rs       # AI provider commands (direct API)
 │   │   │   ├── acp.rs      # ACP agent management (spawn, auth, sessions, permissions, cleanup)
@@ -83,12 +83,13 @@ note-sage/
 │   │   │   ├── ConnectionsSettings.tsx # Multi-provider connections management
 │   │   │   ├── ConnectionCard.tsx  # Single connection display card
 │   │   │   ├── UseCaseRoutingSettings.tsx # Per-use-case provider routing
-│   │   │   ├── SkillsSettings.tsx  # Skills & Agents settings tab (skills browser, agents, agent instructions)
+│   │   │   ├── SkillsSettings.tsx  # Skills & Agents settings tab (skills browser, agents, agent instructions, management)
 │   │   │   └── ProjectSettings.tsx # Project-level settings
 │   │   ├── chat/
 │   │   │   ├── ChatPanel.tsx       # AI chat sidebar (context-aware footer: Tools popover for ACP, Search toggle for direct API)
 │   │   │   ├── ChatMessage.tsx     # Individual message with activity log
 │   │   │   ├── ChatInput.tsx       # Message input (/ for skills, @ for agents)
+│   │   │   ├── QuickReplies.tsx   # Quick reply chips parsed from AI responses
 │   │   │   ├── SkillCommandMenu.tsx # Skill slash command autocomplete (/skill-name)
 │   │   │   ├── AgentCommandMenu.tsx # Agent @ command autocomplete (@agent-name)
 │   │   │   └── PermissionCard.tsx  # ACP tool call approval (allow once/session/always, deny)
@@ -157,10 +158,10 @@ note-sage/
 │       ├── openai.svg
 │       ├── google.svg
 │       └── ollama-official.png
-├── bundled-skills/                 # Built-in skills shipped with app (extracted to ~/.notesage/bundled-skills/)
+├── bundled-skills/                 # Built-in skills shipped with app (extracted to ~/.notesage/skills/)
 │   ├── create-skill/              # Meta-skill for scaffolding new skills
 │   └── create-agent/              # Meta-skill for creating agent instruction files
-├── bundled-agents/                 # Built-in agents shipped with app (extracted to ~/.notesage/bundled-agents/)
+├── bundled-agents/                 # Built-in agents shipped with app (extracted to ~/.notesage/agents/)
 │   ├── general-assistant.md       # Default agent (replaces General Assistant persona)
 │   └── ...                        # 6 more bundled agents (creative-writer, technical-editor, etc.)
 ├── docs/                           # Documentation
@@ -202,9 +203,9 @@ All state stores use Zustand with the persist middleware for localStorage:
 - **editor-store**: Open tabs (file path + dirty state + per-tab copilotDisabled flag), active tab index
 - **workspace-store**: Explorer folders (multiple), open projects, notes tree, expanded folders, section collapse state
 - **project-metadata-store**: Project metadata from `.notesage/project.json` (name, description, AI overrides)
-- **settings-store**: Theme, window state, recent projects, UI preferences (floating toolbar toggle, external change diff review toggle), runtime-only `startupReady` flag (gates filesystem watchers until startup validation completes)
+- **settings-store**: Theme, window state, recent projects, UI preferences (floating toolbar toggle, external change diff review toggle, `skillManagement` toggle for advanced skill/agent management), runtime-only `startupReady` flag (gates filesystem watchers until startup validation completes)
 - **ai-store**: AI provider selection, API keys, Ollama URL, suggestions enabled (legacy — used as fallback). Personas deprecated — replaced by addressable agents in skill-store. Custom persona data kept for one-time migration to agent `.md` files.
-- **skill-store**: Discovered skills registry with enable/disable overrides, discovered addressable agents (from `bundled-agents/`, `agents/` directories, provider-specific paths), agent instruction files, active agent name. Skills, agents, and instructions rebuilt from scan; enable/disable overrides and active agent name persisted. Agent discovery replaces the legacy persona system.
+- **skill-store**: Discovered skills registry with enable/disable overrides, discovered addressable agents (from `~/.notesage/agents/`, project `.notesage/agents/`, provider-specific paths), agent instruction files, active agent name, `rescanCounter` (bumped by `requestRescan()`, observed by `useSkillDiscovery` to trigger re-scan). Skills, agents, and instructions rebuilt from scan; enable/disable overrides and active agent name persisted. Agent discovery replaces the legacy persona system.
 - **connections-store**: Multi-provider connections with auth method, status, capabilities
 - **routing-store**: Per-use-case provider routing (interactive, agent_tasks, inline_completion)
 - **permission-store**: ACP tool call permission tracking with tiered approval (`sessionAllowed`: Set non-persisted, `alwaysAllowed`: string[] persisted); actions: `allowSession`, `removeSession`, `allowAlways`, `removeAlways`, `getToolTier` → `'none' | 'session' | 'always'`

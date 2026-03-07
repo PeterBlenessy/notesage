@@ -146,12 +146,14 @@ Multi-provider AI integration with chat and inline actions.
 
 - Chat panel as collapsible right sidebar (Cmd+Shift+A) with streaming responses
 - Inline AI actions via BubbleMenu: Improve, Summarize, Expand selected text
-- Addressable agents: file-based agent system replacing legacy personas — discovered from `bundled-agents/`, `~/.notesage/agents/`, project `.notesage/agents/`, `.github/agents/`, and provider-specific directories
+- Addressable agents: file-based agent system replacing legacy personas — discovered from `~/.notesage/agents/` (includes bundled agents), project `.notesage/agents/`, `.github/agents/`, and provider-specific directories
 - Agent picker dropdown in chat footer; `@agent-name` addressing in chat input for per-message agent scoping
 - 7 bundled agents (General Assistant, Creative Writer, Technical Editor, Fact Checker, Academic Writer, Copywriter, Proofreader) with YAML frontmatter and markdown body
 - Agent-to-skill connection: `allowed-tools` frontmatter filters which skills an agent can access
 - Agents section in Settings > Skills & Agents for viewing, enabling/disabling discovered agents
+- Skill & agent management (Settings > Advanced toggle): delete and move custom skills/agents between global and project scope
 - One-time migration: custom personas auto-converted to agent `.md` files on first launch
+- Quick reply chips: AI responses can include `<quick-replies>` tags with suggested follow-up prompts, rendered as clickable chips below the message
 - Custom prompts/templates for AI actions
 - Project-scoped AI context (provider, agent, and context overrides per project)
 - Provider logos with dark mode support
@@ -175,7 +177,8 @@ Multi-provider AI integration with chat and inline actions.
 - Three implementations: AnthropicProvider, OpenAIProvider, OllamaProvider
 - State stores: ai-store (config, legacy personas deprecated), chat-store (messages), skill-store (agents, skills, instructions)
 - Tauri commands: ai_generate_text, ai_chat, ai_chat_stream, discover_agents, read_agent_content, extract_bundled_agents
-- Agent discovery: `useSkillDiscovery` hook (mounted in `App.tsx`) orchestrates extraction, migration, and scanning at startup
+- Agent discovery: `useSkillDiscovery` hook (mounted in `App.tsx`) orchestrates extraction, migration, and scanning at startup; auto-rescan triggered by filesystem watcher via `rescanCounter` in skill-store
+- Quick replies: `QuickReplies.tsx` component parses `<quick-replies>` XML tags from AI responses + heuristic fallback for numbered lists of suggestions
 - Ollama thinking detection: `detect_thinking_support()` in `ai_streaming.rs` — queries `/api/show` for capabilities, template, and model metadata
 
 **Future enhancements (not yet built):**
@@ -531,7 +534,7 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 
 **Goal:** Extensible AI capability system based on open standards — users can add new AI skills and agent behaviors by dropping folders, with no app rebuild required.
 
-**Step A — Agent Skills & Script Execution:**
+**Step A — Agent Skills & Script Execution:** ✅ Implemented
 
 - Discover existing skills from connected providers' filesystem paths (`~/.claude/skills/`, `~/.codex/skills/`, `~/.gemini/skills/`, etc.)
 - Notesage skill hierarchy: project `.notesage/skills/` overrides global `~/.notesage/skills/`, which overrides external provider skills
@@ -540,6 +543,8 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - Built-in meta-skills: `create-skill` and `create-agent` ship with the app — the system dogfoods itself
 - Wizard UI for non-technical users + prompt-based creation for advanced users
 - Skills browser in settings for viewing, enabling/disabling, and managing discovered skills
+- Skill & agent management: delete and move (global ↔ project) for custom skills/agents, gated behind Settings > Advanced toggle
+- Auto-rescan: filesystem watcher triggers skill/agent re-discovery via `rescanCounter` in skill-store; manual rescan button with spinner feedback
 - Progressive disclosure: only skill descriptions loaded initially (~100 tokens each), full body and scripts loaded on demand
 - Permission model: per-execution, per-session, or always-allow for script execution, extending existing ACP permission tiers
 
@@ -574,6 +579,7 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - MCP adopted by all major AI tools with 5,800+ servers and 300+ clients
 - Addressable agents follow the cross-tool standard: `.github/agents/*.md` (Copilot), `.claude/agents/*.md` (Claude Code), with shared frontmatter fields
 - Script execution via `std::process::Command` with timeout, path traversal protection, and interpreter resolution
+- `copy_directory` Tauri command for recursive cross-filesystem directory copies (used by skill/agent move operations)
 - Phase 10 sandboxing wraps the script execution layer with OS-level isolation
 - PRDs: `docs/prds/2026-03-05-skills-and-agents-platform.md`, `docs/prds/2026-03-07-addressable-agents.md`
 
@@ -620,7 +626,7 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 
 **Features:**
 
-- Managed agent binary installation to `~/.notesage/agents/` (download from GitHub Releases, no Node.js required for 4/5 agents)
+- Managed agent binary installation to `~/.notesage/bin/` (download from GitHub Releases, no Node.js required for 4/5 agents)
 - Portable Node.js runtime for Gemini CLI (the only agent that genuinely needs it)
 - Prefer user-installed system binaries when available — only offer managed install when not found
 - OS-level filesystem sandboxing for managed installs and skill script execution (Seatbelt on macOS, Bubblewrap/Landlock on Linux)

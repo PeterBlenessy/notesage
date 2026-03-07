@@ -136,6 +136,31 @@ async fn rename_path(old_path: String, new_path: String) -> Result<(), String>
 - `Ok(())`: Success
 - `Err(String)`: Error message if path cannot be renamed
 
+### copy_directory
+
+Recursively copies a directory and all its contents to a new location. Works across filesystem boundaries (unlike `rename_path` which may fail for cross-device moves).
+
+```rust
+#[tauri::command]
+async fn copy_directory(source: String, destination: String) -> Result<(), String>
+```
+
+**Parameters:**
+
+- `source`: Absolute path to the source directory
+- `destination`: Absolute path to the destination directory (must not exist)
+
+**Returns:**
+
+- `Ok(())`: Success
+- `Err(String)`: Error message if copy fails
+
+**Frontend usage:**
+
+```typescript
+await invoke('copy_directory', { source: '/path/to/skill', destination: '/new/path/to/skill' });
+```
+
 ### delete_path
 
 Deletes a file or directory.

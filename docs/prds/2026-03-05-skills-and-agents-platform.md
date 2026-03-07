@@ -1,6 +1,6 @@
 # PRD: Skills & Agents Platform
 
-**Date:** 2026-03-05 **Status:** Step A Complete (v0.18.0) **Parent:** Phase 7 (replaces AI-Assisted Research as standalone phase)
+**Date:** 2026-03-05 **Status:** Steps A & C Complete (v0.18.0) **Parent:** Phase 7 (replaces AI-Assisted Research as standalone phase)
 
 ## Problem
 
@@ -751,121 +751,121 @@ interface PermissionStore {
 
 ### Functional — Discovery
 
-- [ ] Skills in `~/.claude/skills/` are discovered when Claude Code is connected
+- [x] Skills in `~/.claude/skills/` are discovered when Claude Code is connected
 
-- [ ] Skills in `~/.codex/skills/` are discovered when Codex is connected
+- [x] Skills in `~/.codex/skills/` are discovered when Codex is connected
 
-- [ ] Skills in `~/.gemini/skills/` are discovered when Gemini is connected
+- [x] Skills in `~/.gemini/skills/` are discovered when Gemini is connected
 
-- [ ] Skills in `.notesage/skills/` (project) are always discovered
+- [x] Skills in `.notesage/skills/` (project) are always discovered
 
-- [ ] Skills in `~/.notesage/skills/` (global) are always discovered
+- [x] Skills in `~/.notesage/skills/` (global) are always discovered
 
-- [ ] Bundled skills (`create-skill`, `create-agent`) are always discovered
+- [x] Bundled skills (`create-skill`, `create-agent`) are always discovered
 
-- [ ] Same-name skills are resolved by hierarchy (project &gt; global &gt; external)
+- [x] Same-name skills are resolved by hierarchy (project > global > external)
 
-- [ ] Overridden skills shown as greyed out in skills browser
+- [x] Overridden skills shown as greyed out in skills browser
 
-- [ ] Adding a skill folder triggers re-discovery (via filesystem watcher)
+- [x] Adding a skill folder triggers re-discovery (via filesystem watcher)
 
-- [ ] Removing a connected provider removes its skills from the registry
+- [x] Removing a connected provider removes its skills from the registry
 
 ### Functional — Agent Instructions
 
-- [ ] `.notesage/agents.md` is discovered and injected into prompts
+- [x] `.notesage/agents.md` is discovered and injected into prompts
 
-- [ ] `~/.notesage/agents.md` is discovered and injected into prompts
+- [x] `~/.notesage/agents.md` is discovered and injected into prompts
 
-- [ ] `AGENTS.md` in project root is always discovered
+- [x] `AGENTS.md` in project root is always discovered
 
-- [ ] `CLAUDE.md` in project root is discovered only when Claude is connected
+- [x] `CLAUDE.md` in project root is discovered only when Claude is connected
 
-- [ ] `GEMINI.md` in project root is discovered only when Gemini is connected
+- [x] `GEMINI.md` in project root is discovered only when Gemini is connected
 
-- [ ] Instructions are concatenated in correct priority order
+- [x] Instructions are concatenated in correct priority order
 
-- [ ] For ACP connections, only Notesage-specific instructions are injected (no duplication)
+- [x] For ACP connections, only Notesage-specific instructions are injected (no duplication)
 
-- [ ] Status bar shows agent instruction indicator when files are loaded
+- [x] Status bar shows agent instruction indicator when files are loaded
 
 ### Functional — Script Execution
 
-- [ ] Bash scripts execute correctly via `execute_skill_script`
+- [x] Bash scripts execute correctly via `execute_skill_script`
 
-- [ ] Python scripts execute correctly (when Python is installed)
+- [x] Python scripts execute correctly (when Python is installed)
 
-- [ ] Node.js scripts execute correctly (when Node is installed)
+- [x] Node.js scripts execute correctly (when Node is installed)
 
-- [ ] Scripts that exceed timeout are killed and return `timed_out: true`
+- [x] Scripts that exceed timeout are killed and return `timed_out: true`
 
-- [ ] Path traversal attempts are rejected (script must be within skill directory)
+- [x] Path traversal attempts are rejected (script must be within skill directory)
 
-- [ ] Missing interpreter returns clear error message
+- [x] Missing interpreter returns clear error message
 
-- [ ] Script stdout/stderr are captured and returned to the AI
+- [x] Script stdout/stderr are captured and returned to the AI
 
-- [ ] Permission prompt appears before first script execution
+- [x] Permission prompt appears before first script execution
 
-- [ ] Session and always permission tiers work correctly
+- [x] Session and always permission tiers work correctly
 
-- [ ] Script execution works for direct API connections (tool call flow)
+- [x] Script execution works for direct API connections (tool call flow)
 
-- [ ] Script execution works for ACP connections (tool available)
+- [x] Script execution works for ACP connections (tool available)
 
 ### Functional — Skill Invocation
 
-- [ ] AI automatically activates relevant skills based on descriptions (direct API)
+- [x] AI automatically activates relevant skills based on descriptions (direct API)
 
-- [ ] User can invoke skills via `/skill-name` in chat input
+- [x] User can invoke skills via `/skill-name` in chat input
 
-- [ ] Slash command autocomplete shows available user-invocable skills
+- [x] Slash command autocomplete shows available user-invocable skills
 
-- [ ] Skills with `disable-model-invocation: true` are not auto-activated
+- [x] Skills with `disable-model-invocation: true` are not auto-activated
 
-- [ ] Skills with `user-invocable: false` are not shown in slash command menu
+- [x] Skills with `user-invocable: false` are not shown in slash command menu
 
-- [ ] Progressive disclosure: only description loaded initially, body on demand
+- [x] Progressive disclosure: only description loaded initially, body on demand
 
-- [ ] `read_skill_content` tool returns full skill body and file listing
+- [x] `read_skill_content` tool returns full skill body and file listing
 
 ### Functional — Built-in Skills
 
-- [ ] `create-skill` generates a valid SKILL.md with correct frontmatter
+- [x] `create-skill` generates a valid SKILL.md with correct frontmatter
 
-- [ ] `create-skill` creates directory structure in correct scope (project/global)
+- [x] `create-skill` creates directory structure in correct scope (project/global)
 
-- [ ] `create-skill` generates scripts when requested
+- [x] `create-skill` generates scripts when requested
 
-- [ ] `create-agent` generates agent instruction file in correct scope
+- [x] `create-agent` generates agent instruction file in correct scope
 
-- [ ] `create-agent` appends to existing file when one already exists
+- [x] `create-agent` appends to existing file when one already exists
 
-- [ ] Wizard UI invokes `create-skill` with pre-filled inputs
+- [x] Wizard UI invokes `create-skill` with pre-filled inputs
 
-- [ ] Wizard UI validates skill name against naming rules
+- [x] Wizard UI validates skill name against naming rules
 
-- [ ] Newly created skills appear in skills browser without manual rescan
+- [x] Newly created skills appear in skills browser without manual rescan
 
 ### Design
 
-- [ ] Skills & Agents settings tab matches app design system
+- [x] Skills & Agents settings tab matches app design system
 
-- [ ] Skill entries have clear source attribution badges
+- [x] Skill entries have clear source attribution badges
 
-- [ ] Overridden skills are visually distinct (greyed out)
+- [x] Overridden skills are visually distinct (greyed out)
 
-- [ ] Wizard dialog is clean and guides the user step by step
+- [x] Wizard dialog is clean and guides the user step by step
 
-- [ ] Script execution output in chat is readable (collapsible code blocks)
+- [x] Script execution output in chat is readable (collapsible code blocks)
 
-- [ ] Permission prompts are clear and non-intrusive
+- [x] Permission prompts are clear and non-intrusive
 
-- [ ] Status bar agent instruction indicator is subtle and informative
+- [x] Status bar agent instruction indicator is subtle and informative
 
-- [ ] All UI works in both light and dark mode
+- [x] All UI works in both light and dark mode
 
-- [ ] Smooth transitions for skill browser expand/collapse
+- [x] Smooth transitions for skill browser expand/collapse
 
 ## Out of Scope
 
