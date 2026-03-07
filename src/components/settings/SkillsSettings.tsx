@@ -4,7 +4,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { useSkillStore, type SkillEntry, type AgentEntry } from '@/stores/skill-store';
+import { useSkillStore, SOURCE_PRIORITY, type SkillEntry, type AgentEntry } from '@/stores/skill-store';
 import { AgentIcon } from '@/components/AgentIcon';
 import { cn } from '@/lib/utils';
 import { NewSkillWizard } from '@/components/NewSkillWizard';
@@ -40,14 +40,10 @@ function sourceBadgeClass(source: string): string {
 
 /** Check if a skill is overridden by a higher-priority same-name skill. */
 function isOverridden(skill: SkillEntry, allSkills: SkillEntry[]): SkillEntry | null {
-  const priorities: Record<string, number> = {
-    'bundled': 0, 'external': 1, 'agents': 2, 'gemini': 2,
-    'codex': 2, 'claude': 2, 'notesage-global': 3, 'notesage-project': 4,
-  };
-  const myPriority = priorities[skill.source] ?? 1;
+  const myPriority = SOURCE_PRIORITY[skill.source as keyof typeof SOURCE_PRIORITY] ?? 1;
   for (const other of allSkills) {
     if (other.name === skill.name && other.path !== skill.path) {
-      const otherPriority = priorities[other.source] ?? 1;
+      const otherPriority = SOURCE_PRIORITY[other.source as keyof typeof SOURCE_PRIORITY] ?? 1;
       if (otherPriority > myPriority) return other;
     }
   }
@@ -130,14 +126,10 @@ function SkillGroup({
 
 /** Check if an agent is overridden by a higher-priority same-name agent. */
 function isAgentOverridden(agent: AgentEntry, allAgents: AgentEntry[]): AgentEntry | null {
-  const priorities: Record<string, number> = {
-    'bundled': 0, 'external': 1, 'agents': 2, 'gemini': 2,
-    'codex': 2, 'claude': 2, 'github': 2, 'notesage-global': 3, 'notesage-project': 4,
-  };
-  const myPriority = priorities[agent.source] ?? 1;
+  const myPriority = SOURCE_PRIORITY[agent.source as keyof typeof SOURCE_PRIORITY] ?? 1;
   for (const other of allAgents) {
     if (other.name === agent.name && other.path !== agent.path) {
-      const otherPriority = priorities[other.source] ?? 1;
+      const otherPriority = SOURCE_PRIORITY[other.source as keyof typeof SOURCE_PRIORITY] ?? 1;
       if (otherPriority > myPriority) return other;
     }
   }
@@ -219,7 +211,8 @@ function AgentGroup({
 }
 
 export function SkillsSettings() {
-  const { skills, agents, agentInstructions, isScanning, scanSkills, lastScanTimestamp } = useSkillStore();
+  const { skills, agents, agentInstructions, isScanning, scanSkills, scanAgents, lastScanTimestamp } = useSkillStore();
+  const mergedAgentInstructions = useSkillStore((s) => s.getMergedAgentInstructions());
 
   // Group skills by source
   const projectSkills = skills.filter((s) => s.source === 'notesage-project');
@@ -244,19 +237,22 @@ export function SkillsSettings() {
   const [agentWizardOpen, setAgentWizardOpen] = useState(false);
 
   const handleRescan = async () => {
-    // Trigger a rescan (the hook manages which directories to scan)
-    // For now, re-use the last scan's directories via the store
-    // The useSkillDiscovery hook will handle the actual rescan on next render
+    // Re-derive base dirs from existing skills and agents, then rescan both
     const store = useSkillStore.getState();
-    if (store.skills.length > 0) {
-      // Extract unique base dirs from existing skill paths
-      const baseDirs = new Set<string>();
-      for (const skill of store.skills) {
-        const parent = skill.path.substring(0, skill.path.lastIndexOf('/'));
-        baseDirs.add(parent);
-      }
-      await scanSkills(Array.from(baseDirs));
+    const baseDirs = new Set<string>();
+    for (const skill of store.skills) {
+      const parent = skill.path.substring(0, skill.path.lastIndexOf('/'));
+      baseDirs.add(parent);
     }
+    const agentDirs = new Set<string>();
+    for (const agent of store.agents) {
+      const parent = agent.path.substring(0, agent.path.lastIndexOf('/'));
+      agentDirs.add(parent);
+    }
+    await Promise.all([
+      baseDirs.size > 0 ? scanSkills(Array.from(baseDirs)) : Promise.resolve(),
+      agentDirs.size > 0 ? scanAgents(Array.from(agentDirs)) : Promise.resolve(),
+    ]);
   };
 
   const sortedInstructions = [...agentInstructions].sort((a, b) => b.priority - a.priority);
@@ -420,7 +416,7 @@ export function SkillsSettings() {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <pre className="mt-2 p-3 rounded-lg bg-muted text-xs text-muted-foreground whitespace-pre-wrap max-h-48 overflow-y-auto thin-scrollbar">
-                {useSkillStore.getState().getMergedAgentInstructions()}
+                {mergedAgentInstructions}
               </pre>
             </CollapsibleContent>
           </Collapsible>

@@ -55,7 +55,7 @@ export function ChatPanel() {
   const messages = useChatStore(selectMessages);
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const legacyProvider = useAIStore((s) => s.provider);
-  const getUserInvocableAgents = useSkillStore((s) => s.getUserInvocableAgents);
+  const invocableAgents = useSkillStore((s) => s.getUserInvocableAgents());
   const activeAgent = useSkillStore((s) => s.getActiveAgent());
   const setActiveAgent = useSkillStore((s) => s.setActiveAgent);
   const projects = useWorkspaceStore((s) => s.projects);
@@ -465,7 +465,7 @@ export function ChatPanel() {
                   </button>
                 </PopoverTrigger>
                 <PopoverContent side="top" align="start" className="w-56 p-1 max-h-64 overflow-y-auto thin-scrollbar">
-                  {getUserInvocableAgents().map((agent) => (
+                  {invocableAgents.map((agent) => (
                     <button
                       key={agent.path}
                       onClick={() => {
@@ -490,7 +490,7 @@ export function ChatPanel() {
                       )}
                     </button>
                   ))}
-                  {getUserInvocableAgents().length === 0 && (
+                  {invocableAgents.length === 0 && (
                     <div className="px-2 py-1.5 text-xs text-muted-foreground">
                       No agents discovered
                     </div>

@@ -144,8 +144,11 @@ interface SkillStore {
   toggleAgent: (agentPath: string, enabled: boolean) => void;
 }
 
+/** Known skill source labels. */
+export type SkillSource = 'bundled' | 'external' | 'agents' | 'gemini' | 'codex' | 'claude' | 'github' | 'notesage-global' | 'notesage-project';
+
 /** Source priority for hierarchy resolution (higher = wins). */
-const SOURCE_PRIORITY: Record<string, number> = {
+export const SOURCE_PRIORITY: Record<SkillSource, number> = {
   'bundled': 0,
   'external': 1,
   'agents': 2,
@@ -158,7 +161,7 @@ const SOURCE_PRIORITY: Record<string, number> = {
 };
 
 function getSourcePriority(source: string): number {
-  return SOURCE_PRIORITY[source] ?? 1;
+  return SOURCE_PRIORITY[source as SkillSource] ?? 1;
 }
 
 export const useSkillStore = create<SkillStore>()(

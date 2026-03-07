@@ -19,9 +19,16 @@ struct ThinkingTags {
     closing: String,
 }
 
-/// Query the Ollama `/api/show` endpoint for a model and return:
-/// - whether the model natively supports `think: true`
-/// - the thinking tags to look for in the content stream (if any)
+/// Result of querying a model's thinking capabilities.
+#[derive(Debug)]
+struct ThinkingSupport {
+    /// Whether the model natively supports Ollama's `think: true` parameter.
+    has_native: bool,
+    /// Tags to parse from the content stream (when native thinking is not available).
+    tags: Option<ThinkingTags>,
+}
+
+/// Query the Ollama `/api/show` endpoint for a model and return its thinking support.
 ///
 /// Ollama detects thinking capability from the model template. When a model
 /// doesn't support native `think: true`, it may still emit thinking tags like
@@ -31,7 +38,7 @@ async fn detect_thinking_support(
     client: &reqwest::Client,
     base_url: &str,
     model: &str,
-) -> (bool, Option<ThinkingTags>) {
+) -> ThinkingSupport {
     let url = format!("{}/api/show", base_url);
     let resp = client
         .post(&url)
@@ -46,7 +53,7 @@ async fn detect_thinking_support(
 
     let json = match json {
         Some(j) => j,
-        None => return (false, None),
+        None => return ThinkingSupport { has_native: false, tags: None },
     };
 
     // Check if capabilities include "thinking"
@@ -56,7 +63,7 @@ async fn detect_thinking_support(
         .unwrap_or(false);
 
     if has_native_thinking {
-        return (true, None); // Ollama handles it — no need for tag parsing
+        return ThinkingSupport { has_native: true, tags: None };
     }
 
     // Model doesn't support native thinking. Inspect the template for thinking
@@ -78,7 +85,7 @@ async fn detect_thinking_support(
         //   <think>{{.Thinking}}</think>
         //   <|think|>{{.Thinking}}<|/think|>
         if let Some(tags) = extract_tags_from_template(template_str) {
-            return (false, Some(tags));
+            return ThinkingSupport { has_native: false, tags: Some(tags) };
         }
     }
 
@@ -96,13 +103,16 @@ async fn detect_thinking_support(
         || model_type.contains("think");
 
     if is_reasoning_model {
-        return (false, Some(ThinkingTags {
-            opening: "<think>".to_string(),
-            closing: "</think>".to_string(),
-        }));
+        return ThinkingSupport {
+            has_native: false,
+            tags: Some(ThinkingTags {
+                opening: "<think>".to_string(),
+                closing: "</think>".to_string(),
+            }),
+        };
     }
 
-    (false, None)
+    ThinkingSupport { has_native: false, tags: None }
 }
 
 /// Try to extract opening/closing tags from a Go template string by finding
@@ -600,8 +610,9 @@ pub async fn ollama_chat_stream(
 
     // Query model capabilities before streaming to determine thinking support.
     // This avoids hardcoding model-specific tag patterns.
-    let (has_native_thinking, thinking_tags) =
-        detect_thinking_support(&client, base, model).await;
+    let thinking = detect_thinking_support(&client, base, model).await;
+    let has_native_thinking = thinking.has_native;
+    let thinking_tags = thinking.tags;
 
     let mut body = serde_json::json!({
         "model": model,

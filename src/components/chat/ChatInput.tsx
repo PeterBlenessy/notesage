@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { ArrowUp, Square } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { SkillCommandMenu, type SkillCommandMenuHandle } from './SkillCommandMenu';
 import { AgentCommandMenu, type AgentCommandMenuHandle } from './AgentCommandMenu';
 import type { SkillEntry, AgentEntry } from '@/stores/skill-store';
@@ -98,24 +99,28 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
   const canSend = message.trim() && !disabled;
 
   const sendButton = (
-    <button
+    <Button
+      variant="ghost"
+      size="icon"
       onClick={handleSubmit}
       disabled={!canSend}
-      className={`h-6 w-6 rounded-md flex items-center justify-center shrink-0 transition-colors disabled:opacity-30 ${canSend ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'}`}
+      className={`h-6 w-6 shrink-0 disabled:opacity-30 ${canSend ? 'bg-foreground text-background hover:bg-foreground/90' : 'bg-muted text-muted-foreground'}`}
       title="Send (Cmd+Enter)"
     >
       <ArrowUp className="h-3.5 w-3.5" strokeWidth={1.5} />
-    </button>
+    </Button>
   );
 
   const stopButton = isLoading && onStop ? (
-    <button
+    <Button
+      variant="ghost"
+      size="icon"
       onClick={onStop}
-      className="h-6 w-6 rounded-md flex items-center justify-center shrink-0 transition-colors bg-muted text-muted-foreground hover:text-foreground"
+      className="h-6 w-6 shrink-0 bg-muted text-muted-foreground hover:text-foreground"
       title="Stop generating"
     >
       <Square className="h-2.5 w-2.5" strokeWidth={0} fill="currentColor" />
-    </button>
+    </Button>
   ) : null;
 
   return (

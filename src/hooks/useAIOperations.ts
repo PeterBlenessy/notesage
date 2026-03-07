@@ -141,7 +141,7 @@ interface AcpPermissionRequestPayload {
   sessionId: string;
   requestId: string;
   toolCall: unknown;
-  options: { optionId: string; kind: string; name: string }[];
+  options: unknown[];
 }
 
 /** Extract tool kind and title from an ACP toolCall payload. */
@@ -416,7 +416,8 @@ export function useAIOperations() {
 
   // Active agent body — loaded and stored in state so changes trigger re-render
   const activeAgent = useSkillStore((s) => s.getActiveAgent());
-  const [agentBody, setAgentBody] = useState<{ name: string; body: string }>({ name: '', body: '' });
+  interface AgentBodyState { name: string; body: string }
+  const [agentBody, setAgentBody] = useState<AgentBodyState>({ name: '', body: '' });
 
   // Keep agent body in sync with the active agent
   useEffect(() => {
@@ -433,7 +434,7 @@ export function useAIOperations() {
       .then((content) => { if (!cancelled) setAgentBody({ name: agentName, body: content.body }); })
       .catch(() => { if (!cancelled) setAgentBody({ name: agentName, body: '' }); });
     return () => { cancelled = true; };
-  }, [activeAgent?.name, activeAgent?.path]);
+  }, [activeAgent?.name, activeAgent?.path, agentBody.name]);
 
   // Build the agent system message (replaces persona systemMessage)
   const agentSystemMessage = agentBody.body || 'You are a helpful writing assistant.';
@@ -478,12 +479,11 @@ export function useAIOperations() {
   const agentInstructions = useSkillStore((s) => s.getMergedAgentInstructions());
   const notesageAgentInstructions = useSkillStore((s) => s.getNotesageAgentInstructions());
 
-  // Compose system message based on selected projects
-  const composedSystemMessage = useMemo(() => {
+  // Shared project/goals/file-tree/active-file context builder
+  const buildProjectContext = useCallback((): string[] => {
     const parts: string[] = [];
 
     if (selectedProjectPaths.length === 1) {
-      // Single project — full context + goals + file tree
       if (singleMetadata) {
         const header = buildProjectHeader(singleMetadata, singleProjectPath!);
         if (header) parts.push(header);
@@ -496,7 +496,6 @@ export function useAIOperations() {
         if (treeContext) parts.push(treeContext);
       }
     } else if (selectedProjectPaths.length > 1) {
-      // Multiple projects — include each project's summary
       const summaries: string[] = [];
       for (const path of selectedProjectPaths) {
         const meta = metadataMap[path];
@@ -509,9 +508,7 @@ export function useAIOperations() {
       }
       parts.push(`The user has the following projects selected:\n\n${summaries.join('\n\n')}`);
     }
-    // selectedProjectPaths.length === 0 → no project context
 
-    // Active file awareness
     if (activeTab) {
       let fileContext = `Currently editing: ${activeTab.filePath}`;
       if (activeTab.fileType === 'markdown' && activeTab.content) {
@@ -521,6 +518,13 @@ export function useAIOperations() {
       }
       parts.push(fileContext);
     }
+
+    return parts;
+  }, [selectedProjectPaths, singleProjectPath, singleMetadata, goalsContext, singleProject, activeTab, metadataMap]);
+
+  // Compose system message based on selected projects
+  const composedSystemMessage = useMemo(() => {
+    const parts = buildProjectContext();
 
     // Inject agent instructions (always-on context)
     if (agentInstructions) {
@@ -538,49 +542,12 @@ export function useAIOperations() {
     }
 
     return parts.join('\n\n') || 'You are a helpful writing assistant.';
-  }, [selectedProjectPaths, singleProjectPath, singleMetadata, goalsContext, singleProject, activeTab, metadataMap, agentSystemMessage, agentInstructions, skillDescriptions]);
+  }, [buildProjectContext, agentSystemMessage, agentInstructions, skillDescriptions]);
 
   // ACP-specific system message: only Notesage-specific skills and instructions
   // (the ACP agent discovers its own provider-specific skills and CLAUDE.md/AGENTS.md independently)
   const acpSystemMessage = useMemo(() => {
-    const parts: string[] = [];
-
-    // Same project/goals/file-tree/active-file context as direct API
-    if (selectedProjectPaths.length === 1) {
-      if (singleMetadata) {
-        const header = buildProjectHeader(singleMetadata, singleProjectPath!);
-        if (header) parts.push(header);
-      } else if (singleProjectPath) {
-        parts.push(`Project root: ${singleProjectPath}`);
-      }
-      if (goalsContext) parts.push(goalsContext);
-      if (singleProject?.fileTree) {
-        const treeContext = buildFileTreeContext(singleProject.fileTree, singleProjectPath!);
-        if (treeContext) parts.push(treeContext);
-      }
-    } else if (selectedProjectPaths.length > 1) {
-      const summaries: string[] = [];
-      for (const path of selectedProjectPaths) {
-        const meta = metadataMap[path];
-        if (meta) {
-          summaries.push(buildProjectHeader(meta, path));
-        } else {
-          const name = path.split('/').pop() || path;
-          summaries.push(`Project: ${name}\nProject root: ${path}`);
-        }
-      }
-      parts.push(`The user has the following projects selected:\n\n${summaries.join('\n\n')}`);
-    }
-
-    if (activeTab) {
-      let fileContext = `Currently editing: ${activeTab.filePath}`;
-      if (activeTab.fileType === 'markdown' && activeTab.content) {
-        const snippet = activeTab.content.slice(0, 500);
-        const truncated = activeTab.content.length > 500 ? '...' : '';
-        fileContext += `\n\nFile content preview:\n${snippet}${truncated}`;
-      }
-      parts.push(fileContext);
-    }
+    const parts = buildProjectContext();
 
     // Only Notesage-specific agent instructions (not CLAUDE.md/AGENTS.md — ACP agent loads those itself)
     if (notesageAgentInstructions) {
@@ -598,7 +565,7 @@ export function useAIOperations() {
     }
 
     return parts.join('\n\n') || 'You are a helpful writing assistant.';
-  }, [selectedProjectPaths, singleProjectPath, singleMetadata, goalsContext, singleProject, activeTab, metadataMap, agentSystemMessage, notesageAgentInstructions, notesageSkillDescriptions]);
+  }, [buildProjectContext, agentSystemMessage, notesageAgentInstructions, notesageSkillDescriptions]);
 
   const generateText = useCallback(
     async (prompt: string): Promise<string> => {
@@ -636,10 +603,9 @@ export function useAIOperations() {
         const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
           if (event.payload.instanceId !== instanceId) return;
           const payload = event.payload;
-          const rawOptions = payload.options as unknown[];
           let firstOptionId: string | null = null;
-          if (Array.isArray(rawOptions) && rawOptions.length > 0) {
-            const opt = rawOptions[0] as Record<string, unknown>;
+          if (Array.isArray(payload.options) && payload.options.length > 0) {
+            const opt = payload.options[0] as Record<string, unknown>;
             firstOptionId = typeof opt === 'string' ? opt : String(opt?.id ?? '');
           }
           invoke('acp_permission_respond', {

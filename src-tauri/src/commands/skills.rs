@@ -239,34 +239,46 @@ pub async fn discover_skills(
 }
 
 /// Determine the source label for skills found in a given base directory.
+/// Uses path component matching to avoid false positives from substring matches.
 fn determine_source(base_dir: &str) -> String {
-    if base_dir.contains("bundled-skills") || base_dir.contains("bundled_skills") {
-        "bundled".to_string()
-    } else if base_dir.contains(".notesage/skills") {
-        // Distinguish project vs global by checking if it's under home directory directly
-        if base_dir.contains("/.notesage/skills") && !base_dir.starts_with('.') {
-            // Could be either — check if it's the global one (under home dir)
-            if let Some(home) = dirs::home_dir() {
-                let global_path = home.join(".notesage").join("skills");
-                if base_dir == global_path.to_string_lossy() {
-                    return "notesage-global".to_string();
-                }
-            }
-            "notesage-project".to_string()
-        } else {
-            "notesage-project".to_string()
-        }
-    } else if base_dir.contains("/.claude/skills") {
-        "claude".to_string()
-    } else if base_dir.contains("/.codex/skills") {
-        "codex".to_string()
-    } else if base_dir.contains("/.gemini/skills") {
-        "gemini".to_string()
-    } else if base_dir.contains("/.agents/skills") {
-        "agents".to_string()
-    } else {
-        "external".to_string()
+    use std::path::Path;
+
+    let path = Path::new(base_dir);
+    let components: Vec<&str> = path
+        .components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .collect();
+
+    // Check for bundled skills by looking for a "bundled-skills" or "bundled_skills" component
+    if components.iter().any(|c| *c == "bundled-skills" || *c == "bundled_skills") {
+        return "bundled".to_string();
     }
+
+    // Check for .notesage/skills path — distinguish project vs global
+    if components.windows(2).any(|w| w[0] == ".notesage" && w[1] == "skills") {
+        if let Some(home) = dirs::home_dir() {
+            let global_path = home.join(".notesage").join("skills");
+            if base_dir == global_path.to_string_lossy() {
+                return "notesage-global".to_string();
+            }
+        }
+        return "notesage-project".to_string();
+    }
+
+    // Check for provider-specific skill directories by matching .<provider>/skills components
+    let provider_pairs: &[(&str, &str)] = &[
+        (".claude", "claude"),
+        (".codex", "codex"),
+        (".gemini", "gemini"),
+        (".agents", "agents"),
+    ];
+    for (dir_name, label) in provider_pairs {
+        if components.windows(2).any(|w| w[0] == *dir_name && w[1] == "skills") {
+            return label.to_string();
+        }
+    }
+
+    "external".to_string()
 }
 
 /// Read the full content of a skill (body + file listing).
