@@ -15,7 +15,7 @@ function sourceLabel(source: string): string {
   switch (source) {
     case 'notesage-project': return 'Project';
     case 'notesage-global': return 'Global';
-    case 'bundled': return 'Built-in';
+    // 'bundled' removed — bundled items now use 'notesage-global'
     case 'claude': return 'Claude Code';
     case 'codex': return 'Codex';
     case 'gemini': return 'Gemini';
@@ -31,8 +31,6 @@ function sourceBadgeClass(source: string): string {
     case 'notesage-project':
     case 'notesage-global':
       return `${base} border-border text-foreground`;
-    case 'bundled':
-      return `${base} border-border text-muted-foreground`;
     default:
       return `${base} border-border text-muted-foreground`;
   }
@@ -54,7 +52,7 @@ function SkillCard({ skill, allSkills }: { skill: SkillEntry; allSkills: SkillEn
   const { enabledOverrides, toggleSkill } = useSkillStore();
   const overriddenBy = isOverridden(skill, allSkills);
   const isEnabled = enabledOverrides[skill.path] !== false;
-  const isExternal = !['notesage-project', 'notesage-global', 'bundled'].includes(skill.source);
+  const isExternal = !['notesage-project', 'notesage-global'].includes(skill.source);
 
   return (
     <div
@@ -217,7 +215,7 @@ export function SkillsSettings() {
   // Group skills by source
   const projectSkills = skills.filter((s) => s.source === 'notesage-project');
   const globalSkills = skills.filter((s) => s.source === 'notesage-global');
-  const bundledSkills = skills.filter((s) => s.source === 'bundled');
+  // 'bundled' removed — bundled items are now 'notesage-global'
   const claudeSkills = skills.filter((s) => s.source === 'claude');
   const codexSkills = skills.filter((s) => s.source === 'codex');
   const geminiSkills = skills.filter((s) => s.source === 'gemini');
@@ -226,7 +224,7 @@ export function SkillsSettings() {
   // Group agents by source
   const projectAgents = agents.filter((a) => a.source === 'notesage-project');
   const globalAgents = agents.filter((a) => a.source === 'notesage-global');
-  const bundledAgents = agents.filter((a) => a.source === 'bundled');
+  // 'bundled' removed — bundled agents are now 'notesage-global'
   const claudeAgents = agents.filter((a) => a.source === 'claude');
   const codexAgents = agents.filter((a) => a.source === 'codex');
   const geminiAgents = agents.filter((a) => a.source === 'gemini');
@@ -301,7 +299,6 @@ export function SkillsSettings() {
           <div className="space-y-4">
             <SkillGroup title="Project (.notesage/skills/)" skills={projectSkills} allSkills={skills} />
             <SkillGroup title="Global (~/.notesage/skills/)" skills={globalSkills} allSkills={skills} />
-            <SkillGroup title="Built-in" skills={bundledSkills} allSkills={skills} />
             <SkillGroup title="Claude Code (~/.claude/skills/)" skills={claudeSkills} allSkills={skills} readOnly />
             <SkillGroup title="Codex (~/.codex/skills/)" skills={codexSkills} allSkills={skills} readOnly />
             <SkillGroup title="Gemini (~/.gemini/skills/)" skills={geminiSkills} allSkills={skills} readOnly />
@@ -335,7 +332,6 @@ export function SkillsSettings() {
           <div className="space-y-4">
             <AgentGroup title="Project (.notesage/agents/)" agents={projectAgents} allAgents={agents} />
             <AgentGroup title="Global (~/.notesage/agents/)" agents={globalAgents} allAgents={agents} />
-            <AgentGroup title="Built-in" agents={bundledAgents} allAgents={agents} />
             <AgentGroup title="Claude Code (~/.claude/agents/)" agents={claudeAgents} allAgents={agents} />
             <AgentGroup title="Codex (~/.codex/agents/)" agents={codexAgents} allAgents={agents} />
             <AgentGroup title="Gemini (~/.gemini/agents/)" agents={geminiAgents} allAgents={agents} />

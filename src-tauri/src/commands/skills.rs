@@ -249,11 +249,6 @@ fn determine_source(base_dir: &str) -> String {
         .filter_map(|c| c.as_os_str().to_str())
         .collect();
 
-    // Check for bundled skills by looking for a "bundled-skills" or "bundled_skills" component
-    if components.iter().any(|c| *c == "bundled-skills" || *c == "bundled_skills") {
-        return "bundled".to_string();
-    }
-
     // Check for .notesage/skills path — distinguish project vs global
     if components.windows(2).any(|w| w[0] == ".notesage" && w[1] == "skills") {
         if let Some(home) = dirs::home_dir() {
@@ -455,21 +450,6 @@ pub async fn read_agent_instructions(
 
     let home = dirs::home_dir();
 
-    // Priority 0: ~/.notesage/bundled-agents.md (always — shipped with app, overwritable by user files)
-    if let Some(ref home_dir) = home {
-        let bundled_instructions = home_dir.join(".notesage").join("bundled-agents.md");
-        if bundled_instructions.is_file() {
-            if let Ok(content) = fs::read_to_string(&bundled_instructions) {
-                instructions.push(AgentInstruction {
-                    source: bundled_instructions.to_string_lossy().to_string(),
-                    source_type: "bundled".to_string(),
-                    content,
-                    priority: 0,
-                });
-            }
-        }
-    }
-
     if let Some(ref root) = project_root {
         let root_path = Path::new(root);
 
@@ -527,13 +507,20 @@ struct BundledFile {
     executable: bool,
 }
 
-/// Extract bundled skills to ~/.notesage/bundled-skills/.
+/// Extract bundled skills to ~/.notesage/skills/.
 /// Always overwrites to ensure bundled skills stay up-to-date with app version.
+/// Lives alongside user-created skills; the hierarchy system handles overrides.
 #[tauri::command]
 pub async fn extract_bundled_skills() -> Result<String, String> {
     let home = dirs::home_dir()
         .ok_or_else(|| "Cannot determine home directory".to_string())?;
-    let bundled_dir = home.join(".notesage").join("bundled-skills");
+    let bundled_dir = home.join(".notesage").join("skills");
+
+    // Clean up legacy bundled-skills directory
+    let legacy_dir = home.join(".notesage").join("bundled-skills");
+    if legacy_dir.is_dir() {
+        let _ = fs::remove_dir_all(&legacy_dir);
+    }
 
     let bundled_files: Vec<BundledFile> = vec![
         // create-skill
@@ -606,9 +593,7 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
 
 /// Determine the source label for agents found in a given base directory.
 fn determine_agent_source(base_dir: &str) -> String {
-    if base_dir.contains("bundled-agents") || base_dir.contains("bundled_agents") {
-        "bundled".to_string()
-    } else if base_dir.contains(".notesage/agents") {
+    if base_dir.contains(".notesage/agents") {
         if let Some(home) = dirs::home_dir() {
             let global_path = home.join(".notesage").join("agents");
             if base_dir == global_path.to_string_lossy() {
@@ -736,13 +721,20 @@ pub async fn read_agent_content(
     })
 }
 
-/// Extract bundled agents to ~/.notesage/bundled-agents/.
+/// Extract bundled agents to ~/.notesage/agents/.
 /// Always overwrites to ensure bundled agents stay up-to-date with app version.
+/// Lives alongside user-created agents; the hierarchy system handles overrides.
 #[tauri::command]
 pub async fn extract_bundled_agents() -> Result<String, String> {
     let home = dirs::home_dir()
         .ok_or_else(|| "Cannot determine home directory".to_string())?;
-    let bundled_dir = home.join(".notesage").join("bundled-agents");
+    let bundled_dir = home.join(".notesage").join("agents");
+
+    // Clean up legacy bundled-agents directory
+    let legacy_dir = home.join(".notesage").join("bundled-agents");
+    if legacy_dir.is_dir() {
+        let _ = fs::remove_dir_all(&legacy_dir);
+    }
 
     let bundled_files: Vec<BundledFile> = vec![
         BundledFile {
@@ -792,13 +784,22 @@ pub async fn extract_bundled_agents() -> Result<String, String> {
             .map_err(|e| format!("Failed to write {}: {}", file.relative_path, e))?;
     }
 
-    // Extract bundled agent instructions file alongside the agents directory
-    let bundled_instructions = home.join(".notesage").join("bundled-agents.md");
-    fs::write(
-        &bundled_instructions,
-        include_str!("../../../bundled-agents/agents.md"),
-    )
-    .map_err(|e| format!("Failed to write bundled-agents.md: {}", e))?;
+    // Extract bundled agent instructions to ~/.notesage/agents.md
+    // Only write if file doesn't exist (preserves user customizations)
+    let agents_md = home.join(".notesage").join("agents.md");
+    if !agents_md.is_file() {
+        fs::write(
+            &agents_md,
+            include_str!("../../../bundled-agents/agents.md"),
+        )
+        .map_err(|e| format!("Failed to write agents.md: {}", e))?;
+    }
+
+    // Clean up legacy bundled-agents.md
+    let legacy_instructions = home.join(".notesage").join("bundled-agents.md");
+    if legacy_instructions.is_file() {
+        let _ = fs::remove_file(&legacy_instructions);
+    }
 
     Ok(bundled_dir.to_string_lossy().to_string())
 }
@@ -949,9 +950,14 @@ mod tests {
     // --- determine_source tests ---
 
     #[test]
-    fn determine_source_bundled() {
-        assert_eq!(determine_source("/Users/me/.notesage/bundled-skills"), "bundled");
-        assert_eq!(determine_source("/app/bundled_skills"), "bundled");
+    fn determine_source_global_skills() {
+        // Global skills at the actual home dir
+        if let Some(home) = dirs::home_dir() {
+            let global_path = home.join(".notesage").join("skills");
+            assert_eq!(determine_source(&global_path.to_string_lossy()), "notesage-global");
+        }
+        // Non-home .notesage/skills paths are project-level
+        assert_eq!(determine_source("/some/project/.notesage/skills"), "notesage-project");
     }
 
     #[test]
@@ -1367,18 +1373,18 @@ mod tests {
     fn discover_agents_source_attribution() {
         let tmp = create_temp_dir();
 
-        // Create a bundled-agents subdirectory
-        let bundled = tmp.path().join("bundled-agents");
-        fs::create_dir(&bundled).unwrap();
+        // Create a .notesage/agents subdirectory (project-level)
+        let project = tmp.path().join(".notesage").join("agents");
+        fs::create_dir_all(&project).unwrap();
         fs::write(
-            bundled.join("assistant.md"),
+            project.join("assistant.md"),
             "---\nname: assistant\ndescription: General assistant\n---\nBody",
         ).unwrap();
 
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(discover_agents(vec![bundled.to_string_lossy().to_string()]));
+        let result = rt.block_on(discover_agents(vec![project.to_string_lossy().to_string()]));
         let agents = result.unwrap();
-        assert_eq!(agents[0].source, "bundled");
+        assert_eq!(agents[0].source, "notesage-project");
     }
 
     #[test]
@@ -1461,8 +1467,14 @@ mod tests {
     // --- determine_agent_source tests ---
 
     #[test]
-    fn determine_agent_source_bundled() {
-        assert_eq!(determine_agent_source("/Users/me/.notesage/bundled-agents"), "bundled");
+    fn determine_agent_source_global_agents() {
+        // Global agents at the actual home dir
+        if let Some(home) = dirs::home_dir() {
+            let global_path = home.join(".notesage").join("agents");
+            assert_eq!(determine_agent_source(&global_path.to_string_lossy()), "notesage-global");
+        }
+        // Non-home .notesage/agents paths are project-level
+        assert_eq!(determine_agent_source("/some/project/.notesage/agents"), "notesage-project");
     }
 
     #[test]
@@ -1504,9 +1516,9 @@ mod tests {
         ));
         let instructions = result.unwrap();
 
-        // Filter out bundled/global instructions that may exist on the host machine
+        // Filter out global instructions that may exist on the host machine
         let project_instructions: Vec<_> = instructions.iter()
-            .filter(|i| i.source_type != "bundled" && i.source_type != "notesage-global")
+            .filter(|i| i.source_type != "notesage-global")
             .collect();
 
         assert_eq!(project_instructions.len(), 3);
@@ -1532,9 +1544,9 @@ mod tests {
         ));
         let instructions = result.unwrap();
 
-        // Filter out bundled/global instructions that may exist on the host machine
+        // Filter out global instructions that may exist on the host machine
         let project_instructions: Vec<_> = instructions.iter()
-            .filter(|i| i.source_type != "bundled" && i.source_type != "notesage-global")
+            .filter(|i| i.source_type != "notesage-global")
             .collect();
         assert_eq!(project_instructions.len(), 1);
         assert_eq!(project_instructions[0].source_type, "agents-md");

@@ -216,7 +216,6 @@ export function useSkillDiscovery() {
 
       const baseDirs: string[] = [];
       baseDirs.push(`${home}/.notesage/skills`);
-      baseDirs.push(`${home}/.notesage/bundled-skills`);
 
       // Project-level skills
       for (const project of projects) {
@@ -243,7 +242,6 @@ export function useSkillDiscovery() {
       // Build agent base dirs
       const agentBaseDirs: string[] = [];
       agentBaseDirs.push(`${home}/.notesage/agents`);
-      agentBaseDirs.push(`${home}/.notesage/bundled-agents`);
 
       // Project-level agents
       for (const project of projects) {

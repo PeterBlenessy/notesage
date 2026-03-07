@@ -145,11 +145,10 @@ interface SkillStore {
 }
 
 /** Known skill source labels. */
-export type SkillSource = 'bundled' | 'external' | 'agents' | 'gemini' | 'codex' | 'claude' | 'github' | 'notesage-global' | 'notesage-project';
+export type SkillSource = 'external' | 'agents' | 'gemini' | 'codex' | 'claude' | 'github' | 'notesage-global' | 'notesage-project';
 
 /** Source priority for hierarchy resolution (higher = wins). */
 export const SOURCE_PRIORITY: Record<SkillSource, number> = {
-  'bundled': 0,
   'external': 1,
   'agents': 2,
   'gemini': 2,
@@ -212,7 +211,7 @@ export const useSkillStore = create<SkillStore>()(
 
       getNotesageSkillDescriptionsForPrompt: () => {
         const active = get().getActiveSkills().filter(
-          (s) => s.source === 'notesage-project' || s.source === 'notesage-global' || s.source === 'bundled'
+          (s) => s.source === 'notesage-project' || s.source === 'notesage-global'
         );
         if (active.length === 0) return '';
 

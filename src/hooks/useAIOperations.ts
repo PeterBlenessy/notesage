@@ -470,7 +470,7 @@ export function useAIOperations() {
     if (!agentAllowedTools || agentAllowedTools.length === 0) return desc;
     const active = s.getActiveSkills().filter(
       (sk) => agentAllowedTools.includes(sk.name) &&
-        (sk.source === 'notesage-project' || sk.source === 'notesage-global' || sk.source === 'bundled')
+        (sk.source === 'notesage-project' || sk.source === 'notesage-global')
     );
     if (active.length === 0) return '';
     const lines = active.map((sk) => `- **${sk.name}**: ${sk.description}${sk.has_scripts ? ' (has scripts)' : ''}`);

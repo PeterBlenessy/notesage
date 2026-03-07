@@ -23,10 +23,8 @@ export interface ParsedQuickReplies {
 
 export function parseQuickReplies(content: string): ParsedQuickReplies {
   const replies: string[] = [];
-  let lastMatch = false;
 
   const strippedContent = content.replace(QUICK_REPLY_REGEX, (_match, inner: string) => {
-    lastMatch = true;
     const lines = inner
       .split('\n')
       .map((line: string) => line.replace(/^[-*•\d.]+\s*/, '').trim())
@@ -34,10 +32,6 @@ export function parseQuickReplies(content: string): ParsedQuickReplies {
     replies.push(...lines);
     return '';
   }).trimEnd();
-
-  if (!lastMatch) {
-    return { strippedContent: content, replies: [] };
-  }
 
   return { strippedContent, replies };
 }

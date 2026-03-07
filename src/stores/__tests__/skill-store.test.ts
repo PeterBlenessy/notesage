@@ -149,13 +149,13 @@ describe('skill-store', () => {
         skills: [
           skill({ name: 'external-skill', source: 'claude', description: 'From Claude' }),
           skill({ name: 'project-skill', source: 'notesage-project', description: 'From project' }),
-          skill({ name: 'bundled-skill', source: 'bundled', description: 'Built-in' }),
+          skill({ name: 'global-skill', source: 'notesage-global', description: 'Global' }),
         ],
       });
 
       const prompt = useSkillStore.getState().getNotesageSkillDescriptionsForPrompt();
       expect(prompt).toContain('project-skill');
-      expect(prompt).toContain('bundled-skill');
+      expect(prompt).toContain('global-skill');
       expect(prompt).not.toContain('external-skill');
     });
   });
