@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, FileText, GitBranch, Cloud, Info, Loader2, ArrowUpCircle, ScrollText, Code, Download, Blocks } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, FileText, GitBranch, Cloud, Info, Loader2, ArrowUpCircle, ScrollText, Code, Download, Blocks, FolderOpen, Trash2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -24,8 +24,20 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { useState, useCallback, useEffect } from 'react';
 import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { tauriApi } from '@/lib/tauri';
 import type { UpdateState } from '@/hooks/useAutoUpdate';
 
@@ -130,6 +142,8 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'editor');
   const [gitNotAvailable, setGitNotAvailable] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
+  const [logPath, setLogPath] = useState<string | null>(null);
+  const [logSize, setLogSize] = useState<number | null>(null);
 
   // Sync activeTab when initialTab changes (e.g., opened from Project Settings → AI Providers)
   useEffect(() => {
@@ -137,6 +151,27 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
       setActiveTab(initialTab);
     }
   }, [initialTab]);
+
+  // Load log file info when developer tab is active
+  useEffect(() => {
+    if (activeTab !== 'developer') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [path, size] = await Promise.all([
+          tauriApi.getLogPath(),
+          tauriApi.getLogSize(),
+        ]);
+        if (!cancelled) {
+          setLogPath(path);
+          setLogSize(size);
+        }
+      } catch {
+        // Commands may not exist yet — silently ignore
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab]);
 
   const handleGitToggle = useCallback(async (checked: boolean) => {
     if (!checked) {
@@ -321,69 +356,51 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                   </div>
 
                   <div className="space-y-2">
-                    <div
-                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
-                    >
-                      <div>
-                        <Label
-                          htmlFor="toolbar-visible"
-                          className="text-sm font-medium cursor-pointer"
-                        >
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label htmlFor="toolbar-visible" className="text-sm font-medium cursor-pointer">
                           Top Toolbar
                         </Label>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Show the formatting toolbar above the editor
-                        </p>
+                        <Switch
+                          id="toolbar-visible"
+                          checked={toolbarVisible}
+                          onCheckedChange={setToolbarVisible}
+                        />
                       </div>
-                      <Switch
-                        id="toolbar-visible"
-                        checked={toolbarVisible}
-                        onCheckedChange={setToolbarVisible}
-                        className="ml-auto"
-                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Show the formatting toolbar above the editor
+                      </p>
                     </div>
-                    <div
-                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
-                    >
-                      <div>
-                        <Label
-                          htmlFor="floating-toolbar"
-                          className="text-sm font-medium cursor-pointer"
-                        >
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label htmlFor="floating-toolbar" className="text-sm font-medium cursor-pointer">
                           Floating Toolbar
                         </Label>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Show AI actions and comment button when text is selected
-                        </p>
+                        <Switch
+                          id="floating-toolbar"
+                          checked={showFloatingToolbar}
+                          onCheckedChange={setShowFloatingToolbar}
+                        />
                       </div>
-                      <Switch
-                        id="floating-toolbar"
-                        checked={showFloatingToolbar}
-                        onCheckedChange={setShowFloatingToolbar}
-                        className="ml-auto"
-                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Show AI actions and comment button when text is selected
+                      </p>
                     </div>
-                    <div
-                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
-                    >
-                      <div>
-                        <Label
-                          htmlFor="external-diff-review"
-                          className="text-sm font-medium cursor-pointer"
-                        >
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label htmlFor="external-diff-review" className="text-sm font-medium cursor-pointer">
                           Review External Changes
                         </Label>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Show inline diff when files change on disk. When off, changes are auto-accepted.
-                          <span className="text-muted-foreground/60"> Beta — may not preserve formatting perfectly.</span>
-                        </p>
+                        <Switch
+                          id="external-diff-review"
+                          checked={externalChangeDiffReview}
+                          onCheckedChange={setExternalChangeDiffReview}
+                        />
                       </div>
-                      <Switch
-                        id="external-diff-review"
-                        checked={externalChangeDiffReview}
-                        onCheckedChange={setExternalChangeDiffReview}
-                        className="ml-auto"
-                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Show inline diff when files change on disk. When off, changes are auto-accepted.
+                        <span className="text-muted-foreground/60"> Beta — may not preserve formatting perfectly.</span>
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -457,19 +474,17 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
 
                     {/* Page Breaks — only shown for paper sizes */}
                     {(contentWidth === 'a4' || contentWidth === 'a5' || contentWidth === 'letter') && (
-                      <div
-                        className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
-                      >
-                        <div>
+                      <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                        <div className="flex items-center justify-between gap-3">
                           <Label className="text-sm font-medium">Page Break Gaps</Label>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            Show visible gaps between pages
-                          </p>
+                          <Switch
+                            checked={pageBreaks === 'visible'}
+                            onCheckedChange={(checked) => setPageBreaks(checked ? 'visible' : 'continuous')}
+                          />
                         </div>
-                        <Switch
-                          checked={pageBreaks === 'visible'}
-                          onCheckedChange={(checked) => setPageBreaks(checked ? 'visible' : 'continuous')}
-                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Show visible gaps between pages
+                        </p>
                       </div>
                     )}
 
@@ -522,26 +537,20 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                   </div>
 
                   <div className="space-y-2">
-                    <div
-                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
-                    >
-                      <div>
-                        <Label
-                          htmlFor="git-integration"
-                          className="text-sm font-medium cursor-pointer"
-                        >
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label htmlFor="git-integration" className="text-sm font-medium cursor-pointer">
                           Enable Git
                         </Label>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Track file changes, view status indicators, switch branches, and commit from within the app
-                        </p>
+                        <Switch
+                          id="git-integration"
+                          checked={gitEnabled}
+                          onCheckedChange={handleGitToggle}
+                        />
                       </div>
-                      <Switch
-                        id="git-integration"
-                        checked={gitEnabled}
-                        onCheckedChange={handleGitToggle}
-                        className="ml-auto"
-                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Track file changes, view status indicators, switch branches, and commit from within the app
+                      </p>
                     </div>
 
                     {gitNotAvailable && (
@@ -580,51 +589,118 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                   </div>
 
                   <div className="space-y-2">
-                    <div
-                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
-                    >
-                      <div>
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
                         <Label
                           htmlFor="debug-logging"
                           className="text-sm font-medium cursor-pointer"
                         >
                           Debug Logging
                         </Label>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Log diagnostic messages to the console and stderr for troubleshooting
-                        </p>
+                        <Switch
+                          id="debug-logging"
+                          checked={debugLogging}
+                          onCheckedChange={(checked) => {
+                            setDebugLogging(checked);
+                            tauriApi.setDebugLogging(checked);
+                          }}
+                        />
                       </div>
-                      <Switch
-                        id="debug-logging"
-                        checked={debugLogging}
-                        onCheckedChange={(checked) => {
-                          setDebugLogging(checked);
-                          tauriApi.setDebugLogging(checked);
-                        }}
-                        className="ml-auto"
-                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Log diagnostic messages to the console and log files for troubleshooting
+                      </p>
+                      {logPath && (
+                        <div className="flex items-center gap-1 mt-2.5 pt-2.5 border-t border-border">
+                          <p className="text-[10px] leading-tight text-muted-foreground font-mono break-all select-all flex-1 min-w-0">
+                            {logPath}
+                            {logSize !== null && (
+                              <span className="font-sans ml-1.5">
+                                ({logSize < 1024
+                                  ? `${logSize} B`
+                                  : logSize < 1024 * 1024
+                                    ? `${(logSize / 1024).toFixed(1)} KB`
+                                    : `${(logSize / (1024 * 1024)).toFixed(1)} MB`})
+                              </span>
+                            )}
+                          </p>
+                          <TooltipProvider delayDuration={300}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 shrink-0"
+                                  onClick={() => tauriApi.revealInFinder(logPath)}
+                                >
+                                  <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.5} />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Reveal in Finder</TooltipContent>
+                            </Tooltip>
+
+                            <AlertDialog>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <AlertDialogTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 shrink-0"
+                                      disabled={logSize === 0}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent>Clear logs</TooltipContent>
+                              </Tooltip>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Clear log files?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This will permanently delete all diagnostic log data. This action cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={async () => {
+                                      try {
+                                        await tauriApi.clearLogs();
+                                        const size = await tauriApi.getLogSize();
+                                        setLogSize(size);
+                                      } catch {
+                                        // silently ignore
+                                      }
+                                    }}
+                                  >
+                                    Clear Logs
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </TooltipProvider>
+                        </div>
+                      )}
                     </div>
 
-                    <div
-                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
-                    >
-                      <div>
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
                         <Label
                           htmlFor="skill-management"
                           className="text-sm font-medium cursor-pointer"
                         >
                           Skill &amp; Agent Management
                         </Label>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Enable delete and move actions for custom skills and agents in Settings
-                        </p>
+                        <Switch
+                          id="skill-management"
+                          checked={skillManagement}
+                          onCheckedChange={setSkillManagement}
+                        />
                       </div>
-                      <Switch
-                        id="skill-management"
-                        checked={skillManagement}
-                        onCheckedChange={setSkillManagement}
-                        className="ml-auto"
-                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Enable delete and move actions for custom skills and agents in Settings
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -716,26 +792,20 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                     </div>
 
                     {/* Auto-check toggle */}
-                    <div
-                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
-                    >
-                      <div>
-                        <Label
-                          htmlFor="auto-check-updates"
-                          className="text-sm font-medium cursor-pointer"
-                        >
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label htmlFor="auto-check-updates" className="text-sm font-medium cursor-pointer">
                           Automatically Check for Updates
                         </Label>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Check for new versions when the app starts
-                        </p>
+                        <Switch
+                          id="auto-check-updates"
+                          checked={autoCheckUpdates}
+                          onCheckedChange={setAutoCheckUpdates}
+                        />
                       </div>
-                      <Switch
-                        id="auto-check-updates"
-                        checked={autoCheckUpdates}
-                        onCheckedChange={setAutoCheckUpdates}
-                        className="ml-auto"
-                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Check for new versions when the app starts
+                      </p>
                     </div>
                   </div>
                 </div>

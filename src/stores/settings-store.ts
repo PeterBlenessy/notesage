@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+
 type Theme = "light" | "dark" | "system";
 export type ContentWidth = "full" | "auto" | "a4" | "a5" | "letter";
 export type MeasurementUnit = "cm" | "inch";
@@ -257,6 +258,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
+
       partialize: (state) => {
         // Exclude runtime-only fields from persistence
         const { startupReady: _s, icloudAvailable: _a, icloudNotesagePath: _b, ...persisted } = state;

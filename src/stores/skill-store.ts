@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { tauriApi } from '@/lib/tauri';
 import type { SkillEntry, AgentInstruction, AgentEntry } from '@/lib/tauri';
 
+
 // Re-export types from tauri.ts for consumers that import from skill-store
 export type { SkillEntry, SkillContent, ScriptResult, AgentInstruction, AgentEntry, AgentContent } from '@/lib/tauri';
 
@@ -284,6 +285,7 @@ export const useSkillStore = create<SkillStore>()(
     }),
     {
       name: 'notesage-skills',
+
       partialize: (state) => ({
         enabledOverrides: state.enabledOverrides,
         activeAgentName: state.activeAgentName,

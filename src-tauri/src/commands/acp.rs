@@ -80,13 +80,13 @@ impl AcpState {
         let mut agents = match self.agents.try_lock() {
             Ok(guard) => guard,
             Err(_) => {
-                eprintln!("[acp] Could not acquire agent lock during shutdown");
+                log::warn!(target: "notesage::acp", "Could not acquire agent lock during shutdown");
                 return;
             }
         };
 
         for (instance_id, mut handle) in agents.drain() {
-            eprintln!("[acp] Stopping agent {} on exit", instance_id);
+            log::info!(target: "notesage::acp", "Stopping agent {} on exit", instance_id);
             // Drop the channel sender to close the channel
             drop(handle.cmd_tx);
             // Wait for the OS thread to finish (child kill_on_drop handles the process)
@@ -94,6 +94,28 @@ impl AcpState {
                 let _ = th.join();
             }
         }
+    }
+
+    /// Check liveness of all ACP agent processes.
+    pub async fn check_processes(&self) -> Vec<super::health::ProcessStatus> {
+        let agents = self.agents.lock().await;
+        agents
+            .iter()
+            .map(|(id, handle)| {
+                // We can't easily try_wait on ACP agents since the child is managed
+                // by the OS thread. Report as alive if the thread is still running.
+                let alive = handle
+                    .thread_handle
+                    .as_ref()
+                    .map(|th| !th.is_finished())
+                    .unwrap_or(false);
+                super::health::ProcessStatus {
+                    name: id.clone(),
+                    alive,
+                    pid: None,
+                }
+            })
+            .collect()
     }
 }
 
@@ -326,7 +348,7 @@ fn run_agent_thread(
         // Spawn the I/O task on the LocalSet
         tokio::task::spawn_local(async move {
             if let Err(e) = io_task.await {
-                eprintln!("[acp] IO task error: {}", e);
+                log::error!(target: "notesage::acp", "IO task error: {}", e);
             }
         });
 

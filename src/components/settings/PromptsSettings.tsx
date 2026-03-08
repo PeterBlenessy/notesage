@@ -114,7 +114,7 @@ export function PromptsSettings() {
                 className="ml-auto transition-colors"
               >
                 <Plus className="h-4 w-4 mr-1" />
-                Create Prompt
+                Add
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg">
@@ -167,7 +167,7 @@ export function PromptsSettings() {
                 <Button variant="outline" onClick={closeDialog}>
                   Cancel
                 </Button>
-                <Button onClick={handleCreatePrompt}>Create Prompt</Button>
+                <Button onClick={handleCreatePrompt}>Add</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

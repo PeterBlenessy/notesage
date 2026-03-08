@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { FileEntry } from "@/lib/tauri";
 
+
 export interface WorkspaceProject {
   path: string;
   fileTree: FileEntry[];
@@ -222,6 +223,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
     }),
     {
       name: "notesage-workspace",
+
       partialize: (state) => ({
         explorerFolders: state.explorerFolders.map((f) => ({ path: f.path })),
         projects: state.projects.map((p) => ({ path: p.path, fileTree: [] })),

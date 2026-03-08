@@ -4,10 +4,12 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::{oneshot, Mutex};
+use tokio::time::timeout;
 
 use super::shell_path::get_shell_path;
 
@@ -155,7 +157,7 @@ impl McpTransport {
         }
     }
 
-    fn new(stdin: ChildStdin, stdout: ChildStdout, server_id: String, app: AppHandle) -> Self {
+    fn new(stdin: ChildStdin, stdout: ChildStdout, child_pid: Option<u32>, server_id: String, app: AppHandle) -> Self {
         let writer = Arc::new(Mutex::new(BufWriter::new(stdin)));
         let next_id = Arc::new(AtomicU64::new(1));
         let pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, JsonRpcError>>>>> =
@@ -164,8 +166,8 @@ impl McpTransport {
         let reader_pending = pending.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = mcp_reader_loop(stdout, reader_pending, &server_id, &app).await {
-                eprintln!("[mcp:{}] reader loop exited: {}", server_id, e);
+            if let Err(e) = mcp_reader_loop(stdout, reader_pending, child_pid, &server_id, &app).await {
+                log::error!(target: "notesage::mcp", "Reader loop exited for server {}: {}", server_id, e);
                 let _ = app.emit(
                     "mcp-server-status",
                     serde_json::json!({
@@ -241,22 +243,79 @@ impl McpTransport {
 // Reader loop
 // ---------------------------------------------------------------------------
 
+/// Check if a process is still alive using its PID.
+fn is_process_alive(pid: Option<u32>) -> bool {
+    match pid {
+        Some(pid) => {
+            #[cfg(unix)]
+            {
+                unsafe { libc::kill(pid as i32, 0) == 0 }
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = pid;
+                true
+            }
+        }
+        None => true,
+    }
+}
+
+const MCP_READER_TIMEOUT: Duration = Duration::from_secs(30);
+
 async fn mcp_reader_loop(
     stdout: ChildStdout,
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, JsonRpcError>>>>>,
+    child_pid: Option<u32>,
     server_id: &str,
-    _app: &AppHandle,
+    app: &AppHandle,
 ) -> Result<(), String> {
     let mut reader = BufReader::new(stdout);
 
     loop {
-        let content_length = mcp_read_content_length(&mut reader).await?;
+        let content_length = match timeout(MCP_READER_TIMEOUT, mcp_read_content_length(&mut reader)).await {
+            Ok(result) => result?,
+            Err(_) => {
+                log::warn!(target: "notesage::mcp", "Reader timeout for server {} — checking process health", server_id);
+                if !is_process_alive(child_pid) {
+                    log::error!(target: "notesage::mcp", "MCP server {} process is dead after reader timeout", server_id);
+                    let _ = app.emit(
+                        "mcp-server-status",
+                        serde_json::json!({
+                            "serverId": server_id,
+                            "status": "error",
+                            "error": "Server process exited unexpectedly",
+                        }),
+                    );
+                    return Err(format!("MCP server {} process died during header read", server_id));
+                }
+                // Process is alive but slow — retry
+                continue;
+            }
+        };
 
         let mut body = vec![0u8; content_length];
-        reader
-            .read_exact(&mut body)
-            .await
-            .map_err(|e| format!("Failed to read body: {}", e))?;
+        match timeout(MCP_READER_TIMEOUT, reader.read_exact(&mut body)).await {
+            Ok(result) => {
+                result.map_err(|e| format!("Failed to read body: {}", e))?;
+            }
+            Err(_) => {
+                log::warn!(target: "notesage::mcp", "Reader timeout reading body for server {} — checking process health", server_id);
+                if !is_process_alive(child_pid) {
+                    log::error!(target: "notesage::mcp", "MCP server {} process is dead after body read timeout", server_id);
+                    let _ = app.emit(
+                        "mcp-server-status",
+                        serde_json::json!({
+                            "serverId": server_id,
+                            "status": "error",
+                            "error": "Server process exited unexpectedly",
+                        }),
+                    );
+                    return Err(format!("MCP server {} process died during body read", server_id));
+                }
+                continue;
+            }
+        };
 
         let body_str =
             String::from_utf8(body).map_err(|e| format!("Invalid UTF-8 in body: {}", e))?;
@@ -264,7 +323,7 @@ async fn mcp_reader_loop(
         let msg: JsonRpcMessage = match serde_json::from_str(&body_str) {
             Ok(m) => m,
             Err(e) => {
-                eprintln!("[mcp:{}] Failed to parse message: {} — {}", server_id, e, &body_str[..body_str.len().min(200)]);
+                log::warn!(target: "notesage::mcp", "Failed to parse message from server {}: {} — {}", server_id, e, &body_str[..body_str.len().min(200)]);
                 continue;
             }
         };
@@ -365,16 +424,37 @@ impl McpState {
         let mut servers = match self.servers.try_lock() {
             Ok(guard) => guard,
             Err(_) => {
-                eprintln!("[mcp] Could not acquire server lock during shutdown");
+                log::warn!(target: "notesage::mcp", "Could not acquire server lock during shutdown");
                 return;
             }
         };
 
         for (id, mut handle) in servers.drain() {
-            eprintln!("[mcp] Stopping server {} on exit", id);
+            log::info!(target: "notesage::mcp", "Stopping server {} on exit", id);
             // kill_on_drop will handle the process when Child is dropped
             let _ = handle.child.start_kill();
         }
+    }
+
+    /// Check liveness of all MCP server processes.
+    pub async fn check_processes(&self) -> Vec<super::health::ProcessStatus> {
+        let mut servers = self.servers.lock().await;
+        servers
+            .iter_mut()
+            .map(|(id, handle)| {
+                let pid = handle.child.id();
+                let alive = match handle.child.try_wait() {
+                    Ok(None) => true,
+                    Ok(Some(_)) => false,
+                    Err(_) => false,
+                };
+                super::health::ProcessStatus {
+                    name: id.clone(),
+                    alive,
+                    pid,
+                }
+            })
+            .collect()
     }
 }
 
@@ -530,10 +610,11 @@ pub async fn mcp_start_server(
         .spawn()
         .map_err(|e| format!("Failed to spawn MCP server '{}': {}", config.name, e))?;
 
+    let child_pid = child.id();
     let stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
 
-    let transport = McpTransport::new(stdin, stdout, server_id.clone(), app.clone());
+    let transport = McpTransport::new(stdin, stdout, child_pid, server_id.clone(), app.clone());
 
     // Initialize the MCP protocol
     let _server_caps = mcp_initialize(&transport).await.map_err(|e| {

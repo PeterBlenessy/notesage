@@ -1,5 +1,9 @@
 import { create } from "zustand";
+import { toast } from "sonner";
 import { computeExternalDiff, type ExternalDiffHunk } from "@/lib/external-diff";
+
+const MAX_PENDING_CHANGES = 20;
+const CHANGE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export interface ExternalChangeEntry {
   filePath: string;
@@ -42,6 +46,27 @@ export const useExternalChangeStore = create<ExternalChangeStore>()((set, get) =
     // No actual diff — skip
     if (hunks.length === 0) return;
 
+    // Auto-expire stale entries and enforce capacity limit
+    const now = Date.now();
+    const current = get().changes;
+    const expired = Object.keys(current).filter(
+      (key) => now - current[key].timestamp > CHANGE_TTL_MS
+    );
+    if (expired.length > 0) {
+      set((state) => {
+        const cleaned = { ...state.changes };
+        for (const key of expired) delete cleaned[key];
+        return { changes: cleaned };
+      });
+    }
+
+    // Check capacity after expiry (re-read state)
+    const remaining = Object.keys(get().changes).filter((key) => key !== filePath);
+    if (remaining.length >= MAX_PENDING_CHANGES) {
+      toast.warning("Too many pending changes — please review existing changes first");
+      return;
+    }
+
     set((state) => ({
       changes: {
         ...state.changes,
@@ -51,7 +76,7 @@ export const useExternalChangeStore = create<ExternalChangeStore>()((set, get) =
           oldContent,
           newContent,
           hunks,
-          timestamp: Date.now(),
+          timestamp: now,
           status: "pending",
         },
       },

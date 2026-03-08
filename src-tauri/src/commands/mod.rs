@@ -11,6 +11,9 @@ pub mod copilot_lsp;
 pub mod shell_path;
 pub mod skills;
 pub mod mcp;
+pub mod logging;
+pub mod store;
+pub mod health;
 
 pub use file::*;
 pub use dialog::*;
@@ -23,3 +26,6 @@ pub use acp::*;
 pub use copilot_lsp::*;
 pub use skills::*;
 pub use mcp::*;
+pub use logging::*;
+pub use store::*;
+pub use health::*;

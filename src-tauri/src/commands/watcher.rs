@@ -39,6 +39,64 @@ impl WatcherState {
             self_writes: Mutex::new(HashMap::new()),
         }
     }
+
+    /// Check watcher health: returns (alive, list of watched paths).
+    pub fn health_info(&self) -> (bool, Vec<String>) {
+        let watcher_alive = self
+            .watcher
+            .lock()
+            .map(|w| w.is_some())
+            .unwrap_or(false);
+        let paths: Vec<String> = self
+            .watched_paths
+            .lock()
+            .map(|wp| wp.iter().map(|p| p.to_string_lossy().to_string()).collect())
+            .unwrap_or_default();
+        (watcher_alive, paths)
+    }
+
+    /// Drop the old watcher, create a new one, and re-watch all known paths.
+    /// Used for automatic recovery when the watcher dies.
+    pub fn recover_watcher(&self, app: &AppHandle) -> Result<(), String> {
+        // 1. Drop existing watcher
+        {
+            let mut watcher_guard = self.watcher.lock().map_err(|e| e.to_string())?;
+            *watcher_guard = None;
+        }
+
+        // 2. Recreate the debouncer via ensure_watcher
+        ensure_watcher(app)?;
+
+        // 3. Re-watch all known paths
+        let watched = self.watched_paths.lock().map_err(|e| e.to_string())?;
+        let count = watched.len();
+
+        if count > 0 {
+            let mut watcher_guard = self.watcher.lock().map_err(|e| e.to_string())?;
+            if let Some(ref mut debouncer) = *watcher_guard {
+                for path in watched.iter() {
+                    if path.is_dir() {
+                        if let Err(e) = debouncer.watch(path, RecursiveMode::Recursive) {
+                            log::warn!(
+                                target: "notesage::watcher",
+                                "Failed to re-watch {} during recovery: {:?}",
+                                path.display(),
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        log::info!(
+            target: "notesage::watcher",
+            "Watcher recovered — re-watching {} paths",
+            count
+        );
+
+        Ok(())
+    }
 }
 
 /// Map a notify event kind to a simple string for the frontend.
@@ -89,7 +147,7 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
                 Ok(events) => events,
                 Err(errors) => {
                     for e in errors {
-                        eprintln!("Watcher error: {:?}", e);
+                        log::error!(target: "notesage::watcher", "Watcher error: {:?}", e);
                     }
                     return;
                 }
@@ -100,6 +158,8 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
                 Ok(guard) => guard,
                 Err(_) => return,
             };
+
+            let mut batch: Vec<FileChangedEvent> = Vec::new();
 
             for event in events {
                 let kind_str = match event_kind_str(&event.kind) {
@@ -144,9 +204,20 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
                         path: path.to_string_lossy().to_string(),
                         kind: effective_kind.to_string(),
                     };
-                    if let Err(e) = app_handle.emit("file-changed", payload) {
-                        eprintln!("Failed to emit file-changed event: {:?}", e);
+
+                    // Emit per-event for backward compatibility
+                    if let Err(e) = app_handle.emit("file-changed", payload.clone()) {
+                        log::error!(target: "notesage::watcher", "Failed to emit file-changed event: {:?}", e);
                     }
+
+                    batch.push(payload);
+                }
+            }
+
+            // Emit batch event with all filtered events at once
+            if !batch.is_empty() {
+                if let Err(e) = app_handle.emit("file-changed-batch", &batch) {
+                    log::error!(target: "notesage::watcher", "Failed to emit file-changed-batch event: {:?}", e);
                 }
             }
         },

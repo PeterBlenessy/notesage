@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
+import { log } from '@/lib/logger';
 
 export interface CommentReply {
   id: string;
@@ -96,7 +97,7 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
         commentsByDocument: { ...state.commentsByDocument, [documentId]: comments },
       }));
     } catch (error) {
-      console.error('Failed to load comments:', error);
+      log.error('comments', 'Failed to load comments', error);
       set((state) => ({
         commentsByDocument: { ...state.commentsByDocument, [documentId]: [] },
       }));
@@ -180,9 +181,13 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
   },
 
   setCommentStatus: (documentId: string, commentId: string, status: CommentStatus) => {
+    // When resolving, clean up runtime state for this comment
+    if (status === 'resolved') {
+      clearPartialReply(documentId, commentId);
+    }
     set((state) => {
       const comments = state.commentsByDocument[documentId] ?? [];
-      return {
+      const base: Partial<CommentStore> = {
         commentsByDocument: {
           ...state.commentsByDocument,
           [documentId]: comments.map((c) =>
@@ -190,6 +195,13 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
           ),
         },
       };
+      if (status === 'resolved') {
+        const { [commentId]: _, ...restActivities } = state.activitiesByComment;
+        const { [commentId]: __, ...restModes } = state.delegationModeByComment;
+        base.activitiesByComment = restActivities;
+        base.delegationModeByComment = restModes;
+      }
+      return base;
     });
   },
 
@@ -305,7 +317,7 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
       }
       await tauriApi.writeFile(filePath, JSON.stringify(comments, null, 2));
     } catch (error) {
-      console.error('Failed to save comments:', error);
+      log.error('comments', 'Failed to save comments', error);
       toast.error(`Failed to save comments: ${error}`);
     }
   },

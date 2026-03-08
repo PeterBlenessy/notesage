@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+
 type PdfFitMode = "width" | "page" | null;
 
 interface PdfBookmark {

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+
 export interface PermissionRequest {
   id: string;
   instanceId: string;
@@ -157,6 +158,7 @@ export const usePermissionStore = create<PermissionStore>()(
     }),
     {
       name: 'notesage-permissions',
+
       partialize: (state) => ({
         alwaysAllowed: state.alwaysAllowed,
         skillScriptAlways: state.skillScriptAlways,

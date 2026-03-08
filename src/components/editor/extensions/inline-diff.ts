@@ -6,6 +6,9 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { hasActiveSuggestion } from './ai-suggestion';
 import { replaceRangePreservingMarks } from '@/lib/pm-replace';
 
+/** Track active widget elements and their document-level cleanup functions. */
+const activeWidgets = new Map<HTMLElement, () => void>();
+
 /**
  * A diff hunk mapped to ProseMirror positions, ready for inline display.
  */
@@ -163,6 +166,14 @@ function buildDiffDecorations(
   hunks: InlineDiffHunk[],
   editor: Editor
 ): DecorationSet {
+  // Clean up listeners from widgets that are about to be replaced
+  for (const [el, cleanup] of activeWidgets) {
+    if (!el.isConnected) {
+      cleanup();
+      activeWidgets.delete(el);
+    }
+  }
+
   const decorations: Decoration[] = [];
 
   for (const hunk of hunks) {
@@ -266,14 +277,10 @@ function createHunkWidget(hunk: InlineDiffHunk, editor: Editor): HTMLElement {
 
   // Dismiss on click outside
   document.addEventListener('click', dismiss, true);
-  // Clean up when the widget is removed from the DOM
-  const observer = new MutationObserver(() => {
-    if (!container.isConnected) {
-      document.removeEventListener('click', dismiss, true);
-      observer.disconnect();
-    }
+  // Track for deterministic cleanup
+  activeWidgets.set(container, () => {
+    document.removeEventListener('click', dismiss, true);
   });
-  observer.observe(container.parentElement || document.body, { childList: true, subtree: true });
 
   return container;
 }
@@ -299,6 +306,11 @@ export function clearInlineDiff(editor: Editor): void {
   editor.view.dispatch(
     editor.state.tr.setMeta(InlineDiffPluginKey, { clearDiff: true })
   );
+  // Clean up all tracked widget listeners
+  for (const [, cleanup] of activeWidgets) {
+    cleanup();
+  }
+  activeWidgets.clear();
 }
 
 /**

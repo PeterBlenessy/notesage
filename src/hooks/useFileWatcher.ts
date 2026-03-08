@@ -11,6 +11,7 @@ import { useSkillStore } from "@/stores/skill-store";
 import { useMcpStore } from "@/stores/mcp-store";
 import { useFileOperations, refreshGitForPath } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
+import { log } from "@/lib/logger";
 
 /** Cached home dir for skill/agent path matching (set once on first event). */
 let cachedHomeDir: string | undefined;
@@ -20,6 +21,9 @@ async function getHomeDir(): Promise<string> {
   }
   return cachedHomeDir;
 }
+
+/** Maximum entries in per-path debounce maps before triggering a batch refresh. */
+const MAX_DEBOUNCE_ENTRIES = 500;
 
 interface FileChangedPayload {
   path: string;
@@ -60,9 +64,8 @@ export function useFileWatcher() {
   const icloudDiscoveryDebounce = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {
-    const unlisten = listen<FileChangedPayload>("file-changed", (event) => {
-      const { path, kind } = event.payload;
-
+    /** Shared handler for processing a single file-changed event. */
+    function handleEvent(path: string, kind: FileChangedPayload["kind"]) {
       // For create/delete events, debounce file tree refresh
       // Refresh everything (no targetPath) to avoid path mismatch issues
       // where FSEvents-canonicalized paths don't match stored workspace paths
@@ -86,6 +89,15 @@ export function useFileWatcher() {
               useWorkspaceStore.getState().projects.map((p) => p.path)
             );
             if (!knownPaths.has(projectRoot)) {
+              // Guard: flush debounce map if it grows too large
+              if (Object.keys(icloudDiscoveryDebounce.current).length >= MAX_DEBOUNCE_ENTRIES) {
+                log.warn('watcher', 'iCloud discovery debounce map overflow — triggering batch refresh');
+                for (const t of Object.values(icloudDiscoveryDebounce.current)) clearTimeout(t);
+                icloudDiscoveryDebounce.current = {};
+                clearTimeout(refreshDebounce.current);
+                refreshDebounce.current = setTimeout(() => refreshFileTree(), 300);
+                return;
+              }
               // Debounce per-project — iCloud syncs files gradually
               clearTimeout(icloudDiscoveryDebounce.current[projectRoot]);
               icloudDiscoveryDebounce.current[projectRoot] = setTimeout(async () => {
@@ -159,15 +171,51 @@ export function useFileWatcher() {
       // For modify events, debounce per-file to collapse duplicate FSEvents
       if (kind === "modify") {
         const normalizedPath = normalizePath(path);
+        // Guard: flush debounce map if it grows too large
+        if (Object.keys(modifyDebounce.current).length >= MAX_DEBOUNCE_ENTRIES) {
+          log.warn('watcher', 'Debounce map overflow — triggering batch refresh');
+          for (const t of Object.values(modifyDebounce.current)) clearTimeout(t);
+          modifyDebounce.current = {};
+          clearTimeout(refreshDebounce.current);
+          refreshDebounce.current = setTimeout(() => refreshFileTree(), 300);
+          return;
+        }
         clearTimeout(modifyDebounce.current[normalizedPath]);
         modifyDebounce.current[normalizedPath] = setTimeout(async () => {
           delete modifyDebounce.current[normalizedPath];
           await handleModifyEvent(path, normalizedPath);
         }, 200);
       }
+    }
+
+    // Batch listener — processes all events from a single debounce cycle at once,
+    // deduplicating paths so each file is handled only once per batch.
+    const unlistenBatch = listen<FileChangedPayload[]>(
+      "file-changed-batch",
+      (event) => {
+        const batch = event.payload;
+        if (!batch || batch.length === 0) return;
+
+        // Deduplicate: keep last event per normalized path (last wins)
+        const seen = new Map<string, FileChangedPayload>();
+        for (const item of batch) {
+          seen.set(normalizePath(item.path), item);
+        }
+
+        for (const { path, kind } of seen.values()) {
+          handleEvent(path, kind);
+        }
+      }
+    );
+
+    // Per-event listener kept for backward compatibility
+    const unlisten = listen<FileChangedPayload>("file-changed", (event) => {
+      const { path, kind } = event.payload;
+      handleEvent(path, kind);
     });
 
     return () => {
+      unlistenBatch.then((fn) => fn());
       unlisten.then((fn) => fn());
       clearTimeout(refreshDebounce.current);
       clearTimeout(gitDebounce.current);
@@ -231,6 +279,6 @@ async function handleModifyEvent(path: string, normalizedPath: string) {
       }
     }
   } catch (error) {
-    console.error("Failed to read externally changed file:", error);
+    log.error('watcher', 'Failed to read externally changed file', error);
   }
 }

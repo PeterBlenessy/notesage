@@ -26,7 +26,7 @@ function Switch({
     <SwitchPrimitive.Root
       data-slot="switch"
       className={cn(
-        "peer inline-flex shrink-0 items-center rounded-full h-[22px] w-[40px] cursor-pointer transition-colors outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50",
+        "peer inline-flex shrink-0 items-center rounded-full h-[18px] w-[34px] cursor-pointer transition-colors outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50",
         className
       )}
       style={{
@@ -37,7 +37,7 @@ function Switch({
     >
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"
-        className="pointer-events-none block h-[18px] w-[18px] rounded-full shadow-sm transition-transform data-[state=checked]:translate-x-[20px] data-[state=unchecked]:translate-x-[2px]"
+        className="pointer-events-none block h-[14px] w-[14px] rounded-full shadow-sm transition-transform data-[state=checked]:translate-x-[18px] data-[state=unchecked]:translate-x-[2px]"
         style={{
           backgroundColor: checked ? 'var(--color-background)' : 'var(--color-background)',
         }}

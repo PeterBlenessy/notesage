@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ChatMessage, Citation, AgentActivity } from '@/lib/ai/types';
+import { createTauriStorage } from '@/lib/tauri-storage';
 
 export interface Conversation {
   id: string;
@@ -61,6 +62,13 @@ interface ChatStore {
 }
 
 // ---------------------------------------------------------------------------
+// Bounds
+// ---------------------------------------------------------------------------
+
+const MAX_CONVERSATIONS = 50;
+const MAX_MESSAGES_PER_CONVERSATION = 500;
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -79,6 +87,26 @@ function updateActiveConv(
 function autoTitle(content: string): string {
   const first = content.split('\n')[0] || content;
   return first.length > 50 ? first.slice(0, 50) + '\u2026' : first;
+}
+
+/** Remove the oldest inactive conversations until count <= MAX_CONVERSATIONS. */
+function pruneConversations(
+  conversations: Conversation[],
+  activeId: string | null,
+): Conversation[] {
+  if (conversations.length <= MAX_CONVERSATIONS) return conversations;
+  // Sort by updatedAt ascending (oldest first) to find prune candidates
+  const sorted = [...conversations].sort((a, b) => a.updatedAt - b.updatedAt);
+  const toRemove = new Set<string>();
+  for (const conv of sorted) {
+    if (conversations.length - toRemove.size <= MAX_CONVERSATIONS) break;
+    if (conv.id !== activeId) {
+      toRemove.add(conv.id);
+    }
+  }
+  return toRemove.size > 0
+    ? conversations.filter((c) => !toRemove.has(c.id))
+    : conversations;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,10 +138,13 @@ export const useChatStore = create<ChatStore>()(
           sourceCommentId: opts?.sourceCommentId,
           sourceDocumentId: opts?.sourceDocumentId,
         };
-        set((state) => ({
-          conversations: [conv, ...state.conversations],
-          activeConversationId: id,
-        }));
+        set((state) => {
+          const updated = [conv, ...state.conversations];
+          return {
+            conversations: pruneConversations(updated, id),
+            activeConversationId: id,
+          };
+        });
         return id;
       },
 
@@ -151,15 +182,21 @@ export const useChatStore = create<ChatStore>()(
           activeId = get().createConversation();
         }
 
-        set((s) => ({
-          conversations: s.conversations.map((c) => {
+        set((s) => {
+          const conversations = s.conversations.map((c) => {
             if (c.id !== activeId) return c;
             const msg = { ...message, timestamp: message.timestamp || Date.now() };
             // Auto-title on first user message
             const title = c.title || (message.role === 'user' ? autoTitle(message.content) : c.title);
-            return { ...c, messages: [...c.messages, msg], updatedAt: Date.now(), title };
-          }),
-        }));
+            let messages = [...c.messages, msg];
+            // Cap messages per conversation
+            if (messages.length > MAX_MESSAGES_PER_CONVERSATION) {
+              messages = messages.slice(messages.length - MAX_MESSAGES_PER_CONVERSATION);
+            }
+            return { ...c, messages, updatedAt: Date.now(), title };
+          });
+          return { conversations: pruneConversations(conversations, activeId) };
+        });
       },
 
       updateMessage: (timestamp, content, citations) =>
@@ -280,7 +317,15 @@ export const useChatStore = create<ChatStore>()(
     }),
     {
       name: 'notesage-chat-history',
+      storage: createTauriStorage(),
       version: 2,
+      // Exclude transient UI state from persistence to avoid excessive
+      // writes during streaming (isLoading/activeTool toggle rapidly).
+      partialize: (state) => ({
+        conversations: state.conversations,
+        activeConversationId: state.activeConversationId,
+        webSearchEnabled: state.webSearchEnabled,
+      }),
       migrate: (persisted: unknown, version: number) => {
         if (version < 2) {
           // v1 → v2: wrap flat messages into a conversation

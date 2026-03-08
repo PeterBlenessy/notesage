@@ -16,6 +16,7 @@ import { usePermissionStore } from '@/stores/permission-store';
 import { useSkillStore } from '@/stores/skill-store';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { log } from '@/lib/logger';
 
 /**
  * Extract a user-friendly error message from AI provider errors.
@@ -648,7 +649,7 @@ export function useAIOperations() {
         const fullPrompt = `${composedSystemMessage}\n\n${prompt}`;
         return await aiProvider.generateText(fullPrompt);
       } catch (error) {
-        console.error('AI generation failed:', error);
+        log.error('ai', 'AI generation failed', error);
         throw error;
       }
     },
@@ -834,7 +835,7 @@ export function useAIOperations() {
             cleanupRef.current();
           }
           stopAcpAgent();
-          console.error('[AI Chat] ACP error:', error);
+          log.error('ai', 'ACP chat error', error);
           setMessageError(assistantMessageId, friendlyAIError(error, effectiveConnection?.label || effectiveConnection?.provider));
           setLoading(false);
           setActiveTool(null);
@@ -870,6 +871,9 @@ export function useAIOperations() {
         } : {}),
       });
 
+      // Declare outside try so catch block can clear it
+      let flushInterval: ReturnType<typeof setInterval> | undefined;
+
       try {
         let streamedContent = '';
         let streamedThinking = '';
@@ -878,7 +882,7 @@ export function useAIOperations() {
         // Throttle UI updates to avoid overwhelming React with rapid token streams
         let contentDirty = false;
         let thinkingDirty = false;
-        const flushInterval = setInterval(() => {
+        flushInterval = setInterval(() => {
           if (thinkingDirty) {
             updateMessageThinking(assistantMessageId, streamedThinking);
             thinkingDirty = false;
@@ -967,11 +971,14 @@ export function useAIOperations() {
           baseUrl: resolved.config?.baseUrl ?? null,
         });
       } catch (error) {
+        // Always clear the flush interval — it may have been created before
+        // cleanupRef.current was registered (e.g., if a listen() call threw)
+        clearInterval(flushInterval);
         // Clean up listeners on error
         if (cleanupRef.current) {
           cleanupRef.current();
         }
-        console.error('[AI Chat] Stream error:', error);
+        log.error('ai', 'Stream error', error);
         setMessageError(assistantMessageId, friendlyAIError(error, effectiveConnection?.label || resolved?.provider));
         setLoading(false);
         setActiveTool(null);

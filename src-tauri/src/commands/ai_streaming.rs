@@ -355,7 +355,7 @@ pub async fn anthropic_chat_stream(
                             // Check for pause_turn stop reason
                             if let Some(stop_reason) = json["delta"]["stop_reason"].as_str() {
                                 if stop_reason == "pause_turn" {
-                                    eprintln!("[notesage] Anthropic returned pause_turn — response may be incomplete");
+                                    log::warn!(target: "notesage::ai", "Anthropic returned pause_turn — response may be incomplete");
                                 }
                             }
                         }

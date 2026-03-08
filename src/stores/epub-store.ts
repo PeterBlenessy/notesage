@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+
 type EpubViewMode = "scroll" | "paginated";
 
 interface EpubBookmark {

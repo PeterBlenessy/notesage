@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { TabBar } from "@/components/tabs/TabBar";
 import { Editor } from "@/components/editor/Editor";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -38,6 +38,7 @@ import { setBinaryData } from "@/lib/binary-cache";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { migrateV1AISettings } from "@/lib/ai/migration";
 import { scanICloudForProjects } from "@/lib/scan-icloud-projects";
+import { log } from "@/lib/logger";
 import { stopAcpAgent } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { refreshTags } from "@/hooks/useFileOperations";
@@ -206,7 +207,7 @@ function App() {
           setCommandPaletteTagOccurrences(occurrences);
         }
       } catch (error) {
-        console.error("Failed to find tag occurrences:", error);
+        log.error('lifecycle', 'Failed to find tag occurrences', error);
       }
     };
     window.addEventListener("notesage:open-tag-search", handler);
@@ -237,6 +238,78 @@ function App() {
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       handleBeforeUnload();
+    };
+  }, []);
+
+  // Visibility-change wake handler: detect resume from sleep/background and
+  // verify that Tauri backend processes are still alive.
+  const lastWakeCheckRef = useRef(0);
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState !== 'visible') return;
+
+      // Debounce: skip if last check was within 5 seconds
+      const now = Date.now();
+      if (now - lastWakeCheckRef.current < 5000) return;
+      lastWakeCheckRef.current = now;
+
+      log.info('lifecycle', 'App became visible, checking backend health');
+
+      // Ping with 500ms timeout to detect dead WebView process
+      try {
+        await Promise.race([
+          tauriApi.ping(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('ping timeout')), 500)
+          ),
+        ]);
+      } catch {
+        log.info('lifecycle', 'Ping failed or timed out, reloading WebView');
+        window.location.reload();
+        return;
+      }
+
+      // Ping succeeded — run full health check
+      try {
+        const health = await tauriApi.healthCheck();
+        log.info('lifecycle', `Health check: watcher=${health.watcher_alive}, acp=${health.acp_agents.length}, mcp=${health.mcp_servers.length}`);
+
+        // Re-establish filesystem watcher if dead
+        if (!health.watcher_alive) {
+          log.info('lifecycle', 'Watcher dead, re-watching workspace paths');
+          const ws = useWorkspaceStore.getState();
+          for (const project of ws.projects) {
+            try {
+              await tauriApi.watchDirectory(project.path);
+            } catch (err) {
+              log.info('lifecycle', `Failed to re-watch ${project.path}: ${err}`);
+            }
+          }
+          for (const folder of ws.explorerFolders) {
+            try {
+              await tauriApi.watchDirectory(folder.path);
+            } catch (err) {
+              log.info('lifecycle', `Failed to re-watch ${folder.path}: ${err}`);
+            }
+          }
+        }
+
+        // Check if any AI-related processes died
+        const deadAcp = health.acp_agents.some((a) => !a.alive);
+        const deadCopilot = health.copilot_lsp != null && !health.copilot_lsp.alive;
+        const deadMcp = health.mcp_servers.some((s) => !s.alive);
+        if (deadAcp || deadCopilot || deadMcp) {
+          log.info('lifecycle', 'Some AI processes died — they will be lazily respawned on next use');
+          toast.info('Reconnected to AI services');
+        }
+      } catch (err) {
+        log.info('lifecycle', `Health check failed: ${err}`);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
@@ -275,7 +348,7 @@ function App() {
           notesRoot = notesRoot.replace("~", homeDir);
           settings.setNotesRootPath(notesRoot);
         } catch {
-          console.error("Failed to resolve home directory");
+          log.error('startup', 'Failed to resolve home directory');
         }
       }
 
@@ -474,7 +547,7 @@ function App() {
         }
       }
     } catch (error) {
-      console.error("Failed to open folder:", error);
+      log.error('lifecycle', 'Failed to open folder', error);
       toast.error(`Failed to open folder: ${error}`);
     }
   }, [addProject, addExplorerFolder]);
@@ -486,7 +559,7 @@ function App() {
       const tree = await tauriApi.listDirectory(projectPath);
       addProject(projectPath, tree);
     } catch (error) {
-      console.error("Failed to open project:", error);
+      log.error('lifecycle', 'Failed to open project', error);
       toast.error(`Failed to open project: ${error}`);
     }
   }, [addProject]);
@@ -495,7 +568,7 @@ function App() {
     try {
       await openFile(filePath, fileName);
     } catch (error) {
-      console.error("Failed to open file:", error);
+      log.error('lifecycle', 'Failed to open file', error);
       toast.error(`Failed to open file: ${error}`);
     }
   }, [openFile]);
@@ -504,7 +577,7 @@ function App() {
     try {
       await openFileAtTag(filePath, fileName, tag, occurrence);
     } catch (error) {
-      console.error("Failed to open file at tag:", error);
+      log.error('lifecycle', 'Failed to open file at tag', error);
       toast.error(`Failed to open file: ${error}`);
     }
   }, [openFileAtTag]);
@@ -522,7 +595,7 @@ function App() {
         addProject(folderPath, tree);
       }
     } catch (error) {
-      console.error("Failed to open project:", error);
+      log.error('lifecycle', 'Failed to open project', error);
       toast.error(`Failed to open project: ${error}`);
     }
   }, [addProject]);
@@ -537,7 +610,7 @@ function App() {
       const tree = await tauriApi.listDirectory(path);
       addProject(path, tree);
     } catch (error) {
-      console.error("Failed to make project:", error);
+      log.error('lifecycle', 'Failed to make project', error);
       toast.error(`Failed to create project: ${error}`);
     }
   }, [addProject]);
@@ -574,7 +647,7 @@ function App() {
       const content = await tauriApi.readFile(filePath);
       useEditorStore.getState().openTab(filePath, fileName, content);
     } catch (err) {
-      console.error("Failed to create note:", err);
+      log.error('lifecycle', 'Failed to create note', err);
       toast.error(`Failed to create note: ${err}`);
     }
   }, []);

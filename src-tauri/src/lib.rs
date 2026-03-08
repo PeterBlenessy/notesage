@@ -1,23 +1,9 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-
-pub static DEBUG_LOGGING: AtomicBool = AtomicBool::new(false);
-
-/// Conditional debug logging macro. Only prints when DEBUG_LOGGING is enabled.
-/// Use for diagnostic messages; keep genuine errors as `eprintln!`.
-#[macro_export]
-macro_rules! debug_log {
-    ($($arg:tt)*) => {
-        if $crate::DEBUG_LOGGING.load(std::sync::atomic::Ordering::Relaxed) {
-            eprintln!($($arg)*);
-        }
-    };
-}
-
 mod commands;
 mod export;
 
 use commands::*;
 use tauri::{Manager, RunEvent};
+use tauri_plugin_log::{Target, TargetKind, RotationStrategy, TimezoneStrategy};
 
 #[tauri::command]
 fn open_devtools(webview_window: tauri::WebviewWindow) {
@@ -26,7 +12,13 @@ fn open_devtools(webview_window: tauri::WebviewWindow) {
 
 #[tauri::command]
 fn set_debug_logging(enabled: bool) {
-    DEBUG_LOGGING.store(enabled, Ordering::Relaxed);
+    let level = if enabled {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    };
+    log::set_max_level(level);
+    log::info!(target: "notesage::settings", "Debug logging set to {}", enabled);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -39,6 +31,20 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_http::init())
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    Target::new(TargetKind::Stdout),
+                    Target::new(TargetKind::LogDir {
+                        file_name: Some("notesage".into()),
+                    }),
+                ])
+                .rotation_strategy(RotationStrategy::KeepOne)
+                .max_file_size(5_000_000) // 5MB per file
+                .timezone_strategy(TimezoneStrategy::UseLocal)
+                .level(log::LevelFilter::Info)
+                .build(),
+        )
         .manage(WatcherState::new())
         .manage(AcpState::new())
         .manage(CopilotLspState::new())
@@ -136,11 +142,41 @@ pub fn run() {
             mcp_import_configs,
             mcp_save_config,
             mcp_check_import_sources,
+            // Logging
+            log_frontend,
+            get_log_path,
+            clear_logs,
+            get_log_size,
+            // State persistence
+            store_read,
+            store_read_batch,
+            store_write,
+            store_delete,
+            // Health check
+            ping,
+            health_check,
         ])
+        .setup(|app| {
+            log::info!(target: "notesage::lifecycle", "Notesage starting up (version {})", app.package_info().version);
+
+            // Kill orphaned agent processes from previous sessions that weren't cleaned up
+            // (e.g. app was force-quit or crashed). These accumulate over time and waste resources.
+            std::thread::spawn(|| {
+                for pattern in &["claude-agent-acp", "codex-acp"] {
+                    let _ = std::process::Command::new("pkill")
+                        .args(["-f", pattern])
+                        .output();
+                }
+                log::debug!(target: "notesage::lifecycle", "Cleaned up orphaned agent processes");
+            });
+
+            Ok(())
+        })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let RunEvent::Exit = event {
+                log::info!(target: "notesage::lifecycle", "App exiting — stopping child processes");
                 // Stop all ACP agent subprocesses
                 app_handle.state::<AcpState>().stop_all_sync();
                 // Stop all MCP server subprocesses

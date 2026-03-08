@@ -5,6 +5,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useMcpStore, type McpServerEntry, type McpToolInfo } from '@/stores/mcp-store';
 import { toast } from 'sonner';
+import { log } from '@/lib/logger';
 
 // ---------------------------------------------------------------------------
 // Types matching Rust backend
@@ -127,7 +128,7 @@ export function useMcpDiscovery() {
           })
         );
       } catch (err) {
-        console.error('MCP config discovery failed:', err);
+        log.error('mcp', 'MCP config discovery failed', err);
       }
     };
 

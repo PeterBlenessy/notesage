@@ -5,11 +5,13 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::{oneshot, Mutex};
+use tokio::time::timeout;
 
 use super::shell_path::get_shell_path;
 
@@ -125,7 +127,7 @@ impl JsonRpcTransport {
     /// - Routes responses to pending request channels
     /// - Handles server→client requests (window/showDocument, etc.)
     /// - Emits server→client notifications as Tauri events
-    pub fn new(stdin: ChildStdin, stdout: ChildStdout, app: AppHandle) -> Self {
+    pub fn new(stdin: ChildStdin, stdout: ChildStdout, child_pid: Option<u32>, app: AppHandle) -> Self {
         let writer = Arc::new(Mutex::new(BufWriter::new(stdin)));
         let next_id = Arc::new(AtomicU64::new(1));
         let pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, JsonRpcError>>>>> =
@@ -142,11 +144,12 @@ impl JsonRpcTransport {
                 reader_pending,
                 reader_writer,
                 reader_next_id,
+                child_pid,
                 app,
             )
             .await
             {
-                eprintln!("[copilot-lsp] reader loop exited: {}", e);
+                log::error!(target: "notesage::copilot", "Reader loop exited: {}", e);
             }
         });
 
@@ -225,26 +228,82 @@ impl JsonRpcTransport {
 // Reader loop
 // ---------------------------------------------------------------------------
 
+/// Check if a process is still alive using its PID.
+fn is_process_alive(pid: Option<u32>) -> bool {
+    match pid {
+        Some(pid) => {
+            // On Unix, kill(pid, 0) checks existence without sending a signal
+            #[cfg(unix)]
+            {
+                unsafe { libc::kill(pid as i32, 0) == 0 }
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = pid;
+                true // Assume alive on non-Unix platforms
+            }
+        }
+        None => true, // No PID available, assume alive
+    }
+}
+
+const READER_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Continuously reads JSON-RPC messages from the LSP server stdout.
 async fn reader_loop(
     stdout: ChildStdout,
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, JsonRpcError>>>>>,
     writer: Arc<Mutex<BufWriter<ChildStdin>>>,
     next_id: Arc<AtomicU64>,
+    child_pid: Option<u32>,
     app: AppHandle,
 ) -> Result<(), String> {
     let mut reader = BufReader::new(stdout);
 
     loop {
-        // 1. Read headers until we find Content-Length
-        let content_length = read_content_length(&mut reader).await?;
+        // 1. Read headers until we find Content-Length (with timeout)
+        let content_length = match timeout(READER_TIMEOUT, read_content_length(&mut reader)).await {
+            Ok(result) => result?,
+            Err(_) => {
+                log::warn!(target: "notesage::copilot_lsp", "Reader timeout — checking process health");
+                if !is_process_alive(child_pid) {
+                    log::error!(target: "notesage::copilot_lsp", "LSP process is dead after reader timeout");
+                    let _ = app.emit(
+                        "copilot-status-changed",
+                        serde_json::json!({
+                            "message": "LSP process exited unexpectedly",
+                            "kind": "Error",
+                        }),
+                    );
+                    return Err("LSP process died during header read".to_string());
+                }
+                // Process is alive but slow — retry
+                continue;
+            }
+        };
 
-        // 2. Read the body
+        // 2. Read the body (with timeout)
         let mut body = vec![0u8; content_length];
-        reader
-            .read_exact(&mut body)
-            .await
-            .map_err(|e| format!("Failed to read body: {}", e))?;
+        match timeout(READER_TIMEOUT, reader.read_exact(&mut body)).await {
+            Ok(result) => {
+                result.map_err(|e| format!("Failed to read body: {}", e))?;
+            }
+            Err(_) => {
+                log::warn!(target: "notesage::copilot_lsp", "Reader timeout reading body — checking process health");
+                if !is_process_alive(child_pid) {
+                    log::error!(target: "notesage::copilot_lsp", "LSP process is dead after body read timeout");
+                    let _ = app.emit(
+                        "copilot-status-changed",
+                        serde_json::json!({
+                            "message": "LSP process exited unexpectedly",
+                            "kind": "Error",
+                        }),
+                    );
+                    return Err("LSP process died during body read".to_string());
+                }
+                continue;
+            }
+        };
 
         let body_str =
             String::from_utf8(body).map_err(|e| format!("Invalid UTF-8 in body: {}", e))?;
@@ -253,7 +312,7 @@ async fn reader_loop(
         let msg: JsonRpcMessage = match serde_json::from_str(&body_str) {
             Ok(m) => m,
             Err(e) => {
-                eprintln!("[copilot-lsp] Failed to parse message: {} — {}", e, body_str);
+                log::warn!(target: "notesage::copilot", "Failed to parse message: {} — {}", e, body_str);
                 continue;
             }
         };
@@ -346,8 +405,9 @@ async fn handle_server_request(
             // The Copilot LSP sends this after sign-in is initiated, containing
             // the device code the user must enter on GitHub.
             if let Some(params) = params {
-                debug_log!(
-                    "[copilot-lsp] signIn server→client request received, raw params: {}",
+                log::debug!(
+                    target: "notesage::copilot",
+                    "signIn server→client request received, raw params: {}",
                     params
                 );
 
@@ -364,8 +424,9 @@ async fn handle_server_request(
                     .unwrap_or("https://github.com/login/device")
                     .to_string();
 
-                debug_log!(
-                    "[copilot-lsp] signIn server request: userCode={}, verificationUri={}",
+                log::debug!(
+                    target: "notesage::copilot",
+                    "signIn server request: userCode={}, verificationUri={}",
                     user_code, verification_uri
                 );
 
@@ -436,7 +497,7 @@ async fn handle_server_request(
             // Log it and return null (no action selected).
             if let Some(params) = params {
                 if let Some(message) = params.get("message").and_then(|v| v.as_str()) {
-                    debug_log!("[copilot-lsp] showMessageRequest: {}", message);
+                    log::debug!(target: "notesage::copilot", "showMessageRequest: {}", message);
                 }
             }
             Value::Null
@@ -469,7 +530,7 @@ async fn handle_server_request(
         }
 
         _ => {
-            debug_log!("[copilot-lsp] Unhandled server request: {}", method);
+            log::debug!(target: "notesage::copilot", "Unhandled server request: {}", method);
             Value::Null
         }
     };
@@ -530,14 +591,14 @@ async fn handle_server_notification(method: &str, params: Option<&Value>, app: &
                     3 => "INFO",
                     _ => "LOG",
                 };
-                debug_log!("[copilot-lsp] [{}] {}", level, message);
+                log::debug!(target: "notesage::copilot", "[{}] {}", level, message);
             }
         }
 
         "window/showMessage" => {
             if let Some(params) = params {
                 if let Some(message) = params.get("message").and_then(|v| v.as_str()) {
-                    debug_log!("[copilot-lsp] showMessage: {}", message);
+                    log::debug!(target: "notesage::copilot", "showMessage: {}", message);
                 }
             }
         }
@@ -567,6 +628,23 @@ impl CopilotLspState {
         Self {
             process: Mutex::new(None),
         }
+    }
+
+    /// Check liveness of the Copilot LSP process.
+    pub async fn check_process(&self) -> Option<super::health::ProcessStatus> {
+        let mut guard = self.process.lock().await;
+        let proc = guard.as_mut()?;
+        let pid = proc.child.id();
+        let alive = match proc.child.try_wait() {
+            Ok(None) => true,  // Still running
+            Ok(Some(_)) => false, // Exited
+            Err(_) => false,
+        };
+        Some(super::health::ProcessStatus {
+            name: "copilot-language-server".to_string(),
+            alive,
+            pid,
+        })
     }
 }
 
@@ -725,11 +803,12 @@ pub async fn copilot_lsp_start(
         .spawn()
         .map_err(|e| format!("Failed to spawn copilot-language-server: {}", e))?;
 
+    let child_pid = child.id();
     let stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
 
     // Create the JSON-RPC transport (spawns reader loop)
-    let transport = JsonRpcTransport::new(stdin, stdout, app.clone());
+    let transport = JsonRpcTransport::new(stdin, stdout, child_pid, app.clone());
 
     // Read app version from package.json (via Tauri config)
     let app_version = app
@@ -908,7 +987,7 @@ pub async fn copilot_lsp_status(
                     })
                 }
                 Err(e) => {
-                    eprintln!("[copilot-lsp] checkStatus failed: {}", e);
+                    log::warn!(target: "notesage::copilot", "checkStatus failed: {}", e);
                     Ok(CopilotStatus {
                         authenticated: false,
                         message: format!("checkStatus failed: {}", e),
@@ -957,21 +1036,22 @@ pub async fn copilot_lsp_sign_in(
     // --- Phase 1: Try direct signIn RPC ---
     // Some older LSP versions support `signIn` as a client→server method.
     // Use `match` instead of `?` so we can fall through to Phase 2 on error.
-    debug_log!("[copilot-lsp] Phase 1: Sending signIn RPC...");
+    log::debug!(target: "notesage::copilot", "Phase 1: Sending signIn RPC...");
     match process
         .transport
         .send_request("signIn", Some(serde_json::json!({})))
         .await
     {
         Ok(result) => {
-            debug_log!("[copilot-lsp] Phase 1 signIn response: {}", result);
+            log::debug!(target: "notesage::copilot", "Phase 1 signIn response: {}", result);
 
             let user_code = extract_user_code_from_result(&result);
             let verification_uri = extract_verification_uri(&result);
 
             if !user_code.is_empty() {
-                debug_log!(
-                    "[copilot-lsp] Phase 1 succeeded — userCode={}, verificationUri={}",
+                log::debug!(
+                    target: "notesage::copilot",
+                    "Phase 1 succeeded — userCode={}, verificationUri={}",
                     user_code, verification_uri
                 );
 
@@ -992,12 +1072,13 @@ pub async fn copilot_lsp_sign_in(
                 });
             }
 
-            debug_log!("[copilot-lsp] Phase 1: signIn returned no device code, falling to Phase 2");
+            log::debug!(target: "notesage::copilot", "Phase 1: signIn returned no device code, falling to Phase 2");
         }
         Err(e) => {
             // signIn might not be supported — fall through to Phase 2
-            debug_log!(
-                "[copilot-lsp] Phase 1: signIn RPC failed (non-fatal, falling to Phase 2): {}",
+            log::debug!(
+                target: "notesage::copilot",
+                "Phase 1: signIn RPC failed (non-fatal, falling to Phase 2): {}",
                 e
             );
         }
@@ -1006,7 +1087,7 @@ pub async fn copilot_lsp_sign_in(
     // --- Phase 2: signInInitiate workspace command (official flow) ---
     // Per the Copilot LSP docs, `signInInitiate` returns `{ userCode, command }`
     // in the response. We must extract it and execute the embedded command.
-    debug_log!("[copilot-lsp] Phase 2: Sending workspace/executeCommand(signInInitiate)...");
+    log::debug!(target: "notesage::copilot", "Phase 2: Sending workspace/executeCommand(signInInitiate)...");
 
     match process
         .transport
@@ -1020,14 +1101,15 @@ pub async fn copilot_lsp_sign_in(
         .await
     {
         Ok(result) => {
-            debug_log!("[copilot-lsp] Phase 2 signInInitiate response: {}", result);
+            log::debug!(target: "notesage::copilot", "Phase 2 signInInitiate response: {}", result);
 
             let user_code = extract_user_code_from_result(&result);
             let verification_uri = extract_verification_uri(&result);
 
             if !user_code.is_empty() {
-                debug_log!(
-                    "[copilot-lsp] Phase 2 succeeded — userCode={}, verificationUri={}",
+                log::debug!(
+                    target: "notesage::copilot",
+                    "Phase 2 succeeded — userCode={}, verificationUri={}",
                     user_code, verification_uri
                 );
 
@@ -1049,12 +1131,13 @@ pub async fn copilot_lsp_sign_in(
                 });
             }
 
-            debug_log!(
-                "[copilot-lsp] Phase 2: signInInitiate returned no device code in response"
+            log::debug!(
+                target: "notesage::copilot",
+                "Phase 2: signInInitiate returned no device code in response"
             );
         }
         Err(e) => {
-            debug_log!("[copilot-lsp] Phase 2: signInInitiate command failed: {}", e);
+            log::debug!(target: "notesage::copilot", "Phase 2: signInInitiate command failed: {}", e);
         }
     }
 
@@ -1062,8 +1145,9 @@ pub async fn copilot_lsp_sign_in(
     // Neither phase returned a device code in the response. The LSP may send
     // the code asynchronously via a server→client `signIn` request, which is
     // handled in `handle_server_request` and emitted as `copilot-auth-device-code`.
-    debug_log!(
-        "[copilot-lsp] Both phases returned no device code — waiting for server→client signIn request"
+    log::debug!(
+        target: "notesage::copilot",
+        "Both phases returned no device code — waiting for server→client signIn request"
     );
 
     Ok(SignInResponse {
@@ -1122,7 +1206,7 @@ fn extract_user_code_from_result(result: &Value) -> String {
         .or_else(|| result.get("verification_uri").and_then(|v| v.as_str()))
         .unwrap_or("");
     if let Some(code) = extract_code_from_uri(verification_uri) {
-        debug_log!("[copilot-lsp] Extracted user_code from URI: {}", code);
+        log::debug!(target: "notesage::copilot", "Extracted user_code from URI: {}", code);
         return code;
     }
 
@@ -1154,8 +1238,9 @@ async fn execute_embedded_command(process: &CopilotLspProcess, result: &Value) {
             .unwrap_or(Value::Array(vec![]));
 
         if !cmd_name.is_empty() {
-            debug_log!(
-                "[copilot-lsp] Executing embedded command: {} with args: {}",
+            log::debug!(
+                target: "notesage::copilot",
+                "Executing embedded command: {} with args: {}",
                 cmd_name, cmd_args
             );
             if let Err(e) = process
@@ -1169,7 +1254,7 @@ async fn execute_embedded_command(process: &CopilotLspProcess, result: &Value) {
                 )
                 .await
             {
-                eprintln!("[copilot-lsp] Failed to execute embedded command '{}': {}", cmd_name, e);
+                log::error!(target: "notesage::copilot", "Failed to execute embedded command '{}': {}", cmd_name, e);
             }
         }
     }

@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import type { Frontmatter } from "@/lib/frontmatter";
 import type { FileType, ViewMode } from "@/lib/file-utils";
 
+
 export type { FileType, ViewMode } from "@/lib/file-utils";
 
 /** Scroll target for navigating to a specific tag occurrence within a document. */
@@ -45,6 +46,7 @@ export interface PersistedTab {
 }
 
 const MAX_RECENT_FILES = 5;
+const MAX_SCROLL_POSITIONS = 200;
 
 interface EditorStore {
   tabs: Tab[];
@@ -232,9 +234,20 @@ export const useEditorStore = create<EditorStore>()(
       },
 
       setScrollPosition: (filePath: string, ratio: number) => {
-        set((state) => ({
-          scrollPositions: { ...state.scrollPositions, [filePath]: ratio },
-        }));
+        set((state) => {
+          const positions = { ...state.scrollPositions };
+          // Move to end of insertion order (LRU)
+          delete positions[filePath];
+          positions[filePath] = ratio;
+          // Evict oldest if over limit
+          const keys = Object.keys(positions);
+          if (keys.length > MAX_SCROLL_POSITIONS) {
+            for (let i = 0; i < keys.length - MAX_SCROLL_POSITIONS; i++) {
+              delete positions[keys[i]];
+            }
+          }
+          return { scrollPositions: positions };
+        });
       },
 
       setExternalChange: (filePath: string, diskContent: string) => {
@@ -342,6 +355,7 @@ export const useEditorStore = create<EditorStore>()(
     }),
     {
       name: "notesage-editor",
+
       partialize: (state) => ({
         recentFiles: state.recentFiles,
         scrollPositions: state.scrollPositions,

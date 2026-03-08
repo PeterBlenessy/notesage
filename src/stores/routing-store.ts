@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+
 import type { AICapability, Connection, UseCaseSlot, UseCaseRouting } from '@/lib/ai/connections';
 import { EMPTY_ROUTING } from '@/lib/ai/connections';
 import { useConnectionsStore } from './connections-store';
@@ -107,6 +108,7 @@ export const useRoutingStore = create<RoutingStore>()(
     }),
     {
       name: 'notesage-routing',
+
       version: 1,
       migrate: (persisted, version) => {
         if (version === 0 || version === undefined) {

@@ -7,6 +7,7 @@ import { usePermissionStore } from '@/stores/permission-store';
 import { useAIStore } from '@/stores/ai-store';
 import { tauriApi } from '@/lib/tauri';
 import { toast } from 'sonner';
+import { log } from '@/lib/logger';
 import type { ConnectionProvider } from '@/lib/ai/connections';
 
 /** Map connection provider + auth method to skill paths. */
@@ -139,7 +140,7 @@ async function migratePersonasToAgents(home: string) {
           migratedCount++;
         }
       } catch (e) {
-        console.warn(`Failed to migrate persona "${persona.name}":`, e);
+        log.warn('skills', `Failed to migrate persona "${persona.name}"`, e);
       }
     }
 
@@ -185,12 +186,12 @@ export function useSkillDiscovery() {
       try {
         await tauriApi.extractBundledSkills();
       } catch (e) {
-        console.warn('Failed to extract bundled skills:', e);
+        log.warn('skills', 'Failed to extract bundled skills', e);
       }
       try {
         await tauriApi.extractBundledAgents();
       } catch (e) {
-        console.warn('Failed to extract bundled agents:', e);
+        log.warn('skills', 'Failed to extract bundled agents', e);
       }
 
       const home = await tauriApi.getHomeDir();

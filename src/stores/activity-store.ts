@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { DelegationActivity } from '@/stores/comment-store';
+import { createTauriStorage } from '@/lib/tauri-storage';
+
+const MAX_COMPLETED_TASKS = 100;
+const MAX_ACTIVITIES_PER_TASK = 200;
+const TASK_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export type AgentTaskType = 'comment' | 'chat' | 'workflow';
 export type AgentTaskStatus = 'running' | 'done' | 'error' | 'cancelled';
@@ -52,9 +57,20 @@ export const useActivityStore = create<ActivityStore>()(
           activities: [],
           startedAt: Date.now(),
         };
-        set((state) => ({
-          tasks: [task, ...state.tasks],
-        }));
+        set((state) => {
+          const updated = [task, ...state.tasks];
+          // Prune oldest completed tasks if over the limit
+          const completed = updated.filter((t) => t.status !== 'running');
+          if (completed.length > MAX_COMPLETED_TASKS) {
+            const toRemove = new Set(
+              completed
+                .slice(MAX_COMPLETED_TASKS)
+                .map((t) => t.id)
+            );
+            return { tasks: updated.filter((t) => !toRemove.has(t.id)) };
+          }
+          return { tasks: updated };
+        });
       },
 
       removeTask: (id) => {
@@ -92,9 +108,15 @@ export const useActivityStore = create<ActivityStore>()(
 
       appendActivity: (id, activity) => {
         set((state) => ({
-          tasks: state.tasks.map((t) =>
-            t.id === id ? { ...t, activities: [...t.activities, activity] } : t
-          ),
+          tasks: state.tasks.map((t) => {
+            if (t.id !== id) return t;
+            let activities = [...t.activities, activity];
+            // Trim oldest activities if over the limit
+            if (activities.length > MAX_ACTIVITIES_PER_TASK) {
+              activities = activities.slice(activities.length - MAX_ACTIVITIES_PER_TASK);
+            }
+            return { ...t, activities };
+          }),
         }));
       },
 
@@ -162,30 +184,49 @@ export const useActivityStore = create<ActivityStore>()(
     }),
     {
       name: 'notesage-activity',
+      storage: createTauriStorage(),
       version: 1,
+      // Exclude transient streaming fields from persistence to avoid
+      // excessive writes during token-by-token streaming updates.
+      partialize: (state) => ({
+        ...state,
+        tasks: state.tasks.map((t) => ({
+          ...t,
+          partialOutput: '',
+          thinkingOutput: '',
+        })),
+      }),
       // On rehydration, mark any previously-running tasks as interrupted
       // and clear transient streaming state
       onRehydrateStorage: () => (state) => {
         if (!state) return;
-        state.tasks = state.tasks.map((t) => {
-          if (t.status === 'running') {
-            return {
-              ...t,
-              status: 'error' as const,
-              completedAt: Date.now(),
-              partialOutput: undefined,
-              finalOutput: t.partialOutput || t.finalOutput || undefined,
-              activities: t.activities.map((a) =>
-                a.status === 'running' ? { ...a, status: 'error' as const } : a
-              ),
-            };
-          }
-          // Clear any leftover partialOutput on completed tasks
-          if (t.partialOutput) {
-            return { ...t, partialOutput: undefined };
-          }
-          return t;
-        });
+        const now = Date.now();
+        state.tasks = state.tasks
+          .map((t) => {
+            if (t.status === 'running') {
+              return {
+                ...t,
+                status: 'error' as const,
+                completedAt: now,
+                partialOutput: undefined,
+                finalOutput: t.partialOutput || t.finalOutput || undefined,
+                activities: t.activities.map((a) =>
+                  a.status === 'running' ? { ...a, status: 'error' as const } : a
+                ),
+              };
+            }
+            // Clear any leftover partialOutput on completed tasks
+            if (t.partialOutput) {
+              return { ...t, partialOutput: undefined };
+            }
+            return t;
+          })
+          // Remove completed tasks older than 7 days
+          .filter((t) => {
+            if (t.status === 'running') return true;
+            if (t.completedAt && now - t.completedAt > TASK_TTL_MS) return false;
+            return true;
+          });
       },
     },
   ),

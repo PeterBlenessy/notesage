@@ -351,9 +351,37 @@ export const tauriApi = {
     });
   },
 
+  // Health commands
+  async ping(): Promise<void> {
+    await invoke("ping");
+  },
+
+  async healthCheck(): Promise<{
+    watcher_alive: boolean;
+    watched_paths: string[];
+    acp_agents: { name: string; alive: boolean; pid: number | null }[];
+    copilot_lsp: { name: string; alive: boolean; pid: number | null } | null;
+    mcp_servers: { name: string; alive: boolean; pid: number | null }[];
+  }> {
+    return await invoke("health_check");
+  },
+
   // Debug logging
   async setDebugLogging(enabled: boolean): Promise<void> {
     await invoke("set_debug_logging", { enabled });
+  },
+
+  // Log file operations
+  async getLogPath(): Promise<string> {
+    return await invoke<string>("get_log_path");
+  },
+
+  async getLogSize(): Promise<number> {
+    return await invoke<number>("get_log_size");
+  },
+
+  async clearLogs(): Promise<void> {
+    await invoke("clear_logs");
   },
 
   // Tag scanning

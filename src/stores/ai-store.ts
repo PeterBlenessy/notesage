@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AIProviderType } from '@/lib/ai/types';
 
+
 /** @deprecated Use addressable agents (skill-store) instead. Kept for migration compatibility. */
 export interface AIPersona {
   id: string;

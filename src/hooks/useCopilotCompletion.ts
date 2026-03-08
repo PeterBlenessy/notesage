@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { log } from '@/lib/logger';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useEditorStore } from '@/stores/editor-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -86,7 +87,7 @@ export function useCopilotCompletion(editor: Editor | null) {
           }
         })
         .catch((err) => {
-          console.error('[copilot] Failed to start LSP:', err);
+          log.error('copilot', 'Failed to start LSP', err);
         });
     }
 
@@ -343,7 +344,7 @@ export function useCopilotCompletion(editor: Editor | null) {
     const unlisten = listen<{ message: string; kind: string }>('copilot-status-changed', (event) => {
       const { kind, message } = event.payload;
       if (kind === 'Error') {
-        console.error('[copilot] Status error:', message);
+        log.error('copilot', 'Status error', { kind, message });
       }
     });
 
