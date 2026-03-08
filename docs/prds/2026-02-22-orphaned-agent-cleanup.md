@@ -119,20 +119,20 @@ None. All required APIs (`kill_on_drop`, `RunEvent::Exit`, `try_lock`) are alrea
 
 ### Functional
 
-- [ ] `cargo build` passes with no warnings on new code
-- [ ] `npx tsc --noEmit` passes
-- [ ] Start app → connect ACP agent → verify process running (`ps aux | grep acp`) → quit app (Cmd+Q) → verify process gone
-- [ ] Start app → connect ACP agent → force-close window → verify process gone
-- [ ] Start app → trigger ACP error path → verify no orphaned process remains
-- [ ] Copilot LSP behavior unchanged (already has `kill_on_drop`)
-- [ ] Normal ACP chat/inline actions still work after changes
-- [ ] `acp_agent_stop` Tauri command still works for explicit stop
+- [x]`cargo build` passes with no warnings on new code
+- [x]`npx tsc --noEmit` passes
+- [x]Start app → connect ACP agent → verify process running (`ps aux | grep acp`) → quit app (Cmd+Q) → verify process gone
+- [x]Start app → connect ACP agent → force-close window → verify process gone
+- [x]Start app → trigger ACP error path → verify no orphaned process remains
+- [x]Copilot LSP behavior unchanged (already has `kill_on_drop`)
+- [x]Normal ACP chat/inline actions still work after changes
+- [x]`acp_agent_stop` Tauri command still works for explicit stop
 
 ### Code quality
 
-- [ ] ACP spawn uses `kill_on_drop(true)` matching Copilot LSP pattern
-- [ ] `lib.rs` uses `build().run()` pattern with `RunEvent::Exit`
-- [ ] No `acpAgent = null` without corresponding `stopAcpAgent()` call in error paths
+- [x]ACP spawn uses `kill_on_drop(true)` matching Copilot LSP pattern
+- [x]`lib.rs` uses `build().run()` pattern with `RunEvent::Exit`
+- [x]No `acpAgent = null` without corresponding `stopAcpAgent()` call in error paths
 
 ## Out of Scope
 

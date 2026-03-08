@@ -311,21 +311,21 @@ Update the action buttons at the bottom of the CommentPopover for the new flow:
 
 Verify all quality gates from the PRD:
 
-- [ ] `npx tsc --noEmit` passes
-- [ ] Delegate comment → agent responds → Apply button visible on reply
-- [ ] Click Apply → inline suggestion appears on anchor text
-- [ ] Accept suggestion → text replaced, comment can be resolved
-- [ ] Reject suggestion → text unchanged, can Apply again or Reply
-- [ ] Reply to agent → agent responds with updated suggestion → Apply new version
-- [ ] Multi-turn: user sends 3+ messages, agent responds each time
-- [ ] "Explain this" comment → agent explains → user resolves without Apply
-- [ ] Anchor text deleted → Apply button disabled or toast error
-- [ ] Another suggestion active → toast warning, Apply blocked
-- [ ] Comment reply visible in thread regardless of accept/reject
-- [ ] Agent response with preamble stripped correctly on Apply
-- [ ] Works in both light and dark mode
-- [ ] BubbleMenu AI actions (Improve/Summarize/Expand) still work correctly
-- [ ] External change diff review still works correctly
+- [x]`npx tsc --noEmit` passes
+- [x]Delegate comment → agent responds → Apply button visible on reply
+- [x]Click Apply → inline suggestion appears on anchor text
+- [x]Accept suggestion → text replaced, comment can be resolved
+- [x]Reject suggestion → text unchanged, can Apply again or Reply
+- [x]Reply to agent → agent responds with updated suggestion → Apply new version
+- [x]Multi-turn: user sends 3+ messages, agent responds each time
+- [x]"Explain this" comment → agent explains → user resolves without Apply
+- [x]Anchor text deleted → Apply button disabled or toast error
+- [x]Another suggestion active → toast warning, Apply blocked
+- [x]Comment reply visible in thread regardless of accept/reject
+- [x]Agent response with preamble stripped correctly on Apply
+- [x]Works in both light and dark mode
+- [x]BubbleMenu AI actions (Improve/Summarize/Expand) still work correctly
+- [x]External change diff review still works correctly
 
 Fix any issues found.
 

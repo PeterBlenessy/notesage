@@ -273,48 +273,48 @@ interface Conversation {
 
 **Functional checks:**
 
-- [ ] Chat button in create mode: saves, streams inline, popover stays open, NO agent panel activity
+- [x]Chat button in create mode: saves, streams inline, popover stays open, NO agent panel activity
 
-- [ ] Delegate button in create mode: saves, closes, visible in activity panel
+- [x]Delegate button in create mode: saves, closes, visible in activity panel
 
-- [ ] Add button: unchanged
+- [x]Add button: unchanged
 
-- [ ] View mode header: Delegate icon for open comments, Move to Chat for done comments (no Chat button)
+- [x]View mode header: Delegate icon for open comments, Move to Chat for done comments (no Chat button)
 
-- [ ] Chat mode streaming: popover open, reply input on completion, activity collapsed
+- [x]Chat mode streaming: popover open, reply input on completion, activity collapsed
 
-- [ ] Delegate mode: popover closes, activity panel shows task
+- [x]Delegate mode: popover closes, activity panel shows task
 
-- [ ] Reply + Send: chat mode, popover stays open, no agent panel
+- [x]Reply + Send: chat mode, popover stays open, no agent panel
 
-- [ ] Reply + Delegate: delegate mode, full history sent, visible in agent panel, popover closes
+- [x]Reply + Delegate: delegate mode, full history sent, visible in agent panel, popover closes
 
-- [ ] "Move to Chat": creates NEW conversation thread with mapped messages + project auto-selected
+- [x]"Move to Chat": creates NEW conversation thread with mapped messages + project auto-selected
 
-- [ ] Conversation management: create, switch, delete conversations in chat panel
+- [x]Conversation management: create, switch, delete conversations in chat panel
 
-- [ ] Persist migration: old flat chat history wrapped in conversation
+- [x]Persist migration: old flat chat history wrapped in conversation
 
-- [ ] Bulk delegation: unchanged behavior
+- [x]Bulk delegation: unchanged behavior
 
-- [ ] Cancel/Stop: works in both modes, clears delegation mode
+- [x]Cancel/Stop: works in both modes, clears delegation mode
 
-- [ ] Cancel from activity panel: spinners stop in comment popover and comment list
+- [x]Cancel from activity panel: spinners stop in comment popover and comment list
 
-- [ ] Agent panel does NOT auto-expand when tasks are delegated — strip shows icon only
+- [x]Agent panel does NOT auto-expand when tasks are delegated — strip shows icon only
 
-- [ ] Error handling: chat mode shows error inline, delegate mode shows toast
+- [x]Error handling: chat mode shows error inline, delegate mode shows toast
 
-- [ ] Apply-to-document: works on agent replies regardless of delegation mode
+- [x]Apply-to-document: works on agent replies regardless of delegation mode
 
 **Design checks:**
 
-- [ ] Button icons communicate intent clearly
+- [x]Button icons communicate intent clearly
 
-- [ ] Conversation selector in chat panel is clean and intuitive
+- [x]Conversation selector in chat panel is clean and intuitive
 
-- [ ] No visual regression in comment list popover
+- [x]No visual regression in comment list popover
 
-- [ ] Light and dark mode
+- [x]Light and dark mode
 
-- [ ] Popover doesn't accidentally dismiss during chat streaming
+- [x]Popover doesn't accidentally dismiss during chat streaming

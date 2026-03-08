@@ -223,39 +223,39 @@ No new frontend dependencies. Uses existing shadcn/ui components (`dialog`, `dro
 
 ### Functional
 
-- [ ] `git_is_repo` correctly detects git repos (and non-repos)
+- [x] `git_is_repo` correctly detects git repos (and non-repos)
 
-- [ ] `git_status` returns accurate file statuses matching `git status` output
+- [x] `git_status` returns accurate file statuses matching `git status` output
 
-- [ ] Status indicators appear next to modified/staged/untracked files in sidebar
+- [x] Status indicators appear next to modified/staged/untracked files in sidebar
 
-- [ ] Status indicators update after saving a file
+- [x] Status indicators update after saving a file
 
-- [ ] Current branch name displays correctly
+- [x] Current branch name displays correctly
 
-- [ ] Branch switching works and refreshes file tree + status
+- [x] Branch switching works and refreshes file tree + status
 
-- [ ] Staging/unstaging files works from commit dialog
+- [x] Staging/unstaging files works from commit dialog
 
-- [ ] Committing creates a valid git commit with correct message
+- [x] Committing creates a valid git commit with correct message
 
-- [ ] Git features are completely hidden for non-git projects
+- [x] Git features are completely hidden for non-git projects
 
-- [ ] No performance regression for large repos (status fetch &lt; 500ms for 1000 files)
+- [x] No performance regression for large repos (status fetch &lt; 500ms for 1000 files)
 
 ### Design
 
-- [ ] Status badges are subtle and don't crowd the file name
+- [x] Status badges are subtle and don't crowd the file name
 
-- [ ] Branch indicator follows design system (muted, transitions, lucide icon)
+- [x] Branch indicator follows design system (muted, transitions, lucide icon)
 
-- [ ] Commit dialog looks polished (proper spacing, states, loading)
+- [x] Commit dialog looks polished (proper spacing, states, loading)
 
-- [ ] All new interactive elements have hover/active/focus states
+- [x] All new interactive elements have hover/active/focus states
 
-- [ ] Works in both light and dark mode
+- [x] Works in both light and dark mode
 
-- [ ] No chromatic accent colors — all status indicators use greyscale
+- [x] No chromatic accent colors — all status indicators use greyscale
 
 ## Out of Scope
 

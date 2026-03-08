@@ -337,41 +337,41 @@ No new Rust crate dependencies needed — JSON-RPC 2.0 over stdio is simple enou
 
 ### Functional
 
-- [ ] `copilot-language-server` binary detected when installed globally
-- [ ] LSP process starts and completes `initialize` handshake
-- [ ] OAuth device flow works — user can sign in via browser
-- [ ] `didChangeStatus` correctly updates connection status indicator
-- [ ] Document opens are synced to LSP when tab becomes active
-- [ ] Document changes are synced incrementally as user types
-- [ ] Completion request fires ~150ms after typing pause
-- [ ] Ghost text appears at cursor position with suggested text
-- [ ] Tab accepts the completion and inserts text
-- [ ] Escape dismisses the completion
-- [ ] Any keystroke dismisses the completion and processes normally
-- [ ] Ghost text does not appear during text selection
-- [ ] Ghost text does not interfere with slash commands or bubble menu
-- [ ] Completions work across tab switches (didClose old, didOpen new)
-- [ ] LSP process shuts down cleanly when app closes
-- [ ] LSP process restarts if it crashes
-- [ ] Works when Copilot is the only connection (no other providers configured)
-- [ ] Works alongside other providers (e.g., Claude for chat + Copilot for completions)
+- [x] `copilot-language-server` binary detected when installed globally
+- [x] LSP process starts and completes `initialize` handshake
+- [x] OAuth device flow works — user can sign in via browser
+- [x] `didChangeStatus` correctly updates connection status indicator
+- [x] Document opens are synced to LSP when tab becomes active
+- [x] Document changes are synced incrementally as user types
+- [x] Completion request fires ~150ms after typing pause
+- [x] Ghost text appears at cursor position with suggested text
+- [x] Tab accepts the completion and inserts text
+- [x] Escape dismisses the completion
+- [x] Any keystroke dismisses the completion and processes normally
+- [x] Ghost text does not appear during text selection
+- [x] Ghost text does not interfere with slash commands or bubble menu
+- [x] Completions work across tab switches (didClose old, didOpen new)
+- [x] LSP process shuts down cleanly when app closes
+- [x] LSP process restarts if it crashes
+- [x] Works when Copilot is the only connection (no other providers configured)
+- [x] Works alongside other providers (e.g., Claude for chat + Copilot for completions)
 
 ### Design
 
-- [ ] Ghost text is clearly distinguishable from real content (dimmed, italic)
-- [ ] Ghost text feels native — no jarring appearance/disappearance
-- [ ] Smooth fade-in transition (100ms)
-- [ ] No layout shift when ghost text appears/disappears
-- [ ] Auth flow reuses existing connection card design
-- [ ] Device code display is clear and prominent
-- [ ] Both light and dark mode look correct
+- [x] Ghost text is clearly distinguishable from real content (dimmed, italic)
+- [x] Ghost text feels native — no jarring appearance/disappearance
+- [x] Smooth fade-in transition (100ms)
+- [x] No layout shift when ghost text appears/disappears
+- [x] Auth flow reuses existing connection card design
+- [x] Device code display is clear and prominent
+- [x] Both light and dark mode look correct
 
 ### Performance
 
-- [ ] Completion request-to-display under 500ms in normal conditions
-- [ ] No visible editor lag while LSP is running
-- [ ] Document sync does not block the editor
-- [ ] Dismissed completions don't cause flickering
+- [x] Completion request-to-display under 500ms in normal conditions
+- [x] No visible editor lag while LSP is running
+- [x] Document sync does not block the editor
+- [x] Dismissed completions don't cause flickering
 
 ## Out of Scope
 

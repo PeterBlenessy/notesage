@@ -348,7 +348,7 @@ No new libraries. Uses existing:
 
 - [x] Strip and panel work in both light and dark mode
 
-- [ ] Transitions for panel show/hide are smooth (slide in/out)
+- [x]Transitions for panel show/hide are smooth (slide in/out)
 
 - [x] Task status icons are clear and distinguishable
 

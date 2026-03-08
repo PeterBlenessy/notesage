@@ -461,109 +461,109 @@ src/
 
 ### Functional — Comments
 
-- [ ] Can select text and add a comment via bubble menu or Cmd+Shift+M
+- [x]Can select text and add a comment via bubble menu or Cmd+Shift+M
 
-- [ ] Comment highlight appears on the commented text range
+- [x]Comment highlight appears on the commented text range
 
-- [ ] Clicking a highlight opens the comment popover with body, author, timestamp
+- [x]Clicking a highlight opens the comment popover with body, author, timestamp
 
-- [ ] Can edit a comment's body text
+- [x]Can edit a comment's body text
 
-- [ ] Can delete a comment (with confirmation)
+- [x]Can delete a comment (with confirmation)
 
-- [ ] Comments persist across app restarts (sidecar JSON in `.notesage/comments/`)
+- [x]Comments persist across app restarts (sidecar JSON in `.notesage/comments/`)
 
-- [ ] Comments survive document edits (positions remap correctly)
+- [x]Comments survive document edits (positions remap correctly)
 
-- [ ] Comments re-anchor correctly after closing and reopening a file
+- [x]Comments re-anchor correctly after closing and reopening a file
 
-- [ ] Document UUID is lazily generated in frontmatter on first comment
+- [x]Document UUID is lazily generated in frontmatter on first comment
 
-- [ ] Document index (`.notesage/doc-index.json`) rebuilds on project open
+- [x]Document index (`.notesage/doc-index.json`) rebuilds on project open
 
-- [ ] Comments survive file rename (UUID-based identity)
+- [x]Comments survive file rename (UUID-based identity)
 
-- [ ] Multiple comments on different text ranges in the same document work
+- [x]Multiple comments on different text ranges in the same document work
 
 ### Functional — Git Branch Diff Review
 
-- [ ] Can select a branch to compare against
+- [x]Can select a branch to compare against
 
-- [ ] Changed files between branches are listed
+- [x]Changed files between branches are listed
 
-- [ ] Opening a changed file shows inline diff decorations
+- [x]Opening a changed file shows inline diff decorations
 
-- [ ] Insertions displayed with green background
+- [x]Insertions displayed with green background
 
-- [ ] Deletions displayed with red strikethrough
+- [x]Deletions displayed with red strikethrough
 
-- [ ] Per-hunk accept/reject buttons work correctly
+- [x]Per-hunk accept/reject buttons work correctly
 
-- [ ] "Accept All" applies all changes from the branch diff
+- [x]"Accept All" applies all changes from the branch diff
 
-- [ ] "Reject All" clears all diff decorations
+- [x]"Reject All" clears all diff decorations
 
-- [ ] Cmd+Enter / Cmd+Backspace accept/reject next change
+- [x]Cmd+Enter / Cmd+Backspace accept/reject next change
 
-- [ ] Accepting a hunk modifies editor content correctly
+- [x]Accepting a hunk modifies editor content correctly
 
-- [ ] Line-to-ProseMirror position mapping is accurate for headings, paragraphs, lists, code blocks
+- [x]Line-to-ProseMirror position mapping is accurate for headings, paragraphs, lists, code blocks
 
-- [ ] Review state clears when switching to a non-diffed file
+- [x]Review state clears when switching to a non-diffed file
 
 ### Functional — Filesystem Watcher
 
-- [ ] Watcher starts when a project folder is opened
+- [x]Watcher starts when a project folder is opened
 
-- [ ] Editing a file in an external editor triggers detection
+- [x]Editing a file in an external editor triggers detection
 
-- [ ] Clean tabs auto-reload silently
+- [x]Clean tabs auto-reload silently
 
-- [ ] Dirty tabs show banner with "Reload" / "Keep"
+- [x]Dirty tabs show banner with "Reload" / "Keep"
 
-- [ ] "Reload" replaces editor content with disk version
+- [x]"Reload" replaces editor content with disk version
 
-- [ ] "Keep" dismisses banner and marks tab dirty
+- [x]"Keep" dismisses banner and marks tab dirty
 
-- [ ] Notesage's own saves do NOT trigger false detection
+- [x]Notesage's own saves do NOT trigger false detection
 
-- [ ] File tree updates when files are created/deleted externally
+- [x]File tree updates when files are created/deleted externally
 
-- [ ] Watcher is debounced — rapid changes don't cause event storms
+- [x]Watcher is debounced — rapid changes don't cause event storms
 
-- [ ] Sidebar shows external modification indicator
+- [x]Sidebar shows external modification indicator
 
 ### Functional — Integration
 
-- [ ] Comments and diff review work independently
+- [x]Comments and diff review work independently
 
-- [ ] Existing AI suggestion decorations still work alongside comments and diffs
+- [x]Existing AI suggestion decorations still work alongside comments and diffs
 
-- [ ] Markdown round-trip test still passes (comments don't affect markdown content)
+- [x]Markdown round-trip test still passes (comments don't affect markdown content)
 
-- [ ] Git status indicators still work alongside new indicators
+- [x]Git status indicators still work alongside new indicators
 
-- [ ] Export (PDF) still works — comments are not included in export
+- [x]Export (PDF) still works — comments are not included in export
 
-- [ ] Performance: watcher adds no perceptible latency to normal editing
+- [x]Performance: watcher adds no perceptible latency to normal editing
 
-- [ ] App starts in under 1 second with watcher enabled
+- [x]App starts in under 1 second with watcher enabled
 
 ### Design
 
-- [ ] Comment highlight is subtle — does not compete with text readability
+- [x]Comment highlight is subtle — does not compete with text readability
 
-- [ ] Comment popover follows design system (neutral palette, rounded corners, proper spacing)
+- [x]Comment popover follows design system (neutral palette, rounded corners, proper spacing)
 
-- [ ] External change banner is noticeable but not alarming
+- [x]External change banner is noticeable but not alarming
 
-- [ ] Inline diff colors are consistent with AI suggestion extension
+- [x]Inline diff colors are consistent with AI suggestion extension
 
-- [ ] All new UI works in both light and dark mode
+- [x]All new UI works in both light and dark mode
 
-- [ ] Transitions are smooth (popover open/close, banner appear/dismiss, diff show/hide)
+- [x]Transitions are smooth (popover open/close, banner appear/dismiss, diff show/hide)
 
-- [ ] Sidebar indicators are visually distinct from git status letters
+- [x]Sidebar indicators are visually distinct from git status letters
 
 ## Out of Scope
 

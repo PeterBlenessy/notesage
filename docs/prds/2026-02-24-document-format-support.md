@@ -396,47 +396,47 @@ No new Rust crate dependencies required for Part 1-5. PPTX/ODT import (Part 6) m
 
 ### Functional
 
-- [ ] Local images with relative paths render in the editor
+- [x]Local images with relative paths render in the editor
 
-- [ ] Images with absolute file paths render in the editor
+- [x]Images with absolute file paths render in the editor
 
-- [ ] Remote URL images continue to work unchanged
+- [x]Remote URL images continue to work unchanged
 
-- [ ] Image insertion offers both URL and local file picker
+- [x]Image insertion offers both URL and local file picker
 
-- [ ] Source mode toggle preserves document content (no data loss on switch)
+- [x]Source mode toggle preserves document content (no data loss on switch)
 
-- [ ] Copilot ghost text completions work in source mode
+- [x]Copilot ghost text completions work in source mode
 
-- [ ] AI text actions (improve, expand, summarize) work on selected text in source mode
+- [x]AI text actions (improve, expand, summarize) work on selected text in source mode
 
-- [ ] PDF files open in a viewer tab with page navigation and zoom
+- [x]PDF files open in a viewer tab with page navigation and zoom
 
-- [ ] DOCX files render with formatting preserved (colors, tables, fonts)
+- [x]DOCX files render with formatting preserved (colors, tables, fonts)
 
-- [ ] DOCX import produces clean markdown with headings, lists, and tables
+- [x]DOCX import produces clean markdown with headings, lists, and tables
 
-- [ ] Opening a non-markdown file does not crash or corrupt the editor
+- [x]Opening a non-markdown file does not crash or corrupt the editor
 
-- [ ] Tab icons reflect file type
+- [x]Tab icons reflect file type
 
-- [ ] File type detection works for all supported extensions
+- [x]File type detection works for all supported extensions
 
 ### Design
 
-- [ ] CodeMirror theme matches Notesage's neutral greyscale palette in both light and dark modes
+- [x]CodeMirror theme matches Notesage's neutral greyscale palette in both light and dark modes
 
-- [ ] Source mode has the same centered layout feel as WYSIWYG (max-width, padding)
+- [x]Source mode has the same centered layout feel as WYSIWYG (max-width, padding)
 
-- [ ] PDF viewer toolbar is clean and minimal, consistent with Notesage design
+- [x]PDF viewer toolbar is clean and minimal, consistent with Notesage design
 
-- [ ] DOCX viewer wrapper matches the app theme
+- [x]DOCX viewer wrapper matches the app theme
 
-- [ ] Mode toggle transition is smooth (no flash or layout jump)
+- [x]Mode toggle transition is smooth (no flash or layout jump)
 
-- [ ] Image insertion dialog follows shadcn/ui patterns
+- [x]Image insertion dialog follows shadcn/ui patterns
 
-- [ ] All new UI works in both light and dark mode
+- [x]All new UI works in both light and dark mode
 
 ## Out of Scope
 

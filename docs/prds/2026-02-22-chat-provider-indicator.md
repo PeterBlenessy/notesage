@@ -76,14 +76,14 @@ Small provider logo + label below assistant message content, above activity log 
 
 ## Quality Gates
 
-- [ ] `npx tsc --noEmit` passes
-- [ ] Footer shows active provider logo + label when connection is configured
-- [ ] Clicking footer indicator opens popover with interactive-capable connections
-- [ ] Selecting a connection changes the active provider; new messages use it
-- [ ] Active connection highlighted in the list
-- [ ] Footer hides gracefully when no connection is configured
-- [ ] Assistant messages show provider badge after completion (not during streaming)
-- [ ] Switching providers mid-conversation: old messages keep old badge, new messages get new badge
-- [ ] Removing a connection doesn't break badges on existing messages (snapshot fields)
-- [ ] Provider logos render correctly in both light and dark mode
-- [ ] Visual style matches design system (neutral greyscale, consistent sizing)
+- [x] `npx tsc --noEmit` passes
+- [x] Footer shows active provider logo + label when connection is configured
+- [x] Clicking footer indicator opens popover with interactive-capable connections
+- [x] Selecting a connection changes the active provider; new messages use it
+- [x] Active connection highlighted in the list
+- [x] Footer hides gracefully when no connection is configured
+- [x] Assistant messages show provider badge after completion (not during streaming)
+- [x] Switching providers mid-conversation: old messages keep old badge, new messages get new badge
+- [x] Removing a connection doesn't break badges on existing messages (snapshot fields)
+- [x] Provider logos render correctly in both light and dark mode
+- [x] Visual style matches design system (neutral greyscale, consistent sizing)

@@ -136,17 +136,17 @@ None — all required components (Button, permission store, Tauri invoke, lucide
 
 ## Quality Gates
 
-- [ ] `npx tsc --noEmit` passes
-- [ ] Read-only tool calls auto-approve silently (no UI change)
-- [ ] Write tool calls show a permission card with Allow/Deny buttons
-- [ ] Clicking Allow sends approval, card disappears, agent continues
-- [ ] Clicking Deny sends cancellation, card disappears, agent handles gracefully
-- [ ] Multiple pending requests stack as separate cards
-- [ ] Cancelling chat denies and clears all pending requests
-- [ ] Clearing chat denies and clears all pending requests
-- [ ] Agent stream error/completion cleans up pending requests
-- [ ] Permission cards render correctly in both light and dark mode
-- [ ] Card styling matches design system (greyscale, rounded-lg, proper spacing)
+- [x]`npx tsc --noEmit` passes
+- [x]Read-only tool calls auto-approve silently (no UI change)
+- [x]Write tool calls show a permission card with Allow/Deny buttons
+- [x]Clicking Allow sends approval, card disappears, agent continues
+- [x]Clicking Deny sends cancellation, card disappears, agent handles gracefully
+- [x]Multiple pending requests stack as separate cards
+- [x]Cancelling chat denies and clears all pending requests
+- [x]Clearing chat denies and clears all pending requests
+- [x]Agent stream error/completion cleans up pending requests
+- [x]Permission cards render correctly in both light and dark mode
+- [x]Card styling matches design system (greyscale, rounded-lg, proper spacing)
 
 ## Out of Scope
 

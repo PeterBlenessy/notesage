@@ -594,39 +594,39 @@ Phase 6f: Deep Codex Integration (Future Enhancement)
 
 ### Functional
 
-- [ ] Existing API key auth works unchanged for Anthropic, OpenAI, Ollama
+- [x] Existing API key auth works unchanged for Anthropic, OpenAI, Ollama
 
-- [ ] Connections persist across app restarts
+- [x] Connections persist across app restarts
 
-- [ ] Smart auto-assignment works: first connection fills all compatible use case slots
+- [x] Smart auto-assignment works: first connection fills all compatible use case slots
 
-- [ ] Per-use-case routing: interactive, agent tasks, and inline completion can use different providers
+- [x] Per-use-case routing: interactive, agent tasks, and inline completion can use different providers
 
-- [ ] Changing a use case's provider takes effect immediately (no app restart)
+- [x] Changing a use case's provider takes effect immediately (no app restart)
 
-- [ ] Migration from v1 ai-store preserves existing configuration
+- [x] Migration from v1 ai-store preserves existing configuration
 
-- [ ] Agent binary availability check reports which ACP agents are installed
+- [x] Agent binary availability check reports which ACP agents are installed
 
-- [ ] ACP interactive agent spawns, initializes, and authenticates (both API key and subscription)
+- [x] ACP interactive agent spawns, initializes, and authenticates (both API key and subscription)
 
-- [ ] Chat messages route through ACP for agent_managed connections and stream back correctly Inline actions (Improve, Summarize, Expand) route through ACP for agent_managed connections ACP task agent spawns separately from interactive agent
+- [x] Chat messages route through ACP for agent_managed connections and stream back correctly Inline actions (Improve, Summarize, Expand) route through ACP for agent_managed connections ACP task agent spawns separately from interactive agent
 
-- [ ] ACP permission requests surface in the UI and user can accept/reject
+- [x] ACP permission requests surface in the UI and user can accept/reject
 
-- [ ] Agent file changes trigger the existing external change review flow
+- [x] Agent file changes trigger the existing external change review flow
 
-- [ ] ACP session can be cancelled mid-turn
+- [x] ACP session can be cancelled mid-turn
 
-- [ ] ACP session can be resumed (load previous session)
+- [x] ACP session can be resumed (load previous session)
 
-- [ ] Claude Code subscription auth works via `browser popup (no terminal required) Multiple agents can run simultaneously (interactive + task) Agent Activity Panel shows running agents with correct status indicators Agent Activity Panel can be minimized to a strip Design Connections list looks polished (provider logos, status indicators, capability badges) Provider picker shows capability guidance (which use cases each provider supports) Free tier indicators are discrete but informative Auth flow is smooth (click → browser popup → connected indicator) Advanced routing section is discoverable but not overwhelming Agent Activity Panel fits the app's design language (minimizable, clean status indicators)`
+- [x] Claude Code subscription auth works via `browser popup (no terminal required) Multiple agents can run simultaneously (interactive + task) Agent Activity Panel shows running agents with correct status indicators Agent Activity Panel can be minimized to a strip Design Connections list looks polished (provider logos, status indicators, capability badges) Provider picker shows capability guidance (which use cases each provider supports) Free tier indicators are discrete but informative Auth flow is smooth (click → browser popup → connected indicator) Advanced routing section is discoverable but not overwhelming Agent Activity Panel fits the app's design language (minimizable, clean status indicators)`
 
-- [ ] Error states have clear CTAs (not just error messages)
+- [x] Error states have clear CTAs (not just error messages)
 
-- [ ] Both light and dark mode look correct
+- [x] Both light and dark mode look correct
 
-- [ ] Consistent with existing settings dialog design language
+- [x] Consistent with existing settings dialog design language
 
 ## Out of Scope
 

@@ -388,57 +388,57 @@ See `McpState` struct in Technical Approach above. Registered in `lib.rs` alongs
 
 ### Functional
 
-- [ ] Can add an MCP server via Settings UI with command, args, and env
+- [x] Can add an MCP server via Settings UI with command, args, and env
 
-- [ ] MCP server starts on enable and stops on disable
+- [x] MCP server starts on enable and stops on disable
 
-- [ ] Tools are discovered from running servers via `tools/list`
+- [x] Tools are discovered from running servers via `tools/list`
 
-- [ ] MCP tools appear in the Tools popover alongside ACP tools
+- [x] MCP tools appear in the Tools popover alongside ACP tools
 
-- [ ] `mcp_call_tool` successfully invokes a tool and returns results
+- [x] `mcp_call_tool` successfully invokes a tool and returns results
 
-- [ ] Config persists in `~/.notesage/mcp.json` (global) or `<project>/.notesage/mcp.json` (project)
+- [x] Config persists in `~/.notesage/mcp.json` (global) or `<project>/.notesage/mcp.json` (project)
 
-- [ ] Import from Claude Desktop discovers and copies server configs
+- [x] Import from Claude Desktop discovers and copies server configs
 
-- [ ] Import from Cursor discovers and copies server configs
+- [x] Import from Cursor discovers and copies server configs
 
-- [ ] Servers auto-start on app launch for enabled servers
+- [x] Servers auto-start on app launch for enabled servers
 
-- [ ] Servers shut down cleanly on app exit (no orphaned processes)
+- [x] Servers shut down cleanly on app exit (no orphaned processes)
 
-- [ ] Server crash/error shows clear status in Settings UI with retry option
+- [x] Server crash/error shows clear status in Settings UI with retry option
 
-- [ ] Project-scoped servers override global servers with same name
+- [x] Project-scoped servers override global servers with same name
 
-- [ ] Removing a server stops it and removes config
+- [x] Removing a server stops it and removes config
 
-- [ ] App functions normally with zero MCP servers configured (graceful degradation)
+- [x] App functions normally with zero MCP servers configured (graceful degradation)
 
 ### Design
 
-- [ ] Server cards follow the same visual pattern as skill cards in Settings
+- [x] Server cards follow the same visual pattern as skill cards in Settings
 
-- [ ] Status indicators (running/stopped/error) are clear and use consistent iconography
+- [x] Status indicators (running/stopped/error) are clear and use consistent iconography
 
-- [ ] Add Server dialog is clean, follows existing dialog patterns
+- [x] Add Server dialog is clean, follows existing dialog patterns
 
-- [ ] Import flow shows clear preview before committing
+- [x] Import flow shows clear preview before committing
 
-- [ ] MCP tools section in Tools popover is visually separated from ACP tools
+- [x] MCP tools section in Tools popover is visually separated from ACP tools
 
-- [ ] All states (empty, loading, error) are handled with appropriate UI
+- [x] All states (empty, loading, error) are handled with appropriate UI
 
 ### Performance
 
-- [ ] Server startup does not block the app UI
+- [x] Server startup does not block the app UI
 
-- [ ] Tool discovery completes within 5 seconds per server
+- [x] Tool discovery completes within 5 seconds per server
 
-- [ ] Tool calls do not freeze the UI (async with loading indicators)
+- [x] Tool calls do not freeze the UI (async with loading indicators)
 
-- [ ] Multiple servers can run concurrently without issues
+- [x] Multiple servers can run concurrently without issues
 
 ## Out of Scope
 
