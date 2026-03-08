@@ -60,3 +60,4 @@ Chronological log of major implementation milestones and changes.
 | 054 | [Release v0.18.2](054-release-v0.18.2.md) | Download-webpage bundled skill, chat panel empty state fix, bundled extraction cleanup |
 | 055 | [Release v0.18.3](055-release-v0.18.3.md) | MCP client integration, skill/agent editing, creation improvements |
 | 056 | [Release v0.18.4](056-release-v0.18.4.md) | Structured logging, file-backed persistence, store bounds, sleep/wake recovery, leak fixes |
+| 057 | [Release v0.18.5](057-release-v0.18.5.md) | AI-assisted research skill pack (Phase 8) — collect, search, synthesize, cite |

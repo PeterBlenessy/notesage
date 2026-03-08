@@ -6,7 +6,7 @@ id: ""
 
 Notesage is a rich text markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
-**Current version:** 0.18.4
+**Current version:** 0.18.5
 
 ## Current Features
 
@@ -442,14 +442,55 @@ Document comments with AI agent delegation and external change tracking — foun
 - Cross-file Accept All / Reject All (currently per-file only)
 - Comment assignment to specific agents (currently always uses `agent_tasks` routing slot)
 
+### Skills & Agents Platform
+
+Extensible AI capability system based on open standards — users can add new AI skills and agent behaviors by dropping folders, with no app rebuild required.
+
+**Agent Skills & Script Execution:**
+
+- Discover skills from connected providers' filesystem paths (`~/.claude/skills/`, `~/.codex/skills/`, `~/.gemini/skills/`, etc.)
+- Notesage skill hierarchy: project `.notesage/skills/` overrides global `~/.notesage/skills/`, which overrides external provider skills
+- Agent instruction files: `.notesage/agents.md` (project/global) injected into AI context, with discovery of existing AGENTS.md/CLAUDE.md/GEMINI.md
+- Script execution runtime: Tauri command for running skill scripts (bash, python, node), available to all connection types (ACP and direct API)
+- Built-in meta-skills: `create-skill` and `create-agent` ship with the app
+- Skills browser in settings for viewing, enabling/disabling, and managing discovered skills
+- Skill & agent management: delete and move (global ↔ project) for custom skills/agents, gated behind Settings > Advanced toggle
+- Auto-rescan: filesystem watcher triggers skill/agent re-discovery; manual rescan button with spinner feedback
+- Permission model: per-execution, per-session, or always-allow for script execution
+
+**MCP Client Integration:**
+
+- MCP (Model Context Protocol) client in Rust backend using stdio transport with JSON-RPC 2.0
+- Spawn and manage MCP servers as child processes with cleanup on app exit
+- Tool discovery from connected servers, displayed in Tools popover alongside ACP agent tools
+- Import existing MCP configs from Claude Desktop, Cursor, VS Code
+- `.notesage/mcp.json` (project) and `~/.notesage/mcp.json` (global) for Notesage-specific servers
+- Settings UI: MCP Servers section with server cards, Add Server dialog, Import dialog
+
+**Addressable Agents:**
+
+- File-based agents replacing legacy personas, aligned with industry standards (GitHub Copilot, Claude Code, VS Code Copilot)
+- Discover agent files from `agents/` directories: `.notesage/agents/`, `~/.notesage/agents/`, `~/.claude/agents/`, `.github/agents/`, etc.
+- Agent files: markdown with YAML frontmatter (`name`, `description`, `model`, `icon`, `allowed-tools`)
+- Agent picker dropdown in chat footer; `@agent-name` addressing in chat input
+- 7 bundled agents with one-time migration from legacy custom personas
+
+**Architecture:**
+
+- Adopts two open standards: Agent Skills (SKILL.md) for capabilities/workflows, MCP for callable tool servers
+- Agent Skills adopted by Claude Code, Codex CLI, Gemini CLI, VS Code Copilot, Cursor, and 30+ tools
+- MCP adopted by all major AI tools with 5,800+ servers and 300+ clients
+- Script execution via `std::process::Command` with timeout, path traversal protection, and interpreter resolution
+- PRDs: `docs/prds/2026-03-05-skills-and-agents-platform.md`, `docs/prds/2026-03-07-addressable-agents.md`
+
 ### AI-Assisted Research (Skill Pack)
 
-AI-powered research workflow built entirely on the Phase 7 Skills & Agents Platform — collect, organize, search, synthesize, and cite from web sources.
+AI-powered research workflow built entirely on the Skills & Agents Platform — collect, organize, search, synthesize, and cite from web sources.
 
 **Skills:**
 
 | Skill | Purpose | Type |
-|-------|---------|------|
+| --- | --- | --- |
 | `download-webpage` | Fetch URL → clean markdown with metadata | Script-based (enhanced with research frontmatter) |
 | `save-research` | Organize research files with tags and metadata | Script-based |
 | `search-research` | Search research corpus by tag, keyword, or content | Script-based |
@@ -464,7 +505,7 @@ AI-powered research workflow built entirely on the Phase 7 Skills & Agents Platf
 
 **Collecting:**
 
-- Save web pages via chat: "save this article: [URL]"
+- Save web pages via chat: "save this article: \[URL\]"
 - Batch URL saving with sequential processing and summary
 - Author and publication date extracted from page metadata (`<meta>` tags, JSON-LD, Open Graph)
 - Duplicate URL detection with overwrite/keep-both/skip choices
@@ -585,63 +626,9 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 
 ## Roadmap
 
-### Phase 7 — Skills & Agents Platform
+### Phase 7 — Skills & Agents Platform ✅
 
-**Goal:** Extensible AI capability system based on open standards — users can add new AI skills and agent behaviors by dropping folders, with no app rebuild required.
-
-**Step A — Agent Skills & Script Execution:** ✅ Implemented
-
-- Discover existing skills from connected providers' filesystem paths (`~/.claude/skills/`, `~/.codex/skills/`, `~/.gemini/skills/`, etc.)
-- Notesage skill hierarchy: project `.notesage/skills/` overrides global `~/.notesage/skills/`, which overrides external provider skills
-- Agent instruction files: `.notesage/agents.md` (project/global) injected into AI context, with discovery of existing AGENTS.md/CLAUDE.md/GEMINI.md
-- Script execution runtime: Tauri command for running skill scripts (bash, python, node), available to all connection types (ACP and direct API)
-- Built-in meta-skills: `create-skill` and `create-agent` ship with the app — the system dogfoods itself
-- Wizard UI for non-technical users + prompt-based creation for advanced users
-- Skills browser in settings for viewing, enabling/disabling, and managing discovered skills
-- Skill & agent management: delete and move (global ↔ project) for custom skills/agents, gated behind Settings &gt; Advanced toggle
-- Auto-rescan: filesystem watcher triggers skill/agent re-discovery via `rescanCounter` in skill-store; manual rescan button with spinner feedback
-- Progressive disclosure: only skill descriptions loaded initially (\~100 tokens each), full body and scripts loaded on demand
-- Permission model: per-execution, per-session, or always-allow for script execution, extending existing ACP permission tiers
-
-**Step B — MCP Client Integration:** ✅ Implemented
-
-- MCP (Model Context Protocol) client in Rust backend using stdio transport with JSON-RPC 2.0 over Content-Length framing
-- Spawn and manage MCP servers as child processes with `kill_on_drop(true)` — SIGKILL on app exit via `McpState::stop_all_sync()`
-- MCP protocol handshake: `initialize` → `initialized` → `tools/list` for tool discovery
-- `tools/call` for invoking tools with JSON arguments, returning content arrays (text, image, resource)
-- Tool discovery from connected servers, displayed in Tools popover alongside ACP agent tools
-- Import existing MCP server configurations from Claude Desktop (`~/.claude/claude_desktop_config.json`), Cursor (`~/.cursor/mcp.json`), VS Code settings
-- `.notesage/mcp.json` (project) and `~/.notesage/mcp.json` (global) for Notesage-specific servers — Claude Desktop-compatible format
-- Settings UI: MCP Servers section in Skills & Agents tab with server cards (status dots, tool count, enable/disable, context menu), Add Server dialog, Import dialog with source preview
-- Auto-start enabled servers on app launch with staggered 100ms delays
-- Filesystem watcher triggers MCP config rescan on `.notesage/mcp.json` changes
-- `mcp-store` (Zustand, partially persisted): server registry with `enabledOverrides` persisted, server list rebuilt from config scan
-
-**Step C — Addressable Agents (Personas to Agents):** ✅ Implemented
-
-- Replaced hardcoded persona system with discoverable, file-based agents aligned with industry standards (GitHub Copilot, Claude Code, VS Code Copilot)
-- Discover agent files from `agents/` directories: `.notesage/agents/`, `~/.notesage/agents/`, `~/.claude/agents/`, `.github/agents/`, etc.
-- Agent files: markdown with YAML frontmatter (`name`, `description`, `model`, `icon`, `allowed-tools`)
-- Agent picker dropdown replaces persona picker in chat footer
-- `@agent-name` addressing in chat input for per-message agent scoping
-- Agent-to-skill connection: `allowed-tools` filters which skills an agent can access
-- Per-agent model preference: `model` field maps to available connections
-- 7 built-in personas migrated to bundled agent files; custom personas auto-migrated on first launch
-- Two distinct layers preserved: agent instructions (`agents.md`) = always-on context; agents (`agents/*.md`) = selectable roles
-- `useSkillDiscovery` hook mounted in `App.tsx` orchestrates the full discovery lifecycle
-- `PersonasSettings.tsx` and `PersonaIcon.tsx` removed; personas tab removed from Settings
-- PRD: `docs/prds/2026-03-07-addressable-agents.md`
-
-**Architecture considerations:**
-
-- Adopts two complementary open standards: Agent Skills (SKILL.md) for capabilities/workflows, MCP for callable tool servers
-- Agent Skills adopted by Claude Code, Codex CLI, Gemini CLI, VS Code Copilot, Cursor, and 30+ tools (350,000+ skills available)
-- MCP adopted by all major AI tools with 5,800+ servers and 300+ clients
-- Addressable agents follow the cross-tool standard: `.github/agents/*.md` (Copilot), `.claude/agents/*.md` (Claude Code), with shared frontmatter fields
-- Script execution via `std::process::Command` with timeout, path traversal protection, and interpreter resolution
-- `copy_directory` Tauri command for recursive cross-filesystem directory copies (used by skill/agent move operations)
-- Phase 10 sandboxing wraps the script execution layer with OS-level isolation
-- PRDs: `docs/prds/2026-03-05-skills-and-agents-platform.md`, `docs/prds/2026-03-07-addressable-agents.md`
+Implemented — see "Skills & Agents Platform" in Current Features above.
 
 ### Phase 8 — AI-Assisted Research (Skill Pack) ✅
 
