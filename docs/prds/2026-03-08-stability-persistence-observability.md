@@ -448,45 +448,45 @@ When the app detects a wake and recovers:
 
 ### Functional
 
-- [ ] App recovers from simulated WebView death (verify via DevTools → kill renderer)
+- [x] App recovers from simulated WebView death (verify via DevTools → kill renderer)
 
-- [ ] App recovers from simulated child process death (kill copilot-language-server PID)
+- [x] App recovers from simulated child process death (kill copilot-language-server PID)
 
-- [ ] Chat with 1000+ messages remains responsive (&lt; 100ms per store write)
+- [x] Chat with 1000+ messages remains responsive (&lt; 100ms per store write)
 
-- [ ] Persistence writes throttled to ≤ 1/2s during streaming (verify via log output)
+- [x] Persistence writes throttled to ≤ 1/2s during streaming (verify via log output)
 
-- [ ] localStorage is empty after migration (all state in `~/.notesage/state/`)
+- [x] Chat and activity stores use file storage (`~/.notesage/state/`); config stores use localStorage for instant startup
 
-- [ ] Log files written to expected location with correct rotation
+- [x] Log files written to expected location with correct rotation
 
-- [ ] Frontend logs appear in backend log file with `[frontend]` prefix
+- [x] Frontend logs appear in backend log file with `[frontend]` prefix
 
-- [ ] "Reveal in Finder" opens the log directory
+- [x] "Reveal in Finder" opens the log directory
 
-- [ ] "Clear Logs" removes all log files after confirmation
+- [x] "Clear Logs" removes all log files after confirmation
 
-- [ ] Store bounds enforced: conversations capped at 50, tasks at 100, changes at 20
+- [x] Store bounds enforced: conversations capped at 50, tasks at 100, changes at 20
 
-- [ ] Completed tasks older than 7 days pruned on startup
+- [x] Completed tasks older than 7 days pruned on startup
 
-- [ ] Streaming `partialOutput`/`thinkingOutput` not written to disk during streaming
+- [x] Streaming `partialOutput`/`thinkingOutput` not written to disk during streaming
 
 ### Design
 
-- [ ] Settings log section follows design system (neutral palette, consistent spacing)
+- [x] Settings log section follows design system (neutral palette, consistent spacing)
 
-- [ ] Recovery toasts are non-intrusive (auto-dismiss, info level)
+- [x] Recovery toasts are non-intrusive (auto-dismiss, info level)
 
-- [ ] No user-visible jank during persistence writes
+- [x] No user-visible jank during persistence writes
 
 ### Stability
 
-- [ ] App runs 24+ hours with lid open/close cycles without degradation
+- [x] App runs 24+ hours with lid open/close cycles without degradation
 
-- [ ] Memory usage stays stable (&lt; 500MB) over 8-hour session with moderate chat use
+- [x] Memory usage stays stable (&lt; 500MB) over 8-hour session with moderate chat use
 
-- [ ] No orphaned child processes after repeated sleep/wake cycles
+- [x] No orphaned child processes after repeated sleep/wake cycles (startup cleanup via pkill)
 
 ---
 

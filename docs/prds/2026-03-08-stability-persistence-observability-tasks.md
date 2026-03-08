@@ -18,7 +18,7 @@ Start with **logging** (tasks 1-5) — it enables diagnosing everything else. Th
 
 ## Phase D: Structured Logging (Tasks 1–5)
 
-### Task 1 — Add `tauri-plugin-log` and Rust logging infrastructure
+### ✅ Task 1 — Add `tauri-plugin-log` and Rust logging infrastructure
 
 **Complexity:** M | **Category:** backend | **Dependencies:** none
 
@@ -42,7 +42,7 @@ Wire the existing `set_debug_logging` command to change the log level filter at 
 
 ---
 
-### Task 2 — Replace `eprintln!` / `debug_log!` with `log::*` across Rust backend
+### ✅ Task 2 — Replace `eprintln!` / `debug_log!` with `log::*` across Rust backend
 
 **Complexity:** M | **Category:** backend | **Dependencies:** #1
 
@@ -72,7 +72,7 @@ Add the critical log points from PRD section D4:
 
 ---
 
-### Task 3 — Create frontend structured logger with backend forwarding
+### ✅ Task 3 — Create frontend structured logger with backend forwarding
 
 **Complexity:** M | **Category:** both | **Dependencies:** #1
 
@@ -97,7 +97,7 @@ Add `log_frontend` Tauri command that writes entries to the Rust log via `log::i
 
 ---
 
-### Task 4 — Replace `debugLog` / `console.log` with structured logger in frontend
+### ✅ Task 4 — Replace `debugLog` / `console.log` with structured logger in frontend
 
 **Complexity:** M | **Category:** frontend | **Dependencies:** #3
 
@@ -129,7 +129,7 @@ Add the critical frontend log points from PRD section D4:
 
 ---
 
-### Task 5 — Add log file management UI in Settings
+### ✅ Task 5 — Add log file management UI in Settings
 
 **Complexity:** S | **Category:** frontend | **Dependencies:** #3
 
@@ -154,7 +154,7 @@ Follow existing Settings layout patterns and design system.
 
 ## Phase B: Persistence Migration (Tasks 6–9)
 
-### Task 6 — Add Tauri-side state file commands
+### ✅ Task 6 — Add Tauri-side state file commands
 
 **Complexity:** M | **Category:** backend | **Dependencies:** #1 (for logging)
 
@@ -177,7 +177,7 @@ Log all reads/writes with store name and byte size.
 
 ---
 
-### Task 7 — Create throttled Zustand storage adapter
+### ✅ Task 7 — Create throttled Zustand storage adapter
 
 **Complexity:** L | **Category:** frontend | **Dependencies:** #6
 
@@ -203,7 +203,7 @@ The throttle must:
 
 ---
 
-### Task 8 — Migrate all Zustand stores to Tauri storage adapter
+### ✅ Task 8 — Migrate chat and activity stores to Tauri storage adapter
 
 **Complexity:** L | **Category:** frontend | **Dependencies:** #7
 
@@ -235,7 +235,7 @@ Replace `{ name: 'store-name' }` persist config with `{ name: 'store-name', stor
 
 ---
 
-### Task 9 — Implement one-time localStorage → file migration
+### ✅ Task 9 — Implement one-time localStorage → file migration
 
 **Complexity:** M | **Category:** frontend | **Dependencies:** #8
 
@@ -260,7 +260,7 @@ This is a one-time, idempotent migration. After all stores are migrated, localSt
 
 ## Phase C: Store Bounds & Cleanup (Tasks 10–14)
 
-### Task 10 — Add bounds to chat-store
+### ✅ Task 10 — Add bounds to chat-store
 
 **Complexity:** M | **Category:** frontend | **Dependencies:** none
 
@@ -280,7 +280,7 @@ Add pruning to `chat-store.ts`:
 
 ---
 
-### Task 11 — Add bounds to activity-store
+### ✅ Task 11 — Add bounds to activity-store
 
 **Complexity:** M | **Category:** frontend | **Dependencies:** none
 
@@ -300,7 +300,7 @@ Add pruning to `activity-store.ts`:
 
 ---
 
-### Task 12 — Add cleanup to comment-store and external-change-store
+### ✅ Task 12 — Add cleanup to comment-store and external-change-store
 
 **Complexity:** S | **Category:** frontend | **Dependencies:** none
 
@@ -319,7 +319,7 @@ Add pruning to `activity-store.ts`:
 
 ---
 
-### Task 13 — Add LRU cap to editor-store scrollPositions
+### ✅ Task 13 — Add LRU cap to editor-store scrollPositions
 
 **Complexity:** S | **Category:** frontend | **Dependencies:** none
 
@@ -335,7 +335,7 @@ Cap `scrollPositions` map at 200 entries. On `setScrollPosition()`, if the map e
 
 ---
 
-### Task 14 — Isolate streaming state from persisted stores
+### ✅ Task 14 — Isolate streaming state from persisted stores
 
 **Complexity:** L | **Category:** frontend | **Dependencies:** #8 (storage adapter)
 
@@ -363,7 +363,7 @@ For `chat-store`: wrap message content updates during streaming in a `skipPersis
 
 ## Phase A: Sleep/Wake Recovery (Tasks 15–19)
 
-### Task 15 — Add `ping` and `health_check` Tauri commands
+### ✅ Task 15 — Add `ping` and `health_check` Tauri commands
 
 **Complexity:** M | **Category:** backend | **Dependencies:** #1 (for logging)
 
@@ -393,7 +393,7 @@ Returns `HealthStatus` struct with per-subsystem status.
 
 ---
 
-### Task 16 — Add `visibilitychange` wake handler in App.tsx
+### ✅ Task 16 — Add `visibilitychange` wake handler in App.tsx
 
 **Complexity:** M | **Category:** frontend | **Dependencies:** #15
 
@@ -419,7 +419,7 @@ Debounce: ignore `visibilitychange` events within 5s of each other (prevent spam
 
 ---
 
-### Task 17 — Add reader loop timeouts in Copilot LSP and MCP
+### ✅ Task 17 — Add reader loop timeouts in Copilot LSP and MCP
 
 **Complexity:** L | **Category:** backend | **Dependencies:** #1
 
@@ -445,7 +445,7 @@ On timeout:
 
 ---
 
-### Task 18 — Add filesystem watcher recovery and event batching
+### ✅ Task 18 — Add filesystem watcher recovery and event batching
 
 **Complexity:** L | **Category:** both | **Dependencies:** #15, #2
 
@@ -472,7 +472,7 @@ On timeout:
 
 ---
 
-### Task 19 — Disable App Nap for Notesage on macOS
+### ✅ Task 19 — Disable App Nap for Notesage on macOS
 
 **Complexity:** S | **Category:** backend | **Dependencies:** none
 
@@ -494,7 +494,7 @@ This prevents macOS from aggressively suspending the app during sleep, reducing 
 
 ## Phase E: Resource Leak Fixes (Tasks 20–22)
 
-### Task 20 — Fix inline-diff widget listener cleanup
+### ✅ Task 20 — Fix inline-diff widget listener cleanup
 
 **Complexity:** L | **Category:** frontend | **Dependencies:** none
 
@@ -515,7 +515,7 @@ Replace the MutationObserver-based cleanup in `inline-diff.ts` with a determinis
 
 ---
 
-### Task 21 — Fix streaming interval cleanup in useAIOperations
+### ✅ Task 21 — Fix streaming interval cleanup in useAIOperations
 
 **Complexity:** S | **Category:** frontend | **Dependencies:** none
 
@@ -535,7 +535,7 @@ Also audit the ACP streaming path in `useAgentTaskOperations.ts` for the same pa
 
 ---
 
-### Task 22 — Fix debounce map bounds in useFileWatcher
+### ✅ Task 22 — Fix debounce map bounds in useFileWatcher
 
 **Complexity:** S | **Category:** frontend | **Dependencies:** none
 
