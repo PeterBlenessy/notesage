@@ -589,6 +589,40 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
             content: include_str!("../../../bundled-skills/download-webpage/scripts/package.json"),
             executable: false,
         },
+        // save-research
+        BundledFile {
+            relative_path: "save-research/SKILL.md",
+            content: include_str!("../../../bundled-skills/save-research/SKILL.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "save-research/scripts/save.mjs",
+            content: include_str!("../../../bundled-skills/save-research/scripts/save.mjs"),
+            executable: true,
+        },
+        // search-research
+        BundledFile {
+            relative_path: "search-research/SKILL.md",
+            content: include_str!("../../../bundled-skills/search-research/SKILL.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "search-research/scripts/search.mjs",
+            content: include_str!("../../../bundled-skills/search-research/scripts/search.mjs"),
+            executable: true,
+        },
+        // synthesize-sources
+        BundledFile {
+            relative_path: "synthesize-sources/SKILL.md",
+            content: include_str!("../../../bundled-skills/synthesize-sources/SKILL.md"),
+            executable: false,
+        },
+        // insert-citation
+        BundledFile {
+            relative_path: "insert-citation/SKILL.md",
+            content: include_str!("../../../bundled-skills/insert-citation/SKILL.md"),
+            executable: false,
+        },
         // create-agent
         BundledFile {
             relative_path: "create-agent/SKILL.md",

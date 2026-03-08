@@ -4,6 +4,8 @@ export interface ProjectMetadata {
   version: 1;
   name: string;
   description: string;
+  citationFormat?: 'links' | 'footnotes' | 'academic';
+  citationStyle?: 'apa' | 'mla' | 'chicago';
   ai: {
     provider: string | null; // Connection ID (v2) or legacy provider name
     /** @deprecated Use agentName instead. Kept for migration compatibility. */
@@ -31,7 +33,7 @@ interface ProjectMetadataStore {
   dirtyPaths: Set<string>;
 
   setMetadata: (projectPath: string, metadata: ProjectMetadata) => void;
-  updateMetadata: (projectPath: string, updates: Partial<Pick<ProjectMetadata, 'name' | 'description'>>) => void;
+  updateMetadata: (projectPath: string, updates: Partial<Pick<ProjectMetadata, 'name' | 'description' | 'citationFormat' | 'citationStyle'>>) => void;
   updateAI: (projectPath: string, updates: Partial<ProjectMetadata['ai']>) => void;
   removeMetadata: (projectPath: string) => void;
   getMetadata: (projectPath: string) => ProjectMetadata | undefined;

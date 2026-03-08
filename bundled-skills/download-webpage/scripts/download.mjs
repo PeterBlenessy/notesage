@@ -74,6 +74,10 @@ async function downloadImage(imgUrl, outputDir, slug, index, pageUrl) {
 const url = process.argv[2];
 const outputDir = process.argv[3];
 const force = process.argv.includes("--force");
+const tagsIdx = process.argv.indexOf("--tags");
+const tags = tagsIdx !== -1 && process.argv[tagsIdx + 1]
+  ? process.argv[tagsIdx + 1].split(",").map(t => t.trim()).filter(Boolean)
+  : [];
 
 if (!url || !outputDir) {
   console.error("Usage: download.mjs <url> <output_dir> [--force]");
@@ -124,6 +128,61 @@ const article = reader.parse();
 if (!article || !article.content) {
   console.error(`No extractable content from ${url}`);
   process.exit(1);
+}
+
+// --- Extract metadata from original DOM ---
+const doc = dom.window.document;
+
+function extractAuthor() {
+  // 1. Readability byline
+  if (article.byline) return article.byline;
+  // 2. <meta> tags
+  const metaAuthor = doc.querySelector('meta[name="author"]')?.getAttribute("content")
+    || doc.querySelector('meta[property="article:author"]')?.getAttribute("content");
+  if (metaAuthor) return metaAuthor;
+  // 3. JSON-LD
+  for (const script of doc.querySelectorAll('script[type="application/ld+json"]')) {
+    try {
+      const data = JSON.parse(script.textContent);
+      const items = Array.isArray(data) ? data : [data];
+      for (const item of items) {
+        if (item.author) {
+          if (typeof item.author === "string") return item.author;
+          if (item.author.name) return item.author.name;
+          if (Array.isArray(item.author) && item.author[0]?.name) return item.author[0].name;
+        }
+      }
+    } catch {}
+  }
+  return "";
+}
+
+function extractDatePublished() {
+  // 1. <meta> tags
+  const metaDate = doc.querySelector('meta[property="article:published_time"]')?.getAttribute("content")
+    || doc.querySelector('meta[name="date"]')?.getAttribute("content")
+    || doc.querySelector('meta[property="og:article:published_time"]')?.getAttribute("content");
+  if (metaDate) {
+    try { return new Date(metaDate).toISOString().split("T")[0]; } catch {}
+  }
+  // 2. <time> elements with datetime
+  const timeEl = doc.querySelector("time[datetime]");
+  if (timeEl) {
+    try { return new Date(timeEl.getAttribute("datetime")).toISOString().split("T")[0]; } catch {}
+  }
+  // 3. JSON-LD
+  for (const script of doc.querySelectorAll('script[type="application/ld+json"]')) {
+    try {
+      const data = JSON.parse(script.textContent);
+      const items = Array.isArray(data) ? data : [data];
+      for (const item of items) {
+        if (item.datePublished) {
+          try { return new Date(item.datePublished).toISOString().split("T")[0]; } catch {}
+        }
+      }
+    } catch {}
+  }
+  return "";
 }
 
 // Build slug for filenames
@@ -324,20 +383,29 @@ markdown = markdown.replace(imgRegex, (full, imgUrl) => {
 const downloadedImages = replacements.length;
 
 // Build frontmatter
+const wordCount = markdown.split(/\s+/).length;
+const author = extractAuthor();
+const datePublished = extractDatePublished();
+const dateSaved = new Date().toISOString().split("T")[0];
+
 const frontmatter = [
   "---",
   `title: "${article.title?.replace(/"/g, '\\"') || ""}"`,
   `url: "${url}"`,
-  `saved: "${new Date().toISOString().split("T")[0]}"`,
+  `source_url: "${url}"`,
+  `saved: "${dateSaved}"`,
+  `date_saved: "${dateSaved}"`,
+  `date_published: "${datePublished}"`,
   article.siteName ? `source: "${article.siteName}"` : null,
-  article.byline ? `author: "${article.byline.replace(/"/g, '\\"')}"` : null,
+  `author: "${author.replace(/"/g, '\\"')}"`,
+  `tags: [${tags.map(t => `"${t}"`).join(", ")}]`,
+  `word_count: ${wordCount}`,
   "---",
 ]
   .filter(Boolean)
   .join("\n");
 
 const content = `${frontmatter}\n\n${markdown}\n`;
-const wordCount = markdown.split(/\s+/).length;
 
 writeFileSync(filePath, content, "utf-8");
 

@@ -73,3 +73,20 @@ When processing multiple URLs (e.g., from a bookmarks file):
 - If the page has no extractable content, save whatever is available with a warning
 - If an image fails to download, keep the original URL in the markdown and continue
 - Do not check for file existence yourself — just run the script and handle the `status` field
+
+## Research Mode
+
+When the user is saving a page for research purposes (mentions "research", "save for later", "add to research", "collect", etc.):
+
+1. **Default output directory:** Use `.notesage/research/` in the current project instead of asking for a custom directory. If no project is open, use `~/Notesage/.notesage/research/`.
+
+2. **Pass tags:** If the user specified any tags (e.g., "save this for my #climate research"), pass them via the `--tags` flag:
+   ```
+   execute_skill_script("download-webpage", "scripts/download.mjs", [url, output_dir, "--tags", "climate"])
+   ```
+
+3. **Post-download organization:** After a successful download, mention that the `save-research` skill can be used to further organize the file (add more tags, move between directories, update metadata).
+
+4. **Research frontmatter:** The download script automatically includes research-friendly frontmatter fields (`source_url`, `date_saved`, `date_published`, `author`, `tags`, `word_count`), so no additional processing is needed.
+
+When the user is NOT in a research context (just wants to download a page to a specific directory), follow the standard workflow above — ask for the output directory as usual.

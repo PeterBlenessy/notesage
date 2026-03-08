@@ -565,6 +565,70 @@ listen<{ path: string; kind: string }>('file-changed', (event) => {
 });
 ```
 
+## Research Operations
+
+Located in `src-tauri/src/commands/file.rs`
+
+### search_research
+
+Searches research files (.md) in given directories by parsing YAML frontmatter and matching against query/tag filters. Designed for real-time command palette filtering.
+
+```rust
+#[tauri::command]
+pub async fn search_research(
+    dirs: Vec<String>,
+    query: Option<String>,
+    tag: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<ResearchSearchResult>, String>
+```
+
+**Parameters:**
+
+- `dirs`: Array of directory paths to search (e.g., project `.notesage/research/` paths)
+- `query`: Optional case-insensitive substring to match against title, body, source URL, and tags
+- `tag`: Optional exact tag match (case-insensitive) against the tags array
+- `limit`: Maximum results to return (default 50)
+
+**Returns:**
+
+- `Ok(Vec<ResearchSearchResult>)`: Matched files sorted by relevance descending
+- `Err(String)`: Error message
+
+**ResearchSearchResult struct:**
+
+```rust
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ResearchSearchResult {
+    pub file: String,
+    pub title: String,
+    pub tags: Vec<String>,
+    pub source_url: String,
+    pub snippet: String,
+    pub relevance: f32,
+    pub date_saved: String,
+    pub word_count: usize,
+}
+```
+
+**Relevance scoring:**
+
+- Title match: 1.0
+- Tag match: 0.8
+- URL match: 0.6
+- Body match: 0.5
+
+**Frontend usage:**
+
+```typescript
+const results = await tauriApi.searchResearch(
+  ['/path/to/project/.notesage/research', '/Users/me/Notesage/.notesage/research'],
+  'climate policy',  // query
+  'climate',         // tag
+  20                 // limit
+);
+```
+
 ## Error Handling
 
 All Tauri commands return `Result<T, String>`. The frontend should:

@@ -111,6 +111,7 @@ function App() {
   const [commandPaletteTagFiles, setCommandPaletteTagFiles] = useState<{ path: string; name: string }[]>([]);
   const [commandPaletteTagOccurrences, setCommandPaletteTagOccurrences] = useState<TagOccurrence[]>([]);
   const [commandPaletteTagSearchMode, setCommandPaletteTagSearchMode] = useState(false);
+  const [commandPaletteResearchSearchMode, setCommandPaletteResearchSearchMode] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab | undefined>(undefined);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
@@ -750,6 +751,11 @@ function App() {
       setCommandPaletteFilesOnly(true);
       setCommandPaletteOpen(true);
     },
+    onResearchSearchOpen: () => {
+      setCommandPaletteResearchSearchMode(true);
+      setCommandPaletteFilesOnly(true);
+      setCommandPaletteOpen(true);
+    },
     onToggleFocusMode: () => setFocusMode((prev) => !prev),
     onExitFocusMode: () => setFocusMode(false),
     onOutlineOpen: () => setOutlineOpen(true),
@@ -906,6 +912,7 @@ function App() {
               setCommandPaletteTagFiles([]);
               setCommandPaletteTagOccurrences([]);
               setCommandPaletteTagSearchMode(false);
+              setCommandPaletteResearchSearchMode(false);
             }
           }}
           onNewNote={() => handleNewNote()}
@@ -920,6 +927,7 @@ function App() {
           tagOccurrences={commandPaletteTagOccurrences.length > 0 ? commandPaletteTagOccurrences : undefined}
           onOpenFileAtTag={handleOpenFileAtTag}
           tagSearchMode={commandPaletteTagSearchMode}
+          researchSearchMode={commandPaletteResearchSearchMode}
         />
         <NewNoteDialog
           open={newNoteOpen}

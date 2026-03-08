@@ -124,6 +124,7 @@ pub fn run() {
             scan_tags_in_directories,
             find_tag_occurrences,
             search_file_content,
+            search_research,
             discover_skills,
             read_skill_content,
             execute_skill_script,

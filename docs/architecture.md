@@ -164,7 +164,12 @@ note-sage/
 │       └── ollama-official.png
 ├── bundled-skills/                 # Built-in skills shipped with app (extracted to ~/.notesage/skills/)
 │   ├── create-skill/              # Meta-skill for scaffolding new skills
-│   └── create-agent/              # Meta-skill for creating agent instruction files
+│   ├── create-agent/              # Meta-skill for creating agent instruction files
+│   ├── download-webpage/          # Fetch URL and save as research markdown
+│   ├── save-research/             # Save and organize research files
+│   ├── search-research/           # Search research corpus
+│   ├── synthesize-sources/        # AI synthesis across sources
+│   └── insert-citation/           # Citation insertion
 ├── bundled-agents/                 # Built-in agents shipped with app (extracted to ~/.notesage/agents/)
 │   ├── general-assistant.md       # Default agent (replaces General Assistant persona)
 │   └── ...                        # 6 more bundled agents (creative-writer, technical-editor, etc.)
@@ -206,7 +211,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 
 - **editor-store**: Open tabs (file path + dirty state + per-tab copilotDisabled flag), active tab index
 - **workspace-store**: Explorer folders (multiple), open projects, notes tree, expanded folders, section collapse state
-- **project-metadata-store**: Project metadata from `.notesage/project.json` (name, description, AI overrides)
+- **project-metadata-store**: Project metadata from `.notesage/project.json` (name, description, AI overrides, citationFormat/citationStyle (citation preferences))
 - **settings-store**: Theme, window state, recent projects, UI preferences (floating toolbar toggle, external change diff review toggle, `skillManagement` toggle for advanced skill/agent management), runtime-only `startupReady` flag (gates filesystem watchers until startup validation completes)
 - **ai-store**: AI provider selection, API keys, Ollama URL, suggestions enabled (legacy — used as fallback). Personas deprecated — replaced by addressable agents in skill-store. Custom persona data kept for one-time migration to agent `.md` files.
 - **skill-store**: Discovered skills registry with enable/disable overrides, discovered addressable agents (from `~/.notesage/agents/`, project `.notesage/agents/`, provider-specific paths), agent instruction files, active agent name, `rescanCounter` (bumped by `requestRescan()`, observed by `useSkillDiscovery` to trigger re-scan). Skills, agents, and instructions rebuilt from scan; enable/disable overrides and active agent name persisted. Agent discovery replaces the legacy persona system.

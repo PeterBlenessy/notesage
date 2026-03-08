@@ -442,6 +442,61 @@ Document comments with AI agent delegation and external change tracking — foun
 - Cross-file Accept All / Reject All (currently per-file only)
 - Comment assignment to specific agents (currently always uses `agent_tasks` routing slot)
 
+### AI-Assisted Research (Skill Pack)
+
+AI-powered research workflow built entirely on the Phase 7 Skills & Agents Platform — collect, organize, search, synthesize, and cite from web sources.
+
+**Skills:**
+
+| Skill | Purpose | Type |
+|-------|---------|------|
+| `download-webpage` | Fetch URL → clean markdown with metadata | Script-based (enhanced with research frontmatter) |
+| `save-research` | Organize research files with tags and metadata | Script-based |
+| `search-research` | Search research corpus by tag, keyword, or content | Script-based |
+| `synthesize-sources` | Read multiple sources, generate cross-source synthesis | AI-only |
+| `insert-citation` | Insert formatted citations into documents | AI-only |
+
+**Research file format:**
+
+- Standard markdown with YAML frontmatter (`source_url`, `title`, `author`, `date_saved`, `date_published`, `tags`, `word_count`)
+- Stored in `.notesage/research/` (project) or `~/Notesage/.notesage/research/` (global)
+- Images saved to `.notesage/research/images/`
+
+**Collecting:**
+
+- Save web pages via chat: "save this article: [URL]"
+- Batch URL saving with sequential processing and summary
+- Author and publication date extracted from page metadata (`<meta>` tags, JSON-LD, Open Graph)
+- Duplicate URL detection with overwrite/keep-both/skip choices
+
+**Searching:**
+
+- `Cmd+4` opens command palette in research search mode
+- Real-time filtering via native Rust command (fast enough for 500+ files)
+- Results show title, tag pills, source URL domain, and word count
+- Tag-only, keyword-only, or combined filtering
+- Searches both project and global research directories
+
+**Synthesizing:**
+
+- AI reads multiple research files and generates structured synthesis
+- Executive summary, per-source summaries, theme analysis, suggested further research
+- Quick reply actions: save as file, insert into document, go deeper on themes
+
+**Citing:**
+
+- Three citation formats: inline links, footnotes, academic (APA/MLA/Chicago)
+- Citation format preference persisted per-project in project metadata
+- Footnote numbering respects existing footnotes in document
+- Bibliography/references sections auto-created when needed
+
+**Architecture:**
+
+- No custom UI panels — uses chat, file tree, and command palette
+- All capabilities as bundled skills using Agent Skills format
+- `search_research` Tauri command for fast command palette filtering
+- `citationFormat`/`citationStyle` fields on `ProjectMetadata`
+
 ### Notesage Library & iCloud Sync
 
 Central library folder and selective iCloud sync for projects.
@@ -588,24 +643,9 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - Phase 10 sandboxing wraps the script execution layer with OS-level isolation
 - PRDs: `docs/prds/2026-03-05-skills-and-agents-platform.md`, `docs/prds/2026-03-07-addressable-agents.md`
 
-### Phase 8 — AI-Assisted Research (Skill Pack)
+### Phase 8 — AI-Assisted Research (Skill Pack) ✅
 
-**Goal:** AI-powered research workflow — collect, store, synthesize, and draft from web sources. Implemented as a skill pack using the Phase 7 Skills & Agents Platform.
-
-**Features:**
-
-- Ships as bundled skills in the app, using the same Agent Skills format as user-created skills
-- `download-webpage` skill: fetch URL, extract content, convert to markdown, save to `.notesage/research/`
-- `save-research` skill: organize research files with metadata (URL, title, date, tags)
-- `synthesize-sources` skill: read multiple research files, generate summaries, extract key findings
-- `insert-citation` skill: add reference links into documents from research corpus
-- Users can customize or extend the research skills like any other skill
-
-**Architecture considerations:**
-
-- No custom hardcoded features — entirely built on Phase 7 infrastructure
-- Skills have scripts for deterministic operations (web fetching, file organization)
-- Research files stored in `.notesage/research/` (already part of the metadata directory pattern)
+Implemented — see "AI-Assisted Research" in Current Features above.
 
 ### Phase 9 — Local AI
 

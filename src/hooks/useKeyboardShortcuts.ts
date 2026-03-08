@@ -8,6 +8,7 @@ interface KeyboardShortcutCallbacks {
   onFindOpen: () => void;
   onFindReplaceOpen: () => void;
   onTagSearchOpen: () => void;
+  onResearchSearchOpen: () => void;
   onToggleFocusMode: () => void;
   onExitFocusMode: () => void;
   onOutlineOpen: () => void;
@@ -93,6 +94,13 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       if (isMod && !e.shiftKey && e.key === "3") {
         e.preventDefault();
         callbacks.onTagSearchOpen();
+        return;
+      }
+
+      // Cmd+4 — research search
+      if (isMod && !e.shiftKey && e.key === "4") {
+        e.preventDefault();
+        callbacks.onResearchSearchOpen();
         return;
       }
 

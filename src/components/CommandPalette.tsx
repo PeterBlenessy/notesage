@@ -14,6 +14,8 @@ import {
   Focus,
   FileText,
   Loader2,
+  BookOpen,
+  Globe,
 } from "lucide-react";
 import {
   CommandDialog,
@@ -29,7 +31,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
-import { FileEntry, TagOccurrence, ContentMatch, tauriApi } from "@/lib/tauri";
+import { FileEntry, TagOccurrence, ContentMatch, ResearchSearchResult, tauriApi } from "@/lib/tauri";
 
 const MAX_FILE_RESULTS = 50;
 
@@ -55,6 +57,9 @@ interface CommandPaletteProps {
   /** When true, palette is in direct tag search mode (⌘#). User types a tag name
    *  and occurrences are fetched via debounced backend call. */
   tagSearchMode?: boolean;
+  /** When true, palette is in research search mode (⌘4). User types a query
+   *  and research files are fetched via debounced backend call. */
+  researchSearchMode?: boolean;
 }
 
 export function CommandPalette({
@@ -72,6 +77,7 @@ export function CommandPalette({
   tagOccurrences,
   onOpenFileAtTag,
   tagSearchMode,
+  researchSearchMode,
 }: CommandPaletteProps) {
   const [search, setSearch] = useState("");
 
@@ -126,6 +132,61 @@ export function CommandPalette({
       if (tagSearchTimerRef.current) clearTimeout(tagSearchTimerRef.current);
     };
   }, [tagSearchMode, open, search]);
+
+  // Research search state (⌘4): debounced backend call as user types
+  const [researchResults, setResearchResults] = useState<ResearchSearchResult[]>([]);
+  const [researchSearching, setResearchSearching] = useState(false);
+  const researchSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounced research search for ⌘4 mode
+  useEffect(() => {
+    if (!researchSearchMode || !open) {
+      setResearchResults([]);
+      setResearchSearching(false);
+      return;
+    }
+
+    // Show all research when search is empty (browse mode)
+    const q = search.trim();
+
+    setResearchSearching(true);
+    if (researchSearchTimerRef.current) clearTimeout(researchSearchTimerRef.current);
+    researchSearchTimerRef.current = setTimeout(async () => {
+      researchSearchTimerRef.current = null;
+      try {
+        const ws = useWorkspaceStore.getState();
+        const settings = useSettingsStore.getState();
+        const dirs: string[] = [];
+        for (const project of ws.projects) {
+          dirs.push(`${project.path}/.notesage/research`);
+        }
+        // Add global research directory
+        try {
+          const homeDir = settings.notesRootPath
+            ? settings.notesRootPath
+            : await tauriApi.getHomeDir().then((h) => `${h}/Notesage`);
+          dirs.push(`${homeDir}/.notesage/research`);
+        } catch {
+          // Home dir resolution failed, skip global research
+        }
+        if (dirs.length > 0) {
+          const results = await tauriApi.searchResearch(dirs, q || undefined, undefined, 50);
+          setResearchResults(results);
+        } else {
+          setResearchResults([]);
+        }
+      } catch (error) {
+        console.error("Failed to search research:", error);
+        setResearchResults([]);
+      } finally {
+        setResearchSearching(false);
+      }
+    }, 300);
+
+    return () => {
+      if (researchSearchTimerRef.current) clearTimeout(researchSearchTimerRef.current);
+    };
+  }, [researchSearchMode, open, search]);
 
   // Content search state (filesOnly mode): debounced backend call for grep-like search
   const [contentMatches, setContentMatches] = useState<ContentMatch[]>([]);
@@ -264,6 +325,16 @@ export function CommandPalette({
     }
   }, [onOpenChange, onOpenFileAtTag, openFile]);
 
+  const handleOpenResearchFile = useCallback(async (filePath: string) => {
+    onOpenChange(false);
+    try {
+      const name = filePath.split("/").pop() ?? filePath;
+      await openFile(filePath, name);
+    } catch (error) {
+      console.error("Failed to open research file:", error);
+    }
+  }, [onOpenChange, openFile]);
+
   const handleOpenChange = useCallback((nextOpen: boolean) => {
     if (!nextOpen) setSearch("");
     onOpenChange(nextOpen);
@@ -276,11 +347,13 @@ export function CommandPalette({
       title="Command Palette"
       description="Search for files and actions"
       showCloseButton={false}
-      shouldFilter={tagSearchMode || tagOccurrences || tagFiles || filesOnly ? false : undefined}
+      shouldFilter={tagSearchMode || researchSearchMode || tagOccurrences || tagFiles || filesOnly ? false : undefined}
     >
       <CommandInput
         placeholder={
-          tagSearchMode
+          researchSearchMode
+            ? "Search research..."
+            : tagSearchMode
             ? "Type a tag name to search..."
             : filesOnly
               ? `Search ${allFiles.length.toLocaleString()} files by name or content...`
@@ -292,7 +365,70 @@ export function CommandPalette({
         onValueChange={setSearch}
       />
       <CommandList className="max-h-[360px]">
-        <CommandEmpty>{tagSearchMode && !search.trim() ? "Type a tag name to search." : "No results found."}</CommandEmpty>
+        <CommandEmpty>{researchSearchMode ? "No research files found." : tagSearchMode && !search.trim() ? "Type a tag name to search." : "No results found."}</CommandEmpty>
+
+        {/* Research search results (⌘4 mode) */}
+        {researchSearchMode && (researchSearching || researchResults.length > 0) && (
+          <CommandGroup heading={search.trim() ? `Research: "${search.trim()}"` : "All Research"}>
+            {researchSearching && (
+              <div className="flex items-center justify-center py-3">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
+            )}
+            {!researchSearching && researchResults.map((result, idx) => {
+              let domain = "";
+              try {
+                domain = new URL(result.source_url).hostname;
+              } catch {
+                // invalid URL, skip domain display
+              }
+              const wordCountStr = result.word_count > 0
+                ? `${result.word_count.toLocaleString()} words`
+                : "";
+              return (
+                <CommandItem
+                  key={`research-${result.file}-${idx}`}
+                  value={`research ${result.title} ${result.tags.join(" ")} ${result.file}`}
+                  onSelect={() => handleOpenResearchFile(result.file)}
+                  className="flex-col items-start gap-0.5"
+                >
+                  <div className="flex items-center gap-2 w-full">
+                    <BookOpen className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+                    <span className="flex-1 truncate font-medium">{result.title}</span>
+                  </div>
+                  <div className="flex items-center gap-2 w-full pl-6">
+                    {result.tags.length > 0 && (
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {result.tags.slice(0, 3).map((tag) => (
+                          <span
+                            key={tag}
+                            className="inline-flex items-center px-1.5 py-0 rounded-full bg-muted text-muted-foreground text-[10px] font-medium leading-4"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                        {result.tags.length > 3 && (
+                          <span className="text-[10px] text-muted-foreground">
+                            +{result.tags.length - 3}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {domain && (
+                      <span className="flex items-center gap-0.5 text-xs text-muted-foreground truncate">
+                        <Globe className="h-3 w-3 shrink-0" strokeWidth={1.5} />
+                        {domain}
+                      </span>
+                    )}
+                    {wordCountStr && (
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">{wordCountStr}</span>
+                    )}
+                  </div>
+                </CommandItem>
+              );
+            })}
+          </CommandGroup>
+        )}
 
         {/* Direct tag search results (⌘# mode) */}
         {tagSearchMode && liveTagOccurrences.length > 0 && (

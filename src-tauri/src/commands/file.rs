@@ -535,3 +535,237 @@ fn scan_dir_for_tags(
         }
     }
 }
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ResearchSearchResult {
+    pub file: String,
+    pub title: String,
+    pub tags: Vec<String>,
+    pub source_url: String,
+    pub snippet: String,
+    pub relevance: f32,
+    pub date_saved: String,
+    pub word_count: usize,
+}
+
+/// Search research files (.md) in the given directories for matching content.
+/// Parses YAML frontmatter for metadata, matches against query/tag.
+/// Returns results sorted by relevance, limited to `limit` (default 50).
+#[tauri::command]
+pub async fn search_research(
+    dirs: Vec<String>,
+    query: Option<String>,
+    tag: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<ResearchSearchResult>, String> {
+    let max_results = limit.unwrap_or(50);
+    let query_lower = query.as_ref().map(|q| q.to_lowercase());
+    let tag_lower = tag.as_ref().map(|t| t.to_lowercase());
+    let mut results: Vec<ResearchSearchResult> = Vec::new();
+
+    for dir_path in &dirs {
+        let path = Path::new(dir_path);
+        if !path.is_dir() {
+            continue;
+        }
+        scan_dir_for_research(path, &query_lower, &tag_lower, &mut results);
+    }
+
+    // Sort by relevance descending, then by date_saved descending
+    results.sort_by(|a, b| {
+        b.relevance
+            .partial_cmp(&a.relevance)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.date_saved.cmp(&a.date_saved))
+    });
+
+    results.truncate(max_results);
+    Ok(results)
+}
+
+fn scan_dir_for_research(
+    dir: &Path,
+    query_lower: &Option<String>,
+    tag_lower: &Option<String>,
+    results: &mut Vec<ResearchSearchResult>,
+) {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+
+        if name_str.starts_with('.') {
+            continue;
+        }
+
+        if path.is_dir() {
+            scan_dir_for_research(&path, query_lower, tag_lower, results);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
+            if let Some(result) = parse_research_file(&path, query_lower, tag_lower) {
+                results.push(result);
+            }
+        }
+    }
+}
+
+fn parse_research_file(
+    path: &Path,
+    query_lower: &Option<String>,
+    tag_lower: &Option<String>,
+) -> Option<ResearchSearchResult> {
+    let content = fs::read_to_string(path).ok()?;
+    let file_path = path.to_string_lossy().to_string();
+
+    // Parse YAML frontmatter
+    if !content.starts_with("---") {
+        return None;
+    }
+    let end = content[3..].find("\n---")?;
+    let frontmatter = &content[3..3 + end];
+    let body = &content[3 + end + 4..]; // skip closing ---\n
+
+    // Extract fields from frontmatter using simple line parsing
+    let mut title = String::new();
+    let mut source_url = String::new();
+    let mut date_saved = String::new();
+    let mut word_count: usize = 0;
+    let mut tags: Vec<String> = Vec::new();
+
+    for line in frontmatter.lines() {
+        let line = line.trim();
+        if let Some(val) = line.strip_prefix("title:") {
+            title = strip_yaml_quotes(val);
+        } else if let Some(val) = line.strip_prefix("source_url:") {
+            source_url = strip_yaml_quotes(val);
+        } else if let Some(val) = line.strip_prefix("date_saved:") {
+            date_saved = strip_yaml_quotes(val);
+        } else if let Some(val) = line.strip_prefix("word_count:") {
+            word_count = val.trim().parse().unwrap_or(0);
+        } else if let Some(val) = line.strip_prefix("tags:") {
+            tags = parse_yaml_array(val);
+        }
+    }
+
+    // Must have at least a title or source_url to be a valid research file
+    if title.is_empty() && source_url.is_empty() {
+        return None;
+    }
+
+    // Apply filters and compute relevance
+    let mut relevance: f32 = 0.0;
+    let title_lower = title.to_lowercase();
+    let body_lower = body.to_lowercase();
+    let url_lower = source_url.to_lowercase();
+
+    // Tag filter (exact match)
+    if let Some(ref tag_q) = tag_lower {
+        let tag_match = tags.iter().any(|t| t.to_lowercase() == *tag_q);
+        if !tag_match {
+            return None; // tag filter is strict
+        }
+        relevance = relevance.max(0.8);
+    }
+
+    // Query filter (substring match)
+    if let Some(ref q) = query_lower {
+        let mut matched = false;
+        if title_lower.contains(q.as_str()) {
+            relevance = relevance.max(1.0);
+            matched = true;
+        }
+        if url_lower.contains(q.as_str()) {
+            relevance = relevance.max(0.6);
+            matched = true;
+        }
+        if body_lower.contains(q.as_str()) {
+            relevance = relevance.max(0.5);
+            matched = true;
+        }
+        // Also check tags for query match
+        if tags.iter().any(|t| t.to_lowercase().contains(q.as_str())) {
+            relevance = relevance.max(0.8);
+            matched = true;
+        }
+        if !matched {
+            return None;
+        }
+    }
+
+    // If no query and no tag, include all files with base relevance
+    if query_lower.is_none() && tag_lower.is_none() {
+        relevance = 0.5;
+    }
+
+    // Generate snippet
+    let snippet = if let Some(ref q) = query_lower {
+        generate_snippet_around_match(body, q)
+    } else {
+        body.chars().take(200).collect::<String>().trim().to_string()
+    };
+
+    Some(ResearchSearchResult {
+        file: file_path,
+        title,
+        tags,
+        source_url,
+        snippet,
+        relevance,
+        date_saved,
+        word_count,
+    })
+}
+
+fn strip_yaml_quotes(val: &str) -> String {
+    let trimmed = val.trim();
+    if (trimmed.starts_with('"') && trimmed.ends_with('"'))
+        || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
+    {
+        trimmed[1..trimmed.len() - 1].to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn parse_yaml_array(val: &str) -> Vec<String> {
+    let trimmed = val.trim();
+    if trimmed.starts_with('[') && trimmed.ends_with(']') {
+        // Inline array: [tag1, tag2, "tag3"]
+        trimmed[1..trimmed.len() - 1]
+            .split(',')
+            .map(|s| strip_yaml_quotes(s))
+            .filter(|s| !s.is_empty())
+            .collect()
+    } else {
+        Vec::new()
+    }
+}
+
+fn generate_snippet_around_match(body: &str, query: &str) -> String {
+    let body_lower = body.to_lowercase();
+    if let Some(pos) = body_lower.find(query) {
+        let start = if pos > 80 { pos - 80 } else { 0 };
+        let end = (pos + query.len() + 120).min(body.len());
+        // Find safe UTF-8 boundaries
+        let safe_start = (0..=start)
+            .rev()
+            .find(|&i| body.is_char_boundary(i))
+            .unwrap_or(0);
+        let safe_end = (end..=body.len())
+            .find(|&i| body.is_char_boundary(i))
+            .unwrap_or(body.len());
+        let slice = &body[safe_start..safe_end];
+        let trimmed = slice.trim();
+        if safe_start > 0 {
+            format!("...{}", trimmed)
+        } else {
+            trimmed.to_string()
+        }
+    } else {
+        body.chars().take(200).collect::<String>().trim().to_string()
+    }
+}

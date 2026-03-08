@@ -115,6 +115,17 @@ export interface ContentMatch {
   snippet: string;
 }
 
+export interface ResearchSearchResult {
+  file: string;
+  title: string;
+  tags: string[];
+  source_url: string;
+  snippet: string;
+  relevance: number;
+  date_saved: string;
+  word_count: number;
+}
+
 export interface AcpSpawnResult {
   instance_id: string;
   agent_name: string | null;
@@ -395,6 +406,20 @@ export const tauriApi = {
 
   async searchFileContent(query: string, paths: string[]): Promise<ContentMatch[]> {
     return await invoke<ContentMatch[]>("search_file_content", { query, paths });
+  },
+
+  async searchResearch(
+    dirs: string[],
+    query?: string,
+    tag?: string,
+    limit?: number,
+  ): Promise<ResearchSearchResult[]> {
+    return await invoke<ResearchSearchResult[]>("search_research", {
+      dirs,
+      query: query ?? null,
+      tag: tag ?? null,
+      limit: limit ?? null,
+    });
   },
 
   // Skill & agent operations

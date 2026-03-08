@@ -82,6 +82,7 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | Toggle sidebar | `Cmd+Shift+L` | Show/hide file sidebar |
 | Focus mode | `Cmd+.` | Toggle distraction-free focus mode |
 | Tag search | `Cmd+3` | Search for tags across all files |
+| Research search | `Cmd+4` | Search research files across all projects |
 | Document outline | `Cmd+Shift+O` | Open document outline (requires active file) |
 | Keyboard shortcuts | `Cmd+7` | Show keyboard shortcuts reference |
 | Exit focus mode | `Esc` | Exit focus mode (when active) |
