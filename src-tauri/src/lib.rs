@@ -49,6 +49,7 @@ pub fn run() {
         .manage(AcpState::new())
         .manage(CopilotLspState::new())
         .manage(McpState::new())
+        .manage(TranscriptionState::new())
         .invoke_handler(tauri::generate_handler![
             open_devtools,
             set_debug_logging,
@@ -156,6 +157,16 @@ pub fn run() {
             // Health check
             ping,
             health_check,
+            // Voice transcription
+            start_recording,
+            stop_recording,
+            transcribe,
+            start_dictation,
+            stop_dictation,
+            list_whisper_models,
+            download_whisper_model,
+            cancel_model_download,
+            delete_whisper_model,
         ])
         .setup(|app| {
             log::info!(target: "notesage::lifecycle", "Notesage starting up (version {})", app.package_info().version);

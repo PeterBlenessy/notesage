@@ -629,6 +629,266 @@ const results = await tauriApi.searchResearch(
 );
 ```
 
+## Voice Transcription Operations
+
+Located in `src-tauri/src/commands/transcription.rs`
+
+### start_recording
+
+Starts audio capture from the specified source. Spawns a dedicated recording thread (cpal `Stream` is `!Send`). Audio is captured at the device's native sample rate and channel count.
+
+```rust
+#[tauri::command]
+pub async fn start_recording(
+    app: AppHandle,
+    state: State<'_, TranscriptionState>,
+    source: String,
+) -> Result<(), String>
+```
+
+**Parameters:**
+
+- `source`: Audio source — `"microphone"` (only supported value currently)
+
+**Returns:**
+
+- `Ok(())`: Recording started
+- `Err(String)`: Error if already recording or device unavailable
+
+### stop_recording
+
+Stops audio capture, resamples the buffer to 16kHz mono, and returns metadata about the recording.
+
+```rust
+#[tauri::command]
+pub async fn stop_recording(
+    state: State<'_, TranscriptionState>,
+) -> Result<AudioBufferInfo, String>
+```
+
+**Returns:**
+
+- `Ok(AudioBufferInfo)`: Recording metadata (duration, sample count, sample rate, source)
+- `Err(String)`: Error if not currently recording
+
+**AudioBufferInfo struct:**
+
+```rust
+pub struct AudioBufferInfo {
+    pub duration_secs: f64,
+    pub sample_count: usize,
+    pub sample_rate: u32,
+    pub source: String,
+}
+```
+
+### transcribe
+
+Runs Whisper transcription on the last recorded audio buffer. Emits `transcription-progress` events during processing.
+
+```rust
+#[tauri::command]
+pub async fn transcribe(
+    app: AppHandle,
+    state: State<'_, TranscriptionState>,
+    model: String,
+    language: Option<String>,
+) -> Result<TranscriptionResult, String>
+```
+
+**Parameters:**
+
+- `model`: Whisper model size — `"tiny"`, `"base"`, `"small"`, `"medium"`, or `"large-v3"`
+- `language`: Optional language code (e.g., `"en"`, `"sv"`, `"fr"`). `None` for auto-detection.
+
+**Returns:**
+
+- `Ok(TranscriptionResult)`: Segments with timestamps, duration, and detected language
+- `Err(String)`: Error if no audio buffer or model not found
+
+**Events emitted:**
+
+- `transcription-progress` (`{ percent: number, segment?: string }`): Progress updates during transcription
+
+**TranscriptionResult struct:**
+
+```rust
+pub struct TranscriptionResult {
+    pub segments: Vec<TranscriptionSegment>,
+    pub duration_secs: f64,
+    pub language: String,
+}
+
+pub struct TranscriptionSegment {
+    pub start: f64,
+    pub end: f64,
+    pub text: String,
+    pub speaker: Option<String>,
+}
+```
+
+### start_dictation
+
+Starts live dictation — captures audio in ~3-second chunks, transcribes each chunk through Whisper, and streams results as events. Includes silence detection, hallucination filtering, and consecutive duplicate removal.
+
+```rust
+#[tauri::command]
+pub async fn start_dictation(
+    app: AppHandle,
+    state: State<'_, TranscriptionState>,
+    language: Option<String>,
+) -> Result<(), String>
+```
+
+**Parameters:**
+
+- `language`: Optional language code for Whisper. `None` for auto-detection.
+
+**Events emitted:**
+
+- `dictation-result` (`{ text: string, is_final: boolean, error?: string }`): Transcribed text chunks. `is_final: true` signals dictation has ended.
+
+### stop_dictation
+
+Stops an active dictation session.
+
+```rust
+#[tauri::command]
+pub async fn stop_dictation(
+    state: State<'_, TranscriptionState>,
+) -> Result<(), String>
+```
+
+### list_whisper_models
+
+Lists all available Whisper model sizes with download status and file size.
+
+```rust
+#[tauri::command]
+pub async fn list_whisper_models(
+    state: State<'_, TranscriptionState>,
+) -> Result<Vec<ModelInfo>, String>
+```
+
+**Returns:**
+
+- `Ok(Vec<ModelInfo>)`: Array of model entries
+
+**ModelInfo struct:**
+
+```rust
+pub struct ModelInfo {
+    pub name: String,        // e.g., "tiny", "base", "large-v3"
+    pub size_bytes: u64,     // File size on disk (0 if not downloaded)
+    pub downloaded: bool,    // Whether the model file exists
+    pub path: Option<String>, // Absolute path if downloaded
+}
+```
+
+### download_whisper_model
+
+Downloads a Whisper GGML model from Hugging Face. Supports concurrent downloads. Emits progress events. Can be cancelled via `cancel_model_download`.
+
+```rust
+#[tauri::command]
+pub async fn download_whisper_model(
+    app: AppHandle,
+    state: State<'_, TranscriptionState>,
+    size: String,
+) -> Result<(), String>
+```
+
+**Parameters:**
+
+- `size`: Model size — `"tiny"`, `"base"`, `"small"`, `"medium"`, or `"large-v3"`
+
+**Events emitted:**
+
+- `model-download-progress` (`{ model: string, percent: number }`): Download progress updates
+
+### cancel_model_download
+
+Cancels an in-progress model download.
+
+```rust
+#[tauri::command]
+pub async fn cancel_model_download(
+    state: State<'_, TranscriptionState>,
+    size: String,
+) -> Result<(), String>
+```
+
+**Parameters:**
+
+- `size`: Model size to cancel
+
+### delete_whisper_model
+
+Deletes a downloaded Whisper model file from disk.
+
+```rust
+#[tauri::command]
+pub async fn delete_whisper_model(
+    state: State<'_, TranscriptionState>,
+    size: String,
+) -> Result<(), String>
+```
+
+**Parameters:**
+
+- `size`: Model size to delete
+
+**Frontend usage:**
+
+```typescript
+// List available models
+const models = await tauriApi.listWhisperModels();
+
+// Download a model (fire-and-forget — progress via events)
+await tauriApi.downloadWhisperModel('small');
+
+// Listen for download progress
+listen<{ model: string; percent: number }>('model-download-progress', (event) => {
+  console.log(`${event.payload.model}: ${event.payload.percent}%`);
+});
+
+// Cancel a download
+await tauriApi.cancelModelDownload('small');
+
+// Record and transcribe
+await tauriApi.startRecording('microphone');
+// ... user speaks ...
+const info = await tauriApi.stopRecording();
+const result = await tauriApi.transcribe('small', 'en');
+
+// Live dictation
+await tauriApi.startDictation('en');
+listen<{ text: string; is_final: boolean }>('dictation-result', (event) => {
+  if (event.payload.text) insertText(event.payload.text);
+});
+await tauriApi.stopDictation();
+```
+
+### TranscriptionState (Managed State)
+
+```rust
+pub struct TranscriptionState {
+    models_dir: PathBuf,
+    recording: Mutex<Option<RecordingHandle>>,
+    last_recording_buffer: Mutex<Option<(Vec<f32>, String, u32)>>,
+    dictation_cancel: Mutex<Option<Arc<AtomicBool>>>,
+    download_cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
+}
+```
+
+**Fields:**
+
+- `models_dir`: Path to `~/.notesage/whisper-models/`
+- `recording`: Active recording handle (stop signal, buffer, thread)
+- `last_recording_buffer`: Audio data from last recording (samples, source, sample rate)
+- `dictation_cancel`: Cancel signal for active dictation session
+- `download_cancels`: Per-model cancel signals for concurrent downloads
+
 ## Error Handling
 
 All Tauri commands return `Result<T, String>`. The frontend should:

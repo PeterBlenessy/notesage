@@ -58,6 +58,10 @@ import { EpubViewer } from "./viewers/EpubViewer";
 import { BubbleMenu } from "./BubbleMenu";
 import { SourceBubbleMenu } from "./SourceBubbleMenu";
 import { FindBar } from "./FindBar";
+import { RecordingBar } from "@/components/recording/RecordingBar";
+import { TranscriptionDialog } from "@/components/recording/TranscriptionDialog";
+import { useRecording } from "@/hooks/useRecording";
+import type { AudioBufferInfo } from "@/lib/tauri";
 import { openSearchPanel } from "@codemirror/search";
 import { DiffReviewBanner } from "./DiffReviewBanner";
 import { BranchDiffSelector } from "./BranchDiffSelector";
@@ -174,6 +178,11 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const [sourceContent, setSourceContent] = useState("");
   // Prevents the init effect from clobbering user edits
   const sourceUserEditRef = useRef(false);
+
+  // Recording state
+  const recording = useRecording();
+  const [transcriptionDialogOpen, setTranscriptionDialogOpen] = useState(false);
+  const [lastBufferInfo, setLastBufferInfo] = useState<AudioBufferInfo | null>(null);
 
   // Find in document state
   const [findBarOpen, setFindBarOpen] = useState(false);
@@ -904,6 +913,24 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     };
   }, [activeTab, editor, cmView]);
 
+  // Toggle recording via global keyboard shortcut event
+  useEffect(() => {
+    const handleToggleRecording = () => {
+      if (recording.isRecording) {
+        recording.stopRecording().then((info) => {
+          if (info) {
+            setLastBufferInfo(info);
+            setTranscriptionDialogOpen(true);
+          }
+        });
+      } else {
+        recording.startRecording("microphone");
+      }
+    };
+    window.addEventListener("notesage:toggle-recording", handleToggleRecording);
+    return () => window.removeEventListener("notesage:toggle-recording", handleToggleRecording);
+  }, [recording]);
+
   // Clear find state on tab switch
   const prevFindTabId = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -1285,6 +1312,20 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
               initialQuery={findInitialQuery}
             />
           )}
+          {recording.isRecording && (
+            <RecordingBar
+              elapsedTime={recording.elapsedTime}
+              source={recording.source}
+              micLevel={recording.micLevel}
+              onStop={async () => {
+                const info = await recording.stopRecording();
+                if (info) {
+                  setLastBufferInfo(info);
+                  setTranscriptionDialogOpen(true);
+                }
+              }}
+            />
+          )}
           <div ref={scrollAreaRef} className="h-full overflow-y-auto">
           <div
             className={`min-h-full flex justify-center ${
@@ -1432,6 +1473,27 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           onExportOpenChange?.(false);
         }}
         isExporting={isExporting}
+      />
+      <TranscriptionDialog
+        open={transcriptionDialogOpen}
+        onOpenChange={setTranscriptionDialogOpen}
+        bufferInfo={lastBufferInfo}
+        onSaveAsNote={async (content, title) => {
+          if (projectPath) {
+            const fileName = `${title.replace(/[^a-zA-Z0-9 —-]/g, '').replace(/ /g, '-').toLowerCase()}.md`;
+            const filePath = `${projectPath}/${fileName}`;
+            try {
+              const { tauriApi: api } = await import('@/lib/tauri');
+              await api.writeFile(filePath, content);
+              toast.success(`Saved: ${fileName}`);
+            } catch (err) {
+              toast.error(`Failed to save: ${err}`);
+            }
+          }
+        }}
+        onInsertAtCursor={editor ? (text) => {
+          editor.chain().focus().insertContent(text).run();
+        } : undefined}
       />
       <CommentPopover
         comment={commentOps.activeComment}

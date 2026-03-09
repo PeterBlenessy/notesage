@@ -19,6 +19,7 @@ interface KeyboardShortcutCallbacks {
   onOpenFolder: () => void;
   onShortcutsOpen: () => void;
   onToggleActivityStrip?: () => void;
+  onToggleRecording?: () => void;
   focusMode: boolean;
 }
 
@@ -157,6 +158,13 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       if (isMod && !e.shiftKey && e.key === "7") {
         e.preventDefault();
         callbacks.onShortcutsOpen();
+        return;
+      }
+
+      // Cmd+Shift+R — toggle recording
+      if (isMod && e.shiftKey && e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        callbacks.onToggleRecording?.();
         return;
       }
 

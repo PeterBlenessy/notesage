@@ -454,7 +454,7 @@ Extensible AI capability system based on open standards — users can add new AI
 - Script execution runtime: Tauri command for running skill scripts (bash, python, node), available to all connection types (ACP and direct API)
 - Built-in meta-skills: `create-skill` and `create-agent` ship with the app
 - Skills browser in settings for viewing, enabling/disabling, and managing discovered skills
-- Skill & agent management: delete and move (global ↔ project) for custom skills/agents, gated behind Settings > Advanced toggle
+- Skill & agent management: delete and move (global ↔ project) for custom skills/agents, gated behind Settings &gt; Advanced toggle
 - Auto-rescan: filesystem watcher triggers skill/agent re-discovery; manual rescan button with spinner feedback
 - Permission model: per-execution, per-session, or always-allow for script execution
 
@@ -579,6 +579,45 @@ Central library folder and selective iCloud sync for projects.
 - Sync progress/status monitoring from iCloud
 - Non-Apple cloud providers (Dropbox, Google Drive, OneDrive)
 
+### Voice Transcription & Dictation
+
+On-device speech-to-text powered by whisper-rs with Metal GPU acceleration — fully offline, no cloud API required.
+
+**Dictation (live):**
+
+- Real-time speech-to-text inserted at the cursor position in the editor
+- Triggered via microphone button in chat input or editor status bar
+- Web Speech API tried first (browsers); auto-falls back to whisper-rs in WKWebView
+- Language selection from 99 supported languages (sorted alphabetically)
+- Hallucination filtering removes Whisper artifacts (`[silence]`, `[BLANK_AUDIO]`, repeated phrases)
+- RMS silence detection skips empty audio chunks before transcription
+- Keyboard shortcut: Cmd+Shift+R to toggle recording
+
+**Meeting recording & transcription:**
+
+- Record audio from microphone with visual recording indicator in status bar
+- Stop recording opens transcription dialog with model selection
+- Full transcription with timestamped segments and progress tracking
+- Transcription results inserted into the active document
+
+**Whisper model management:**
+
+- 5 model sizes: Tiny (39M), Base (74M), Small (244M), Medium (769M), Large v3 (1550M)
+- Models downloaded from Hugging Face (`ggerganov/whisper.cpp`) in GGML format
+- Concurrent downloads with per-model progress bars and cancel buttons
+- Status bar download indicator with popover for detailed progress
+- Model management in Settings > Transcription tab (download, delete, set default)
+
+**Architecture:**
+
+- Rust backend: `commands/transcription.rs` — cpal audio capture, whisper-rs transcription, model management
+- Audio captured at device-native sample rate/channels, resampled to 16kHz mono via linear interpolation
+- Recording thread dedicated (cpal `Stream` is `!Send`), audio buffer shared via `Arc<Mutex<Vec<f32>>>`
+- `TranscriptionState` managed state: recording handle, dictation cancel signal, audio buffer, model download cancels
+- Frontend: `useRecording` (start/stop), `useTranscription` (model transcription), `useSpeechRecognition` (live dictation with Web Speech API fallback)
+- `recording-store` (Zustand, mixed persistence): models, downloads, language, default model
+- Tauri commands: `start_recording`, `stop_recording`, `transcribe`, `start_dictation`, `stop_dictation`, `list_whisper_models`, `download_whisper_model`, `cancel_model_download`, `delete_whisper_model`
+
 ### AI Provider Architecture v2
 
 Multi-provider AI with subscription-based auth, agent mode, and per-use-case routing via ACP (Agent Client Protocol).
@@ -625,14 +664,6 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - ACP agent binary bundling as Tauri sidecar
 
 ## Roadmap
-
-### Phase 7 — Skills & Agents Platform ✅
-
-Implemented — see "Skills & Agents Platform" in Current Features above.
-
-### Phase 8 — AI-Assisted Research (Skill Pack) ✅
-
-Implemented — see "AI-Assisted Research" in Current Features above.
 
 ### Phase 9 — Local AI
 

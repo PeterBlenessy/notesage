@@ -14,6 +14,7 @@ pub mod mcp;
 pub mod logging;
 pub mod store;
 pub mod health;
+pub mod transcription;
 
 pub use file::*;
 pub use dialog::*;
@@ -29,3 +30,4 @@ pub use mcp::*;
 pub use logging::*;
 pub use store::*;
 pub use health::*;
+pub use transcription::*;

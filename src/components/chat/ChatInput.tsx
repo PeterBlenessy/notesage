@@ -1,6 +1,7 @@
-import { useState, useRef, useCallback } from 'react';
-import { ArrowUp, Square } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { ArrowUp, Square, Mic, MicOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { SkillCommandMenu, type SkillCommandMenuHandle } from './SkillCommandMenu';
 import { AgentCommandMenu, type AgentCommandMenuHandle } from './AgentCommandMenu';
 import type { SkillEntry, AgentEntry } from '@/stores/skill-store';
@@ -23,6 +24,14 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<SkillCommandMenuHandle>(null);
   const agentMenuRef = useRef<AgentCommandMenuHandle>(null);
+  const { startDictation, stopDictation, isDictating, interimText, finalText } = useSpeechRecognition();
+
+  // Append dictation text to message
+  useEffect(() => {
+    if (finalText) {
+      setMessage((prev) => (prev ? prev + ' ' + finalText : finalText));
+    }
+  }, [finalText]);
 
   const autoResize = useCallback(() => {
     const el = textareaRef.current;
@@ -96,7 +105,32 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
     }
   };
 
+  const handleMicToggle = useCallback(async () => {
+    if (isDictating) {
+      await stopDictation();
+    } else {
+      await startDictation();
+    }
+  }, [isDictating, startDictation, stopDictation]);
+
   const canSend = message.trim() && !disabled;
+
+  const micButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={handleMicToggle}
+      disabled={disabled}
+      className={`h-6 w-6 shrink-0 ${isDictating ? 'text-red-500 animate-pulse' : 'text-muted-foreground hover:text-foreground'}`}
+      title={isDictating ? 'Stop dictation' : 'Start dictation'}
+    >
+      {isDictating ? (
+        <MicOff className="h-3.5 w-3.5" strokeWidth={1.5} />
+      ) : (
+        <Mic className="h-3.5 w-3.5" strokeWidth={1.5} />
+      )}
+    </Button>
+  );
 
   const sendButton = (
     <Button
@@ -150,7 +184,7 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
             autoResize();
           }}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder}
+          placeholder={isDictating && interimText ? interimText : placeholder}
           disabled={disabled}
           rows={1}
           className="flex-1 bg-transparent text-sm resize-none outline-none placeholder:text-muted-foreground/50 max-h-[120px] py-0.5 leading-relaxed overflow-y-auto text-foreground"
@@ -164,6 +198,7 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
               {footer}
             </div>
             <div className="flex items-center gap-1.5">
+              {micButton}
               {stopButton}
               {sendButton}
             </div>
@@ -172,6 +207,7 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
       )}
       {!footer && (
         <div className="flex justify-end px-3 pb-2 gap-1.5">
+          {micButton}
           {stopButton}
           {sendButton}
         </div>

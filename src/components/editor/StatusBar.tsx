@@ -1,5 +1,7 @@
 import type { Editor } from "@tiptap/core";
-import { ArrowUpCircle, Command, GitBranch, ScrollText } from "lucide-react";
+import { ArrowUpCircle, Command, Download, GitBranch, Loader2, ScrollText, X } from "lucide-react";
+import { useRecordingStore } from "@/stores/recording-store";
+import { Progress } from "@/components/ui/progress";
 import type { ViewMode } from "@/lib/file-utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -102,6 +104,73 @@ function AgentInstructionsIndicator() {
   );
 }
 
+function formatSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function ModelDownloadIndicator() {
+  const activeDownloads = useRecordingStore((s) => s.activeDownloads);
+  const models = useRecordingStore((s) => s.availableModels);
+  const cancelDownload = useRecordingStore((s) => s.cancelDownload);
+  const entries = Object.entries(activeDownloads);
+
+  if (entries.length === 0) return null;
+
+  return (
+    <>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors">
+            <Loader2 className="h-3 w-3 shrink-0 animate-spin" strokeWidth={1.5} />
+            <span>{entries.length === 1 ? "Downloading" : `${entries.length} downloads`}</span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-64 p-3" sideOffset={6}>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Download className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+              <span className="text-xs font-medium">Model Downloads</span>
+            </div>
+            <div className="space-y-2">
+              {entries.map(([name, state]) => {
+                const model = models.find((m) => m.name === name);
+                return (
+                  <div key={name} className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-xs font-medium truncate">{name === 'large-v3' ? 'Large v3' : name.charAt(0).toUpperCase() + name.slice(1)}</span>
+                        {model && (
+                          <span className="text-[10px] text-muted-foreground/60">{formatSize(model.size_bytes)}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[10px] tabular-nums text-muted-foreground">
+                          {Math.round(state.progress)}%
+                        </span>
+                        <button
+                          onClick={() => cancelDownload(name)}
+                          className="text-muted-foreground hover:text-destructive transition-colors"
+                          title="Cancel download"
+                        >
+                          <X className="h-3 w-3" strokeWidth={1.5} />
+                        </button>
+                      </div>
+                    </div>
+                    <Progress value={state.progress} className="h-1" />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+      <span className="w-px h-2.5 bg-border" />
+    </>
+  );
+}
+
 interface StatusBarProps {
   editor: Editor | null;
   maxWidth?: number;
@@ -174,6 +243,9 @@ export function StatusBar({
   if (!editor) {
     return (
       <div className="h-6 border-t border-border px-3 flex items-center text-[11px] shrink-0 overflow-x-auto overflow-y-hidden whitespace-nowrap bg-background text-muted-foreground">
+        <div className="flex items-center gap-2 min-w-0">
+          <ModelDownloadIndicator />
+        </div>
         <span className="flex-1" />
         <div className="flex items-center gap-3">
           {onShortcutsOpen && (
@@ -245,6 +317,7 @@ export function StatusBar({
             </Tooltip>
           </TooltipProvider>
         )}
+        <ModelDownloadIndicator />
       </div>
 
       {/* Spacer */}

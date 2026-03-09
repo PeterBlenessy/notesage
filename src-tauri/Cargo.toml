@@ -70,6 +70,11 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-http = "2.5.7"
 
+# Voice transcription
+whisper-rs = { version = "0.15", features = ["metal"] }
+cpal = "0.15"
+hound = "3.5"
+
 [dev-dependencies]
 tempfile = "3"
 

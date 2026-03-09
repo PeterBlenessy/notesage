@@ -32,7 +32,8 @@ note-sage/
 │   │   │   ├── skills.rs   # Skill/agent discovery, script execution, bundled extraction
 │   │   │   ├── export.rs   # PDF export commands
 │   │   │   ├── git.rs      # Git operations
-│   │   │   └── watcher.rs  # Filesystem watcher (notify crate)
+│   │   │   ├── watcher.rs  # Filesystem watcher (notify crate)
+│   │   │   └── transcription.rs # Voice recording, Whisper transcription, dictation, model management
 │   │   └── export/         # PDF export engine
 │   │       ├── mod.rs
 │   │       ├── typst_world.rs      # Typst World trait implementation
@@ -75,6 +76,7 @@ note-sage/
 │   │   ├── tabs/
 │   │   │   ├── TabBar.tsx          # Tab bar for open files
 │   │   │   └── Tab.tsx             # Single tab
+│   │   ├── TranscriptionDialog.tsx    # Post-recording transcription dialog (model select, progress, results)
 │   │   ├── ExportDialog.tsx          # PDF export options dialog
 │   │   ├── NewNoteDialog.tsx        # New note creation dialog
 │   │   ├── NewProjectDialog.tsx     # New project creation dialog
@@ -86,6 +88,7 @@ note-sage/
 │   │   │   ├── UseCaseRoutingSettings.tsx # Per-use-case provider routing
 │   │   │   ├── SkillsSettings.tsx  # Skills & Agents settings tab (skills browser, agents, agent instructions, management)
 │   │   │   ├── McpServersSettings.tsx # MCP Servers section (server cards, add/edit/import dialogs)
+│   │   │   ├── TranscriptionSettings.tsx # Whisper model management (download, delete, progress)
 │   │   │   └── ProjectSettings.tsx # Project-level settings
 │   │   ├── chat/
 │   │   │   ├── ChatPanel.tsx       # AI chat sidebar (context-aware footer: Tools popover for ACP, Search toggle for direct API)
@@ -118,6 +121,9 @@ note-sage/
 │   │   ├── useCommentDelegation.ts # Comment → agent delegation flow
 │   │   ├── useCommentOperations.ts # Comment CRUD, decorations, status filtering
 │   │   ├── useCopilotCompletion.ts # Copilot LSP lifecycle + ghost text completions
+│   │   ├── useRecording.ts        # Audio recording lifecycle (start/stop via cpal)
+│   │   ├── useTranscription.ts    # Whisper transcription with progress events
+│   │   ├── useSpeechRecognition.ts # Live dictation (Web Speech API → whisper-rs fallback)
 │   │   ├── useMcpOperations.ts  # MCP server discovery (useMcpDiscovery mounted in App.tsx), start/stop/restart/callTool operations
 │   │   └── useSkillOperations.ts   # Skill/agent discovery orchestration (useSkillDiscovery mounted in App.tsx), persona migration, skill-aware prompt building
 │   ├── stores/
@@ -224,6 +230,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 - **epub-store**: EPUB viewer mode (scroll/paginated), per-file bookmarks keyed by file path (CFI + chapter)
 - **tag-store**: Workspace tag index — all known tags and tag-to-file mapping (non-persisted, rebuilt from scan)
 - **activity-store**: Agent task registry — background task tracking with status, activities, streaming output, thinking output (persisted; running tasks marked as error on rehydration). Controls agent activity strip (40px rail) and agent activity panel (resizable sidebar) visibility.
+- **recording-store**: Voice recording and transcription state — available Whisper models, active downloads with per-model progress (RAF-throttled), speech language preference, recording/dictation status flags. Mixed persistence: `speechLanguage` and `defaultModel` persisted, runtime state (downloads, models, flags) non-persisted via `partialize`.
 - **external-change-store**: Pending external file changes with hunks (non-persisted)
 
 ### Styling
@@ -468,6 +475,47 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 - **Toast dedup**: Uses stable `id: "external-change"` on toast to prevent duplicate notifications from FSEvents re-reporting.
 - **Startup gating (`startupReady`)**: `useStartWatchers` does not start filesystem watchers until `settings-store.startupReady` is `true`. This flag is set by `App.tsx` after `reloadTrees()` finishes validating paths, removing stale projects, and discovering iCloud projects — preventing watchers from firing on paths that no longer exist.
 - **iCloud project auto-discovery**: At startup, `scanICloudForProjects()` scans the iCloud Notesage folder for top-level directories with `.notesage/` metadata and adds them as synced projects. At runtime, `useFileWatcher` detects create events inside the iCloud folder and performs the same check with a 1s debounce (accounts for gradual iCloud file sync).
+
+### Voice Transcription & Dictation
+
+On-device speech-to-text powered by whisper-rs with Metal acceleration.
+
+**Recording (cpal):**
+
+1. `start_recording(source)` spawns a dedicated thread (cpal `Stream` is `!Send`)
+2. Audio captured at device-native sample rate and channel count (not hardcoded 16kHz mono)
+3. Raw f32 samples accumulated in a shared `Arc<Mutex<Vec<f32>>>` buffer
+4. `stop_recording()` signals the thread, joins it, resamples audio to 16kHz mono via `resample_to_16k_mono()` (channel mixing + linear interpolation), stores in `TranscriptionState`
+
+**Transcription (whisper-rs):**
+
+1. `transcribe(model, language)` loads the selected GGML model via `WhisperContext::new_with_params()`
+2. Full audio buffer passed to Whisper with Metal GPU acceleration
+3. Progress events emitted as `transcription-progress` Tauri events (percent + current segment text)
+4. Results returned as `TranscriptionResultData` with segments (start, end, text, speaker) and metadata
+
+**Dictation (live streaming):**
+
+1. `start_dictation(language)` captures audio in 3-second chunks at native device config
+2. Each chunk resampled to 16kHz mono, checked for silence via RMS threshold (0.005)
+3. Non-silent chunks transcribed through Whisper with hallucination filtering (`is_hallucination()`)
+4. Consecutive duplicate text deduplication prevents repeat artifacts
+5. Results streamed as `dictation-result` Tauri events (`{ text, is_final, error }`)
+
+**Web Speech API fallback:**
+
+- Frontend `useSpeechRecognition` tries Web Speech API first (works in browsers)
+- WKWebView has the constructor but blocks the service at runtime
+- On `service-not-allowed` error: permanently marks Web Speech as unavailable, auto-falls back to whisper-rs dictation
+- Seamless to the user — no manual configuration needed
+
+**Model management:**
+
+- Models stored in `~/.notesage/whisper-models/` as GGML files
+- Downloaded from Hugging Face (`ggerganov/whisper.cpp`)
+- Concurrent downloads with per-model `Arc<AtomicBool>` cancel signals
+- Download progress via `model-download-progress` Tauri events, RAF-throttled in frontend store
+- Status bar indicator with popover showing per-model progress and cancel buttons
 
 ## Future-Proofing Decisions
 

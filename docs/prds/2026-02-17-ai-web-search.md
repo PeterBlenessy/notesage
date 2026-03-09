@@ -242,51 +242,51 @@ interface ChatMessage {
 
 ### Functional
 
-- [x]Search toggle appears in chat input footer and persists state
+- \[x\]Search toggle appears in chat input footer and persists state
 
-- [x]Toggling search on with Anthropic provider causes AI to search when appropriate
+- \[x\]Toggling search on with Anthropic provider causes AI to search when appropriate
 
-- [x]Search results include citations with clickable source URLs
+- \[x\]Search results include citations with clickable source URLs
 
-- [x]"Searching the web..." indicator appears during search
+- \[x\]"Searching the web..." indicator appears during search
 
-- [x]Search toggle disabled when no provider configured
+- \[x\]Search toggle disabled when no provider configured
 
-- [x]Search toggle disabled with tooltip when Ollama is selected
+- \[x\]Search toggle disabled with tooltip when Ollama is selected
 
-- [x]Toast notification shown when Ollama user tries to enable search
+- \[x\]Toast notification shown when Ollama user tries to enable search
 
-- [x]Multiple searches in one conversation work correctly
+- \[x\]Multiple searches in one conversation work correctly
 
-- [x]Search works in multi-turn conversations (context preserved)
+- \[x\]Search works in multi-turn conversations (context preserved)
 
-- [x]Existing chat functionality (no search) continues to work unchanged
+- \[x\]Existing chat functionality (no search) continues to work unchanged
 
-- [x]DuckDuckGo tool code fully removed
+- \[x\]DuckDuckGo tool code fully removed
 
-- [x]OpenAI migrated to Responses API
+- \[x\]OpenAI migrated to Responses API
 
-- [x]OpenAI web search works with search toggle enabled
+- \[x\]OpenAI web search works with search toggle enabled
 
-- [x]OpenAI chat works without search (basic conversation)
+- \[x\]OpenAI chat works without search (basic conversation)
 
-- [x]Streaming works correctly for both providers with and without search
+- \[x\]Streaming works correctly for both providers with and without search
 
 ### Design
 
-- [x]Search toggle matches existing footer button style (persona/project selectors)
+- \[x\]Search toggle matches existing footer button style (persona/project selectors)
 
-- [x]Active/inactive states use correct palette colors (no chromatic accents)
+- \[x\]Active/inactive states use correct palette colors (no chromatic accents)
 
-- [x]Citations are readable and visually distinct without being distracting
+- \[x\]Citations are readable and visually distinct without being distracting
 
-- [x]Source URLs are styled as links (underline on hover, `--color-primary`)
+- \[x\]Source URLs are styled as links (underline on hover, `--color-primary`)
 
-- [x]Works correctly in both light and dark mode
+- \[x\]Works correctly in both light and dark mode
 
-- [x]Transitions on toggle state (150ms)
+- \[x\]Transitions on toggle state (150ms)
 
-- [x]Search status indicator consistent with existing loading states
+- \[x\]Search status indicator consistent with existing loading states
 
 ## Out of Scope
 

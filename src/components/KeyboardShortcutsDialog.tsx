@@ -46,19 +46,30 @@ const categories: ShortcutCategory[] = [
     shortcuts: [
       { action: "Find in document", keys: [["⌘", "F"]] },
       { action: "Find and replace", keys: [["⌘", "⇧", "H"]] },
+      { action: "Search files", keys: [["⌘", "⇧", "F"]] },
+      { action: "Search tags", keys: [["⌘", "3"]] },
+      { action: "Search research", keys: [["⌘", "4"]] },
     ],
   },
   {
     label: "Navigation",
     shortcuts: [
       { action: "Command palette", keys: [["⌘", "K"]] },
-      { action: "Search files", keys: [["⌘", "⇧", "F"]] },
-      { action: "Tag search", keys: [["⌘", "3"]] },
       { action: "Toggle sidebar", keys: [["⌘", "⇧", "L"]] },
-      { action: "Toggle chat", keys: [["⌘", "⇧", "A"]] },
+      { action: "Toggle chat panel", keys: [["⌘", "⇧", "C"]] },
+      { action: "Toggle agent panel", keys: [["⌘", "⇧", "A"]] },
       { action: "Focus mode", keys: [["⌘", "."]] },
       { action: "Document outline", keys: [["⌘", "⇧", "O"]] },
       { action: "Keyboard shortcuts", keys: [["⌘", "7"]] },
+    ],
+  },
+  {
+    label: "AI & Voice",
+    shortcuts: [
+      { action: "Add comment", keys: [["⌘", "⇧", "M"]] },
+      { action: "Toggle recording", keys: [["⌘", "⇧", "R"]] },
+      { action: "Accept suggestion", keys: [["⌘", "↵"]] },
+      { action: "Reject suggestion", keys: [["⌘", "⌫"]] },
     ],
   },
   {

@@ -49,6 +49,7 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | Add comment | `Cmd+Shift+M` | Create inline comment on selected text |
 | Accept suggestion | `Cmd+Enter` | Accept AI inline suggestion (when decoration visible) |
 | Reject suggestion | `Cmd+Backspace` | Reject AI inline suggestion (when decoration visible) |
+| Toggle recording | `Cmd+Shift+R` | Start/stop meeting recording |
 
 ## Tab Navigation
 

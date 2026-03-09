@@ -137,6 +137,37 @@ export interface AcpSessionResult {
   session_id: string;
 }
 
+// ---------------------------------------------------------------------------
+// Transcription types
+// ---------------------------------------------------------------------------
+
+export interface TranscriptionSegment {
+  start: number;
+  end: number;
+  text: string;
+  speaker?: string;
+}
+
+export interface TranscriptionResultData {
+  segments: TranscriptionSegment[];
+  duration_secs: number;
+  language: string;
+}
+
+export interface AudioBufferInfo {
+  duration_secs: number;
+  sample_count: number;
+  sample_rate: number;
+  source: string;
+}
+
+export interface WhisperModelInfo {
+  name: string;
+  size_bytes: number;
+  downloaded: boolean;
+  path?: string;
+}
+
 export const tauriApi = {
   async readFile(path: string): Promise<string> {
     return await invoke<string>("read_file", { path });
@@ -460,5 +491,38 @@ export const tauriApi = {
 
   async extractBundledAgents(): Promise<string> {
     return await invoke<string>("extract_bundled_agents");
+  },
+
+  // Voice transcription operations
+  async startRecording(source: string): Promise<void> {
+    await invoke("start_recording", { source });
+  },
+
+  async stopRecording(): Promise<AudioBufferInfo> {
+    return await invoke<AudioBufferInfo>("stop_recording");
+  },
+
+  async transcribe(model: string, language?: string): Promise<TranscriptionResultData> {
+    return await invoke<TranscriptionResultData>("transcribe", { model, language: language ?? null });
+  },
+
+  async startDictation(language?: string): Promise<void> {
+    await invoke("start_dictation", { language: language ?? null });
+  },
+
+  async stopDictation(): Promise<void> {
+    await invoke("stop_dictation");
+  },
+
+  async listWhisperModels(): Promise<WhisperModelInfo[]> {
+    return await invoke<WhisperModelInfo[]>("list_whisper_models");
+  },
+
+  async downloadWhisperModel(size: string): Promise<void> {
+    await invoke("download_whisper_model", { size });
+  },
+
+  async deleteWhisperModel(size: string): Promise<void> {
+    await invoke("delete_whisper_model", { size });
   },
 };

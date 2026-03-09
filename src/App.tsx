@@ -769,6 +769,9 @@ function App() {
       const store = useActivityStore.getState();
       store.setManuallyHidden(!store.isManuallyHidden);
     },
+    onToggleRecording: () => {
+      window.dispatchEvent(new CustomEvent("notesage:toggle-recording"));
+    },
     focusMode,
   });
 
