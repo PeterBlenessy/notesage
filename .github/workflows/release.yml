@@ -166,6 +166,7 @@ jobs:
           echo "WHISPER_NATIVE=OFF" >> $GITHUB_ENV
           echo "CMAKE_C_FLAGS=-march=armv8.2-a+dotprod+fp16" >> $GITHUB_ENV
           echo "CMAKE_CXX_FLAGS=-march=armv8.2-a+dotprod+fp16" >> $GITHUB_ENV
+          echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> $GITHUB_ENV
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0

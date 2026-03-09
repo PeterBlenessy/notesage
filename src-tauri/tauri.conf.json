@@ -57,7 +57,8 @@
     ],
     "macOS": {
       "signingIdentity": null,
-      "entitlements": null
+      "entitlements": null,
+      "minimumSystemVersion": "14.0"
     }
   }
 }
