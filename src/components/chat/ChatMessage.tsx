@@ -99,7 +99,11 @@ export function ChatMessage({ message, isLast = false }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const { isLoading, deleteMessage } = useChatStore();
 
-  const [thinkingExpanded, setThinkingExpanded] = useState(false);
+  // Auto-expand thinking while streaming, collapse after completion. User toggle overrides.
+  const [thinkingManualToggle, setThinkingManualToggle] = useState<boolean | null>(null);
+  const isActiveStream = isLoading && isLast;
+  const thinkingExpanded = thinkingManualToggle ?? (isActiveStream && !!message.thinking);
+  const setThinkingExpanded = (v: boolean) => setThinkingManualToggle(v);
 
   const isUser = message.role === 'user';
   const isActivelyStreaming = isLoading && isLast;

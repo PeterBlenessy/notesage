@@ -305,6 +305,10 @@ function resolveConnectionCredentials(connection: Connection, useCaseModelOverri
     return { provider, apiKey: undefined, ollamaUrl: connection.credentials.url, config };
   }
 
+  if (connection.credentials.type === 'local_bundled') {
+    return { provider: 'local_bundled' as AIProviderType, apiKey: undefined, ollamaUrl: undefined, config };
+  }
+
   return null;
 }
 
@@ -324,6 +328,9 @@ function resolveWithConfig(
   }
   if (connection.credentials.type === 'local') {
     return { provider, apiKey: undefined, ollamaUrl: connection.credentials.url, config };
+  }
+  if (connection.credentials.type === 'local_bundled') {
+    return { provider: 'local_bundled' as AIProviderType, apiKey: undefined, ollamaUrl: undefined, config };
   }
   return null;
 }
@@ -545,6 +552,12 @@ export function useAIOperations() {
     return parts.join('\n\n') || 'You are a helpful writing assistant.';
   }, [buildProjectContext, agentSystemMessage, agentInstructions, skillDescriptions]);
 
+  // Lightweight system message for local models — skip bulky context that overwhelms small models
+  const localSystemMessage = useMemo(() => {
+    if (agentSystemMessage) return agentSystemMessage;
+    return 'You are a helpful writing assistant. Be concise and focused.';
+  }, [agentSystemMessage]);
+
   // ACP-specific system message: only Notesage-specific skills and instructions
   // (the ACP agent discovers its own provider-specific skills and CLAUDE.md/AGENTS.md independently)
   const acpSystemMessage = useMemo(() => {
@@ -646,14 +659,15 @@ export function useAIOperations() {
           resolved.config
         );
 
-        const fullPrompt = `${composedSystemMessage}\n\n${prompt}`;
+        const systemPrompt = resolved.provider === 'local_bundled' ? localSystemMessage : composedSystemMessage;
+        const fullPrompt = `${systemPrompt}\n\n${prompt}`;
         return await aiProvider.generateText(fullPrompt);
       } catch (error) {
         log.error('ai', 'AI generation failed', error);
         throw error;
       }
     },
-    [resolved, composedSystemMessage, acpSystemMessage, effectiveConnection, selectedProjectPaths]
+    [resolved, composedSystemMessage, localSystemMessage, acpSystemMessage, effectiveConnection, selectedProjectPaths]
   );
 
   const sendChatMessage = useCallback(
@@ -899,8 +913,11 @@ export function useAIOperations() {
           contentDirty = true;
         });
 
-        // Listen for thinking chunks (Ollama thinking models)
+        // Listen for thinking chunks (local models with reasoning tags, Ollama thinking models)
         const unlistenThinking = await listen<string>('ai-stream-thinking-chunk', (event) => {
+          if (import.meta.env.DEV && !streamedThinking) {
+            console.log('[AI] Thinking content detected');
+          }
           streamedThinking += event.payload;
           thinkingDirty = true;
         });
@@ -948,10 +965,10 @@ export function useAIOperations() {
           cleanup();
         });
 
-        // System message with composed content (project context + goals + agent)
+        // System message — use lightweight prompt for local models to avoid overwhelming small models
         const systemMessage: ChatMessage = {
           role: 'system',
-          content: composedSystemMessage,
+          content: resolved.provider === 'local_bundled' ? localSystemMessage : composedSystemMessage,
         };
 
         // Apply history limit (system message and new user message always included)
@@ -984,7 +1001,7 @@ export function useAIOperations() {
         setActiveTool(null);
       }
     },
-    [resolved, composedSystemMessage, acpSystemMessage, webSearchEnabled, addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, effectiveConnection, selectedProjectPaths]
+    [resolved, composedSystemMessage, localSystemMessage, acpSystemMessage, webSearchEnabled, addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, effectiveConnection, selectedProjectPaths]
   );
 
   const cancelChat = useCallback(() => {

@@ -17,6 +17,7 @@ import { useMcpStore } from '@/stores/mcp-store';
 import { useSkillStore } from '@/stores/skill-store';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
+import { LocalAISetupCard } from './LocalAISetupCard';
 import { PermissionCard } from './PermissionCard';
 import { QuickReplies, parseQuickReplies } from './QuickReplies';
 import {
@@ -379,11 +380,14 @@ export function ChatPanel() {
       <div className="flex-1 overflow-y-auto px-3 py-4">
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm text-center">
-            <p>
-              Start a conversation with AI.
-              <br />
-              Ask questions about your writing or get suggestions.
-            </p>
+            <div>
+              <LocalAISetupCard />
+              <p className="mt-4">
+                Start a conversation with AI.
+                <br />
+                Ask questions about your writing or get suggestions.
+              </p>
+            </div>
           </div>
         ) : (
           <>

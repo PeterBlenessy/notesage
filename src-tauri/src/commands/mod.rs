@@ -15,6 +15,7 @@ pub mod logging;
 pub mod store;
 pub mod health;
 pub mod transcription;
+pub mod local_inference;
 
 pub use file::*;
 pub use dialog::*;
@@ -31,3 +32,4 @@ pub use logging::*;
 pub use store::*;
 pub use health::*;
 pub use transcription::*;
+pub use local_inference::*;

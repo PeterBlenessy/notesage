@@ -10,7 +10,7 @@ Two-option approach — both implemented:
 
 **Option 1 — Web Speech API** (`webkitSpeechRecognition`): Lightweight real-time dictation for chat input and editor. Proven in TeamAI project. Zero dependencies, browser-native. May need whisper-rs fallback if WKWebView doesn't support it (research indicates it's broken in WKWebView but needs validation).
 
-**Option 2 — whisper-rs** (whisper.cpp Rust bindings with Metal GPU): High-quality offline meeting transcription. Records mic + system audio, transcribes post-recording with timestamps and channel-based speaker attribution. Models downloaded on-demand (~142 MB for base, up to 2.9 GB for large-v3).
+**Option 2 — whisper-rs** (whisper.cpp Rust bindings with Metal GPU): High-quality offline meeting transcription. Records mic + system audio, transcribes post-recording with timestamps and channel-based speaker attribution. Models downloaded on-demand (\~142 MB for base, up to 2.9 GB for large-v3).
 
 Both options are fully local/offline. See PRD: `docs/prds/2026-03-08-voice-transcription.md`
 
@@ -231,9 +231,9 @@ Audio Input
 
 ### Core Stack
 
-- **`whisper-rs`** with `metal` feature in `src-tauri/` for Apple Silicon GPU acceleration
-- **`tauri-plugin-mic-recorder`** or raw `cpal` for microphone capture
-- **`screencapturekit`** for system audio (meeting apps, macOS 13+)
+- `whisper-rs` with `metal` feature in `src-tauri/` for Apple Silicon GPU acceleration
+- `tauri-plugin-mic-recorder` or raw `cpal` for microphone capture
+- `screencapturekit` for system audio (meeting apps, macOS 13+)
 - Ship with `base` model (\~142 MB), offer `small`/`medium`/`large` as downloadable upgrades
 - Post-recording transcription for best quality; optional real-time preview with `base` model
 

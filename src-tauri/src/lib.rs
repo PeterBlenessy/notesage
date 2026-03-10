@@ -50,6 +50,7 @@ pub fn run() {
         .manage(CopilotLspState::new())
         .manage(McpState::new())
         .manage(TranscriptionState::new())
+        .manage(LocalInferenceState::new())
         .invoke_handler(tauri::generate_handler![
             open_devtools,
             set_debug_logging,
@@ -70,6 +71,8 @@ pub fn run() {
             ai_chat,
             ai_chat_stream,
             ollama_fim_completion,
+            openai_completions_fim,
+            local_bundled_fim,
             list_models,
             get_home_dir,
             reveal_in_finder,
@@ -167,6 +170,20 @@ pub fn run() {
             download_whisper_model,
             cancel_model_download,
             delete_whisper_model,
+            // Local AI inference
+            get_system_memory,
+            list_local_models,
+            download_local_model,
+            cancel_local_model_download,
+            delete_local_model,
+            add_custom_local_model,
+            remove_custom_local_model,
+            start_local_server,
+            stop_local_server,
+            get_local_server_status,
+            check_llama_server_available,
+            download_llama_server_binary,
+            cancel_llama_server_download,
         ])
         .setup(|app| {
             log::info!(target: "notesage::lifecycle", "Notesage starting up (version {})", app.package_info().version);
@@ -179,6 +196,8 @@ pub fn run() {
                         .args(["-f", pattern])
                         .output();
                 }
+                // Kill orphaned llama-server from previous sessions
+                local_inference::kill_orphaned_servers();
                 log::debug!(target: "notesage::lifecycle", "Cleaned up orphaned agent processes");
             });
 
@@ -193,6 +212,8 @@ pub fn run() {
                 app_handle.state::<AcpState>().stop_all_sync();
                 // Stop all MCP server subprocesses
                 app_handle.state::<McpState>().stop_all_sync();
+                // Stop local inference server
+                app_handle.state::<LocalInferenceState>().stop_sync();
             }
         });
 }

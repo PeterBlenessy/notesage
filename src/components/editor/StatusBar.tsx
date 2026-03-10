@@ -1,18 +1,28 @@
 import type { Editor } from "@tiptap/core";
-import { ArrowUpCircle, Command, Download, GitBranch, Loader2, ScrollText, X } from "lucide-react";
+import { ArrowUpCircle, Command, Cpu, Download, GitBranch, Loader2, ScrollText, X } from "lucide-react";
+
+/** Inline completion icon — italic T with horizontal sparkle trail ✦··· representing text being completed. */
+function InlineCompletionIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" className={className}>
+      {/* Italic T */}
+      <line x1="2" y1="3" x2="8.5" y2="3" strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="6.5" y1="3" x2="3.5" y2="13" strokeWidth="1.5" strokeLinecap="round" />
+      {/* Sparkles — 4-pointed stars, increasing size, spread across icon */}
+      <path d="M9 9 L9.7 11.8 L12 13 L9.7 14.2 L9 17 L8.3 14.2 L6 13 L8.3 11.8 Z" fill="currentColor" stroke="none" />
+      <path d="M13.5 2 L14.55 6.2 L18 8 L14.55 9.8 L13.5 14 L12.45 9.8 L9 8 L12.45 6.2 Z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+import { useLocalAIStore } from "@/stores/local-ai-store";
+import { useConnectionsStore } from "@/stores/connections-store";
 import { useRecordingStore } from "@/stores/recording-store";
 import { Progress } from "@/components/ui/progress";
 import type { ViewMode } from "@/lib/file-utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
-function CopilotIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" fill="currentColor" className={className}>
-      <path d="M7.998 15.035c-4.562 0-7.873-2.914-7.998-3.749V9.338c.085-.628.677-1.686 1.588-2.065.013-.07.024-.143.036-.218.029-.183.06-.384.126-.612-.201-.508-.254-1.084-.254-1.656 0-.87.128-1.769.693-2.484.579-.733 1.494-1.124 2.724-1.261 1.206-.134 2.262.034 2.944.765.05.053.096.108.139.165.044-.057.094-.112.143-.165.682-.731 1.738-.899 2.944-.765 1.23.137 2.145.528 2.724 1.261.566.715.693 1.614.693 2.484 0 .572-.053 1.148-.254 1.656.066.228.098.429.126.612.012.076.024.148.037.218.924.385 1.522 1.471 1.591 2.095v1.872c0 .766-3.351 3.795-8.002 3.795Zm0-1.485c2.28 0 4.584-1.11 5.002-1.433V7.862l-.023-.116c-.49.21-1.075.291-1.727.291-1.146 0-2.059-.327-2.71-.991A3.222 3.222 0 0 1 8 6.303a3.24 3.24 0 0 1-.544.743c-.65.664-1.563.991-2.71.991-.652 0-1.236-.081-1.727-.291l-.023.116v4.255c.419.323 2.722 1.433 5.002 1.433ZM6.762 2.83c-.193-.206-.637-.413-1.682-.297-1.019.113-1.479.404-1.713.7-.247.312-.369.789-.369 1.554 0 .793.129 1.171.308 1.371.162.181.519.379 1.442.379.853 0 1.339-.235 1.638-.54.315-.322.527-.827.617-1.553.117-.935-.037-1.395-.241-1.614Zm4.155-.297c-1.044-.116-1.488.091-1.681.297-.204.219-.359.679-.242 1.614.091.726.303 1.231.618 1.553.299.305.784.54 1.638.54.922 0 1.28-.198 1.442-.379.179-.2.308-.578.308-1.371 0-.765-.123-1.242-.37-1.554-.233-.296-.693-.587-1.713-.7Z" />
-      <path d="M6.25 9.037a.75.75 0 0 1 .75.75v1.501a.75.75 0 0 1-1.5 0V9.787a.75.75 0 0 1 .75-.75Zm4.25.75v1.501a.75.75 0 0 1-1.5 0V9.787a.75.75 0 0 1 1.5 0Z" />
-    </svg>
-  );
-}
+
+
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
@@ -44,6 +54,27 @@ function CopilotMaxCharsSlider() {
         step={10}
         value={[maxChars]}
         onValueChange={([v]) => setMaxChars(v)}
+        className="w-full"
+      />
+    </div>
+  );
+}
+
+function FimContextSlider() {
+  const contextChars = useSettingsStore((s) => s.fimContextChars);
+  const setContextChars = useSettingsStore((s) => s.setFimContextChars);
+  return (
+    <div className="space-y-1.5 pt-1 border-t border-border">
+      <div className="flex items-center justify-between">
+        <label className="text-xs text-muted-foreground">Context sent</label>
+        <span className="text-[10px] text-muted-foreground tabular-nums">{contextChars} chars</span>
+      </div>
+      <Slider
+        min={200}
+        max={2000}
+        step={100}
+        value={[contextChars]}
+        onValueChange={([v]) => setContextChars(v)}
         className="w-full"
       />
     </div>
@@ -171,6 +202,75 @@ function ModelDownloadIndicator() {
   );
 }
 
+function LocalAIIndicator() {
+  const serverStatus = useLocalAIStore((s) => s.serverStatus);
+  const activeModelId = useLocalAIStore((s) => s.activeModelId);
+  const models = useLocalAIStore((s) => s.models);
+  const connections = useConnectionsStore((s) => s.connections);
+
+  const hasConnection = connections.some(
+    (c) => c.provider === 'local_ai' && c.authMethod === 'local_bundled'
+  );
+
+  if (!hasConnection) return null;
+
+  const activeModel = models.find((m) => m.id === activeModelId);
+
+  return (
+    <>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button className="inline-flex items-center gap-1 hover:text-foreground transition-colors">
+            <Cpu className="h-3 w-3 shrink-0" strokeWidth={1.5} />
+            <span
+              className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                serverStatus === 'running'
+                  ? 'bg-green-500'
+                  : serverStatus === 'starting'
+                  ? 'bg-amber-500 animate-pulse'
+                  : serverStatus === 'error'
+                  ? 'bg-red-500'
+                  : 'bg-muted-foreground/30'
+              }`}
+            />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-48 p-3" sideOffset={6}>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Cpu className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
+              <span className="text-xs font-medium">Local AI</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span
+                className={`h-2 w-2 rounded-full shrink-0 ${
+                  serverStatus === 'running'
+                    ? 'bg-green-500'
+                    : serverStatus === 'starting'
+                    ? 'bg-amber-500 animate-pulse'
+                    : serverStatus === 'error'
+                    ? 'bg-red-500'
+                    : 'bg-muted-foreground/30'
+                }`}
+              />
+              <span>
+                {serverStatus === 'running' && activeModel
+                  ? `Running (${activeModel.name})`
+                  : serverStatus === 'starting'
+                  ? 'Starting...'
+                  : serverStatus === 'error'
+                  ? 'Error — check Settings'
+                  : 'Stopped'}
+              </span>
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+      <span className="w-px h-2.5 bg-border" />
+    </>
+  );
+}
+
 interface StatusBarProps {
   editor: Editor | null;
   maxWidth?: number;
@@ -245,6 +345,7 @@ export function StatusBar({
       <div className="h-6 border-t border-border px-3 flex items-center text-[11px] shrink-0 overflow-x-auto overflow-y-hidden whitespace-nowrap bg-background text-muted-foreground">
         <div className="flex items-center gap-2 min-w-0">
           <ModelDownloadIndicator />
+          <LocalAIIndicator />
         </div>
         <span className="flex-1" />
         <div className="flex items-center gap-3">
@@ -318,6 +419,7 @@ export function StatusBar({
           </TooltipProvider>
         )}
         <ModelDownloadIndicator />
+        <LocalAIIndicator />
       </div>
 
       {/* Spacer */}
@@ -366,13 +468,13 @@ export function StatusBar({
                   }`}
                   title="Inline completions"
                 >
-                  <CopilotIcon className="h-3.5 w-3.5" />
+                  <InlineCompletionIcon className="h-3.5 w-3.5" />
                 </button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-56 p-3" sideOffset={6}>
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <CopilotIcon className="h-3.5 w-3.5 shrink-0" />
+                    <InlineCompletionIcon className="h-3.5 w-3.5 shrink-0" />
                     <span className="text-xs font-medium">Inline Completions</span>
                     <span
                       className={`ml-auto h-1.5 w-1.5 rounded-full shrink-0 ${
@@ -398,6 +500,7 @@ export function StatusBar({
                     Session only — resets when tab is closed
                   </p>
                   <CopilotMaxCharsSlider />
+                  <FimContextSlider />
                 </div>
               </PopoverContent>
             </Popover>

@@ -70,6 +70,12 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-http = "2.5.7"
 
+# System info (local AI memory detection)
+sysinfo = "0.35"
+
+# Local AI binary download (zip extraction)
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
 # Voice transcription
 whisper-rs = "0.15"
 cpal = "0.15"

@@ -26,6 +26,8 @@ dist-ssr
 # Tauri
 src-tauri/target
 src-tauri/gen
+src-tauri/binaries/llama-server-*
+src-tauri/binaries/lib/
 
 # Build outputs
 *.dmg

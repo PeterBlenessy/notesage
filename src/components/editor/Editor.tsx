@@ -15,7 +15,7 @@ import { useFileWatcher } from "@/hooks/useFileWatcher";
 import { useCommentOperations } from "@/hooks/useCommentOperations";
 import { useCopilotCompletion } from "@/hooks/useCopilotCompletion";
 import { useCopilotCompletionCM } from "@/hooks/useCopilotCompletionCM";
-import { useOllamaCompletion } from "@/hooks/useOllamaCompletion";
+import { useLocalCompletion } from "@/hooks/useLocalCompletion";
 import type { EditorView as CMEditorView } from "@codemirror/view";
 import { useCommentDelegation } from "@/hooks/useCommentDelegation";
 import { useAIOperations } from "@/hooks/useAIOperations";
@@ -299,7 +299,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   useFileWatcher();
   useCopilotCompletion(editor);
   useCopilotCompletionCM(cmView);
-  useOllamaCompletion(editor);
+  useLocalCompletion(editor);
 
   // Page position: calculate from editor content height and page geometry
   const marginTopPx = marginTop * PX_PER_CM;

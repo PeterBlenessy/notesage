@@ -21,6 +21,7 @@ import { useFileOperations } from "@/hooks/useFileOperations";
 import { useStartWatchers } from "@/hooks/useStartWatchers";
 import { useSkillDiscovery } from "@/hooks/useSkillOperations";
 import { useMcpDiscovery } from "@/hooks/useMcpOperations";
+import { useLocalAI } from "@/hooks/useLocalAI";
 import { useAgentTaskOperations } from "@/hooks/useAgentTaskOperations";
 import { useActivityNavigation } from "@/hooks/useActivityNavigation";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -136,6 +137,7 @@ function App() {
   useStartWatchers();
   useSkillDiscovery();
   useMcpDiscovery();
+  useLocalAI();
 
   // Activity strip — cancel handler and navigation
   const { cancelTask } = useAgentTaskOperations();

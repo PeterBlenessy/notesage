@@ -20,12 +20,25 @@ pub struct AIRequest {
 }
 
 #[tauri::command]
-pub async fn ai_generate_text(request: AIRequest) -> Result<String, String> {
+pub async fn ai_generate_text(
+    request: AIRequest,
+    state: tauri::State<'_, super::local_inference::LocalInferenceState>,
+) -> Result<String, String> {
     match request.provider.as_str() {
         "anthropic" => anthropic_generate(&request).await,
         "openai" => openai_generate(&request).await,
         "ollama" => ollama_generate(&request).await,
         "openai_compatible" => openai_compatible_generate(&request).await,
+        "local_bundled" => {
+            super::local_inference::local_bundled_generate(
+                &request.prompt,
+                &state,
+                &request.model,
+                request.temperature,
+                request.max_tokens,
+            )
+            .await
+        }
         _ => Err(format!("Unknown provider: {}", request.provider)),
     }
 }
@@ -40,12 +53,16 @@ pub async fn ai_chat(
     temperature: Option<f64>,
     max_tokens: Option<u32>,
     base_url: Option<String>,
+    state: tauri::State<'_, super::local_inference::LocalInferenceState>,
 ) -> Result<String, String> {
     match provider.as_str() {
         "anthropic" => anthropic_chat(&messages, &api_key, &model, temperature, max_tokens, &base_url).await,
         "openai" => openai_chat(&messages, &api_key, &model, temperature, max_tokens, &base_url).await,
         "ollama" => ollama_chat(&messages, &ollama_url, &model, temperature, max_tokens, &base_url).await,
         "openai_compatible" => openai_compatible_chat(&messages, &api_key, &model, temperature, max_tokens, &base_url).await,
+        "local_bundled" => {
+            super::local_inference::local_bundled_chat(&messages, &state, &model, temperature, max_tokens).await
+        }
         _ => Err(format!("Unknown provider: {}", provider)),
     }
 }
@@ -62,6 +79,7 @@ pub async fn ai_chat_stream(
     temperature: Option<f64>,
     max_tokens: Option<u32>,
     base_url: Option<String>,
+    state: tauri::State<'_, super::local_inference::LocalInferenceState>,
 ) -> Result<(), String> {
     use crate::commands::ai_streaming::*;
 
@@ -72,6 +90,9 @@ pub async fn ai_chat_stream(
         "openai" => openai_chat_stream(&window, &messages, &api_key, search, &model, temperature, max_tokens, &base_url).await,
         "ollama" => ollama_chat_stream(&window, &messages, &ollama_url, &model, temperature, max_tokens, &base_url).await,
         "openai_compatible" => openai_compatible_chat_stream(&window, &messages, &api_key, &model, temperature, max_tokens, &base_url).await,
+        "local_bundled" => {
+            super::local_inference::local_bundled_chat_stream(&window, &messages, &state, &model, temperature, max_tokens).await
+        }
         _ => Err(format!("Unknown provider: {}", provider)),
     }
 }
@@ -696,6 +717,69 @@ pub async fn ollama_fim_completion(
         .to_string();
 
     Ok(content)
+}
+
+// Generic OpenAI-compatible /v1/completions FIM endpoint
+// Works with llama-server, vLLM, LiteLLM, Together AI, Groq, etc.
+#[tauri::command]
+pub async fn openai_completions_fim(
+    base_url: String,
+    api_key: Option<String>,
+    model: String,
+    prefix: String,
+    suffix: String,
+    max_tokens: Option<u32>,
+) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let url = if base_url.ends_with("/v1") || base_url.ends_with("/v1/") {
+        format!("{}/completions", base_url.trim_end_matches('/'))
+    } else {
+        format!("{}/v1/completions", base_url.trim_end_matches('/'))
+    };
+
+    let body = serde_json::json!({
+        "model": model,
+        "prompt": prefix,
+        "suffix": suffix,
+        "max_tokens": max_tokens.unwrap_or(128),
+        "temperature": 0.2,
+        "stop": ["\n\n"]
+    });
+
+    let mut req = client
+        .post(&url)
+        .header("content-type", "application/json")
+        .json(&body);
+
+    if let Some(key) = &api_key {
+        req = req.header("authorization", format!("Bearer {}", key));
+    }
+
+    let response = req
+        .send()
+        .await
+        .map_err(|e| format!("Completion request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(format!("Completion error: {}", error_text));
+    }
+
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse completion response: {}", e))?;
+
+    let text = json["choices"][0]["text"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    Ok(text)
 }
 
 async fn openai_compatible_chat(

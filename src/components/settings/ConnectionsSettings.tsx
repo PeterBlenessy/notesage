@@ -1,11 +1,22 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
+import { useLocalAIStore } from '@/stores/local-ai-store';
 import { stopAcpAgent } from '@/hooks/useAIOperations';
+import { tauriApi } from '@/lib/tauri';
 import { ConnectionCard } from './ConnectionCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Progress } from '@/components/ui/progress';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,7 +31,7 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from '@/components/ui/popover';
-import { Plus, Check, Eye, EyeOff, Loader2, AlertCircle, RefreshCw, Copy } from 'lucide-react';
+import { Plus, Check, Eye, EyeOff, Loader2, AlertCircle, RefreshCw, Copy, Download } from 'lucide-react';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { ConnectionConfigDialog } from './ConnectionConfigDialog';
 import type { Connection, ProviderOption } from '@/lib/ai/connections';
@@ -86,7 +97,44 @@ export function ConnectionsSettings() {
     requestAnimationFrame(() => setDropdownOpen(true));
   }, []);
 
+  // Binary download dialog state for Local AI
+  const [binaryDialogOpen, setBinaryDialogOpen] = useState(false);
+  const [binaryDownloading, setBinaryDownloading] = useState(false);
+  const binaryDownloadProgress = useLocalAIStore((s) => s.binaryDownloadProgress);
+
+  const finishLocalAIConnect = useCallback(() => {
+    // Start as 'expired' (amber) — useLocalAI hook will set 'connected' (green) once server is running
+    const connectionId = addConnection({
+      provider: 'local_ai',
+      authMethod: 'local_bundled',
+      status: 'expired',
+      label: 'Local AI',
+      credentials: { type: 'local_bundled' },
+    });
+    autoAssign(connectionId);
+  }, [addConnection, autoAssign]);
+
   const handlePickProvider = useCallback((option: ProviderOption) => {
+    // Local AI: check binary availability first
+    if (option.authMethod === 'local_bundled') {
+      (async () => {
+        try {
+          const status = await tauriApi.checkLlamaServerAvailable();
+          if (status.available) {
+            // Binary exists, connect immediately
+            finishLocalAIConnect();
+          } else {
+            // Binary missing — show download dialog
+            setBinaryDialogOpen(true);
+          }
+        } catch {
+          // On error, try to connect anyway
+          finishLocalAIConnect();
+        }
+      })();
+      return;
+    }
+
     if (option.lspBinary || option.authMethod === 'agent_managed') {
       setFlow({ step: 'connecting', option });
     } else {
@@ -97,7 +145,20 @@ export function ConnectionsSettings() {
       setPopoverOpen(true);
       popoverOpenedAt.current = Date.now();
     }, 100);
-  }, []);
+  }, [addConnection, autoAssign, finishLocalAIConnect]);
+
+  const handleBinaryDownload = useCallback(async () => {
+    setBinaryDownloading(true);
+    try {
+      await useLocalAIStore.getState().downloadBinary();
+      setBinaryDialogOpen(false);
+      finishLocalAIConnect();
+    } catch {
+      // Toast already shown by the store action
+    } finally {
+      setBinaryDownloading(false);
+    }
+  }, [finishLocalAIConnect]);
 
   const handleSave = useCallback(() => {
     if (flow.step !== 'configure') return;
@@ -272,7 +333,45 @@ export function ConnectionsSettings() {
                 <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
                   API Key
                 </DropdownMenuLabel>
-                {PROVIDER_OPTIONS.filter((o) => o.authMethod !== 'agent_managed').map((option) => {
+                {PROVIDER_OPTIONS.filter((o) => o.authMethod === 'api_key').map((option) => {
+                  const alreadyConnected = connectedLabels.has(option.label);
+                  return (
+                    <DropdownMenuItem
+                      key={`${option.provider}-${option.authMethod}-${option.label}`}
+                      className={`relative flex items-start gap-3 py-2.5 ${alreadyConnected ? 'opacity-50' : 'cursor-pointer'}`}
+                      disabled={alreadyConnected}
+                      onSelect={() => handlePickProvider(option)}
+                    >
+                      <ProviderLogo provider={option.provider} className="w-5 h-5 mt-0.5 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium block">
+                          {option.label}
+                          {alreadyConnected && (
+                            <span className="ml-2 text-xs font-normal text-muted-foreground">Connected</span>
+                          )}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{option.description}</span>
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          {option.capabilities.map((cap) => (
+                            <span key={cap} className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground">
+                              {CAPABILITY_LABELS[cap]}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {alreadyConnected && (
+                        <Check className="absolute right-2 top-3 h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                      )}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Local
+                </DropdownMenuLabel>
+                {PROVIDER_OPTIONS.filter((o) => o.authMethod === 'local' || o.authMethod === 'local_bundled').map((option) => {
                   const alreadyConnected = connectedLabels.has(option.label);
                   return (
                     <DropdownMenuItem
@@ -374,6 +473,40 @@ export function ConnectionsSettings() {
           if (!open) setConfigDialogConnection(null);
         }}
       />
+
+      {/* Binary download dialog for Local AI */}
+      <Dialog open={binaryDialogOpen} onOpenChange={(open) => {
+        if (!open && !binaryDownloading) {
+          setBinaryDialogOpen(false);
+        }
+      }}>
+        <DialogContent className="sm:max-w-[400px]" onPointerDownOutside={(e) => { if (binaryDownloading) e.preventDefault(); }}>
+          <DialogHeader>
+            <DialogTitle className="text-base">Download AI Engine</DialogTitle>
+            <DialogDescription className="text-sm">
+              Local AI requires the llama.cpp inference engine (~11 MB download). This only needs to happen once.
+            </DialogDescription>
+          </DialogHeader>
+          {binaryDownloading ? (
+            <div className="py-4 space-y-3">
+              <Progress value={binaryDownloadProgress} className="h-1.5" />
+              <p className="text-xs text-muted-foreground text-center">
+                Downloading... {Math.round(binaryDownloadProgress)}%
+              </p>
+            </div>
+          ) : (
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button variant="outline" size="sm" onClick={() => setBinaryDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={handleBinaryDownload} className="gap-1.5">
+                <Download className="h-3.5 w-3.5" />
+                Download
+              </Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

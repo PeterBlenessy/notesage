@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
+import { useLocalAIStore } from '@/stores/local-ai-store';
 import {
   Collapsible,
   CollapsibleContent,
@@ -43,13 +44,24 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
   const currentModel = useRoutingStore((s) => s.routing[useCase]?.model);
   const setUseCaseModel = useRoutingStore((s) => s.setUseCaseModel);
 
-  const canListModels = connection.authMethod !== 'agent_managed';
+  const isLocalBundled = connection.authMethod === 'local_bundled';
+  const canListModels = connection.authMethod !== 'agent_managed' && !isLocalBundled;
+
+  // For local_bundled, use downloaded models from local-ai-store
+  const localModels = useLocalAIStore((s) => s.models);
+  const localModelNames = useMemo(
+    () => localModels.filter((m) => m.downloaded).map((m) => m.id),
+    [localModels]
+  );
 
   const [open, setOpen] = useState(false);
   const [inputValue, setInputValue] = useState(currentModel ?? '');
   const [models, setModels] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Use local models for local_bundled, fetched models for others
+  const displayModels = isLocalBundled ? localModelNames : models;
 
   useEffect(() => {
     setInputValue(currentModel ?? '');
@@ -148,14 +160,14 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
                 <span className="text-xs text-muted-foreground">Default</span>
               </CommandItem>
             </CommandGroup>
-            {canListModels && !loading && !error && models.length === 0 && (
+            {!isLocalBundled && canListModels && !loading && !error && displayModels.length === 0 && (
               <CommandEmpty className="text-xs">
                 Type a model name or click refresh
               </CommandEmpty>
             )}
-            {models.length > 0 && (
+            {displayModels.length > 0 && (
               <CommandGroup>
-                {models.map((m) => (
+                {displayModels.map((m) => (
                   <CommandItem
                     key={m}
                     value={m}
@@ -173,7 +185,7 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
                 ))}
               </CommandGroup>
             )}
-            {inputValue.trim() && !models.includes(inputValue.trim()) && inputValue.trim() !== '__default__' && (
+            {inputValue.trim() && !displayModels.includes(inputValue.trim()) && inputValue.trim() !== '__default__' && (
               <CommandGroup>
                 <CommandItem
                   value={`custom-${inputValue.trim()}`}

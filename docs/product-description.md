@@ -606,7 +606,7 @@ On-device speech-to-text powered by whisper-rs with Metal GPU acceleration — f
 - Models downloaded from Hugging Face (`ggerganov/whisper.cpp`) in GGML format
 - Concurrent downloads with per-model progress bars and cancel buttons
 - Status bar download indicator with popover for detailed progress
-- Model management in Settings > Transcription tab (download, delete, set default)
+- Model management in Settings &gt; Transcription tab (download, delete, set default)
 
 **Architecture:**
 

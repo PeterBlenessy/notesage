@@ -8,6 +8,7 @@ const AUTH_BADGES: Record<string, string> = {
   api_key: 'API Key',
   agent_managed: 'Subscription',
   local: 'Local',
+  local_bundled: 'On-device',
 };
 
 function StatusDot({ status }: { status: Connection['status'] }) {

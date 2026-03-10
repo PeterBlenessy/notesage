@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, FileText, GitBranch, Cloud, Info, Loader2, ArrowUpCircle, ScrollText, Code, Download, Blocks, FolderOpen, Trash2, Mic } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, FileText, GitBranch, Cloud, Info, Loader2, ArrowUpCircle, ScrollText, Code, Download, Blocks, FolderOpen, Trash2, Mic, Cpu } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,7 @@ import { PromptsSettings } from './PromptsSettings';
 import { SyncSettings } from './SyncSettings';
 import { SkillsSettings } from './SkillsSettings';
 import { TranscriptionSettings } from './TranscriptionSettings';
+import { LocalAISettings } from './LocalAISettings';
 import { ChangelogDialog } from './ChangelogDialog';
 import { useSettingsStore, type MeasurementUnit } from '@/stores/settings-store';
 import { Label } from '@/components/ui/label';
@@ -42,7 +43,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { tauriApi } from '@/lib/tauri';
 import type { UpdateState } from '@/hooks/useAutoUpdate';
 
-export type SettingsTab = 'ai' | 'prompts' | 'skills' | 'transcription' | 'editor' | 'git' | 'sync' | 'developer' | 'about';
+export type SettingsTab = 'ai' | 'local-ai' | 'prompts' | 'skills' | 'transcription' | 'editor' | 'git' | 'sync' | 'developer' | 'about';
 
 interface SettingsDialogProps {
   open?: boolean;
@@ -56,6 +57,7 @@ interface SettingsDialogProps {
 const TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
   { id: 'editor', label: 'Editor', icon: Sliders },
   { id: 'ai', label: 'AI Providers', icon: Sparkles },
+  { id: 'local-ai', label: 'Local AI', icon: Cpu },
   { id: 'prompts', label: 'Custom Prompts', icon: FileText },
   { id: 'skills', label: 'Skills & Agents', icon: Blocks },
   { id: 'transcription', label: 'Transcription', icon: Mic },
@@ -309,6 +311,12 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
             {activeTab === 'skills' && (
               <div className="p-6">
                 <SkillsSettings />
+              </div>
+            )}
+
+            {activeTab === 'local-ai' && (
+              <div className="p-6">
+                <LocalAISettings />
               </div>
             )}
 

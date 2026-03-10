@@ -168,6 +168,41 @@ export interface WhisperModelInfo {
   path?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Local AI types
+// ---------------------------------------------------------------------------
+
+export interface LocalModelInfo {
+  id: string;
+  name: string;
+  filename: string;
+  size_bytes: number;
+  ram_required_bytes: number;
+  downloaded: boolean;
+  description: string;
+  huggingface_url: string;
+  is_custom: boolean;
+  source: string;
+  supports_fim: boolean;
+}
+
+export interface SystemMemoryInfo {
+  total_bytes: number;
+  available_bytes: number;
+}
+
+export interface LocalServerStatus {
+  running: boolean;
+  port: number | null;
+  model: string | null;
+}
+
+export interface BinaryStatus {
+  available: boolean;
+  location: string; // "bundled" | "managed" | "system" | "not_found"
+  path: string | null;
+}
+
 export const tauriApi = {
   async readFile(path: string): Promise<string> {
     return await invoke<string>("read_file", { path });
@@ -384,6 +419,28 @@ export const tauriApi = {
     });
   },
 
+  // OpenAI-compatible FIM completion (for openai_compatible connections)
+  async openaiCompatibleFimCompletion(baseUrl: string, apiKey: string | undefined, model: string, prefix: string, suffix: string, maxTokens?: number): Promise<string> {
+    return await invoke<string>("openai_completions_fim", {
+      baseUrl,
+      apiKey: apiKey ?? null,
+      model,
+      prefix,
+      suffix,
+      maxTokens: maxTokens ?? null,
+    });
+  },
+
+  // Local bundled FIM completion
+  async localBundledFimCompletion(prefix: string, suffix: string, model?: string, maxTokens?: number): Promise<string> {
+    return await invoke<string>("local_bundled_fim", {
+      prefix,
+      suffix,
+      model: model ?? null,
+      maxTokens: maxTokens ?? null,
+    });
+  },
+
   // AI model listing
   async listModels(provider: string, apiKey?: string, baseUrl?: string): Promise<string[]> {
     return await invoke<string[]>("list_models", {
@@ -524,5 +581,66 @@ export const tauriApi = {
 
   async deleteWhisperModel(size: string): Promise<void> {
     await invoke("delete_whisper_model", { size });
+  },
+
+  // Local AI inference
+  async getSystemMemory(): Promise<SystemMemoryInfo> {
+    return await invoke<SystemMemoryInfo>("get_system_memory");
+  },
+
+  async listLocalModels(): Promise<LocalModelInfo[]> {
+    return await invoke<LocalModelInfo[]>("list_local_models");
+  },
+
+  async downloadLocalModel(modelId: string): Promise<void> {
+    await invoke("download_local_model", { modelId });
+  },
+
+  async cancelLocalModelDownload(modelId: string): Promise<void> {
+    await invoke("cancel_local_model_download", { modelId });
+  },
+
+  async deleteLocalModel(modelId: string): Promise<void> {
+    await invoke("delete_local_model", { modelId });
+  },
+
+  async addCustomLocalModel(name: string, url: string): Promise<LocalModelInfo> {
+    return await invoke<LocalModelInfo>("add_custom_local_model", { name, url });
+  },
+
+  async removeCustomLocalModel(modelId: string): Promise<void> {
+    await invoke("remove_custom_local_model", { modelId });
+  },
+
+  async startLocalServer(
+    modelId: string,
+    contextLength?: number,
+    gpuLayers?: number,
+  ): Promise<number> {
+    return await invoke<number>("start_local_server", {
+      modelId,
+      contextLength: contextLength ?? null,
+      gpuLayers: gpuLayers ?? null,
+    });
+  },
+
+  async stopLocalServer(): Promise<void> {
+    await invoke("stop_local_server");
+  },
+
+  async getLocalServerStatus(): Promise<LocalServerStatus> {
+    return await invoke<LocalServerStatus>("get_local_server_status");
+  },
+
+  async checkLlamaServerAvailable(): Promise<BinaryStatus> {
+    return await invoke<BinaryStatus>("check_llama_server_available");
+  },
+
+  async downloadLlamaServerBinary(): Promise<string> {
+    return await invoke<string>("download_llama_server_binary");
+  },
+
+  async cancelLlamaServerDownload(): Promise<void> {
+    await invoke("cancel_llama_server_download");
   },
 };

@@ -6,7 +6,8 @@
 export type AuthMethod =
   | 'api_key'         // User provides an API key (Anthropic, OpenAI)
   | 'agent_managed'   // Agent subprocess handles its own auth (subscription via ACP)
-  | 'local';          // No auth needed (Ollama)
+  | 'local'           // No auth needed (Ollama)
+  | 'local_bundled';  // Bundled local inference (llama-server sidecar)
 
 // --- Providers ---
 
@@ -16,14 +17,16 @@ export type ConnectionProvider =
   | 'github'             // Agent-managed subscription (Copilot via ACP + LSP)
   | 'google'             // Agent-managed subscription (Gemini CLI via ACP)
   | 'ollama'             // Local, no auth
-  | 'openai_compatible'; // Any OpenAI-compatible API (vLLM, LiteLLM, Together AI, Groq)
+  | 'openai_compatible'  // Any OpenAI-compatible API (vLLM, LiteLLM, Together AI, Groq)
+  | 'local_ai';          // Bundled local inference (llama-server)
 
 // --- Credentials ---
 
 export type ConnectionCredentials =
   | { type: 'api_key'; key: string }
   | { type: 'agent_managed'; agentBinary: string; agentArgs?: string[] }  // e.g., "claude-agent-acp"
-  | { type: 'local'; url: string };
+  | { type: 'local'; url: string }
+  | { type: 'local_bundled' };    // No credentials — bundled llama-server
 
 // --- Capabilities ---
 
@@ -60,7 +63,10 @@ export const PROVIDER_CAPABILITIES: Record<ConnectionProvider, Partial<Record<Au
     local:         ['interactive', 'agent_tasks', 'inline_completion'],
   },
   openai_compatible: {
-    api_key:       ['interactive', 'agent_tasks'],
+    api_key:       ['interactive', 'agent_tasks', 'inline_completion'],
+  },
+  local_ai: {
+    local_bundled: ['interactive', 'agent_tasks', 'inline_completion'],
   },
 };
 
@@ -197,7 +203,14 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     authMethod: 'api_key',
     label: 'OpenAI-Compatible',
     description: 'vLLM, LiteLLM, Together AI, Groq, or any compatible API',
-    capabilities: ['interactive', 'agent_tasks'],
+    capabilities: ['interactive', 'agent_tasks', 'inline_completion'],
+  },
+  {
+    provider: 'local_ai',
+    authMethod: 'local_bundled',
+    label: 'Local AI',
+    description: 'Bundled on-device AI — no API key needed',
+    capabilities: ['interactive', 'agent_tasks', 'inline_completion'],
   },
 ];
 

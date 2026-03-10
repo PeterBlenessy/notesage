@@ -23,9 +23,17 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { Slider } from '@/components/ui/slider';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Loader2, RefreshCw, ChevronsUpDown, Check, Eye, EyeOff } from 'lucide-react';
 import { tauriApi } from '@/lib/tauri';
 import { useConnectionsStore } from '@/stores/connections-store';
+import { useLocalAIStore } from '@/stores/local-ai-store';
 import { stopAcpAgent } from '@/hooks/useAIOperations';
 import { stopTaskAgent } from '@/hooks/useAgentTaskOperations';
 import type { Connection, ConnectionConfig } from '@/lib/ai/connections';
@@ -103,6 +111,13 @@ export function ConnectionConfigDialog({
   const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
 
+  // Local AI server settings
+  const [contextLength, setContextLength] = useState(4096);
+  const [gpuLayers, setGpuLayers] = useState(-1);
+  const [localModelId, setLocalModelId] = useState<string | null>(null);
+  const localModels = useLocalAIStore((s) => s.models);
+  const downloadedLocalModels = localModels.filter((m) => m.downloaded);
+
   // Model list state
   const [models, setModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -128,6 +143,14 @@ export function ConnectionConfigDialog({
       setShowApiKey(false);
       setModels([]);
       setModelsError(null);
+
+      // Local AI server settings
+      if (connection.authMethod === 'local_bundled') {
+        const localStore = useLocalAIStore.getState();
+        setContextLength(localStore.contextLength);
+        setGpuLayers(localStore.gpuLayers);
+        setLocalModelId(localStore.activeModelId);
+      }
     }
   }, [connection, open]);
 
@@ -155,12 +178,12 @@ export function ConnectionConfigDialog({
     }
   }, [connection, apiKey, baseUrl]);
 
-  // Auto-fetch models when popover opens
+  // Auto-fetch models when popover opens (not for local_bundled)
   useEffect(() => {
-    if (modelPopoverOpen && models.length === 0 && !modelsLoading && !modelsError) {
+    if (modelPopoverOpen && models.length === 0 && !modelsLoading && !modelsError && connection?.authMethod !== 'local_bundled') {
       fetchModels();
     }
-  }, [modelPopoverOpen, models.length, modelsLoading, modelsError, fetchModels]);
+  }, [modelPopoverOpen, models.length, modelsLoading, modelsError, fetchModels, connection?.authMethod]);
 
   const hasCustomValues = temperature !== null || maxTokensIndex !== null;
   const isAgentManaged = connection?.authMethod === 'agent_managed';
@@ -194,12 +217,34 @@ export function ConnectionConfigDialog({
       stopTaskAgent();
     }
 
+    // Persist local AI server settings and restart if changed
+    if (isLocalBundled) {
+      const localStore = useLocalAIStore.getState();
+      const ctxChanged = contextLength !== localStore.contextLength;
+      const gpuChanged = gpuLayers !== localStore.gpuLayers;
+      const modelChanged = localModelId !== localStore.activeModelId;
+      localStore.setContextLength(contextLength);
+      localStore.setGpuLayers(gpuLayers);
+      if (localModelId) localStore.setActiveModel(localModelId);
+      // Server will auto-restart via useLocalAI effect when these change
+      if (ctxChanged || gpuChanged || modelChanged) {
+        // Force a server restart by stopping it — useLocalAI will re-start
+        if (localStore.serverStatus === 'running') {
+          tauriApi.stopLocalServer().catch(() => {});
+          localStore.setServerStatus('stopped');
+          localStore.setServerPort(null);
+        }
+      }
+    }
+
     updateConnection(connection.id, updates);
     onOpenChange(false);
   };
 
   if (!connection) return null;
-  const showBaseUrl = connection.authMethod === 'api_key' || connection.provider === 'openai_compatible';
+
+  const isLocalBundled = connection.authMethod === 'local_bundled';
+  const showBaseUrl = !isLocalBundled && (connection.authMethod === 'api_key' || connection.provider === 'openai_compatible');
   const showApiKeyField = connection.credentials.type === 'api_key';
   const defaultModel = DEFAULT_MODELS[connection.provider] ?? '';
   const placeholderUrl = DEFAULT_URLS[connection.provider] ?? '';
@@ -214,8 +259,45 @@ export function ConnectionConfigDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          {/* Local AI model picker — shows downloaded models */}
+          {isLocalBundled && (
+            <div className="space-y-1.5">
+              <Label className="text-sm">Model</Label>
+              {downloadedLocalModels.length > 0 ? (
+                <Select
+                  value={localModelId ?? ''}
+                  onValueChange={setLocalModelId}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select a model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {downloadedLocalModels.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        <span className="flex items-center gap-2">
+                          <span>{m.name}</span>
+                          {m.size_bytes > 0 && (
+                            <span className="text-xs text-muted-foreground">
+                              {m.size_bytes < 1_000_000_000
+                                ? `${(m.size_bytes / 1_000_000).toFixed(0)} MB`
+                                : `${(m.size_bytes / 1_000_000_000).toFixed(1)} GB`}
+                            </span>
+                          )}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No models downloaded yet. Download one in the Local AI tab.
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Model — agent-managed: simple text input; API providers: combobox with fetch */}
-          <div className="space-y-1.5">
+          {!isLocalBundled && <div className="space-y-1.5">
             <Label className="text-sm">Model</Label>
             {isAgentManaged ? (
               <>
@@ -312,9 +394,9 @@ export function ConnectionConfigDialog({
                 </PopoverContent>
               </Popover>
             )}
-          </div>
+          </div>}
 
-          {/* Temperature — only for direct API connections */}
+          {/* Temperature — for direct API and local_bundled connections */}
           {!isAgentManaged && (
             <div className="space-y-2.5">
               <div className="flex items-center justify-between">
@@ -372,6 +454,47 @@ export function ConnectionConfigDialog({
                 <span className="text-[10px] text-muted-foreground">Long</span>
               </div>
             </div>
+          )}
+
+          {/* Server settings — local_bundled only */}
+          {isLocalBundled && (
+            <>
+              <div className="flex items-center justify-between">
+                <Label className="text-sm">Context Length</Label>
+                <Select
+                  value={String(contextLength)}
+                  onValueChange={(v) => setContextLength(Number(v))}
+                >
+                  <SelectTrigger className="w-28 h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="2048">2,048</SelectItem>
+                    <SelectItem value="4096">4,096</SelectItem>
+                    <SelectItem value="8192">8,192</SelectItem>
+                    <SelectItem value="16384">16,384</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-between">
+                <Label className="text-sm">GPU Layers</Label>
+                <Select
+                  value={String(gpuLayers)}
+                  onValueChange={(v) => setGpuLayers(Number(v))}
+                >
+                  <SelectTrigger className="w-28 h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="-1">Auto (all)</SelectItem>
+                    <SelectItem value="0">CPU only</SelectItem>
+                    <SelectItem value="16">16 layers</SelectItem>
+                    <SelectItem value="32">32 layers</SelectItem>
+                    <SelectItem value="48">48 layers</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
           )}
 
           {/* Base URL */}

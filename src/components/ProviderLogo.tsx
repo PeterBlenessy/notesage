@@ -1,4 +1,4 @@
-import { Server } from 'lucide-react';
+import { Cpu, Server } from 'lucide-react';
 
 export const PROVIDER_LOGOS: Record<string, string | null> = {
   anthropic: '/logos/anthropic.svg',
@@ -7,9 +7,18 @@ export const PROVIDER_LOGOS: Record<string, string | null> = {
   github: '/logos/copilot.svg',
   google: '/logos/google.svg',
   openai_compatible: null, // Uses Server icon instead
+  local_ai: null, // Uses Cpu icon instead
 };
 
 export function ProviderLogo({ provider, className = 'w-6 h-6' }: { provider: string; className?: string }) {
+  if (provider === 'local_ai') {
+    return (
+      <span className={`${className} rounded bg-muted flex items-center justify-center`}>
+        <Cpu className="w-3.5 h-3.5 text-muted-foreground" strokeWidth={1.5} />
+      </span>
+    );
+  }
+
   if (provider === 'openai_compatible') {
     return (
       <span className={`${className} rounded bg-muted flex items-center justify-center`}>

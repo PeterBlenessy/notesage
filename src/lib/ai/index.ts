@@ -4,6 +4,7 @@ import { AnthropicProvider } from './providers/anthropic';
 import { OpenAIProvider } from './providers/openai';
 import { OllamaProvider } from './providers/ollama';
 import { OpenAICompatibleProvider } from './providers/openai-compatible';
+import { LocalProvider } from './providers/local';
 
 export * from './types';
 export * from './connections';
@@ -30,6 +31,10 @@ export function getAIProviderFromConnection(connection: Connection): AIProvider 
     return getAIProvider('ollama', undefined, connection.credentials.url, connection.config);
   }
 
+  if (connection.credentials.type === 'local_bundled') {
+    return new LocalProvider(connection.config);
+  }
+
   throw new Error(`Unsupported credentials type for connection "${connection.label}"`);
 }
 
@@ -52,6 +57,8 @@ export function getAIProvider(
       return new OllamaProvider(ollamaUrl, config);
     case 'openai_compatible':
       return new OpenAICompatibleProvider(apiKey, config);
+    case 'local_bundled':
+      return new LocalProvider(config);
     default:
       throw new Error(`Unknown provider: ${provider}`);
   }

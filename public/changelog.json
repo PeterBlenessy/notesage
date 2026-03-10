@@ -1,6 +1,445 @@
 {
   "releases": [
     {
+      "version": "0.18.6",
+      "date": "2026-03-09",
+      "previousVersion": "0.18.5",
+      "sections": {
+        "features": [
+          "Voice transcription and dictation with on-device Whisper (Metal GPU acceleration on macOS)",
+          "Live dictation via microphone with Web Speech API fallback to whisper-rs",
+          "Meeting recording with full transcription and timestamped segments",
+          "5 Whisper model sizes with download management in Settings",
+          "Language selection from 99 supported languages"
+        ],
+        "fixes": [
+          "Fix CI build failures for whisper-rs on all platforms (Metal feature macOS-only, ALSA/clang deps for Linux)",
+          "Set macOS deployment target to 14.0 (Sonoma) to resolve whisper.cpp compilation errors"
+        ]
+      }
+    },
+    {
+      "version": "0.18.5",
+      "date": "2026-03-08",
+      "previousVersion": "0.18.4",
+      "sections": {
+        "features": [
+          "AI-assisted research skill pack (Phase 8) — collect, organize, search, synthesize, and cite from web sources",
+          "4 new bundled skills: `save-research`, `search-research`, `synthesize-sources`, `insert-citation`",
+          "Enhanced `download-webpage` with author/date metadata extraction, `--tags` flag, and research frontmatter",
+          "`Cmd+4` opens command palette in research search mode with real-time filtering",
+          "`search_research` Rust Tauri command for fast research file searching with relevance scoring",
+          "Citation format preferences (`citationFormat`/`citationStyle`) persisted per-project in project metadata",
+          "Three citation styles: inline links, footnotes, academic (APA/MLA/Chicago)"
+        ],
+        "fixes": [
+          "Local file links in chat messages now open as editor tabs instead of navigating the webview",
+          "Relative file paths in AI responses resolve against workspace project/explorer roots"
+        ]
+      }
+    },
+    {
+      "version": "0.18.4",
+      "date": "2026-03-08",
+      "previousVersion": "0.18.3",
+      "sections": {
+        "features": [
+          "Structured logging with `tauri-plugin-log` — rotating 5MB log files, runtime debug toggle, frontend structured logger with batched IPC forwarding",
+          "Log file management in Settings (path display, Reveal in Finder, Clear Logs)",
+          "File-backed persistence for chat and activity stores (`~/.notesage/state/`) with throttled writes and atomic file operations",
+          "Health check commands (`ping`, `health_check`) for sleep/wake recovery",
+          "`visibilitychange` wake handler — detects dead WebView, recovers filesystem watchers, reports dead AI processes",
+          "Startup cleanup of orphaned ACP agent processes via `pkill`"
+        ],
+        "fixes": [
+          "Fix `flushInterval` out-of-scope bug in streaming cleanup (`useAIOperations`)",
+          "Fix MutationObserver leak in inline-diff with deterministic Map-based cleanup",
+          "Fix reader loop hangs in Copilot LSP and MCP with 30s timeouts",
+          "Fix `@mozilla/readability` vulnerability by bumping to ^0.6.0"
+        ],
+        "improvements": [
+          "Store bounds: max 50 conversations, 500 messages, 100 completed tasks, 200 activities per task, 7-day task TTL, 20 pending external changes, 200 scroll positions (LRU)",
+          "Streaming state (`partialOutput`, `thinkingOutput`) excluded from persistence writes",
+          "Filesystem watcher overflow guards (500 entry cap) and batch event emission",
+          "Disable macOS App Nap to prevent aggressive process suspension",
+          "Settings UI: consistent card layout for toggles, smaller switch component, icon-only log buttons with tooltips",
+          "Rename \"Create Prompt\" to \"Add\" for consistency"
+        ]
+      }
+    },
+    {
+      "version": "0.18.3",
+      "date": "2026-03-07",
+      "previousVersion": "0.18.2",
+      "sections": {
+        "features": [
+          "MCP Client Integration (Phase 7 Step B): Rust backend with stdio JSON-RPC transport, Zustand store, discovery hook, and Settings UI for managing MCP servers",
+          "Import existing MCP server configurations from Claude Desktop, Cursor, and VS Code",
+          "Add/edit/remove MCP servers with `.notesage/mcp.json` (global) persistence",
+          "Edit custom skills and agents from Settings with structured dialog (description, instructions, advanced options)",
+          "New addressable agent creation dialog with advanced fields (model, icon, allowed-tools, user-invocable, disable-model-invocation)",
+          "Rewrite skill creation wizard as single-page dialog with advanced options (allowed-tools, disable-model-invocation)"
+        ],
+        "improvements": [
+          "Use existing `serializeFrontmatter` library instead of hand-rolled YAML builders across all create/edit dialogs",
+          "Memoize skill/agent source grouping to avoid redundant filter passes on re-render",
+          "Add async cancellation guards to edit dialog effects to prevent stale writes on rapid open/close",
+          "Update bundled `create-skill` to guide AI about advanced frontmatter fields",
+          "Scrollable dialog bodies when window is small",
+          "MCP server auto-start on discovery, parallel startup via `Promise.allSettled`"
+        ],
+        "fixes": [
+          "Fix MCP `mcp_start_server` holding Tokio mutex across network I/O",
+          "Fix MCP `mcp_call_tool` holding mutex during tool call round-trip",
+          "Fix MCP settings UI using `useState` instead of `useEffect` for async config import check",
+          "Remove broken MCP project scope selector (both paths saved to global)",
+          "Remove useless async MCP stop calls from `beforeunload` handler",
+          "Remove duplicate `requestRescan` alias in SkillsSettings",
+          "Remove empty `className=\"\"` on delete menu items"
+        ]
+      }
+    },
+    {
+      "version": "0.18.2",
+      "date": "2026-03-07",
+      "previousVersion": "0.18.1",
+      "sections": {
+        "features": [
+          "Add `download-webpage` bundled skill — fetch web pages by URL, extract article content, download images locally, save as clean markdown with YAML frontmatter"
+        ],
+        "fixes": [
+          "Fix chat panel broken state when last conversation is deleted (auto-create recovery)",
+          "Fix debug guard logic for bundled file extraction (was inverted — skipped unchanged files instead of changed ones)"
+        ],
+        "improvements": [
+          "Extract shared `write_bundled_file()` helper to deduplicate bundled skill/agent extraction logic",
+          "Parallelize image downloads in download-webpage skill (Promise.all instead of sequential)",
+          "Single-pass markdown image URL replacement instead of per-image string rebuild"
+        ]
+      }
+    },
+    {
+      "version": "0.18.1",
+      "date": "2026-03-07",
+      "previousVersion": "0.18.0",
+      "sections": {
+        "features": [
+          "Addressable agents: file-based agent system replacing legacy personas, discovered from `~/.notesage/agents/`, project `.notesage/agents/`, `.github/agents/`, and provider-specific directories (Phase 7 Step C)",
+          "Agent picker dropdown in chat footer; `@agent-name` addressing in chat input for per-message agent scoping",
+          "7 bundled agents (General Assistant, Creative Writer, Technical Editor, Fact Checker, Academic Writer, Copywriter, Proofreader)",
+          "One-time migration of custom personas to agent `.md` files on first launch",
+          "Quick reply chips: AI responses can include `<quick-replies>` tags rendered as clickable follow-up prompts",
+          "Skill & agent management: delete and move (global <-> project) for custom skills/agents, gated behind Settings > Advanced toggle",
+          "Skill invocations displayed as collapsible indicators instead of raw expanded content",
+          "Generic Ollama thinking/reasoning model support with runtime capability detection",
+          "Auto-rescan: filesystem watcher triggers skill/agent re-discovery automatically"
+        ],
+        "fixes": [
+          "Fix task list text overflow when window is narrow (flexbox min-width + overflow-wrap)",
+          "Fix code review findings: typed API wrappers (`tauriApi.*`), component-based path matching in Rust, UI polish",
+          "Fix UI design review issues: focus states, typography, accessibility",
+          "Strip duplicate option lists when quick-replies tags are present",
+          "Consolidate bundled skills/agents into standard `~/.notesage/` paths (remove legacy `bundled-skills/` and `bundled-agents/` directories)"
+        ],
+        "improvements": [
+          "Rename Developer settings tab to Advanced",
+          "Remove destructive red styling from skill/agent delete menu items",
+          "Move quick-replies convention to bundled agents.md instruction file",
+          "Update docs and PRDs to reflect current implementation status (all Step A & C quality gates checked)",
+          "Document `copy_directory` Tauri command"
+        ]
+      }
+    },
+    {
+      "version": "0.18.0",
+      "date": "2026-03-06",
+      "previousVersion": "0.17.6",
+      "sections": {
+        "features": [
+          "Skills & Agents Platform (Phase 7, Step A) — extensible AI capability system based on the open Agent Skills standard",
+          "Skill discovery from connected providers' filesystem paths (~/.claude/skills/, ~/.codex/skills/, ~/.gemini/skills/, ~/.agents/skills/)",
+          "Notesage skill hierarchy: project .notesage/skills/ overrides global ~/.notesage/skills/, which overrides external provider skills",
+          "Agent instruction files: .notesage/agents.md and ~/.notesage/agents.md injected into AI context, with discovery of existing AGENTS.md/CLAUDE.md/GEMINI.md",
+          "Script execution runtime with path traversal protection, interpreter resolution (bash/python/node/tsx), timeout enforcement, and permission tiers",
+          "Built-in create-skill and create-agent meta-skills shipped with the app, extracted to ~/.notesage/bundled-skills/ at startup",
+          "Skills browser in Settings > Skills & Agents with source groups, enable/disable toggles, override detection, and rescan",
+          "Agent instructions section with priority ordering, source badges, and merged context preview",
+          "Skill slash commands in chat input (/skill-name) with autocomplete dropdown and skill body expansion",
+          "Status bar indicator showing active agent instruction files with popover details",
+          "New Skill wizard: multi-step dialog (describe → name → scope → review → create)",
+          "New Agent Instructions wizard: multi-step dialog with append/replace for existing files",
+          "Skill context injection into AI prompts — all skills for direct API, Notesage-only for ACP (avoids duplicating what agents discover independently)",
+          "Skill script permission model: per-execution, per-session (non-persisted), always (persisted)"
+        ]
+      }
+    },
+    {
+      "version": "0.17.6",
+      "date": "2026-03-06",
+      "previousVersion": "0.17.5",
+      "sections": {
+        "features": [
+          "Add Skills & Agents Platform PRD (Phase 7 Step A) — agent skills discovery, script execution runtime, built-in meta-skills, wizard UI",
+          "Add task breakdown for Skills & Agents Platform (22 implementation tasks)"
+        ],
+        "fixes": [
+          "Fix tab bar scrollbar gap by matching track color to tab background",
+          "Fix tab bar scrollbar overlapping tabs and blocking clicks",
+          "Remove reply truncation in comment popover",
+          "Fix stale project path errors and OpenAI-compatible base URL normalization"
+        ],
+        "improvements": [
+          "Restructure roadmap: Phase 7 → Skills & Agents Platform, Phase 8 → Research Skill Pack, Workflows moved to Beyond",
+          "Add architectural decision for open standards adoption (Agent Skills + MCP)",
+          "Unify streaming cursor style across chat, comments, and activity panel",
+          "Add Ollama thinking model support with collapsible reasoning display"
+        ]
+      }
+    },
+    {
+      "version": "0.17.5",
+      "date": "2026-03-05",
+      "previousVersion": "0.17.4",
+      "sections": {
+        "features": [
+          "Comment delegation modes: Chat (inline popover stays open) and Delegate (background) with separate UX flows",
+          "Per-reply activity logs: each agent reply persists its own activity log (tool calls, steps) instead of a single flat list per comment",
+          "Move to Chat carries per-reply activities through to chat panel messages"
+        ],
+        "fixes": [
+          "Fix activity spinners not stopping after task completion — added `completeAllActivities()` to all terminal paths in activity-store",
+          "Sanitize stale `running` activities at render time in CommentPopover and ActivityTaskCard",
+          "Fix stale Zustand state snapshot when snapshotting activities onto reply",
+          "Fix code review issues in useCommentDelegation"
+        ],
+        "improvements": [
+          "Polish CommentPopover: dropdown menu for edit/delete/resolve, tooltips on all action buttons, textarea for comment input, icon consistency (User vs BotMessageSquare)"
+        ]
+      }
+    },
+    {
+      "version": "0.17.4",
+      "date": "2026-03-03",
+      "previousVersion": "0.17.3",
+      "sections": {
+        "improvements": [
+          "Replace cloud sync badge with RefreshCw (sync arrows) overlay icon — more recognizable at small sizes, consistent across folders, folder-open, and file icons",
+          "Update check-for-updates button to always show download icon and \"Check for Updates\" label instead of misleading \"You're up to date\" on initial open"
+        ]
+      }
+    },
+    {
+      "version": "0.17.3",
+      "date": "2026-03-02",
+      "previousVersion": "0.17.2",
+      "sections": {
+        "features": [
+          "File content search in command palette (Cmd+Shift+F) — grep-like search across all workspace files with debounced backend calls, line numbers, and content snippets",
+          "Recent files section now visible in file search mode (Cmd+Shift+F), matching the standard palette (Cmd+K) behavior"
+        ],
+        "improvements": [
+          "New `search_file_content` Tauri command: case-insensitive substring search across 40+ text file extensions, skips hidden files and files >1MB, capped at 100 results",
+          "File search results grouped as Recent → Files → Content Matches for clear visual hierarchy",
+          "Recent files excluded from the Files group in file search mode to avoid duplicates",
+          "Updated placeholder text to indicate content search capability"
+        ]
+      }
+    },
+    {
+      "version": "0.17.2",
+      "date": "2026-03-02",
+      "previousVersion": "0.17.1",
+      "sections": {
+        "fixes": [
+          "Fix startup watcher errors caused by stale paths — watchers now gated behind `startupReady` flag until `reloadTrees()` finishes validation"
+        ],
+        "features": [
+          "iCloud project auto-discovery at startup — scans iCloud Notesage folder for projects synced from other machines",
+          "iCloud project auto-discovery at runtime — file watcher detects new projects appearing in iCloud folder (1s debounce)"
+        ]
+      }
+    },
+    {
+      "version": "0.17.1",
+      "date": "2026-03-02",
+      "previousVersion": "0.17.0",
+      "sections": {
+        "features": [
+          "Chat message deletion — circular X button on hover (top-left for user, top-right for assistant)",
+          "Configurable chat history limit for Direct API connections (Unlimited, 10, 20, 50, 100)",
+          "Project awareness — file tree and root path injected into AI system message",
+          "File awareness — active file path and content preview in AI system message",
+          "Chat provider selector reflects project-level AI provider override"
+        ],
+        "fixes": [
+          "Fix false \"File modified externally\" toasts from in-app saves",
+          "Fix resizable panel handle layout shift on hover (1px → 2px expansion removed)",
+          "Fix sidebar drag-and-drop: disable Tauri native DnD, use counter-based hover tracking",
+          "Fix sidebar UX: iCloud sync for blank projects, folder indentation, context menus"
+        ],
+        "improvements": [
+          "AI errors shown inline as assistant messages with warning icon and provider attribution",
+          "Parse provider JSON error bodies into user-friendly messages",
+          "Increase Ollama HTTP timeout to 5 minutes for model loading",
+          "AI provider configuration v2: OpenAI-compatible providers, Ollama expanded capabilities",
+          "Redesign routing model selector with config icon",
+          "Provider-agnostic inline completion popover text",
+          "Refactor sidebar: extract shared utilities, replace window.prompt with dialog",
+          "Skip node_modules, .git, dist, and other heavy directories in file tree context"
+        ]
+      }
+    },
+    {
+      "version": "0.17.0",
+      "date": "2026-03-01",
+      "previousVersion": "0.16.11",
+      "sections": {
+        "features": [
+          "Multi-turn comment threads: user can reply to agent responses, agent responds again with full conversation history in each prompt",
+          "Explicit \"Apply\" button on agent replies: shows agent response as inline diff on anchor text via AISuggestion decorations (accept via Cmd+Enter, reject via Cmd+Backspace)",
+          "Preamble stripping: agent responses automatically cleaned of introductory phrases and trailing sign-offs before applying",
+          "Anchor range resolution via CommentMark decoration positions with text search fallback",
+          "Collision prevention: toast warning when another suggestion is active, toast error when anchor text was deleted",
+          "Conversation-aware activity panel: multi-turn conversations displayed as chat-style message threads with user/agent attribution",
+          "Sticky expansion states: expanded conversations stay expanded across agent turns in both comment popover and activity panel",
+          "Multi-turn task reuse: `existingTaskId` on TaskMeta enables activity store to reuse the same task entry across conversation turns"
+        ],
+        "improvements": [
+          "User vs agent reply distinction in comment popover with separate icons (User icon vs BotMessageSquare)",
+          "Agent auto-apply PRD revised with explicit Apply button flow and multi-turn thread design",
+          "Phase 6.5 marked as complete in all documentation"
+        ]
+      }
+    },
+    {
+      "version": "0.16.11",
+      "date": "2026-03-01",
+      "previousVersion": "0.16.10",
+      "sections": {
+        "fixes": [
+          "Fix critical bug where AI chat and bubble menu showed \"Please configure an AI provider\" despite v2 connections being configured — UI was gating on the legacy v1 ai-store instead of v2 routing/connections stores",
+          "Fix Cmd+B shortcut conflict between bold formatting and sidebar toggle — sidebar now uses Cmd+Shift+L"
+        ],
+        "features": [
+          "Mark-preserving inline changes: accepting AI suggestions and diff hunks now preserves formatting marks (bold, italic, code, links) via shared `pm-replace.ts` helper",
+          "Show provider logo (Anthropic, OpenAI, etc.) in agent activity panel instead of generic bot icon"
+        ],
+        "improvements": [
+          "Unify SourceBubbleMenu (raw mode) loading behavior with WYSIWYG BubbleMenu — all buttons stay visible during loading with spinner on active button",
+          "Update keyboard shortcuts dialog and documentation for Cmd+Shift+L sidebar toggle"
+        ]
+      }
+    },
+    {
+      "version": "0.16.10",
+      "date": "2026-03-01",
+      "previousVersion": "0.16.9",
+      "sections": {
+        "features": [
+          "Agent activity strip & panel — background task tracking with status icons, streaming output, thinking output, markdown rendering, click-to-navigate to source comments",
+          "Agent activity panel resizable with drag handle, keyboard shortcut (Cmd+Shift+A)",
+          "Progress streaming — partial agent replies stream into comment popovers in real-time",
+          "Configurable debug logging (frontend + Rust backend) with Developer settings tab",
+          "Make Project option on top-level explorer folders (previously only available on child folders)"
+        ],
+        "fixes": [
+          "Fix update download progress bar flickering caused by CSS transition interruption",
+          "Fix Copilot LSP signIn flow: extract userCode from signInInitiate response",
+          "Fix scroll-to-comment navigation from activity panel",
+          "Clean up partial replies and activities on comment/document deletion",
+          "Fix sidebar resize handle only showing when pinned",
+          "Fix TooltipProvider error in activity strip",
+          "Fix Copilot LSP error swallowing in execute_embedded_command"
+        ],
+        "improvements": [
+          "Design review fixes for agent activity components (shadcn/ui Button, consistent icon sizing, text sizes)",
+          "Developer settings promoted to its own tab (moved from About section)",
+          "Agent activity tasks persist across app restart (running tasks marked as error on rehydration)",
+          "Updated terminology: agent activity strip (40px rail) vs agent activity panel (resizable sidebar)"
+        ]
+      }
+    },
+    {
+      "version": "0.16.9",
+      "date": "2026-02-28",
+      "previousVersion": "0.16.8",
+      "sections": {
+        "features": [
+          "Add universal \"Move to...\" context menu with subfolder navigation — move files between Quick Notes, projects, and explorer folders with recursive folder browsing and conflict detection",
+          "Add adjustable sidebar width with drag handle",
+          "Show and allow editing frontmatter in source mode",
+          "Add keyboard shortcuts reference dialog (Cmd+7)",
+          "Show minimal StatusBar with shortcuts icon for all file types"
+        ],
+        "fixes": [
+          "Fix Ollama save button disabled when using default server URL",
+          "Fix agent_managed project override routing and chat project selector conflicts"
+        ],
+        "improvements": [
+          "Replace ExternalChangeBanner with toast for dirty-tab external changes",
+          "Unify AI bubble menu style and fix source mode clipping",
+          "Add rounded corners to markdown editor to match PDF viewer",
+          "Reposition frontmatter expand/collapse controls for better UX",
+          "Uppercase category labels in Move to... submenu"
+        ]
+      }
+    },
+    {
+      "version": "0.16.8",
+      "date": "2026-02-28",
+      "previousVersion": "0.16.7",
+      "sections": {
+        "features": [
+          "Find in document across all viewer types — Cmd+F now works in PDF, EPUB, DOCX, and plain text viewers (previously only markdown WYSIWYG/source)",
+          "Shared DOM search utility (`dom-search.ts`) for DOCX and plain text viewers — TreeWalker-based text node walking with `<mark>` element wrapping",
+          "DOCX viewer: FindBar with match highlighting, match count, prev/next navigation",
+          "Plain text viewer: toolbar with filename display, FindBar with match highlighting",
+          "PDF viewer: text layer search with match highlighting and page-aware navigation",
+          "EPUB viewer: CFI-based search via foliate-js `view.search()`, native text selection highlighting via `view.select()`",
+          "Inline tag badges — `#tag` patterns render as styled pill badges in the editor",
+          "Tag occurrence search — click a tag badge to find all occurrences across the workspace",
+          "Tag autocomplete — typing `#` suggests known tags from the workspace index",
+          "Cmd+3 keyboard shortcut for direct tag search via command palette"
+        ],
+        "fixes": [
+          "EPUB search: removed red SVG overlay artifacts by patching vendored `view.js` to suppress `addAnnotation` calls from the search generator",
+          "EPUB keyboard forwarding: all keydown events (including modifier keys) forwarded from EPUB iframes to parent window, enabling Escape to close FindBar and app shortcuts (Cmd+T, etc.) when EPUB has focus",
+          "FindBar: global Escape key listener ensures FindBar closes regardless of focus state"
+        ],
+        "improvements": [
+          "Find-in-document PRD marked as Complete (all three phases done)",
+          "Architecture docs updated with viewer components and dom-search utility",
+          "Product description updated with comprehensive find-in-document coverage"
+        ]
+      }
+    },
+    {
+      "version": "0.16.7",
+      "date": "2026-02-27",
+      "previousVersion": "0.16.6",
+      "sections": {
+        "features": [
+          "EPUB viewer: replace epubjs with foliate-js for reliable paginated and scroll rendering",
+          "EPUB viewer: dark/light mode support — content theme follows app theme with full element coverage",
+          "EPUB viewer: running header (chapter title) and footer (page number) in paginated mode",
+          "EPUB viewer: book-wide page numbering accumulated from physical pages across sections"
+        ],
+        "fixes": [
+          "EPUB viewer: table overflow constrained to column width in paginated mode (paginator.js)",
+          "EPUB viewer: null guard fixes in paginator.js for documents without expected elements",
+          "Frontmatter parser: gracefully handle invalid YAML instead of throwing"
+        ],
+        "improvements": [
+          "EPUB viewer: single-column layout following foliate-js reference implementation pattern",
+          "EPUB viewer: bookmark persistence and restoration on app restart",
+          "EPUB viewer: arrow key navigation in paginated mode",
+          "EPUB viewer: TOC dropdown for chapter navigation",
+          "File types: register `.epub` as binary file type, add `.log`/`.txt` as plain text types",
+          "Removed epubjs dependency in favor of vendored foliate-js (MIT licensed)"
+        ]
+      }
+    },
+    {
       "version": "0.16.6",
       "date": "2026-02-26",
       "previousVersion": "0.16.5",
@@ -24,23 +463,59 @@
       }
     },
     {
+      "version": "0.16.5",
+      "date": "2026-02-26",
+      "previousVersion": "0.16.4",
+      "sections": {
+        "improvements": [
+          "PDF viewer: continuous scroll — all pages rendered vertically with lazy loading via IntersectionObserver",
+          "PDF viewer: fit-to-page mode alongside existing fit-to-width",
+          "PDF viewer: smoother zoom steps (~10-15% increments instead of 25-50% jumps)",
+          "PDF viewer: current page indicator updates from scroll position",
+          "PDF viewer: removed prev/next page buttons (scrolling replaces them)"
+        ]
+      }
+    },
+    {
+      "version": "0.16.4",
+      "date": "2026-02-26",
+      "previousVersion": "0.16.3",
+      "sections": {
+        "features": [
+          "Editor typography settings: configurable font family, font size, line height, and paragraph spacing via toolbar popover",
+          "14 curated font presets across sans-serif (System/SF Pro, Helvetica Neue, Avenir Next, Inter), serif (Source Serif 4, Georgia, Palatino, Baskerville, Charter, Times New Roman), and monospace (JetBrains Mono, SF Mono, Menlo, Courier New)",
+          "Font dropdown renders each option in its own typeface for live preview",
+          "Typography settings persisted to disk (`~/Notesage/.notesage/editor-styles.json`) for iCloud sync",
+          "Reset to defaults button in typography popover"
+        ],
+        "improvements": [
+          "Replaced hardcoded editor CSS values with CSS custom properties (`--editor-font-family`, `--editor-font-size`, `--editor-line-height`, `--editor-paragraph-spacing`)",
+          "Typography changes apply immediately without restart"
+        ]
+      }
+    },
+    {
       "version": "0.16.3",
       "date": "2026-02-25",
       "previousVersion": "0.16.2",
       "sections": {
         "features": [
-          "Multi-folder explorer support: open multiple folders simultaneously in the Folders sidebar section",
+          "Multi-folder explorer support: open multiple folders simultaneously in the Folders sidebar section, each as a collapsible entry with independent expand/collapse, context menu, and file watching",
           "Full-width source editor with word wrap toggle in toolbar"
         ],
         "fixes": [
           "Fix tab restoration order and active tab on app restart",
-          "Fix changelog dialog: scrollable content, dev mode loading, bullet alignment",
+          "Fix changelog dialog: scrollable content and dev mode loading",
+          "Fix changelog dialog bullet alignment and capitalize section headings",
           "Fix image display: project-root relative paths, path normalization, load timing",
           "Fix Cmd+/ view mode toggle for Nordic keyboard layouts",
-          "Fix changelog CORS error in production: use Tauri HTTP plugin instead of browser fetch"
+          "Enlarge toolbar and chat icons for better visibility",
+          "Fix changelog CORS error in production: use Tauri HTTP plugin instead of browser fetch for GitHub release assets"
         ],
         "improvements": [
-          "Enlarge toolbar and chat icons for better visibility"
+          "New ExplorerFolderItem component for collapsible folder entries (simplified ProjectItem)",
+          "Workspace store refactored from single explorerPath to explorerFolders array with persistence migration",
+          "Architecture docs updated for workspace-store rename and new component"
         ]
       }
     },
