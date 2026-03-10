@@ -573,15 +573,23 @@ pub async fn start_local_server(
     }
 
     // Set library search path so the binary can find its shared libraries (libllama.dylib etc.)
-    // Libraries are in a `lib/` directory next to the binary
+    // Libraries may be in `lib/` next to the binary (dev / managed install)
+    // or in `Contents/Resources/lib/` (Tauri bundle resources)
     if let Some(binary_dir) = binary_path.parent() {
         let lib_dir = binary_dir.join("lib");
-        if lib_dir.exists() {
+        let resource_lib_dir = binary_dir.parent()
+            .map(|p| p.join("Resources").join("lib"));
+        let effective_lib_dir = if lib_dir.exists() {
+            Some(lib_dir)
+        } else {
+            resource_lib_dir.filter(|p| p.exists())
+        };
+        if let Some(dir) = effective_lib_dir {
             #[cfg(target_os = "macos")]
-            cmd.env("DYLD_LIBRARY_PATH", &lib_dir);
+            cmd.env("DYLD_LIBRARY_PATH", &dir);
             #[cfg(target_os = "linux")]
-            cmd.env("LD_LIBRARY_PATH", &lib_dir);
-            log::debug!(target: "notesage::local_ai", "Set library path to {}", lib_dir.display());
+            cmd.env("LD_LIBRARY_PATH", &dir);
+            log::debug!(target: "notesage::local_ai", "Set library path to {}", dir.display());
         }
     }
 

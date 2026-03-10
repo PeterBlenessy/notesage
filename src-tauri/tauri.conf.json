@@ -49,6 +49,9 @@
     "active": true,
     "targets": "all",
     "externalBin": ["binaries/llama-server"],
+    "resources": {
+      "binaries/lib/*": "lib/"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
