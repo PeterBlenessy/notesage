@@ -61,3 +61,5 @@ Chronological log of major implementation milestones and changes.
 | 055 | [Release v0.18.3](055-release-v0.18.3.md) | MCP client integration, skill/agent editing, creation improvements |
 | 056 | [Release v0.18.4](056-release-v0.18.4.md) | Structured logging, file-backed persistence, store bounds, sleep/wake recovery, leak fixes |
 | 057 | [Release v0.18.5](057-release-v0.18.5.md) | AI-assisted research skill pack (Phase 8) — collect, search, synthesize, cite |
+| 058 | [Release v0.18.6](058-release-v0.18.6.md) | Voice transcription and dictation with on-device Whisper |
+| 059 | [Release v0.19.0](059-release-v0.19.0.md) | Local AI with bundled llama-server (Phase 9) — offline inference, model management, FIM completions |

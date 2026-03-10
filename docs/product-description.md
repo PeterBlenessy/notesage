@@ -6,7 +6,7 @@ id: ""
 
 Notesage is a rich text markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
-**Current version:** 0.18.6
+**Current version:** 0.19.0
 
 ## Current Features
 
@@ -663,25 +663,56 @@ Multi-provider AI with subscription-based auth, agent mode, and per-use-case rou
 - Agent binary auto-install wizard — automated npm install from within the app (PRD: `docs/prds/2026-02-21-agent-install-wizard.md`)
 - ACP agent binary bundling as Tauri sidecar
 
+### Local AI (Bundled Inference)
+
+Privacy-focused offline AI with zero setup — no API keys, no external software, no accounts required.
+
+**Inference engine:**
+
+- Bundled `llama-server` (llama.cpp) as Tauri sidecar binary with Metal GPU acceleration
+- Auto-starts on app launch when enabled and a model is downloaded
+- Auto-restarts on crash (max 3 retries, then error state)
+- Process cleanup: `RunEvent::Exit` hook (SIGTERM → SIGKILL), `pkill` at startup for crash recovery, `kill_on_drop(true)` on process handle, frontend `beforeunload` as tertiary defense
+- Health checks every 30 seconds via `/health` endpoint
+
+**Model management:**
+
+- Curated model catalog embedded at compile time (`model-catalog.json`)
+- Models downloaded from Hugging Face in GGUF format to `~/.notesage/models/llm/`
+- Download progress via Tauri events, concurrent downloads with cancel support
+- System RAM detection for model recommendations
+- Settings → Local AI tab with model cards (download, delete, set active, FIM badge)
+- Custom model support via `~/.notesage/models/llm/custom-models.json`
+
+**Chat & inline actions:**
+
+- Chat streaming via OpenAI-compatible `/v1/chat/completions` endpoint on localhost
+- Bubble menu actions (Improve, Summarize, Expand) work with local models
+- Thinking/reasoning model support via hardcoded tag parser (`<think>`, `<reasoning>`, `<reflection>`, etc.)
+- First-run setup card in chat panel when no AI connections exist
+
+**Inline completions:**
+
+- FIM (Fill-in-the-Middle) via llama-server's `/infill` endpoint for code models (Qwen2.5 Coder, etc.)
+- Chat-based fallback for non-FIM models using instructed `/v1/chat/completions` prompt
+- Configurable context size (`fimContextChars` setting, adjustable via status bar slider)
+- Error backoff (stops after 5 consecutive failures, resets on connection/model/tab change)
+- Custom inline completion icon in status bar (italic T with sparkle trail)
+
+**Architecture:**
+
+- Rust backend: `commands/local_inference.rs` — `LocalInferenceState` managed state, sidecar lifecycle, model catalog, download management, FIM completions
+- Binary resolution: bundled sidecar → `~/.notesage/bin/` → system PATH
+- Frontend: `useLocalAI` hook (server lifecycle, health checks), `useLocalCompletion` hook (inline completions), `LocalProvider` (AIProvider implementation)
+- `local-ai-store` (Zustand, mixed persistence): server status, active model, downloads, system memory
+
+**Future enhancements (not yet built):**
+
+- Embeddings and semantic search (foundation laid with model directory structure)
+- Custom GGUF model import UI (users can use Ollama for arbitrary models)
+- Windows/Linux support (llama-server binaries exist for all platforms)
+
 ## Roadmap
-
-### Phase 9 — Local AI
-
-**Goal:** Privacy-focused offline AI with no external API dependency.
-
-**Features:**
-
-- Bundled llama-server for local inference
-  - Ship with pre-configured model or guided download
-  - No API keys required
-  - GPU acceleration support
-- Seamless provider switching — same chat/inline AI features work with local models
-
-**Architecture considerations:**
-
-- Ship llama.cpp binaries with app
-- Model files (\~4GB) as optional download
-- Extends existing provider abstraction (`AIProvider` interface)
 
 ### Phase 10 — Agent Binary Management & Runtime Sandboxing
 

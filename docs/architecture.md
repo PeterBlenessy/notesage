@@ -33,12 +33,15 @@ note-sage/
 │   │   │   ├── export.rs   # PDF export commands
 │   │   │   ├── git.rs      # Git operations
 │   │   │   ├── watcher.rs  # Filesystem watcher (notify crate)
-│   │   │   └── transcription.rs # Voice recording, Whisper transcription, dictation, model management
+│   │   │   ├── transcription.rs # Voice recording, Whisper transcription, dictation, model management
+│   │   │   └── local_inference.rs # Bundled llama-server lifecycle, model catalog, download, FIM completions
 │   │   └── export/         # PDF export engine
 │   │       ├── mod.rs
 │   │       ├── typst_world.rs      # Typst World trait implementation
 │   │       ├── markdown_to_typst.rs # Markdown → Typst markup converter
 │   │       └── templates.rs        # Template loading and parameterization
+│   ├── binaries/           # Bundled sidecar binaries (llama-server + dylibs)
+│   ├── model-catalog.json  # Curated LLM model catalog (embedded at compile time)
 │   ├── fonts/              # Bundled fonts (Inter, Source Serif 4, JetBrains Mono)
 │   ├── templates/          # Typst template presets (clean.typ, academic.typ, report.typ)
 │   ├── Cargo.toml
@@ -121,6 +124,8 @@ note-sage/
 │   │   ├── useCommentDelegation.ts # Comment → agent delegation flow
 │   │   ├── useCommentOperations.ts # Comment CRUD, decorations, status filtering
 │   │   ├── useCopilotCompletion.ts # Copilot LSP lifecycle + ghost text completions
+│   │   ├── useLocalAI.ts          # Local AI server lifecycle (auto-start, health checks, model switching)
+│   │   ├── useLocalCompletion.ts  # Local/compatible provider inline completions (FIM + chat fallback)
 │   │   ├── useRecording.ts        # Audio recording lifecycle (start/stop via cpal)
 │   │   ├── useTranscription.ts    # Whisper transcription with progress events
 │   │   ├── useSpeechRecognition.ts # Live dictation (Web Speech API → whisper-rs fallback)
@@ -137,7 +142,8 @@ note-sage/
 │   │   ├── mcp-store.ts           # MCP server registry, enabled overrides (partially persisted)
 │   │   ├── epub-store.ts          # EPUB viewer preferences and bookmarks
 │   │   ├── activity-store.ts      # Agent task registry (persisted)
-│   │   └── tag-store.ts           # Workspace tag index (non-persisted)
+│   │   ├── tag-store.ts           # Workspace tag index (non-persisted)
+│   │   └── local-ai-store.ts     # Local AI server state, model list, downloads (mixed persistence)
 │   ├── lib/
 │   │   ├── markdown.ts             # Markdown ↔ ProseMirror conversion
 │   │   ├── tauri.ts                # Typed Tauri invoke wrappers
@@ -152,7 +158,8 @@ note-sage/
 │   │       └── providers/
 │   │           ├── anthropic.ts    # Anthropic implementation
 │   │           ├── openai.ts       # OpenAI implementation
-│   │           └── ollama.ts       # Ollama implementation
+│   │           ├── ollama.ts       # Ollama implementation
+│   │           └── local.ts       # Bundled local AI implementation (llama-server)
 │   └── styles/
 │       ├── globals.css             # Global styles and CSS variables
 │       └── editor.css              # Editor-specific styles (ProseMirror overrides)
@@ -232,6 +239,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 - **activity-store**: Agent task registry — background task tracking with status, activities, streaming output, thinking output (persisted; running tasks marked as error on rehydration). Controls agent activity strip (40px rail) and agent activity panel (resizable sidebar) visibility.
 - **recording-store**: Voice recording and transcription state — available Whisper models, active downloads with per-model progress (RAF-throttled), speech language preference, recording/dictation status flags. Mixed persistence: `speechLanguage` and `defaultModel` persisted, runtime state (downloads, models, flags) non-persisted via `partialize`.
 - **external-change-store**: Pending external file changes with hunks (non-persisted)
+- **local-ai-store**: Local AI server state — server status (`stopped`/`starting`/`running`/`error`), active model, downloaded models, download progress, system memory info. Mixed persistence: `enabled`, `activeModelId`, `contextLength`, `gpuLayers`, `dismissedFirstRun` persisted; runtime state (server status, port, models, downloads) non-persisted via `partialize`.
 
 ### Styling
 
@@ -243,13 +251,13 @@ All state stores use Zustand with the persist middleware for localStorage:
 
 ### AI Provider Abstraction
 
-Three paths for AI operations, transparently routed based on the connection's auth method and use case:
+Four paths for AI operations, transparently routed based on the connection's auth method and use case:
 
 **Path 1: Direct API** (for `api_key` and `local` connections)
 
 ```typescript
 interface AIProvider {
-  name: 'anthropic' | 'openai' | 'ollama';
+  name: 'anthropic' | 'openai' | 'ollama' | 'local';
   generateText(prompt: string, options?: GenerateOptions): Promise<string>;
   chat(messages: ChatMessage[]): Promise<string>;
 }
@@ -258,6 +266,7 @@ interface AIProvider {
 - Anthropic: Claude Sonnet 4.5 (Messages API with server-side web search via `web_search_20250305`)
 - OpenAI: GPT-4o (Responses API `/v1/responses` with `web_search_preview` tool)
 - Ollama: Local AI models (no web search support). Generic thinking/reasoning model support via runtime capability detection — queries `/api/show` before streaming to determine whether the model supports native `think: true` (separate `message.thinking` field), has thinking tags in its template (`{{.Thinking}}`), or uses `<think>` tags by convention. No hardcoded model-specific tags.
+- Local AI (bundled): Privacy-focused offline inference via bundled llama-server sidecar. OpenAI-compatible `/v1/chat/completions` endpoint on localhost. Thinking/reasoning model support via hardcoded tag parser (scans for `<think>`, `<reasoning>`, `<reflection>`, etc.). Inline completions via `/infill` FIM endpoint with chat-based fallback for non-FIM models. Models downloaded from Hugging Face in GGUF format to `~/.notesage/models/llm/`. Metal GPU acceleration on macOS.
 
 **Path 2: ACP (Agent Client Protocol)** (for `agent_managed` connections)
 
@@ -275,7 +284,17 @@ interface AIProvider {
 - Ghost text rendered as ProseMirror widget decorations via `GhostText` Tiptap extension
 - Separate from ACP — the Copilot CLI (`copilot --acp`) handles chat/agents, the LSP handles completions
 
-**Routing:** `useAIOperations` reads the `interactive` connection from `routing-store`. If the connection is `api_key`/`local`, it uses Path 1 (direct API). If `agent_managed`, it uses Path 2 (ACP). `useCopilotCompletion` independently reads the `inline_completion` connection and manages the Copilot LSP. The rest of the app (chat panel, bubble menu) is unaware of which path is used.
+**Path 4: Local Bundled** (for `local_bundled` connections)
+
+- Bundled `llama-server` binary runs as a Tauri sidecar process on localhost
+- Auto-starts on app launch when enabled and a model is downloaded; auto-restarts on crash (max 3 retries)
+- Process cleanup: `LocalInferenceState::stop_sync()` called from `RunEvent::Exit` hook; `pkill llama-server` at startup as crash recovery; frontend `beforeunload` as tertiary defense
+- Chat streaming via `/v1/chat/completions` (OpenAI-compatible SSE)
+- Inline completions via `/infill` (FIM) with `/v1/chat/completions` instructed chat fallback for non-FIM models
+- Model catalog embedded at compile time from `model-catalog.json`; curated models with RAM requirements and FIM capability flags
+- Health checks every 30s via `/health` endpoint
+
+**Routing:** `useAIOperations` reads the `interactive` connection from `routing-store`. If the connection is `api_key`/`local`, it uses Path 1 (direct API). If `local_bundled`, it uses Path 4 (bundled server). If `agent_managed`, it uses Path 2 (ACP). `useCopilotCompletion` independently reads the `inline_completion` connection and manages the Copilot LSP. `useLocalCompletion` handles inline completions for `local`, `local_bundled`, and `openai_compatible` connections. The rest of the app (chat panel, bubble menu) is unaware of which path is used.
 
 ### Security Model
 
@@ -368,11 +387,11 @@ When web search is enabled (toggle in chat footer — only visible for direct AP
 6. Citations extracted from provider-specific response formats, emitted via `ai-citation` events
 7. Citations displayed as numbered "Sources" section below assistant messages
 
-### Inline Completions (Copilot LSP)
+### Inline Completions (Copilot LSP & Local)
 
-Ghost text completions via the Copilot Language Server, a separate path from both Direct API and ACP.
+Ghost text completions via the Copilot Language Server or local/compatible providers, a separate path from both Direct API and ACP.
 
-**Path 3: LSP** (for `inline_completion` routing slot)
+**Path 3: LSP** (for `inline_completion` routing slot with Copilot LSP connection)
 
 1. `useCopilotCompletion` hook reads `inline_completion` connection from `routing-store`
 2. If connection exists and working directory is available, spawns `copilot-language-server --stdio` via `copilot_lsp_start`
@@ -398,6 +417,18 @@ Ghost text completions via the Copilot Language Server, a separate path from bot
 - JSON-RPC 2.0 over stdio: `Content-Length` header framing, async reader task dispatching responses and notifications
 - Auth: OAuth device flow via `signIn` command → user code → browser verification → `didChangeStatus` notification
 - Frontend: `GhostText` Tiptap extension (ProseMirror plugin with widget decoration state), `useCopilotCompletion` hook
+
+**Path 4: Local/Compatible** (for `inline_completion` routing slot with `local`, `local_bundled`, or `openai_compatible` connections)
+
+1. `useLocalCompletion` hook reads `inline_completion` connection from `routing-store`
+2. Activates for `local` (Ollama), `local_bundled` (bundled llama-server), or `openai_compatible` connections
+3. On editor update: debounces 300ms, extracts prefix/suffix text around cursor (limited by configurable `fimContextChars`)
+4. For Ollama: calls native `/api/generate` FIM endpoint
+5. For local bundled: calls `/infill` FIM endpoint; on 501 (model lacks FIM tokens) falls back to `/v1/chat/completions` with instructed chat prompt
+6. For OpenAI-compatible: calls `/v1/completions` endpoint
+7. Completion text trimmed, space-adjusted (checks character before cursor), dispatched as ghost text via `setGhostText`
+8. Error backoff: stops requesting after 5 consecutive failures; resets on connection/model/tab change
+9. Same `GhostText` extension as Copilot LSP — Tab to accept, Escape to dismiss
 
 ### Comment Delegation (Agent Tasks)
 
@@ -524,6 +555,6 @@ These architectural choices enable future phases:
 - **ProseMirror decorations**: Enables inline diff display (Phase 5) and AI suggestion decorations
 - **Tauri commands**: Pattern established for file/git operations extends to filesystem watching (Phase 5) and agent task management (Phase 6)
 - **Zustand stores**: Clean boundaries allow adding new stores (comment-store for Phase 5, workflow-store for Phase 8)
-- **Provider abstraction**: Easy to add new providers — local AI (Phase 9), Anthropic Agent SDK (Phase 6)
+- **Provider abstraction**: Easy to add new providers — local AI (Phase 9, shipped), Anthropic Agent SDK (Phase 6)
 - **No hardcoded paths**: `.notesage/` metadata directory supports sidecar comments (Phase 5), research storage (Phase 7), workflow definitions (Phase 8)
 - **YAML frontmatter**: Document identity via lazy UUID enables stable cross-document references for comments, research, and AI task assignments (project files only — non-project files use path-based comment keys to avoid modifying external files)
