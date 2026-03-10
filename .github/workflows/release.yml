@@ -94,18 +94,7 @@ jobs:
 
   build-tauri:
     needs: create-release
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: 'macos-latest' # macOS (Apple Silicon)
-            args: '--target aarch64-apple-darwin'
-          - platform: 'ubuntu-22.04' # Linux
-            args: ''
-          - platform: 'windows-latest' # Windows
-            args: ''
-
-    runs-on: ${{ matrix.platform }}
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -123,13 +112,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
-
-      - name: Install dependencies (Ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev libasound2-dev libclang-dev
+          targets: aarch64-apple-darwin
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -156,8 +139,7 @@ jobs:
           cat package.json | grep version
           cat src-tauri/Cargo.toml | grep version
 
-      - name: Set whisper.cpp build flags (macOS)
-        if: matrix.platform == 'macos-latest'
+      - name: Set whisper.cpp build flags
         run: |
           # Disable -mcpu=native to avoid i8mm intrinsic errors on CI clang.
           # Set explicit ARM arch with dotprod+fp16 (supported by all Apple Silicon M1+)
@@ -168,22 +150,6 @@ jobs:
           echo "CMAKE_CXX_FLAGS=-march=armv8.2-a+dotprod+fp16 -mmacosx-version-min=14.0" >> $GITHUB_ENV
           echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> $GITHUB_ENV
           echo "CMAKE_OSX_DEPLOYMENT_TARGET=14.0" >> $GITHUB_ENV
-
-      - name: Create stub llama-server binary (non-macOS)
-        if: matrix.platform != 'macos-latest'
-        shell: bash
-        run: |
-          # Tauri externalBin requires the sidecar binary to exist at build time.
-          # On Linux/Windows, llama-server is not yet bundled — create a stub so the
-          # build succeeds. The runtime falls back to ~/.notesage/bin/ or PATH.
-          if [ "${{ matrix.platform }}" = "ubuntu-22.04" ]; then
-            TRIPLE="x86_64-unknown-linux-gnu"
-            touch "src-tauri/binaries/llama-server-${TRIPLE}"
-            chmod +x "src-tauri/binaries/llama-server-${TRIPLE}"
-          elif [ "${{ matrix.platform }}" = "windows-latest" ]; then
-            TRIPLE="x86_64-pc-windows-msvc"
-            touch "src-tauri/binaries/llama-server-${TRIPLE}.exe"
-          fi
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -205,8 +171,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Notesage v__VERSION__"
           releaseBody: ${{ needs.create-release.outputs.release_notes }}
-          updaterJsonPreferNsis: true
-          args: ${{ matrix.args }}
+          args: --target aarch64-apple-darwin
 
   publish-release:
     needs: [create-release, build-tauri]
