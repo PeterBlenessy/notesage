@@ -139,6 +139,31 @@ jobs:
           cat package.json | grep version
           cat src-tauri/Cargo.toml | grep version
 
+      - name: Sign bundled dylibs for notarization
+        if: env.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          # Import certificate into a temporary keychain (same as tauri-action does internally)
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security import $RUNNER_TEMP/certificate.p12 -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Sign all dylibs in the bundled lib directory
+          for dylib in src-tauri/binaries/lib/*.dylib; do
+            echo "Signing $(basename $dylib)"
+            codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$dylib"
+          done
+          echo "All dylibs signed successfully"
+
       - name: Set whisper.cpp build flags
         run: |
           # Disable -mcpu=native to avoid i8mm intrinsic errors on CI clang.
