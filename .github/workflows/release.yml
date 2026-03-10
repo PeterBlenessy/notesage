@@ -133,6 +133,7 @@ jobs:
             -DGGML_METAL=ON \
             -DGGML_METAL_EMBED_LIBRARY=ON \
             -DGGML_NATIVE=OFF \
+            -DLLAMA_CURL=OFF \
             -DLLAMA_BUILD_SERVER=ON \
             -DLLAMA_BUILD_TESTS=OFF \
             -DLLAMA_BUILD_EXAMPLES=OFF \
@@ -145,10 +146,18 @@ jobs:
           cp /tmp/llama.cpp/build/bin/llama-server src-tauri/binaries/llama-server-aarch64-apple-darwin
           chmod +x src-tauri/binaries/llama-server-aarch64-apple-darwin
 
-          # Verify it's statically linked (no @rpath dylib deps)
+          # Verify no non-system dynamic dependencies (homebrew, @rpath, etc.)
           echo "Dependencies:"
           otool -L src-tauri/binaries/llama-server-aarch64-apple-darwin
           echo "Binary size: $(du -h src-tauri/binaries/llama-server-aarch64-apple-darwin | cut -f1)"
+
+          # Fail build if any homebrew or @rpath dependencies are found
+          if otool -L src-tauri/binaries/llama-server-aarch64-apple-darwin | grep -q -E "homebrew|@rpath"; then
+            echo "::error::llama-server has non-system dynamic dependencies that will break code signing"
+            otool -L src-tauri/binaries/llama-server-aarch64-apple-darwin | grep -E "homebrew|@rpath"
+            exit 1
+          fi
+          echo "✓ No problematic dependencies found"
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
