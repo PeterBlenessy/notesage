@@ -710,7 +710,7 @@ Privacy-focused offline AI with zero setup — no API keys, no external software
 
 - Embeddings and semantic search (foundation laid with model directory structure)
 - Custom GGUF model import UI (users can use Ollama for arbitrary models)
-- Windows/Linux support (llama-server binaries exist for all platforms)
+- Windows/Linux support (llama-server binaries exist for all platforms but are not yet bundled — CI creates stub binaries so the build succeeds, runtime falls back to `~/.notesage/bin/` or system PATH)
 
 ## Roadmap
 

@@ -164,9 +164,26 @@ jobs:
           # but without i8mm (which causes compilation errors in ggml-cpu).
           # Metal GPU acceleration handles the heavy lifting for Whisper inference.
           echo "WHISPER_NATIVE=OFF" >> $GITHUB_ENV
-          echo "CMAKE_C_FLAGS=-march=armv8.2-a+dotprod+fp16" >> $GITHUB_ENV
-          echo "CMAKE_CXX_FLAGS=-march=armv8.2-a+dotprod+fp16" >> $GITHUB_ENV
+          echo "CMAKE_C_FLAGS=-march=armv8.2-a+dotprod+fp16 -mmacosx-version-min=14.0" >> $GITHUB_ENV
+          echo "CMAKE_CXX_FLAGS=-march=armv8.2-a+dotprod+fp16 -mmacosx-version-min=14.0" >> $GITHUB_ENV
           echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> $GITHUB_ENV
+          echo "CMAKE_OSX_DEPLOYMENT_TARGET=14.0" >> $GITHUB_ENV
+
+      - name: Create stub llama-server binary (non-macOS)
+        if: matrix.platform != 'macos-latest'
+        shell: bash
+        run: |
+          # Tauri externalBin requires the sidecar binary to exist at build time.
+          # On Linux/Windows, llama-server is not yet bundled — create a stub so the
+          # build succeeds. The runtime falls back to ~/.notesage/bin/ or PATH.
+          if [ "${{ matrix.platform }}" = "ubuntu-22.04" ]; then
+            TRIPLE="x86_64-unknown-linux-gnu"
+            touch "src-tauri/binaries/llama-server-${TRIPLE}"
+            chmod +x "src-tauri/binaries/llama-server-${TRIPLE}"
+          elif [ "${{ matrix.platform }}" = "windows-latest" ]; then
+            TRIPLE="x86_64-pc-windows-msvc"
+            touch "src-tauri/binaries/llama-server-${TRIPLE}.exe"
+          fi
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
