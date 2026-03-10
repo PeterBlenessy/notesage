@@ -114,6 +114,42 @@ jobs:
         with:
           targets: aarch64-apple-darwin
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build llama-server from source (static)
+        run: |
+          LLAMA_VERSION=$(cat src-tauri/binaries/LLAMA_CPP_VERSION | tr -d '[:space:]')
+          echo "Building llama.cpp $LLAMA_VERSION"
+
+          git clone --depth 1 --branch "$LLAMA_VERSION" https://github.com/ggml-org/llama.cpp.git /tmp/llama.cpp
+
+          cmake -B /tmp/llama.cpp/build -S /tmp/llama.cpp \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DGGML_STATIC=ON \
+            -DGGML_METAL=ON \
+            -DGGML_METAL_EMBED_LIBRARY=ON \
+            -DGGML_NATIVE=OFF \
+            -DLLAMA_BUILD_SERVER=ON \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0
+
+          cmake --build /tmp/llama.cpp/build --config Release --target llama-server -j $(sysctl -n hw.logicalcpu)
+
+          # Copy the static binary to the sidecar location
+          cp /tmp/llama.cpp/build/bin/llama-server src-tauri/binaries/llama-server-aarch64-apple-darwin
+          chmod +x src-tauri/binaries/llama-server-aarch64-apple-darwin
+
+          # Verify it's statically linked (no @rpath dylib deps)
+          echo "Dependencies:"
+          otool -L src-tauri/binaries/llama-server-aarch64-apple-darwin
+          echo "Binary size: $(du -h src-tauri/binaries/llama-server-aarch64-apple-darwin | cut -f1)"
+
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
@@ -138,31 +174,6 @@ jobs:
           echo "Updated config files to version $VERSION"
           cat package.json | grep version
           cat src-tauri/Cargo.toml | grep version
-
-      - name: Sign bundled dylibs for notarization
-        if: env.APPLE_CERTIFICATE != ''
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-        run: |
-          # Import certificate into a temporary keychain (same as tauri-action does internally)
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          echo "$APPLE_CERTIFICATE" | base64 --decode > $RUNNER_TEMP/certificate.p12
-          security import $RUNNER_TEMP/certificate.p12 -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          # Sign all dylibs in the bundled lib directory
-          for dylib in src-tauri/binaries/lib/*.dylib; do
-            echo "Signing $(basename $dylib)"
-            codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$dylib"
-          done
-          echo "All dylibs signed successfully"
 
       - name: Set whisper.cpp build flags
         run: |
