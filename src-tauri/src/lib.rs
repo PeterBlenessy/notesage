@@ -191,12 +191,12 @@ pub fn run() {
             // Kill orphaned agent processes from previous sessions that weren't cleaned up
             // (e.g. app was force-quit or crashed). These accumulate over time and waste resources.
             std::thread::spawn(|| {
-                for pattern in &["claude-agent-acp", "codex-acp"] {
+                for pattern in &["claude-agent-acp", "codex-acp", "llama-server"] {
                     let _ = std::process::Command::new("pkill")
                         .args(["-f", pattern])
                         .output();
                 }
-                // Kill orphaned llama-server from previous sessions
+                // Also try PID-file-based cleanup for llama-server
                 local_inference::kill_orphaned_servers();
                 log::debug!(target: "notesage::lifecycle", "Cleaned up orphaned agent processes");
             });

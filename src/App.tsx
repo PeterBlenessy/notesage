@@ -236,6 +236,7 @@ function App() {
     const handleBeforeUnload = () => {
       stopAcpAgent();
       stopTaskAgent();
+      tauriApi.stopLocalServer().catch(() => {});
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
