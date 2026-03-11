@@ -32,13 +32,24 @@ Notesage is a rich text markdown editor with AI collaboration capabilities, pack
 
 | Need | Read |
 | --- | --- |
-| Architecture, project structure, data flow | @docs/architecture.md |
+| Core architecture, tech stack, project structure | @docs/architecture.md |
 | UI/UX requirements, typography, colors, component specs | @docs/design-system.md |
-| Current features, roadmap, quality gates | @docs/product-description.md |
+| Overview, roadmap, quality gates | @docs/product-description.md |
 | Tauri command signatures, IPC patterns | @docs/tauri-commands.md |
 | All keyboard shortcuts | @docs/keyboard-shortcuts.md |
 | Implementation history | @docs/history/ |
 | Product requirements | @docs/prds/ |
+
+**Feature-specific docs (read when working on that area):**
+
+| Feature area | Read |
+| --- | --- |
+| Editor, find, tags, formatting | @docs/features/editor.md |
+| Editor internals (ProseMirror, decorations, extensions) | @docs/features/editor-architecture.md |
+| AI providers, connections, routing, local AI, completions | @docs/features/ai-providers.md |
+| Chat, agents, skills, MCP, delegation, research, voice | @docs/features/ai-workflows.md |
+| EPUB, PDF export, DOCX, viewers | @docs/features/document-formats.md |
+| Projects, file tree, iCloud, git, external changes | @docs/features/workspace.md |
 
 ## Development Lifecycle
 
