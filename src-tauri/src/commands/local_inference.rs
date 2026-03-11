@@ -14,7 +14,7 @@ pub struct LocalInferenceState {
     server_pid: std::sync::Mutex<Option<u32>>,
     port: tokio::sync::Mutex<Option<u16>>,
     active_model: tokio::sync::Mutex<Option<String>>,
-    models_dir: PathBuf,
+    pub models_dir: PathBuf,
     download_cancels: std::sync::Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
@@ -76,22 +76,54 @@ pub struct LocalModelInfo {
     pub source: String,
     #[serde(default)]
     pub supports_fim: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub organization: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub license: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub architecture: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_length: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quantization: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hf_repo_id: Option<String>,
 }
 
 /// A model entry in the catalog (curated or custom).
 #[derive(Serialize, Deserialize, Clone, Debug)]
-struct CatalogEntry {
-    id: String,
-    name: String,
-    filename: String,
-    size_bytes: u64,
-    ram_required_bytes: u64,
-    description: String,
-    huggingface_url: String,
+pub struct CatalogEntry {
+    pub id: String,
+    pub name: String,
+    pub filename: String,
+    pub size_bytes: u64,
+    pub ram_required_bytes: u64,
+    pub description: String,
+    pub huggingface_url: String,
     #[serde(default)]
-    source: String,
+    pub source: String,
     #[serde(default)]
-    supports_fim: bool,
+    pub supports_fim: bool,
+    #[serde(default)]
+    pub author: Option<String>,
+    #[serde(default)]
+    pub organization: Option<String>,
+    #[serde(default)]
+    pub license: Option<String>,
+    #[serde(default)]
+    pub parameters: Option<String>,
+    #[serde(default)]
+    pub architecture: Option<String>,
+    #[serde(default)]
+    pub context_length: Option<u64>,
+    #[serde(default)]
+    pub quantization: Option<String>,
+    #[serde(default)]
+    pub hf_repo_id: Option<String>,
 }
 
 /// Bundled catalog embedded at compile time.
@@ -120,6 +152,11 @@ fn save_custom_models(models_dir: &std::path::Path, models: &[CatalogEntry]) -> 
     std::fs::write(&path, json)
         .map_err(|e| format!("Failed to write custom models: {}", e))?;
     Ok(())
+}
+
+/// Get all models (curated + custom), marking custom entries. Public for model_metadata module.
+pub fn get_all_models_pub(models_dir: &std::path::Path) -> Vec<(CatalogEntry, bool)> {
+    get_all_models(models_dir)
 }
 
 /// Get all models (curated + custom), marking custom entries.
@@ -196,6 +233,14 @@ pub async fn list_local_models(
                 is_custom,
                 source: if is_custom { "Custom".to_string() } else { entry.source },
                 supports_fim: entry.supports_fim,
+                author: entry.author,
+                organization: entry.organization,
+                license: entry.license,
+                parameters: entry.parameters,
+                architecture: entry.architecture,
+                context_length: entry.context_length,
+                quantization: entry.quantization,
+                hf_repo_id: entry.hf_repo_id,
             }
         })
         .collect();
@@ -307,6 +352,12 @@ async fn download_model_inner(
         .map_err(|e| format!("Failed to finalize download: {}", e))?;
 
     log::info!(target: "notesage::local_ai", "Downloaded model '{}' ({} bytes)", entry.id, downloaded);
+
+    // Auto-parse GGUF header and cache metadata (Task 9)
+    if entry.filename.ends_with(".gguf") {
+        super::model_metadata::parse_and_cache_gguf_for_model(&entry.id, &final_path);
+    }
+
     Ok(())
 }
 
@@ -391,6 +442,9 @@ pub async fn add_custom_local_model(
         Err(_) => 0,
     };
 
+    // Try to derive hf_repo_id from URL
+    let hf_repo_id = super::model_metadata::repo_id_from_url(&url);
+
     let entry = CatalogEntry {
         id: id.clone(),
         name: name.clone(),
@@ -401,6 +455,14 @@ pub async fn add_custom_local_model(
         huggingface_url: url,
         source: "Custom".to_string(),
         supports_fim: false,
+        author: None,
+        organization: None,
+        license: None,
+        parameters: None,
+        architecture: None,
+        context_length: None,
+        quantization: None,
+        hf_repo_id,
     };
 
     let mut custom = load_custom_models(&state.models_dir);
@@ -421,6 +483,14 @@ pub async fn add_custom_local_model(
         is_custom: true,
         source: "Custom".to_string(),
         supports_fim: false,
+        author: entry.author,
+        organization: entry.organization,
+        license: entry.license,
+        parameters: entry.parameters,
+        architecture: entry.architecture,
+        context_length: entry.context_length,
+        quantization: entry.quantization,
+        hf_repo_id: entry.hf_repo_id,
     })
 }
 

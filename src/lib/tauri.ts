@@ -166,6 +166,12 @@ export interface WhisperModelInfo {
   size_bytes: number;
   downloaded: boolean;
   path?: string;
+  author?: string;
+  license?: string;
+  parameters?: string;
+  description?: string;
+  languages_count?: number;
+  hf_repo_id?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +190,40 @@ export interface LocalModelInfo {
   is_custom: boolean;
   source: string;
   supports_fim: boolean;
+  author?: string;
+  organization?: string;
+  license?: string;
+  parameters?: string;
+  architecture?: string;
+  context_length?: number;
+  quantization?: string;
+  hf_repo_id?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Model Metadata types
+// ---------------------------------------------------------------------------
+
+export interface ModelMetadata {
+  author?: string;
+  organization?: string;
+  license?: string;
+  base_model?: string;
+  quantized_by?: string;
+  parameters?: string;
+  parameters_raw?: number;
+  architecture?: string;
+  context_length?: number;
+  quantization?: string;
+  embedding_length?: number;
+  vocab_size?: number;
+  block_count?: number;
+  languages?: string[];
+  hf_repo_id?: string;
+  hf_repo_url?: string;
+  last_modified?: string;
+  downloads?: number;
+  _sources?: string[];
 }
 
 export interface SystemMemoryInfo {
@@ -642,5 +682,14 @@ export const tauriApi = {
 
   async cancelLlamaServerDownload(): Promise<void> {
     await invoke("cancel_llama_server_download");
+  },
+
+  // Model metadata
+  async getModelMetadata(modelId: string, modelType: 'llm' | 'whisper'): Promise<ModelMetadata> {
+    return await invoke<ModelMetadata>("get_model_metadata", { modelId, modelType });
+  },
+
+  async getRuntimeModelMetadata(port: number): Promise<ModelMetadata> {
+    return await invoke<ModelMetadata>("get_runtime_model_metadata", { port });
   },
 };

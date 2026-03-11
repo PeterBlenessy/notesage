@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Download, Trash2, CheckCircle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,6 +22,9 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { Label } from '@/components/ui/label';
 import { useRecordingStore } from '@/stores/recording-store';
+import { useModelMetadata } from '@/hooks/useModelMetadata';
+import { ModelMetadataTooltip } from './ModelMetadataTooltip';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const LANGUAGES = [
   { value: 'ar', label: 'Arabic' },
@@ -39,16 +42,9 @@ const LANGUAGES = [
   { value: 'sv', label: 'Swedish' },
 ];
 
-const MODEL_DETAILS: Record<string, { label: string; params: string; description: string }> = {
-  tiny: { label: 'Tiny', params: '39M', description: 'Fastest, least accurate' },
-  base: { label: 'Base', params: '74M', description: 'Good balance for short recordings' },
-  small: { label: 'Small', params: '244M', description: 'Accurate for most languages' },
-  medium: { label: 'Medium', params: '769M', description: 'High accuracy, slower' },
-  'large-v3': { label: 'Large v3', params: '1550M', description: 'Best accuracy, slowest' },
-};
-
 function modelDisplayName(name: string): string {
-  return MODEL_DETAILS[name]?.label ?? name;
+  // Capitalize and format model names: "tiny" -> "Tiny", "large-v3" -> "Large v3"
+  return name.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function formatSize(bytes: number): string {
@@ -78,6 +74,10 @@ export function TranscriptionSettings() {
   const downloadedModels = models.filter((m) => m.downloaded);
   const hasActiveDownloads = Object.keys(activeDownloads).length > 0;
 
+  // Batch-fetch metadata for all Whisper models
+  const modelIds = useMemo(() => models.map((m) => ({ id: m.name })), [models]);
+  const { metadataMap } = useModelMetadata(modelIds, 'whisper');
+
   return (
     <div className="space-y-6">
       {/* Model Management */}
@@ -97,12 +97,17 @@ export function TranscriptionSettings() {
         </p>
 
         <div className="space-y-2">
+          <TooltipProvider delayDuration={300}>
           {models.map((model) => {
-            const details = MODEL_DETAILS[model.name];
             const download = activeDownloads[model.name];
             return (
-              <div
+              <ModelMetadataTooltip
                 key={model.name}
+                metadata={metadataMap[model.name]}
+                modelType="whisper"
+                side="top"
+              >
+              <div
                 className="flex items-center justify-between rounded-md border border-border px-3 py-2"
               >
                 <div className="flex items-center gap-3 min-w-0">
@@ -112,14 +117,14 @@ export function TranscriptionSettings() {
                       <span className="text-xs text-muted-foreground">
                         {formatSize(model.size_bytes)}
                       </span>
-                      {details && (
+                      {model.parameters && (
                         <span className="text-xs text-muted-foreground/70">
-                          · {details.params} params
+                          · {model.parameters} params
                         </span>
                       )}
                     </div>
-                    {details && (
-                      <p className="text-xs text-muted-foreground/70 mt-0.5">{details.description}</p>
+                    {model.description && (
+                      <p className="text-xs text-muted-foreground/70 mt-0.5">{model.description}</p>
                     )}
                   </div>
                 </div>
@@ -185,8 +190,10 @@ export function TranscriptionSettings() {
                   )}
                 </div>
               </div>
+              </ModelMetadataTooltip>
             );
           })}
+          </TooltipProvider>
         </div>
       </div>
 

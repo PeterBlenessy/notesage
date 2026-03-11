@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { tauriApi } from '@/lib/tauri';
+import { useModelMetadata } from '@/hooks/useModelMetadata';
+import { ModelMetadataTooltip } from './ModelMetadataTooltip';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -144,6 +146,10 @@ export function LocalAISettings() {
   const activeModel = models.find((m) => m.id === activeModelId);
   const totalMemGB = systemMemory ? (systemMemory.total_bytes / 1_000_000_000).toFixed(0) : '?';
   const hasDownloadedModels = models.some((m) => m.downloaded);
+
+  // Batch-fetch metadata for all models when settings panel mounts
+  const modelIds = useMemo(() => models.map((m) => ({ id: m.id })), [models]);
+  const { metadataMap } = useModelMetadata(modelIds, 'llm');
 
   const handleSetActive = async (modelId: string) => {
     setActiveModel(modelId);
@@ -313,8 +319,13 @@ export function LocalAISettings() {
               const isActive = model.id === activeModelId;
 
               return (
-                <div
+                <ModelMetadataTooltip
                   key={model.id}
+                  metadata={metadataMap[model.id]}
+                  modelType="llm"
+                  side="right"
+                >
+                <div
                   className="relative rounded-md border px-3 py-2.5"
                 >
                   {/* Action buttons — top right */}
@@ -434,12 +445,10 @@ export function LocalAISettings() {
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
                       {model.description}
-                      {model.source && !model.source.toLowerCase().includes('official') && !model.is_custom && (
-                        <span className="text-muted-foreground/50"> · via {model.source}</span>
-                      )}
                     </p>
                   </div>
                 </div>
+                </ModelMetadataTooltip>
               );
             })}
           </TooltipProvider>

@@ -11,6 +11,12 @@ export interface ModelInfo {
   size_bytes: number;
   downloaded: boolean;
   path?: string;
+  author?: string;
+  license?: string;
+  parameters?: string;
+  description?: string;
+  languages_count?: number;
+  hf_repo_id?: string;
 }
 
 export interface DownloadState {

@@ -7,7 +7,15 @@
     "ram_required_bytes": 2500000000,
     "description": "Lightweight. Fast responses, basic quality.",
     "huggingface_url": "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf",
-    "source": "Qwen (official)"
+    "source": "Qwen (official)",
+    "author": "Qwen",
+    "organization": "Alibaba",
+    "license": "apache-2.0",
+    "parameters": "1.7B",
+    "architecture": "qwen3",
+    "context_length": 32768,
+    "quantization": "Q8_0",
+    "hf_repo_id": "Qwen/Qwen3-1.7B-GGUF"
   },
   {
     "id": "qwen2.5-coder-1.5b",
@@ -18,7 +26,15 @@
     "description": "Code completion. Fast FIM (fill-in-the-middle) support.",
     "huggingface_url": "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q8_0.gguf",
     "source": "Qwen (official)",
-    "supports_fim": true
+    "supports_fim": true,
+    "author": "Qwen",
+    "organization": "Alibaba",
+    "license": "apache-2.0",
+    "parameters": "1.5B",
+    "architecture": "qwen2",
+    "context_length": 32768,
+    "quantization": "Q8_0",
+    "hf_repo_id": "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF"
   },
   {
     "id": "phi-4-mini",
@@ -28,7 +44,15 @@
     "ram_required_bytes": 3500000000,
     "description": "Microsoft. Strong reasoning for its size.",
     "huggingface_url": "https://huggingface.co/lmstudio-community/phi-4-mini-instruct-GGUF/resolve/main/Phi-4-mini-instruct-Q4_K_M.gguf",
-    "source": "lmstudio-community"
+    "source": "lmstudio-community",
+    "author": "Microsoft",
+    "organization": "Microsoft",
+    "license": "mit",
+    "parameters": "3.8B",
+    "architecture": "phi3",
+    "context_length": 16384,
+    "quantization": "Q4_K_M",
+    "hf_repo_id": "lmstudio-community/phi-4-mini-instruct-GGUF"
   },
   {
     "id": "phi-4-mini-reasoning",
@@ -38,7 +62,15 @@
     "ram_required_bytes": 3800000000,
     "description": "Microsoft. Chain-of-thought reasoning.",
     "huggingface_url": "https://huggingface.co/lmstudio-community/Phi-4-mini-reasoning-GGUF/resolve/main/Phi-4-mini-reasoning-Q4_K_M.gguf",
-    "source": "lmstudio-community"
+    "source": "lmstudio-community",
+    "author": "Microsoft",
+    "organization": "Microsoft",
+    "license": "mit",
+    "parameters": "3.8B",
+    "architecture": "phi3",
+    "context_length": 16384,
+    "quantization": "Q4_K_M",
+    "hf_repo_id": "lmstudio-community/Phi-4-mini-reasoning-GGUF"
   },
   {
     "id": "gemma-3-4b",
@@ -48,7 +80,15 @@
     "ram_required_bytes": 4000000000,
     "description": "Google. Great multilingual support.",
     "huggingface_url": "https://huggingface.co/lmstudio-community/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf",
-    "source": "lmstudio-community"
+    "source": "lmstudio-community",
+    "author": "Google",
+    "organization": "Google",
+    "license": "gemma",
+    "parameters": "4B",
+    "architecture": "gemma3",
+    "context_length": 131072,
+    "quantization": "Q4_K_M",
+    "hf_repo_id": "lmstudio-community/gemma-3-4b-it-GGUF"
   },
   {
     "id": "qwen3-4b",
@@ -58,7 +98,15 @@
     "ram_required_bytes": 4000000000,
     "description": "Alibaba. Good all-around quality.",
     "huggingface_url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf",
-    "source": "Qwen (official)"
+    "source": "Qwen (official)",
+    "author": "Qwen",
+    "organization": "Alibaba",
+    "license": "apache-2.0",
+    "parameters": "4B",
+    "architecture": "qwen3",
+    "context_length": 32768,
+    "quantization": "Q4_K_M",
+    "hf_repo_id": "Qwen/Qwen3-4B-GGUF"
   },
   {
     "id": "qwen2.5-coder-3b",
@@ -69,7 +117,15 @@
     "description": "Code completion. FIM support, good balance of speed and quality.",
     "huggingface_url": "https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF/resolve/main/qwen2.5-coder-3b-instruct-q4_k_m.gguf",
     "source": "Qwen (official)",
-    "supports_fim": true
+    "supports_fim": true,
+    "author": "Qwen",
+    "organization": "Alibaba",
+    "license": "apache-2.0",
+    "parameters": "3B",
+    "architecture": "qwen2",
+    "context_length": 32768,
+    "quantization": "Q4_K_M",
+    "hf_repo_id": "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF"
   },
   {
     "id": "qwen2.5-coder-7b",
@@ -80,7 +136,15 @@
     "description": "Code completion. Best FIM quality, needs more RAM.",
     "huggingface_url": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q4_k_m.gguf",
     "source": "Qwen (official)",
-    "supports_fim": true
+    "supports_fim": true,
+    "author": "Qwen",
+    "organization": "Alibaba",
+    "license": "apache-2.0",
+    "parameters": "7B",
+    "architecture": "qwen2",
+    "context_length": 32768,
+    "quantization": "Q4_K_M",
+    "hf_repo_id": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF"
   },
   {
     "id": "llama-3.1-8b",
@@ -90,6 +154,14 @@
     "ram_required_bytes": 6500000000,
     "description": "Meta. Very good quality, well-rounded.",
     "huggingface_url": "https://huggingface.co/lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
-    "source": "lmstudio-community"
+    "source": "lmstudio-community",
+    "author": "Meta",
+    "organization": "Meta",
+    "license": "llama3.1",
+    "parameters": "8B",
+    "architecture": "llama",
+    "context_length": 131072,
+    "quantization": "Q4_K_M",
+    "hf_repo_id": "lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF"
   }
 ]

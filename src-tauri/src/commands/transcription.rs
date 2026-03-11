@@ -30,6 +30,18 @@ pub struct ModelInfo {
     pub size_bytes: u64,
     pub downloaded: bool,
     pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub license: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub languages_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hf_repo_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -90,13 +102,20 @@ impl TranscriptionState {
     }
 }
 
-// Known models with approximate download sizes
-const KNOWN_MODELS: &[(&str, u64)] = &[
-    ("tiny", 75_000_000),
-    ("base", 142_000_000),
-    ("small", 466_000_000),
-    ("medium", 1_500_000_000),
-    ("large-v3", 2_900_000_000),
+// Known Whisper models with metadata
+struct WhisperModelMeta {
+    name: &'static str,
+    size_bytes: u64,
+    parameters: &'static str,
+    description: &'static str,
+}
+
+const KNOWN_MODELS: &[WhisperModelMeta] = &[
+    WhisperModelMeta { name: "tiny", size_bytes: 75_000_000, parameters: "39M", description: "Fastest, least accurate" },
+    WhisperModelMeta { name: "base", size_bytes: 142_000_000, parameters: "74M", description: "Good balance for short recordings" },
+    WhisperModelMeta { name: "small", size_bytes: 466_000_000, parameters: "244M", description: "Accurate for most languages" },
+    WhisperModelMeta { name: "medium", size_bytes: 1_500_000_000, parameters: "769M", description: "High accuracy, slower" },
+    WhisperModelMeta { name: "large-v3", size_bytes: 2_900_000_000, parameters: "1550M", description: "Best accuracy, slowest" },
 ];
 
 fn model_download_url(size: &str) -> String {
@@ -719,19 +738,19 @@ pub async fn list_whisper_models(
 ) -> Result<Vec<ModelInfo>, String> {
     let mut models = Vec::new();
 
-    for &(name, expected_size) in KNOWN_MODELS {
-        let path = state.models_dir.join(format!("ggml-{}.bin", name));
+    for meta in KNOWN_MODELS {
+        let path = state.models_dir.join(format!("ggml-{}.bin", meta.name));
         let downloaded = path.exists();
         let actual_size = if downloaded {
             std::fs::metadata(&path)
                 .map(|m| m.len())
-                .unwrap_or(expected_size)
+                .unwrap_or(meta.size_bytes)
         } else {
-            expected_size
+            meta.size_bytes
         };
 
         models.push(ModelInfo {
-            name: name.to_string(),
+            name: meta.name.to_string(),
             size_bytes: actual_size,
             downloaded,
             path: if downloaded {
@@ -739,6 +758,12 @@ pub async fn list_whisper_models(
             } else {
                 None
             },
+            author: Some("OpenAI".to_string()),
+            license: Some("MIT".to_string()),
+            parameters: Some(meta.parameters.to_string()),
+            description: Some(meta.description.to_string()),
+            languages_count: Some(99),
+            hf_repo_id: Some("ggerganov/whisper.cpp".to_string()),
         });
     }
 
@@ -752,7 +777,7 @@ pub async fn download_whisper_model(
     state: State<'_, TranscriptionState>,
     size: String,
 ) -> Result<(), String> {
-    if !KNOWN_MODELS.iter().any(|(name, _)| *name == size) {
+    if !KNOWN_MODELS.iter().any(|m| m.name == size) {
         return Err(format!("Unknown model size: {}", size));
     }
 

@@ -119,6 +119,10 @@ export function useLocalAI() {
           store.setServerPort(port);
           retryCountRef.current = 0;
           updateConnectionStatus('connected');
+          // Fetch runtime model metadata for tooltip enrichment
+          if (port) {
+            tauriApi.getRuntimeModelMetadata(port).catch(() => {});
+          }
         } else {
           store.setServerStatus('stopped');
           store.setServerPort(null);

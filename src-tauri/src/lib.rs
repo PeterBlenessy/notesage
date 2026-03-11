@@ -184,6 +184,11 @@ pub fn run() {
             check_llama_server_available,
             download_llama_server_binary,
             cancel_llama_server_download,
+            // Model metadata
+            get_model_metadata,
+            fetch_hf_metadata,
+            parse_gguf_metadata,
+            get_runtime_model_metadata,
         ])
         .setup(|app| {
             log::info!(target: "notesage::lifecycle", "Notesage starting up (version {})", app.package_info().version);
