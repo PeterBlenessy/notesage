@@ -1,6 +1,6 @@
 # PRD: App Stability, Persistence & Observability
 
-**Date:** 2026-03-08 **Phase:** Cross-cutting (applies to all existing phases) **Priority:** High — addresses production crash (black page after macOS sleep)
+**Date:** 2026-03-08 **Phase:** Cross-cutting (applies to all existing phases) **Status:** ✅ Complete **Priority:** High — addresses production crash (black page after macOS sleep)
 
 ---
 

@@ -1,6 +1,7 @@
 # PRD: Codebase Health Improvements
 
 **Date:** 2026-03-10
+**Status:** 📋 Planned
 **Source:** `docs/research/codebase-analysis.md` (2026-03-09)
 **Structure:** 12 independent, incremental tasks — each can ship in any release, in any order.
 

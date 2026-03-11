@@ -1,6 +1,6 @@
 # PRD: Tag Occurrence Search with Jump-to-Line
 
-**Date:** 2026-02-28 **Status:** Draft **Depends on:** Inline Tag Badges (2026-02-28-inline-tag-badges.md)
+**Date:** 2026-02-28 **Status:** ✅ Complete **Depends on:** Inline Tag Badges (2026-02-28-inline-tag-badges.md)
 
 ## Problem
 

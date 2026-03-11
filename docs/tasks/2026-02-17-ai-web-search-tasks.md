@@ -1,6 +1,8 @@
 # AI Web Search — Implementation Tasks
 
-**PRD:** [2026-02-17-ai-web-search.md](2026-02-17-ai-web-search.md)**Total:** 13 tasks — 4S, 6M, 3L **Suggested order:** Backend cleanup (#1) → Anthropic streaming rewrite (#2) → frontend state/types (#3, #4) → search toggle UI (#5) → citation display (#6) → wire up frontend (#7) → OpenAI migration (#8, #9) → Ollama guard (#10) → non-streaming commands (#11) → testing (#12) → docs (#13)
+**Status:** ✅ Complete
+
+**PRD:** [2026-02-17-ai-web-search.md](2026-02-17-ai-web-search.md)**Total:** 13 tasks — 4S, 6M, 3L — All complete **Suggested order:** Backend cleanup (#1) → Anthropic streaming rewrite (#2) → frontend state/types (#3, #4) → search toggle UI (#5) → citation display (#6) → wire up frontend (#7) → OpenAI migration (#8, #9) → Ollama guard (#10) → non-streaming commands (#11) → testing (#12) → docs (#13)
 
 **Risks / open questions:**
 
@@ -10,7 +12,7 @@
 
 ---
 
-### #1 — Remove DuckDuckGo tool infrastructure
+### #1 ✅ DONE — Remove DuckDuckGo tool infrastructure
 
 **Description:** Delete `src-tauri/src/commands/tools.rs` entirely. Remove all imports/references to `tools` from `ai_streaming.rs` and `mod.rs`. Remove the `urlencoding` crate from `Cargo.toml` (only used in `tools.rs`). Verify the project compiles after removal.
 
@@ -23,7 +25,7 @@
 
 ---
 
-### #2 — Rewrite Anthropic streaming with server-side web search
+### #2 ✅ DONE — Rewrite Anthropic streaming with server-side web search
 
 **Description:** Rewrite `anthropic_chat_stream()` in `ai_streaming.rs` to:
 
@@ -46,7 +48,7 @@
 
 ---
 
-### #3 — Add `webSearchEnabled` to chat store
+### #3 ✅ DONE — Add `webSearchEnabled` to chat store
 
 **Description:** Add `webSearchEnabled: boolean` (default `false`) and `setWebSearchEnabled` action to the chat store. Include in persistence. Add `citations` support to `updateMessage` — allow updating citations alongside content.
 
@@ -56,7 +58,7 @@
 
 ---
 
-### #4 — Extend ChatMessage type with citations
+### #4 ✅ DONE — Extend ChatMessage type with citations
 
 **Description:** Add `Citation` interface and optional `citations` field to `ChatMessage` type. Update `updateMessage` in chat store to accept and store citations.
 
@@ -74,7 +76,7 @@ interface Citation {
 
 ---
 
-### #5 — Add search toggle to chat input footer
+### #5 ✅ DONE — Add search toggle to chat input footer
 
 **Description:** Add a Globe icon toggle button to the chat input footer in `ChatPanel.tsx`, positioned after the project selector and before the goals indicator.
 
@@ -93,7 +95,7 @@ interface Citation {
 
 ---
 
-### #6 — Display citations in chat messages
+### #6 ✅ DONE — Display citations in chat messages
 
 **Description:** Update `ChatMessage.tsx` to render citations when present on a message:
 
@@ -110,7 +112,7 @@ interface Citation {
 
 ---
 
-### #7 — Wire up frontend to pass search flag and handle citation events
+### #7 ✅ DONE — Wire up frontend to pass search flag and handle citation events
 
 **Description:** Update `useAIOperations.ts` to:
 
@@ -128,7 +130,7 @@ Update `ai.rs` `ai_chat_stream` command to accept and forward the new `web_searc
 
 ---
 
-### #8 — Migrate OpenAI to Responses API (non-search)
+### #8 ✅ DONE — Migrate OpenAI to Responses API (non-search)
 
 **Description:** Rewrite `openai_chat_stream()` to use the Responses API (`/v1/responses`):
 
@@ -147,7 +149,7 @@ Update `ai.rs` `ai_chat_stream` command to accept and forward the new `web_searc
 
 ---
 
-### #9 — Add OpenAI web search support
+### #9 ✅ DONE — Add OpenAI web search support
 
 **Description:** Extend the rewritten `openai_chat_stream()` to support web search:
 
@@ -163,7 +165,7 @@ Update `ai.rs` `ai_chat_stream` command to accept and forward the new `web_searc
 
 ---
 
-### #10 — Ollama search guard
+### #10 ✅ DONE — Ollama search guard
 
 **Description:** Update `ollama_chat_stream()` to accept the `web_search_enabled` parameter (ignore it). The frontend toggle disabling + toast (task #5) handles the UX. The backend should just log a warning if it somehow receives `web_search_enabled: true` for Ollama and proceed without search.
 
@@ -173,7 +175,7 @@ Update `ai.rs` `ai_chat_stream` command to accept and forward the new `web_searc
 
 ---
 
-### #11 — Update non-streaming AI commands
+### #11 ✅ DONE — Update non-streaming AI commands
 
 **Description:** Update `ai_chat()` and `ai_generate_text()` in `ai.rs` to remove any references to the deleted tools module. These non-streaming commands don't support web search (search is streaming-only), but they must compile after the tools removal. Also update the model strings:
 
@@ -186,7 +188,7 @@ Update `ai.rs` `ai_chat_stream` command to accept and forward the new `web_searc
 
 ---
 
-### #12 — End-to-end testing
+### #12 ✅ DONE — End-to-end testing
 
 **Description:** Manual testing checklist (no automated tests for API calls):
 
@@ -204,7 +206,7 @@ Update `ai.rs` `ai_chat_stream` command to accept and forward the new `web_searc
 
 ---
 
-### #13 — Update documentation
+### #13 ✅ DONE — Update documentation
 
 **Description:** Update project documentation to reflect changes:
 

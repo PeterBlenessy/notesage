@@ -1,6 +1,6 @@
 # PRD: Expand Ollama Capabilities — Agent Tasks + Inline Completions
 
-**Date:** 2026-03-02 **Status:** Implemented
+**Date:** 2026-03-02 **Status:** ✅ Complete
 
 ## Problem
 

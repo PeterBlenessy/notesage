@@ -1,7 +1,9 @@
 # Tasks: Skills & Agents Platform (Step A)
 
+**Status:** ✅ Complete
+
 **PRD:** `docs/prds/2026-03-05-skills-and-agents-platform.md`
-**Total:** 22 tasks — 5S, 11M, 6L
+**Total:** 22 tasks — 22/22 done — 5S, 11M, 6L
 **Estimated phases:** 4 implementation groups (Backend → State → Core Hooks → UI)
 
 ## Summary
@@ -18,7 +20,7 @@ The implementation follows a bottom-up approach: Rust backend commands first, th
 
 ## Tasks
 
-### 1. Define Rust types and structs for skills
+### 1. Define Rust types and structs for skills ✅ DONE
 
 **Description:** Create the foundational Rust types used across all skill commands: `SkillEntry`, `SkillContent`, `ScriptResult`, `AgentInstruction`. These are serialized to/from the frontend via serde.
 
@@ -35,7 +37,7 @@ The implementation follows a bottom-up approach: Rust backend commands first, th
 
 ---
 
-### 2. Implement `discover_skills` Tauri command
+### 2. Implement `discover_skills` Tauri command ✅ DONE
 
 **Description:** Scan a list of base directories for subdirectories containing `SKILL.md` files. Parse YAML frontmatter to extract metadata (name, description, license, compatibility, metadata, allowed-tools, user-invocable, disable-model-invocation). Return a flat `Vec<SkillEntry>` with source attribution. Do NOT read the full SKILL.md body (progressive disclosure).
 
@@ -58,7 +60,7 @@ Follow the filesystem scanning pattern in `commands/watcher.rs` (async, error ha
 
 ---
 
-### 3. Implement `read_skill_content` Tauri command
+### 3. Implement `read_skill_content` Tauri command ✅ DONE
 
 **Description:** Given an absolute path to a skill directory, read the full SKILL.md body (everything after YAML frontmatter) and list all files in `scripts/`, `references/`, and `assets/` subdirectories. This is the Level 2 progressive disclosure load.
 
@@ -76,7 +78,7 @@ Follow the filesystem scanning pattern in `commands/watcher.rs` (async, error ha
 
 ---
 
-### 4. Implement `execute_skill_script` Tauri command
+### 4. Implement `execute_skill_script` Tauri command ✅ DONE
 
 **Description:** Execute a script from a skill's `scripts/` directory with controlled environment. This is the critical security boundary — must validate paths, resolve interpreters, enforce timeouts, and capture output.
 
@@ -100,7 +102,7 @@ Follow the filesystem scanning pattern in `commands/watcher.rs` (async, error ha
 
 ---
 
-### 5. Implement `read_agent_instructions` Tauri command
+### 5. Implement `read_agent_instructions` Tauri command ✅ DONE
 
 **Description:** Discover and read agent instruction files for a project. Accepts the project root path and list of connected provider types. Checks for files in the defined priority order, returns array of `AgentInstruction` structs with source attribution and priority.
 
@@ -120,7 +122,7 @@ Follow the filesystem scanning pattern in `commands/watcher.rs` (async, error ha
 
 ---
 
-### 6. Register skill commands in Tauri builder
+### 6. Register skill commands in Tauri builder ✅ DONE
 
 **Description:** Add the new skills module and all commands to the Tauri command registration.
 
@@ -138,7 +140,7 @@ Follow the filesystem scanning pattern in `commands/watcher.rs` (async, error ha
 
 ---
 
-### 7. Create `skill-store.ts` Zustand store
+### 7. Create `skill-store.ts` Zustand store ✅ DONE
 
 **Description:** Central store for discovered skills and agent instructions. Persists `enabledOverrides` only — skills and agent instructions are rebuilt from scan. Provides computed getters for active skills (filtered by hierarchy and enabled state) and merged agent instructions.
 
@@ -165,7 +167,7 @@ Follow the pattern in `permission-store.ts` for separating persisted vs runtime 
 
 ---
 
-### 8. Extend `permission-store.ts` for skill script permissions
+### 8. Extend `permission-store.ts` for skill script permissions ✅ DONE
 
 **Description:** Add skill-specific script execution permissions to the existing permission store. Follow the same tiered pattern (session / always) already used for ACP tool calls.
 
@@ -185,7 +187,7 @@ Follow the pattern in `permission-store.ts` for separating persisted vs runtime 
 
 ---
 
-### 9. Create `useSkillOperations.ts` hook
+### 9. Create `useSkillOperations.ts` hook ✅ DONE
 
 **Description:** Orchestration hook that manages skill discovery lifecycle: when to scan, which directories to scan based on connections, and how to trigger rescans. Also provides helpers for reading skill content and executing scripts.
 
@@ -206,7 +208,7 @@ Follow the pattern in `permission-store.ts` for separating persisted vs runtime 
 
 ---
 
-### 10. Integrate skill context into `useAIOperations.ts` — Direct API path
+### 10. Integrate skill context into `useAIOperations.ts` — Direct API path ✅ DONE
 
 **Description:** Modify the direct API code path to inject skill descriptions into the system message and add `execute_skill_script` and `read_skill_content` as function tools. When the model calls these tools, handle the tool call loop (call Tauri command → return result → continue conversation).
 
@@ -231,7 +233,7 @@ Follow the pattern in `permission-store.ts` for separating persisted vs runtime 
 
 ---
 
-### 11. Integrate skill context into `useAIOperations.ts` — ACP path
+### 11. Integrate skill context into `useAIOperations.ts` — ACP path ✅ DONE
 
 **Description:** Modify the ACP code path to inject Notesage-specific skill descriptions into session prompts. Only inject `.notesage/skills/` — not external provider skills that the ACP agent discovers on its own. Agent instructions: only inject `.notesage/agents.md` files.
 
@@ -251,7 +253,7 @@ Follow the pattern in `permission-store.ts` for separating persisted vs runtime 
 
 ---
 
-### 12. Add tool call rendering for skill tools in `ChatMessage.tsx`
+### 12. Add tool call rendering for skill tools in `ChatMessage.tsx` ✅ DONE
 
 **Description:** When the AI calls `execute_skill_script` or `read_skill_content`, display the tool call in the chat message with appropriate formatting: skill name, script path, and output in a collapsible code block.
 
@@ -273,7 +275,7 @@ Follow the existing pattern for ACP tool call rendering (activity entries).
 
 ---
 
-### 13. Create `SkillsSettings.tsx` — Skills browser section
+### 13. Create `SkillsSettings.tsx` — Skills browser section ✅ DONE
 
 **Description:** Settings tab component showing all discovered skills grouped by source, with enable/disable toggles, source badges, hierarchy override indicators, and action buttons.
 
@@ -296,7 +298,7 @@ Follow the existing pattern for ACP tool call rendering (activity entries).
 
 ---
 
-### 14. Create `SkillsSettings.tsx` — Agent Instructions section
+### 14. Create `SkillsSettings.tsx` — Agent Instructions section ✅ DONE
 
 **Description:** Section within the Skills & Agents settings tab showing discovered agent instruction files with priority, source badges, and edit/create actions.
 
@@ -316,7 +318,7 @@ Follow the existing pattern for ACP tool call rendering (activity entries).
 
 ---
 
-### 15. Add Skills & Agents tab to `SettingsDialog.tsx`
+### 15. Add Skills & Agents tab to `SettingsDialog.tsx` ✅ DONE
 
 **Description:** Register the new Skills & Agents tab in the settings dialog navigation, with appropriate icon. Place it logically in the tab order (after Connections, before Project).
 
@@ -334,7 +336,7 @@ Follow the existing pattern for ACP tool call rendering (activity entries).
 
 ---
 
-### 16. Add skill slash commands to `ChatInput.tsx`
+### 16. Add skill slash commands to `ChatInput.tsx` ✅ DONE
 
 **Description:** Extend the chat input to support `/skill-name` invocation. When the user types `/`, show an autocomplete dropdown listing available user-invocable skills (filtered by what they're typing). On selection, the skill name is sent as part of the prompt and the skill body is loaded and injected.
 
@@ -358,7 +360,7 @@ Follow the existing pattern for ACP tool call rendering (activity entries).
 
 ---
 
-### 17. Add agent instructions indicator to `StatusBar.tsx`
+### 17. Add agent instructions indicator to `StatusBar.tsx` ✅ DONE
 
 **Description:** Show an indicator in the editor status bar when agent instruction files are loaded. Clicking it opens a popover showing which files are active and a preview of each.
 
@@ -380,7 +382,7 @@ Follow the existing Copilot status bar indicator pattern.
 
 ---
 
-### 18. Create `NewSkillWizard.tsx` dialog
+### 18. Create `NewSkillWizard.tsx` dialog ✅ DONE
 
 **Description:** Guided dialog for non-technical users to create skills. Collects description, name, scope, script options. On create, invokes the `create-skill` built-in skill (or directly scaffolds if the built-in skill isn't ready yet — fallback to direct file creation).
 
@@ -405,7 +407,7 @@ Follow the existing Copilot status bar indicator pattern.
 
 ---
 
-### 19. Create `NewAgentWizard.tsx` dialog
+### 19. Create `NewAgentWizard.tsx` dialog ✅ DONE
 
 **Description:** Guided dialog for creating agent instruction files. Collects description, scope, optional skill references. Creates `.notesage/agents.md` or appends to existing.
 
@@ -428,7 +430,7 @@ Follow the existing Copilot status bar indicator pattern.
 
 ---
 
-### 20. Create `create-skill` bundled skill
+### 20. Create `create-skill` bundled skill ✅ DONE
 
 **Description:** Write the SKILL.md, scaffold script, validation script, and reference files for the built-in `create-skill` skill. This skill guides the AI through creating a well-formed skill directory.
 
@@ -452,7 +454,7 @@ Follow the existing Copilot status bar indicator pattern.
 
 ---
 
-### 21. Create `create-agent` bundled skill
+### 21. Create `create-agent` bundled skill ✅ DONE
 
 **Description:** Write the SKILL.md, scaffold script, and reference files for the built-in `create-agent` skill.
 
@@ -473,7 +475,7 @@ Follow the existing Copilot status bar indicator pattern.
 
 ---
 
-### 22. Integrate bundled skills into app startup
+### 22. Integrate bundled skills into app startup ✅ DONE
 
 **Description:** Ensure bundled skills are discoverable at app startup. Bundled skills should be extracted from the app bundle to a known location (`~/.notesage/bundled-skills/`) on first run or when the app version changes. The discovery scan includes this directory automatically.
 

@@ -1,6 +1,6 @@
 # PRD: Find in Document
 
-**Date:** 2026-02-28 **Status:** Complete **Parent:** Editor
+**Date:** 2026-02-28 **Status:** ✅ Complete **Parent:** Editor
 
 ## Problem
 

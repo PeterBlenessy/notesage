@@ -1,5 +1,6 @@
 # Agent Binary Management & Runtime Sandboxing — Implementation Plan
 
+**Status:** 🔮 Future
 **PRD:** `docs/prds/2026-02-21-agent-install-wizard.md`
 **Tasks:** `docs/prds/2026-02-21-agent-install-wizard-tasks.md`
 **Date:** 2026-03-01

@@ -1,10 +1,12 @@
 # Diff Fidelity + Agent Auto-Apply — Implementation Tasks
 
+**Status:** ✅ Complete
+
 **PRDs:** `docs/prds/2026-03-01-diff-fidelity.md` + `docs/prds/2026-03-01-agent-auto-apply.md`**Date:** 2026-03-01
 
 ## Summary
 
-**9 tasks: 3S, 4M, 2L**
+**9 tasks: 9/9 done — 3S, 4M, 2L**
 
 Implementation order: Foundation first (shared helper), then fix existing code paths, then add auto-apply. Diff fidelity tasks (#1-#5) must complete before auto-apply tasks (#6-#9).
 

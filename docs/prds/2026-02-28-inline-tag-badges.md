@@ -1,6 +1,6 @@
 # PRD: Inline Tag Badges & Autocomplete
 
-**Date:** 2026-02-28 **Status:** Done **Parent:** Phase 6.5 — Chat UX & Agent Polish
+**Date:** 2026-02-28 **Status:** ✅ Complete **Parent:** Phase 6.5 — Chat UX & Agent Polish
 
 ## Problem
 

@@ -1,5 +1,7 @@
 # MCP Client Integration — Implementation Tasks
 
+**Status:** ✅ Complete
+
 PRD: `docs/prds/2026-03-07-mcp-client-integration.md`
 
 ## Task Overview
@@ -21,7 +23,7 @@ PRD: `docs/prds/2026-03-07-mcp-client-integration.md`
 
 ---
 
-## Task 1: MCP JSON-RPC Transport & Protocol
+## Task 1: MCP JSON-RPC Transport & Protocol ✅ DONE
 
 **Goal:** Implement the MCP client protocol over stdio in Rust.
 
@@ -62,7 +64,7 @@ struct McpToolResult {
 
 ---
 
-## Task 2: MCP Managed State & Tauri Commands
+## Task 2: MCP Managed State & Tauri Commands ✅ DONE
 
 **Goal:** Expose MCP operations to the frontend via Tauri IPC commands.
 
@@ -95,7 +97,7 @@ mcp_get_server_status() -> Result<Vec<McpServerInfo>, String>
 
 ---
 
-## Task 3: Config File Parsing & Import
+## Task 3: Config File Parsing & Import ✅ DONE
 
 **Goal:** Read and write MCP server configurations from JSON files, import from other tools.
 
@@ -134,7 +136,7 @@ mcp_save_config(path: String, configs: HashMap<String, McpServerConfigEntry>) ->
 
 ---
 
-## Task 4: MCP Zustand Store
+## Task 4: MCP Zustand Store ✅ DONE
 
 **Goal:** Frontend state management for MCP servers.
 
@@ -171,7 +173,7 @@ interface McpStore {
 
 ---
 
-## Task 5: Discovery Hook & Lifecycle
+## Task 5: Discovery Hook & Lifecycle ✅ DONE
 
 **Goal:** Automatic MCP server discovery and management on startup and config changes.
 
@@ -204,7 +206,7 @@ interface McpStore {
 
 ---
 
-## Task 6: Settings UI — Server Cards
+## Task 6: Settings UI — Server Cards ✅ DONE
 
 **Goal:** Display MCP servers in the Settings dialog.
 
@@ -233,7 +235,7 @@ interface McpStore {
 
 ---
 
-## Task 7: Settings UI — Add/Edit/Import Dialogs
+## Task 7: Settings UI — Add/Edit/Import Dialogs ✅ DONE
 
 **Goal:** UI for adding new servers and importing from other tools.
 
@@ -264,7 +266,7 @@ interface McpStore {
 
 ---
 
-## Task 8: Tools Popover Integration
+## Task 8: Tools Popover Integration ✅ DONE
 
 **Goal:** MCP tools appear in the chat footer Tools popover.
 
@@ -285,7 +287,7 @@ interface McpStore {
 
 ---
 
-## Task 9: App Lifecycle (Startup/Shutdown)
+## Task 9: App Lifecycle (Startup/Shutdown) ✅ DONE
 
 **Goal:** Reliable MCP server startup and shutdown.
 
@@ -317,7 +319,7 @@ interface McpStore {
 
 ---
 
-## Task 10: Testing & Polish
+## Task 10: Testing & Polish ✅ DONE
 
 **Goal:** End-to-end verification and UX polish.
 

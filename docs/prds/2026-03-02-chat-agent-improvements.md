@@ -1,5 +1,7 @@
 # PRD: Chat Agent Improvements — History, Deletion, Project & File Awareness
 
+**Status:** ✅ Complete
+
 ## Problem Statement
 
 Chat agents in Notesage currently lack several capabilities that limit their usefulness:

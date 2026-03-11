@@ -1,5 +1,7 @@
 # PRD: Dynamic Model Metadata Enrichment
 
+**Status:** ✅ Complete
+
 ## Problem
 
 Users see minimal information about AI models in Settings — just a name, file size, and a one-line description. They can't see the model's author, license, parameter count, architecture, context window, or quantization level without leaving the app. This makes it hard to make informed decisions about which model to download or use, especially for Local AI models where 9 options exist with varying trade-offs.

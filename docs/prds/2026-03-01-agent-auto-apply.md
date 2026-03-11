@@ -1,6 +1,6 @@
 # Agent Comment Delegation Part 3 — Multi-Turn Threads & Apply-to-Document
 
-**Date:** 2026-03-01 **Status:** Done **Parent:** Phase 6.5 **Depends on:** `2026-03-01-diff-fidelity.md`
+**Date:** 2026-03-01 **Status:** ✅ Complete **Parent:** Phase 6.5 **Depends on:** `2026-03-01-diff-fidelity.md`
 
 ## Problem
 

@@ -1,6 +1,7 @@
 # Agent Binary Management & Runtime Sandboxing — Tasks
 
 **PRD:** `docs/prds/2026-02-21-agent-install-wizard.md`
+**Status:** 🔮 Future
 
 ## Phase 1 — Managed Installation + Filesystem Sandbox
 

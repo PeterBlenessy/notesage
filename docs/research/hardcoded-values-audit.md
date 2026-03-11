@@ -1,7 +1,6 @@
 # Hardcoded Values Audit
 
-**Date:** 2026-03-10
-**Status:** Research complete, pending implementation decisions
+**Date:** 2026-03-10 **Status:** Research complete, pending implementation decisions
 
 ## Overview
 
@@ -15,7 +14,8 @@ Comprehensive audit of hardcoded values across the Notesage codebase that should
 
 `src-tauri/src/commands/local_inference.rs` has 7 hardcoded tag pairs **duplicated** in two places:
 
-**Streaming parser (lines ~1030-1038):**
+**Streaming parser (lines \~1030-1038):**
+
 ```rust
 let thinking_tags: &[(&str, &str)] = &[
     ("<think>", "</think>"),
@@ -28,7 +28,7 @@ let thinking_tags: &[(&str, &str)] = &[
 ];
 ```
 
-**Non-streaming stripper (lines ~1229-1237):** Identical array.
+**Non-streaming stripper (lines \~1229-1237):** Identical array.
 
 ### Why This Is Bad
 
@@ -40,22 +40,26 @@ let thinking_tags: &[(&str, &str)] = &[
 ### How Other Apps Solve This
 
 **Ollama** (`thinking/template.go` → `InferTags()`):
+
 1. Checks model capabilities field for `"thinking"`
 2. Scans the Jinja2 chat template for `{{.Thinking}}` and extracts surrounding delimiter tags
 3. Falls back to model name/family heuristics
 4. Has built-in parsers per model family for model-specific output formats
 
 **LM Studio:**
+
 - Auto-detects from GGUF metadata
 - Supports `model.yaml` override files with `metadataOverrides` for capabilities
 
 **Open WebUI:**
+
 - Scans output stream for common patterns (`<think>`, `<reasoning>`, etc.)
 - Similar to current Notesage approach but done at the UI layer
 
 ### Recommended Fix
 
-**After llama-server loads a model, call `GET /props`** which returns:
+**After llama-server loads a model, call** `GET /props` which returns:
+
 ```json
 {
   "chat_template": "{% if ... %}",
@@ -70,11 +74,12 @@ Parse `chat_template` for thinking tag patterns (same strategy as Ollama's `Infe
 ### Contrast: Ollama Path (Already Good)
 
 `ai_streaming.rs` uses runtime detection via `/api/show`:
+
 1. Check for native `thinking` capability in model JSON
 2. Extract tags from Go template if `.Thinking` field referenced
 3. Fallback to hardcoded `<think>...</think>` for reasoning-named models
 
-The only hardcoded part is the fallback at lines ~109-110, which is acceptable.
+The only hardcoded part is the fallback at lines \~109-110, which is acceptable.
 
 ---
 
@@ -83,6 +88,7 @@ The only hardcoded part is the fallback at lines ~109-110, which is acceptable.
 ### Problem
 
 `src-tauri/model-catalog.json` embeds 9 models with hardcoded:
+
 - RAM requirements
 - File sizes in bytes
 - FIM (Fill-in-the-Middle) support flags
@@ -96,7 +102,7 @@ All compiled into the binary via `include_str!("../../model-catalog.json")` at `
 GGUF files have a rich key-value metadata header:
 
 | Key | Type | Description |
-|-----|------|-------------|
+| --- | --- | --- |
 | `{arch}.context_length` | uint32 | Trained context window |
 | `tokenizer.ggml.prefix_token_id` | uint32 | FIM prefix token |
 | `tokenizer.ggml.suffix_token_id` | uint32 | FIM suffix token |
@@ -111,22 +117,26 @@ GGUF files have a rich key-value metadata header:
 ### How Other Apps Solve This
 
 **llama.cpp:**
+
 - Reads FIM tokens from GGUF header automatically
 - `/infill` endpoint returns 501 if model lacks FIM tokens
 - `/props` endpoint exposes `chat_template` and `n_ctx`
 
-**`@huggingface/gguf` (npm package):**
+`@huggingface/gguf` **(npm package):**
+
 - Parses GGUF metadata from files without full download (HTTP range requests)
 - `const { metadata } = await gguf(url)` returns all key-value pairs
 - Supports local files with `allowLocalFile: true`
 
 **LM Studio:**
+
 - Auto-populates model info from GGUF metadata
 - Overridable via `model.yaml` files
 
 ### What llama-server Exposes via HTTP
 
-**`GET /props` response:**
+`GET /props` **response:**
+
 ```json
 {
   "assistant_name": "",
@@ -140,13 +150,13 @@ GGUF files have a rich key-value metadata header:
 }
 ```
 
-**What's NOT in `/props`:** FIM token IDs, RAM requirements, architecture details, full GGUF metadata dump. There was a [feature request](https://github.com/ggml-org/llama.cpp/discussions/9341) for a `/metadata` endpoint but it hasn't been implemented.
+**What's NOT in** `/props`**:** FIM token IDs, RAM requirements, architecture details, full GGUF metadata dump. There was a [feature request](https://github.com/ggml-org/llama.cpp/discussions/9341) for a `/metadata` endpoint but it hasn't been implemented.
 
 ### Recommended Fix
 
 1. **After model download**, parse the GGUF file header in Rust to extract context length, FIM token presence, and chat template
 2. **Cache this metadata** alongside the model file (e.g., `model-id.meta.json`)
-3. **Keep `model-catalog.json`** for download URLs, descriptions, and RAM recommendations only
+3. **Keep** `model-catalog.json` for download URLs, descriptions, and RAM recommendations only
 4. **Custom models** (`custom-models.json`) get auto-populated metadata on import
 5. **After server loads**, call `GET /props` to confirm actual `n_ctx` (may differ from GGUF if user overrides `--ctx-size`)
 
@@ -161,12 +171,13 @@ GGUF files have a rich key-value metadata header:
 Default models are hardcoded in **both** `ai.rs` and `ai_streaming.rs`:
 
 | Provider | Default | Locations |
-|----------|---------|-----------|
+| --- | --- | --- |
 | Anthropic | `claude-sonnet-4-5-20250929` | `ai.rs:227,286`, `ai_streaming.rs:204` |
 | OpenAI | `gpt-4o` | `ai.rs:357,415`, `ai_streaming.rs:415` |
 | Ollama | `llama3.2` | `ai.rs:503,558`, `ai_streaming.rs:593` |
 
 Also in TypeScript: `src/lib/ai/connections.ts:220-222`:
+
 ```typescript
 export const DEFAULT_MODELS: Partial<Record<ConnectionProvider, string>> = {
   anthropic: 'claude-sonnet-4-5-20250929',
@@ -184,7 +195,7 @@ export const DEFAULT_MODELS: Partial<Record<ConnectionProvider, string>> = {
 ### What APIs Offer
 
 | Provider | API | Returns | Capabilities? |
-|----------|-----|---------|---------------|
+| --- | --- | --- | --- |
 | Anthropic | `GET /v1/models` | id, display_name, created_at | No |
 | OpenAI | `GET /v1/models` | id, object, created, owned_by | No |
 | Ollama | `GET /api/tags` | Locally pulled models with sizes | No |
@@ -219,6 +230,7 @@ Move to a `const ANTHROPIC_API_VERSION: &str = "2023-06-01"` in a shared constan
 ### Problem
 
 `acp.rs:584-626` and `copilot_lsp.rs:687-717` hardcode macOS-specific paths:
+
 ```
 /opt/homebrew/bin
 /opt/homebrew/lib/node_modules/.bin
@@ -250,6 +262,7 @@ Move to a `const ANTHROPIC_API_VERSION: &str = "2023-06-01"` in a shared constan
 ### Problem
 
 `transcription.rs:94-100` has hardcoded file sizes:
+
 ```rust
 ("tiny", 75_000_000),
 ("base", 142_000_000),
@@ -285,7 +298,7 @@ No dynamic alternative exists — providers don't expose tool catalogs via API. 
 ### Acceptable — No Action Needed
 
 | Value | Location | Reason |
-|-------|----------|--------|
+| --- | --- | --- |
 | HTTP timeout `300s` | `ai.rs`, `ai_streaming.rs` | Standard for AI streaming |
 | Self-write TTL `5s` | `watcher.rs:21` | Well-documented, covers FSEvents + iCloud |
 | Debounce `500ms` | `watcher.rs` | Internal implementation detail |
@@ -298,7 +311,7 @@ No dynamic alternative exists — providers don't expose tool catalogs via API. 
 ### Could Improve (Low Priority)
 
 | Value | Location | Fix |
-|-------|----------|-----|
+| --- | --- | --- |
 | Max restart attempts `3` | `useLocalAI.ts:149` | Move to settings-store |
 | Health check interval `30s` | `useLocalAI.ts:143` | Move to settings-store |
 | Chat flush interval `50ms` | `useAIOperations.ts:899` | Move to constants |
@@ -312,16 +325,19 @@ No dynamic alternative exists — providers don't expose tool catalogs via API. 
 ## Priority Action Items
 
 ### High Priority
+
 1. **Thinking tags** → Parse from llama-server `/props` `chat_template` dynamically; deduplicate shared constant as immediate fix
 2. **Default model names** → Consolidate to single constants file, remove duplication between `ai.rs` and `ai_streaming.rs`
 3. **NPM binary paths** → Use `which`/`PATH` instead of hardcoded macOS paths; extract shared utility
 
 ### Medium Priority
+
 4. **Model catalog FIM/context** → Read from GGUF file headers instead of static JSON
 5. **Anthropic API version** → Update to current version, move to shared constant
 6. **Model metadata caching** → Parse GGUF headers on download, cache as `.meta.json`
 
 ### Low Priority
+
 7. Whisper model sizes → Use `Content-Length` from download response
 8. Web search tool names → Move to constants file
 9. Various magic numbers → Extract to named constants

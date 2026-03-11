@@ -1,6 +1,6 @@
 # PRD: Comments & Change Detection (Phase 5)
 
-**Status:** Complete (v0.9.0)
+**Status:** ✅ Complete (v0.9.0)
 
 ## Problem
 

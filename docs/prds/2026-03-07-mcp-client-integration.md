@@ -1,5 +1,7 @@
 # PRD: MCP Client Integration (Phase 7 Step B)
 
+**Status:** ✅ Complete
+
 ## Problem
 
 Notesage's AI agents can only use tools that are either hardcoded (ACP agent built-ins like bash, edit, read) or implemented as skill scripts (Phase 7 Step A). Users cannot connect external tool servers — databases, APIs, filesystems, web scrapers, or any of the 5,800+ MCP servers available in the ecosystem — without leaving the app.

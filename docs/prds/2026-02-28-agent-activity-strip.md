@@ -1,6 +1,6 @@
 # PRD: Agent Activity Strip & Progress Streaming
 
-**Date:** 2026-02-28 **Status:** Draft **Depends on:** Agent comment delegation Part 1 (v0.14.1)
+**Date:** 2026-02-28 **Status:** ✅ Complete **Depends on:** Agent comment delegation Part 1 (v0.14.1)
 
 ## Problem
 

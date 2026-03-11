@@ -1,6 +1,8 @@
 # Agent Activity Strip & Panel & Progress Streaming — Implementation Tasks
 
-**PRD:** `docs/prds/2026-02-28-agent-activity-strip.md`**Total: 9 tasks — 2S, 4M, 3LNo backend changes — purely frontend.Suggested order:** Store → Hook plumbing → Streaming UI → Activity strip UI → Layout → Shortcut → Polish
+**Status:** ✅ Complete
+
+**PRD:** `docs/prds/2026-02-28-agent-activity-strip.md`**Total: 9 tasks — 9/9 done — 2S, 4M, 3LNo backend changes — purely frontend.Suggested order:** Store → Hook plumbing → Streaming UI → Activity strip UI → Layout → Shortcut → Polish
 
 ---
 

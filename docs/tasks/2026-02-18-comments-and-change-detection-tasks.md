@@ -1,10 +1,12 @@
 # Task Breakdown: Comments & Change Detection (Phase 5)
 
+**Status:** ✅ Complete
+
 **PRD:** `docs/prds/2026-02-18-comments-and-change-detection.md`
 
 ## Summary
 
-**17 tasks: 4S, 8M, 5L**
+**17 tasks: 4S, 8M, 5L — All complete**
 
 Three independent work streams:
 
@@ -33,7 +35,7 @@ The filesystem watcher is simplified to **Tier 1 only**: detect external changes
 
 ### Stream A: Comments
 
-#### Task 1 — Add document UUID to frontmatter types
+#### Task 1 ✅ DONE — Add document UUID to frontmatter types
 
 |  |  |
 | --- | --- |
@@ -53,7 +55,7 @@ The filesystem watcher is simplified to **Tier 1 only**: detect external changes
 
 ---
 
-#### Task 2 — Create comment-store
+#### Task 2 ✅ DONE — Create comment-store
 
 |  |  |
 | --- | --- |
@@ -92,7 +94,7 @@ interface CommentStore {
 
 ---
 
-#### Task 3 — Build document index utility
+#### Task 3 ✅ DONE — Build document index utility
 
 |  |  |
 | --- | --- |
@@ -120,7 +122,7 @@ interface CommentStore {
 
 ---
 
-#### Task 4 — Trigger document index build on project open
+#### Task 4 ✅ DONE — Trigger document index build on project open
 
 |  |  |
 | --- | --- |
@@ -139,7 +141,7 @@ interface CommentStore {
 
 ---
 
-#### Task 5 — Create comment-mark Tiptap extension
+#### Task 5 ✅ DONE — Create comment-mark Tiptap extension
 
 |  |  |
 | --- | --- |
@@ -177,7 +179,7 @@ interface CommentStore {
 
 ---
 
-#### Task 6 — Create CommentPopover component
+#### Task 6 ✅ DONE — Create CommentPopover component
 
 |  |  |
 | --- | --- |
@@ -204,7 +206,7 @@ interface CommentStore {
 
 ---
 
-#### Task 7 — Add "Comment" button to BubbleMenu
+#### Task 7 ✅ DONE — Add "Comment" button to BubbleMenu
 
 |  |  |
 | --- | --- |
@@ -224,7 +226,7 @@ interface CommentStore {
 
 ---
 
-#### Task 8 — Wire comment lifecycle (load, save, create, delete)
+#### Task 8 ✅ DONE — Wire comment lifecycle (load, save, create, delete)
 
 |  |  |
 | --- | --- |
@@ -252,7 +254,7 @@ interface CommentStore {
 
 ---
 
-#### Task 9 — Add comment styles to editor.css
+#### Task 9 ✅ DONE — Add comment styles to editor.css
 
 |  |  |
 | --- | --- |
@@ -277,7 +279,7 @@ interface CommentStore {
 
 ### Stream B: Git Branch Diff Review
 
-#### Task 10 — Add git diff Tauri commands
+#### Task 10 ✅ DONE — Add git diff Tauri commands
 
 |  |  |
 | --- | --- |
@@ -331,7 +333,7 @@ pub async fn git_worktree_list(
 
 ---
 
-#### Task 11 — Create diff-review-store
+#### Task 11 ✅ DONE — Create diff-review-store
 
 |  |  |
 | --- | --- |
@@ -367,7 +369,7 @@ interface DiffReviewStore {
 
 ---
 
-#### Task 12 — Build line-to-ProseMirror position mapping
+#### Task 12 ✅ DONE — Build line-to-ProseMirror position mapping
 
 |  |  |
 | --- | --- |
@@ -419,7 +421,7 @@ function buildLineMap(editor: Editor): Map<number, LineMapping>
 
 ---
 
-#### Task 13 — Create inline-diff Tiptap extension
+#### Task 13 ✅ DONE — Create inline-diff Tiptap extension
 
 |  |  |
 | --- | --- |
@@ -472,7 +474,7 @@ interface InlineDiffState {
 
 ---
 
-#### Task 14 — Create DiffReviewBanner component
+#### Task 14 ✅ DONE — Create DiffReviewBanner component
 
 |  |  |
 | --- | --- |
@@ -509,7 +511,7 @@ interface InlineDiffState {
 
 ---
 
-#### Task 15 — Create useDiffReview hook and branch selector UI
+#### Task 15 ✅ DONE — Create useDiffReview hook and branch selector UI
 
 |  |  |
 | --- | --- |
@@ -545,7 +547,7 @@ interface InlineDiffState {
 
 ### Stream C: Filesystem Watcher
 
-#### Task 16 — Create filesystem watcher Tauri commands
+#### Task 16 ✅ DONE — Create filesystem watcher Tauri commands
 
 |  |  |
 | --- | --- |
@@ -580,7 +582,7 @@ interface InlineDiffState {
 
 ---
 
-#### Task 17 — Create useFileWatcher hook, banner, and sidebar indicators
+#### Task 17 ✅ DONE — Create useFileWatcher hook, banner, and sidebar indicators
 
 |  |  |
 | --- | --- |

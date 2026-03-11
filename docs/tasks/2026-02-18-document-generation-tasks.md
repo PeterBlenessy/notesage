@@ -1,10 +1,12 @@
 # Tasks: Document Generation (Phase 4)
 
+**Status:** ✅ Complete
+
 **Source PRD:** `docs/prds/2026-02-18-document-generation.md`
 
 ## Summary
 
-**13 tasks: 3S, 6M, 4L**
+**13 tasks: 3S, 6M, 4L — All complete**
 
 **Implementation order:** Backend foundation (Rust crates, Typst world, markdown conversion) -&gt; templates & fonts -&gt; Tauri command -&gt; frontend state -&gt; UI dialog -&gt; integration & wiring -&gt; docs.
 
@@ -20,7 +22,7 @@
 
 ## Tasks
 
-### #1. Add Typst and markdown parsing dependencies to Cargo.toml
+### #1 ✅ DONE. Add Typst and markdown parsing dependencies to Cargo.toml
 
 | Field | Value |
 | --- | --- |
@@ -38,7 +40,7 @@ Add `typst`, `typst-pdf`, `typst-syntax`, `typst-library`, and `comrak` (GFM-com
 
 ---
 
-### #2. Bundle fonts for deterministic PDF rendering
+### #2 ✅ DONE. Bundle fonts for deterministic PDF rendering
 
 | Field | Value |
 | --- | --- |
@@ -63,7 +65,7 @@ Verify all fonts are OFL or Apache 2.0 licensed. Add a `fonts/LICENSE` file with
 
 ---
 
-### #3. Implement Typst World trait for embedded compilation
+### #3 ✅ DONE. Implement Typst World trait for embedded compilation
 
 | Field | Value |
 | --- | --- |
@@ -89,7 +91,7 @@ Evaluate `typst-as-lib` wrapper vs direct `World` implementation. Use whichever 
 
 ---
 
-### #4. Implement markdown-to-Typst conversion
+### #4 ✅ DONE. Implement markdown-to-Typst conversion
 
 | Field | Value |
 | --- | --- |
@@ -124,7 +126,7 @@ Parse markdown (using `comrak` with GFM extensions) and emit Typst markup. Handl
 
 ---
 
-### #5. Create Typst template presets
+### #5 ✅ DONE. Create Typst template presets
 
 | Field | Value |
 | --- | --- |
@@ -151,7 +153,7 @@ Each template accepts parameters: `title`, `include-toc`, `include-page-numbers`
 
 ---
 
-### #6. Implement `export_pdf` Tauri command
+### #6 ✅ DONE. Implement `export_pdf` Tauri command
 
 | Field | Value |
 | --- | --- |
@@ -195,7 +197,7 @@ pub async fn save_binary_file(path: String, data: Vec<u8>) -> Result<(), String>
 
 ---
 
-### #7. Add export settings to settings-store
+### #7 ✅ DONE. Add export settings to settings-store
 
 | Field | Value |
 | --- | --- |
@@ -222,7 +224,7 @@ lastExportIncludePageNumbers: boolean;                  // default: false
 
 ---
 
-### #8. Add typed Tauri invoke wrappers for export commands
+### #8 ✅ DONE. Add typed Tauri invoke wrappers for export commands
 
 | Field | Value |
 | --- | --- |
@@ -253,7 +255,7 @@ async saveBinaryFile(path: string, data: number[]): Promise<void>
 
 ---
 
-### #9. Build ExportDialog component
+### #9 ✅ DONE. Build ExportDialog component
 
 | Field | Value |
 | --- | --- |
@@ -286,7 +288,7 @@ Follow design system: neutral palette, transitions, both themes, proper spacing.
 
 ---
 
-### #10. Implement useExportOperations hook
+### #10 ✅ DONE. Implement useExportOperations hook
 
 | Field | Value |
 | --- | --- |
@@ -315,7 +317,7 @@ Create a hook that orchestrates the export flow:
 
 ---
 
-### #11. Wire up keyboard shortcut and context menu
+### #11 ✅ DONE. Wire up keyboard shortcut and context menu
 
 | Field | Value |
 | --- | --- |
@@ -337,7 +339,7 @@ Create a hook that orchestrates the export flow:
 
 ---
 
-### #12. Update documentation
+### #12 ✅ DONE. Update documentation
 
 | Field | Value |
 | --- | --- |
@@ -358,7 +360,7 @@ Create a hook that orchestrates the export flow:
 
 ---
 
-### #13. End-to-end testing with reference documents
+### #13 ✅ DONE. End-to-end testing with reference documents
 
 | Field | Value |
 | --- | --- |

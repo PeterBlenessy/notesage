@@ -1,6 +1,6 @@
 # PRD: Document Format Support
 
-**Date:** 2026-02-24 **Phase:** 7a — Multi-Format Documents **Status:** Complete (v0.16.0)
+**Date:** 2026-02-24 **Phase:** 7a — Multi-Format Documents **Status:** ✅ Complete (v0.16.0)
 
 ## Problem
 

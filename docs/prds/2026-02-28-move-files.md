@@ -1,6 +1,6 @@
 # PRD: Move Files Between Projects and Folders
 
-**Date:** 2026-02-28 **Status:** Pending **Parent:** File Management
+**Date:** 2026-02-28 **Status:** 📋 Planned **Parent:** File Management
 
 ## Problem
 

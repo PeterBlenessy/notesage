@@ -1,6 +1,6 @@
 # PRD: Voice Transcription
 
-**Date:** 2026-03-08 **Status:** Shipped (task #4 deferred) **Research:** `docs/research/voice-transcription-options.md`**Reference implementation:** [TeamAI](https://github.com/PeterBlenessy/TeamAI) — see `src/components/UserInput.vue` for Web Speech API integration **Web Speech API docs:** [MDN SpeechRecognition](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition), [MDN Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API)
+**Date:** 2026-03-08 **Status:** ✅ Complete **Research:** `docs/research/voice-transcription-options.md`**Reference implementation:** [TeamAI](https://github.com/PeterBlenessy/TeamAI) — see `src/components/UserInput.vue` for Web Speech API integration **Web Speech API docs:** [MDN SpeechRecognition](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition), [MDN Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API)
 
 ## Problem
 

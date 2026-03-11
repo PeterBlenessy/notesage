@@ -1,6 +1,6 @@
 # PRD: In-App Auto-Update
 
-**Date:** 2026-02-23 **Status:** Complete (v0.15.2) **Author:** Claude
+**Date:** 2026-02-23 **Status:** ✅ Complete (v0.15.2) **Author:** Claude
 
 ## Problem
 

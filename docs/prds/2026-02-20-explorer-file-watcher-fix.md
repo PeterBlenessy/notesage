@@ -1,5 +1,7 @@
 # PRD: Explorer Folder File Watcher Fix
 
+**Status:** ✅ Complete
+
 ## Problem
 
 The filesystem watcher infrastructure (Rust `notify` crate + Tauri events + React hooks) exists but silently fails for explorer folders. Users report three symptoms:

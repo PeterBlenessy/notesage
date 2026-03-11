@@ -1,7 +1,9 @@
 # Task Breakdown: AI-Assisted Research (Phase 8)
 
+**Status:** ✅ Complete
+
 **PRD:** `docs/prds/2026-03-08-ai-assisted-research.md`
-**Total:** 13 tasks — 4S, 5M, 4L
+**Total:** 13 tasks — 13/13 done — 4S, 5M, 4L
 
 ## Suggested Implementation Order
 
@@ -21,7 +23,7 @@
 
 ## Wave 1: Foundation (Parallel)
 
-### Task 1 — Enhance `download-webpage` script with metadata extraction
+### Task 1 — Enhance `download-webpage` script with metadata extraction ✅ DONE
 
 **Complexity:** M | **Category:** frontend (Node.js script) | **Dependencies:** none
 
@@ -53,7 +55,7 @@ Add `--tags "tag1,tag2"` CLI argument support.
 
 ---
 
-### Task 3 — Create `search-research` skill with script
+### Task 3 — Create `search-research` skill with script ✅ DONE
 
 **Complexity:** M | **Category:** both (skill + Node.js script) | **Dependencies:** none
 
@@ -87,7 +89,7 @@ Create `bundled-skills/search-research/` directory with:
 
 ---
 
-### Task 6 — Add `search_research` Tauri command
+### Task 6 — Add `search_research` Tauri command ✅ DONE
 
 **Complexity:** L | **Category:** backend (Rust) | **Dependencies:** none
 
@@ -142,7 +144,7 @@ Register in `generate_handler![]` in `lib.rs`.
 
 ---
 
-### Task 7 — Add citation format fields to project metadata
+### Task 7 — Add citation format fields to project metadata ✅ DONE
 
 **Complexity:** S | **Category:** frontend | **Dependencies:** none
 
@@ -171,7 +173,7 @@ Add these as top-level fields on the metadata object (not inside `ai` sub-object
 
 ## Wave 2: Skills & Types (Depends on Wave 1)
 
-### Task 2 — Create `save-research` skill with script
+### Task 2 — Create `save-research` skill with script ✅ DONE
 
 **Complexity:** L | **Category:** both (skill + Node.js script) | **Dependencies:** #1
 
@@ -209,7 +211,7 @@ Create `bundled-skills/save-research/` directory with:
 
 ---
 
-### Task 4 — Create `synthesize-sources` AI-only skill
+### Task 4 — Create `synthesize-sources` AI-only skill ✅ DONE
 
 **Complexity:** S | **Category:** frontend (skill definition) | **Dependencies:** #3
 
@@ -241,7 +243,7 @@ Body instructs the AI to:
 
 ---
 
-### Task 5 — Create `insert-citation` AI-only skill
+### Task 5 — Create `insert-citation` AI-only skill ✅ DONE
 
 **Complexity:** S | **Category:** frontend (skill definition) | **Dependencies:** #3
 
@@ -279,7 +281,7 @@ Include concrete examples of each format in the SKILL.md body so the AI has refe
 
 ---
 
-### Task 8 — Add `ResearchSearchResult` type and Tauri wrapper
+### Task 8 — Add `ResearchSearchResult` type and Tauri wrapper ✅ DONE
 
 **Complexity:** S | **Category:** frontend | **Dependencies:** #6
 
@@ -320,7 +322,7 @@ export async function searchResearch(
 
 ## Wave 3: Frontend Wiring (Depends on Waves 1-2)
 
-### Task 9 — Add Cmd+4 research search mode to command palette
+### Task 9 — Add Cmd+4 research search mode to command palette ✅ DONE
 
 **Complexity:** L | **Category:** frontend | **Dependencies:** #8
 
@@ -359,7 +361,7 @@ Add a `researchSearchMode` to `CommandPalette.tsx`, following the exact pattern 
 
 ---
 
-### Task 10 — Register new bundled skills in extraction pipeline
+### Task 10 — Register new bundled skills in extraction pipeline ✅ DONE
 
 **Complexity:** M | **Category:** both | **Dependencies:** #2, #3, #4, #5
 
@@ -386,7 +388,7 @@ If bundled skills are embedded via `include_dir!` or similar — add the new dir
 
 ---
 
-### Task 11 — Update `download-webpage` SKILL.md for research context
+### Task 11 — Update `download-webpage` SKILL.md for research context ✅ DONE
 
 **Complexity:** S | **Category:** frontend (skill definition) | **Dependencies:** #1
 
@@ -410,7 +412,7 @@ Keep existing non-research workflow instructions unchanged — the skill should 
 
 ## Wave 4: Documentation & Testing
 
-### Task 12 — Update documentation
+### Task 12 — Update documentation ✅ DONE
 
 **Complexity:** S | **Category:** docs | **Dependencies:** #9
 
@@ -435,7 +437,7 @@ Update project documentation to reflect the new research capabilities:
 
 ---
 
-### Task 13 — End-to-end integration testing
+### Task 13 — End-to-end integration testing ✅ DONE
 
 **Complexity:** L | **Category:** both | **Dependencies:** all previous tasks
 

@@ -1,5 +1,7 @@
 # Tasks: Chat Agent Improvements
 
+**Status:** ✅ Complete
+
 PRD: `docs/prds/2026-03-02-chat-agent-improvements.md`
 
 ## Tasks

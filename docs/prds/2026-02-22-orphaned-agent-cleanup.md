@@ -2,7 +2,7 @@
 
 **Date:** 2026-02-22
 **Phase:** 6.5 — Chat UX & Agent Polish
-**Status:** Complete (v0.15.0)
+**Status:** ✅ Complete (v0.15.0)
 **Version:** 0.14.1
 
 ## Problem

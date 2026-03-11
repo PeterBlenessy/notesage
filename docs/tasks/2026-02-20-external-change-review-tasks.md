@@ -1,7 +1,7 @@
 # External Change Review — Task Breakdown
 
 **PRD:** [2026-02-20-external-change-review.md](2026-02-20-external-change-review.md)
-**Status:** Complete
+**Status:** ✅ Complete
 **Total: 10 tasks (3S, 5M, 2L) — all implemented**
 
 All frontend — no Rust/Tauri backend work required.

@@ -1,12 +1,14 @@
 # Agent Auto-Apply — Implementation Tasks
 
+**Status:** ✅ Complete
+
 **PRD:** `docs/prds/2026-03-01-agent-auto-apply.md`
 **Dependency:** `docs/prds/2026-03-01-diff-fidelity.md` (done)
 **Date:** 2026-03-01
 
 ## Summary
 
-**9 tasks: 3S, 4M, 2L**
+**9 tasks: 9/9 done — 3S, 4M, 2L**
 
 All tasks are frontend-only. No backend (Rust/Tauri) changes needed.
 

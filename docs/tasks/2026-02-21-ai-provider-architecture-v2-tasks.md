@@ -1,8 +1,9 @@
 # Task Breakdown: AI Provider Architecture v2
 
 **PRD:** `docs/prds/2026-02-21-ai-provider-architecture-v2.md`
+**Status:** ✅ Complete
 
-**Total tasks:** 26 (6S, 10M, 10L)
+**Total tasks:** 26 (6S, 10M, 10L) — all implemented
 
 **Estimated phases:** 6a (tasks 1-10), 6b (tasks 11-19), 6c (tasks 20-22), 6d (tasks 23-26)
 
@@ -30,7 +31,7 @@
 
 ## Phase 6a: Connections & Routing Infrastructure
 
-### #1 — Define connection and routing types
+### #1 — Define connection and routing types ✅ DONE
 
 **Description:** Create the TypeScript type definitions for the new connection/routing system: `Connection`, `ConnectionProvider`, `AuthMethod`, `ConnectionCredentials`, `AICapability`, `UseCaseRouting`, and the `PROVIDER_CAPABILITIES` map. These are the foundational types used by all subsequent tasks.
 
@@ -47,7 +48,7 @@
 
 ---
 
-### #2 — Create connections-store
+### #2 — Create connections-store ✅ DONE
 
 **Description:** Create a Zustand store for managing provider connections. Follows the same pattern as existing stores (`ai-store.ts`, `chat-store.ts`) with `persist` middleware.
 
@@ -63,7 +64,7 @@
 
 ---
 
-### #3 — Create routing-store
+### #3 — Create routing-store ✅ DONE
 
 **Description:** Create a Zustand store for use-case-to-connection routing with 3 slots: interactive, agent_tasks, inline_completion. Includes the smart auto-assignment logic.
 
@@ -80,7 +81,7 @@
 
 ---
 
-### #4 — Migrate v1 ai-store to connections/routing on first load
+### #4 — Migrate v1 ai-store to connections/routing on first load ✅ DONE
 
 **Description:** Write a one-time migration that reads existing `ai-store` settings (provider, apiKeys, ollamaUrl) and creates equivalent Connection + Routing entries in the new stores. Runs on app startup if connections-store is empty.
 
@@ -100,7 +101,7 @@
 
 ---
 
-### #5 — Refactor useAIOperations to use routing-store
+### #5 — Refactor useAIOperations to use routing-store ✅ DONE
 
 **Description:** Update the `useAIOperations` hook to resolve provider/credentials from the new routing-store instead of directly from ai-store. For now, only handle api_key and local connections via the existing direct API path. ACP routing is added in Phase 6b (#17).
 
@@ -117,7 +118,7 @@
 
 ---
 
-### #6 — Update getAIProvider factory for connection-based resolution
+### #6 — Update getAIProvider factory for connection-based resolution ✅ DONE
 
 **Description:** Extend the `getAIProvider` factory to accept a `Connection` object instead of loose parameters. Keep the old signature as a deprecated overload for backward compatibility.
 
@@ -132,7 +133,7 @@
 
 ---
 
-### #7 — Build ConnectionCard component
+### #7 — Build ConnectionCard component ✅ DONE
 
 **Description:** Create a reusable card component for displaying a single connection in the settings UI. Shows provider logo, name, auth type badge, capability tags, status indicator, and action buttons.
 
@@ -150,7 +151,7 @@
 
 ---
 
-### #8 — Build ConnectionsSettings component with capability guidance
+### #8 — Build ConnectionsSettings component with capability guidance ✅ DONE
 
 **Description:** Create the new Connections section for the AI settings page. Shows existing connections as cards, "Add Connection" button with provider picker that includes capability guidance to help users choose the right subscription.
 
@@ -175,7 +176,7 @@
 
 ---
 
-### #9 — Build UseCaseRoutingSettings component
+### #9 — Build UseCaseRoutingSettings component ✅ DONE
 
 **Description:** Create the "Advanced" collapsible section showing the use-case-to-connection routing grid with 3 rows.
 
@@ -192,7 +193,7 @@
 
 ---
 
-### #10 — Integrate new settings components into SettingsDialog
+### #10 — Integrate new settings components into SettingsDialog ✅ DONE
 
 **Description:** Replace the old AISettings provider/key section with the new ConnectionsSettings + UseCaseRoutingSettings components in the SettingsDialog.
 
@@ -209,7 +210,7 @@
 
 ## Phase 6b: ACP Client + Interactive Agent
 
-### #11 — Add agent-client-protocol crate dependency
+### #11 — Add agent-client-protocol crate dependency ✅ DONE
 
 **Description:** Add the `agent-client-protocol` and `agent-client-protocol-schema` crates to `Cargo.toml`. Verify the crate compiles and the key types (`ClientSideConnection`, `AgentInfo`, `SessionId`, etc.) are accessible.
 
@@ -224,7 +225,7 @@
 
 ---
 
-### #12 — Add agent binary availability check Tauri command
+### #12 — Add agent binary availability check Tauri command ✅ DONE
 
 **Description:** Add a Rust command that checks whether ACP agent binaries are installed on the system. Uses `which` (Unix) or `where` (Windows) to locate executables.
 
@@ -241,7 +242,7 @@
 
 ---
 
-### #13 — Implement ACP client state and subprocess spawning
+### #13 — Implement ACP client state and subprocess spawning ✅ DONE
 
 **Description:** Create the core ACP client infrastructure in Rust: `AcpState` managed state, subprocess spawning, and the `initialize` handshake. This is the foundation for all agent communication (both interactive and task agents).
 
@@ -262,7 +263,7 @@
 
 ---
 
-### #14 — Implement ACP authenticate command
+### #14 — Implement ACP authenticate command ✅ DONE
 
 **Description:** Add the `acp_agent_authenticate` Tauri command that sends the ACP `authenticate` method to the agent subprocess. For `agent_managed` connections, this triggers the agent's internal auth flow (e.g., browser popup for subscription login).
 
@@ -279,7 +280,7 @@
 
 ---
 
-### #15 — Implement ACP session management and streaming
+### #15 — Implement ACP session management and streaming ✅ DONE
 
 **Description:** Add Tauri commands for ACP session lifecycle (`session/new`, `session/load`, `session/cancel`) and the core `acp_session_prompt` command that streams responses as Tauri events.
 
@@ -301,7 +302,7 @@
 
 ---
 
-### #16 — Register ACP commands and state in lib.rs
+### #16 — Register ACP commands and state in lib.rs ✅ DONE
 
 **Description:** Wire up all ACP commands and managed state in the Tauri builder. Ensure the module is exported from `commands/mod.rs`.
 
@@ -317,7 +318,7 @@
 
 ---
 
-### #17 — Route interactive operations through ACP for agent_managed connections
+### #17 — Route interactive operations through ACP for agent_managed connections ✅ DONE
 
 **Description:** Update `useAIOperations` to transparently route chat and inline actions through ACP when the interactive connection is `agent_managed`. This is the key task that enables subscription-based chat/inline without API keys.
 
@@ -336,7 +337,7 @@
 
 ---
 
-### #18 — Add agent connection flow to ConnectionsSettings
+### #18 — Add agent connection flow to ConnectionsSettings ✅ DONE
 
 **Description:** Extend the ConnectionsSettings UI to support adding `agent_managed` connections (subscription-based). When user clicks "Connect Claude Code" or "Connect Codex", spawn the agent, trigger auth, and store the connection.
 
@@ -360,7 +361,7 @@
 
 ---
 
-### #19 — Build Agent Activity Panel
+### #19 — Build Agent Activity Panel ✅ DONE
 
 **Description:** Create a collapsible activity log within chat messages showing running agents and their tool call status.
 
@@ -380,7 +381,7 @@
 
 ## Phase 6c: Agent Tasks + Permission Bridge
 
-### #20 — Create useAgentTaskOperations hook
+### #20 — Create useAgentTaskOperations hook ✅ DONE
 
 **Description:** Create a frontend hook for delegated agent task operations. Handles spawning task agents, sending task prompts, and managing task lifecycle.
 
@@ -398,7 +399,7 @@
 
 ---
 
-### #21 — Bridge ACP permission requests to inline diff review
+### #21 — Bridge ACP permission requests to inline diff review ✅ DONE
 
 **Description:** When an ACP task agent requests permission to edit a file, bridge this to the existing external change review infrastructure. Display proposed changes as inline diffs for user accept/reject.
 
@@ -418,7 +419,7 @@
 
 ---
 
-### #22 — Agent Activity Panel: task controls and permission UI
+### #22 — Agent Activity Panel: task controls and permission UI ✅ DONE
 
 **Description:** Extend the Agent Activity Panel with task-specific controls: start/cancel tasks, permission request inline controls, completed task summaries.
 
@@ -437,7 +438,7 @@
 
 ## Phase 6d: Additional ACP Agents & Polish
 
-### #23 — Test and integrate Codex CLI ACP adapter
+### #23 — Test and integrate Codex CLI ACP adapter ✅ DONE
 
 **Description:** Verify the Codex CLI works as an ACP agent through Notesage's ACP client. Test spawn, authenticate (both API key and ChatGPT subscription), interactive chat, and agent task flows.
 
@@ -454,7 +455,7 @@
 
 ---
 
-### #24 — Test and integrate GitHub Copilot ACP agent
+### #24 — Test and integrate GitHub Copilot ACP agent ✅ DONE
 
 **Description:** Verify GitHub Copilot works as an ACP agent through Notesage's ACP client. Test spawn, authenticate (subscription), interactive chat, and agent tasks. Test with both paid and free GitHub accounts.
 
@@ -471,7 +472,7 @@
 
 ---
 
-### #25 — Add agent picker to routing settings
+### #25 — Add agent picker to routing settings ✅ DONE
 
 **Description:** Extend UseCaseRoutingSettings to show which ACP agent is assigned to each use case, with dropdowns to switch between available agents. Show availability status and capability guidance.
 
@@ -489,7 +490,7 @@
 
 ---
 
-### #26 — Capability guidance and onboarding polish
+### #26 — Capability guidance and onboarding polish ✅ DONE
 
 **Description:** Polish the capability guidance throughout the settings UI. Ensure new users without subscriptions get helpful guidance on which subscription to choose.
 
@@ -508,34 +509,34 @@
 
 ## Summary Table
 
-| # | Title | Complexity | Category | Phase | Dependencies |
-|---|-------|-----------|----------|-------|-------------|
-| 1 | Define connection and routing types | S | frontend | 6a | — |
-| 2 | Create connections-store | M | frontend | 6a | #1 |
-| 3 | Create routing-store | M | frontend | 6a | #1, #2 |
-| 4 | Migrate v1 ai-store to connections/routing | M | frontend | 6a | #2, #3 |
-| 5 | Refactor useAIOperations (direct API path) | L | frontend | 6a | #1-4 |
-| 6 | Update getAIProvider for connection-based resolution | S | frontend | 6a | #1 |
-| 7 | Build ConnectionCard component | M | frontend | 6a | #1 |
-| 8 | Build ConnectionsSettings with capability guidance | L | frontend | 6a | #2, #3, #7 |
-| 9 | Build UseCaseRoutingSettings component | M | frontend | 6a | #3 |
-| 10 | Integrate new settings into SettingsDialog | M | frontend | 6a | #8, #9 |
-| 11 | Add agent-client-protocol crate dependency | S | backend | 6b | — |
-| 12 | Add agent binary availability check command | M | backend | 6b | — |
-| 13 | Implement ACP client state and subprocess spawning | L | backend | 6b | #11, #12 |
-| 14 | Implement ACP authenticate command | M | backend | 6b | #13 |
-| 15 | Implement ACP session management and streaming | L | backend | 6b | #13 |
-| 16 | Register ACP commands and state in lib.rs | S | backend | 6b | #13-15 |
-| 17 | Route interactive operations through ACP | L | frontend | 6b | #5, #13-15 |
-| 18 | Add agent connection flow to ConnectionsSettings | L | frontend | 6b | #8, #13, #14 |
-| 19 | Build Agent Activity Panel | L | frontend | 6b | #15, #17 |
-| 20 | Create useAgentTaskOperations hook | L | frontend | 6c | #3, #13-15 |
-| 21 | Bridge ACP permission requests to inline diff review | L | both | 6c | #20 |
-| 22 | Agent Activity Panel: task controls and permission UI | M | frontend | 6c | #19-21 |
-| 23 | Test and integrate Codex CLI ACP adapter | M | both | 6d | #15, #17, #18 |
-| 24 | Test and integrate GitHub Copilot ACP agent | M | both | 6d | #15, #17, #18 |
-| 25 | Add agent picker to routing settings | M | frontend | 6d | #9, #18 |
-| 26 | Capability guidance and onboarding polish | S | frontend | 6d | #8-10 |
+| # | Title | Complexity | Category | Phase | Dependencies | Status |
+|---|-------|-----------|----------|-------|-------------|--------|
+| 1 | Define connection and routing types | S | frontend | 6a | — | ✅ Done |
+| 2 | Create connections-store | M | frontend | 6a | #1 | ✅ Done |
+| 3 | Create routing-store | M | frontend | 6a | #1, #2 | ✅ Done |
+| 4 | Migrate v1 ai-store to connections/routing | M | frontend | 6a | #2, #3 | ✅ Done |
+| 5 | Refactor useAIOperations (direct API path) | L | frontend | 6a | #1-4 | ✅ Done |
+| 6 | Update getAIProvider for connection-based resolution | S | frontend | 6a | #1 | ✅ Done |
+| 7 | Build ConnectionCard component | M | frontend | 6a | #1 | ✅ Done |
+| 8 | Build ConnectionsSettings with capability guidance | L | frontend | 6a | #2, #3, #7 | ✅ Done |
+| 9 | Build UseCaseRoutingSettings component | M | frontend | 6a | #3 | ✅ Done |
+| 10 | Integrate new settings into SettingsDialog | M | frontend | 6a | #8, #9 | ✅ Done |
+| 11 | Add agent-client-protocol crate dependency | S | backend | 6b | — | ✅ Done |
+| 12 | Add agent binary availability check command | M | backend | 6b | — | ✅ Done |
+| 13 | Implement ACP client state and subprocess spawning | L | backend | 6b | #11, #12 | ✅ Done |
+| 14 | Implement ACP authenticate command | M | backend | 6b | #13 | ✅ Done |
+| 15 | Implement ACP session management and streaming | L | backend | 6b | #13 | ✅ Done |
+| 16 | Register ACP commands and state in lib.rs | S | backend | 6b | #13-15 | ✅ Done |
+| 17 | Route interactive operations through ACP | L | frontend | 6b | #5, #13-15 | ✅ Done |
+| 18 | Add agent connection flow to ConnectionsSettings | L | frontend | 6b | #8, #13, #14 | ✅ Done |
+| 19 | Build Agent Activity Panel | L | frontend | 6b | #15, #17 | ✅ Done |
+| 20 | Create useAgentTaskOperations hook | L | frontend | 6c | #3, #13-15 | ✅ Done |
+| 21 | Bridge ACP permission requests to inline diff review | L | both | 6c | #20 | ✅ Done |
+| 22 | Agent Activity Panel: task controls and permission UI | M | frontend | 6c | #19-21 | ✅ Done |
+| 23 | Test and integrate Codex CLI ACP adapter | M | both | 6d | #15, #17, #18 | ✅ Done |
+| 24 | Test and integrate GitHub Copilot ACP agent | M | both | 6d | #15, #17, #18 | ✅ Done |
+| 25 | Add agent picker to routing settings | M | frontend | 6d | #9, #18 | ✅ Done |
+| 26 | Capability guidance and onboarding polish | S | frontend | 6d | #8-10 | ✅ Done |
 
 **Complexity breakdown:** 5S, 10M, 11L
 

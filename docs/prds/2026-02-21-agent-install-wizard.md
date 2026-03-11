@@ -1,6 +1,6 @@
 # Agent Binary Management & Runtime Sandboxing
 
-**Date:** 2026-02-21 (revised 2026-03-01) **Status:** Planning **Parent:** AI Provider Architecture v2
+**Date:** 2026-02-21 (revised 2026-03-01) **Status:** 🔮 Future **Parent:** AI Provider Architecture v2
 
 ## Problem
 

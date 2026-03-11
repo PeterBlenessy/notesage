@@ -1,3 +1,5 @@
+**Status:** 🔮 Future
+
 ## In progress
 
 - [x] Move files between projects and folders. Phase 1 MVP uses context menu “Move to” -&gt; “Folder in listed projects”.

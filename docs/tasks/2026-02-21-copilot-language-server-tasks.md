@@ -2,7 +2,7 @@
 
 **PRD:** [2026-02-21-copilot-language-server.md](2026-02-21-copilot-language-server.md)
 **Total:** 10 tasks — 3S, 4M, 3L + 1 bonus task
-**Status:** All tasks complete (2026-02-21)
+**Status:** ✅ Complete (2026-02-21)
 **Estimated phases:** Backend plumbing (Tasks 1-5) → Frontend integration (Tasks 6-10) → Polish (Task 11)
 
 ## Summary

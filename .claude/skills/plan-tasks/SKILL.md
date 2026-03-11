@@ -40,6 +40,13 @@ Break a PRD or feature description into concrete, ordered implementation tasks.
    - Suggested implementation order
    - Any risks or open questions
 
+6. **Save the task list** to `docs/tasks/YYYY-MM-DD-<slug>-tasks.md` where:
+   - Date is today's date
+   - Slug matches the PRD slug (e.g., PRD `docs/prds/2026-03-11-model-metadata-enrichment.md` → tasks file `docs/tasks/2026-03-11-model-metadata-enrichment-tasks.md`)
+   - If no PRD exists, derive the slug from the feature name in lowercase-kebab-case
+
+7. **Present a brief summary** to the user with the file path and task count.
+
 ## Guidelines
 
 - Tasks should be small enough to complete in one sitting
