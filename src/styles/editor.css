@@ -813,6 +813,151 @@ mark.dom-find-highlight-active {
   background: oklch(50% 0 0) !important;
 }
 
+/* Highlight marks (background color) */
+.ProseMirror mark {
+  border-radius: 2px;
+  padding: 0.05em 0;
+}
+
+/* Text color: ensure colored text is readable in dark mode too */
+.ProseMirror span[style*="color"] {
+  /* Let the inline style handle it — just ensure transitions */
+  transition: color 150ms ease;
+}
+
+/* Table column resize handle */
+.ProseMirror .column-resize-handle {
+  background-color: var(--color-primary);
+  width: 2px;
+  position: absolute;
+  right: -1px;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.ProseMirror .selectedCell {
+  background: oklch(from var(--color-primary) l c h / 0.08);
+}
+
+/* Block drag handle — positioned in the left gutter via JS */
+.drag-handle {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  cursor: grab;
+  color: var(--color-muted-foreground);
+  opacity: 0.3;
+  transition: opacity 150ms ease, background-color 150ms ease;
+  user-select: none;
+  z-index: 20;
+  /* Extend the hover target slightly so it's easy to grab */
+  padding: 2px;
+}
+
+.drag-handle:hover {
+  opacity: 1;
+  background-color: var(--color-muted);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+  opacity: 1;
+}
+
+.drag-handle svg {
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+/* Source block visual feedback while dragging */
+.dragging-source {
+  opacity: 0.4;
+  outline: 2px dashed var(--color-border);
+  outline-offset: 2px;
+  border-radius: 4px;
+  transition: opacity 150ms ease;
+}
+
+/* 2px horizontal drop indicator line */
+.drag-drop-indicator {
+  position: absolute;
+  height: 2px;
+  background-color: var(--color-primary);
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 30;
+  transition: top 60ms ease;
+}
+
+.drag-drop-indicator::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--color-primary);
+}
+
+/* Item annotation badges (emoji icons on list items) */
+.item-annotation-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4em;
+  height: 1.4em;
+  margin-right: 0.3em;
+  border-radius: 4px;
+  font-size: 0.9em;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  vertical-align: middle;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  transition: background-color 120ms ease, opacity 120ms ease;
+}
+
+.item-annotation-badge--set {
+  opacity: 1;
+}
+
+.item-annotation-badge--set:hover {
+  background-color: var(--color-muted);
+}
+
+/* Empty badge: invisible by default, show subtle "+" on list item hover */
+.item-annotation-badge--empty {
+  opacity: 0;
+  color: var(--color-muted-foreground);
+  font-size: 0.7em;
+  font-weight: 600;
+}
+
+.item-annotation-badge--empty::after {
+  content: '+';
+}
+
+/* Reveal empty badge on hover over the list item */
+.ProseMirror li:hover .item-annotation-badge--empty,
+.ProseMirror li:focus-within .item-annotation-badge--empty {
+  opacity: 0.35;
+}
+
+.ProseMirror li:hover .item-annotation-badge--empty:hover,
+.ProseMirror li:focus-within .item-annotation-badge--empty:hover {
+  opacity: 0.8;
+  background-color: var(--color-muted);
+}
+
 /* Ghost text (inline completion suggestions) */
 .ghost-text {
   color: var(--color-muted-foreground);

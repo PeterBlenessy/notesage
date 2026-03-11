@@ -60,6 +60,14 @@
       "signingIdentity": null,
       "entitlements": null,
       "minimumSystemVersion": "14.0"
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown", "mdown", "mkd"],
+        "mimeType": "text/markdown",
+        "description": "Markdown Document",
+        "role": "Editor"
+      }
+    ]
   }
 }

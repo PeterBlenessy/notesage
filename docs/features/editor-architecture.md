@@ -29,12 +29,14 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | TagHighlight | `tag-highlight.ts` | Plugin + Decoration | Inline tag badge decorations (#tag → styled pill) |
 | TagSuggestion | `tag-suggestion.tsx` | Suggestion | Tag autocomplete popup (triggered by # character, uses `@tiptap/suggestion`) |
 | SlashCommand | `slash-command.ts` | Suggestion | Block insertion menu (triggered by / at start of line) |
+| ItemAnnotation | `item-annotation.ts` | Plugin + Decoration | Emoji annotations on list items (widget decorations in left margin) |
+| DragHandle | `drag-handle.ts` | Plugin + DOM | Block drag handles in left gutter for reordering top-level nodes |
 
 ## Decoration System
 
 ProseMirror decorations are the mechanism for visual overlays that don't modify the document:
 
-- **Widget decorations** (`Decoration.widget()`): Insert DOM elements at a position. Used by GhostText for inline completion preview.
+- **Widget decorations** (`Decoration.widget()`): Insert DOM elements at a position. Used by GhostText for inline completion preview and ItemAnnotation for emoji badges.
 - **Inline decorations** (`Decoration.inline()`): Style text ranges. Used by CommentMark, SearchHighlight, InlineDiff, TagHighlight.
 - **Node decorations** (`Decoration.node()`): Style entire nodes. Not currently used.
 

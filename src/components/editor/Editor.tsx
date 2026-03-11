@@ -56,6 +56,8 @@ import { PdfViewer } from "./viewers/PdfViewer";
 import { DocxViewer } from "./viewers/DocxViewer";
 import { EpubViewer } from "./viewers/EpubViewer";
 import { BubbleMenu } from "./BubbleMenu";
+import { AnnotationPicker } from "./AnnotationPicker";
+
 import { SourceBubbleMenu } from "./SourceBubbleMenu";
 import { FindBar } from "./FindBar";
 import { RecordingBar } from "@/components/recording/RecordingBar";
@@ -70,7 +72,7 @@ import { StatusBar } from "./StatusBar";
 import { FrontmatterBlock } from "./FrontmatterBlock";
 import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
 import { DocumentOutline } from "@/components/DocumentOutline";
-import { getMarkdownFromEditor, encodeImagePathSpaces, setContentWithoutHistory } from "@/lib/markdown";
+import { getMarkdownFromEditor, loadRawMarkdownIntoEditor } from "@/lib/markdown";
 import { getDocumentDir } from "@/lib/image-utils";
 import { toast } from "sonner";
 import "@/styles/editor.css";
@@ -453,7 +455,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
     if (!activeTab.isDirty) {
       // Clean tab: auto-reload silently + toast
-      setContentWithoutHistory(editor, encodeImagePathSpaces(activeExternalContent));
+      loadRawMarkdownIntoEditor(editor, activeExternalContent);
       updateTabContent(activeTab.id, activeExternalContent, false);
       clearExternalChange(activeTab.filePath);
       toast("File updated from disk", { id: "external-change", description: activeTab.fileName });
@@ -471,7 +473,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           onClick: () => {
             const currentEditor = editor;
             if (!currentEditor) return;
-            setContentWithoutHistory(currentEditor, encodeImagePathSpaces(content));
+            loadRawMarkdownIntoEditor(currentEditor, content);
             useEditorStore.getState().updateTabContent(tabId, content, false);
             useEditorStore.getState().clearExternalChange(filePath);
           },
@@ -720,12 +722,12 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       // load that content instead of the stale tab.content.
       const pendingExternal = externalChanges[activeTab.filePath];
       if (pendingExternal !== undefined && !activeTab.isDirty) {
-        setContentWithoutHistory(editor, encodeImagePathSpaces(pendingExternal));
+        loadRawMarkdownIntoEditor(editor, pendingExternal);
         updateTabContent(activeTab.id, pendingExternal, false);
         clearExternalChange(activeTab.filePath);
         toast("File updated from disk", { id: "external-change", description: activeTab.fileName });
       } else {
-        setContentWithoutHistory(editor, encodeImagePathSpaces(activeTab.content));
+        loadRawMarkdownIntoEditor(editor, activeTab.content);
       }
 
       editor.commands.blur();
@@ -792,7 +794,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     prevViewMode.current = activeTab.viewMode;
 
     if (wasSource && isNowWysiwyg) {
-      setContentWithoutHistory(editor, encodeImagePathSpaces(activeTab.content));
+      loadRawMarkdownIntoEditor(editor, activeTab.content);
       // Re-set image storage in case it was lost
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const imageStorage = (editor.storage as any).image;
@@ -1356,6 +1358,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             </div>
           </div>
           {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}
+
+          {editor && <AnnotationPicker editor={editor} />}
         </div>
         </div>
       )}

@@ -23,6 +23,21 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | Strikethrough | `Cmd+Shift+X` | Toggle strikethrough on selection |
 | Code | `Cmd+E` | Toggle inline code on selection |
 | Link | `Cmd+K` | Insert/edit link (when text is selected) |
+| Indent list item | `Tab` | Nest list item deeper (also available via toolbar button) |
+| Outdent list item | `Shift+Tab` | Lift list item one level (also available via toolbar button) |
+
+## Toolbar Controls (Mouse)
+
+| Control | Location | Description |
+| --- | --- | --- |
+| Heading picker | Toolbar (leftmost) | Dropdown to switch between Paragraph and Heading 1–6 |
+| Text color | Toolbar (after Code) | Popover with 8-color palette for text color |
+| Highlight | Toolbar (after Text color) | Popover with 6-color palette for background highlight |
+| Align left/center/right | Toolbar (after HR) | Set text alignment for headings and paragraphs |
+| Indent/Outdent | Toolbar (after Task list) | Nest/lift list items (disabled outside lists) |
+| Table toolbar | Floating (above table) | Appears when cursor is in a table — row/column add/remove, merge/split, header toggle, delete |
+| Block drag handle | Left gutter (on hover) | Drag to reorder top-level blocks |
+| Item annotation | Left margin of list items | Click to add emoji annotation for visual categorization |
 
 ## Editor Navigation
 

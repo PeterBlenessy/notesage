@@ -9,13 +9,16 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import TextAlign from "@tiptap/extension-text-align";
+import { TextStyle } from "@tiptap/extension-text-style";
+import Color from "@tiptap/extension-color";
+import Highlight from "@tiptap/extension-highlight";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { common, createLowlight } from "lowlight";
 import { Markdown } from "tiptap-markdown";
 import { SlashCommand } from "@/components/editor/extensions/slash-command";
-import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSuggestion, SearchHighlight } from "@/components/editor/extensions";
+import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSuggestion, SearchHighlight, DragHandle, ItemAnnotation } from "@/components/editor/extensions";
 import { PageBreaks } from "@/components/editor/extensions/page-breaks";
-import { getMarkdownFromEditor, encodeImagePathSpaces } from "@/lib/markdown";
+import { getMarkdownFromEditor, prepareInitialContent, applyAnnotationsToEditor } from "@/lib/markdown";
 
 const lowlight = createLowlight(common);
 
@@ -28,6 +31,8 @@ interface UseEditorOptions {
 }
 
 export function useEditor({ content, onUpdate, editable = true, documentDir }: UseEditorOptions) {
+  const { content: preparedContent, annotations } = prepareInitialContent(content);
+
   const editor = useTiptapEditor({
     onCreate: ({ editor }) => {
       // Set documentDir early so image nodes created during initial parse resolve correctly
@@ -37,6 +42,12 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
         if (imageStorage) {
           imageStorage.documentDir = documentDir;
         }
+      }
+      // Apply any annotations that were stripped from the initial content
+      if (annotations.size > 0) {
+        requestAnimationFrame(() => {
+          applyAnnotationsToEditor(editor, annotations);
+        });
       }
     },
     extensions: [
@@ -57,6 +68,11 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       }),
       TextAlign.configure({
         types: ["heading", "paragraph"],
+      }),
+      TextStyle,
+      Color,
+      Highlight.configure({
+        multicolor: true,
       }),
       LocalImage.configure({
         HTMLAttributes: {
@@ -98,7 +114,7 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
         nested: true,
       }),
       Markdown.configure({
-        html: false,
+        html: true,
         transformPastedText: true,
         transformCopiedText: true,
         // Prevent duplicate extensions
@@ -113,8 +129,10 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       TagHighlight,
       TagSuggestion,
       SearchHighlight,
+      DragHandle,
+      ItemAnnotation,
     ],
-    content: encodeImagePathSpaces(content),
+    content: preparedContent,
     editable,
     editorProps: {
       attributes: {

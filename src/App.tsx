@@ -558,6 +558,41 @@ function App() {
 
   const { openFile, openFileAtTag } = useFileOperations();
 
+  // Handle file-open events from macOS file association (double-click .md in Finder)
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    import("@tauri-apps/api/event").then(({ listen }) => {
+      listen<string[]>("open-files", async (event) => {
+        for (const filePath of event.payload) {
+          const fileName = filePath.split("/").pop() ?? filePath;
+          try {
+            await openFile(filePath, fileName);
+            // Ensure parent directory is in the workspace
+            const parentDir = filePath.substring(0, filePath.lastIndexOf("/"));
+            if (parentDir) {
+              const ws = useWorkspaceStore.getState();
+              const isKnown =
+                ws.projects.some((p) => filePath.startsWith(p.path)) ||
+                ws.explorerFolders.some((f) => filePath.startsWith(f.path));
+              if (!isKnown) {
+                try {
+                  const tree = await tauriApi.listDirectory(parentDir);
+                  addExplorerFolder(parentDir, tree);
+                } catch {
+                  // Parent directory may not be listable, ignore
+                }
+              }
+            }
+          } catch (error) {
+            log.error("lifecycle", "Failed to open file from association", error);
+            toast.error(`Failed to open file: ${error}`);
+          }
+        }
+      }).then((fn) => { unlisten = fn; });
+    });
+    return () => { unlisten?.(); };
+  }, [openFile, addExplorerFolder]);
+
   const handleOpenProject = useCallback(async (projectPath: string) => {
     try {
       const tree = await tauriApi.listDirectory(projectPath);

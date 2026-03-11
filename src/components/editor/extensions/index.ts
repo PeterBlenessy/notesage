@@ -46,3 +46,11 @@ export {
   replaceAllMatches,
   getSearchState,
 } from './search-highlight';
+export { DragHandle, DragHandlePluginKey } from './drag-handle';
+export {
+  ItemAnnotation,
+  ItemAnnotationPluginKey,
+  setItemAnnotation,
+  serializeAnnotation,
+} from './item-annotation';
+export type { AnnotationClickDetail } from './item-annotation';

@@ -2,7 +2,7 @@ mod commands;
 mod export;
 
 use commands::*;
-use tauri::{Manager, RunEvent};
+use tauri::{Emitter, Manager, RunEvent};
 use tauri_plugin_log::{Target, TargetKind, RotationStrategy, TimezoneStrategy};
 
 #[tauri::command]
@@ -211,14 +211,36 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            if let RunEvent::Exit = event {
-                log::info!(target: "notesage::lifecycle", "App exiting — stopping child processes");
-                // Stop all ACP agent subprocesses
-                app_handle.state::<AcpState>().stop_all_sync();
-                // Stop all MCP server subprocesses
-                app_handle.state::<McpState>().stop_all_sync();
-                // Stop local inference server
-                app_handle.state::<LocalInferenceState>().stop_sync();
+            match event {
+                RunEvent::Exit => {
+                    log::info!(target: "notesage::lifecycle", "App exiting — stopping child processes");
+                    // Stop all ACP agent subprocesses
+                    app_handle.state::<AcpState>().stop_all_sync();
+                    // Stop all MCP server subprocesses
+                    app_handle.state::<McpState>().stop_all_sync();
+                    // Stop local inference server
+                    app_handle.state::<LocalInferenceState>().stop_sync();
+                }
+                RunEvent::Opened { urls } => {
+                    // Handle file associations — macOS sends file:// URLs when opening .md files
+                    let paths: Vec<String> = urls
+                        .iter()
+                        .filter_map(|url| {
+                            if url.scheme() == "file" {
+                                url.to_file_path().ok().map(|p| p.to_string_lossy().into_owned())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if !paths.is_empty() {
+                        log::info!(target: "notesage::lifecycle", "File association open: {:?}", paths);
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.emit("open-files", paths);
+                        }
+                    }
+                }
+                _ => {}
             }
         });
 }
