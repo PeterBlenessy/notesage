@@ -11,7 +11,7 @@ const AUTH_BADGES: Record<string, string> = {
   local_bundled: 'On-device',
 };
 
-function StatusDot({ status }: { status: Connection['status'] }) {
+function StatusDot({ status, tooltip }: { status: Connection['status']; tooltip?: string }) {
   const colors: Record<Connection['status'], string> = {
     connected: 'bg-green-500',
     expired: 'bg-yellow-500',
@@ -19,10 +19,17 @@ function StatusDot({ status }: { status: Connection['status'] }) {
     not_installed: 'bg-muted-foreground/40',
   };
 
+  const defaultTooltips: Record<Connection['status'], string> = {
+    connected: 'Connected',
+    expired: 'Not ready',
+    error: 'Error',
+    not_installed: 'Not installed',
+  };
+
   return (
     <span
       className={`inline-block w-2 h-2 rounded-full shrink-0 ${colors[status]}`}
-      title={status.replace('_', ' ')}
+      title={tooltip ?? defaultTooltips[status]}
     />
   );
 }
@@ -34,13 +41,21 @@ interface ConnectionCardProps {
 }
 
 export function ConnectionCard({ connection, onConfigure, onDisconnect }: ConnectionCardProps) {
+  // Derive a contextual tooltip for the status dot
+  const statusTooltip = (() => {
+    if (connection.authMethod === 'local_bundled' && connection.status === 'expired') {
+      return 'No local models available';
+    }
+    return undefined; // use default
+  })();
+
   return (
     <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground/50 transition-colors duration-150">
       {/* Logo + status */}
       <div className="relative shrink-0">
         <ProviderLogo provider={connection.provider} />
         <span className="absolute -bottom-0.5 -right-0.5">
-          <StatusDot status={connection.status} />
+          <StatusDot status={connection.status} tooltip={statusTooltip} />
         </span>
       </div>
 

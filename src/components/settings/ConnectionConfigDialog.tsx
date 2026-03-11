@@ -88,6 +88,7 @@ interface ConnectionConfigDialogProps {
   connection: Connection | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onNavigateToTab?: (tab: string) => void;
 }
 
 const DEFAULT_URLS: Record<string, string> = {
@@ -100,6 +101,7 @@ export function ConnectionConfigDialog({
   connection,
   open,
   onOpenChange,
+  onNavigateToTab,
 }: ConnectionConfigDialogProps) {
   const updateConnection = useConnectionsStore((s) => s.updateConnection);
 
@@ -290,7 +292,20 @@ export function ConnectionConfigDialog({
                 </Select>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  No models downloaded yet. Download one in the Local AI tab.
+                  No models downloaded yet. Download one in the{' '}
+                  {onNavigateToTab ? (
+                    <button
+                      className="underline hover:text-foreground transition-colors"
+                      onClick={() => {
+                        onOpenChange(false);
+                        onNavigateToTab('local-ai');
+                      }}
+                    >
+                      Local AI tab
+                    </button>
+                  ) : (
+                    'Local AI tab'
+                  )}.
                 </p>
               )}
             </div>

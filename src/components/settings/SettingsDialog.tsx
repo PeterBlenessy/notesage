@@ -260,7 +260,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
           <div className="flex-1 overflow-y-auto">
             {activeTab === 'ai' && (
               <div className="p-6 space-y-6">
-                <ConnectionsSettings />
+                <ConnectionsSettings onNavigateToTab={(tab) => setActiveTab(tab as SettingsTab)} />
                 <div className="h-px bg-border" />
                 <UseCaseRoutingSettings />
                 <div className="h-px bg-border" />

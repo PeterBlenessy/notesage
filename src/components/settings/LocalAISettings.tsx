@@ -177,7 +177,7 @@ export function LocalAISettings() {
     if (serverStatus === 'running' && activeModel) {
       return `Running — ${activeModel.name}`;
     }
-    if (serverStatus === 'starting') return 'Starting server...';
+    if (serverStatus === 'starting') return 'Loading model...';
     if (serverStatus === 'error') {
       if (binaryStatus === 'not_found') return 'AI engine not installed — download it below';
       if (serverError) {
@@ -188,8 +188,8 @@ export function LocalAISettings() {
       return 'Server error';
     }
     if (!hasConnection) return 'Not connected — add Local AI in the Connections tab';
+    if (!hasDownloadedModels) return 'No models downloaded';
     if (!activeModelId) return 'No model selected';
-    if (!hasDownloadedModels) return 'No models downloaded yet';
     return 'Stopped';
   })();
 

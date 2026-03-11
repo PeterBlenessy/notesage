@@ -56,7 +56,7 @@ type AddFlowState =
   | { step: 'configure'; option: ProviderOption }
   | { step: 'connecting'; option: ProviderOption };
 
-export function ConnectionsSettings() {
+export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (tab: string) => void } = {}) {
   const connections = useConnectionsStore((s) => s.connections);
   const addConnection = useConnectionsStore((s) => s.addConnection);
   const removeConnection = useConnectionsStore((s) => s.removeConnection);
@@ -472,6 +472,7 @@ export function ConnectionsSettings() {
         onOpenChange={(open) => {
           if (!open) setConfigDialogConnection(null);
         }}
+        onNavigateToTab={onNavigateToTab}
       />
 
       {/* Binary download dialog for Local AI */}
