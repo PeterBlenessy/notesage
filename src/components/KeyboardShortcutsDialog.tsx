@@ -47,6 +47,7 @@ const categories: ShortcutCategory[] = [
       { action: "Find in document", keys: [["⌘", "F"]] },
       { action: "Find and replace", keys: [["⌘", "⇧", "H"]] },
       { action: "Search files", keys: [["⌘", "⇧", "F"]] },
+      { action: "Search mentions", keys: [["⌘", "2"]] },
       { action: "Search tags", keys: [["⌘", "3"]] },
       { action: "Search research", keys: [["⌘", "4"]] },
     ],
