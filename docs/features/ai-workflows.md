@@ -124,7 +124,7 @@ Research workflow built on the Skills & Agents Platform.
 
 **Research file format:** Standard markdown with YAML frontmatter (`source_url`, `title`, `author`, `date_saved`, `tags`, `word_count`). Stored in `.notesage/research/` (project) or `~/Notesage/.notesage/research/` (global).
 
-**Searching:** `Cmd+4` opens command palette in research search mode. Real-time filtering via native Rust `search_research` command.
+**Searching:** `Cmd+4` (or type `?` in command palette) opens research search mode. Real-time filtering via native Rust `search_research` command.
 
 **Citing:** Three citation formats (inline links, footnotes, academic). Citation format persisted per-project.
 

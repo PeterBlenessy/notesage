@@ -97,11 +97,25 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | Search files | `Cmd+Shift+F` | Open command palette in file search mode |
 | Toggle sidebar | `Cmd+Shift+L` | Show/hide file sidebar |
 | Focus mode | `Cmd+.` | Toggle distraction-free focus mode |
-| Tag search | `Cmd+3` | Search for tags across all files |
-| Research search | `Cmd+4` | Search research files across all projects |
+| Mention search | `Cmd+2` | Search for @mentions across all files (or type `@` in palette) |
+| Tag search | `Cmd+3` | Search for #tags across all files (or type `#` in palette) |
+| Research search | `Cmd+4` | Search research files across all projects (or type `?` in palette) |
 | Document outline | `Cmd+Shift+O` | Open document outline (requires active file) |
 | Keyboard shortcuts | `Cmd+7` | Show keyboard shortcuts reference |
 | Exit focus mode | `Esc` | Exit focus mode (when active) |
+
+### Command Palette Prefix Modes
+
+Type a prefix character as the first character in the command palette input to switch modes:
+
+| Prefix | Mode | Description |
+| --- | --- | --- |
+| `#` | Tags | Search for #tags across all files |
+| `@` | Mentions | Search for @mentions across all files |
+| `>` | Commands | Filter actions (New Note, Toggle Theme, etc.) |
+| `?` | Research | Search research files across all projects |
+
+Backspacing past a prefix character returns to the default (files + actions) mode.
 
 ## Future Shortcuts (Planned)
 

@@ -1,17 +1,13 @@
 # Tasks: Unified Command Palette with Prefix-Based Mode Switching
 
 **PRD:** `docs/prds/2026-03-12-unified-command-palette.md`
-**Total:** 7 tasks (2S, 4M, 1L)
+**Total:** 7 tasks (2S, 4M, 1L) — **All complete**
 
 **Suggested order:** Sequential #1 → #7. Tasks #1-#2 are foundational types/utilities. Task #3 is the core refactor. Tasks #4-#5 simplify the calling code. Tasks #6-#7 are the new features enabled by the refactor.
 
-**Risks:**
-- Task #3 is the largest — it rewrites the component's mode logic. All other tasks depend on it. Test thoroughly before moving on.
-- Badge click handlers in App.tsx (tag/mention custom events) must be updated in lockstep with the new props (#4).
-
 ---
 
-## Task 1: Add PaletteMode type and mode utility functions
+## Task 1: Add PaletteMode type and mode utility functions ✅
 
 **Complexity:** S | **Category:** frontend | **Dependencies:** None
 
@@ -35,7 +31,7 @@ Create shared types and utility functions used by both `CommandPalette.tsx` and 
 
 ---
 
-## Task 2: Extract SymbolSearchResults component
+## Task 2: Extract SymbolSearchResults component ✅
 
 **Complexity:** M | **Category:** frontend | **Dependencies:** #1
 
@@ -60,7 +56,7 @@ Extract the duplicated tag/mention two-level search UI (list → drilldown → o
 
 ---
 
-## Task 3: Rewrite CommandPalette with mode-derived rendering
+## Task 3: Rewrite CommandPalette with mode-derived rendering ✅
 
 **Complexity:** L | **Category:** frontend | **Dependencies:** #1, #2
 
@@ -115,7 +111,7 @@ interface CommandPaletteProps {
 
 ---
 
-## Task 4: Simplify App.tsx palette state and shortcut callbacks
+## Task 4: Simplify App.tsx palette state and shortcut callbacks ✅
 
 **Complexity:** M | **Category:** frontend | **Dependencies:** #3
 
@@ -162,7 +158,7 @@ Pass simplified props: `initialMode`, `drilldownName`, `onOpenFileAtSymbol`.
 
 ---
 
-## Task 5: Simplify useKeyboardShortcuts callback interface
+## Task 5: Simplify useKeyboardShortcuts callback interface ✅
 
 **Complexity:** S | **Category:** frontend | **Dependencies:** #4
 
@@ -184,7 +180,7 @@ The `KeyboardShortcutCallbacks` interface in `useKeyboardShortcuts.ts` can be si
 
 ---
 
-## Task 6: Add commands mode (> prefix)
+## Task 6: Add commands mode (> prefix) ✅
 
 **Complexity:** M | **Category:** frontend | **Dependencies:** #3
 
@@ -210,7 +206,7 @@ Implement the `>` prefix commands mode — a filtered view of the existing Actio
 
 ---
 
-## Task 7: Add footer mode hints
+## Task 7: Add footer mode hints ✅
 
 **Complexity:** M | **Category:** frontend | **Dependencies:** #3
 
