@@ -108,6 +108,14 @@ export interface TagOccurrence {
   snippet: string;
 }
 
+export interface MentionOccurrence {
+  path: string;
+  file_name: string;
+  line_number: number;
+  occurrence_in_file: number;
+  snippet: string;
+}
+
 export interface ContentMatch {
   path: string;
   file_name: string;
@@ -530,6 +538,15 @@ export const tauriApi = {
 
   async findTagOccurrences(tag: string, paths: string[]): Promise<TagOccurrence[]> {
     return await invoke<TagOccurrence[]>("find_tag_occurrences", { tag, paths });
+  },
+
+  // Mention scanning
+  async scanMentionsInDirectories(paths: string[]): Promise<Record<string, string[]>> {
+    return await invoke<Record<string, string[]>>("scan_mentions_in_directories", { paths });
+  },
+
+  async findMentionOccurrences(mention: string, paths: string[]): Promise<MentionOccurrence[]> {
+    return await invoke<MentionOccurrence[]>("find_mention_occurrences", { mention, paths });
   },
 
   async searchFileContent(query: string, paths: string[]): Promise<ContentMatch[]> {

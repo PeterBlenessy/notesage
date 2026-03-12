@@ -673,6 +673,39 @@
   border-bottom-left-radius: 0;
 }
 
+/* Mention badges */
+.mention-badge {
+  background-color: var(--color-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.05em 0.45em;
+  font-size: 0.88em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+  font-style: italic;
+}
+
+.mention-badge:hover {
+  background-color: var(--color-accent);
+}
+
+/* When cursor is inside a mention, ProseMirror splits the decoration into two
+   adjacent spans. Merge them visually so the badge looks intact. */
+.mention-badge:has(+ .mention-badge) {
+  border-right: 0;
+  padding-right: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.mention-badge + .mention-badge {
+  border-left: 0;
+  padding-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
 /* Date badges — hide the "//" prefix visually */
 .date-badge-prefix {
   font-size: 0;

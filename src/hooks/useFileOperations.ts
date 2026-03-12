@@ -5,6 +5,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useGitStore } from "@/stores/git-store";
 import { useTagStore } from "@/stores/tag-store";
+import { useMentionStore } from "@/stores/mention-store";
 import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { migrateProjectPath } from "@/lib/migrate-project-path";
@@ -33,6 +34,29 @@ export function refreshTags() {
       useTagStore.getState().setScanResult(filesByTag);
     } catch (error) {
       console.error("Failed to scan tags:", error);
+    }
+  }, 500);
+}
+
+/** Debounced workspace mention scan. */
+let mentionScanTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function refreshMentions() {
+  if (mentionScanTimer) clearTimeout(mentionScanTimer);
+  mentionScanTimer = setTimeout(async () => {
+    mentionScanTimer = null;
+    try {
+      const ws = useWorkspaceStore.getState();
+      const settings = useSettingsStore.getState();
+      const paths: string[] = [];
+      for (const folder of ws.explorerFolders) paths.push(folder.path);
+      for (const project of ws.projects) paths.push(project.path);
+      if (settings.notesRootPath) paths.push(settings.notesRootPath);
+      if (paths.length === 0) return;
+      const filesByMention = await tauriApi.scanMentionsInDirectories(paths);
+      useMentionStore.getState().setScanResult(filesByMention);
+    } catch (error) {
+      console.error("Failed to scan mentions:", error);
     }
   }, 500);
 }
@@ -234,7 +258,10 @@ export function useFileOperations() {
         markTabClean(tabId, content);
         useEditorStore.getState().clearExternalChange(filePath);
         refreshGitForPath(filePath);
-        if (filePath.endsWith(".md")) refreshTags();
+        if (filePath.endsWith(".md")) {
+          refreshTags();
+          refreshMentions();
+        }
         return true;
       } catch (error) {
         await tauriApi.clearSelfWrite(filePath).catch(() => {});

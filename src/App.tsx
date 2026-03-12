@@ -42,7 +42,7 @@ import { scanICloudForProjects } from "@/lib/scan-icloud-projects";
 import { log } from "@/lib/logger";
 import { stopAcpAgent } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
-import { refreshTags } from "@/hooks/useFileOperations";
+import { refreshTags, refreshMentions } from "@/hooks/useFileOperations";
 import { useTagStore } from "@/stores/tag-store";
 import {
   ResizablePanelGroup,
@@ -112,6 +112,8 @@ function App() {
   const [commandPaletteTagFiles, setCommandPaletteTagFiles] = useState<{ path: string; name: string }[]>([]);
   const [commandPaletteTagOccurrences, setCommandPaletteTagOccurrences] = useState<TagOccurrence[]>([]);
   const [commandPaletteTagSearchMode, setCommandPaletteTagSearchMode] = useState(false);
+  const [commandPaletteMentionSearchMode, setCommandPaletteMentionSearchMode] = useState(false);
+  const [commandPaletteMentionDrilldown, setCommandPaletteMentionDrilldown] = useState("");
   const [commandPaletteResearchSearchMode, setCommandPaletteResearchSearchMode] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab | undefined>(undefined);
@@ -215,6 +217,20 @@ function App() {
     };
     window.addEventListener("notesage:open-tag-search", handler);
     return () => window.removeEventListener("notesage:open-tag-search", handler);
+  }, []);
+
+  // Listen for mention badge clicks → open command palette with mention occurrence results
+  useEffect(() => {
+    const handler = async (e: Event) => {
+      const mention = (e as CustomEvent<{ mention: string }>).detail.mention;
+
+      setCommandPaletteMentionDrilldown(mention);
+      setCommandPaletteMentionSearchMode(true);
+      setCommandPaletteFilesOnly(true);
+      setCommandPaletteOpen(true);
+    };
+    window.addEventListener("notesage:open-mention-search", handler);
+    return () => window.removeEventListener("notesage:open-mention-search", handler);
   }, []);
 
   // Migrate v1 AI settings to v2 connections/routing on first load
@@ -473,8 +489,9 @@ function App() {
       // get it right in one shot — no flash of local-only then merged content)
       await refreshNotesTree();
 
-      // Initial workspace tag scan (for tag autocomplete)
+      // Initial workspace tag and mention scan (for autocomplete)
       refreshTags();
+      refreshMentions();
 
       // Signal that startup tree validation is complete — watchers can now start
       settings.setStartupReady(true);
@@ -789,6 +806,11 @@ function App() {
       setCommandPaletteFilesOnly(true);
       setCommandPaletteOpen(true);
     },
+    onMentionSearchOpen: () => {
+      setCommandPaletteMentionSearchMode(true);
+      setCommandPaletteFilesOnly(true);
+      setCommandPaletteOpen(true);
+    },
     onResearchSearchOpen: () => {
       setCommandPaletteResearchSearchMode(true);
       setCommandPaletteFilesOnly(true);
@@ -953,6 +975,8 @@ function App() {
               setCommandPaletteTagFiles([]);
               setCommandPaletteTagOccurrences([]);
               setCommandPaletteTagSearchMode(false);
+              setCommandPaletteMentionSearchMode(false);
+              setCommandPaletteMentionDrilldown("");
               setCommandPaletteResearchSearchMode(false);
             }
           }}
@@ -968,6 +992,8 @@ function App() {
           tagOccurrences={commandPaletteTagOccurrences.length > 0 ? commandPaletteTagOccurrences : undefined}
           onOpenFileAtTag={handleOpenFileAtTag}
           tagSearchMode={commandPaletteTagSearchMode}
+          mentionSearchMode={commandPaletteMentionSearchMode}
+          mentionDrilldownName={commandPaletteMentionDrilldown || undefined}
           researchSearchMode={commandPaletteResearchSearchMode}
         />
         <NewNoteDialog

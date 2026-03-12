@@ -127,6 +127,8 @@ pub fn run() {
             copilot_lsp_accept_completion,
             scan_tags_in_directories,
             find_tag_occurrences,
+            scan_mentions_in_directories,
+            find_mention_occurrences,
             search_file_content,
             search_research,
             discover_skills,

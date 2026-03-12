@@ -536,6 +536,170 @@ fn scan_dir_for_tags(
     }
 }
 
+// ---------------------------------------------------------------------------
+// @mention scanning
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct MentionOccurrence {
+    pub path: String,
+    pub file_name: String,
+    pub line_number: usize,
+    pub occurrence_in_file: usize,
+    pub snippet: String,
+}
+
+/// Scan all .md files in the given directories (recursively) for @mention patterns.
+/// Returns a map of mention name → list of file paths that contain that mention.
+/// Mention names are without the `@` prefix, sorted alphabetically.
+#[tauri::command]
+pub async fn scan_mentions_in_directories(
+    paths: Vec<String>,
+) -> Result<BTreeMap<String, Vec<String>>, String> {
+    let mention_re = Regex::new(r"(?:^|(?:\s|[^\w]))@([a-zA-Z][a-zA-Z0-9_-]*)").unwrap();
+    let mut mention_files: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+
+    for dir_path in &paths {
+        let path = Path::new(dir_path);
+        if !path.is_dir() {
+            continue;
+        }
+        scan_dir_for_mentions(path, &mention_re, &mut mention_files);
+    }
+
+    Ok(mention_files
+        .into_iter()
+        .map(|(mention, files)| (mention, files.into_iter().collect()))
+        .collect())
+}
+
+/// Find all occurrences of a specific mention across .md files in the given directories.
+/// Returns per-line occurrences with context snippets, sorted by file name then line number.
+#[tauri::command]
+pub async fn find_mention_occurrences(
+    mention: String,
+    paths: Vec<String>,
+) -> Result<Vec<MentionOccurrence>, String> {
+    let pattern = format!(
+        r"(?:^|(?:\s|[^\w]))@{}(?:[^a-zA-Z0-9_-]|$)",
+        regex::escape(&mention)
+    );
+    let mention_re = Regex::new(&pattern).map_err(|e| e.to_string())?;
+    let mut occurrences: Vec<MentionOccurrence> = Vec::new();
+
+    for dir_path in &paths {
+        let path = Path::new(dir_path);
+        if !path.is_dir() {
+            continue;
+        }
+        scan_dir_for_mention_occurrences(path, &mention_re, &mut occurrences);
+    }
+
+    occurrences.sort_by(|a, b| {
+        a.file_name
+            .to_lowercase()
+            .cmp(&b.file_name.to_lowercase())
+            .then(a.line_number.cmp(&b.line_number))
+    });
+
+    Ok(occurrences)
+}
+
+fn scan_dir_for_mentions(
+    dir: &Path,
+    mention_re: &Regex,
+    mention_files: &mut BTreeMap<String, BTreeSet<String>>,
+) {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+
+        if name_str.starts_with('.') {
+            continue;
+        }
+
+        if path.is_dir() {
+            scan_dir_for_mentions(&path, mention_re, mention_files);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
+            if let Ok(content) = fs::read_to_string(&path) {
+                let file_path = path.to_string_lossy().to_string();
+                for cap in mention_re.captures_iter(&content) {
+                    if let Some(m) = cap.get(1) {
+                        mention_files
+                            .entry(m.as_str().to_string())
+                            .or_default()
+                            .insert(file_path.clone());
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn scan_dir_for_mention_occurrences(
+    dir: &Path,
+    mention_re: &Regex,
+    occurrences: &mut Vec<MentionOccurrence>,
+) {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+
+        if name_str.starts_with('.') {
+            continue;
+        }
+
+        if path.is_dir() {
+            scan_dir_for_mention_occurrences(&path, mention_re, occurrences);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
+            if let Ok(content) = fs::read_to_string(&path) {
+                let file_path = path.to_string_lossy().to_string();
+                let file_name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+
+                let mut occ_count: usize = 0;
+                for (idx, line) in content.lines().enumerate() {
+                    if mention_re.is_match(line) {
+                        let trimmed = line.trim();
+                        let snippet = if trimmed.chars().count() > 100 {
+                            let end = trimmed
+                                .char_indices()
+                                .nth(97)
+                                .map(|(i, _)| i)
+                                .unwrap_or(trimmed.len());
+                            format!("{}...", &trimmed[..end])
+                        } else {
+                            trimmed.to_string()
+                        };
+                        occurrences.push(MentionOccurrence {
+                            path: file_path.clone(),
+                            file_name: file_name.clone(),
+                            line_number: idx + 1,
+                            occurrence_in_file: occ_count,
+                            snippet,
+                        });
+                        occ_count += 1;
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ResearchSearchResult {
     pub file: String,

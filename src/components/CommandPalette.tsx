@@ -4,6 +4,7 @@ import {
   FilePlus,
   FolderDot,
   Hash,
+  AtSign,
   FolderOpen,
   FileOutput,
   SunMoon,
@@ -31,7 +32,8 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
-import { FileEntry, TagOccurrence, ContentMatch, ResearchSearchResult, tauriApi } from "@/lib/tauri";
+import { FileEntry, TagOccurrence, MentionOccurrence, ContentMatch, ResearchSearchResult, tauriApi } from "@/lib/tauri";
+import { useMentionStore } from "@/stores/mention-store";
 
 const MAX_FILE_RESULTS = 50;
 
@@ -54,9 +56,14 @@ interface CommandPaletteProps {
   tagOccurrences?: TagOccurrence[];
   /** Callback to open a file at a specific tag occurrence. */
   onOpenFileAtTag?: (path: string, name: string, tag: string, occurrence: number) => void;
-  /** When true, palette is in direct tag search mode (⌘#). User types a tag name
+  /** When true, palette is in direct tag search mode (⌘3). User types a tag name
    *  and occurrences are fetched via debounced backend call. */
   tagSearchMode?: boolean;
+  /** When true, palette is in direct mention search mode (⌘2). Shows all mentions,
+   *  filtered by input. Selecting one drills into occurrences. */
+  mentionSearchMode?: boolean;
+  /** Pre-select a mention to drill into (e.g. from badge click). */
+  mentionDrilldownName?: string;
   /** When true, palette is in research search mode (⌘4). User types a query
    *  and research files are fetched via debounced backend call. */
   researchSearchMode?: boolean;
@@ -77,6 +84,8 @@ export function CommandPalette({
   tagOccurrences,
   onOpenFileAtTag,
   tagSearchMode,
+  mentionSearchMode,
+  mentionDrilldownName,
   researchSearchMode,
 }: CommandPaletteProps) {
   const [search, setSearch] = useState("");
@@ -132,6 +141,55 @@ export function CommandPalette({
       if (tagSearchTimerRef.current) clearTimeout(tagSearchTimerRef.current);
     };
   }, [tagSearchMode, open, search]);
+
+  // Mention search state (⌘2): show all known mentions from store, filtered by input.
+  // When a mention is selected, drill into its occurrences.
+  const [mentionDrilldown, setMentionDrilldown] = useState<string | null>(null);
+  const [mentionOccurrences, setMentionOccurrences] = useState<MentionOccurrence[]>([]);
+  const allMentions = useMentionStore((s) => s.mentions);
+  const filesByMention = useMentionStore((s) => s.filesByMention);
+
+  // Filter mentions by search input
+  const filteredMentions = useMemo(() => {
+    if (!mentionSearchMode || !open) return [];
+    if (mentionDrilldown) return []; // drilled into a specific mention
+    const q = search.trim().toLowerCase();
+    return allMentions.filter((m) => !q || m.toLowerCase().includes(q));
+  }, [mentionSearchMode, open, search, allMentions, mentionDrilldown]);
+
+  // Reset drilldown when palette closes or mode changes
+  useEffect(() => {
+    if (!mentionSearchMode || !open) {
+      setMentionDrilldown(null);
+      setMentionOccurrences([]);
+    }
+  }, [mentionSearchMode, open]);
+
+  const handleMentionSelect = useCallback(async (mention: string) => {
+    setMentionDrilldown(mention);
+    setSearch(mention);
+    try {
+      const ws = useWorkspaceStore.getState();
+      const settings = useSettingsStore.getState();
+      const paths: string[] = [];
+      for (const folder of ws.explorerFolders) paths.push(folder.path);
+      for (const project of ws.projects) paths.push(project.path);
+      if (settings.notesRootPath) paths.push(settings.notesRootPath);
+      if (paths.length > 0) {
+        const occurrences = await tauriApi.findMentionOccurrences(mention, paths);
+        setMentionOccurrences(occurrences);
+      }
+    } catch (error) {
+      console.error("Failed to find mention occurrences:", error);
+    }
+  }, []);
+
+  // Auto-drilldown when opened from badge click with a specific mention
+  useEffect(() => {
+    if (mentionSearchMode && open && mentionDrilldownName) {
+      handleMentionSelect(mentionDrilldownName);
+    }
+  }, [mentionSearchMode, open, mentionDrilldownName, handleMentionSelect]);
 
   // Research search state (⌘4): debounced backend call as user types
   const [researchResults, setResearchResults] = useState<ResearchSearchResult[]>([]);
@@ -195,7 +253,7 @@ export function CommandPalette({
 
   // Debounced file content search for filesOnly mode (⌘⇧F)
   useEffect(() => {
-    if (!filesOnly || !open || tagSearchMode) {
+    if (!filesOnly || !open || tagSearchMode || mentionSearchMode) {
       setContentMatches([]);
       setContentSearching(false);
       return;
@@ -236,7 +294,7 @@ export function CommandPalette({
     return () => {
       if (contentSearchTimerRef.current) clearTimeout(contentSearchTimerRef.current);
     };
-  }, [filesOnly, open, search, tagSearchMode]);
+  }, [filesOnly, open, search, tagSearchMode, mentionSearchMode]);
 
   const { recentFiles, activeTabId } = useEditorStore();
   const { explorerFolders, projects, notesTree } = useWorkspaceStore();
@@ -347,12 +405,14 @@ export function CommandPalette({
       title="Command Palette"
       description="Search for files and actions"
       showCloseButton={false}
-      shouldFilter={tagSearchMode || researchSearchMode || tagOccurrences || tagFiles || filesOnly ? false : undefined}
+      shouldFilter={tagSearchMode || mentionSearchMode || researchSearchMode || tagOccurrences || tagFiles || filesOnly ? false : undefined}
     >
       <CommandInput
         placeholder={
           researchSearchMode
             ? "Search research..."
+            : mentionSearchMode
+            ? (mentionDrilldown ? `Filter @${mentionDrilldown} occurrences...` : "Filter mentions...")
             : tagSearchMode
             ? "Type a tag name to search..."
             : filesOnly
@@ -362,10 +422,17 @@ export function CommandPalette({
                 : "Type a command or file name..."
         }
         value={search}
-        onValueChange={setSearch}
+        onValueChange={(value) => {
+          setSearch(value);
+          // Exit mention drilldown when user edits the search text
+          if (mentionSearchMode && mentionDrilldown && value !== mentionDrilldown) {
+            setMentionDrilldown(null);
+            setMentionOccurrences([]);
+          }
+        }}
       />
       <CommandList className="max-h-[360px]">
-        <CommandEmpty>{researchSearchMode ? "No research files found." : tagSearchMode && !search.trim() ? "Type a tag name to search." : "No results found."}</CommandEmpty>
+        <CommandEmpty>{researchSearchMode ? "No research files found." : mentionSearchMode ? (mentionDrilldown ? "Loading occurrences..." : "No matching mentions.") : tagSearchMode && !search.trim() ? "Type a tag name to search." : "No results found."}</CommandEmpty>
 
         {/* Research search results (⌘4 mode) */}
         {researchSearchMode && (researchSearching || researchResults.length > 0) && (
@@ -451,6 +518,49 @@ export function CommandPalette({
           </CommandGroup>
         )}
 
+        {/* Mention search: list of known mentions (⌘2 mode) */}
+        {mentionSearchMode && !mentionDrilldown && filteredMentions.length > 0 && (
+          <CommandGroup heading="Mentions">
+            {filteredMentions.map((mention) => {
+              const fileCount = filesByMention[mention]?.length ?? 0;
+              return (
+                <CommandItem
+                  key={`mention-${mention}`}
+                  value={`mention ${mention}`}
+                  onSelect={() => handleMentionSelect(mention)}
+                >
+                  <AtSign className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+                  <span className="flex-1 truncate">{mention}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {fileCount} {fileCount === 1 ? "file" : "files"}
+                  </span>
+                </CommandItem>
+              );
+            })}
+          </CommandGroup>
+        )}
+
+        {/* Mention drilldown: occurrences for a selected mention */}
+        {mentionSearchMode && mentionDrilldown && mentionOccurrences.length > 0 && (
+          <CommandGroup heading={`@${mentionDrilldown}`}>
+            {mentionOccurrences.map((occ, idx) => (
+              <CommandItem
+                key={`mention-occ-${occ.path}-${occ.line_number}-${idx}`}
+                value={`mention ${occ.file_name} ${occ.path} ${occ.snippet}`}
+                onSelect={() => handleOpenFile(occ.path, occ.file_name)}
+                className="flex-col items-start gap-0.5"
+              >
+                <div className="flex items-center gap-2 w-full">
+                  <AtSign className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+                  <span className="flex-1 truncate">{occ.file_name}</span>
+                  <span className="text-xs text-muted-foreground tabular-nums">:{occ.line_number}</span>
+                </div>
+                <span className="text-xs text-muted-foreground truncate w-full pl-6">{occ.snippet}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+
         {/* Tag occurrence results from badge click (with line numbers and snippets) */}
         {!tagSearchMode && tagOccurrences && tagOccurrences.length > 0 && (
           <CommandGroup heading={`#${initialSearch ?? ""}`}>
@@ -492,7 +602,7 @@ export function CommandPalette({
         )}
 
         {/* Recent Files */}
-        {!tagSearchMode && !tagOccurrences && !tagFiles && recentFiles.length > 0 && (
+        {!tagSearchMode && !mentionSearchMode && !tagOccurrences && !tagFiles && recentFiles.length > 0 && (
           <CommandGroup heading="Recent">
             {recentFiles.map((file) => (
               <CommandItem
@@ -510,7 +620,7 @@ export function CommandPalette({
           </CommandGroup>
         )}
 
-        {!tagSearchMode && !tagOccurrences && !tagFiles && recentFiles.length > 0 && <CommandSeparator />}
+        {!tagSearchMode && !mentionSearchMode && !tagOccurrences && !tagFiles && recentFiles.length > 0 && <CommandSeparator />}
 
         {/* Actions — hidden in filesOnly mode */}
         {!filesOnly && <CommandGroup heading="Actions">
@@ -595,7 +705,7 @@ export function CommandPalette({
         </CommandGroup>}
 
         {/* Go to File — hidden when tag results are shown (tag mode shows only tag hits) */}
-        {!tagSearchMode && !tagOccurrences && !tagFiles && filteredFiles.length > 0 && (
+        {!tagSearchMode && !mentionSearchMode && !tagOccurrences && !tagFiles && filteredFiles.length > 0 && (
           <>
             {!filesOnly && <CommandSeparator />}
             <CommandGroup heading="Files">
@@ -617,7 +727,7 @@ export function CommandPalette({
         )}
 
         {/* Content Matches — grep-like results in filesOnly mode */}
-        {filesOnly && !tagSearchMode && (contentSearching || contentMatches.length > 0) && (
+        {filesOnly && !tagSearchMode && !mentionSearchMode && (contentSearching || contentMatches.length > 0) && (
           <>
             <CommandSeparator />
             <CommandGroup heading={
