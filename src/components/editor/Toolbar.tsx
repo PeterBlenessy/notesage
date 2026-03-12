@@ -196,13 +196,13 @@ const TEXT_COLORS = [
 ] as const;
 
 const HIGHLIGHT_COLORS = [
-  { label: "None", light: null, dark: null },
-  { label: "Yellow", light: "#fef08a", dark: "#854d0e" },
-  { label: "Green", light: "#bbf7d0", dark: "#166534" },
-  { label: "Blue", light: "#bfdbfe", dark: "#1e40af" },
-  { label: "Pink", light: "#fbcfe8", dark: "#9d174d" },
-  { label: "Orange", light: "#fed7aa", dark: "#9a3412" },
-  { label: "Grey", light: "#e5e7eb", dark: "#374151" },
+  { label: "None", name: null, swatchLight: "#ffffff", swatchDark: "#2d2d2d" },
+  { label: "Yellow", name: "yellow", swatchLight: "#fef08a", swatchDark: "#854d0e" },
+  { label: "Green", name: "green", swatchLight: "#bbf7d0", swatchDark: "#166534" },
+  { label: "Blue", name: "blue", swatchLight: "#bfdbfe", swatchDark: "#1e40af" },
+  { label: "Pink", name: "pink", swatchLight: "#fbcfe8", swatchDark: "#9d174d" },
+  { label: "Orange", name: "orange", swatchLight: "#fed7aa", swatchDark: "#9a3412" },
+  { label: "Grey", name: "grey", swatchLight: "#e5e7eb", swatchDark: "#374151" },
 ] as const;
 
 function TextColorPopover({ editor }: { editor: Editor }) {
@@ -277,10 +277,6 @@ function HighlightPopover({ editor }: { editor: Editor }) {
 
   const currentHighlight = editor.getAttributes("highlight")?.color as string | undefined;
 
-  // Check if current highlight matches either light or dark variant of a color
-  const isActiveColor = (light: string | null, dark: string | null) =>
-    currentHighlight === light || currentHighlight === dark;
-
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <Tooltip>
@@ -297,8 +293,8 @@ function HighlightPopover({ editor }: { editor: Editor }) {
               <Highlighter className="size-4" strokeWidth={1.5} />
               {currentHighlight && (
                 <span
-                  className="absolute bottom-0.5 left-1/2 -translate-x-1/2 h-0.5 w-3 rounded-full"
-                  style={{ backgroundColor: currentHighlight }}
+                  className="absolute bottom-0.5 left-1/2 -translate-x-1/2 h-0.5 w-3 rounded-full highlight-swatch-indicator"
+                  data-color={currentHighlight}
                 />
               )}
             </Button>
@@ -313,29 +309,28 @@ function HighlightPopover({ editor }: { editor: Editor }) {
           Highlight
         </p>
         <div className="grid grid-cols-7 gap-1">
-          {HIGHLIGHT_COLORS.map(({ label, light, dark }) => {
-            const swatchColor = isDark ? dark : light;
-            const applyColor = isDark ? dark : light;
+          {HIGHLIGHT_COLORS.map(({ label, name, swatchLight, swatchDark }) => {
+            const swatchColor = isDark ? swatchDark : swatchLight;
             return (
               <Tooltip key={label}>
                 <TooltipTrigger asChild>
                   <button
                     className={cn(
                       "size-5 rounded border border-border transition-transform hover:scale-125 focus:outline-none focus:ring-1 focus:ring-ring",
-                      !swatchColor && "flex items-center justify-center",
-                      isActiveColor(light, dark) && "ring-1 ring-foreground ring-offset-1 ring-offset-background"
+                      !name && "flex items-center justify-center",
+                      currentHighlight === name && "ring-1 ring-foreground ring-offset-1 ring-offset-background"
                     )}
-                    style={swatchColor ? { backgroundColor: swatchColor } : undefined}
+                    style={{ backgroundColor: swatchColor }}
                     onClick={() => {
-                      if (applyColor) {
-                        editor.chain().focus().toggleHighlight({ color: applyColor }).run();
+                      if (name) {
+                        editor.chain().focus().toggleHighlight({ color: name }).run();
                       } else {
                         editor.chain().focus().unsetHighlight().run();
                       }
                       setOpen(false);
                     }}
                   >
-                    {!swatchColor && <X className="size-3 text-muted-foreground" strokeWidth={1.5} />}
+                    {!name && <X className="size-3 text-muted-foreground" strokeWidth={1.5} />}
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="text-xs">

@@ -11,7 +11,7 @@ import TaskItem from "@tiptap/extension-task-item";
 import TextAlign from "@tiptap/extension-text-align";
 import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
-import Highlight from "@tiptap/extension-highlight";
+import { ThemedHighlight } from "@/components/editor/extensions/themed-highlight";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { common, createLowlight } from "lowlight";
 import { Markdown } from "tiptap-markdown";
@@ -63,7 +63,7 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       }),
       TextStyle,
       Color,
-      Highlight.configure({
+      ThemedHighlight.configure({
         multicolor: true,
       }),
       LocalImage.configure({

@@ -819,11 +819,40 @@ mark.dom-find-highlight-active {
   background: oklch(50% 0 0) !important;
 }
 
-/* Highlight marks (background color) */
+/* Highlight marks — themed via data-color attribute */
 .ProseMirror mark {
   border-radius: 2px;
   padding: 0.05em 0;
+  transition: background-color 200ms ease;
 }
+.ProseMirror mark[data-color="yellow"] { background-color: #fef08a; }
+.ProseMirror mark[data-color="green"]  { background-color: #bbf7d0; }
+.ProseMirror mark[data-color="blue"]   { background-color: #bfdbfe; }
+.ProseMirror mark[data-color="pink"]   { background-color: #fbcfe8; }
+.ProseMirror mark[data-color="orange"] { background-color: #fed7aa; }
+.ProseMirror mark[data-color="grey"]   { background-color: #e5e7eb; }
+
+.dark .ProseMirror mark[data-color="yellow"] { background-color: #854d0e; }
+.dark .ProseMirror mark[data-color="green"]  { background-color: #166534; }
+.dark .ProseMirror mark[data-color="blue"]   { background-color: #1e40af; }
+.dark .ProseMirror mark[data-color="pink"]   { background-color: #9d174d; }
+.dark .ProseMirror mark[data-color="orange"] { background-color: #9a3412; }
+.dark .ProseMirror mark[data-color="grey"]   { background-color: #374151; }
+
+/* Toolbar highlight indicator dot */
+.highlight-swatch-indicator[data-color="yellow"] { background-color: #fef08a; }
+.highlight-swatch-indicator[data-color="green"]  { background-color: #bbf7d0; }
+.highlight-swatch-indicator[data-color="blue"]   { background-color: #bfdbfe; }
+.highlight-swatch-indicator[data-color="pink"]   { background-color: #fbcfe8; }
+.highlight-swatch-indicator[data-color="orange"] { background-color: #fed7aa; }
+.highlight-swatch-indicator[data-color="grey"]   { background-color: #e5e7eb; }
+
+.dark .highlight-swatch-indicator[data-color="yellow"] { background-color: #854d0e; }
+.dark .highlight-swatch-indicator[data-color="green"]  { background-color: #166534; }
+.dark .highlight-swatch-indicator[data-color="blue"]   { background-color: #1e40af; }
+.dark .highlight-swatch-indicator[data-color="pink"]   { background-color: #9d174d; }
+.dark .highlight-swatch-indicator[data-color="orange"] { background-color: #9a3412; }
+.dark .highlight-swatch-indicator[data-color="grey"]   { background-color: #374151; }
 
 /* Text color: ensure colored text is readable in dark mode too */
 .ProseMirror span[style*="color"] {
