@@ -64,3 +64,4 @@ Chronological log of major implementation milestones and changes.
 | 058 | [Release v0.18.6](058-release-v0.18.6.md) | Voice transcription and dictation with on-device Whisper |
 | 059 | [Release v0.19.0](059-release-v0.19.0.md) | Local AI with bundled llama-server (Phase 9) — offline inference, model management, FIM completions |
 | 060 | [Release v0.19.1](060-release-v0.19.1.md) | Editor toolbar enhancements — heading picker, color/highlight, alignment, table grid picker, dark mode fixes |
+| 061 | [Release v0.19.2](061-release-v0.19.2.md) | Model catalog expansion, command palette unification, @mentions, date badges |
