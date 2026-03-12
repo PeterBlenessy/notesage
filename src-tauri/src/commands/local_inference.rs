@@ -92,6 +92,26 @@ pub struct LocalModelInfo {
     pub quantization: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hf_repo_id: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub supports_tool_calling: bool,
+    #[serde(default)]
+    pub supports_thinking: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_tags: Option<ThinkingTags>,
+    #[serde(default)]
+    pub supports_vision: bool,
+    #[serde(default)]
+    pub multilingual: bool,
+    #[serde(default)]
+    pub recommended_for: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ThinkingTags {
+    pub open: String,
+    pub close: String,
 }
 
 /// A model entry in the catalog (curated or custom).
@@ -124,6 +144,20 @@ pub struct CatalogEntry {
     pub quantization: Option<String>,
     #[serde(default)]
     pub hf_repo_id: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub supports_tool_calling: bool,
+    #[serde(default)]
+    pub supports_thinking: bool,
+    #[serde(default)]
+    pub thinking_tags: Option<ThinkingTags>,
+    #[serde(default)]
+    pub supports_vision: bool,
+    #[serde(default)]
+    pub multilingual: bool,
+    #[serde(default)]
+    pub recommended_for: Vec<String>,
 }
 
 /// Bundled catalog embedded at compile time.
@@ -241,6 +275,13 @@ pub async fn list_local_models(
                 context_length: entry.context_length,
                 quantization: entry.quantization,
                 hf_repo_id: entry.hf_repo_id,
+                category: entry.category,
+                supports_tool_calling: entry.supports_tool_calling,
+                supports_thinking: entry.supports_thinking,
+                thinking_tags: entry.thinking_tags,
+                supports_vision: entry.supports_vision,
+                multilingual: entry.multilingual,
+                recommended_for: entry.recommended_for,
             }
         })
         .collect();
@@ -463,6 +504,13 @@ pub async fn add_custom_local_model(
         context_length: None,
         quantization: None,
         hf_repo_id,
+        category: None,
+        supports_tool_calling: false,
+        supports_thinking: false,
+        thinking_tags: None,
+        supports_vision: false,
+        multilingual: false,
+        recommended_for: vec![],
     };
 
     let mut custom = load_custom_models(&state.models_dir);
@@ -491,6 +539,13 @@ pub async fn add_custom_local_model(
         context_length: entry.context_length,
         quantization: entry.quantization,
         hf_repo_id: entry.hf_repo_id,
+        category: entry.category,
+        supports_tool_calling: entry.supports_tool_calling,
+        supports_thinking: entry.supports_thinking,
+        thinking_tags: entry.thinking_tags,
+        supports_vision: entry.supports_vision,
+        multilingual: entry.multilingual,
+        recommended_for: entry.recommended_for,
     })
 }
 
@@ -1094,17 +1149,38 @@ pub async fn local_bundled_chat_stream(
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
 
-    // Tag-based thinking parser for local models that emit reasoning in XML-like tags
-    // Common patterns: <think>, <summary>, <discussion>, <reflection>, <reasoning>, <scratchpad>
-    let thinking_tags: &[(&str, &str)] = &[
-        ("<think>", "</think>"),
-        ("<summary>", "</summary>"),
-        ("<discussion>", "</discussion>"),
-        ("<reflection>", "</reflection>"),
-        ("<reasoning>", "</reasoning>"),
-        ("<scratchpad>", "</scratchpad>"),
-        ("<internal_thoughts>", "</internal_thoughts>"),
-    ];
+    // Determine thinking tags from catalog metadata if available.
+    // For catalog models with explicit thinking_tags, use only those.
+    // For catalog models with supports_thinking but no tags, use generic <think>.
+    // For catalog models with supports_thinking: false, skip tag parsing entirely.
+    // For custom models (no catalog metadata), fall back to the full hardcoded scanner.
+    let active_model_id = state.active_model.lock().await.clone().unwrap_or_default();
+    let catalog_entry = find_model_entry(&state.models_dir, &active_model_id);
+
+    let catalog_thinking_tags: Vec<(String, String)> = match &catalog_entry {
+        Some(entry) if !entry.supports_thinking => vec![],
+        Some(entry) => match &entry.thinking_tags {
+            Some(tags) => vec![(tags.open.clone(), tags.close.clone())],
+            None => vec![("<think>".to_string(), "</think>".to_string())],
+        },
+        None => {
+            // Custom/unknown model — use full hardcoded set
+            [
+                ("<think>", "</think>"),
+                ("<summary>", "</summary>"),
+                ("<discussion>", "</discussion>"),
+                ("<reflection>", "</reflection>"),
+                ("<reasoning>", "</reasoning>"),
+                ("<scratchpad>", "</scratchpad>"),
+                ("<internal_thoughts>", "</internal_thoughts>"),
+            ].iter().map(|(o, c)| (o.to_string(), c.to_string())).collect()
+        }
+    };
+    let thinking_tags_refs: Vec<(&str, &str)> = catalog_thinking_tags.iter()
+        .map(|(o, c)| (o.as_str(), c.as_str()))
+        .collect();
+    let thinking_tags: &[(&str, &str)] = &thinking_tags_refs;
+
     let mut tag_buf = String::new();
     let mut in_thinking_tag: Option<&str> = None; // closing tag we're looking for
 
@@ -1286,30 +1362,41 @@ pub async fn local_bundled_chat(
         .ok_or("Invalid response format from local AI")?
         .to_string();
 
-    // Strip thinking/reasoning tags from non-streaming responses
-    let content = strip_thinking_tags(&raw_content);
+    // Strip thinking/reasoning tags from non-streaming responses using catalog metadata
+    let active_model_id = state.active_model.lock().await.clone().unwrap_or_default();
+    let catalog_entry = find_model_entry(&state.models_dir, &active_model_id);
+    let content = strip_thinking_tags_for_model(&raw_content, catalog_entry.as_ref());
 
     Ok(content)
 }
 
-/// Strip known thinking/reasoning XML tags from model output.
-/// Used for non-streaming responses where we can't route to thinking events.
-fn strip_thinking_tags(text: &str) -> String {
-    let tag_pairs: &[(&str, &str)] = &[
-        ("<think>", "</think>"),
-        ("<summary>", "</summary>"),
-        ("<discussion>", "</discussion>"),
-        ("<reflection>", "</reflection>"),
-        ("<reasoning>", "</reasoning>"),
-        ("<scratchpad>", "</scratchpad>"),
-        ("<internal_thoughts>", "</internal_thoughts>"),
-    ];
+/// Strip thinking/reasoning XML tags from model output, using catalog metadata when available.
+fn strip_thinking_tags_for_model(text: &str, catalog_entry: Option<&CatalogEntry>) -> String {
+    let tag_pairs_owned: Vec<(String, String)> = match catalog_entry {
+        Some(entry) if !entry.supports_thinking => return text.trim().to_string(),
+        Some(entry) => match &entry.thinking_tags {
+            Some(tags) => vec![(tags.open.clone(), tags.close.clone())],
+            None => vec![("<think>".to_string(), "</think>".to_string())],
+        },
+        None => {
+            // Custom/unknown model — use full hardcoded set
+            [
+                ("<think>", "</think>"),
+                ("<summary>", "</summary>"),
+                ("<discussion>", "</discussion>"),
+                ("<reflection>", "</reflection>"),
+                ("<reasoning>", "</reasoning>"),
+                ("<scratchpad>", "</scratchpad>"),
+                ("<internal_thoughts>", "</internal_thoughts>"),
+            ].iter().map(|(o, c)| (o.to_string(), c.to_string())).collect()
+        }
+    };
 
     let mut result = text.to_string();
-    for &(open, close) in tag_pairs {
+    for (open, close) in &tag_pairs_owned {
         loop {
-            let Some(start) = result.find(open) else { break };
-            if let Some(end) = result[start..].find(close) {
+            let Some(start) = result.find(open.as_str()) else { break };
+            if let Some(end) = result[start..].find(close.as_str()) {
                 result = format!("{}{}", &result[..start], &result[start + end + close.len()..]);
             } else {
                 // Opening tag without closing — strip from opening tag to end

@@ -57,7 +57,7 @@ interface AIProvider {
 - Process cleanup: `LocalInferenceState::stop_sync()` via `RunEvent::Exit` hook; `pkill llama-server` at startup for crash recovery
 - Chat streaming via `/v1/chat/completions` (OpenAI-compatible SSE)
 - Inline completions via `/infill` (FIM) with `/v1/chat/completions` instructed chat fallback for non-FIM models
-- Model catalog embedded at compile time from `model-catalog.json`; curated models with RAM requirements and FIM capability flags
+- Model catalog embedded at compile time from `model-catalog.json`; 18 curated models across 4 categories (general, code, reasoning, compact) with capability metadata (FIM, tool calling, thinking tags, vision, multilingual, RAM-tier recommendations)
 - Health checks every 30s via `/health` endpoint
 
 ### Routing
@@ -93,11 +93,11 @@ Privacy-focused offline AI with zero setup — no API keys, no external software
 
 **Model management:**
 
-- Curated model catalog embedded at compile time (`model-catalog.json`)
+- Curated model catalog (18 models) embedded at compile time (`model-catalog.json`) with per-model capability metadata (`category`, `supports_tool_calling`, `supports_thinking`, `thinking_tags`, `supports_vision`, `multilingual`, `recommended_for`)
 - Models downloaded from Hugging Face in GGUF format to `~/.notesage/models/llm/`
 - Download progress via Tauri events, concurrent downloads with cancel support
-- System RAM detection for model recommendations
-- Settings → Local AI tab with model cards (download, delete, set active, FIM badge)
+- System RAM detection for model recommendations per tier (8GB, 16GB, 32GB, 64GB)
+- Settings → Local AI tab with model cards, capability badges (Tools, Think, FIM, Vision, Multi), category filter tabs (All, General, Code, Reasoning, Downloaded), sort dropdown (Name, Size, RAM)
 - Custom model support via `~/.notesage/models/llm/custom-models.json`
 - Model metadata enrichment: GGUF header parsing, HF API metadata, runtime `/v1/models` — merged with hover tooltips
 

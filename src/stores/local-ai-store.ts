@@ -7,6 +7,7 @@ import type { LocalModelInfo, SystemMemoryInfo, BinaryStatus } from '@/lib/tauri
 
 export type ServerStatus = 'stopped' | 'starting' | 'running' | 'error';
 export type BinaryState = 'unknown' | 'available' | 'downloading' | 'not_found';
+export type ModelCategory = 'all' | 'general' | 'code' | 'reasoning' | 'compact' | 'downloaded';
 
 export interface DownloadState {
   progress: number;
@@ -28,6 +29,7 @@ interface LocalAIStore {
   systemMemory: SystemMemoryInfo | null;
   binaryStatus: BinaryState;
   binaryDownloadProgress: number;
+  categoryFilter: ModelCategory;
 
   // Actions
   setActiveModel: (modelId: string) => void;
@@ -38,6 +40,7 @@ interface LocalAIStore {
   dismissFirstRun: () => void;
   setContextLength: (len: number) => void;
   setGpuLayers: (layers: number) => void;
+  setCategoryFilter: (category: ModelCategory) => void;
   refreshModels: () => Promise<void>;
   downloadModel: (modelId: string) => void;
   cancelDownload: (modelId: string) => void;
@@ -97,6 +100,7 @@ export const useLocalAIStore = create<LocalAIStore>()(
         systemMemory: null,
         binaryStatus: 'unknown',
         binaryDownloadProgress: 0,
+        categoryFilter: 'all',
 
         // Actions
         setActiveModel: (modelId) => set({ activeModelId: modelId }),
@@ -107,6 +111,7 @@ export const useLocalAIStore = create<LocalAIStore>()(
         dismissFirstRun: () => set({ dismissedFirstRun: true }),
         setContextLength: (len) => set({ contextLength: len }),
         setGpuLayers: (layers) => set({ gpuLayers: layers }),
+        setCategoryFilter: (category) => set({ categoryFilter: category }),
 
         refreshModels: async () => {
           try {

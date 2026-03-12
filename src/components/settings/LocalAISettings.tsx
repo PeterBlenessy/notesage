@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo } from 'react';
-import { useLocalAIStore } from '@/stores/local-ai-store';
+import { useLocalAIStore, type ModelCategory } from '@/stores/local-ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { tauriApi } from '@/lib/tauri';
+import type { LocalModelInfo } from '@/lib/tauri';
 import { useModelMetadata } from '@/hooks/useModelMetadata';
 import { ModelMetadataTooltip } from './ModelMetadataTooltip';
 import { Button } from '@/components/ui/button';
@@ -21,13 +22,60 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
-import { Download, Trash2, X, Cpu, Plus, Link, Shield, HeartPulse, Loader2, FolderOpen } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Download, Trash2, X, Cpu, Plus, Link, Shield, HeartPulse, Loader2, FolderOpen, Star, ArrowUpDown, Check } from 'lucide-react';
 import { toast } from 'sonner';
+
+type ModelSort = 'name' | 'size' | 'ram';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(0)} MB`;
   return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
 }
+
+function CapabilityBadge({ label }: { label: string }) {
+  return (
+    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+      {label}
+    </span>
+  );
+}
+
+function getRamTier(totalBytes: number): string {
+  const gb = totalBytes / 1_000_000_000;
+  if (gb <= 8) return '8gb';
+  if (gb <= 16) return '16gb';
+  if (gb <= 32) return '32gb';
+  return '64gb';
+}
+
+function getDefaultModelId(ramTier: string): string {
+  switch (ramTier) {
+    case '8gb': return 'qwen3-1.7b';
+    case '16gb': return 'qwen3-4b';
+    case '32gb': return 'qwen3-8b';
+    default: return 'qwen3-14b';
+  }
+}
+
+const CATEGORY_TABS: { value: ModelCategory; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'general', label: 'General' },
+  { value: 'code', label: 'Code' },
+  { value: 'reasoning', label: 'Reasoning' },
+  { value: 'downloaded', label: 'Downloaded' },
+];
+
+const SORT_OPTIONS: { value: ModelSort; label: string }[] = [
+  { value: 'ram', label: 'RAM' },
+  { value: 'size', label: 'Size' },
+  { value: 'name', label: 'Name' },
+];
 
 function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
   const [open, setOpen] = useState(false);
@@ -107,6 +155,159 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
   );
 }
 
+function ModelCard({
+  model,
+  isActive,
+  isRecommendedDefault,
+  download,
+  metadata,
+  onSetActive,
+  onDownload,
+  onCancelDownload,
+  onDelete,
+  onRemoveCustom,
+}: {
+  model: LocalModelInfo;
+  isActive: boolean;
+  isRecommendedDefault: boolean;
+  download: { progress: number } | undefined;
+  metadata: import('@/lib/tauri').ModelMetadata | null | undefined;
+  onSetActive: () => void;
+  onDownload: () => void;
+  onCancelDownload: () => void;
+  onDelete: () => void;
+  onRemoveCustom: () => void;
+}) {
+  return (
+    <ModelMetadataTooltip metadata={metadata} modelType="llm" side="right">
+      <div className="relative rounded-md border px-3 py-2.5">
+        {/* Action buttons — top right */}
+        <div className="absolute top-2 right-2 flex items-center gap-1">
+          {download ? (
+            <div className="flex items-center gap-2">
+              <div className="w-16">
+                <Progress value={download.progress} className="h-1.5" />
+              </div>
+              <span className="text-[10px] tabular-nums text-muted-foreground">
+                {Math.round(download.progress)}%
+              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={onCancelDownload}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">Cancel download</TooltipContent>
+              </Tooltip>
+            </div>
+          ) : model.downloaded ? (
+            <>
+              {!isActive && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 text-[11px] px-2"
+                      onClick={onSetActive}
+                    >
+                      Use
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Set as active model</TooltipContent>
+                </Tooltip>
+              )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                    disabled={isActive}
+                    onClick={onDelete}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {isActive ? 'Stop the model first' : 'Delete model file'}
+                </TooltipContent>
+              </Tooltip>
+              {model.is_custom && !isActive && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                      onClick={onRemoveCustom}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Remove custom model</TooltipContent>
+                </Tooltip>
+              )}
+            </>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={onDownload}
+                >
+                  <Download className="h-3 w-3" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Download model</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="pr-24">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {isRecommendedDefault && (
+              <Star className="h-3 w-3 text-muted-foreground fill-muted-foreground" strokeWidth={1.5} />
+            )}
+            <span className="text-sm font-medium">{model.name}</span>
+            <span className="text-[10px] text-muted-foreground/50">
+              {model.size_bytes > 0 && formatBytes(model.size_bytes)}
+              {model.size_bytes > 0 && model.ram_required_bytes > 0 && ' · '}
+              {model.ram_required_bytes > 0 && `~${formatBytes(model.ram_required_bytes)} RAM`}
+            </span>
+            {isActive && model.downloaded && (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                Active
+              </span>
+            )}
+            {model.is_custom && (
+              <CapabilityBadge label="Custom" />
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+            {model.description}
+          </p>
+          <div className="flex items-center gap-1 mt-1 flex-wrap">
+            {model.supports_tool_calling && <CapabilityBadge label="Tools" />}
+            {model.supports_thinking && <CapabilityBadge label="Think" />}
+            {model.supports_fim && <CapabilityBadge label="FIM" />}
+            {model.supports_vision && <CapabilityBadge label="Vision" />}
+            {model.multilingual && <CapabilityBadge label="Multi" />}
+          </div>
+        </div>
+      </div>
+    </ModelMetadataTooltip>
+  );
+}
+
 export function LocalAISettings() {
   const {
     activeModelId,
@@ -117,6 +318,7 @@ export function LocalAISettings() {
     systemMemory,
     binaryStatus,
     binaryDownloadProgress,
+    categoryFilter,
     setActiveModel,
     refreshModels,
     downloadModel,
@@ -126,6 +328,7 @@ export function LocalAISettings() {
     checkBinary,
     downloadBinary,
     cancelBinaryDownload,
+    setCategoryFilter,
   } = useLocalAIStore();
 
   const connections = useConnectionsStore((s) => s.connections);
@@ -134,6 +337,7 @@ export function LocalAISettings() {
   );
 
   const [healthChecking, setHealthChecking] = useState(false);
+  const [sortBy, setSortBy] = useState<ModelSort>('ram');
 
   useEffect(() => {
     refreshModels();
@@ -147,13 +351,45 @@ export function LocalAISettings() {
   const totalMemGB = systemMemory ? (systemMemory.total_bytes / 1_000_000_000).toFixed(0) : '?';
   const hasDownloadedModels = models.some((m) => m.downloaded);
 
+  // RAM-based recommendations
+  const ramTier = systemMemory ? getRamTier(systemMemory.total_bytes) : null;
+  const defaultModelId = ramTier ? getDefaultModelId(ramTier) : null;
+
+  const sortModels = (list: LocalModelInfo[]) => {
+    return [...list].sort((a, b) => {
+      switch (sortBy) {
+        case 'name': return a.name.localeCompare(b.name);
+        case 'size': return a.size_bytes - b.size_bytes;
+        case 'ram': return a.ram_required_bytes - b.ram_required_bytes;
+      }
+    });
+  };
+
+  const recommendedModels = useMemo(() => {
+    if (!ramTier) return [];
+    return sortModels(
+      models.filter((m) => m.recommended_for?.includes(ramTier))
+    );
+  }, [models, ramTier, sortBy]);
+
+  const filteredModels = useMemo(() => {
+    let filtered: LocalModelInfo[];
+    if (categoryFilter === 'downloaded') {
+      filtered = models.filter((m) => m.downloaded);
+    } else if (categoryFilter === 'all') {
+      filtered = models;
+    } else {
+      filtered = models.filter((m) => m.category === categoryFilter);
+    }
+    return sortModels(filtered);
+  }, [models, categoryFilter, sortBy]);
+
   // Batch-fetch metadata for all models when settings panel mounts
   const modelIds = useMemo(() => models.map((m) => ({ id: m.id })), [models]);
   const { metadataMap } = useModelMetadata(modelIds, 'llm');
 
   const handleSetActive = async (modelId: string) => {
     setActiveModel(modelId);
-    // Server auto-starts via useLocalAI hook when connection exists
   };
 
   const handleHealthCheck = async () => {
@@ -192,6 +428,22 @@ export function LocalAISettings() {
     if (!activeModelId) return 'No model selected';
     return 'Stopped';
   })();
+
+  const renderModelCard = (model: LocalModelInfo) => (
+    <ModelCard
+      key={model.id}
+      model={model}
+      isActive={model.id === activeModelId}
+      isRecommendedDefault={model.id === defaultModelId}
+      download={downloads[model.id]}
+      metadata={metadataMap[model.id]}
+      onSetActive={() => handleSetActive(model.id)}
+      onDownload={() => downloadModel(model.id)}
+      onCancelDownload={() => cancelDownload(model.id)}
+      onDelete={() => deleteModel(model.id)}
+      onRemoveCustom={() => removeCustomModel(model.id)}
+    />
+  );
 
   return (
     <div className="space-y-6">
@@ -312,147 +564,68 @@ export function LocalAISettings() {
           </h4>
           <AddCustomModelDialog onAdded={refreshModels} />
         </div>
+
+        {/* Category filter tabs + sort */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1">
+            {CATEGORY_TABS.map((tab) => (
+              <button
+                key={tab.value}
+                onClick={() => setCategoryFilter(tab.value)}
+                className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                  categoryFilter === tab.value
+                    ? 'bg-primary text-primary-foreground font-medium'
+                    : 'text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex items-center gap-1 px-2 py-1 text-[11px] text-muted-foreground rounded-md hover:bg-muted transition-colors">
+                <ArrowUpDown className="h-3 w-3" strokeWidth={1.5} />
+                {SORT_OPTIONS.find((o) => o.value === sortBy)?.label}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[100px]">
+              {SORT_OPTIONS.map((opt) => (
+                <DropdownMenuItem
+                  key={opt.value}
+                  onClick={() => setSortBy(opt.value)}
+                  className="text-xs gap-2"
+                >
+                  {opt.label}
+                  {sortBy === opt.value && <Check className="h-3 w-3 ml-auto" strokeWidth={1.5} />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {/* Recommended models section */}
+        {recommendedModels.length > 0 && categoryFilter === 'all' && sortBy === 'ram' && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Recommended for your Mac ({totalMemGB} GB):
+            </p>
+            <TooltipProvider delayDuration={300}>
+              {recommendedModels.map(renderModelCard)}
+            </TooltipProvider>
+          </div>
+        )}
+
+        {/* All models */}
         <div className="space-y-2">
+          {categoryFilter === 'all' && sortBy === 'ram' && recommendedModels.length > 0 && (
+            <p className="text-xs text-muted-foreground pt-2">All models:</p>
+          )}
           <TooltipProvider delayDuration={300}>
-            {[...models].sort((a, b) => a.name.localeCompare(b.name)).map((model) => {
-              const download = downloads[model.id];
-              const isActive = model.id === activeModelId;
-
-              return (
-                <ModelMetadataTooltip
-                  key={model.id}
-                  metadata={metadataMap[model.id]}
-                  modelType="llm"
-                  side="right"
-                >
-                <div
-                  className="relative rounded-md border px-3 py-2.5"
-                >
-                  {/* Action buttons — top right */}
-                  <div className="absolute top-2 right-2 flex items-center gap-1">
-                    {download ? (
-                      <div className="flex items-center gap-2">
-                        <div className="w-16">
-                          <Progress value={download.progress} className="h-1.5" />
-                        </div>
-                        <span className="text-[10px] tabular-nums text-muted-foreground">
-                          {Math.round(download.progress)}%
-                        </span>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => cancelDownload(model.id)}
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top">Cancel download</TooltipContent>
-                        </Tooltip>
-                      </div>
-                    ) : model.downloaded ? (
-                      <>
-                        {!isActive && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-6 text-[11px] px-2"
-                                onClick={() => handleSetActive(model.id)}
-                              >
-                                Use
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">Set as active model</TooltipContent>
-                          </Tooltip>
-                        )}
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                              disabled={isActive}
-                              onClick={() => deleteModel(model.id)}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top">
-                            {isActive ? 'Stop the model first' : 'Delete model file'}
-                          </TooltipContent>
-                        </Tooltip>
-                        {model.is_custom && !isActive && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                                onClick={() => removeCustomModel(model.id)}
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top">Remove custom model</TooltipContent>
-                          </Tooltip>
-                        )}
-                      </>
-                    ) : (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-6 w-6"
-                            onClick={() => downloadModel(model.id)}
-                          >
-                            <Download className="h-3 w-3" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">Download model</TooltipContent>
-                      </Tooltip>
-                    )}
-                  </div>
-
-                  {/* Content */}
-                  <div className="pr-24">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{model.name}</span>
-                      <span className="text-[10px] text-muted-foreground/50">
-                        {model.size_bytes > 0 && formatBytes(model.size_bytes)}
-                        {model.size_bytes > 0 && model.ram_required_bytes > 0 && ' · '}
-                        {model.ram_required_bytes > 0 && `~${formatBytes(model.ram_required_bytes)} RAM`}
-                      </span>
-                      {isActive && model.downloaded && (
-                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary">
-                          Active
-                        </span>
-                      )}
-                      {model.is_custom && (
-                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                          Custom
-                        </span>
-                      )}
-                      {model.supports_fim && (
-                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                          FIM
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                      {model.description}
-                    </p>
-                  </div>
-                </div>
-                </ModelMetadataTooltip>
-              );
-            })}
+            {filteredModels.map(renderModelCard)}
           </TooltipProvider>
         </div>
+
         <div className="flex items-center gap-1.5">
           <p className="text-[10px] text-muted-foreground">
             Models stored in ~/.notesage/models/llm/

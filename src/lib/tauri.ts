@@ -186,6 +186,11 @@ export interface WhisperModelInfo {
 // Local AI types
 // ---------------------------------------------------------------------------
 
+export interface ThinkingTags {
+  open: string;
+  close: string;
+}
+
 export interface LocalModelInfo {
   id: string;
   name: string;
@@ -206,6 +211,13 @@ export interface LocalModelInfo {
   context_length?: number;
   quantization?: string;
   hf_repo_id?: string;
+  category?: string;
+  supports_tool_calling: boolean;
+  supports_thinking: boolean;
+  thinking_tags?: ThinkingTags;
+  supports_vision: boolean;
+  multilingual: boolean;
+  recommended_for: string[];
 }
 
 // ---------------------------------------------------------------------------

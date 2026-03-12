@@ -1,6 +1,6 @@
 # PRD: Local AI Model Catalog Expansion
 
-**Date:** 2026-03-11 **Phase:** 11 **Status:** Draft
+**Date:** 2026-03-11 **Phase:** 11 **Status:** Implemented
 
 ---
 
@@ -33,7 +33,7 @@ The model catalog is the user's first impression of local AI quality. A thin cat
 - **Custom model import UI** — users who want arbitrary GGUF models should use Ollama
 - **Model benchmarks in UI** — no quality scores or leaderboard rankings shown
 - **Auto-update catalog from remote** — catalog ships with app releases
-- **Models > 14B** — keep within reasonable desktop RAM limits
+- **Models &gt; 14B** — keep within reasonable desktop RAM limits
 - **Embedding models** — deferred to semantic search phase
 - **Vision model inference** — catalog the models but inference support is deferred
 
@@ -78,58 +78,58 @@ Extend `model-catalog.json` with new capability fields:
 ### New Fields
 
 | Field | Type | Description |
-|---|---|---|
-| `category` | string | `"general"` \| `"code"` \| `"reasoning"` \| `"compact"` |
+| --- | --- | --- |
+| `category` | string | `"general"` |
 | `supports_tool_calling` | bool | Model supports native function calling via llama.cpp `--jinja` |
 | `supports_thinking` | bool | Model has thinking/reasoning mode |
 | `thinking_tags` | object | `{ "open": "<think>", "close": "</think>" }` — tags for thinking content extraction |
 | `supports_vision` | bool | Model supports image input (future use) |
 | `multilingual` | bool | Trained for multilingual use |
-| `recommended_for` | string[] | RAM tiers: `"8gb"`, `"16gb"`, `"32gb"`, `"64gb"` |
+| `recommended_for` | string\[\] | RAM tiers: `"8gb"`, `"16gb"`, `"32gb"`, `"64gb"` |
 
 ### Proposed Full Catalog (18 models)
 
-#### Compact (< 2B, for 8GB Macs)
+#### Compact (&lt; 2B, for 8GB Macs)
 
 | ID | Name | Params | Size | RAM | Category | Tool Calling | Thinking | Source |
-|---|---|---|---|---|---|---|---|---|
-| `qwen3-0.6b` | Qwen3 0.6B | 0.6B | ~400MB | 1GB | compact | Yes | Yes | Qwen (official) |
-| `smollm2-1.7b` | SmolLM2 1.7B | 1.7B | ~1.0GB | 2GB | compact | Yes | No | HuggingFace (official) |
-| `qwen3-1.7b` | Qwen3 1.7B | 1.7B | ~1.8GB | 2.5GB | compact | Yes | Yes | Qwen (official) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `qwen3-0.6b` | Qwen3 0.6B | 0.6B | \~400MB | 1GB | compact | Yes | Yes | Qwen (official) |
+| `smollm2-1.7b` | SmolLM2 1.7B | 1.7B | \~1.0GB | 2GB | compact | Yes | No | HuggingFace (official) |
+| `qwen3-1.7b` | Qwen3 1.7B | 1.7B | \~1.8GB | 2.5GB | compact | Yes | Yes | Qwen (official) |
 
 #### General (2B-8B)
 
 | ID | Name | Params | Size | RAM | Category | Tool Calling | Thinking | Source |
-|---|---|---|---|---|---|---|---|---|
-| `phi-4-mini` | Phi-4 Mini | 3.8B | ~2.5GB | 3.5GB | general | No | No | lmstudio-community |
-| `gemma-3-4b` | Gemma 3 4B | 4B | ~2.5GB | 4GB | general | No | No | lmstudio-community |
-| `qwen3-4b` | Qwen3 4B | 4B | ~2.5GB | 4GB | general | Yes | Yes | Qwen (official) |
-| `ministral-3-3b` | Ministral 3 3B | 3B | ~2.0GB | 3GB | general | Yes | No | Mistral (official) |
-| `qwen3-8b` | Qwen3 8B | 8B | ~5.0GB | 6.5GB | general | Yes | Yes | Qwen (official) |
-| `llama-3.1-8b` | Llama 3.1 8B | 8B | ~4.9GB | 6.5GB | general | Yes | No | lmstudio-community |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `phi-4-mini` | Phi-4 Mini | 3.8B | \~2.5GB | 3.5GB | general | No | No | lmstudio-community |
+| `gemma-3-4b` | Gemma 3 4B | 4B | \~2.5GB | 4GB | general | No | No | lmstudio-community |
+| `qwen3-4b` | Qwen3 4B | 4B | \~2.5GB | 4GB | general | Yes | Yes | Qwen (official) |
+| `ministral-3-3b` | Ministral 3 3B | 3B | \~2.0GB | 3GB | general | Yes | No | Mistral (official) |
+| `qwen3-8b` | Qwen3 8B | 8B | \~5.0GB | 6.5GB | general | Yes | Yes | Qwen (official) |
+| `llama-3.1-8b` | Llama 3.1 8B | 8B | \~4.9GB | 6.5GB | general | Yes | No | lmstudio-community |
 
 #### Code (FIM-capable)
 
 | ID | Name | Params | Size | RAM | Category | FIM | Source |
-|---|---|---|---|---|---|---|---|
-| `qwen2.5-coder-1.5b` | Qwen2.5 Coder 1.5B | 1.5B | ~1.6GB | 2.5GB | code | Yes | Qwen (official) |
-| `qwen2.5-coder-3b` | Qwen2.5 Coder 3B | 3B | ~2.0GB | 3.5GB | code | Yes | Qwen (official) |
-| `qwen2.5-coder-7b` | Qwen2.5 Coder 7B | 7B | ~4.7GB | 6.5GB | code | Yes | Qwen (official) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `qwen2.5-coder-1.5b` | Qwen2.5 Coder 1.5B | 1.5B | \~1.6GB | 2.5GB | code | Yes | Qwen (official) |
+| `qwen2.5-coder-3b` | Qwen2.5 Coder 3B | 3B | \~2.0GB | 3.5GB | code | Yes | Qwen (official) |
+| `qwen2.5-coder-7b` | Qwen2.5 Coder 7B | 7B | \~4.7GB | 6.5GB | code | Yes | Qwen (official) |
 
 #### Reasoning (chain-of-thought specialized)
 
 | ID | Name | Params | Size | RAM | Category | Thinking | Source |
-|---|---|---|---|---|---|---|---|
-| `phi-4-mini-reasoning` | Phi-4 Mini Reasoning | 3.8B | ~2.5GB | 3.8GB | reasoning | Yes | lmstudio-community |
-| `deepseek-r1-distill-1.5b` | DeepSeek R1 Distill 1.5B | 1.5B | ~1.1GB | 2GB | reasoning | Yes | unsloth |
-| `deepseek-r1-distill-7b` | DeepSeek R1 Distill 7B | 7B | ~4.5GB | 6GB | reasoning | Yes | unsloth |
-| `deepseek-r1-distill-14b` | DeepSeek R1 Distill 14B | 14B | ~8.5GB | 11GB | reasoning | Yes | unsloth |
-| `qwen3-14b` | Qwen3 14B | 14B | ~8.5GB | 11GB | reasoning | Yes | Qwen (official) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `phi-4-mini-reasoning` | Phi-4 Mini Reasoning | 3.8B | \~2.5GB | 3.8GB | reasoning | Yes | lmstudio-community |
+| `deepseek-r1-distill-1.5b` | DeepSeek R1 Distill 1.5B | 1.5B | \~1.1GB | 2GB | reasoning | Yes | unsloth |
+| `deepseek-r1-distill-7b` | DeepSeek R1 Distill 7B | 7B | \~4.5GB | 6GB | reasoning | Yes | unsloth |
+| `deepseek-r1-distill-14b` | DeepSeek R1 Distill 14B | 14B | \~8.5GB | 11GB | reasoning | Yes | unsloth |
+| `qwen3-14b` | Qwen3 14B | 14B | \~8.5GB | 11GB | reasoning | Yes | Qwen (official) |
 
 ### Models Removed
 
 | ID | Reason |
-|---|---|
+| --- | --- |
 | (none removed) | All existing models retained; new ones added |
 
 ### RAM Recommendation Logic
@@ -197,7 +197,7 @@ Add category tabs and capability badges:
 Small inline badges on model cards:
 
 | Badge | Meaning | Color |
-|---|---|---|
+| --- | --- | --- |
 | `[Tools]` | Supports tool calling | neutral |
 | `[Think]` | Supports thinking/reasoning | neutral |
 | `[FIM]` | Fill-in-the-middle for code | neutral |
@@ -209,6 +209,7 @@ Badges use the design system's neutral palette — no chromatic colors.
 ### Category Filter
 
 Tab-style filter above model list:
+
 - **All** — show everything
 - **General** — chat, writing, editing
 - **Code** — FIM-capable models
@@ -297,27 +298,41 @@ if model.supports_tool_calling.unwrap_or(false) {
 ### Functional
 
 - [ ] All 18 models have correct download URLs (verified, not 404)
+
 - [ ] All models download successfully and load in llama-server
+
 - [ ] RAM requirements are accurate (within 500MB of actual)
+
 - [ ] `supports_tool_calling` is correct for each model (tested with structured tool call)
+
 - [ ] `supports_thinking` is correct (thinking content properly extracted)
+
 - [ ] `thinking_tags` match actual model output format
+
 - [ ] Category filter works in Settings UI
+
 - [ ] RAM-based recommendations are correct for 8/16/32/64 GB
+
 - [ ] Capability badges display correctly on model cards
+
 - [ ] Existing models (from old catalog) continue to work without re-download
+
 - [ ] Custom models (from `custom-models.json`) coexist with catalog models
 
 ### Performance
 
 - [ ] Catalog loading is instant (embedded at compile time)
+
 - [ ] Model list rendering is smooth with 18+ entries
 
 ### Design
 
 - [ ] Model cards with badges follow design system
+
 - [ ] Category tabs are clean and functional
+
 - [ ] Recommended section is visually distinct
+
 - [ ] All UI works in light and dark mode
 
 ---
@@ -345,7 +360,7 @@ if model.supports_tool_calling.unwrap_or(false) {
 - **Custom model import** — Ollama for arbitrary GGUF models
 - **Model benchmarks** — no quality scores in UI
 - **Auto-update catalog from remote** — ships with app
-- **Models > 14B** — too large for most desktops
+- **Models &gt; 14B** — too large for most desktops
 - **Embedding models** — separate phase
 - **Vision inference** — catalog support only, no runtime processing
 - **Qwen3.5 models** — monitor hallucination rates before adding to catalog
