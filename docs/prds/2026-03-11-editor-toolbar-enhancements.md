@@ -1,6 +1,8 @@
 # PRD: Editor & Toolbar Enhancements
 
-**Date:** 2026-03-11 **Status:** Complete **Parent:** Editor
+**Date:** 2026-03-11 **Status:** Partially complete **Parent:** Editor
+
+> **Note (2026-03-12):** Features 3 (Item Annotations) and 8 (Block Drag Handles) have been **deferred**. Initial implementation revealed UX issues: the annotation badge and drag handle compete for the same left-margin space with inconsistent vertical alignment, fragile hover/hide timing (elements disappear before the user can reach them), and drag handles only operating on top-level blocks rather than individual list items. Both features need a unified left-gutter design (a single rail managing handles, badges, and spacing) before reintroduction. Extension source files remain in the codebase for future work.
 
 ## Problem
 

@@ -558,6 +558,84 @@ function MicButton({ editor }: { editor: Editor | null }) {
   );
 }
 
+// --- Table Grid Picker (visual row×col selection) ---
+
+const TABLE_GRID_MAX_ROWS = 8;
+const TABLE_GRID_MAX_COLS = 8;
+
+function TableGridPicker({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(false);
+  const [hoverRows, setHoverRows] = useState(0);
+  const [hoverCols, setHoverCols] = useState(0);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className={cn(
+                "text-muted-foreground",
+                (open || editor.isActive("table")) && "bg-accent text-foreground"
+              )}
+            >
+              <Table className="size-4" strokeWidth={1.5} />
+            </Button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">
+          Insert table
+        </TooltipContent>
+      </Tooltip>
+      <PopoverContent
+        side="bottom"
+        align="start"
+        className="w-auto p-2"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        <div
+          className="grid gap-[3px]"
+          style={{ gridTemplateColumns: `repeat(${TABLE_GRID_MAX_COLS}, 1fr)` }}
+          onMouseLeave={() => { setHoverRows(0); setHoverCols(0); }}
+        >
+          {Array.from({ length: TABLE_GRID_MAX_ROWS }, (_, row) =>
+            Array.from({ length: TABLE_GRID_MAX_COLS }, (_, col) => {
+              const isHighlighted = row < hoverRows && col < hoverCols;
+              return (
+                <button
+                  key={`${row}-${col}`}
+                  className={cn(
+                    "size-4 rounded-[2px] border transition-colors duration-75",
+                    isHighlighted
+                      ? "border-foreground/40 bg-foreground/15"
+                      : "border-border bg-transparent hover:border-muted-foreground/30"
+                  )}
+                  onMouseEnter={() => { setHoverRows(row + 1); setHoverCols(col + 1); }}
+                  onClick={() => {
+                    editor
+                      .chain()
+                      .focus()
+                      .insertTable({ rows: row + 1, cols: col + 1, withHeaderRow: true })
+                      .run();
+                    setOpen(false);
+                    setHoverRows(0);
+                    setHoverCols(0);
+                  }}
+                />
+              );
+            })
+          )}
+        </div>
+        <p className="text-[10px] text-muted-foreground text-center mt-1.5 tabular-nums">
+          {hoverRows > 0 ? `${hoverRows} × ${hoverCols}` : "Select size"}
+        </p>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 // --- Table Tools Popover (appears next to Insert Table when cursor is in a table) ---
 
 function TableToolsPopover({ editor }: { editor: Editor }) {
@@ -601,13 +679,6 @@ function TableToolsPopover({ editor }: { editor: Editor }) {
 export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleViewMode, sourceWordWrap, onToggleWordWrap }: ToolbarProps) {
   const isSource = viewMode === "source";
 
-  const insertTable = () => {
-    editor
-      ?.chain()
-      .focus()
-      .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-      .run();
-  };
 
   const isInList = editor
     ? editor.isActive("bulletList") || editor.isActive("orderedList") || editor.isActive("taskList")
@@ -796,13 +867,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
 
           <ToolbarSeparator />
 
-          <ToolbarButton
-            onClick={insertTable}
-            active={editor.isActive("table")}
-            title="Insert Table"
-          >
-            <Table className="size-4" strokeWidth={1.5} />
-          </ToolbarButton>
+          <TableGridPicker editor={editor} />
 
           {/* Table editing tools — only visible when cursor is inside a table */}
           {editor.isActive("table") && (

@@ -36,8 +36,8 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | Align left/center/right | Toolbar (after HR) | Set text alignment for headings and paragraphs |
 | Indent/Outdent | Toolbar (after Task list) | Nest/lift list items (disabled outside lists) |
 | Table toolbar | Floating (above table) | Appears when cursor is in a table — row/column add/remove, merge/split, header toggle, delete |
-| Block drag handle | Left gutter (on hover) | Drag to reorder top-level blocks |
-| Item annotation | Left margin of list items | Click to add emoji annotation for visual categorization |
+| ~~Block drag handle~~ | ~~Left gutter (on hover)~~ | ~~Deferred — needs unified gutter design~~ |
+| ~~Item annotation~~ | ~~Left margin of list items~~ | ~~Deferred — needs unified gutter design~~ |
 
 ## Editor Navigation
 

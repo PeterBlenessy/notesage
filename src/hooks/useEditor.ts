@@ -16,9 +16,9 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { common, createLowlight } from "lowlight";
 import { Markdown } from "tiptap-markdown";
 import { SlashCommand } from "@/components/editor/extensions/slash-command";
-import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSuggestion, SearchHighlight, DragHandle, ItemAnnotation } from "@/components/editor/extensions";
+import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSuggestion, SearchHighlight } from "@/components/editor/extensions";
 import { PageBreaks } from "@/components/editor/extensions/page-breaks";
-import { getMarkdownFromEditor, prepareInitialContent, applyAnnotationsToEditor } from "@/lib/markdown";
+import { getMarkdownFromEditor } from "@/lib/markdown";
 
 const lowlight = createLowlight(common);
 
@@ -31,8 +31,6 @@ interface UseEditorOptions {
 }
 
 export function useEditor({ content, onUpdate, editable = true, documentDir }: UseEditorOptions) {
-  const { content: preparedContent, annotations } = prepareInitialContent(content);
-
   const editor = useTiptapEditor({
     onCreate: ({ editor }) => {
       // Set documentDir early so image nodes created during initial parse resolve correctly
@@ -42,12 +40,6 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
         if (imageStorage) {
           imageStorage.documentDir = documentDir;
         }
-      }
-      // Apply any annotations that were stripped from the initial content
-      if (annotations.size > 0) {
-        requestAnimationFrame(() => {
-          applyAnnotationsToEditor(editor, annotations);
-        });
       }
     },
     extensions: [
@@ -129,10 +121,8 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       TagHighlight,
       TagSuggestion,
       SearchHighlight,
-      DragHandle,
-      ItemAnnotation,
     ],
-    content: preparedContent,
+    content,
     editable,
     editorProps: {
       attributes: {

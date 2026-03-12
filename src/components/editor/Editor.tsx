@@ -56,7 +56,6 @@ import { PdfViewer } from "./viewers/PdfViewer";
 import { DocxViewer } from "./viewers/DocxViewer";
 import { EpubViewer } from "./viewers/EpubViewer";
 import { BubbleMenu } from "./BubbleMenu";
-import { AnnotationPicker } from "./AnnotationPicker";
 
 import { SourceBubbleMenu } from "./SourceBubbleMenu";
 import { FindBar } from "./FindBar";
@@ -1359,7 +1358,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           </div>
           {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}
 
-          {editor && <AnnotationPicker editor={editor} />}
         </div>
         </div>
       )}

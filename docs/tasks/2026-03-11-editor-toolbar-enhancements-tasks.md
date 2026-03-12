@@ -198,6 +198,8 @@ Register Notesage as a handler for `.md` files on macOS and handle the file-open
 
 ## Task 10: Item annotation — custom Tiptap extension
 
+**Status: DEFERRED** — Initial implementation revealed fundamental UX issues: the annotation badge and drag handle compete for the same left-margin space, vertical alignment is inconsistent across block types, and the hover/hide timing is fragile (elements disappear before the user can interact with them). Both features (tasks #10–#14) have been disconnected from the editor and need a unified left-gutter design before reintroduction. Extension source files remain in place for future work. (2026-03-12)
+
 **Complexity:** L **Category:** frontend **Dependencies:** None
 
 Create a `ItemAnnotation` Tiptap extension that adds an `annotation` attribute to list item and task item nodes.
@@ -221,6 +223,8 @@ Create a `ItemAnnotation` Tiptap extension that adds an `annotation` attribute t
 
 ## Task 11: Item annotation — picker popover UI
 
+**Status: DEFERRED** — See Task #10 note.
+
 **Complexity:** M **Category:** frontend **Dependencies:** #10
 
 Create the annotation picker popover that appears when clicking the margin area.
@@ -241,6 +245,8 @@ Create the annotation picker popover that appears when clicking the margin area.
 ---
 
 ## Task 12: Item annotation — markdown serialization
+
+**Status: DEFERRED** — See Task #10 note.
 
 **Complexity:** M **Category:** frontend **Dependencies:** #10
 
@@ -264,6 +270,8 @@ Implement `{emoji}` prefix serialization for item annotations in markdown.
 
 ## Task 13: Block drag handle — ProseMirror plugin
 
+**Status: DEFERRED** — See Task #10 note.
+
 **Complexity:** L **Category:** frontend **Dependencies:** None
 
 Create a ProseMirror plugin that shows a drag handle in the left margin on block hover.
@@ -286,6 +294,8 @@ Create a ProseMirror plugin that shows a drag handle in the left margin on block
 ---
 
 ## Task 14: Block drag handle — drag-and-drop behavior
+
+**Status: DEFERRED** — See Task #10 note.
 
 **Complexity:** L **Category:** frontend **Dependencies:** #13
 

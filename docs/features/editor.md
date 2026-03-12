@@ -19,8 +19,8 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 - Top toolbar with formatting controls: heading level picker, undo/redo, bold, italic, underline, strikethrough, code, text color, highlight, bullet list, ordered list, task list, indent/outdent, blockquote, code block, horizontal rule, alignment (left/center/right), table, image, typography settings, dictation
 - Bubble menu on text selection with AI actions (Improve, Summarize, Expand) — toggleable in settings
 - Floating table toolbar appears when cursor is inside a table — add/remove rows and columns, merge/split cells, toggle header row, delete table
-- Block drag handles in the left gutter — hover to reveal, drag to reorder top-level blocks
-- Item annotations on list items — emoji badges in the left margin for visual categorization, with a picker popover
+- ~~Block drag handles~~ — deferred, needs unified left-gutter design
+- ~~Item annotations~~ — deferred, needs unified left-gutter design
 - Slash commands (`/` at start of line) for inserting headings, lists, code blocks, blockquotes, tables, horizontal rules, images
 - Multi-tab editing with dirty indicator, auto-save on blur/tab switch (debounced 1s)
 - Open tabs restored on app restart (persisted file paths, re-opened from disk)
@@ -109,7 +109,7 @@ Hashtag-based tagging system with visual badges, autocomplete, and cross-file se
 | `src/components/editor/SlashCommand.tsx` | Slash command menu |
 | `src/components/editor/BubbleMenu.tsx` | Selection bubble menu |
 | `src/components/editor/TableToolbar.tsx` | Floating table editing toolbar |
-| `src/components/editor/AnnotationPicker.tsx` | Item annotation emoji picker |
+| ~~`src/components/editor/AnnotationPicker.tsx`~~ | ~~Item annotation emoji picker (deferred)~~ |
 | `src/components/editor/FindBar.tsx` | Find and replace bar |
 | `src/components/editor/StatusBar.tsx` | Editor status bar |
 | `src/components/editor/extensions/` | Custom Tiptap extensions |
