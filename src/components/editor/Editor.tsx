@@ -67,6 +67,7 @@ import { openSearchPanel } from "@codemirror/search";
 import { DiffReviewBanner } from "./DiffReviewBanner";
 import { BranchDiffSelector } from "./BranchDiffSelector";
 import { CommentPopover } from "./CommentPopover";
+import { DatePickerPopover } from "./DatePickerPopover";
 import { StatusBar } from "./StatusBar";
 import { FrontmatterBlock } from "./FrontmatterBlock";
 import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
@@ -1644,6 +1645,34 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           if (editor) {
             editor.chain().focus().setImage({ src, alt: alt || undefined }).run();
           }
+        }}
+      />
+      <DatePickerPopover
+        onDateChange={(oldDate, newDate, rect) => {
+          if (!editor) return;
+          // Find and replace the date text in the document
+          const oldText = `//${oldDate}`;
+          const newText = `//${newDate}`;
+          const { doc } = editor.state;
+          let replaced = false;
+          doc.descendants((node, pos) => {
+            if (replaced) return false;
+            if (!node.isText || !node.text) return;
+            const idx = node.text.indexOf(oldText);
+            if (idx !== -1) {
+              // Find the date badge closest to the clicked position
+              const from = pos + idx;
+              const to = from + oldText.length;
+              // Verify this is near the clicked rect by checking all matches
+              const view = editor.view;
+              const coords = view.coordsAtPos(from);
+              const distance = Math.abs(coords.top - rect.top);
+              if (distance < 50) {
+                editor.chain().focus().deleteRange({ from, to }).insertContentAt(from, newText).run();
+                replaced = true;
+              }
+            }
+          });
         }}
       />
     </div>

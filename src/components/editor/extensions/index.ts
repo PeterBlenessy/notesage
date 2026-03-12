@@ -35,6 +35,8 @@ export {
 export type { GhostTextCompletion } from './ghost-text';
 export { TagHighlight } from './tag-highlight';
 export { TagSuggestion } from './tag-suggestion';
+export { DateHighlight } from './date-highlight';
+export { DateSuggestion } from './date-suggestion';
 export {
   SearchHighlight,
   SearchPluginKey,

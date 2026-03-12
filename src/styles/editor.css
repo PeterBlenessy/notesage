@@ -673,6 +673,55 @@
   border-bottom-left-radius: 0;
 }
 
+/* Date badges — hide the "//" prefix visually */
+.date-badge-prefix {
+  font-size: 0;
+  letter-spacing: -1px;
+  overflow: hidden;
+  display: inline-block;
+  width: 0;
+}
+
+.date-badge {
+  background-color: oklch(93% 0.03 85);
+  border: 1px solid oklch(85% 0.05 85);
+  border-radius: 6px;
+  padding: 0.05em 0.45em 0.05em 0.45em;
+  font-size: 0.88em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.date-badge:hover {
+  background-color: oklch(88% 0.05 85);
+}
+
+.dark .date-badge {
+  background-color: oklch(30% 0.03 85);
+  border-color: oklch(38% 0.05 85);
+}
+
+.dark .date-badge:hover {
+  background-color: oklch(35% 0.05 85);
+}
+
+/* When cursor is inside a date, ProseMirror splits the decoration into
+   adjacent spans. Merge them visually so the badge looks intact. */
+.date-badge:has(+ .date-badge) {
+  border-right: 0;
+  padding-right: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.date-badge + .date-badge {
+  border-left: 0;
+  padding-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
 /* Find in document */
 .find-match {
   background: oklch(85% 0 0);
