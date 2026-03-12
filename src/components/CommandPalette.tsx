@@ -33,6 +33,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { FileEntry, TagOccurrence, MentionOccurrence, ContentMatch, ResearchSearchResult, tauriApi } from "@/lib/tauri";
+import { useTagStore } from "@/stores/tag-store";
 import { useMentionStore } from "@/stores/mention-store";
 
 const MAX_FILE_RESULTS = 50;
@@ -48,17 +49,13 @@ interface CommandPaletteProps {
   onToggleFocusMode: () => void;
   /** When true, show only file search (no actions/recent). Used by ⌘⇧F. */
   filesOnly?: boolean;
-  /** Pre-fill search input when palette opens (e.g. from tag badge click). */
-  initialSearch?: string;
-  /** Pre-filtered file paths to show (e.g. files containing a tag). */
-  tagFiles?: { path: string; name: string }[];
-  /** Individual tag occurrences with line numbers and snippets. */
-  tagOccurrences?: TagOccurrence[];
   /** Callback to open a file at a specific tag occurrence. */
   onOpenFileAtTag?: (path: string, name: string, tag: string, occurrence: number) => void;
-  /** When true, palette is in direct tag search mode (⌘3). User types a tag name
-   *  and occurrences are fetched via debounced backend call. */
+  /** When true, palette is in tag search mode (⌘3). Shows all tags,
+   *  filtered by input. Selecting one drills into occurrences. */
   tagSearchMode?: boolean;
+  /** Pre-select a tag to drill into (e.g. from badge click). */
+  tagDrilldownName?: string;
   /** When true, palette is in direct mention search mode (⌘2). Shows all mentions,
    *  filtered by input. Selecting one drills into occurrences. */
   mentionSearchMode?: boolean;
@@ -79,68 +76,63 @@ export function CommandPalette({
   onExportPdf,
   onToggleFocusMode,
   filesOnly,
-  initialSearch,
-  tagFiles,
-  tagOccurrences,
   onOpenFileAtTag,
   tagSearchMode,
+  tagDrilldownName,
   mentionSearchMode,
   mentionDrilldownName,
   researchSearchMode,
 }: CommandPaletteProps) {
   const [search, setSearch] = useState("");
 
-  // Direct tag search state (⌘#): debounced backend call as user types
-  const [liveTagOccurrences, setLiveTagOccurrences] = useState<TagOccurrence[]>([]);
-  const [liveTagQuery, setLiveTagQuery] = useState("");
-  const tagSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tag search state (⌘3): show all known tags from store, filtered by input.
+  // When a tag is selected, drill into its occurrences.
+  const [tagDrilldown, setTagDrilldown] = useState<string | null>(null);
+  const [tagOccurrences, setTagOccurrences] = useState<TagOccurrence[]>([]);
+  const allTags = useTagStore((s) => s.tags);
+  const filesByTag = useTagStore((s) => s.filesByTag);
 
-  // Pre-fill search when initialSearch prop is provided
-  useEffect(() => {
-    if (open && initialSearch) {
-      setSearch(initialSearch);
-    }
-  }, [open, initialSearch]);
+  // Filter tags by search input
+  const filteredTags = useMemo(() => {
+    if (!tagSearchMode || !open) return [];
+    if (tagDrilldown) return []; // drilled into a specific tag
+    const q = search.trim().toLowerCase();
+    return allTags.filter((t) => !q || t.toLowerCase().includes(q));
+  }, [tagSearchMode, open, search, allTags, tagDrilldown]);
 
-  // Debounced tag occurrence search for ⌘# mode
+  // Reset tag drilldown when palette closes or mode changes
   useEffect(() => {
     if (!tagSearchMode || !open) {
-      setLiveTagOccurrences([]);
-      setLiveTagQuery("");
-      return;
+      setTagDrilldown(null);
+      setTagOccurrences([]);
     }
+  }, [tagSearchMode, open]);
 
-    const q = search.trim();
-    if (!q) {
-      setLiveTagOccurrences([]);
-      setLiveTagQuery("");
-      return;
-    }
-
-    if (tagSearchTimerRef.current) clearTimeout(tagSearchTimerRef.current);
-    tagSearchTimerRef.current = setTimeout(async () => {
-      tagSearchTimerRef.current = null;
-      try {
-        const ws = useWorkspaceStore.getState();
-        const settings = useSettingsStore.getState();
-        const paths: string[] = [];
-        for (const folder of ws.explorerFolders) paths.push(folder.path);
-        for (const project of ws.projects) paths.push(project.path);
-        if (settings.notesRootPath) paths.push(settings.notesRootPath);
-        if (paths.length > 0) {
-          const occurrences = await tauriApi.findTagOccurrences(q, paths);
-          setLiveTagOccurrences(occurrences);
-          setLiveTagQuery(q);
-        }
-      } catch (error) {
-        console.error("Failed to search tags:", error);
+  const handleTagSelect = useCallback(async (tag: string) => {
+    setTagDrilldown(tag);
+    setSearch(tag);
+    try {
+      const ws = useWorkspaceStore.getState();
+      const settings = useSettingsStore.getState();
+      const paths: string[] = [];
+      for (const folder of ws.explorerFolders) paths.push(folder.path);
+      for (const project of ws.projects) paths.push(project.path);
+      if (settings.notesRootPath) paths.push(settings.notesRootPath);
+      if (paths.length > 0) {
+        const occurrences = await tauriApi.findTagOccurrences(tag, paths);
+        setTagOccurrences(occurrences);
       }
-    }, 300);
+    } catch (error) {
+      console.error("Failed to find tag occurrences:", error);
+    }
+  }, []);
 
-    return () => {
-      if (tagSearchTimerRef.current) clearTimeout(tagSearchTimerRef.current);
-    };
-  }, [tagSearchMode, open, search]);
+  // Auto-drilldown when opened from badge click with a specific tag
+  useEffect(() => {
+    if (tagSearchMode && open && tagDrilldownName) {
+      handleTagSelect(tagDrilldownName);
+    }
+  }, [tagSearchMode, open, tagDrilldownName, handleTagSelect]);
 
   // Mention search state (⌘2): show all known mentions from store, filtered by input.
   // When a mention is selected, drill into its occurrences.
@@ -405,7 +397,7 @@ export function CommandPalette({
       title="Command Palette"
       description="Search for files and actions"
       showCloseButton={false}
-      shouldFilter={tagSearchMode || mentionSearchMode || researchSearchMode || tagOccurrences || tagFiles || filesOnly ? false : undefined}
+      shouldFilter={tagSearchMode || mentionSearchMode || researchSearchMode || filesOnly ? false : undefined}
     >
       <CommandInput
         placeholder={
@@ -414,7 +406,7 @@ export function CommandPalette({
             : mentionSearchMode
             ? (mentionDrilldown ? `Filter @${mentionDrilldown} occurrences...` : "Filter mentions...")
             : tagSearchMode
-            ? "Type a tag name to search..."
+            ? (tagDrilldown ? `Filter #${tagDrilldown} occurrences...` : "Filter tags...")
             : filesOnly
               ? `Search ${allFiles.length.toLocaleString()} files by name or content...`
               : allFiles.length > 0
@@ -424,6 +416,11 @@ export function CommandPalette({
         value={search}
         onValueChange={(value) => {
           setSearch(value);
+          // Exit tag drilldown when user edits the search text
+          if (tagSearchMode && tagDrilldown && value !== tagDrilldown) {
+            setTagDrilldown(null);
+            setTagOccurrences([]);
+          }
           // Exit mention drilldown when user edits the search text
           if (mentionSearchMode && mentionDrilldown && value !== mentionDrilldown) {
             setMentionDrilldown(null);
@@ -432,7 +429,7 @@ export function CommandPalette({
         }}
       />
       <CommandList className="max-h-[360px]">
-        <CommandEmpty>{researchSearchMode ? "No research files found." : mentionSearchMode ? (mentionDrilldown ? "Loading occurrences..." : "No matching mentions.") : tagSearchMode && !search.trim() ? "Type a tag name to search." : "No results found."}</CommandEmpty>
+        <CommandEmpty>{researchSearchMode ? "No research files found." : mentionSearchMode ? (mentionDrilldown ? "Loading occurrences..." : "No matching mentions.") : tagSearchMode ? (tagDrilldown ? "Loading occurrences..." : "No matching tags.") : "No results found."}</CommandEmpty>
 
         {/* Research search results (⌘4 mode) */}
         {researchSearchMode && (researchSearching || researchResults.length > 0) && (
@@ -497,14 +494,36 @@ export function CommandPalette({
           </CommandGroup>
         )}
 
-        {/* Direct tag search results (⌘# mode) */}
-        {tagSearchMode && liveTagOccurrences.length > 0 && (
-          <CommandGroup heading={`#${liveTagQuery}`}>
-            {liveTagOccurrences.map((occ, idx) => (
+        {/* Tag search: list of known tags (⌘3 mode) */}
+        {tagSearchMode && !tagDrilldown && filteredTags.length > 0 && (
+          <CommandGroup heading="Tags">
+            {filteredTags.map((tag) => {
+              const fileCount = filesByTag[tag]?.length ?? 0;
+              return (
+                <CommandItem
+                  key={`tag-${tag}`}
+                  value={`tag ${tag}`}
+                  onSelect={() => handleTagSelect(tag)}
+                >
+                  <Hash className="h-4 w-4 shrink-0" strokeWidth={1.5} />
+                  <span className="flex-1 truncate">{tag}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {fileCount} {fileCount === 1 ? "file" : "files"}
+                  </span>
+                </CommandItem>
+              );
+            })}
+          </CommandGroup>
+        )}
+
+        {/* Tag drilldown: occurrences for a selected tag */}
+        {tagSearchMode && tagDrilldown && tagOccurrences.length > 0 && (
+          <CommandGroup heading={`#${tagDrilldown}`}>
+            {tagOccurrences.map((occ, idx) => (
               <CommandItem
-                key={`live-occ-${occ.path}-${occ.line_number}-${idx}`}
+                key={`tag-occ-${occ.path}-${occ.line_number}-${idx}`}
                 value={`tag ${occ.file_name} ${occ.path} ${occ.snippet}`}
-                onSelect={() => handleOpenAtTag(occ.path, occ.file_name, liveTagQuery, occ.occurrence_in_file)}
+                onSelect={() => handleOpenAtTag(occ.path, occ.file_name, tagDrilldown, occ.occurrence_in_file)}
                 className="flex-col items-start gap-0.5"
               >
                 <div className="flex items-center gap-2 w-full">
@@ -561,48 +580,8 @@ export function CommandPalette({
           </CommandGroup>
         )}
 
-        {/* Tag occurrence results from badge click (with line numbers and snippets) */}
-        {!tagSearchMode && tagOccurrences && tagOccurrences.length > 0 && (
-          <CommandGroup heading={`#${initialSearch ?? ""}`}>
-            {tagOccurrences.map((occ, idx) => (
-              <CommandItem
-                key={`occ-${occ.path}-${occ.line_number}-${idx}`}
-                value={`tag ${occ.file_name} ${occ.path} ${occ.snippet}`}
-                onSelect={() => handleOpenAtTag(occ.path, occ.file_name, initialSearch ?? "", occ.occurrence_in_file)}
-                className="flex-col items-start gap-0.5"
-              >
-                <div className="flex items-center gap-2 w-full">
-                  <Hash className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-                  <span className="flex-1 truncate">{occ.file_name}</span>
-                  <span className="text-xs text-muted-foreground tabular-nums">:{occ.line_number}</span>
-                </div>
-                <span className="text-xs text-muted-foreground truncate w-full pl-6">{occ.snippet}</span>
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        )}
-
-        {/* Tag file results (fallback when occurrences not available) */}
-        {!tagOccurrences && tagFiles && tagFiles.length > 0 && (
-          <CommandGroup heading={`Files with #${initialSearch ?? ""}`}>
-            {tagFiles.map((file) => (
-              <CommandItem
-                key={`tag-${file.path}`}
-                value={`tag ${file.name} ${file.path}`}
-                onSelect={() => handleOpenFile(file.path, file.name)}
-              >
-                <Hash className="h-4 w-4" strokeWidth={1.5} />
-                <span className="flex-1 truncate">{file.name}</span>
-                <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-                  {file.path}
-                </span>
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        )}
-
         {/* Recent Files */}
-        {!tagSearchMode && !mentionSearchMode && !tagOccurrences && !tagFiles && recentFiles.length > 0 && (
+        {!tagSearchMode && !mentionSearchMode && recentFiles.length > 0 && (
           <CommandGroup heading="Recent">
             {recentFiles.map((file) => (
               <CommandItem
@@ -620,7 +599,7 @@ export function CommandPalette({
           </CommandGroup>
         )}
 
-        {!tagSearchMode && !mentionSearchMode && !tagOccurrences && !tagFiles && recentFiles.length > 0 && <CommandSeparator />}
+        {!tagSearchMode && !mentionSearchMode && recentFiles.length > 0 && <CommandSeparator />}
 
         {/* Actions — hidden in filesOnly mode */}
         {!filesOnly && <CommandGroup heading="Actions">
@@ -705,7 +684,7 @@ export function CommandPalette({
         </CommandGroup>}
 
         {/* Go to File — hidden when tag results are shown (tag mode shows only tag hits) */}
-        {!tagSearchMode && !mentionSearchMode && !tagOccurrences && !tagFiles && filteredFiles.length > 0 && (
+        {!tagSearchMode && !mentionSearchMode && filteredFiles.length > 0 && (
           <>
             {!filesOnly && <CommandSeparator />}
             <CommandGroup heading="Files">

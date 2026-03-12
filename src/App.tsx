@@ -32,7 +32,7 @@ import { useEditorStylesStore } from "@/stores/editor-styles-store";
 import { useActivityStore } from "@/stores/activity-store";
 import { useCommentStore, clearPartialReply } from "@/stores/comment-store";
 import { useChatStore } from "@/stores/chat-store";
-import { tauriApi, type TagOccurrence } from "@/lib/tauri";
+import { tauriApi } from "@/lib/tauri";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { setBinaryData } from "@/lib/binary-cache";
@@ -43,7 +43,6 @@ import { log } from "@/lib/logger";
 import { stopAcpAgent } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { refreshTags, refreshMentions } from "@/hooks/useFileOperations";
-import { useTagStore } from "@/stores/tag-store";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -108,10 +107,8 @@ function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOp
 function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandPaletteFilesOnly, setCommandPaletteFilesOnly] = useState(false);
-  const [commandPaletteInitialSearch, setCommandPaletteInitialSearch] = useState("");
-  const [commandPaletteTagFiles, setCommandPaletteTagFiles] = useState<{ path: string; name: string }[]>([]);
-  const [commandPaletteTagOccurrences, setCommandPaletteTagOccurrences] = useState<TagOccurrence[]>([]);
   const [commandPaletteTagSearchMode, setCommandPaletteTagSearchMode] = useState(false);
+  const [commandPaletteTagDrilldown, setCommandPaletteTagDrilldown] = useState("");
   const [commandPaletteMentionSearchMode, setCommandPaletteMentionSearchMode] = useState(false);
   const [commandPaletteMentionDrilldown, setCommandPaletteMentionDrilldown] = useState("");
   const [commandPaletteResearchSearchMode, setCommandPaletteResearchSearchMode] = useState(false);
@@ -182,38 +179,14 @@ function App() {
   // Narrow rail always visible; wide strip toggles via isManuallyHidden
   const stripExpanded = !isManuallyHidden && !focusMode;
 
-  // Listen for tag badge clicks → open command palette with tag occurrence results
+  // Listen for tag badge clicks → open command palette with tag drilldown
   useEffect(() => {
-    const handler = async (e: Event) => {
+    const handler = (e: Event) => {
       const tag = (e as CustomEvent<{ tag: string }>).detail.tag;
-
-      // Open palette immediately with file-level results while occurrences load
-      const filePaths = useTagStore.getState().filesByTag[tag] ?? [];
-      const files = filePaths.map((p) => ({
-        path: p,
-        name: p.split("/").pop() ?? p,
-      }));
-      setCommandPaletteInitialSearch(tag);
-      setCommandPaletteTagFiles(files);
-      setCommandPaletteTagOccurrences([]);
+      setCommandPaletteTagDrilldown(tag);
+      setCommandPaletteTagSearchMode(true);
       setCommandPaletteFilesOnly(true);
       setCommandPaletteOpen(true);
-
-      // Fetch per-line occurrences asynchronously
-      try {
-        const ws = useWorkspaceStore.getState();
-        const settings = useSettingsStore.getState();
-        const paths: string[] = [];
-        for (const folder of ws.explorerFolders) paths.push(folder.path);
-        for (const project of ws.projects) paths.push(project.path);
-        if (settings.notesRootPath) paths.push(settings.notesRootPath);
-        if (paths.length > 0) {
-          const occurrences = await tauriApi.findTagOccurrences(tag, paths);
-          setCommandPaletteTagOccurrences(occurrences);
-        }
-      } catch (error) {
-        log.error('lifecycle', 'Failed to find tag occurrences', error);
-      }
     };
     window.addEventListener("notesage:open-tag-search", handler);
     return () => window.removeEventListener("notesage:open-tag-search", handler);
@@ -971,10 +944,8 @@ function App() {
             setCommandPaletteOpen(open);
             if (!open) {
               setCommandPaletteFilesOnly(false);
-              setCommandPaletteInitialSearch("");
-              setCommandPaletteTagFiles([]);
-              setCommandPaletteTagOccurrences([]);
               setCommandPaletteTagSearchMode(false);
+              setCommandPaletteTagDrilldown("");
               setCommandPaletteMentionSearchMode(false);
               setCommandPaletteMentionDrilldown("");
               setCommandPaletteResearchSearchMode(false);
@@ -987,11 +958,9 @@ function App() {
           onExportPdf={() => setExportOpen(true)}
           onToggleFocusMode={() => setFocusMode((prev) => !prev)}
           filesOnly={commandPaletteFilesOnly}
-          initialSearch={commandPaletteInitialSearch}
-          tagFiles={commandPaletteTagFiles.length > 0 ? commandPaletteTagFiles : undefined}
-          tagOccurrences={commandPaletteTagOccurrences.length > 0 ? commandPaletteTagOccurrences : undefined}
           onOpenFileAtTag={handleOpenFileAtTag}
           tagSearchMode={commandPaletteTagSearchMode}
+          tagDrilldownName={commandPaletteTagDrilldown || undefined}
           mentionSearchMode={commandPaletteMentionSearchMode}
           mentionDrilldownName={commandPaletteMentionDrilldown || undefined}
           researchSearchMode={commandPaletteResearchSearchMode}
