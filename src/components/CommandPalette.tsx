@@ -28,176 +28,105 @@ import {
   CommandShortcut,
   CommandSeparator,
 } from "@/components/ui/command";
+import { SymbolSearchResults } from "@/components/SymbolSearchResults";
 import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
-import { FileEntry, TagOccurrence, MentionOccurrence, ContentMatch, ResearchSearchResult, tauriApi } from "@/lib/tauri";
+import { FileEntry, ContentMatch, ResearchSearchResult, tauriApi } from "@/lib/tauri";
 import { useTagStore } from "@/stores/tag-store";
 import { useMentionStore } from "@/stores/mention-store";
+import type { PaletteMode, SymbolSearchConfig } from "@/lib/command-palette";
+import { deriveMode, getQuery, getPrefixForMode, getPlaceholder, getSearchPaths } from "@/lib/command-palette";
 
 const MAX_FILE_RESULTS = 50;
 
 interface CommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialMode?: PaletteMode;
+  drilldownName?: string;
+  onOpenFileAtSymbol?: (path: string, name: string, symbol: string, occurrence: number) => void;
   onNewNote: () => void;
   onNewProject: () => void;
   onOpenFolder: () => void;
   onOpenSettings: () => void;
   onExportPdf: () => void;
   onToggleFocusMode: () => void;
-  /** When true, show only file search (no actions/recent). Used by ⌘⇧F. */
-  filesOnly?: boolean;
-  /** Callback to open a file at a specific tag occurrence. */
-  onOpenFileAtTag?: (path: string, name: string, tag: string, occurrence: number) => void;
-  /** When true, palette is in tag search mode (⌘3). Shows all tags,
-   *  filtered by input. Selecting one drills into occurrences. */
-  tagSearchMode?: boolean;
-  /** Pre-select a tag to drill into (e.g. from badge click). */
-  tagDrilldownName?: string;
-  /** When true, palette is in direct mention search mode (⌘2). Shows all mentions,
-   *  filtered by input. Selecting one drills into occurrences. */
-  mentionSearchMode?: boolean;
-  /** Pre-select a mention to drill into (e.g. from badge click). */
-  mentionDrilldownName?: string;
-  /** When true, palette is in research search mode (⌘4). User types a query
-   *  and research files are fetched via debounced backend call. */
-  researchSearchMode?: boolean;
 }
 
 export function CommandPalette({
   open,
   onOpenChange,
+  initialMode = "default",
+  drilldownName,
+  onOpenFileAtSymbol,
   onNewNote,
   onNewProject,
   onOpenFolder,
   onOpenSettings,
   onExportPdf,
   onToggleFocusMode,
-  filesOnly,
-  onOpenFileAtTag,
-  tagSearchMode,
-  tagDrilldownName,
-  mentionSearchMode,
-  mentionDrilldownName,
-  researchSearchMode,
 }: CommandPaletteProps) {
-  const [search, setSearch] = useState("");
+  const [input, setInput] = useState("");
 
-  // Tag search state (⌘3): show all known tags from store, filtered by input.
-  // When a tag is selected, drill into its occurrences.
-  const [tagDrilldown, setTagDrilldown] = useState<string | null>(null);
-  const [tagOccurrences, setTagOccurrences] = useState<TagOccurrence[]>([]);
+  // Derive mode from input prefix (or external files mode)
+  const mode = deriveMode(input, initialMode === "files" ? "files" : undefined);
+  const query = getQuery(input, mode);
+
+  // Set initial input when palette opens with a mode
+  useEffect(() => {
+    if (open) {
+      const prefix = getPrefixForMode(initialMode);
+      setInput(prefix ?? "");
+    }
+  }, [open, initialMode]);
+
+  // --- Tag config ---
   const allTags = useTagStore((s) => s.tags);
   const filesByTag = useTagStore((s) => s.filesByTag);
 
-  // Filter tags by search input
-  const filteredTags = useMemo(() => {
-    if (!tagSearchMode || !open) return [];
-    if (tagDrilldown) return []; // drilled into a specific tag
-    const q = search.trim().toLowerCase();
-    return allTags.filter((t) => !q || t.toLowerCase().includes(q));
-  }, [tagSearchMode, open, search, allTags, tagDrilldown]);
+  const tagConfig: SymbolSearchConfig = useMemo(
+    () => ({
+      prefix: "#",
+      label: "Tags",
+      labelSingular: "Tag",
+      icon: Hash,
+      allItems: allTags,
+      filesByItem: filesByTag,
+      findOccurrences: async (name, paths) => tauriApi.findTagOccurrences(name, paths),
+    }),
+    [allTags, filesByTag]
+  );
 
-  // Reset tag drilldown when palette closes or mode changes
-  useEffect(() => {
-    if (!tagSearchMode || !open) {
-      setTagDrilldown(null);
-      setTagOccurrences([]);
-    }
-  }, [tagSearchMode, open]);
-
-  const handleTagSelect = useCallback(async (tag: string) => {
-    setTagDrilldown(tag);
-    setSearch(tag);
-    try {
-      const ws = useWorkspaceStore.getState();
-      const settings = useSettingsStore.getState();
-      const paths: string[] = [];
-      for (const folder of ws.explorerFolders) paths.push(folder.path);
-      for (const project of ws.projects) paths.push(project.path);
-      if (settings.notesRootPath) paths.push(settings.notesRootPath);
-      if (paths.length > 0) {
-        const occurrences = await tauriApi.findTagOccurrences(tag, paths);
-        setTagOccurrences(occurrences);
-      }
-    } catch (error) {
-      console.error("Failed to find tag occurrences:", error);
-    }
-  }, []);
-
-  // Auto-drilldown when opened from badge click with a specific tag
-  useEffect(() => {
-    if (tagSearchMode && open && tagDrilldownName) {
-      handleTagSelect(tagDrilldownName);
-    }
-  }, [tagSearchMode, open, tagDrilldownName, handleTagSelect]);
-
-  // Mention search state (⌘2): show all known mentions from store, filtered by input.
-  // When a mention is selected, drill into its occurrences.
-  const [mentionDrilldown, setMentionDrilldown] = useState<string | null>(null);
-  const [mentionOccurrences, setMentionOccurrences] = useState<MentionOccurrence[]>([]);
+  // --- Mention config ---
   const allMentions = useMentionStore((s) => s.mentions);
   const filesByMention = useMentionStore((s) => s.filesByMention);
 
-  // Filter mentions by search input
-  const filteredMentions = useMemo(() => {
-    if (!mentionSearchMode || !open) return [];
-    if (mentionDrilldown) return []; // drilled into a specific mention
-    const q = search.trim().toLowerCase();
-    return allMentions.filter((m) => !q || m.toLowerCase().includes(q));
-  }, [mentionSearchMode, open, search, allMentions, mentionDrilldown]);
+  const mentionConfig: SymbolSearchConfig = useMemo(
+    () => ({
+      prefix: "@",
+      label: "Mentions",
+      labelSingular: "Mention",
+      icon: AtSign,
+      allItems: allMentions,
+      filesByItem: filesByMention,
+      findOccurrences: async (name, paths) => tauriApi.findMentionOccurrences(name, paths),
+    }),
+    [allMentions, filesByMention]
+  );
 
-  // Reset drilldown when palette closes or mode changes
-  useEffect(() => {
-    if (!mentionSearchMode || !open) {
-      setMentionDrilldown(null);
-      setMentionOccurrences([]);
-    }
-  }, [mentionSearchMode, open]);
-
-  const handleMentionSelect = useCallback(async (mention: string) => {
-    setMentionDrilldown(mention);
-    setSearch(mention);
-    try {
-      const ws = useWorkspaceStore.getState();
-      const settings = useSettingsStore.getState();
-      const paths: string[] = [];
-      for (const folder of ws.explorerFolders) paths.push(folder.path);
-      for (const project of ws.projects) paths.push(project.path);
-      if (settings.notesRootPath) paths.push(settings.notesRootPath);
-      if (paths.length > 0) {
-        const occurrences = await tauriApi.findMentionOccurrences(mention, paths);
-        setMentionOccurrences(occurrences);
-      }
-    } catch (error) {
-      console.error("Failed to find mention occurrences:", error);
-    }
-  }, []);
-
-  // Auto-drilldown when opened from badge click with a specific mention
-  useEffect(() => {
-    if (mentionSearchMode && open && mentionDrilldownName) {
-      handleMentionSelect(mentionDrilldownName);
-    }
-  }, [mentionSearchMode, open, mentionDrilldownName, handleMentionSelect]);
-
-  // Research search state (⌘4): debounced backend call as user types
+  // --- Research search ---
   const [researchResults, setResearchResults] = useState<ResearchSearchResult[]>([]);
   const [researchSearching, setResearchSearching] = useState(false);
   const researchSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Debounced research search for ⌘4 mode
   useEffect(() => {
-    if (!researchSearchMode || !open) {
+    if (mode !== "research" || !open) {
       setResearchResults([]);
       setResearchSearching(false);
       return;
     }
-
-    // Show all research when search is empty (browse mode)
-    const q = search.trim();
 
     setResearchSearching(true);
     if (researchSearchTimerRef.current) clearTimeout(researchSearchTimerRef.current);
@@ -210,16 +139,16 @@ export function CommandPalette({
         for (const project of ws.projects) {
           dirs.push(`${project.path}/.notesage/research`);
         }
-        // Add global research directory
         try {
           const homeDir = settings.notesRootPath
             ? settings.notesRootPath
             : await tauriApi.getHomeDir().then((h) => `${h}/Notesage`);
           dirs.push(`${homeDir}/.notesage/research`);
         } catch {
-          // Home dir resolution failed, skip global research
+          // skip global research
         }
         if (dirs.length > 0) {
+          const q = query.trim();
           const results = await tauriApi.searchResearch(dirs, q || undefined, undefined, 50);
           setResearchResults(results);
         } else {
@@ -236,22 +165,21 @@ export function CommandPalette({
     return () => {
       if (researchSearchTimerRef.current) clearTimeout(researchSearchTimerRef.current);
     };
-  }, [researchSearchMode, open, search]);
+  }, [mode, open, query]);
 
-  // Content search state (filesOnly mode): debounced backend call for grep-like search
+  // --- Content search (files mode) ---
   const [contentMatches, setContentMatches] = useState<ContentMatch[]>([]);
   const [contentSearching, setContentSearching] = useState(false);
   const contentSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Debounced file content search for filesOnly mode (⌘⇧F)
   useEffect(() => {
-    if (!filesOnly || !open || tagSearchMode || mentionSearchMode) {
+    if (mode !== "files" || !open) {
       setContentMatches([]);
       setContentSearching(false);
       return;
     }
 
-    const q = search.trim();
+    const q = query.trim();
     if (q.length < 3) {
       setContentMatches([]);
       setContentSearching(false);
@@ -263,12 +191,7 @@ export function CommandPalette({
     contentSearchTimerRef.current = setTimeout(async () => {
       contentSearchTimerRef.current = null;
       try {
-        const ws = useWorkspaceStore.getState();
-        const settings = useSettingsStore.getState();
-        const searchPaths: string[] = [];
-        for (const folder of ws.explorerFolders) searchPaths.push(folder.path);
-        for (const project of ws.projects) searchPaths.push(project.path);
-        if (settings.notesRootPath) searchPaths.push(settings.notesRootPath);
+        const searchPaths = getSearchPaths();
         if (searchPaths.length > 0) {
           const matches = await tauriApi.searchFileContent(q, searchPaths);
           setContentMatches(matches);
@@ -286,37 +209,26 @@ export function CommandPalette({
     return () => {
       if (contentSearchTimerRef.current) clearTimeout(contentSearchTimerRef.current);
     };
-  }, [filesOnly, open, search, tagSearchMode, mentionSearchMode]);
+  }, [mode, open, query]);
 
+  // --- Workspace files ---
   const { recentFiles, activeTabId } = useEditorStore();
   const { explorerFolders, projects, notesTree } = useWorkspaceStore();
   const { theme, setTheme, sidebarPinned, setSidebarPinned, chatPanelOpen, setChatPanelOpen } = useSettingsStore();
   const { openFile } = useFileOperations();
 
-  // Flatten all workspace files (memoized on tree changes, not on every keystroke)
   const allFiles = useMemo(() => {
     const files: FileEntry[] = [];
-
     const flatten = (entries: FileEntry[]) => {
       for (const entry of entries) {
-        if (!entry.is_directory) {
-          files.push(entry);
-        }
-        if (entry.children) {
-          flatten(entry.children);
-        }
+        if (!entry.is_directory) files.push(entry);
+        if (entry.children) flatten(entry.children);
       }
     };
-
-    for (const folder of explorerFolders) {
-      flatten(folder.fileTree);
-    }
-    for (const project of projects) {
-      flatten(project.fileTree);
-    }
+    for (const folder of explorerFolders) flatten(folder.fileTree);
+    for (const project of projects) flatten(project.fileTree);
     flatten(notesTree);
 
-    // Deduplicate by path
     const seen = new Set<string>();
     return files.filter((f) => {
       if (seen.has(f.path)) return false;
@@ -325,18 +237,14 @@ export function CommandPalette({
     });
   }, [explorerFolders, projects, notesTree]);
 
-  // Recent file paths for exclusion from "Go to File"
   const recentPaths = useMemo(
     () => new Set(recentFiles.map((r) => r.path)),
     [recentFiles]
   );
 
-  // Only compute filtered file results when user is actually searching
-  // (or in filesOnly mode where files are always shown).
-  // This avoids rendering thousands of DOM nodes on initial palette open.
   const filteredFiles = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q && !filesOnly) return [];
+    const q = query.trim().toLowerCase();
+    if (!q && mode !== "files") return [];
     const results: FileEntry[] = [];
     for (const file of allFiles) {
       if (recentPaths.has(file.path)) continue;
@@ -346,8 +254,40 @@ export function CommandPalette({
       }
     }
     return results;
-  }, [allFiles, search, recentPaths, filesOnly]);
+  }, [allFiles, query, recentPaths, mode]);
 
+  // --- Actions list (for commands mode filtering) ---
+  interface Action {
+    value: string;
+    label: string;
+    icon: typeof FilePlus;
+    shortcut?: string;
+    action: () => void;
+    condition?: boolean;
+  }
+
+  const actions: Action[] = useMemo(() => [
+    { value: "new note", label: "New Note", icon: FilePlus, shortcut: "\u2318N", action: onNewNote },
+    { value: "new project", label: "New Project", icon: FolderDot, shortcut: "\u2318\u21E7N", action: onNewProject },
+    { value: "open folder", label: "Open Folder", icon: FolderOpen, shortcut: "\u2318O", action: onOpenFolder },
+    { value: "export pdf", label: "Export as PDF", icon: FileOutput, shortcut: "\u2318\u21E7E", action: onExportPdf, condition: !!activeTabId },
+    { value: "toggle theme dark light", label: "Toggle Theme", icon: SunMoon, shortcut: "\u2318T", action: () => setTheme(theme === "dark" ? "light" : "dark") },
+    { value: "toggle sidebar", label: "Toggle Sidebar", icon: PanelLeft, shortcut: "\u2318B", action: () => setSidebarPinned(!sidebarPinned) },
+    { value: "toggle chat ai", label: "Toggle Chat", icon: MessageSquare, shortcut: "\u2318\u21E7A", action: () => setChatPanelOpen(!chatPanelOpen) },
+    { value: "toggle focus mode distraction free", label: "Toggle Focus Mode", icon: Focus, shortcut: "\u2318.", action: onToggleFocusMode },
+    { value: "open settings preferences", label: "Settings", icon: Settings, shortcut: "\u2318,", action: onOpenSettings },
+  ], [activeTabId, theme, sidebarPinned, chatPanelOpen, onNewNote, onNewProject, onOpenFolder, onExportPdf, onOpenSettings, onToggleFocusMode, setTheme, setSidebarPinned, setChatPanelOpen]);
+
+  const filteredActions = useMemo(() => {
+    if (mode !== "commands") return actions;
+    const q = query.trim().toLowerCase();
+    return actions.filter((a) => {
+      if (a.condition === false) return false;
+      return !q || a.value.includes(q) || a.label.toLowerCase().includes(q);
+    });
+  }, [actions, mode, query]);
+
+  // --- Callbacks ---
   const runAndClose = useCallback((action: () => void) => {
     onOpenChange(false);
     action();
@@ -362,18 +302,18 @@ export function CommandPalette({
     }
   }, [onOpenChange, openFile]);
 
-  const handleOpenAtTag = useCallback(async (path: string, name: string, tag: string, occurrence: number) => {
+  const handleSymbolSelect = useCallback(async (path: string, name: string, symbol: string, occurrence: number) => {
     onOpenChange(false);
     try {
-      if (onOpenFileAtTag) {
-        onOpenFileAtTag(path, name, tag, occurrence);
+      if (onOpenFileAtSymbol) {
+        onOpenFileAtSymbol(path, name, symbol, occurrence);
       } else {
         await openFile(path, name);
       }
     } catch (error) {
-      console.error("Failed to open file at tag:", error);
+      console.error("Failed to open file at symbol:", error);
     }
-  }, [onOpenChange, onOpenFileAtTag, openFile]);
+  }, [onOpenChange, onOpenFileAtSymbol, openFile]);
 
   const handleOpenResearchFile = useCallback(async (filePath: string) => {
     onOpenChange(false);
@@ -386,9 +326,25 @@ export function CommandPalette({
   }, [onOpenChange, openFile]);
 
   const handleOpenChange = useCallback((nextOpen: boolean) => {
-    if (!nextOpen) setSearch("");
+    if (!nextOpen) setInput("");
     onOpenChange(nextOpen);
   }, [onOpenChange]);
+
+  // --- Empty state text ---
+  const emptyText = useMemo(() => {
+    switch (mode) {
+      case "research": return "No research files found.";
+      case "tags": return "No matching tags.";
+      case "mentions": return "No matching mentions.";
+      case "commands": return "No commands found.";
+      default: return "No results found.";
+    }
+  }, [mode]);
+
+  // Compute drilldown name for symbol modes — either from prop (badge click) or internal state
+  // The SymbolSearchResults component manages its own drilldown state internally,
+  // but we pass the external drilldownName prop for the initial auto-drill case.
+  const symbolDrilldownName = (mode === "tags" || mode === "mentions") ? drilldownName : undefined;
 
   return (
     <CommandDialog
@@ -397,43 +353,41 @@ export function CommandPalette({
       title="Command Palette"
       description="Search for files and actions"
       showCloseButton={false}
-      shouldFilter={tagSearchMode || mentionSearchMode || researchSearchMode || filesOnly ? false : undefined}
+      shouldFilter={mode === "default" ? undefined : false}
     >
       <CommandInput
-        placeholder={
-          researchSearchMode
-            ? "Search research..."
-            : mentionSearchMode
-            ? (mentionDrilldown ? `Filter @${mentionDrilldown} occurrences...` : "Filter mentions...")
-            : tagSearchMode
-            ? (tagDrilldown ? `Filter #${tagDrilldown} occurrences...` : "Filter tags...")
-            : filesOnly
-              ? `Search ${allFiles.length.toLocaleString()} files by name or content...`
-              : allFiles.length > 0
-                ? `Type a command or search ${allFiles.length.toLocaleString()} files...`
-                : "Type a command or file name..."
-        }
-        value={search}
-        onValueChange={(value) => {
-          setSearch(value);
-          // Exit tag drilldown when user edits the search text
-          if (tagSearchMode && tagDrilldown && value !== tagDrilldown) {
-            setTagDrilldown(null);
-            setTagOccurrences([]);
-          }
-          // Exit mention drilldown when user edits the search text
-          if (mentionSearchMode && mentionDrilldown && value !== mentionDrilldown) {
-            setMentionDrilldown(null);
-            setMentionOccurrences([]);
-          }
-        }}
+        placeholder={getPlaceholder(mode, allFiles.length, symbolDrilldownName)}
+        value={input}
+        onValueChange={setInput}
       />
       <CommandList className="max-h-[360px]">
-        <CommandEmpty>{researchSearchMode ? "No research files found." : mentionSearchMode ? (mentionDrilldown ? "Loading occurrences..." : "No matching mentions.") : tagSearchMode ? (tagDrilldown ? "Loading occurrences..." : "No matching tags.") : "No results found."}</CommandEmpty>
+        <CommandEmpty>{emptyText}</CommandEmpty>
 
-        {/* Research search results (⌘4 mode) */}
-        {researchSearchMode && (researchSearching || researchResults.length > 0) && (
-          <CommandGroup heading={search.trim() ? `Research: "${search.trim()}"` : "All Research"}>
+        {/* Tags mode */}
+        {mode === "tags" && (
+          <SymbolSearchResults
+            config={tagConfig}
+            query={query}
+            open={open}
+            drilldownName={drilldownName}
+            onSelect={handleSymbolSelect}
+          />
+        )}
+
+        {/* Mentions mode */}
+        {mode === "mentions" && (
+          <SymbolSearchResults
+            config={mentionConfig}
+            query={query}
+            open={open}
+            drilldownName={drilldownName}
+            onSelect={handleSymbolSelect}
+          />
+        )}
+
+        {/* Research mode */}
+        {mode === "research" && (researchSearching || researchResults.length > 0) && (
+          <CommandGroup heading={query.trim() ? `Research: "${query.trim()}"` : "All Research"}>
             {researchSearching && (
               <div className="flex items-center justify-center py-3">
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -444,7 +398,7 @@ export function CommandPalette({
               try {
                 domain = new URL(result.source_url).hostname;
               } catch {
-                // invalid URL, skip domain display
+                // invalid URL
               }
               const wordCountStr = result.word_count > 0
                 ? `${result.word_count.toLocaleString()} words`
@@ -494,94 +448,29 @@ export function CommandPalette({
           </CommandGroup>
         )}
 
-        {/* Tag search: list of known tags (⌘3 mode) */}
-        {tagSearchMode && !tagDrilldown && filteredTags.length > 0 && (
-          <CommandGroup heading="Tags">
-            {filteredTags.map((tag) => {
-              const fileCount = filesByTag[tag]?.length ?? 0;
+        {/* Commands mode */}
+        {mode === "commands" && (
+          <CommandGroup heading="Commands">
+            {filteredActions.map((action) => {
+              if (action.condition === false) return null;
+              const Icon = action.icon;
               return (
                 <CommandItem
-                  key={`tag-${tag}`}
-                  value={`tag ${tag}`}
-                  onSelect={() => handleTagSelect(tag)}
+                  key={action.value}
+                  value={action.value}
+                  onSelect={() => runAndClose(action.action)}
                 >
-                  <Hash className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-                  <span className="flex-1 truncate">{tag}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {fileCount} {fileCount === 1 ? "file" : "files"}
-                  </span>
+                  <Icon className="h-4 w-4" strokeWidth={1.5} />
+                  <span>{action.label}</span>
+                  {action.shortcut && <CommandShortcut>{action.shortcut}</CommandShortcut>}
                 </CommandItem>
               );
             })}
           </CommandGroup>
         )}
 
-        {/* Tag drilldown: occurrences for a selected tag */}
-        {tagSearchMode && tagDrilldown && tagOccurrences.length > 0 && (
-          <CommandGroup heading={`#${tagDrilldown}`}>
-            {tagOccurrences.map((occ, idx) => (
-              <CommandItem
-                key={`tag-occ-${occ.path}-${occ.line_number}-${idx}`}
-                value={`tag ${occ.file_name} ${occ.path} ${occ.snippet}`}
-                onSelect={() => handleOpenAtTag(occ.path, occ.file_name, tagDrilldown, occ.occurrence_in_file)}
-                className="flex-col items-start gap-0.5"
-              >
-                <div className="flex items-center gap-2 w-full">
-                  <Hash className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-                  <span className="flex-1 truncate">{occ.file_name}</span>
-                  <span className="text-xs text-muted-foreground tabular-nums">:{occ.line_number}</span>
-                </div>
-                <span className="text-xs text-muted-foreground truncate w-full pl-6">{occ.snippet}</span>
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        )}
-
-        {/* Mention search: list of known mentions (⌘2 mode) */}
-        {mentionSearchMode && !mentionDrilldown && filteredMentions.length > 0 && (
-          <CommandGroup heading="Mentions">
-            {filteredMentions.map((mention) => {
-              const fileCount = filesByMention[mention]?.length ?? 0;
-              return (
-                <CommandItem
-                  key={`mention-${mention}`}
-                  value={`mention ${mention}`}
-                  onSelect={() => handleMentionSelect(mention)}
-                >
-                  <AtSign className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-                  <span className="flex-1 truncate">{mention}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {fileCount} {fileCount === 1 ? "file" : "files"}
-                  </span>
-                </CommandItem>
-              );
-            })}
-          </CommandGroup>
-        )}
-
-        {/* Mention drilldown: occurrences for a selected mention */}
-        {mentionSearchMode && mentionDrilldown && mentionOccurrences.length > 0 && (
-          <CommandGroup heading={`@${mentionDrilldown}`}>
-            {mentionOccurrences.map((occ, idx) => (
-              <CommandItem
-                key={`mention-occ-${occ.path}-${occ.line_number}-${idx}`}
-                value={`mention ${occ.file_name} ${occ.path} ${occ.snippet}`}
-                onSelect={() => handleOpenFile(occ.path, occ.file_name)}
-                className="flex-col items-start gap-0.5"
-              >
-                <div className="flex items-center gap-2 w-full">
-                  <AtSign className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-                  <span className="flex-1 truncate">{occ.file_name}</span>
-                  <span className="text-xs text-muted-foreground tabular-nums">:{occ.line_number}</span>
-                </div>
-                <span className="text-xs text-muted-foreground truncate w-full pl-6">{occ.snippet}</span>
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        )}
-
-        {/* Recent Files */}
-        {!tagSearchMode && !mentionSearchMode && recentFiles.length > 0 && (
+        {/* Default mode: Recent files */}
+        {mode === "default" && recentFiles.length > 0 && (
           <CommandGroup heading="Recent">
             {recentFiles.map((file) => (
               <CommandItem
@@ -599,94 +488,33 @@ export function CommandPalette({
           </CommandGroup>
         )}
 
-        {!tagSearchMode && !mentionSearchMode && recentFiles.length > 0 && <CommandSeparator />}
+        {mode === "default" && recentFiles.length > 0 && <CommandSeparator />}
 
-        {/* Actions — hidden in filesOnly mode */}
-        {!filesOnly && <CommandGroup heading="Actions">
-          <CommandItem
-            value="new note"
-            onSelect={() => runAndClose(onNewNote)}
-          >
-            <FilePlus className="h-4 w-4" strokeWidth={1.5} />
-            <span>New Note</span>
-            <CommandShortcut>&#8984;N</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            value="new project"
-            onSelect={() => runAndClose(onNewProject)}
-          >
-            <FolderDot className="h-4 w-4" strokeWidth={1.5} />
-            <span>New Project</span>
-            <CommandShortcut>&#8984;&#8679;N</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            value="open folder"
-            onSelect={() => runAndClose(onOpenFolder)}
-          >
-            <FolderOpen className="h-4 w-4" strokeWidth={1.5} />
-            <span>Open Folder</span>
-            <CommandShortcut>&#8984;O</CommandShortcut>
-          </CommandItem>
-          {activeTabId && (
-            <CommandItem
-              value="export pdf"
-              onSelect={() => runAndClose(onExportPdf)}
-            >
-              <FileOutput className="h-4 w-4" strokeWidth={1.5} />
-              <span>Export as PDF</span>
-              <CommandShortcut>&#8984;&#8679;E</CommandShortcut>
-            </CommandItem>
-          )}
-          <CommandItem
-            value="toggle theme dark light"
-            onSelect={() =>
-              runAndClose(() => setTheme(theme === "dark" ? "light" : "dark"))
-            }
-          >
-            <SunMoon className="h-4 w-4" strokeWidth={1.5} />
-            <span>Toggle Theme</span>
-            <CommandShortcut>&#8984;T</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            value="toggle sidebar"
-            onSelect={() => runAndClose(() => setSidebarPinned(!sidebarPinned))}
-          >
-            <PanelLeft className="h-4 w-4" strokeWidth={1.5} />
-            <span>Toggle Sidebar</span>
-            <CommandShortcut>&#8984;B</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            value="toggle chat ai"
-            onSelect={() =>
-              runAndClose(() => setChatPanelOpen(!chatPanelOpen))
-            }
-          >
-            <MessageSquare className="h-4 w-4" strokeWidth={1.5} />
-            <span>Toggle Chat</span>
-            <CommandShortcut>&#8984;&#8679;A</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            value="toggle focus mode distraction free"
-            onSelect={() => runAndClose(onToggleFocusMode)}
-          >
-            <Focus className="h-4 w-4" strokeWidth={1.5} />
-            <span>Toggle Focus Mode</span>
-            <CommandShortcut>&#8984;.</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            value="open settings preferences"
-            onSelect={() => runAndClose(onOpenSettings)}
-          >
-            <Settings className="h-4 w-4" strokeWidth={1.5} />
-            <span>Settings</span>
-            <CommandShortcut>&#8984;,</CommandShortcut>
-          </CommandItem>
-        </CommandGroup>}
+        {/* Default mode: Actions */}
+        {mode === "default" && (
+          <CommandGroup heading="Actions">
+            {actions.map((action) => {
+              if (action.condition === false) return null;
+              const Icon = action.icon;
+              return (
+                <CommandItem
+                  key={action.value}
+                  value={action.value}
+                  onSelect={() => runAndClose(action.action)}
+                >
+                  <Icon className="h-4 w-4" strokeWidth={1.5} />
+                  <span>{action.label}</span>
+                  {action.shortcut && <CommandShortcut>{action.shortcut}</CommandShortcut>}
+                </CommandItem>
+              );
+            })}
+          </CommandGroup>
+        )}
 
-        {/* Go to File — hidden when tag results are shown (tag mode shows only tag hits) */}
-        {!tagSearchMode && !mentionSearchMode && filteredFiles.length > 0 && (
+        {/* Default + Files mode: File results */}
+        {(mode === "default" || mode === "files") && filteredFiles.length > 0 && (
           <>
-            {!filesOnly && <CommandSeparator />}
+            {mode === "default" && <CommandSeparator />}
             <CommandGroup heading="Files">
               {filteredFiles.map((file) => (
                 <CommandItem
@@ -705,8 +533,8 @@ export function CommandPalette({
           </>
         )}
 
-        {/* Content Matches — grep-like results in filesOnly mode */}
-        {filesOnly && !tagSearchMode && !mentionSearchMode && (contentSearching || contentMatches.length > 0) && (
+        {/* Files mode: Content matches */}
+        {mode === "files" && (contentSearching || contentMatches.length > 0) && (
           <>
             <CommandSeparator />
             <CommandGroup heading={
@@ -737,21 +565,44 @@ export function CommandPalette({
             </CommandGroup>
           </>
         )}
-
       </CommandList>
 
       {/* Footer hints */}
       <div className="flex items-center justify-between px-3 h-8 border-t border-border bg-muted text-muted-foreground text-xs">
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1">
-            <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">&#8593;&#8595;</kbd> navigate
-          </span>
-          <span className="flex items-center gap-1">
             <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">&#8629;</kbd> select
           </span>
           <span className="flex items-center gap-1">
             <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">esc</kbd> close
           </span>
+        </div>
+        <div className="flex items-center gap-3">
+          {mode === "default" ? (
+            <>
+              <span className="flex items-center gap-1">
+                <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">#</kbd>
+                <span>tags</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">@</kbd>
+                <span>mentions</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">&gt;</kbd>
+                <span>commands</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">?</kbd>
+                <span>research</span>
+              </span>
+            </>
+          ) : mode !== "files" ? (
+            <span className="flex items-center gap-1">
+              <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">&#9003;</kbd>
+              <span>back to search</span>
+            </span>
+          ) : null}
         </div>
       </div>
     </CommandDialog>

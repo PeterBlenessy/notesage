@@ -1,15 +1,12 @@
 import { useEffect } from "react";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import type { PaletteMode } from "@/lib/command-palette";
 
 interface KeyboardShortcutCallbacks {
-  onCommandPaletteOpen: () => void;
-  onFileSearchOpen: () => void;
+  onPaletteOpen: (mode: PaletteMode) => void;
   onFindOpen: () => void;
   onFindReplaceOpen: () => void;
-  onTagSearchOpen: () => void;
-  onMentionSearchOpen: () => void;
-  onResearchSearchOpen: () => void;
   onToggleFocusMode: () => void;
   onExitFocusMode: () => void;
   onOutlineOpen: () => void;
@@ -67,7 +64,7 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
           }
         }
         e.preventDefault();
-        callbacks.onCommandPaletteOpen();
+        callbacks.onPaletteOpen("default");
         return;
       }
 
@@ -81,7 +78,7 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       // Cmd+Shift+F — project file search
       if (isMod && e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
-        callbacks.onFileSearchOpen();
+        callbacks.onPaletteOpen("files");
         return;
       }
 
@@ -95,21 +92,21 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       // Cmd+2 — mention search
       if (isMod && !e.shiftKey && e.key === "2") {
         e.preventDefault();
-        callbacks.onMentionSearchOpen();
+        callbacks.onPaletteOpen("mentions");
         return;
       }
 
       // Cmd+3 — tag search
       if (isMod && !e.shiftKey && e.key === "3") {
         e.preventDefault();
-        callbacks.onTagSearchOpen();
+        callbacks.onPaletteOpen("tags");
         return;
       }
 
       // Cmd+4 — research search
       if (isMod && !e.shiftKey && e.key === "4") {
         e.preventDefault();
-        callbacks.onResearchSearchOpen();
+        callbacks.onPaletteOpen("research");
         return;
       }
 

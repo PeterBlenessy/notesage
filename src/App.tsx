@@ -40,6 +40,7 @@ import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { migrateV1AISettings } from "@/lib/ai/migration";
 import { scanICloudForProjects } from "@/lib/scan-icloud-projects";
 import { log } from "@/lib/logger";
+import type { PaletteMode } from "@/lib/command-palette";
 import { stopAcpAgent } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { refreshTags, refreshMentions } from "@/hooks/useFileOperations";
@@ -106,12 +107,8 @@ function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOp
 
 function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const [commandPaletteFilesOnly, setCommandPaletteFilesOnly] = useState(false);
-  const [commandPaletteTagSearchMode, setCommandPaletteTagSearchMode] = useState(false);
-  const [commandPaletteTagDrilldown, setCommandPaletteTagDrilldown] = useState("");
-  const [commandPaletteMentionSearchMode, setCommandPaletteMentionSearchMode] = useState(false);
-  const [commandPaletteMentionDrilldown, setCommandPaletteMentionDrilldown] = useState("");
-  const [commandPaletteResearchSearchMode, setCommandPaletteResearchSearchMode] = useState(false);
+  const [commandPaletteInitialMode, setCommandPaletteInitialMode] = useState<PaletteMode>("default");
+  const [commandPaletteDrilldown, setCommandPaletteDrilldown] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab | undefined>(undefined);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
@@ -183,9 +180,8 @@ function App() {
   useEffect(() => {
     const handler = (e: Event) => {
       const tag = (e as CustomEvent<{ tag: string }>).detail.tag;
-      setCommandPaletteTagDrilldown(tag);
-      setCommandPaletteTagSearchMode(true);
-      setCommandPaletteFilesOnly(true);
+      setCommandPaletteDrilldown(tag);
+      setCommandPaletteInitialMode("tags");
       setCommandPaletteOpen(true);
     };
     window.addEventListener("notesage:open-tag-search", handler);
@@ -194,12 +190,10 @@ function App() {
 
   // Listen for mention badge clicks → open command palette with mention occurrence results
   useEffect(() => {
-    const handler = async (e: Event) => {
+    const handler = (e: Event) => {
       const mention = (e as CustomEvent<{ mention: string }>).detail.mention;
-
-      setCommandPaletteMentionDrilldown(mention);
-      setCommandPaletteMentionSearchMode(true);
-      setCommandPaletteFilesOnly(true);
+      setCommandPaletteDrilldown(mention);
+      setCommandPaletteInitialMode("mentions");
       setCommandPaletteOpen(true);
     };
     window.addEventListener("notesage:open-mention-search", handler);
@@ -762,32 +756,18 @@ function App() {
     }
   }, [focusMode]);
 
+  const openPalette = useCallback((mode: PaletteMode = "default") => {
+    setCommandPaletteInitialMode(mode);
+    setCommandPaletteOpen(true);
+  }, []);
+
   useKeyboardShortcuts({
-    onCommandPaletteOpen: () => setCommandPaletteOpen(true),
-    onFileSearchOpen: () => {
-      setCommandPaletteFilesOnly(true);
-      setCommandPaletteOpen(true);
-    },
+    onPaletteOpen: openPalette,
     onFindOpen: () => {
       window.dispatchEvent(new CustomEvent("notesage:find-open"));
     },
     onFindReplaceOpen: () => {
       window.dispatchEvent(new CustomEvent("notesage:find-replace-open"));
-    },
-    onTagSearchOpen: () => {
-      setCommandPaletteTagSearchMode(true);
-      setCommandPaletteFilesOnly(true);
-      setCommandPaletteOpen(true);
-    },
-    onMentionSearchOpen: () => {
-      setCommandPaletteMentionSearchMode(true);
-      setCommandPaletteFilesOnly(true);
-      setCommandPaletteOpen(true);
-    },
-    onResearchSearchOpen: () => {
-      setCommandPaletteResearchSearchMode(true);
-      setCommandPaletteFilesOnly(true);
-      setCommandPaletteOpen(true);
     },
     onToggleFocusMode: () => setFocusMode((prev) => !prev),
     onExitFocusMode: () => setFocusMode(false),
@@ -943,27 +923,19 @@ function App() {
           onOpenChange={(open) => {
             setCommandPaletteOpen(open);
             if (!open) {
-              setCommandPaletteFilesOnly(false);
-              setCommandPaletteTagSearchMode(false);
-              setCommandPaletteTagDrilldown("");
-              setCommandPaletteMentionSearchMode(false);
-              setCommandPaletteMentionDrilldown("");
-              setCommandPaletteResearchSearchMode(false);
+              setCommandPaletteInitialMode("default");
+              setCommandPaletteDrilldown("");
             }
           }}
+          initialMode={commandPaletteInitialMode}
+          drilldownName={commandPaletteDrilldown || undefined}
+          onOpenFileAtSymbol={handleOpenFileAtTag}
           onNewNote={() => handleNewNote()}
           onNewProject={handleNewProject}
           onOpenFolder={handleOpenFolder}
           onOpenSettings={() => setSettingsOpen(true)}
           onExportPdf={() => setExportOpen(true)}
           onToggleFocusMode={() => setFocusMode((prev) => !prev)}
-          filesOnly={commandPaletteFilesOnly}
-          onOpenFileAtTag={handleOpenFileAtTag}
-          tagSearchMode={commandPaletteTagSearchMode}
-          tagDrilldownName={commandPaletteTagDrilldown || undefined}
-          mentionSearchMode={commandPaletteMentionSearchMode}
-          mentionDrilldownName={commandPaletteMentionDrilldown || undefined}
-          researchSearchMode={commandPaletteResearchSearchMode}
         />
         <NewNoteDialog
           open={newNoteOpen}
