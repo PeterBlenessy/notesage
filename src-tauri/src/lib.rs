@@ -191,6 +191,8 @@ pub fn run() {
             fetch_hf_metadata,
             parse_gguf_metadata,
             get_runtime_model_metadata,
+            // Actions dashboard
+            scan_actions,
         ])
         .setup(|app| {
             log::info!(target: "notesage::lifecycle", "Notesage starting up (version {})", app.package_info().version);

@@ -11,6 +11,8 @@ import { NewNoteDialog } from "@/components/NewNoteDialog";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { KeyboardShortcutsDialog } from "@/components/KeyboardShortcutsDialog";
+import { ActionsDialog } from "@/components/actions/ActionsDialog";
+import { useActionScanner } from "@/hooks/useActionScanner";
 import { TitleBar } from "@/components/TitleBar";
 import { SidebarPanel } from "@/components/SidebarPanel";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
@@ -93,14 +95,15 @@ interface EditorAreaProps {
   updateVersion?: string | null;
   onUpdateClick?: () => void;
   onShortcutsOpen?: () => void;
+  onOpenActions?: () => void;
 }
 
 // Editor area with document-style presentation
-function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick, onShortcutsOpen }: EditorAreaProps) {
+function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick, onShortcutsOpen, onOpenActions }: EditorAreaProps) {
   return (
     <div className="flex flex-col h-full overflow-hidden bg-muted">
       {!focusMode && <TabBar />}
-      <Editor onNewNote={onNewNote} onNewProject={onNewProject} onOpenFolder={onOpenFolder} onOpenProject={onOpenProject} onOpenFile={onOpenFile} exportOpen={exportOpen} onExportOpenChange={onExportOpenChange} focusMode={focusMode} outlineOpen={outlineOpen} onOutlineOpenChange={onOutlineOpenChange} updateAvailable={updateAvailable} updateVersion={updateVersion} onUpdateClick={onUpdateClick} onShortcutsOpen={onShortcutsOpen} />
+      <Editor onNewNote={onNewNote} onNewProject={onNewProject} onOpenFolder={onOpenFolder} onOpenProject={onOpenProject} onOpenFile={onOpenFile} exportOpen={exportOpen} onExportOpenChange={onExportOpenChange} focusMode={focusMode} outlineOpen={outlineOpen} onOutlineOpenChange={onOutlineOpenChange} updateAvailable={updateAvailable} updateVersion={updateVersion} onUpdateClick={onUpdateClick} onShortcutsOpen={onShortcutsOpen} onOpenActions={onOpenActions} />
     </div>
   );
 }
@@ -122,6 +125,7 @@ function App() {
   const [focusHintVisible, setFocusHintVisible] = useState(false);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [actionsDialogOpen, setActionsDialogOpen] = useState(false);
 
   const { chatPanelOpen, setChatPanelOpen } = useSettingsStore();
   const { state: updateState, checkForUpdate, downloadAndInstall, restartNow, dismiss: dismissUpdate } = useAutoUpdate();
@@ -134,6 +138,7 @@ function App() {
   useSkillDiscovery();
   useMcpDiscovery();
   useLocalAI();
+  useActionScanner();
 
   // Activity strip — cancel handler and navigation
   const { cancelTask } = useAgentTaskOperations();
@@ -540,7 +545,7 @@ function App() {
     }
   }, [addProject, addExplorerFolder]);
 
-  const { openFile, openFileAtTag } = useFileOperations();
+  const { openFile, openFileAtTag, openFileAtText } = useFileOperations();
 
   // Handle file-open events from macOS file association (double-click .md in Finder)
   useEffect(() => {
@@ -785,6 +790,7 @@ function App() {
     onToggleRecording: () => {
       window.dispatchEvent(new CustomEvent("notesage:toggle-recording"));
     },
+    onOpenActions: () => setActionsDialogOpen(true),
     focusMode,
   });
 
@@ -841,6 +847,7 @@ function App() {
                   updateVersion={updateState.updateInfo?.version ?? null}
                   onUpdateClick={() => setUpdateDialogOpen(true)}
                   onShortcutsOpen={() => setShortcutsOpen(true)}
+                  onOpenActions={() => setActionsDialogOpen(true)}
                 />
               </ResizablePanel>
 
@@ -936,6 +943,7 @@ function App() {
           onOpenSettings={() => setSettingsOpen(true)}
           onExportPdf={() => setExportOpen(true)}
           onToggleFocusMode={() => setFocusMode((prev) => !prev)}
+          onOpenActions={() => setActionsDialogOpen(true)}
         />
         <NewNoteDialog
           open={newNoteOpen}
@@ -961,6 +969,23 @@ function App() {
         <KeyboardShortcutsDialog
           open={shortcutsOpen}
           onOpenChange={setShortcutsOpen}
+        />
+        <ActionsDialog
+          open={actionsDialogOpen}
+          onOpenChange={setActionsDialogOpen}
+          onActionClick={(action) => {
+            if (action.file_path) {
+              const fileName = action.file_path.split('/').pop() ?? action.file_path;
+              if (action.text) {
+                openFileAtText(action.file_path, fileName, action.text).catch((error) => {
+                  log.error('lifecycle', 'Failed to open file', error);
+                  toast.error(`Failed to open file: ${error}`);
+                });
+              } else {
+                handleOpenFile(action.file_path, fileName);
+              }
+            }
+          }}
         />
       </div>
       <Toaster position="bottom-right" />

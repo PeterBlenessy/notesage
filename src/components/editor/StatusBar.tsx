@@ -1,5 +1,6 @@
 import type { Editor } from "@tiptap/core";
-import { ArrowUpCircle, Command, Cpu, Download, GitBranch, Loader2, ScrollText, X } from "lucide-react";
+import { ArrowUpCircle, CheckSquare, Command, Cpu, Download, GitBranch, Loader2, ScrollText, X } from "lucide-react";
+import { useActionStore } from "@/stores/action-store";
 
 /** Inline completion icon — italic T with horizontal sparkle trail ✦··· representing text being completed. */
 function InlineCompletionIcon({ className }: { className?: string }) {
@@ -78,6 +79,34 @@ function FimContextSlider() {
         className="w-full"
       />
     </div>
+  );
+}
+
+function ActionsIndicator({ onOpenActions }: { onOpenActions?: () => void }) {
+  const openCount = useActionStore((s) => s.getOpenCount());
+
+  if (openCount === 0 || !onOpenActions) return null;
+
+  return (
+    <>
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={onOpenActions}
+              className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+            >
+              <CheckSquare className="h-3 w-3 shrink-0" strokeWidth={1.5} />
+              <span>{openCount} {openCount === 1 ? 'action' : 'actions'}</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">
+            Open actions dashboard ({'\u2318'}5)
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      <span className="w-px h-2.5 bg-border" />
+    </>
   );
 }
 
@@ -304,6 +333,7 @@ interface StatusBarProps {
   updateVersion?: string | null;
   onUpdateClick?: () => void;
   onShortcutsOpen?: () => void;
+  onOpenActions?: () => void;
 }
 
 export function StatusBar({
@@ -338,6 +368,7 @@ export function StatusBar({
   updateAvailable = false,
   updateVersion = null,
   onUpdateClick,
+  onOpenActions,
   onShortcutsOpen,
 }: StatusBarProps) {
   if (!editor) {
@@ -346,6 +377,7 @@ export function StatusBar({
         <div className="flex items-center gap-2 min-w-0">
           <ModelDownloadIndicator />
           <LocalAIIndicator />
+          <ActionsIndicator onOpenActions={onOpenActions} />
         </div>
         <span className="flex-1" />
         <div className="flex items-center gap-3">
@@ -420,6 +452,7 @@ export function StatusBar({
         )}
         <ModelDownloadIndicator />
         <LocalAIIndicator />
+        <ActionsIndicator onOpenActions={onOpenActions} />
       </div>
 
       {/* Spacer */}

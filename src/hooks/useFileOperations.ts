@@ -247,6 +247,18 @@ export function useFileOperations() {
     [openFile]
   );
 
+  const openFileAtText = useCallback(
+    async (filePath: string, fileName: string, searchText: string) => {
+      await openFile(filePath, fileName);
+      const { tabs, activeTabId } = useEditorStore.getState();
+      const tab = tabs.find((t) => t.id === activeTabId && t.filePath === filePath);
+      if (tab) {
+        useEditorStore.getState().setScrollToText(tab.id, searchText);
+      }
+    },
+    [openFile]
+  );
+
   const saveFile = useCallback(
     async (filePath: string, content: string, tabId: string) => {
       try {
@@ -346,6 +358,7 @@ export function useFileOperations() {
   return {
     openFile,
     openFileAtTag,
+    openFileAtText,
     saveFile,
     createFile,
     createFolder,

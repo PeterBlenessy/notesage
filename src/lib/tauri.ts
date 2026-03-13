@@ -134,6 +134,20 @@ export interface ResearchSearchResult {
   word_count: number;
 }
 
+export interface ActionItem {
+  id: string;
+  source_type: string;
+  status: string;
+  text: string;
+  file_path: string;
+  line_number?: number;
+  project_name?: string;
+  project_root?: string;
+  created_at?: string;
+  updated_at?: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface AcpSpawnResult {
   instance_id: string;
   agent_name: string | null;
@@ -576,6 +590,17 @@ export const tauriApi = {
       query: query ?? null,
       tag: tag ?? null,
       limit: limit ?? null,
+    });
+  },
+
+  // Action scanning
+  async scanActions(
+    paths: string[],
+    since?: number,
+  ): Promise<ActionItem[]> {
+    return await invoke<ActionItem[]>("scan_actions", {
+      paths,
+      since: since ?? null,
     });
   },
 

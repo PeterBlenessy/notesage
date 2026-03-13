@@ -40,18 +40,23 @@ The concept of "hooks" — deterministic pre/post processing triggered by specif
 ## User Stories
 
 **Auto-summarizer:**
+
 > As a user who writes meeting notes, I want a summary automatically generated in the frontmatter every time I save, so my notes always have an up-to-date summary without me having to ask the AI.
 
 **Tag maintainer:**
+
 > As a researcher with hundreds of notes, I want tags automatically suggested when I save a new document, so I don't forget to categorize my work.
 
 **Format enforcer:**
+
 > As a team lead sharing a project with colleagues, I want all markdown files to follow a consistent format (heading structure, citation style) when saved, so the project stays organized.
 
 **Export preparer:**
+
 > As someone who exports to PDF regularly, I want a hook that checks for broken links and missing images before export, so I catch problems early.
 
 **Writing coach:**
+
 > As a non-native English speaker, I want the AI to check my grammar and suggest improvements after I save, presented as inline comments I can accept or dismiss.
 
 ---
@@ -133,7 +138,7 @@ action:
 ### Event Types
 
 | Event | When | Can Cancel | Content Available |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `before-save` | Before file is written to disk | Yes (cancel save) | Current editor content |
 | `after-save` | After file is successfully written | No | Saved content |
 | `before-open` | Before file content is loaded into editor | Yes (cancel open) | File path only |
@@ -148,7 +153,7 @@ action:
 Hooks can reference document context via template variables:
 
 | Variable | Description |
-|---|---|
+| --- | --- |
 | `{{file.path}}` | Absolute file path |
 | `{{file.name}}` | File name without path |
 | `{{file.extension}}` | File extension |
@@ -192,6 +197,7 @@ Event occurs (e.g., save)
 ### Hook Action Execution
 
 **Script hooks:**
+
 ```typescript
 async function executeScriptHook(hook: HookDefinition, context: HookContext): Promise<HookResult> {
   const skill = skillStore.getSkillByName(hook.action.skill);
@@ -214,6 +220,7 @@ async function executeScriptHook(hook: HookDefinition, context: HookContext): Pr
 ```
 
 **AI hooks:**
+
 ```typescript
 async function executeAIHook(hook: HookDefinition, context: HookContext): Promise<HookResult> {
   // Build prompt with context
@@ -236,6 +243,7 @@ async function executeAIHook(hook: HookDefinition, context: HookContext): Promis
 ```
 
 **Composite hooks:**
+
 ```typescript
 async function executeCompositeHook(hook: HookDefinition, context: HookContext): Promise<HookResult> {
   let currentContext = { ...context };
@@ -351,6 +359,7 @@ When a hook runs, show a subtle toast:
 ```
 
 For `before-*` hooks that cancel, show an informative message:
+
 ```
 ┌──────────────────────────────────────┐
 │  ✕ Export cancelled by format-check  │
@@ -398,7 +407,7 @@ Accessible from Settings or command palette ("Create Hook"):
 Ship 3 templates that users can enable:
 
 | Template | Trigger | Type | What it does |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `auto-summarize` | after-save | ai | Generates/updates `summary` in frontmatter |
 | `auto-tag` | after-save | ai | Suggests tags based on content |
 | `word-count` | after-save | script | Updates `word_count` in frontmatter |
@@ -454,35 +463,57 @@ interface HookContext {
 ### Functional
 
 - [ ] Script hooks execute correctly via skill script runtime
+
 - [ ] AI hooks call the active AI connection and return processed content
+
 - [ ] Composite hooks chain steps correctly, passing context between them
+
 - [ ] `before-save` hooks can cancel the save operation
+
 - [ ] `before-export` hooks can cancel the export
+
 - [ ] `after-save` hooks with `write_back` update the document and re-save
+
 - [ ] File extension filter works correctly
+
 - [ ] Path glob filter works correctly
+
 - [ ] Frontmatter filter works correctly
+
 - [ ] Template variables are interpolated correctly
+
 - [ ] Project hooks override global hooks with same name
+
 - [ ] Hooks can be enabled/disabled in Settings
+
 - [ ] New Hook wizard creates valid YAML files
+
 - [ ] Bundled hook templates are extracted and available
+
 - [ ] Hook errors show informative toast messages
+
 - [ ] Hooks timeout after 60 seconds (configurable)
 
 ### Performance
 
-- [ ] Hook discovery adds < 100ms to startup
-- [ ] `before-save` script hooks complete in < 2 seconds (for acceptable save latency)
+- [ ] Hook discovery adds &lt; 100ms to startup
+
+- [ ] `before-save` script hooks complete in &lt; 2 seconds (for acceptable save latency)
+
 - [ ] `after-save` AI hooks run asynchronously without blocking the editor
+
 - [ ] Multiple hooks on the same event run sequentially without race conditions
 
 ### Design
 
 - [ ] Settings Hooks tab matches design system
+
 - [ ] Hook execution indicator is subtle and non-intrusive
+
 - [ ] Hook cancellation messages are clear and actionable
+
 - [ ] Wizard dialog follows the same pattern as Skill/Agent creation wizards
+
 - [ ] All UI works in light and dark mode
 
 ---
@@ -490,9 +521,11 @@ interface HookContext {
 ## Dependencies
 
 ### Rust
+
 - No new dependencies — YAML parsing via `serde_yaml` (already in use)
 
 ### Frontend
+
 - No new dependencies
 
 ---
@@ -500,6 +533,7 @@ interface HookContext {
 ## Files Created/Modified
 
 ### New Files
+
 - `src-tauri/src/commands/hooks.rs` — hook discovery and YAML parsing
 - `src/stores/hook-store.ts` — hook registry
 - `src/hooks/useHookRunner.ts` — hook execution orchestration
@@ -510,6 +544,7 @@ interface HookContext {
 - `bundled-hooks/word-count.yaml` — template
 
 ### Modified Files
+
 - `src/hooks/useFileOperations.ts` — integrate before/after save hooks
 - `src/components/ExportDialog.tsx` — integrate before/after export hooks
 - `src/components/settings/SettingsDialog.tsx` — add Hooks tab

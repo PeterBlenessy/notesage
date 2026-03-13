@@ -11,6 +11,7 @@ Notesage users accumulate hundreds of notes across multiple projects. Over time,
 Today, all AI features in Notesage are **user-initiated** — you must ask the AI to summarize, tag, or analyze. This means AI value is proportional to how often the user remembers to invoke it. For document maintenance tasks (keeping summaries current, suggesting tags, detecting action items), the AI should work in the background automatically.
 
 This PRD builds on two prerequisites:
+
 1. **Agent Hooks** — provides the event-driven trigger mechanism
 2. **Local AI Tool Calling** — enables the local model to read/write files autonomously
 
@@ -43,15 +44,19 @@ Together, they enable "document intelligence" — passive AI processing that kee
 ## User Stories
 
 **Meeting note taker:**
+
 > As someone who takes meeting notes, I want action items automatically extracted and highlighted after I save, so I never miss a follow-up.
 
 **Researcher:**
+
 > As a researcher with 50+ research notes, I want tags automatically suggested based on content, so my notes stay organized without manual effort.
 
 **Project reviewer:**
+
 > As a team lead reviewing a project's progress, I want a weekly digest of what changed across all project files, so I can stay informed without reading every update.
 
 **Note browser:**
+
 > As a user scrolling through my file tree, I want to see a summary for each document on hover, so I can find what I'm looking for faster.
 
 ---
@@ -67,6 +72,7 @@ Each feature is implemented as a **bundled hook** (see Agent Hooks PRD) with a s
 **Trigger:** `after-save` (debounced — only if content actually changed)
 
 **Behavior:**
+
 1. Read the saved document content
 2. Send to local AI with summarization prompt
 3. Extract 1-2 sentence summary
@@ -74,12 +80,14 @@ Each feature is implemented as a **bundled hook** (see Agent Hooks PRD) with a s
 5. If no frontmatter exists, create minimal frontmatter block
 
 **Prompt:**
+
 ```
 Summarize this document in 1-2 sentences. Be factual and concise.
 Output ONLY the summary text, nothing else.
 ```
 
 **Frontmatter update:**
+
 ```yaml
 ---
 summary: "Meeting notes from Q1 planning session covering roadmap priorities and resource allocation."
@@ -88,6 +96,7 @@ summary_updated: "2026-03-11T14:30:00Z"
 ```
 
 **Configuration:**
+
 ```yaml
 # .notesage/hooks/auto-summarize.yaml
 name: auto-summarize
@@ -113,6 +122,7 @@ action:
 **Trigger:** `after-save` (only for new documents or documents without tags)
 
 **Behavior:**
+
 1. Read the saved document content
 2. Send to local AI with tagging prompt
 3. Extract 3-5 relevant tags
@@ -120,6 +130,7 @@ action:
 5. Tags also added as inline `#tag` markers if user preference is set
 
 **Prompt:**
+
 ```
 Suggest 3-5 tags for this document. Tags should be lowercase, hyphenated
 (e.g., "machine-learning", "meeting-notes", "project-update").
@@ -127,6 +138,7 @@ Output ONLY the tags as a comma-separated list, nothing else.
 ```
 
 **Frontmatter update:**
+
 ```yaml
 ---
 tags: [battery-technology, solid-state, research, literature-review]
@@ -135,6 +147,7 @@ tags_suggested: [literature-review]   # Tracks which tags were AI-suggested
 ```
 
 **Merge logic:**
+
 - AI-suggested tags are appended to existing `tags` array
 - If a suggested tag already exists, skip it
 - Track AI-suggested tags in `tags_suggested` so users can review/remove
@@ -145,6 +158,7 @@ tags_suggested: [literature-review]   # Tracks which tags were AI-suggested
 **Trigger:** `after-save` (for documents matching meeting/notes patterns)
 
 **Behavior:**
+
 1. Read the saved document
 2. Send to local AI with action extraction prompt
 3. Extract action items (who, what, deadline if mentioned)
@@ -152,6 +166,7 @@ tags_suggested: [literature-review]   # Tracks which tags were AI-suggested
 5. These items appear in the Open Actions Dashboard (PRD)
 
 **Prompt:**
+
 ```
 Extract action items from this document. For each action item, provide:
 - text: The action to take
@@ -162,6 +177,7 @@ Output as JSON array. If no action items found, output [].
 ```
 
 **Sidecar file:**
+
 ```json
 {
   "document_id": "abc-123",
@@ -179,6 +195,7 @@ Output as JSON array. If no action items found, output [].
 ```
 
 **Integration with Actions Dashboard:**
+
 - Extracted actions appear alongside task lists and comments
 - Source type: `"extracted"` (distinct from `"task"` which is `- [ ]` items)
 - Click to navigate to the line in the source document
@@ -188,11 +205,13 @@ Output as JSON array. If no action items found, output [].
 **Trigger:** `after-save` (only if content differs from last saved version)
 
 **Behavior:**
+
 1. Compare current content with previous version (stored in memory or `.notesage/`)
 2. Generate a brief change description
 3. Append to `.notesage/changelog/{document-uuid}.jsonl` (JSON Lines)
 
 **Prompt:**
+
 ```
 Compare the old and new versions of this document.
 Describe what changed in one sentence. Be specific about what was added,
@@ -200,11 +219,13 @@ removed, or modified. Output ONLY the change description.
 ```
 
 **Changelog entry:**
+
 ```jsonl
 {"timestamp":"2026-03-11T14:30:00Z","summary":"Added section on solid-state battery findings with 3 new references.","word_delta":"+142"}
 ```
 
 **UI integration:**
+
 - Changelog viewable via command palette ("Document History")
 - Shows timeline of changes with AI-generated descriptions
 - Click entry to see approximate position of changes
@@ -214,6 +235,7 @@ removed, or modified. Output ONLY the change description.
 **Trigger:** Scheduled — runs daily at end of day (or on-demand via command palette)
 
 **Behavior:**
+
 1. Collect all changes across project files from the last 24 hours (or 7 days for weekly)
 2. Read change summaries from `.notesage/changelog/`
 3. Generate a project-level summary
@@ -221,6 +243,7 @@ removed, or modified. Output ONLY the change description.
 5. Optionally show as notification (System Tray PRD)
 
 **Prompt:**
+
 ```
 Here are the changes made to this project in the last [period]:
 
@@ -231,6 +254,7 @@ developments, decisions made, and pending items. Be concise and actionable.
 ```
 
 **Digest format:**
+
 ```markdown
 ---
 type: digest
@@ -400,9 +424,11 @@ To avoid overwhelming the local model, intelligence features use a queue:
 2. **Agent Hooks** (PRD) — for event-driven triggers
 
 ### Rust
+
 - No new crate dependencies
 
 ### Frontend
+
 - No new npm dependencies
 
 ---
@@ -412,35 +438,57 @@ To avoid overwhelming the local model, intelligence features use a queue:
 ### Functional
 
 - [ ] Auto-summarization generates correct summaries (spot check 10 documents)
+
 - [ ] Summaries update when document content changes
+
 - [ ] Summaries don't update when content hasn't changed (debounce)
+
 - [ ] Auto-tagging suggests relevant tags (spot check 10 documents)
+
 - [ ] Suggested tags don't duplicate existing tags
+
 - [ ] User-added tags are never removed
+
 - [ ] `tags_suggested` tracks AI-suggested tags correctly
+
 - [ ] Action item extraction finds items in meeting notes
+
 - [ ] Extracted actions appear in Actions Dashboard
+
 - [ ] Change summaries accurately describe modifications
+
 - [ ] Changelog appends correctly (doesn't lose history)
+
 - [ ] Project digest covers all changed files in the period
+
 - [ ] Processing queue prevents model overload
+
 - [ ] Features gracefully disable when local AI is not running
+
 - [ ] Each feature can be independently enabled/disabled
+
 - [ ] Frontmatter preservation: existing frontmatter fields not corrupted
 
 ### Performance
 
-- [ ] Auto-summarization completes in < 5 seconds per document
-- [ ] Auto-tagging completes in < 3 seconds per document
+- [ ] Auto-summarization completes in &lt; 5 seconds per document
+
+- [ ] Auto-tagging completes in &lt; 3 seconds per document
+
 - [ ] Processing doesn't block editor interaction
+
 - [ ] Queue processes documents sequentially without stacking
+
 - [ ] No noticeable slowdown during normal editing
 
 ### Design
 
 - [ ] Settings section matches design system
+
 - [ ] File tree tooltips with summaries are clean and readable
+
 - [ ] Document history panel follows app aesthetic
+
 - [ ] All UI works in light and dark mode
 
 ---
@@ -448,6 +496,7 @@ To avoid overwhelming the local model, intelligence features use a queue:
 ## Files Created/Modified
 
 ### New Files
+
 - `src/stores/intelligence-store.ts` — intelligence feature settings
 - `src/hooks/useDocumentIntelligence.ts` — processing queue and orchestration
 - `src/components/DocumentHistory.tsx` — changelog viewer
@@ -457,6 +506,7 @@ To avoid overwhelming the local model, intelligence features use a queue:
 - `bundled-hooks/track-changes.yaml` — bundled hook definition
 
 ### Modified Files
+
 - `src/components/settings/SettingsDialog.tsx` — add Intelligence section
 - `src/components/sidebar/FileTreeItem.tsx` — summary tooltip on hover
 - `src/stores/action-store.ts` — integrate extracted actions

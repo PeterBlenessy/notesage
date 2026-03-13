@@ -29,6 +29,8 @@ export interface Tab {
   deleted?: boolean;
   /** Session-only: scroll to a specific tag occurrence after content loads. Cleared after use. */
   scrollToTag?: ScrollToTag;
+  /** Session-only: scroll to a text match after content loads. Cleared after use. */
+  scrollToText?: string;
   /** Session-only: the markdown content at the time of the last save. Used to distinguish
    *  self-writes from external changes when the user continues typing after a save. */
   lastSavedContent?: string;
@@ -84,6 +86,8 @@ interface EditorStore {
   toggleCopilotForTab: (tabId: string) => void;
   /** Set a tag scroll target. Cleared after Editor.tsx consumes it. */
   setScrollToTag: (tabId: string, target: ScrollToTag | undefined) => void;
+  /** Set a text scroll target. Cleared after Editor.tsx consumes it. */
+  setScrollToText: (tabId: string, text: string | undefined) => void;
 }
 
 export const useEditorStore = create<EditorStore>()(
@@ -321,6 +325,14 @@ export const useEditorStore = create<EditorStore>()(
         set((state) => ({
           tabs: state.tabs.map((tab) =>
             tab.id === tabId ? { ...tab, scrollToTag: target } : tab
+          ),
+        }));
+      },
+
+      setScrollToText: (tabId: string, text: string | undefined) => {
+        set((state) => ({
+          tabs: state.tabs.map((tab) =>
+            tab.id === tabId ? { ...tab, scrollToText: text } : tab
           ),
         }));
       },

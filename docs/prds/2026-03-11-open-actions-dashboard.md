@@ -1,6 +1,6 @@
 # PRD: Open Actions & Task Tracking Dashboard
 
-**Date:** 2026-03-11 **Phase:** 12 **Status:** Draft
+**Date:** 2026-03-11 **Updated:** 2026-03-13 **Phase:** 12 **Status:** Draft
 
 ---
 
@@ -44,15 +44,19 @@ A user with 5 projects and 200 notes has no way to answer "what do I need to do 
 ## User Stories
 
 **Busy researcher:**
+
 > As a user with 5 active research projects, I want to see all my open tasks and pending agent delegations in one place, so I know what needs my attention without switching between projects.
 
 **Meeting follow-up:**
+
 > As someone who takes meeting notes with action items, I want to see all unchecked tasks from today's meetings grouped together, so I don't miss any follow-ups.
 
 **Goal tracker:**
+
 > As a user with project goals defined in frontmatter, I want to see goal progress alongside task items, so I have a complete picture of where each project stands.
 
 **Agent collaborator:**
+
 > As a user who delegates research comments to AI agents, I want to see which delegations are still pending and which have replies I haven't reviewed, so I can follow up on agent work.
 
 ---
@@ -62,7 +66,7 @@ A user with 5 projects and 200 notes has no way to answer "what do I need to do 
 ### Action Sources
 
 | Source | Detection Method | Status States |
-|---|---|---|
+| --- | --- | --- |
 | Task lists | Parse `- [ ]` / `- [x]` from markdown files | open, done |
 | Comments | Read `.notesage/comments/*.json` sidecar files | open, delegated, done, resolved |
 | Agent tasks | Read activity-store (persisted) | pending, running, completed, error |
@@ -191,55 +195,101 @@ async function toggleTaskDone(action: ActionItem) {
 
 ## UI/UX
 
-### Dashboard Panel
+### Architecture: Dialog + Landing Page + Status Bar
+
+The dashboard uses a **three-tier progressive disclosure** pattern, informed by research into how Cursor, VS Code, GitHub Copilot, Linear, and Things 3 handle similar views (see `docs/research/actions-dashboard-ui-patterns.md`):
+
+1. **Status bar indicator** (glance) — open action count in the editor status bar
+2. **Landing page** (discovery) — shown when no tabs are open
+3. **Full-screen dialog** (detail) — rich overlay accessible anytime via Cmd+5
+
+**Why a dialog, not an editor tab?** The dashboard is non-editable interactive UI (filters, checkboxes, navigation), not a document. A dialog avoids touching the editor-store tab system entirely — zero regression risk, fully decoupled. The `ActionsDashboard` component can be promoted to a virtual tab later if needed, since the component itself is the same either way.
+
+**Why not a panel?** The right sidebar panel is too narrow for a dashboard with project grouping, filters, and action detail. It also competes with the chat panel for the same slot.
+
+**Why not a separate window?** Adds multi-window state sync complexity. The system tray (future PRD) will be able to open the dialog without needing a separate window.
+
+### Status Bar Indicator
+
+Open action count displayed in the status bar left zone, alongside existing indicators (git branch, Local AI, downloads):
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ ☐ 12 actions  ⑃ main  ⬡ Running (Phi-4)  │  Rich text  1,234 words │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+- `CheckSquare` icon (lucide) + count + "actions" label
+- Muted text by default, foreground on hover
+- **Click** → opens the Actions dialog
+- Count updates in real-time as actions are scanned
+- Hidden when count is 0 (clean status bar when nothing needs attention)
+
+### Landing Page
+
+When no editor tabs are open, the content area displays the actions dashboard instead of the empty welcome screen. This provides a natural "here's what needs your attention" on app launch.
+
+- Same `ActionsDashboard` component rendered inline in the empty-state slot
+- If no actions exist, falls back to the existing welcome screen (New Note, New Project, etc.)
+- Clicking an action item opens the source file (which replaces the landing page naturally)
+
+### Actions Dialog
 
 Accessible via:
-- Keyboard shortcut: `Cmd+5`
-- Command palette: "Open Actions"
-- Activity strip icon (new icon below existing agent activity)
 
-The dashboard opens as a panel (same position as chat panel — right sidebar):
+- **Keyboard shortcut:** `Cmd+5`
+- **Command palette:** "Open Actions"
+- **Status bar click:** Click the actions count
+
+The dialog is a full-screen overlay using shadcn/ui `Dialog` with rich content:
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  Actions                              [⟳] [Filter ▾]│
-│─────────────────────────────────────────────────────│
-│                                                     │
-│  Filter: [All ▾] [Open ▾] [Search...           ]   │
-│                                                     │
-│  ── Research Project (8 open) ─────────────────── │
-│                                                     │
-│  □ Review battery technology paper            task  │
-│    notes/research-plan.md:14                        │
-│  □ Download arxiv source on solid-state       task  │
-│    notes/research-plan.md:15                        │
-│  ◉ Agent: summarize lithium findings     delegated  │
-│    notes/literature-review.md — 2 replies           │
-│  □ Update project goals                       goal  │
-│    project-goals.md:8                               │
-│                                                     │
-│  ── Meeting Notes (3 open) ────────────────────── │
-│                                                     │
-│  □ Send follow-up email to Sarah              task  │
-│    meetings/2026-03-10.md:22                        │
-│  □ Schedule design review                     task  │
-│    meetings/2026-03-10.md:23                        │
-│  💬 Comment: needs clarification              open  │
-│    meetings/2026-03-10.md                           │
-│                                                     │
-│  ── Quick Notes (1 open) ──────────────────────── │
-│                                                     │
-│  □ Buy groceries                              task  │
-│    todo.md:3                                        │
-│                                                     │
-│  ── Completed (12) ─────────────── [Show/Hide] ── │
-│                                                     │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                    [✕]  │
+│                                                                         │
+│  Actions                                                   [⟳] [Filter]│
+│                                                                         │
+│  [All ▾] [Open ▾] [Search...                                        ]  │
+│                                                                         │
+│  ── Research Project (8 open) ────────────────────────────────────────  │
+│                                                                         │
+│  □ Review battery technology paper                              task    │
+│    notes/research-plan.md:14                                            │
+│  □ Download arxiv source on solid-state                         task    │
+│    notes/research-plan.md:15                                            │
+│  ◉ Agent: summarize lithium findings                       delegated    │
+│    notes/literature-review.md — 2 replies                               │
+│  □ Update project goals                                         goal    │
+│    project-goals.md:8                                                   │
+│                                                                         │
+│  ── Meeting Notes (3 open) ───────────────────────────────────────────  │
+│                                                                         │
+│  □ Send follow-up email to Sarah                                task    │
+│    meetings/2026-03-10.md:22                                            │
+│  □ Schedule design review                                       task    │
+│    meetings/2026-03-10.md:23                                            │
+│  💬 Comment: needs clarification                                open    │
+│    meetings/2026-03-10.md                                               │
+│                                                                         │
+│  ── Quick Notes (1 open) ─────────────────────────────────────────────  │
+│                                                                         │
+│  □ Buy groceries                                                task    │
+│    todo.md:3                                                            │
+│                                                                         │
+│  ── Completed (12) ──────────────────────────────── [Show/Hide] ─────  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
+
+- Centered content with max-width for readability
+- Backdrop blur overlay (consistent with existing dialogs)
+- Escape or click outside to dismiss
+- Clicking an action item navigates to the source file and **closes the dialog**
+- Checking a checkbox toggles the task without closing the dialog
 
 ### Action Item Interactions
 
-- **Click** → Navigate to source file and scroll to line
+- **Click** → Navigate to source file and scroll to line (opens in new tab if not already open)
 - **Checkbox** → Toggle task completion (in source file)
 - **Right-click** → Context menu: Open file, Copy text, Mark done
 - **Hover** → Shows full text and file path
@@ -251,29 +301,19 @@ The dashboard opens as a panel (same position as chat panel — right sidebar):
 - **Search**: Full-text search across action text
 - **Project filter**: All projects or specific project
 
-### Badge in Activity Strip
-
-Small badge showing open action count:
-
-```
-┌───┐
-│ ☐ │  ← Actions icon
-│ 12│  ← Badge with open count
-└───┘
-```
-
 ### Empty State
 
 When no actions found:
+
 ```
-┌─────────────────────────────────────────────────────┐
-│                                                     │
-│           No open actions                           │
-│                                                     │
-│   Create tasks with "- [ ] Task text" in any        │
-│   markdown file, or delegate comments to agents.    │
-│                                                     │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│              No open actions                                            │
+│                                                                         │
+│    Create tasks with "- [ ] Task text" in any                           │
+│    markdown file, or delegate comments to agents.                       │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -332,51 +372,101 @@ Cache invalidated when file modification time changes (detected by incremental s
 ### Functional
 
 - [ ] Task lists (`- [ ]` / `- [x]`) are correctly parsed from all markdown files
+
 - [ ] Nested task lists maintain correct hierarchy
+
 - [ ] Open comments from `.notesage/comments/` appear as actions
+
 - [ ] Delegated comments show correct status (delegated, done with reply count)
+
 - [ ] Agent tasks from activity-store appear with correct status
+
 - [ ] Goal items from frontmatter appear as actions
+
 - [ ] Clicking an action navigates to the source file and line
+
 - [ ] Checking off a task in the dashboard updates the source markdown file
+
 - [ ] If the task's file is open in editor, the editor content refreshes
+
 - [ ] Project grouping is correct (items under correct project)
+
 - [ ] Non-project files (explorer folders, Quick Notes) grouped separately
+
 - [ ] Filter by source type works
+
 - [ ] Filter by status works
+
 - [ ] Text search across actions works
+
 - [ ] Project filter works
-- [ ] Full scan completes in < 2 seconds for 500 files
+
+- [ ] Full scan completes in &lt; 2 seconds for 500 files
+
 - [ ] Incremental update on file change works
+
 - [ ] File watcher triggers action refresh for modified files
-- [ ] Badge count updates in real-time
+
+- [ ] Status bar count updates in real-time
+
 - [ ] Completed section is collapsible
+
+- [ ] Dashboard renders as landing page when no tabs are open
+
+- [ ] Falls back to welcome screen when no tabs and no actions
+
+- [ ] Cmd+5 opens the actions dialog
+
+- [ ] Status bar click opens the actions dialog
+
+- [ ] Command palette "Open Actions" opens the actions dialog
+
+- [ ] Clicking an action in the dialog navigates to source and closes dialog
+
+- [ ] Checking a checkbox in the dialog does not close it
 
 ### Performance
 
 - [ ] Initial scan does not block editor rendering
-- [ ] Incremental updates complete in < 200ms per file
-- [ ] Dashboard panel opens instantly (cached results)
+
+- [ ] Incremental updates complete in &lt; 200ms per file
+
+- [ ] Dashboard dialog opens instantly (cached results)
+
 - [ ] Scrolling through 200+ actions is smooth
 
 ### Design
 
-- [ ] Dashboard panel matches design system (neutral palette, proper spacing)
+- [ ] Dashboard matches design system (neutral palette, proper spacing)
+
 - [ ] Action items have clear visual distinction by source type
+
 - [ ] Project sections have proper visual separation
-- [ ] Badge icon fits the activity strip aesthetic
+
+- [ ] Status bar indicator fits existing status bar aesthetic
+
+- [ ] Dialog has backdrop blur consistent with existing dialogs
+
 - [ ] Empty state is helpful and polished
+
 - [ ] All UI works in light and dark mode
+
 - [ ] Checkboxes follow custom styling (not browser defaults)
+
+- [ ] Dashboard content is centered with max-width for readability
+
+- [ ] Landing page and dialog use the same ActionsDashboard component
 
 ---
 
 ## Dependencies
 
 ### Rust
+
 - No new crate dependencies — uses existing `regex`, `serde_json`, `serde`
 
 ### Frontend
+
 - No new npm dependencies — uses existing shadcn/ui components
 
 ---
@@ -384,15 +474,20 @@ Cache invalidated when file modification time changes (detected by incremental s
 ## Files Created/Modified
 
 ### New Files
+
 - `src-tauri/src/commands/actions.rs` — action scanning Tauri command
 - `src/stores/action-store.ts` — action registry and cache
 - `src/hooks/useActionScanner.ts` — scan orchestration
-- `src/components/actions/ActionsPanel.tsx` — main dashboard panel
+- `src/components/actions/ActionsDashboard.tsx` — main dashboard (shared by landing page + dialog)
+- `src/components/actions/ActionsDialog.tsx` — dialog wrapper (shadcn/ui Dialog)
 - `src/components/actions/ActionItem.tsx` — individual action row
 - `src/components/actions/ActionFilter.tsx` — filter bar
 
 ### Modified Files
-- `src/components/activity/ActivityStrip.tsx` — add actions icon with badge
+
+- `src/components/editor/StatusBar.tsx` — add open actions count indicator
+- `src/components/editor/Editor.tsx` — render dashboard as landing page when no tabs open
+- `src/App.tsx` — mount useActionScanner, manage dialog open state
 - `src/hooks/useFileWatcher.ts` — trigger action rescan on file changes
 - `src-tauri/src/commands/mod.rs` — register new commands
 - `src-tauri/src/lib.rs` — add to `generate_handler![]`

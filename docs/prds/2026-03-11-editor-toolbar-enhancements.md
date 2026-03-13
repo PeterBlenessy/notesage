@@ -153,15 +153,15 @@ The attribute is stored on the node: `<li data-annotation='{"icon":"phone","colo
 Since markdown has no standard for list item annotations, use an inline convention that survives round-tripping:
 
 ```markdown
-- {📞} Call the team about the deadline
-- {🔴} URGENT: Fix the production bug
-- {💡} Consider using a different approach
-- [ ] {📧} Reply to client email
+- Call the team about the deadline
+- URGENT: Fix the production bug
+- Consider using a different approach
+- [ ] Reply to client email
 ```
 
 The `{emoji}` prefix at the start of a list item is parsed on load and rendered as a margin icon. On serialize, it's written back as `{emoji}` prefix. This keeps files readable in other editors while being lossless.
 
-**Custom Tiptap extension: `ItemAnnotation`**
+**Custom Tiptap extension:** `ItemAnnotation`
 
 - ProseMirror plugin that reads `annotation` node attributes
 - Renders as CSS `::before` pseudo-element or a widget decoration in the left margin (negative margin-left or absolute positioning)
@@ -223,13 +223,14 @@ Each color defined as a CSS variable or specific oklch value for consistency in 
 **Markdown serialization:**
 
 Standard markdown doesn't support text colors. Options:
+
 - **HTML passthrough:** Serialize as `<span style="color: red">text</span>` and `<mark style="background: yellow">text</mark>` — works if `html: true` in tiptap-markdown config
 - **Convention-based:** `==highlighted text==` for default highlight (some markdown flavors support this)
 - Recommendation: Use HTML spans. They're valid markdown, survive round-tripping in most editors, and preserve the exact color. Gate behind `html: true` in the Markdown extension config for color-marked content only.
 
 ### Feature 5: Text Alignment Buttons
 
-**Quick win — expose existing `TextAlign` extension:**
+**Quick win — expose existing** `TextAlign` **extension:**
 
 Add three buttons to the toolbar (after formatting group or in a "paragraph" section):
 
@@ -309,6 +310,7 @@ Use `@tiptap/extension-drag-handle` or build a custom solution:
 ```
 
 The toolbar remains a single row. New controls are inserted in logical groups:
+
 - **Heading picker** at the far left (prominent placement)
 - **Color controls** after text formatting
 - **Indent/outdent** after list controls
@@ -385,9 +387,9 @@ Configuration only — no runtime data model changes.
 
 | Package | Purpose | Size |
 | --- | --- | --- |
-| `@tiptap/extension-color` | Text color mark | ~5KB |
-| `@tiptap/extension-text-style` | Required by color extension | ~3KB |
-| `@tiptap/extension-highlight` | Background highlight mark | ~5KB |
+| `@tiptap/extension-color` | Text color mark | \~5KB |
+| `@tiptap/extension-text-style` | Required by color extension | \~3KB |
+| `@tiptap/extension-highlight` | Background highlight mark | \~5KB |
 
 ### Existing packages (no new installs)
 
@@ -421,29 +423,49 @@ Features 1–3 are quick wins (a few hours each). Features 4–6 are medium effo
 ### Functional
 
 - [ ] Double-clicking a `.md` file in Finder opens it in Notesage (after setting as default)
+
 - [ ] Heading level picker shows current block type and allows changing heading level or converting to paragraph
+
 - [ ] Alignment buttons reflect current alignment and toggle correctly for headings and paragraphs
+
 - [ ] Indent/outdent buttons work for all list types (bullet, ordered, task) and are disabled outside lists
+
 - [ ] Floating table toolbar appears when cursor is inside a table, disappears when leaving
+
 - [ ] All table operations work: add/remove rows and columns, merge/split cells, toggle header, delete table
+
 - [ ] Text color can be set from a curated palette and persists through save/reload
+
 - [ ] Background highlight can be applied and removed, persists through save/reload
+
 - [ ] Colors round-trip correctly through markdown serialization (HTML spans/marks)
+
 - [ ] Item annotations display in the left margin with correct icon/color
+
 - [ ] Annotations survive save/reload (markdown round-trip via `{emoji}` prefix)
+
 - [ ] Block drag handles appear on hover and allow reordering blocks
+
 - [ ] No console errors during normal operation with new features
+
 - [ ] All new controls disabled appropriately in source mode
 
 ### Design
 
 - [ ] New toolbar controls match existing button style (size, spacing, active state, muted-foreground color)
+
 - [ ] Floating table toolbar has frosted glass effect matching bubble menu
+
 - [ ] Color picker popover is compact and tasteful — no garish color grid
+
 - [ ] Annotation picker is cleanly laid out with clear iconography
+
 - [ ] Drag handle is subtle (low opacity) and doesn't clutter the reading experience
+
 - [ ] All new controls have tooltips with descriptions
+
 - [ ] All new features work correctly in both light and dark mode
+
 - [ ] New toolbar items don't cause toolbar overflow on 800px minimum window width
 
 ## Out of Scope

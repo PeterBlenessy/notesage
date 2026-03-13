@@ -9,6 +9,7 @@
 Notesage exists only while the main window is open. Close it, and all background activity stops — no agent task notifications, no action reminders, no quick capture. Users who rely on Notesage for daily work must keep it open and visible, or lose track of pending items.
 
 Desktop productivity apps like Things 3, Raycast, and Bear offer persistent system tray (menu bar) presence that provides:
+
 - At-a-glance status without switching windows
 - Quick capture without opening the full app
 - Notifications for completed background tasks
@@ -42,15 +43,19 @@ Notesage should feel like a first-class desktop citizen, always accessible from 
 ## User Stories
 
 **Always-available writer:**
+
 > As someone who uses Notesage throughout the day, I want the app accessible from my menu bar, so I can quickly capture a thought without hunting for the app window.
 
 **Agent task monitor:**
+
 > As a user who delegates research to agents, I want a notification when the agent finishes, so I don't have to keep checking the app.
 
 **Quick capture:**
+
 > As someone in a meeting using another app, I want to press a global shortcut and immediately start writing a new note, so I capture ideas without breaking flow.
 
 **Action reminder:**
+
 > As a busy professional, I want to glance at my menu bar and see how many open actions I have, so I stay on top of my work.
 
 ---
@@ -134,11 +139,11 @@ fn send_notification(app: &AppHandle, title: &str, body: &str) {
 **Notification triggers:**
 
 | Event | Notification |
-|---|---|
-| Agent task completed | "Agent completed: [task summary]" |
-| Agent task error | "Agent failed: [error summary]" |
-| Hook completed with changes | "Hook [name]: updated [file]" |
-| External file change (dirty tab) | "External change: [file] modified" |
+| --- | --- |
+| Agent task completed | "Agent completed: \[task summary\]" |
+| Agent task error | "Agent failed: \[error summary\]" |
+| Hook completed with changes | "Hook \[name\]: updated \[file\]" |
+| External file change (dirty tab) | "External change: \[file\] modified" |
 
 ### Window Management
 
@@ -156,6 +161,7 @@ fn handle_close_requested(event: &WindowEvent) {
 ```
 
 **Click tray icon:**
+
 - If window is hidden → show and focus
 - If window is visible but not focused → focus
 - If window is focused → hide (toggle behavior)
@@ -254,7 +260,7 @@ macOS menu bar (right side):
 
 ### Settings → General
 
-New options in Settings > General:
+New options in Settings &gt; General:
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -321,12 +327,13 @@ Read from existing `editor-store` tab history — no new storage needed.
 ### New Tauri Plugins
 
 | Plugin | Purpose | Crate |
-|---|---|---|
+| --- | --- | --- |
 | `tauri-plugin-notification` | Desktop notifications | `tauri-plugin-notification` |
 | `tauri-plugin-autostart` | Start at login | `tauri-plugin-autostart` |
 | `tauri-plugin-global-shortcut` | Quick capture shortcut | `tauri-plugin-global-shortcut` |
 
 ### Frontend
+
 - No new npm dependencies
 
 ---
@@ -336,32 +343,51 @@ Read from existing `editor-store` tab history — no new storage needed.
 ### Functional
 
 - [ ] Tray icon appears in macOS menu bar
+
 - [ ] Tray menu shows correct items (New Note, Quick Note, Open Actions, Recent, Show, Quit)
+
 - [ ] Clicking "New Note" opens new note dialog (shows main window if hidden)
+
 - [ ] Clicking "Open Actions" opens the actions dashboard
+
 - [ ] Recent files list shows last 3 opened files
+
 - [ ] Badge count updates when action count changes
+
 - [ ] Clicking tray icon toggles main window visibility
+
 - [ ] Close-to-tray keeps app running in background
+
 - [ ] Start at login works correctly
+
 - [ ] Global shortcut opens quick capture window
+
 - [ ] Quick capture saves note to selected destination
+
 - [ ] Agent completion notification appears
+
 - [ ] Clicking notification shows main window and navigates to relevant content
+
 - [ ] Notification preferences are respected (can disable per type)
+
 - [ ] Quit from tray menu fully exits the app (including local AI server)
 
 ### Performance
 
 - [ ] Tray icon and menu render instantly
-- [ ] Badge count updates in < 100ms
-- [ ] Quick capture window appears in < 300ms after shortcut
+
+- [ ] Badge count updates in &lt; 100ms
+
+- [ ] Quick capture window appears in &lt; 300ms after shortcut
 
 ### Design
 
 - [ ] Tray icon fits macOS menu bar aesthetic (template image for dark/light)
+
 - [ ] Tray menu follows macOS HIG conventions
+
 - [ ] Quick capture window is minimal and focused
+
 - [ ] Notifications follow macOS notification style
 
 ---
@@ -369,10 +395,12 @@ Read from existing `editor-store` tab history — no new storage needed.
 ## Files Created/Modified
 
 ### New Files
+
 - `src/components/QuickCapture.tsx` — quick capture floating window
 - `src-tauri/src/tray.rs` — tray setup and event handling
 
 ### Modified Files
+
 - `src-tauri/src/lib.rs` — tray setup, plugin registration, window close handler
 - `src-tauri/Cargo.toml` — add notification, autostart, global-shortcut plugins
 - `src-tauri/tauri.conf.json` — add plugin permissions

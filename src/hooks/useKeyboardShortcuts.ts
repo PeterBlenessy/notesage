@@ -18,6 +18,7 @@ interface KeyboardShortcutCallbacks {
   onShortcutsOpen: () => void;
   onToggleActivityStrip?: () => void;
   onToggleRecording?: () => void;
+  onOpenActions?: () => void;
   focusMode: boolean;
 }
 
@@ -107,6 +108,13 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
       if (isMod && !e.shiftKey && e.key === "4") {
         e.preventDefault();
         callbacks.onPaletteOpen("research");
+        return;
+      }
+
+      // Cmd+5 — open actions dashboard
+      if (isMod && !e.shiftKey && e.key === "5") {
+        e.preventDefault();
+        callbacks.onOpenActions?.();
         return;
       }
 

@@ -17,6 +17,7 @@ import {
   Loader2,
   BookOpen,
   Globe,
+  CheckSquare,
 } from "lucide-react";
 import {
   CommandDialog,
@@ -53,6 +54,7 @@ interface CommandPaletteProps {
   onOpenSettings: () => void;
   onExportPdf: () => void;
   onToggleFocusMode: () => void;
+  onOpenActions?: () => void;
 }
 
 export function CommandPalette({
@@ -67,6 +69,7 @@ export function CommandPalette({
   onOpenSettings,
   onExportPdf,
   onToggleFocusMode,
+  onOpenActions,
 }: CommandPaletteProps) {
   const [input, setInput] = useState("");
 
@@ -276,7 +279,8 @@ export function CommandPalette({
     { value: "toggle chat ai", label: "Toggle Chat", icon: MessageSquare, shortcut: "\u2318\u21E7A", action: () => setChatPanelOpen(!chatPanelOpen) },
     { value: "toggle focus mode distraction free", label: "Toggle Focus Mode", icon: Focus, shortcut: "\u2318.", action: onToggleFocusMode },
     { value: "open settings preferences", label: "Settings", icon: Settings, shortcut: "\u2318,", action: onOpenSettings },
-  ], [activeTabId, theme, sidebarPinned, chatPanelOpen, onNewNote, onNewProject, onOpenFolder, onExportPdf, onOpenSettings, onToggleFocusMode, setTheme, setSidebarPinned, setChatPanelOpen]);
+    ...(onOpenActions ? [{ value: "open actions dashboard tasks", label: "Open Actions", icon: CheckSquare, shortcut: "\u23185", action: onOpenActions }] : []),
+  ], [activeTabId, theme, sidebarPinned, chatPanelOpen, onNewNote, onNewProject, onOpenFolder, onExportPdf, onOpenSettings, onToggleFocusMode, onOpenActions, setTheme, setSidebarPinned, setChatPanelOpen]);
 
   const filteredActions = useMemo(() => {
     if (mode !== "commands") return actions;

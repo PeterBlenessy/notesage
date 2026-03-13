@@ -23,7 +23,7 @@ The command palette (`CommandPalette.tsx`, 760 lines) serves five distinct searc
 1. **Prefix-based mode switching** — Type `#`, `@`, `>`, or `?` as the first character in the palette input to switch modes, matching the syntax users already know from the editor
 2. **Zero-query mode hints** — Show discoverable hints in the palette footer when no prefix is active, so users learn the modes without documentation
 3. **Single mode state** — Replace 7 boolean state variables with one `mode` enum derived from input prefix
-4. **Unified symbol search** — Merge tag and mention search into a single parameterized code path, reducing ~200 lines of duplicated logic
+4. **Unified symbol search** — Merge tag and mention search into a single parameterized code path, reducing \~200 lines of duplicated logic
 5. **Preserved shortcuts** — All existing keyboard shortcuts (Cmd+3, Cmd+2, Cmd+4, Cmd+Shift+F) continue to work by pre-filling the prefix
 
 ## Non-Goals
@@ -40,7 +40,7 @@ The command palette (`CommandPalette.tsx`, 760 lines) serves five distinct searc
 
 **US-1:** As a user who opened the command palette with Cmd+K, I want to type `#` to switch to tag search mode, so I don't need to remember a separate shortcut.
 
-**US-2:** As a user who opened the palette, I want to see hints like `# tags  @ mentions  > commands  ? research` in the footer, so I can discover available modes.
+**US-2:** As a user who opened the palette, I want to see hints like `# tags @ mentions > commands ? research` in the footer, so I can discover available modes.
 
 **US-3:** As a user who pressed Cmd+3, I want the palette to open with `#` pre-filled in the input and tag search active, so the existing shortcut feels the same.
 
@@ -86,6 +86,7 @@ function getQuery(input: string, mode: PaletteMode): string {
 ### App.tsx State Reduction
 
 Before (7 states):
+
 ```typescript
 const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 const [commandPaletteFilesOnly, setCommandPaletteFilesOnly] = useState(false);
@@ -97,6 +98,7 @@ const [commandPaletteResearchSearchMode, setCommandPaletteResearchSearchMode] = 
 ```
 
 After (3 states):
+
 ```typescript
 const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 const [commandPaletteInitialMode, setCommandPaletteInitialMode] = useState<PaletteMode>('default');
@@ -110,7 +112,7 @@ The `initialMode` is only used for external triggers (keyboard shortcuts, badge 
 Shortcuts pre-fill the input prefix instead of setting boolean flags:
 
 | Shortcut | Before | After |
-|----------|--------|-------|
+| --- | --- | --- |
 | Cmd+K | `setCommandPaletteOpen(true)` | Same (mode = `default`) |
 | Cmd+Shift+F | Set `filesOnly=true` | Set `initialMode='files'` |
 | Cmd+3 | Set `tagSearchMode=true`, `filesOnly=true` | Set `initialMode='tags'`, input = `#` |
@@ -134,11 +136,12 @@ interface SymbolSearchConfig {
 }
 ```
 
-The two-level UI (list → drilldown) is rendered by a single `SymbolSearchResults` component that accepts a `SymbolSearchConfig`. This replaces ~200 lines of nearly-identical tag/mention code with one ~100-line implementation.
+The two-level UI (list → drilldown) is rendered by a single `SymbolSearchResults` component that accepts a `SymbolSearchConfig`. This replaces \~200 lines of nearly-identical tag/mention code with one \~100-line implementation.
 
 ### Component Props Simplification
 
 Before (11 mode-related props):
+
 ```typescript
 interface CommandPaletteProps {
   open: boolean;
@@ -155,6 +158,7 @@ interface CommandPaletteProps {
 ```
 
 After (4 mode-related props):
+
 ```typescript
 interface CommandPaletteProps {
   open: boolean;
@@ -195,9 +199,9 @@ switch (mode) {
 
 When the user types or removes a prefix character:
 
-1. **Typing `#`:** Mode switches from `default` → `tags`. Previous query is discarded. Tag list appears immediately (pre-scanned in store).
-2. **Backspacing past `#`:** Mode switches from `tags` → `default`. If in drilldown, drilldown is exited first (existing behavior), then removing the prefix exits the mode entirely.
-3. **Typing `#` then `@`:** Input becomes `#@...`, which is mode `tags` with query `@...`. Only a prefix at position 0 triggers mode switching.
+1. **Typing** `#`**:** Mode switches from `default` → `tags`. Previous query is discarded. Tag list appears immediately (pre-scanned in store).
+2. **Backspacing past** `#`**:** Mode switches from `tags` → `default`. If in drilldown, drilldown is exited first (existing behavior), then removing the prefix exits the mode entirely.
+3. **Typing** `#` **then** `@`**:** Input becomes `#@...`, which is mode `tags` with query `@...`. Only a prefix at position 0 triggers mode switching.
 
 ### Commands Mode (`>`)
 
@@ -223,11 +227,13 @@ A new lightweight mode that filters the existing Actions group:
 Replace the current footer (which only shows navigate/select/close hints) with a context-aware footer:
 
 **Default mode (no prefix):**
+
 ```
 ↑↓ navigate  ⏎ select  esc close    # tags  @ mentions  > commands  ? research
 ```
 
 **Active mode (e.g., tags):**
+
 ```
 ↑↓ navigate  ⏎ select  esc close    ⌫ back to search
 ```
@@ -237,7 +243,7 @@ The hints use the same `kbd` styling as the existing footer. Mode hints are righ
 ### Placeholder Text
 
 | Mode | Placeholder |
-|------|-------------|
+| --- | --- |
 | default | `Type a command or search N files...` |
 | files | `Search N files by name or content...` |
 | tags | `Search tags...` (or `Filter #tagName occurrences...` in drilldown) |
@@ -301,39 +307,64 @@ None. This is a pure frontend refactor using existing dependencies (React, cmdk/
 ### Functional
 
 - [ ] Cmd+K opens palette in default mode (recent files + actions + file search)
+
 - [ ] Typing `#` switches to tag search mode; tag list appears immediately
+
 - [ ] Typing `@` switches to mention search mode; mention list appears immediately
+
 - [ ] Typing `>` switches to commands mode; action list appears filtered
+
 - [ ] Typing `?` switches to research search mode; debounced search activates
+
 - [ ] Backspacing past a prefix character returns to default mode
+
 - [ ] Cmd+3 opens palette with `#` pre-filled, tag search active
+
 - [ ] Cmd+2 opens palette with `@` pre-filled, mention search active
+
 - [ ] Cmd+4 opens palette with `?` pre-filled, research search active
+
 - [ ] Cmd+Shift+F opens palette in file search mode (no prefix — dedicated mode)
+
 - [ ] Tag badge click in editor opens palette with `#tagName` pre-filled and drilled into occurrences
+
 - [ ] Mention badge click in editor opens palette with `@mentionName` pre-filled and drilled into occurrences
+
 - [ ] Tag drilldown: selecting a tag shows occurrences; editing input exits drilldown
+
 - [ ] Mention drilldown: selecting a mention shows occurrences; editing input exits drilldown
+
 - [ ] Research results show title, tags, domain, word count (unchanged)
+
 - [ ] Content search (files mode) shows file name, line number, snippet (unchanged)
+
 - [ ] All search results open the correct file on selection
+
 - [ ] Palette closes cleanly (Escape or click outside) and resets all state
+
 - [ ] No regressions: round-trip test passes, no console errors
 
 ### Design
 
 - [ ] Footer shows mode hints in default mode, styled consistently with existing `kbd` elements
+
 - [ ] Footer shows "back to search" hint in active mode
+
 - [ ] Prefix character visible in input field, not as a separate badge
+
 - [ ] Mode transitions feel instant (no flicker between modes)
+
 - [ ] Both light and dark mode look correct
 
 ### Code Quality
 
 - [ ] App.tsx palette state reduced from 7 variables to ≤3
+
 - [ ] CommandPalette props reduced from 11 mode-related to ≤4
+
 - [ ] No duplicated tag/mention rendering logic
-- [ ] Component line count reduced (target: <600 lines from current 760)
+
+- [ ] Component line count reduced (target: &lt;600 lines from current 760)
 
 ---
 

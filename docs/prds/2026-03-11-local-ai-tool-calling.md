@@ -9,6 +9,7 @@
 Notesage has a mature skills system (7 bundled skills, SKILL.md discovery, script execution runtime) and a powerful local AI engine (bundled llama-server with curated models). But these two systems are **completely disconnected**. Local models can describe what a skill does — they see skill descriptions in the system prompt — but they cannot *execute* skills. The `ai_chat_stream` command passes zero tool definitions to any provider (Anthropic, OpenAI, Ollama, or local bundled).
 
 This means:
+
 1. **Local models can't act** — a user asks "download this webpage and save it as research" and the model can only explain what to do, not do it
 2. **Cloud API models can't act either** — even Anthropic and OpenAI, which have native tool calling APIs, receive no tool schemas
 3. **Skills are text-only** — skill descriptions are injected as system prompt text, forcing the model to "imagine" executing them rather than actually calling `execute_skill_script`
@@ -43,15 +44,19 @@ The Skills & Agents Platform (Phase 7) laid the foundation — discovery, permis
 ## User Stories
 
 **Local-first researcher:**
+
 > As a user with Qwen3-4B running locally, I want to say "research battery technology" in chat and have the model automatically call the `download-webpage` and `save-research` skills, so I get useful research saved without manual steps.
 
 **Cloud + skills user:**
+
 > As an Anthropic user, I want Claude to automatically use my project's custom skills when relevant, so I don't have to manually invoke `/skill-name` every time.
 
 **Privacy-conscious writer:**
+
 > As a user who won't use cloud APIs, I want my local model to be able to read files, run skill scripts, and write outputs — all on-device — so I have a fully autonomous local assistant.
 
 **Agent author:**
+
 > As someone who created a "research-agent" with `allowed-tools: [download-webpage, save-research, synthesize-sources]`, I want only those skills available when that agent is active, so different agents have different capabilities.
 
 ---
@@ -120,6 +125,7 @@ const builtInTools = [
 The Rust backend converts the generic tool schema to each provider's native format:
 
 **Anthropic (Messages API):**
+
 ```json
 {
   "tools": [
@@ -133,6 +139,7 @@ The Rust backend converts the generic tool schema to each provider's native form
 ```
 
 **OpenAI (Responses API / Chat Completions):**
+
 ```json
 {
   "tools": [
@@ -148,8 +155,7 @@ The Rust backend converts the generic tool schema to each provider's native form
 }
 ```
 
-**Ollama & Local Bundled (OpenAI-compatible):**
-Same as OpenAI format. Requires models that support function calling (Qwen3, Llama 3.1+, Mistral). For local bundled, llama-server needs `--jinja` flag to enable native tool calling.
+**Ollama & Local Bundled (OpenAI-compatible)**:Same as OpenAI format. Requires models that support function calling (Qwen3, Llama 3.1+, Mistral). For local bundled, llama-server needs `--jinja` flag to enable native tool calling.
 
 ### Tool Execution Loop
 
@@ -216,6 +222,7 @@ pub async fn ai_chat_stream(
 The streaming implementation detects `tool_use` blocks in the response and emits new events:
 
 **New Tauri events:**
+
 - `ai-tool-call` (`{ id: string, name: string, arguments: object }`) — model wants to call a tool
 - `ai-tool-result` (`{ tool_call_id: string, content: string }`) — tool execution completed
 
@@ -286,6 +293,7 @@ listen<ToolCall>('ai-tool-call', async (event) => {
 **Modified:** `src/components/chat/ChatMessage.tsx`
 
 Tool call activity rendered inline:
+
 ```
 ┌─────────────────────────────────────────┐
 │ ▸ execute_skill_script                  │
@@ -393,7 +401,8 @@ Tool calls appear in the chat as collapsible activity blocks:
 
 ### Settings — Tool Calling Toggle
 
-In Settings > Advanced:
+In Settings &gt; Advanced:
+
 ```
 Tool Calling
 Allow AI to call tools and execute skills autonomously
@@ -458,14 +467,17 @@ interface PermissionStore {
 ## Dependencies
 
 ### Rust Changes
+
 - No new crate dependencies — uses existing `reqwest`, `serde_json`, `serde`
 - `ai_streaming.rs` modified to parse tool_use blocks from each provider's SSE format
 
 ### Frontend Changes
+
 - No new npm dependencies
 - Modified: `useAIOperations.ts`, `ChatMessage.tsx`, `ChatInput.tsx`, `permission-store.ts`
 
 ### llama-server
+
 - Add `--jinja` flag to startup command (already supported by llama-server)
 
 ---
@@ -475,34 +487,55 @@ interface PermissionStore {
 ### Functional
 
 - [ ] Anthropic tool calling works (model calls execute_skill_script, gets result, continues)
+
 - [ ] OpenAI tool calling works (same flow)
+
 - [ ] Ollama tool calling works with Qwen3 and Llama 3.1
+
 - [ ] Local bundled tool calling works with Qwen3-4B
+
 - [ ] Models without tool calling support get text-based tool descriptions (graceful degradation)
+
 - [ ] Permission prompt appears for write/execute tools
+
 - [ ] Auto-allow works for read-only tools
+
 - [ ] Session and always permission tiers persist correctly
+
 - [ ] Agent `allowed-tools` restricts available tools per agent
+
 - [ ] Tool call limit (20) prevents runaway loops
+
 - [ ] Tool errors are handled gracefully (model receives error, continues)
+
 - [ ] read_file tool returns file contents correctly
+
 - [ ] write_file tool creates/overwrites files correctly
+
 - [ ] read_skill_content tool returns full skill body
+
 - [ ] execute_skill_script tool runs scripts and returns results
+
 - [ ] Multi-turn tool chains work (model calls tool A → result → calls tool B → result → final response)
+
 - [ ] Tool calling can be disabled globally in Settings
 
 ### Performance
 
-- [ ] Tool schema generation adds < 50ms to prompt preparation
+- [ ] Tool schema generation adds &lt; 50ms to prompt preparation
+
 - [ ] Tool calling overhead does not noticeably slow streaming responses
-- [ ] 20 tool calls in a single turn completes in < 60 seconds
+
+- [ ] 20 tool calls in a single turn completes in &lt; 60 seconds
 
 ### Design
 
 - [ ] Tool permission prompt matches ACP PermissionCard design
+
 - [ ] Tool call activity blocks are visually consistent with ACP tool use display
+
 - [ ] Tools popover follows design system
+
 - [ ] All UI works in light and dark mode
 
 ---
@@ -510,9 +543,11 @@ interface PermissionStore {
 ## Files Created/Modified
 
 ### New Files
+
 - None — all changes extend existing files
 
 ### Modified Rust Files
+
 - `src-tauri/src/commands/ai.rs` — add `tools` parameter, `ai_chat_stream_continue` command
 - `src-tauri/src/commands/ai_streaming.rs` — parse tool_use blocks per provider, emit tool call events
 - `src-tauri/src/commands/local_inference.rs` — add `--jinja` flag, tool calling support detection
@@ -521,6 +556,7 @@ interface PermissionStore {
 - `src-tauri/model-catalog.json` — add `supports_tool_calling` field
 
 ### Modified Frontend Files
+
 - `src/hooks/useAIOperations.ts` — build tools array, handle tool call events, continuation loop
 - `src/components/chat/ChatMessage.tsx` — render tool call activity blocks
 - `src/components/chat/ChatPanel.tsx` — tool call permission prompt inline

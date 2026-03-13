@@ -84,6 +84,37 @@ const PX_PER_CM = 96 / 2.54;
 const EMPTY_ACTIVITIES: DelegationActivity[] = [];
 
 /**
+ * Scroll the editor to the first occurrence of `searchText` in the ProseMirror document.
+ * Uses the same text-node walk strategy as `findNthTagInDoc`.
+ */
+function scrollToTextInEditor(
+  editor: { state: { doc: { descendants: (fn: (node: { isText: boolean; text?: string }, pos: number) => boolean | void) => void } }; view: { domAtPos: (pos: number) => { node: Node; offset: number } } },
+  searchText: string,
+) {
+  try {
+    const needle = searchText.toLowerCase();
+    let matchPos: number | null = null;
+    editor.state.doc.descendants((node, pos) => {
+      if (matchPos !== null) return false;
+      if (!node.isText || !node.text) return;
+      const idx = node.text.toLowerCase().indexOf(needle);
+      if (idx !== -1) {
+        matchPos = pos + idx;
+        return false;
+      }
+    });
+
+    if (matchPos !== null) {
+      const domInfo = editor.view.domAtPos(matchPos);
+      const node = domInfo.node instanceof HTMLElement ? domInfo.node : domInfo.node.parentElement;
+      node?.scrollIntoView({ block: "center" });
+    }
+  } catch {
+    // Position mapping failed — ignore
+  }
+}
+
+/**
  * Find the ProseMirror position of the Nth occurrence (0-based) of `#tag` in the document.
  * Walks all text nodes and searches for the tag pattern.
  */
@@ -148,10 +179,11 @@ interface EditorProps {
   updateVersion?: string | null;
   onUpdateClick?: () => void;
   onShortcutsOpen?: () => void;
+  onOpenActions?: () => void;
 }
 
-export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick, onShortcutsOpen }: EditorProps) {
-  const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange, toggleCopilotForTab, toggleViewMode, setScrollToTag } = useEditorStore();
+export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick, onShortcutsOpen, onOpenActions }: EditorProps) {
+  const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange, toggleCopilotForTab, toggleViewMode, setScrollToTag, setScrollToText } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, pageBreaks, notesRootPath, sourceWordWrap, setSourceWordWrap } = useSettingsStore();
   const editorStyles = useEditorStylesStore();
@@ -752,6 +784,15 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             scrollAreaRef.current.style.opacity = '1';
           }
         });
+      } else if (activeTab.scrollToText) {
+        const text = activeTab.scrollToText;
+        setScrollToText(activeTab.id, undefined);
+        requestAnimationFrame(() => {
+          scrollToTextInEditor(editor, text);
+          if (scrollAreaRef.current) {
+            scrollAreaRef.current.style.opacity = '1';
+          }
+        });
       } else {
         // Restore scroll position then reveal
         restoreScrollRatio(activeTab.filePath, () => {
@@ -761,7 +802,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         });
       }
     }
-  }, [activeTab?.id, editor, activeTab, tabs, setScrollPosition, restoreScrollRatio, externalChanges, updateTabContent, clearExternalChange, setScrollToTag]);
+  }, [activeTab?.id, editor, activeTab, tabs, setScrollPosition, restoreScrollRatio, externalChanges, updateTabContent, clearExternalChange, setScrollToTag, setScrollToText]);
 
   // Scroll to tag when scrollToTag is set on the already-active tab (same-tab jump)
   useEffect(() => {
@@ -784,6 +825,17 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       }
     });
   }, [editor, activeTab?.scrollToTag, activeTab?.id, setScrollToTag]);
+
+  // Scroll to text when scrollToText is set on the already-active tab (same-tab jump)
+  useEffect(() => {
+    if (!editor || !activeTab || !activeTab.scrollToText) return;
+    if (activeTab.id !== lastLoadedTabId.current) return;
+    const text = activeTab.scrollToText;
+    setScrollToText(activeTab.id, undefined);
+    requestAnimationFrame(() => {
+      scrollToTextInEditor(editor, text);
+    });
+  }, [editor, activeTab?.scrollToText, activeTab?.id, setScrollToText]);
 
   // When switching from Source → WYSIWYG, reload editor with current tab content
   const prevViewMode = useRef(activeTab?.viewMode);
@@ -1223,6 +1275,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           <StatusBar
             editor={null}
             onShortcutsOpen={onShortcutsOpen}
+            onOpenActions={onOpenActions}
           />
         )}
       </div>
@@ -1439,6 +1492,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           updateVersion={updateVersion}
           onUpdateClick={onUpdateClick}
           onShortcutsOpen={onShortcutsOpen}
+          onOpenActions={onOpenActions}
           onSelectChange={(change, hunkIndex) => {
             // Switch to the tab that has this file open and scroll to the specific hunk
             const matchingTab = tabs.find((t) => t.filePath === change.filePath);
