@@ -133,76 +133,87 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 
 ### 3. Obsidian
 
-**Website:** obsidian.md | **License:** Proprietary (free for personal use) | **Pricing:** Free personal; $50/yr commercial
+**Website:** obsidian.md | **License:** Proprietary | **Pricing:** Free (personal + commercial since Feb 2025); Sync $4/mo; Publish $8/mo
 
-**Overview:** Obsidian is the dominant player in the local-first markdown knowledge base space. It stores notes as plain markdown files and offers an extensible plugin ecosystem with 2,000+ community plugins.
+**Overview:** Obsidian is the dominant player in the local-first markdown knowledge base space. It stores notes as plain markdown files and offers the largest plugin ecosystem in the category with 2,700+ community plugins. Commercial use became free in February 2025, removing the previous $50/yr commercial license.
 
-**Tech Stack:** Electron, TypeScript, CodeMirror 6
+**Tech Stack:** Electron (vanilla JS — no React/Vue/Angular framework), CodeMirror 6 (heavily customized), D3.js + PIXI.js (graph rendering), markdown-it (parsing), MathJax 3/KaTeX, Mermaid.js, Prism (syntax highlighting)
 
-**Platform Support:** macOS, Windows, Linux, iOS, Android
+**Platform Support:** macOS, Windows, Linux, iOS, Android (near-full feature parity on mobile as of 2026)
 
 **Editor:**
-- CodeMirror 6-based with live preview mode
-- Source mode, reading mode, and live preview mode
-- Vim keybindings (optional)
-- Callouts, embedded content, math (MathJax/KaTeX)
-- Tables, task lists, footnotes, mermaid diagrams
-- Canvas (infinite spatial canvas for visual thinking)
+- CodeMirror 6-based with three modes: Live Preview, Source, and Reading
+- Vim keybindings (optional core plugin)
+- Callouts/admonitions (styled blockquotes with types)
+- Embeds/transclusion: `![[note]]`, `![[note#heading]]`, `![[note#^block]]`
+- Math (MathJax/KaTeX), Mermaid diagrams, footnotes
+- Tables, task lists, YAML frontmatter / Properties editor
+- Folding (headings and indented blocks)
+- Canvas (infinite spatial board for visual thinking)
 
 **Key Features:**
-- Internal links (`[[wikilinks]]`) with backlinks panel
-- Knowledge graph visualization (global and local)
+- Internal links (`[[wikilinks]]`) with backlinks panel and unlinked mentions
+- Block references and heading references
+- Knowledge graph visualization (global and local, D3.js + WebGL)
+- **Bases** (v1.9, Aug 2025) — database-like views over Markdown notes (table, list, map, board, Kanban); formulas, grouping, sorting, filtering by properties; CSV import (v1.11)
 - Daily notes and templates
-- Bookmarks, tags, aliases
+- Bookmarks, tags (nested), aliases
 - Split panes and workspaces
 - Command palette
 - Custom CSS themes (massive theme community)
-- 2,000+ community plugins
+- **2,700+ community plugins** with TypeScript API
+- **CLI** (v1.12, Jan 2026) — command-line vault operations
+- **Plugin Keychain** (v1.11) — secure API key storage for plugins
 - Obsidian Publish (web publishing, $8/mo)
-- Obsidian Sync (E2E encrypted sync, $4/mo)
-- Obsidian Canvas (visual spatial notes)
+- Obsidian Sync (E2E encrypted sync, $4/mo, shared vault collaboration)
+- Siri/Shortcuts integration on iOS (v1.12)
 
 **AI Capabilities (via plugins):**
 - No first-party AI features
-- **Copilot plugin** — chat with notes, RAG-style Q&A, supports OpenAI/Anthropic/Ollama/local models
-- **Smart Connections** — semantic similarity, AI-powered backlinks
-- **Text Generator** — inline AI text generation
-- **Omnisearch** — enhanced search with AI ranking
-- Dozens of other AI plugins (summarize, translate, generate, etc.)
+- **Smart Connections** — semantic similarity search across notes using vector embeddings; supports offline/local models
+- **Obsidian Copilot** — chat sidebar for conversing with notes (RAG-style Q&A)
+- **Text Generator** — content generation via OpenAI, Anthropic, Google, or local models
+- **Nova** — inline AI editing (edits text in place without chat window); supports Ollama, LM Studio, Claude, OpenAI, Gemini
+- **MCP integration** — Claude Code + Obsidian MCP server enables vault-wide AI operations from external tools
+- Multiple plugins support Ollama and LM Studio for fully offline AI
 
 **Unique Differentiators:**
-- Largest plugin ecosystem in the space (2,000+)
+- Largest plugin ecosystem in the space (2,700+, ~75 updates/week, ~6 new plugins/week)
 - Plain markdown files — ultimate data portability
-- Canvas for visual/spatial thinking
-- Massive community (Discord, forums, YouTube)
+- Bases bridges the gap to Notion-style databases while staying Markdown-native
+- Canvas for visual/spatial thinking (embeddable Bases and queries)
+- No heavy framework (vanilla JS) — fast despite Electron
+- Massive community (Discord, forums, YouTube, community-to-core feature pipeline)
 - Obsidian Publish for web publishing
 - Highly customizable (CSS themes, hotkeys, workflows)
-- Strong mobile apps with full feature parity
+- Strong mobile apps with near-full feature parity and plugin support
 
 **Limitations:**
-- Electron-based (resource heavy)
-- No real-time collaboration
-- No first-party AI (plugin quality varies)
+- Electron-based (heavier resource footprint than Tauri)
+- No real-time collaboration (shared vaults via Sync, but no simultaneous editing)
+- No first-party AI (entirely dependent on community plugin quality)
+- No plugin sandboxing — plugins have full Electron context access
 - Sync and Publish are paid add-ons
-- Plugin ecosystem can be overwhelming
-- Proprietary license (not open source)
+- Plugin ecosystem can be overwhelming (curation challenge)
+- Closed source (despite open plugin ecosystem)
 
 **Comparison with Notesage:**
 
 | Dimension | Obsidian | Notesage |
 |---|---|---|
-| Plugin ecosystem | 2,000+ plugins | Skills + MCP (extensible but smaller) |
-| AI integration | Community plugins (inconsistent) | First-party, deep, multi-provider |
+| Plugin ecosystem | 2,700+ plugins | Skills + MCP (extensible but smaller) |
+| AI integration | Community plugins (fragmented) | First-party, deep, multi-provider |
 | Editor engine | CodeMirror 6 | Tiptap/ProseMirror |
-| Knowledge graph | Built-in | Not yet (planned) |
+| Knowledge graph | Built-in (D3.js + WebGL) | Not yet (planned) |
+| Databases | Bases (Markdown-backed) | None |
 | EPUB reading | Plugin-based | Built-in viewer |
 | PDF export | Plugin-based | Built-in Typst engine |
 | Voice transcription | Plugin-based | Built-in Whisper |
-| Desktop framework | Electron | Tauri (lighter) |
-| Mobile apps | Excellent | No |
-| Collaboration | No | No (planned) |
+| Desktop framework | Electron (vanilla JS) | Tauri (lighter) |
+| Mobile apps | Excellent (near-full parity) | No |
+| Collaboration | Shared vaults (Sync) | No (planned) |
 | Data format | Plain .md files | Plain .md files |
-| Pricing | Free personal / $50 commercial | Free |
+| Pricing | Free (all use) | Free |
 
 ---
 
