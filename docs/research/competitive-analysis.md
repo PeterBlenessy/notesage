@@ -14,39 +14,45 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 
 ### 1. Reor
 
-**Website:** reorproject.org | **License:** AGPL-3.0 (open source) | **Pricing:** Free
+**Website:** reorproject.org | **License:** AGPL-3.0 (open source) | **Pricing:** Free | **Status: ARCHIVED (March 7, 2026)**
 
-**Overview:** Reor is an AI-powered desktop note-taking app that combines semantic search, RAG (retrieval-augmented generation), and local-first AI. It positions itself as a "self-organizing" note app where AI automatically connects related notes.
+**Overview:** Reor (Latin: "to think") is an AI-powered desktop note-taking app that combines semantic search, RAG (retrieval-augmented generation), and local-first AI. It positions itself as a "self-organizing" note app for "high entropy people" — those who produce many notes and need help organizing them. The project was **archived on March 7, 2026** and is no longer maintained. Last release: v0.2.32 (April 2025). Despite archival, it had 8,500+ GitHub stars.
 
-**Tech Stack:** Electron, React, TypeScript, Transformers.js (for local embeddings)
+**Tech Stack:** Electron, React, TypeScript, BlockNote (migrated from Tiptap in v0.2.32), Transformers.js (local embeddings), LanceDB (local vector database), Vite
 
 **Platform Support:** macOS, Windows, Linux
 
 **Editor:**
-- Markdown editor with rich text rendering
-- Block-based editing
-- Wikilinks (`[[note]]`) for internal linking
+- BlockNote-based editor (built on Tiptap/ProseMirror, migrated from raw Tiptap in final release)
+- Block-based editing with image and video support
+- Wikilinks (`[[note]]`) for internal linking (Obsidian-compatible)
+- Related notes sidebar showing vector-similar notes
+- Light and dark themes
 
 **AI Capabilities:**
 - Local LLM support via Ollama integration
-- Cloud AI via OpenAI and Anthropic API keys
-- Semantic search using local vector embeddings (Transformers.js)
+- Cloud AI via OpenAI API or any OpenAI-compatible endpoint
+- Semantic search using local vector embeddings (Transformers.js, runs in-process)
 - RAG: chat with your notes — AI answers using your note content as context
-- Automatic note linking based on semantic similarity
-- AI-powered Q&A across your entire knowledge base
+- Automatic note linking based on semantic similarity (LanceDB vector store)
+- AI writing assistant — highlight text + press space for inline rewriting
+- AI flashcard generation — extracts key points and generates Q&A cards
 
 **Unique Differentiators:**
-- "Self-organizing" — AI automatically finds and suggests connections between notes
-- Fully local vector embeddings (no data leaves the machine)
-- RAG-first design — the entire app is built around AI-augmented retrieval
+- "Two generators" RAG model — both human (sidebar showing related notes) and LLM (Q&A) share the same vector retrieval infrastructure
+- Zero-cloud architecture — both LLM and embeddings run locally, no API key required with Ollama
+- Automatic knowledge graph — notes linked without manual effort
+- Single-directory simplicity — just a folder of markdown files, no proprietary database
 
 **Limitations:**
+- **Project archived** — no further development or maintenance
 - Electron-based (heavier than Tauri)
-- Smaller community and ecosystem than Obsidian
+- Single directory only (no multi-project support)
 - No mobile apps
 - No plugin system
 - No collaboration features
 - Limited export options
+- Frontmatter parsing issues with some imported markdown
 
 **Comparison with Notesage:**
 
@@ -827,7 +833,7 @@ The closest competitors for this specific user are **Reor** (AI + local + markdo
 
 | App | Category | Best For | Biggest Weakness vs. Notesage |
 |---|---|---|---|
-| Reor | AI-first notes | RAG / chat with notes | Narrower AI, less polished editor |
+| Reor | AI-first notes (ARCHIVED) | RAG / chat with notes | Archived, narrower AI, less polished editor |
 | Logseq | Outliner PKM | Networked thinking, daily journals | Not a prose editor, no first-party AI |
 | Obsidian | Extensible PKM | Plugin power users | Fragmented AI via plugins, Electron |
 | Bear | Beautiful notes | Apple ecosystem writers | No AI, Apple-only, no extensibility |
