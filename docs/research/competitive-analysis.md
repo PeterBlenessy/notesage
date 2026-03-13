@@ -70,64 +70,80 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 
 ### 2. Logseq
 
-**Website:** logseq.com | **License:** AGPL-3.0 (open source) | **Pricing:** Free (Sync $5/mo)
+**Website:** logseq.com | **License:** AGPL-3.0 (open source) | **Pricing:** Free; Sync via Open Collective ($5+/mo); Pro tier (coming)
 
-**Overview:** Logseq is an outliner-first, privacy-focused knowledge management tool. Every line is a block that can be referenced, embedded, and linked. It emphasizes networked thinking and daily journals.
+**Overview:** Logseq is an outliner-first, privacy-focused knowledge management tool with 41,500+ GitHub stars. Every line is a block that can be referenced, embedded, and linked. It emphasizes networked thinking and daily journals. A major **DB version** (beta) is in active development, adding SQLite persistence, Classes (typed schemas), and real-time collaboration.
 
-**Tech Stack:** ClojureScript (legacy), Rust + SQLite (DB version), Electron
+**Tech Stack:** ClojureScript (67.8%), React via Rum, DataScript (in-memory Datalog DB), Electron, Capacitor (mobile), OCaml (document parser), isomorphic-git, SCI (Clojure scripting). DB version adds SQLite for persistent storage.
 
-**Platform Support:** macOS, Windows, Linux, iOS, Android (mobile apps available)
+**Platform Support:** macOS, Windows, Linux, iOS, Android; browser version at test.logseq.com
 
 **Editor:**
-- Outliner-based (every line is a collapsible, referenceable block)
-- Markdown and Org-mode support
+- Outliner-based (every line is a collapsible, referenceable block — blocks are the primary unit, not pages)
+- Markdown and Org-mode dual format support
 - Block references and embeds (`((block-id))`)
-- Page references (`[[page name]]`)
-- Templates and dynamic queries
+- Page references (`[[page name]]`), page aliases
+- Block-level and page-level properties (YAML frontmatter)
+- Tag inheritance (child blocks inherit parent tags)
+- Templates and slash commands
+- Indentation-driven hierarchy (Tab/Shift+Tab)
 
 **Key Features:**
-- Daily journal as default entry point
-- Bi-directional linking with backlinks panel
+- Daily journal as default entry point (auto-created)
+- Bi-directional linking with linked and unlinked references
 - Knowledge graph visualization (interactive force-directed graph)
-- Advanced queries (Datalog-based)
-- Flashcards (spaced repetition built in)
-- PDF annotation — highlight and reference PDF content
-- Whiteboards (infinite canvas for visual thinking)
-- Plugin marketplace with 200+ community plugins
+- Advanced queries — built-in Datalog query language (far more expressive than SQL or tag filtering)
+- Native task management: TODO/DOING/DONE workflow with priorities (A/B/C), scheduled dates, deadlines, repeated tasks
+- Flashcards with spaced repetition (Anki-style, built in)
+- PDF annotation — highlight and link back to graph pages
+- Whiteboards/Canvas — visual spatial canvas with customizable backgrounds
+- Zotero integration for academic references
+- Plugin marketplace with community plugins and ClojureScript Plugin SDK (Sep 2025)
 - Git-based version history
+- **DB version (beta):** Classes (typed block schemas), real-time collaboration (alpha), page publishing via Cloudflare Workers
 
 **AI Capabilities:**
 - No built-in AI features in the core app
-- Community plugins add AI capabilities (e.g., Logseq Copilot, GPT-3 Logseq)
-- No official AI roadmap published
+- **logseq-plugin-gpt3-openai** (most popular) — GPT-3.5/4 via OpenAI, Whisper transcription (`/whisper`), DALL-E image generation
+- **AssistSeq** — multi-provider (OpenAI, Gemini, Ollama, Groq) with automatic web scraping
+- Other community plugins for AI text generation and transformation
+- All require user-provided API keys; no native AI announced
 
 **Unique Differentiators:**
-- Outliner-first paradigm — everything is a nestable, referenceable block
+- Outliner-first paradigm — blocks, not pages, are the fundamental unit of thought
 - Daily journals as the primary workflow
+- Datalog query engine — most powerful query system among note apps
 - Org-mode support (rare among modern note apps)
-- Flashcards with spaced repetition built in
-- PDF annotation integrated into the knowledge base
+- Block-level linking and tag inheritance — granularity page-based tools cannot match
+- Flashcards, PDF annotation, and task management built in (not plugins)
 - Whiteboards for spatial thinking
+- DB version evolving toward structured knowledge base with typed schemas
+- 41,500+ GitHub stars, $665,000+ community funding via Open Collective
 
 **Limitations:**
 - Performance issues with large graphs (being addressed by DB version)
 - Outliner paradigm has a learning curve
 - Not a traditional document editor — poor for long-form prose
+- Markdown files not 100% compatible with other tools (strips blank lines, single heading per block)
 - AI support is community-driven, not first-party
-- Mobile apps are limited compared to desktop
+- DB version still in beta with potential data loss risks
+- Real-time collaboration is alpha-stage
+- Electron-based (heavier than Tauri)
 
 **Comparison with Notesage:**
 
 | Dimension | Logseq | Notesage |
 |---|---|---|
 | Editing paradigm | Outliner (block-first) | Document (prose-first) |
-| Knowledge management | Graph, backlinks, queries | File tree, tags, projects |
+| Knowledge management | Graph, backlinks, Datalog queries | File tree, tags, projects |
 | AI | Community plugins only | First-party, multi-provider |
 | Long-form writing | Weak (outliner friction) | Strong (Tiptap rich text) |
+| Task management | Built-in (TODO/DOING/DONE) | No |
 | Mobile apps | Yes (iOS, Android) | No |
 | PDF support | Annotation + reference | View + export |
-| Flashcards | Built-in | No |
-| Voice/transcription | No | Whisper-powered dictation |
+| Flashcards | Built-in (Anki-style) | No |
+| Voice/transcription | Plugin (Whisper via OpenAI) | Built-in Whisper (on-device) |
+| Collaboration | Alpha (DB version RTC) | No (planned) |
 
 ---
 
