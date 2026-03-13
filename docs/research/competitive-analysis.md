@@ -279,69 +279,81 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 
 ### 5. Anytype
 
-**Website:** anytype.io | **License:** Source-available (Any Source License) | **Pricing:** Free (self-hosted); paid plans for multiplayer
+**Website:** anytype.io | **License:** Source-available (Any Source License, MIT for sync/data protocols) | **Pricing:** Free (self-hosted); Explorer free / Builder $99/yr / Co-Creator $299/yr
 
-**Overview:** Anytype is a local-first, encrypted, peer-to-peer knowledge management platform. It uses an object-and-relation model (not files or databases) where everything is a typed object connected through relations.
+**Overview:** Anytype is a local-first, E2E-encrypted, peer-to-peer knowledge management platform. It uses an object-and-relation model (not files or databases) where everything is a typed object connected through relations in a knowledge graph. It positions itself as a "digital brain" combining Notion-style structured data with Obsidian-style local-first privacy.
 
-**Tech Stack:** Go (backend/middleware), Electron + React (desktop), Swift (iOS), Kotlin (Android), IPFS/libp2p for P2P sync, CRDT for conflict resolution
+**Tech Stack:** Go (middleware/`anytype-heart`), Electron + React + MobX (desktop), Swift (iOS, native), Kotlin (Android, native), Protocol Buffers (data serialization), CRDT-based `any-sync` protocol (MIT), IPFS-compatible file storage
 
-**Platform Support:** macOS, Windows, Linux, iOS, Android
+**Platform Support:** macOS, Windows, Linux, iOS (native Swift), Android (native Kotlin) — no web app
 
 **Editor:**
-- Block-based editor (Notion-style)
-- Rich text with inline styling
-- Embeds, bookmarks, code blocks, LaTeX math
-- Relations (custom typed metadata on any object)
+- Block-based editor with slash commands (20+ block types)
+- Rich text: headings, bold, italic, strikethrough, underline, code, highlight
+- Toggle blocks and toggled headings (collapsible sections)
+- Callout/quote blocks
+- Embeds: YouTube, Miro, Google Maps, Mermaid diagrams
+- LaTeX math notation
+- Code blocks
+- Multi-column layouts via drag-and-drop
+- Inline query blocks for embedding live database views
 - Templates per object type
+- Tabs (multiple objects in same window, 2026 addition)
 
 **Key Features:**
 - Object-and-relation data model (types: Note, Task, Book, Person, etc.)
-- Sets and Collections (database-like views: grid, list, gallery, Kanban)
-- Graph view showing object relationships
+- Sets (live filtered views) and Collections (manually curated groups) with 6 view modes: Grid, Gallery, List, Kanban, Calendar, Graph
+- Graph view and Flow view visualizing object relationships
+- Bidirectional linking (automatic reverse links)
 - Spaces (separate workspaces with sharing)
-- End-to-end encryption by default
-- P2P sync via IPFS (no central server required)
-- Local-first — works fully offline
-- Type system — create custom object types with custom relations
-- Widgets for dashboard-style home screens
+- End-to-end encryption by default (user-held passphrase, Anytype cannot access data)
+- P2P sync via CRDTs (no central server required, optional relay nodes)
+- Self-hosting option (free — run your own sync infrastructure)
+- ANY Experience Gallery (community-shared workspace templates)
 - Import from Notion, Markdown, HTML, CSV
+- Native mobile apps (not webview wrappers)
 
 **AI Capabilities:**
-- AI features added in recent versions
-- AI-assisted writing (rewrite, summarize, expand)
-- Object type suggestion based on content
-- AI search across spaces
-- Uses cloud AI (specific provider not prominently documented)
-- Local AI not available
+- **MCP Server** (`anytype-mcp`) — official MCP server bridging AI assistants (Claude, etc.) to Anytype data
+- **Local API** — high-performance local API for integration with local LLMs and automation
+- **Local AI Agents** (in development) — spin up local agents using any API key, with Anytype objects as memory
+- Privacy-first AI philosophy: users choose no AI, local AI, cloud AI, or hybrid
+- No built-in AI writing features baked into the editor (AI accessed through open protocols)
 
 **Unique Differentiators:**
-- P2P encrypted sync (no central server) — strongest privacy story alongside Joplin
-- Object-relation model is more flexible than files or databases
-- CRDT-based — built for future real-time collaboration
-- Self-hostable backup nodes
-- Not file-based — data stored in a local encrypted object store
+- True local-first with E2E encryption — Anytype cannot access user data
+- Object-graph architecture — more structured than files, more flexible than databases
+- P2P sync via CRDTs — automatic conflict resolution, no central server needed
+- Self-hostable for free with no vendor lock-in
+- Native mobile apps (Swift/Kotlin, not webview wrappers)
+- MCP support for AI integration via open protocols
+- ANY Experience Gallery for community templates
 
 **Limitations:**
-- Not markdown-native (proprietary object store)
-- Steeper learning curve (object/relation/type concepts)
-- Smaller community than Obsidian
-- AI features are basic compared to dedicated AI writing tools
-- Performance can lag with large object graphs
-- Data portability concerns (not plain files)
+- Not markdown-native (Protobuf-based internal format)
+- Steep learning curve (object/type/relation concepts)
+- No web app (local-first architecture)
+- Limited third-party integrations (MCP is primary integration path)
+- No real-time co-editing (CRDT merge, not Google Docs-style cursors)
+- Any Source Available license for clients (commercial use requires permission)
+- Data portability concerns (export exists but not plain files on disk)
 
 **Comparison with Notesage:**
 
 | Dimension | Anytype | Notesage |
 |---|---|---|
-| Data model | Objects + relations | Markdown files |
-| Sync | P2P encrypted (IPFS) | iCloud |
-| AI depth | Basic (rewrite, summarize) | Deep (multi-provider, agents, MCP, voice) |
-| Privacy | E2E encrypted, P2P | Local-first, optional cloud AI |
-| Editor | Block-based | Rich text (Tiptap) |
-| Mobile | Yes (iOS, Android) | No |
-| Data portability | Export only (not plain files) | Native .md files |
-| Collaboration | Spaces with sharing | No (planned) |
-| Graph view | Yes | No (planned) |
+| Data model | Objects + relations + graph | Markdown files |
+| Sync | P2P encrypted (CRDTs) | iCloud |
+| AI depth | MCP + local API (protocol-based) | Deep (multi-provider, agents, MCP, voice) |
+| AI philosophy | User-choice, protocol-based | Built-in first-party |
+| Privacy | E2E encrypted, P2P, self-hostable | Local-first, optional cloud AI |
+| MCP | Yes (official server) | Yes (client) |
+| Editor | Block-based (20+ types) | Rich text (Tiptap) |
+| Mobile | Native Swift/Kotlin | No |
+| Data portability | Export only (Protobuf internal) | Native .md files |
+| Collaboration | Spaces with sharing (CRDT) | No (planned) |
+| Graph view | Yes (graph + flow) | No (planned) |
+| Pricing | Free–$299/yr | Free |
 
 ---
 
@@ -716,7 +728,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 | AI inline completions | Yes | No | No | Plugin | No | No | No | No | No | No | No | No | No |
 | Voice transcription | Yes | No | No | Plugin | No | No | No | Yes | No | No | No | No | No |
 | Web search (AI) | Yes | No | No | No | No | No | No | Yes | No | No | No | No | No |
-| MCP support | Yes | No | No | No | No | No | Yes | No | No | No | No | No | No |
+| MCP support | Yes | No | No | No | No | Yes | Yes | No | No | No | No | No | No |
 | Skills/tools platform | Yes | No | No | No | No | No | No | No | No | No | No | No | No |
 | Comment delegation | Yes | No | No | No | No | No | No | No | No | No | No | No | No |
 | Authorship tracking | No | No | No | No | No | No | No | No | No | No | Yes | No | No |
