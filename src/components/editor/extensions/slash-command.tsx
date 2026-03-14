@@ -137,8 +137,8 @@ const commands: CommandItem[] = [
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).run();
       // Open the image insert dialog via the LocalImage extension storage callback
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const openDialog = (editor.storage as any).image?.openInsertDialog;
+      const imageStorage = (editor.storage as unknown as Record<string, Record<string, unknown> | undefined>).image;
+      const openDialog = imageStorage?.openInsertDialog;
       if (typeof openDialog === "function") {
         openDialog();
       }

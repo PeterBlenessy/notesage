@@ -1,5 +1,7 @@
-import { useEffect, useCallback, useRef, useState, useMemo } from "react";
+import { useEffect, useCallback, useRef, useState, useMemo, type MutableRefObject } from "react";
 import { EditorContent } from "@tiptap/react";
+import type { Editor as TiptapEditor } from "@tiptap/core";
+import type { Node as PMNode } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
 import { Command, File, FolderDot, Folder, Clock } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
@@ -117,14 +119,13 @@ function stripMarkdownInline(text: string): string {
  * (e.g. hardBreak → "\n") that contribute to textContent but aren't text nodes.
  */
 function findTextPositionInDoc(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  doc: any,
+  doc: PMNode,
   searchText: string,
 ): number | null {
   let fullText = '';
   const posMap: number[] = []; // posMap[i] = PM position of the i-th character in fullText
 
-  doc.descendants((node: { isText: boolean; isLeaf: boolean; text?: string; type: { spec: { leafText?: (n: unknown) => string } } }, pos: number) => {
+  doc.descendants((node, pos) => {
     if (node.isText && node.text) {
       for (let i = 0; i < node.text.length; i++) {
         posMap.push(pos + i);
@@ -198,8 +199,7 @@ function findTextPositionInDoc(
  * 2. Call scrollIntoView({ block: "center" }) — lets the browser handle the math
  * 3. Set the ProseMirror selection (element is already in view, no auto-scroll)
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function scrollPosToCenter(editor: any, pos: number, _scrollContainer: HTMLElement, programmaticScrollRef?: React.MutableRefObject<boolean>) {
+function scrollPosToCenter(editor: TiptapEditor, pos: number, _scrollContainer: HTMLElement, programmaticScrollRef?: MutableRefObject<boolean>) {
   // Guard: prevent ResizeObserver and scroll-save from interfering
   if (programmaticScrollRef) programmaticScrollRef.current = true;
 
@@ -237,8 +237,7 @@ function scrollPosToCenter(editor: any, pos: number, _scrollContainer: HTMLEleme
 /**
  * Find text in the ProseMirror document, move the cursor there, and scroll to center it.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function scrollToTextInEditor(editor: any, searchText: string, scrollContainer?: HTMLElement | null, programmaticScrollRef?: React.MutableRefObject<boolean>) {
+function scrollToTextInEditor(editor: TiptapEditor, searchText: string, scrollContainer?: HTMLElement | null, programmaticScrollRef?: MutableRefObject<boolean>) {
   const pos = findTextPositionInDoc(editor.state.doc, searchText);
   if (pos !== null && scrollContainer) {
     scrollPosToCenter(editor, pos, scrollContainer, programmaticScrollRef);

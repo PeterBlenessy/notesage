@@ -35,8 +35,7 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
     onCreate: ({ editor }) => {
       // Set documentDir early so image nodes created during initial parse resolve correctly
       if (documentDir) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const imageStorage = (editor.storage as any).image;
+        const imageStorage = (editor.storage as unknown as Record<string, Record<string, unknown> | undefined>).image;
         if (imageStorage) {
           imageStorage.documentDir = documentDir;
         }
