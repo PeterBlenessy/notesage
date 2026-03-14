@@ -837,8 +837,11 @@ All UI changes use existing shadcn/ui components and Tauri invoke patterns.
 ## Remaining Items
 
 - [x] Clear orphaned `tag-store` and `mention-store` localStorage keys on first launch after upgrade
+
 - [x] Status bar spinner during bulk reindex
+
 - [ ] Cross-device iCloud testing (not tested on second device)
+
 - [x] Renamed file index update (watcher emits delete + create events; indexer handles both)
 
 ## Out of Scope

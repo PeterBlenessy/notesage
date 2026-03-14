@@ -18,14 +18,18 @@
 
 **Status:** Done
 
-**Description:** Add new fields to `CatalogEntry` and `LocalModelInfo` Rust structs: `category` (String), `supports_tool_calling` (bool), `supports_thinking` (bool), `thinking_tags` (Option<ThinkingTags>), `supports_vision` (bool), `multilingual` (bool), `recommended_for` (Vec<String>). Add matching `ThinkingTags` struct with `open`/`close` fields. Update the TypeScript `LocalModelInfo` interface in `tauri.ts` with the same fields. All new fields must use `#[serde(default)]` or `Option<>` for backwards compatibility with existing `custom-models.json` files.
+**Description:** Add new fields to `CatalogEntry` and `LocalModelInfo` Rust structs: `category` (String), `supports_tool_calling` (bool), `supports_thinking` (bool), `thinking_tags` (Option), `supports_vision` (bool), `multilingual` (bool), `recommended_for` (Vec). Add matching `ThinkingTags` struct with `open`/`close` fields. Update the TypeScript `LocalModelInfo` interface in `tauri.ts` with the same fields. All new fields must use `#[serde(default)]` or `Option<>` for backwards compatibility with existing `custom-models.json` files.
 
 **Acceptance criteria:**
 
 - [x] `CatalogEntry` and `LocalModelInfo` compile with all new fields
+
 - [x] Existing catalog JSON still deserializes (new fields default to `None`/`false`)
+
 - [x] `list_local_models` returns new fields to frontend
+
 - [x] TypeScript interface matches Rust struct
+
 - [x] Custom models without new fields still load
 
 **Complexity:** S **Category:** both **Dependencies:** None **Files:**
@@ -44,12 +48,19 @@
 **Acceptance criteria:**
 
 - [x] Catalog has exactly 18 entries
+
 - [x] All entries have `category` set to `"compact"`, `"general"`, `"code"`, or `"reasoning"`
+
 - [x] Existing 9 models have unchanged `id`, `filename`, and `huggingface_url`
+
 - [x] `thinking_tags` set for Qwen3, DeepSeek R1, and Phi-4 Mini Reasoning models
+
 - [x] `supports_tool_calling: true` for Qwen3 and Ministral models
+
 - [x] `supports_fim: true` only for Qwen2.5 Coder models
+
 - [x] `recommended_for` arrays match PRD RAM recommendation logic
+
 - [x] JSON is valid and parses without error
 
 **Complexity:** L **Category:** backend **Dependencies:** #1 **Files:**
@@ -67,9 +78,13 @@
 **Acceptance criteria:**
 
 - [x] Catalog models with `thinking_tags` use those tags for parsing
+
 - [x] Catalog models with `supports_thinking: false` skip tag parsing
+
 - [x] Custom models without catalog metadata still use hardcoded scanner
+
 - [x] Thinking content correctly extracted for Qwen3, DeepSeek R1, and Phi-4 Reasoning
+
 - [x] No regression for existing thinking model behavior
 
 **Complexity:** M **Category:** backend **Dependencies:** #1, #2 **Files:**
@@ -87,7 +102,9 @@
 **Acceptance criteria:**
 
 - [x] `LocalModelInfo.supports_tool_calling` is available in the frontend
+
 - [x] Active model's tool calling capability queryable from store or hook
+
 - [x] No behavioral change yet (just metadata exposure)
 
 **Complexity:** S **Category:** frontend **Dependencies:** #1 **Files:**
@@ -105,9 +122,13 @@
 **Acceptance criteria:**
 
 - [x] `categoryFilter` defaults to `'all'`
+
 - [x] `setCategoryFilter` updates the filter
+
 - [x] Filtered models correctly excludes non-matching categories
+
 - [x] `'all'` shows everything
+
 - [x] Filter state resets on app restart (not persisted)
 
 **Complexity:** S **Category:** frontend **Dependencies:** #1 **Files:**
@@ -125,15 +146,25 @@
 **Acceptance criteria:**
 
 - [x] Category tabs render above model list
+
 - [x] Clicking a tab filters the model list
+
 - [x] Active tab has distinct styling
+
 - [x] Sort dropdown with Name/Size/RAM options
+
 - [x] "Downloaded" filter tab shows only downloaded models
+
 - [x] Capability badges render inline on model cards
+
 - [x] Badges follow design system (neutral, no chromatic colors)
+
 - [x] All 18 models display correctly
+
 - [x] Existing action buttons (download, delete, use) still work
+
 - [x] Works in both light and dark mode
+
 - [x] ModelMetadataTooltip still works on hover
 
 **Complexity:** L **Category:** frontend **Dependencies:** #2, #5 **Files:**
@@ -151,10 +182,15 @@
 **Acceptance criteria:**
 
 - [x] Recommendations use `recommended_for` from catalog metadata
+
 - [x] 8GB Mac sees compact/small models recommended
+
 - [x] 16GB Mac sees Qwen3 4B, Qwen2.5 Coder 3B, Phi-4 Mini recommended
+
 - [x] 32GB+ Mac sees Qwen3 8B, Qwen2.5 Coder 7B, DeepSeek R1 7B recommended
+
 - [x] 64GB+ Mac sees Qwen3 14B, DeepSeek R1 14B recommended
+
 - [x] Recommended section visually distinct from full model list
 
 **Complexity:** M **Category:** frontend **Dependencies:** #2, #6 **Files:**
@@ -172,10 +208,15 @@
 **Acceptance criteria:**
 
 - [ ] All 18 URLs verified (HEAD request returns 200)
+
 - [ ] All 9 new models load in llama-server without error
+
 - [ ] Thinking content extracted correctly for all `supports_thinking: true` models
+
 - [ ] Tool calling works for all `supports_tool_calling: true` models
+
 - [ ] RAM estimates accurate within 500MB
+
 - [ ] Existing models from old catalog work without re-download
 
 **Complexity:** M **Category:** both **Dependencies:** #1, #2, #3 **Files:**
