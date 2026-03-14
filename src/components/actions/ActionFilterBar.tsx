@@ -76,6 +76,8 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
       setFilter({ status: ['open', 'delegated', 'pending', 'running'] });
     } else if (value === 'done') {
       setFilter({ status: ['done', 'completed'] });
+    } else {
+      console.warn('[ActionFilterBar] Unhandled status value:', value);
     }
   }, [setFilter]);
 
