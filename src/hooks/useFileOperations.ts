@@ -4,8 +4,6 @@ import { useEditorStore, type ScrollToTag } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useGitStore } from "@/stores/git-store";
-import { useTagStore } from "@/stores/tag-store";
-import { useMentionStore } from "@/stores/mention-store";
 import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { migrateProjectPath } from "@/lib/migrate-project-path";
@@ -14,52 +12,6 @@ import { setBinaryData } from "@/lib/binary-cache";
 
 /** Debounced git status refresh per repo. Each repo gets its own timer. */
 const repoRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-/** Debounced workspace tag scan. */
-let tagScanTimer: ReturnType<typeof setTimeout> | null = null;
-
-export function refreshTags() {
-  if (tagScanTimer) clearTimeout(tagScanTimer);
-  tagScanTimer = setTimeout(async () => {
-    tagScanTimer = null;
-    try {
-      const ws = useWorkspaceStore.getState();
-      const settings = useSettingsStore.getState();
-      const paths: string[] = [];
-      for (const folder of ws.explorerFolders) paths.push(folder.path);
-      for (const project of ws.projects) paths.push(project.path);
-      if (settings.notesRootPath) paths.push(settings.notesRootPath);
-      if (paths.length === 0) return;
-      const filesByTag = await tauriApi.scanTagsInDirectories(paths);
-      useTagStore.getState().setScanResult(filesByTag);
-    } catch (error) {
-      console.error("Failed to scan tags:", error);
-    }
-  }, 500);
-}
-
-/** Debounced workspace mention scan. */
-let mentionScanTimer: ReturnType<typeof setTimeout> | null = null;
-
-export function refreshMentions() {
-  if (mentionScanTimer) clearTimeout(mentionScanTimer);
-  mentionScanTimer = setTimeout(async () => {
-    mentionScanTimer = null;
-    try {
-      const ws = useWorkspaceStore.getState();
-      const settings = useSettingsStore.getState();
-      const paths: string[] = [];
-      for (const folder of ws.explorerFolders) paths.push(folder.path);
-      for (const project of ws.projects) paths.push(project.path);
-      if (settings.notesRootPath) paths.push(settings.notesRootPath);
-      if (paths.length === 0) return;
-      const filesByMention = await tauriApi.scanMentionsInDirectories(paths);
-      useMentionStore.getState().setScanResult(filesByMention);
-    } catch (error) {
-      console.error("Failed to scan mentions:", error);
-    }
-  }, 500);
-}
 
 export function refreshGitForPath(filePath: string) {
   if (!useSettingsStore.getState().gitEnabled) return;
@@ -208,19 +160,19 @@ export function useFileOperations() {
   }, []);
 
   const openFile = useCallback(
-    async (filePath: string, fileName: string, scrollToTag?: ScrollToTag) => {
+    async (filePath: string, fileName: string, scrollToTag?: ScrollToTag, scrollToText?: string) => {
       try {
         const fileType = getFileType(fileName);
 
         if (fileType === "image") {
-          openTab(filePath, fileName, "", null, fileType, scrollToTag);
+          openTab(filePath, fileName, "", null, fileType, scrollToTag, scrollToText);
           return;
         }
 
         if (isBinaryFileType(fileType)) {
           const bytes = await tauriApi.readBinaryFile(filePath);
           setBinaryData(filePath, new Uint8Array(bytes));
-          openTab(filePath, fileName, "", null, fileType, scrollToTag);
+          openTab(filePath, fileName, "", null, fileType, scrollToTag, scrollToText);
           return;
         }
 
@@ -228,9 +180,9 @@ export function useFileOperations() {
         const raw = await tauriApi.readFile(filePath);
         if (fileType === "markdown") {
           const { frontmatter, content } = parseFrontmatter(raw);
-          openTab(filePath, fileName, content, frontmatter, fileType, scrollToTag);
+          openTab(filePath, fileName, content, frontmatter, fileType, scrollToTag, scrollToText);
         } else {
-          openTab(filePath, fileName, raw, null, fileType, scrollToTag);
+          openTab(filePath, fileName, raw, null, fileType, scrollToTag, scrollToText);
         }
       } catch (error) {
         console.error("Failed to read file:", error);
@@ -241,20 +193,20 @@ export function useFileOperations() {
   );
 
   const openFileAtTag = useCallback(
-    async (filePath: string, fileName: string, tag: string, occurrence: number) => {
-      await openFile(filePath, fileName, { tag, occurrence });
+    async (filePath: string, fileName: string, symbol: string, occurrenceInFile: number = 0) => {
+      // `symbol` includes the prefix (e.g. "#climate" or "@alice").
+      // Encode the occurrence index so findTextPositionInDoc can find the Nth match.
+      // Format: "symbol\0N" where N is the 0-based occurrence index.
+      const searchText = occurrenceInFile > 0 ? `${symbol}\0${occurrenceInFile}` : symbol;
+      await openFile(filePath, fileName, undefined, searchText);
     },
     [openFile]
   );
 
   const openFileAtText = useCallback(
     async (filePath: string, fileName: string, searchText: string) => {
-      await openFile(filePath, fileName);
-      const { tabs, activeTabId } = useEditorStore.getState();
-      const tab = tabs.find((t) => t.id === activeTabId && t.filePath === filePath);
-      if (tab) {
-        useEditorStore.getState().setScrollToText(tab.id, searchText);
-      }
+      // Pass scrollToText through openFile atomically.
+      await openFile(filePath, fileName, undefined, searchText);
     },
     [openFile]
   );
@@ -270,10 +222,6 @@ export function useFileOperations() {
         markTabClean(tabId, content);
         useEditorStore.getState().clearExternalChange(filePath);
         refreshGitForPath(filePath);
-        if (filePath.endsWith(".md")) {
-          refreshTags();
-          refreshMentions();
-        }
         return true;
       } catch (error) {
         await tauriApi.clearSelfWrite(filePath).catch(() => {});

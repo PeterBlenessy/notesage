@@ -10,7 +10,8 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { flushSync } from "react-dom";
 import { cn } from "@/lib/utils";
 import { AtSign } from "lucide-react";
-import { useMentionStore } from "@/stores/mention-store";
+import { tauriApi } from "@/lib/tauri";
+import { getSearchPaths } from "@/lib/command-palette";
 
 interface MentionItem {
   name: string;
@@ -153,14 +154,14 @@ export const MentionSuggestion = Extension.create({
       Suggestion({
         editor: this.editor,
         ...this.options.suggestion,
-        items: ({ query }: { query: string }) => {
-          const mentions = useMentionStore.getState().mentions;
-          if (mentions.length === 0) return [];
-          const q = query.toLowerCase();
-          return mentions
-            .filter((mention) => mention.toLowerCase().includes(q))
-            .slice(0, 20)
-            .map((name) => ({ name }));
+        items: async ({ query }: { query: string }): Promise<MentionItem[]> => {
+          try {
+            const paths = getSearchPaths();
+            const mentions = await tauriApi.indexMentions(paths, query || undefined);
+            return mentions.slice(0, 20).map((m) => ({ name: m.mention }));
+          } catch {
+            return [];
+          }
         },
         render: () => {
           let component: ReactRenderer<MentionListRef>;
@@ -195,14 +196,14 @@ export const MentionSuggestion = Extension.create({
                 return;
               }
 
-              popup[0].setProps({
+              popup?.[0]?.setProps({
                 getReferenceClientRect: props.clientRect as () => DOMRect,
               });
             },
 
             onKeyDown(props: SuggestionKeyDownProps) {
               if (props.event.key === "Escape") {
-                popup[0].hide();
+                popup?.[0]?.hide();
                 return true;
               }
 
@@ -210,8 +211,8 @@ export const MentionSuggestion = Extension.create({
             },
 
             onExit() {
-              popup[0].destroy();
-              component.destroy();
+              popup?.[0]?.destroy();
+              component?.destroy();
             },
           };
         },

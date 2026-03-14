@@ -10,7 +10,8 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { flushSync } from "react-dom";
 import { cn } from "@/lib/utils";
 import { Hash } from "lucide-react";
-import { useTagStore } from "@/stores/tag-store";
+import { tauriApi } from "@/lib/tauri";
+import { getSearchPaths } from "@/lib/command-palette";
 
 interface TagItem {
   name: string;
@@ -157,14 +158,14 @@ export const TagSuggestion = Extension.create({
       Suggestion({
         editor: this.editor,
         ...this.options.suggestion,
-        items: ({ query }: { query: string }) => {
-          const tags = useTagStore.getState().tags;
-          if (tags.length === 0) return [];
-          const q = query.toLowerCase();
-          return tags
-            .filter((tag) => tag.toLowerCase().includes(q))
-            .slice(0, 20)
-            .map((name) => ({ name }));
+        items: async ({ query }: { query: string }): Promise<TagItem[]> => {
+          try {
+            const paths = getSearchPaths();
+            const tags = await tauriApi.indexTags(paths, query || undefined);
+            return tags.slice(0, 20).map((t) => ({ name: t.tag }));
+          } catch {
+            return [];
+          }
         },
         render: () => {
           let component: ReactRenderer<TagListRef>;
@@ -199,14 +200,14 @@ export const TagSuggestion = Extension.create({
                 return;
               }
 
-              popup[0].setProps({
+              popup?.[0]?.setProps({
                 getReferenceClientRect: props.clientRect as () => DOMRect,
               });
             },
 
             onKeyDown(props: SuggestionKeyDownProps) {
               if (props.event.key === "Escape") {
-                popup[0].hide();
+                popup?.[0]?.hide();
                 return true;
               }
 
@@ -214,8 +215,8 @@ export const TagSuggestion = Extension.create({
             },
 
             onExit() {
-              popup[0].destroy();
-              component.destroy();
+              popup?.[0]?.destroy();
+              component?.destroy();
             },
           };
         },

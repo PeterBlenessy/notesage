@@ -63,7 +63,7 @@ interface EditorStore {
   /** Persisted: which file was active, so we can re-activate it on restart. */
   persistedActiveFilePath: string | null;
 
-  openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null, fileType?: FileType, scrollToTag?: ScrollToTag) => void;
+  openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null, fileType?: FileType, scrollToTag?: ScrollToTag, scrollToText?: string) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   updateTabContent: (tabId: string, content: string, isDirty: boolean) => void;
@@ -101,7 +101,7 @@ export const useEditorStore = create<EditorStore>()(
       persistedTabs: [],
       persistedActiveFilePath: null,
 
-      openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null, fileType?: FileType, scrollToTag?: ScrollToTag) => {
+      openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null, fileType?: FileType, scrollToTag?: ScrollToTag, scrollToText?: string) => {
         set((state) => {
           // Track in recent files (deduplicate, cap)
           const filteredRecent = state.recentFiles.filter((r) => r.path !== filePath);
@@ -111,13 +111,16 @@ export const useEditorStore = create<EditorStore>()(
           const existingTab = state.tabs.find((tab) => tab.filePath === filePath);
 
           if (existingTab) {
-            // Sync persisted state + set scrollToTag atomically
+            // Sync persisted state + set scroll targets atomically with tab activation
+            const needsTabUpdate = scrollToTag !== undefined || scrollToText !== undefined;
             const newPersistedTabs = state.persistedTabs.some((p) => p.filePath === filePath)
               ? state.persistedTabs
               : [...state.persistedTabs, { filePath, fileName }];
             return {
-              tabs: scrollToTag !== undefined
-                ? state.tabs.map((tab) => tab.id === existingTab.id ? { ...tab, scrollToTag } : tab)
+              tabs: needsTabUpdate
+                ? state.tabs.map((tab) => tab.id === existingTab.id
+                  ? { ...tab, ...(scrollToTag !== undefined && { scrollToTag }), ...(scrollToText !== undefined && { scrollToText }) }
+                  : tab)
                 : state.tabs,
               activeTabId: existingTab.id,
               recentFiles: newRecent,
@@ -136,6 +139,7 @@ export const useEditorStore = create<EditorStore>()(
             frontmatter: frontmatter ?? null,
             fileType: fileType ?? "markdown",
             scrollToTag,
+            scrollToText,
             lastSavedContent: content,
           };
 

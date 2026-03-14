@@ -44,6 +44,10 @@ comrak = { version = "0.50.0", default-features = false, features = ["syntect"] 
 # Tag scanning
 regex = "1"
 
+# SQLite document index (Phase 10)
+rusqlite = { version = "0.34", features = ["bundled"] }
+sha2 = "0.10"
+
 # Skills & Agents Platform (Phase 7)
 serde_yaml = "0.9"
 

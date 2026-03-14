@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createTauriStorage } from '@/lib/tauri-storage';
 import { toast } from 'sonner';
-import { tauriApi, type ActionItem } from '@/lib/tauri';
+import { tauriApi, type ActionItem, type IndexedTask, type IndexedGoal } from '@/lib/tauri';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useEditorStore } from '@/stores/editor-store';
@@ -91,6 +91,47 @@ function agentTasksToActions(): ActionItem[] {
     }));
 }
 
+/** Convert an IndexedTask (from SQLite index, AST-parsed) to an ActionItem */
+function indexedTaskToAction(task: IndexedTask): ActionItem {
+  return {
+    id: `task:${task.path}:${task.position}`,
+    source_type: 'task',
+    status: task.done ? 'done' : 'open',
+    text: task.text,
+    file_path: task.path,
+    line_number: undefined,
+    project_name: task.project_name,
+    project_root: undefined,
+    created_at: undefined,
+    updated_at: undefined,
+    metadata: {
+      context_before: task.context_before,
+      context_after: task.context_after,
+    },
+  };
+}
+
+/** Convert an IndexedGoal (from SQLite index) to an ActionItem */
+function indexedGoalToAction(goal: IndexedGoal): ActionItem {
+  return {
+    id: `goal:${goal.path}`,
+    source_type: 'goal',
+    status: goal.completed_tasks >= goal.total_tasks && goal.total_tasks > 0 ? 'done' : 'open',
+    text: goal.title,
+    file_path: goal.path,
+    line_number: undefined,
+    project_name: goal.project_name,
+    project_root: undefined,
+    created_at: undefined,
+    updated_at: undefined,
+    metadata: {
+      template: goal.template,
+      total_tasks: goal.total_tasks,
+      completed_tasks: goal.completed_tasks,
+    },
+  };
+}
+
 function rebuildActions(cache: Record<string, { items: ActionItem[] }>): ActionItem[] {
   const items: ActionItem[] = [];
   for (const entry of Object.values(cache)) {
@@ -99,16 +140,6 @@ function rebuildActions(cache: Record<string, { items: ActionItem[] }>): ActionI
   // Add agent tasks from activity store
   items.push(...agentTasksToActions());
   return items;
-}
-
-function toggleCheckbox(line: string): string {
-  if (/\[[ ]\]/.test(line)) {
-    return line.replace('[ ]', '[x]');
-  }
-  if (/\[[xX]\]/.test(line)) {
-    return line.replace(/\[[xX]\]/, '[ ]');
-  }
-  return line;
 }
 
 export const useActionStore = create<ActionStore>()(
@@ -128,12 +159,26 @@ export const useActionStore = create<ActionStore>()(
             set({ actions: agentTasksToActions(), isScanning: false, lastFullScan: Date.now() });
             return;
           }
-          const items = await tauriApi.scanActions(paths);
+
+          // Fetch tasks and goals from SQLite index (AST-parsed, clean text)
+          // and comments from the old scan_actions command (JSON-based, unaffected)
+          const [indexedTasks, indexedGoals, scanItems] = await Promise.all([
+            tauriApi.indexTasks(paths),
+            tauriApi.indexGoals(paths),
+            tauriApi.scanActions(paths),
+          ]);
+
+          // Convert indexed items to ActionItems
+          const taskActions = indexedTasks.map(indexedTaskToAction);
+          const goalActions = indexedGoals.map(indexedGoalToAction);
+
+          // Keep only comments from scanActions (tasks/goals now come from the index)
+          const commentActions = scanItems.filter((item) => item.source_type === 'comment');
 
           // Build cache keyed by file path
           const cache: Record<string, { items: ActionItem[]; scannedAt: number }> = {};
           const now = Date.now();
-          for (const item of items) {
+          for (const item of [...taskActions, ...goalActions, ...commentActions]) {
             const key = item.file_path;
             if (!cache[key]) {
               cache[key] = { items: [], scannedAt: now };
@@ -176,9 +221,16 @@ export const useActionStore = create<ActionStore>()(
 
           if (!scanRoot) return;
 
-          // Only rescan the specific file's parent directory (quick single-file update)
-          // We rescan the root to get proper project_name etc.
-          const items = await tauriApi.scanActions([scanRoot]);
+          // Fetch tasks/goals from index, comments from scan_actions
+          const [indexedTasks, indexedGoals, scanItems] = await Promise.all([
+            tauriApi.indexTasks([scanRoot]),
+            tauriApi.indexGoals([scanRoot]),
+            tauriApi.scanActions([scanRoot]),
+          ]);
+
+          const taskActions = indexedTasks.map(indexedTaskToAction);
+          const goalActions = indexedGoals.map(indexedGoalToAction);
+          const commentActions = scanItems.filter((item) => item.source_type === 'comment');
 
           const cache = { ...get().actionCache };
           const now = Date.now();
@@ -191,7 +243,7 @@ export const useActionStore = create<ActionStore>()(
           }
 
           // Add new entries
-          for (const item of items) {
+          for (const item of [...taskActions, ...goalActions, ...commentActions]) {
             const key = item.file_path;
             if (!cache[key]) {
               cache[key] = { items: [], scannedAt: now };
@@ -207,66 +259,45 @@ export const useActionStore = create<ActionStore>()(
 
       async toggleTaskDone(action: ActionItem) {
         if (action.source_type !== 'task' && action.source_type !== 'goal') return;
-        if (!action.line_number || !action.file_path) return;
+        if (!action.file_path) return;
+
+        const isDone = action.status === 'done';
+        const newDone = !isDone;
 
         try {
-          const content = await tauriApi.readFile(action.file_path);
-          const lines = content.split('\n');
-          const lineIdx = action.line_number - 1;
-
-          if (lineIdx < 0 || lineIdx >= lines.length) {
-            toast.error('Line number out of range — file may have changed');
-            return;
-          }
-
-          let line = lines[lineIdx];
-          const taskRe = /^(\s*)([-*]|\d+\.)\s+\[([ xX])\]\s+/;
-
-          // Check if the line still matches
-          if (!taskRe.test(line)) {
-            // Fallback: search for the action text nearby
-            const searchText = action.text.slice(0, 40);
-            let found = false;
-            for (let offset = -3; offset <= 3; offset++) {
-              const idx = lineIdx + offset;
-              if (idx >= 0 && idx < lines.length && lines[idx].includes(searchText) && taskRe.test(lines[idx])) {
-                line = lines[idx];
-                lines[idx] = toggleCheckbox(line);
-                found = true;
-                break;
-              }
-            }
-            if (!found) {
-              toast.error('Task not found at expected location — file may have changed');
-              return;
-            }
-          } else {
-            lines[lineIdx] = toggleCheckbox(line);
-          }
-
-          const newContent = lines.join('\n');
-          await tauriApi.markSelfWrite(action.file_path);
-          await tauriApi.writeFile(action.file_path, newContent);
+          // Use context-based matching via SQLite index — no fragile line numbers
+          const contextBefore = action.metadata?.context_before as string ?? '';
+          const contextAfter = action.metadata?.context_after as string ?? '';
+          await tauriApi.indexToggleTask(
+            action.file_path,
+            contextBefore,
+            contextAfter,
+            action.text,
+            newDone,
+          );
 
           // Optimistic UI update
-          const isDone = action.status === 'done';
           set((state) => ({
             actions: state.actions.map((a) =>
-              a.id === action.id ? { ...a, status: isDone ? 'open' : 'done' } : a
+              a.id === action.id ? { ...a, status: newDone ? 'done' : 'open' } : a
             ),
           }));
 
-          toast.success(isDone ? 'Task reopened' : 'Task completed');
+          toast.success(newDone ? 'Task completed' : 'Task reopened');
 
           // Refresh open editor tab if this file is open
           const editorStore = useEditorStore.getState();
           const openTab = editorStore.tabs.find((t) => t.filePath === action.file_path);
           if (openTab) {
-            editorStore.updateTabContent(openTab.id, newContent, false);
-            // Trigger editor refresh by dispatching a custom event
-            window.dispatchEvent(new CustomEvent('notesage:refresh-editor-content', {
-              detail: { filePath: action.file_path, content: newContent },
-            }));
+            try {
+              const newContent = await tauriApi.readFile(action.file_path);
+              editorStore.updateTabContent(openTab.id, newContent, false);
+              window.dispatchEvent(new CustomEvent('notesage:refresh-editor-content', {
+                detail: { filePath: action.file_path, content: newContent },
+              }));
+            } catch {
+              // File read failed — editor will catch up via watcher
+            }
           }
         } catch (error) {
           log.error('actions', 'Toggle task failed', error);

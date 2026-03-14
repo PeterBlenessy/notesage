@@ -45,7 +45,6 @@ import { log } from "@/lib/logger";
 import type { PaletteMode } from "@/lib/command-palette";
 import { stopAcpAgent } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
-import { refreshTags, refreshMentions } from "@/hooks/useFileOperations";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -461,9 +460,15 @@ function App() {
       // get it right in one shot — no flash of local-only then merged content)
       await refreshNotesTree();
 
-      // Initial workspace tag and mention scan (for autocomplete)
-      refreshTags();
-      refreshMentions();
+      // Initialize the SQLite document index (global scope + per-project)
+      try {
+        await tauriApi.indexInit(); // global index
+        for (const project of useWorkspaceStore.getState().projects) {
+          await tauriApi.indexInit(project.path);
+        }
+      } catch (error) {
+        log.error('lifecycle', 'Failed to initialize index', error);
+      }
 
       // Signal that startup tree validation is complete — watchers can now start
       settings.setStartupReady(true);
@@ -601,9 +606,9 @@ function App() {
     }
   }, [openFile]);
 
-  const handleOpenFileAtTag = useCallback(async (filePath: string, fileName: string, tag: string, occurrence: number) => {
+  const handleOpenFileAtTag = useCallback(async (filePath: string, fileName: string, symbol: string, occurrenceInFile: number) => {
     try {
-      await openFileAtTag(filePath, fileName, tag, occurrence);
+      await openFileAtTag(filePath, fileName, symbol, occurrenceInFile);
     } catch (error) {
       log.error('lifecycle', 'Failed to open file at tag', error);
       toast.error(`Failed to open file: ${error}`);

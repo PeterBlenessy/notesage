@@ -80,9 +80,8 @@ export function getPlaceholder(mode: PaletteMode, fileCount: number, drilldownNa
 export interface SymbolOccurrence {
   path: string;
   file_name: string;
-  line_number: number;
-  occurrence_in_file: number;
-  snippet: string;
+  context_before: string;
+  context_after: string;
 }
 
 export interface SymbolSearchConfig {
@@ -90,8 +89,9 @@ export interface SymbolSearchConfig {
   label: string;
   labelSingular: string;
   icon: LucideIcon;
-  allItems: string[];
-  filesByItem: Record<string, string[]>;
+  /** Fetch items matching query (async, hits index DB). */
+  fetchItems: (query: string, paths: string[]) => Promise<{ name: string; fileCount: number }[]>;
+  /** Fetch occurrences for a specific item (async, hits index DB). */
   findOccurrences: (name: string, paths: string[]) => Promise<SymbolOccurrence[]>;
 }
 

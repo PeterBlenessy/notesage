@@ -34,9 +34,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
-import { FileEntry, ContentMatch, ResearchSearchResult, tauriApi } from "@/lib/tauri";
-import { useTagStore } from "@/stores/tag-store";
-import { useMentionStore } from "@/stores/mention-store";
+import { FileEntry, IndexContentSearchResult, IndexResearchResult, tauriApi } from "@/lib/tauri";
 import type { PaletteMode, SymbolSearchConfig } from "@/lib/command-palette";
 import { deriveMode, getQuery, getPrefixForMode, getPlaceholder, getSearchPaths } from "@/lib/command-palette";
 
@@ -47,7 +45,7 @@ interface CommandPaletteProps {
   onOpenChange: (open: boolean) => void;
   initialMode?: PaletteMode;
   drilldownName?: string;
-  onOpenFileAtSymbol?: (path: string, name: string, symbol: string, occurrence: number) => void;
+  onOpenFileAtSymbol?: (path: string, name: string, symbol: string, occurrenceInFile: number) => void;
   onNewNote: () => void;
   onNewProject: () => void;
   onOpenFolder: () => void;
@@ -77,50 +75,55 @@ export function CommandPalette({
   const mode = deriveMode(input, initialMode === "files" ? "files" : undefined);
   const query = getQuery(input, mode);
 
-  // Set initial input when palette opens with a mode
+  // Set initial input when palette opens with a mode.
+  // Use a ref to move the cursor after the prefix on the first focus
+  // (otherwise the Dialog auto-focus selects the prefix character).
+  const needsCursorFix = useRef(false);
+
   useEffect(() => {
     if (open) {
       const prefix = getPrefixForMode(initialMode);
       setInput(prefix ?? "");
+      if (prefix) {
+        needsCursorFix.current = true;
+      }
     }
   }, [open, initialMode]);
 
-  // --- Tag config ---
-  const allTags = useTagStore((s) => s.tags);
-  const filesByTag = useTagStore((s) => s.filesByTag);
-
+  // --- Tag config (reads from SQLite index) ---
   const tagConfig: SymbolSearchConfig = useMemo(
     () => ({
       prefix: "#",
       label: "Tags",
       labelSingular: "Tag",
       icon: Hash,
-      allItems: allTags,
-      filesByItem: filesByTag,
-      findOccurrences: async (name, paths) => tauriApi.findTagOccurrences(name, paths),
+      fetchItems: async (query, paths) => {
+        const tags = await tauriApi.indexTags(paths, query || undefined);
+        return tags.map((t) => ({ name: t.tag, fileCount: t.file_count }));
+      },
+      findOccurrences: async (name, paths) => tauriApi.indexTagOccurrences(name, paths),
     }),
-    [allTags, filesByTag]
+    []
   );
 
-  // --- Mention config ---
-  const allMentions = useMentionStore((s) => s.mentions);
-  const filesByMention = useMentionStore((s) => s.filesByMention);
-
+  // --- Mention config (reads from SQLite index) ---
   const mentionConfig: SymbolSearchConfig = useMemo(
     () => ({
       prefix: "@",
       label: "Mentions",
       labelSingular: "Mention",
       icon: AtSign,
-      allItems: allMentions,
-      filesByItem: filesByMention,
-      findOccurrences: async (name, paths) => tauriApi.findMentionOccurrences(name, paths),
+      fetchItems: async (query, paths) => {
+        const mentions = await tauriApi.indexMentions(paths, query || undefined);
+        return mentions.map((m) => ({ name: m.mention, fileCount: m.file_count }));
+      },
+      findOccurrences: async (name, paths) => tauriApi.indexMentionOccurrences(name, paths),
     }),
-    [allMentions, filesByMention]
+    []
   );
 
-  // --- Research search ---
-  const [researchResults, setResearchResults] = useState<ResearchSearchResult[]>([]);
+  // --- Research search (from SQLite index) ---
+  const [researchResults, setResearchResults] = useState<IndexResearchResult[]>([]);
   const [researchSearching, setResearchSearching] = useState(false);
   const researchSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -136,27 +139,10 @@ export function CommandPalette({
     researchSearchTimerRef.current = setTimeout(async () => {
       researchSearchTimerRef.current = null;
       try {
-        const ws = useWorkspaceStore.getState();
-        const settings = useSettingsStore.getState();
-        const dirs: string[] = [];
-        for (const project of ws.projects) {
-          dirs.push(`${project.path}/.notesage/research`);
-        }
-        try {
-          const homeDir = settings.notesRootPath
-            ? settings.notesRootPath
-            : await tauriApi.getHomeDir().then((h) => `${h}/Notesage`);
-          dirs.push(`${homeDir}/.notesage/research`);
-        } catch {
-          // skip global research
-        }
-        if (dirs.length > 0) {
-          const q = query.trim();
-          const results = await tauriApi.searchResearch(dirs, q || undefined, undefined, 50);
-          setResearchResults(results);
-        } else {
-          setResearchResults([]);
-        }
+        const paths = getSearchPaths();
+        const q = query.trim();
+        const results = await tauriApi.indexSearchResearch(paths, q || undefined, undefined, 50);
+        setResearchResults(results);
       } catch (error) {
         console.error("Failed to search research:", error);
         setResearchResults([]);
@@ -170,8 +156,8 @@ export function CommandPalette({
     };
   }, [mode, open, query]);
 
-  // --- Content search (files mode) ---
-  const [contentMatches, setContentMatches] = useState<ContentMatch[]>([]);
+  // --- Content search (files mode, FTS5) ---
+  const [contentMatches, setContentMatches] = useState<IndexContentSearchResult[]>([]);
   const [contentSearching, setContentSearching] = useState(false);
   const contentSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -183,7 +169,7 @@ export function CommandPalette({
     }
 
     const q = query.trim();
-    if (q.length < 3) {
+    if (q.length < 2) {
       setContentMatches([]);
       setContentSearching(false);
       return;
@@ -196,7 +182,7 @@ export function CommandPalette({
       try {
         const searchPaths = getSearchPaths();
         if (searchPaths.length > 0) {
-          const matches = await tauriApi.searchFileContent(q, searchPaths);
+          const matches = await tauriApi.indexSearchContent(searchPaths, q, 50);
           setContentMatches(matches);
         } else {
           setContentMatches([]);
@@ -207,7 +193,7 @@ export function CommandPalette({
       } finally {
         setContentSearching(false);
       }
-    }, 300);
+    }, 200);
 
     return () => {
       if (contentSearchTimerRef.current) clearTimeout(contentSearchTimerRef.current);
@@ -306,11 +292,11 @@ export function CommandPalette({
     }
   }, [onOpenChange, openFile]);
 
-  const handleSymbolSelect = useCallback(async (path: string, name: string, symbol: string, occurrence: number) => {
+  const handleSymbolSelect = useCallback(async (path: string, name: string, symbol: string, occurrenceInFile: number) => {
     onOpenChange(false);
     try {
       if (onOpenFileAtSymbol) {
-        onOpenFileAtSymbol(path, name, symbol, occurrence);
+        onOpenFileAtSymbol(path, name, symbol, occurrenceInFile);
       } else {
         await openFile(path, name);
       }
@@ -363,6 +349,15 @@ export function CommandPalette({
         placeholder={getPlaceholder(mode, allFiles.length, symbolDrilldownName)}
         value={input}
         onValueChange={setInput}
+        onFocus={(e) => {
+          if (needsCursorFix.current) {
+            needsCursorFix.current = false;
+            const el = e.target as HTMLInputElement;
+            requestAnimationFrame(() => {
+              el.selectionStart = el.selectionEnd = el.value.length;
+            });
+          }
+        }}
       />
       <CommandList className="max-h-[360px]">
         <CommandEmpty>{emptyText}</CommandEmpty>
@@ -553,17 +548,16 @@ export function CommandPalette({
               )}
               {!contentSearching && contentMatches.map((match, idx) => (
                 <CommandItem
-                  key={`content-${match.path}-${match.line_number}-${idx}`}
+                  key={`content-${match.path}-${idx}`}
                   value={`content ${match.file_name} ${match.path} ${match.snippet}`}
                   onSelect={() => handleOpenFile(match.path, match.file_name)}
                   className="flex-col items-start gap-0.5"
                 >
                   <div className="flex items-center gap-2 w-full">
                     <FileText className="h-4 w-4 shrink-0" strokeWidth={1.5} />
-                    <span className="flex-1 truncate">{match.file_name}</span>
-                    <span className="text-xs text-muted-foreground tabular-nums">:{match.line_number}</span>
+                    <span className="flex-1 truncate">{match.title || match.file_name}</span>
                   </div>
-                  <span className="text-xs text-muted-foreground truncate w-full pl-6">{match.snippet}</span>
+                  <span className="text-xs text-muted-foreground truncate w-full pl-6" dangerouslySetInnerHTML={{ __html: match.snippet }} />
                 </CommandItem>
               ))}
             </CommandGroup>

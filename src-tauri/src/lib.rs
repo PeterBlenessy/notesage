@@ -1,7 +1,9 @@
 mod commands;
 mod export;
+mod index;
 
 use commands::*;
+use index::IndexState;
 use tauri::{Emitter, Manager, RunEvent};
 use tauri_plugin_log::{Target, TargetKind, RotationStrategy, TimezoneStrategy};
 
@@ -51,6 +53,7 @@ pub fn run() {
         .manage(McpState::new())
         .manage(TranscriptionState::new())
         .manage(LocalInferenceState::new())
+        .manage(IndexState::new())
         .invoke_handler(tauri::generate_handler![
             open_devtools,
             set_debug_logging,
@@ -125,12 +128,20 @@ pub fn run() {
             copilot_lsp_request_completion,
             copilot_lsp_did_show_completion,
             copilot_lsp_accept_completion,
-            scan_tags_in_directories,
-            find_tag_occurrences,
-            scan_mentions_in_directories,
-            find_mention_occurrences,
-            search_file_content,
-            search_research,
+            // SQLite document index
+            index::index_init,
+            index::index_file,
+            index::index_rebuild,
+            index::index_tags,
+            index::index_tag_occurrences,
+            index::index_mentions,
+            index::index_mention_occurrences,
+            index::index_search_research,
+            index::index_tasks,
+            index::index_toggle_task,
+            index::index_goals,
+            index::index_search_content,
+            index::index_stats,
             discover_skills,
             read_skill_content,
             execute_skill_script,

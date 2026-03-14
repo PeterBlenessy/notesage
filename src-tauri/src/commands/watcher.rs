@@ -28,7 +28,7 @@ pub struct WatcherState {
     watched_paths: Mutex<HashSet<PathBuf>>,
     /// Paths that Notesage itself just wrote — skip events for these.
     /// Uses timestamps so a single mark covers the full debounce window.
-    self_writes: Mutex<HashMap<PathBuf, Instant>>,
+    pub(crate) self_writes: Mutex<HashMap<PathBuf, Instant>>,
 }
 
 impl WatcherState {
@@ -205,6 +205,14 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
                         kind: effective_kind.to_string(),
                     };
 
+                    // Queue file for reindexing (Rust-side, no frontend round-trip)
+                    if let Some(indexer) = app_handle.try_state::<crate::index::IndexState>() {
+                        indexer.queue_reindex(
+                            payload.path.clone(),
+                            payload.kind.clone(),
+                        );
+                    }
+
                     // Emit per-event for backward compatibility
                     if let Err(e) = app_handle.emit("file-changed", payload.clone()) {
                         log::error!(target: "notesage::watcher", "Failed to emit file-changed event: {:?}", e);
@@ -219,6 +227,9 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
                 if let Err(e) = app_handle.emit("file-changed-batch", &batch) {
                     log::error!(target: "notesage::watcher", "Failed to emit file-changed-batch event: {:?}", e);
                 }
+
+                // Process the reindex queue after emitting events
+                crate::index::process_reindex_queue(&app_handle);
             }
         },
     )

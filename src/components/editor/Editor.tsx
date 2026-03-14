@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef, useState, useMemo } from "react";
 import { EditorContent } from "@tiptap/react";
+import { TextSelection } from "@tiptap/pm/state";
 import { Command, File, FolderDot, Folder, Clock } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
 import { useRoutingStore } from "@/stores/routing-store";
@@ -84,33 +85,163 @@ const PX_PER_CM = 96 / 2.54;
 const EMPTY_ACTIVITIES: DelegationActivity[] = [];
 
 /**
- * Scroll the editor to the first occurrence of `searchText` in the ProseMirror document.
- * Uses the same text-node walk strategy as `findNthTagInDoc`.
+ * Find the ProseMirror position of `searchText` in the document.
+ *
+ * Uses `doc.textContent` (which concatenates text across all node boundaries)
+ * so it correctly finds text that spans multiple ProseMirror text nodes
+ * (e.g. "Buy #groceries" where "Buy " and "#groceries" are separate nodes).
+ *
+ * Returns the PM position of the match, or null if not found.
  */
-function scrollToTextInEditor(
-  editor: { state: { doc: { descendants: (fn: (node: { isText: boolean; text?: string }, pos: number) => boolean | void) => void } }; view: { domAtPos: (pos: number) => { node: Node; offset: number } } },
-  searchText: string,
-) {
-  try {
-    const needle = searchText.toLowerCase();
-    let matchPos: number | null = null;
-    editor.state.doc.descendants((node, pos) => {
-      if (matchPos !== null) return false;
-      if (!node.isText || !node.text) return;
-      const idx = node.text.toLowerCase().indexOf(needle);
-      if (idx !== -1) {
-        matchPos = pos + idx;
-        return false;
-      }
-    });
+/**
+ * Strip common markdown inline formatting markers from text.
+ * Converts raw markdown like `Buy **groceries** and \`code\`` into
+ * plain text like `Buy groceries and code` to match ProseMirror's textContent.
+ */
+function stripMarkdownInline(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1')   // **bold**
+    .replace(/__(.+?)__/g, '$1')         // __bold__
+    .replace(/\*(.+?)\*/g, '$1')         // *italic*
+    .replace(/_(.+?)_/g, '$1')           // _italic_
+    .replace(/~~(.+?)~~/g, '$1')         // ~~strikethrough~~
+    .replace(/`(.+?)`/g, '$1')           // `code`
+    .replace(/\[(.+?)\]\(.+?\)/g, '$1'); // [link](url)
+}
 
-    if (matchPos !== null) {
-      const domInfo = editor.view.domAtPos(matchPos);
-      const node = domInfo.node instanceof HTMLElement ? domInfo.node : domInfo.node.parentElement;
-      node?.scrollIntoView({ block: "center" });
+/**
+ * Find the ProseMirror position of `searchText` in the document.
+ *
+ * Builds the full text and position map in a SINGLE PASS through the document
+ * tree, so they're always in sync. This correctly handles non-text leaf nodes
+ * (e.g. hardBreak → "\n") that contribute to textContent but aren't text nodes.
+ */
+function findTextPositionInDoc(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  doc: any,
+  searchText: string,
+): number | null {
+  let fullText = '';
+  const posMap: number[] = []; // posMap[i] = PM position of the i-th character in fullText
+
+  doc.descendants((node: { isText: boolean; isLeaf: boolean; text?: string; type: { spec: { leafText?: (n: unknown) => string } } }, pos: number) => {
+    if (node.isText && node.text) {
+      for (let i = 0; i < node.text.length; i++) {
+        posMap.push(pos + i);
+        fullText += node.text[i];
+      }
+    } else if (node.isLeaf && !node.isText) {
+      // Non-text leaves (hardBreak, image, etc.) may contribute to textContent
+      const leafText = node.type.spec.leafText?.(node) ?? '';
+      for (let i = 0; i < leafText.length; i++) {
+        posMap.push(pos);
+        fullText += leafText[i];
+      }
+    }
+  });
+
+  // Parse occurrence index if encoded as "searchText\0N"
+  let needle: string;
+  let nth = 0;
+  const nullIdx = searchText.indexOf('\0');
+  if (nullIdx !== -1) {
+    needle = searchText.slice(0, nullIdx).toLowerCase();
+    nth = parseInt(searchText.slice(nullIdx + 1), 10) || 0;
+  } else {
+    needle = searchText.toLowerCase();
+  }
+
+  const lowerText = fullText.toLowerCase();
+  let strippedNeedle: string | null = null;
+
+  // Find the Nth occurrence
+  let found = 0;
+  let startFrom = 0;
+  while (startFrom < lowerText.length) {
+    let textOffset = lowerText.indexOf(needle, startFrom);
+    // Fallback: try stripped markdown
+    if (textOffset === -1 && !strippedNeedle) {
+      strippedNeedle = stripMarkdownInline(needle);
+      if (strippedNeedle !== needle) {
+        textOffset = lowerText.indexOf(strippedNeedle, startFrom);
+      }
+    }
+    if (textOffset === -1) return null;
+
+    if (found === nth) {
+      return posMap[textOffset] ?? null;
+    }
+    found++;
+    startFrom = textOffset + 1;
+  }
+
+  return null;
+}
+
+/**
+ * Scroll the editor so that the given ProseMirror position is vertically
+ * centered in the scroll container, and move the cursor there.
+ *
+ * Key: sets the selection via a raw transaction WITHOUT scrollIntoView.
+ * Tiptap's `editor.commands.setTextSelection()` chains `.scrollIntoView()`,
+ * which pre-scrolls the container and invalidates our centering math.
+ *
+ * `programmaticScrollRef` is set to true during the scroll to prevent the
+ * ResizeObserver and scroll-save listeners from interfering.
+ */
+/**
+ * Scroll a ProseMirror position to the vertical center of the scroll container
+ * and place the cursor there.
+ *
+ * Uses the simplest reliable approach:
+ * 1. Get the DOM element at the position via view.domAtPos
+ * 2. Call scrollIntoView({ block: "center" }) — lets the browser handle the math
+ * 3. Set the ProseMirror selection (element is already in view, no auto-scroll)
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function scrollPosToCenter(editor: any, pos: number, _scrollContainer: HTMLElement, programmaticScrollRef?: React.MutableRefObject<boolean>) {
+  // Guard: prevent ResizeObserver and scroll-save from interfering
+  if (programmaticScrollRef) programmaticScrollRef.current = true;
+
+  try {
+    // 1. Find the DOM element at this position
+    const domInfo = editor.view.domAtPos(pos);
+    const el: Element | null = domInfo.node instanceof Element
+      ? domInfo.node
+      : domInfo.node.parentElement;
+
+    // 2. Scroll into view — browser handles all the container math
+    if (el) {
+      el.scrollIntoView({ block: "center", behavior: "instant" });
     }
   } catch {
-    // Position mapping failed — ignore
+    // Position not in DOM
+  }
+
+  // 3. Set cursor AFTER scroll — element is visible, browser won't fight us
+  try {
+    const tr = editor.view.state.tr.setSelection(
+      TextSelection.create(editor.view.state.doc, pos)
+    );
+    editor.view.dispatch(tr);
+  } catch {
+    // Invalid position
+  }
+
+  // Clear guard after scroll settles
+  if (programmaticScrollRef) {
+    setTimeout(() => { programmaticScrollRef.current = false; }, 500);
+  }
+}
+
+/**
+ * Find text in the ProseMirror document, move the cursor there, and scroll to center it.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function scrollToTextInEditor(editor: any, searchText: string, scrollContainer?: HTMLElement | null, programmaticScrollRef?: React.MutableRefObject<boolean>) {
+  const pos = findTextPositionInDoc(editor.state.doc, searchText);
+  if (pos !== null && scrollContainer) {
+    scrollPosToCenter(editor, pos, scrollContainer, programmaticScrollRef);
   }
 }
 
@@ -201,6 +332,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const isResizing = useRef(false);
+  const isProgrammaticScroll = useRef(false);
   const resizeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [renderedWidth, setRenderedWidth] = useState<number | null>(null);
   const [pageInfo, setPageInfo] = useState<{ current: number; total: number } | null>(null);
@@ -234,8 +366,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   // Save current scroll position as a ratio (0–1) keyed by file path
   const saveScrollRatio = useCallback(() => {
     const el = scrollAreaRef.current;
-    // Skip save during resize or before first tab load (prevents saving 0 on remount)
-    if (!el || !activeTab || isResizing.current || !lastLoadedTabId.current) return;
+    // Skip save during resize, programmatic scroll, or before first tab load
+    if (!el || !activeTab || isResizing.current || isProgrammaticScroll.current || !lastLoadedTabId.current) return;
     const maxScroll = el.scrollHeight - el.clientHeight;
     const ratio = maxScroll > 0 ? el.scrollTop / maxScroll : 0;
     setScrollPosition(activeTab.filePath, ratio);
@@ -286,14 +418,17 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     return () => observer.disconnect();
   }, [activeTab]);
 
-  // Observe scroll container for resize — suppress scroll saves and restore after settling
+  // Observe scroll container for resize — suppress scroll saves and restore after settling.
+  // Skip restore if a programmatic scroll-to-text/tag is active.
   useEffect(() => {
     const el = scrollAreaRef.current;
     if (!el || !activeTab) return;
     const observer = new ResizeObserver(() => {
+      if (isProgrammaticScroll.current) return; // Don't interfere with scroll-to-text
       isResizing.current = true;
       clearTimeout(resizeTimer.current);
       resizeTimer.current = setTimeout(() => {
+        if (isProgrammaticScroll.current) { isResizing.current = false; return; }
         restoreScrollRatio(activeTab.filePath);
         // Allow saves again after restore has been fully applied (matches double-RAF in restore)
         requestAnimationFrame(() => {
@@ -768,31 +903,22 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       if (activeTab.scrollToTag) {
         const { tag, occurrence } = activeTab.scrollToTag;
         setScrollToTag(activeTab.id, undefined);
-        requestAnimationFrame(() => {
-          if (!editor.state?.doc) return;
+        // Double-rAF: first frame ProseMirror updates DOM, second frame browser completes layout
+        requestAnimationFrame(() => { requestAnimationFrame(() => {
+          if (!editor.state?.doc) { if (scrollAreaRef.current) scrollAreaRef.current.style.opacity = '1'; return; }
           const pos = findNthTagInDoc(editor.state.doc, tag, occurrence);
-          if (pos !== null) {
-            try {
-              const domInfo = editor.view.domAtPos(pos);
-              const node = domInfo.node instanceof HTMLElement ? domInfo.node : domInfo.node.parentElement;
-              node?.scrollIntoView({ block: "center" });
-            } catch {
-              // fallback: just reveal scroll area
-            }
+          if (pos !== null && scrollAreaRef.current) {
+            scrollPosToCenter(editor, pos, scrollAreaRef.current, isProgrammaticScroll);
           }
-          if (scrollAreaRef.current) {
-            scrollAreaRef.current.style.opacity = '1';
-          }
-        });
+          if (scrollAreaRef.current) scrollAreaRef.current.style.opacity = '1';
+        }); });
       } else if (activeTab.scrollToText) {
         const text = activeTab.scrollToText;
         setScrollToText(activeTab.id, undefined);
-        requestAnimationFrame(() => {
-          scrollToTextInEditor(editor, text);
-          if (scrollAreaRef.current) {
-            scrollAreaRef.current.style.opacity = '1';
-          }
-        });
+        requestAnimationFrame(() => { requestAnimationFrame(() => {
+          scrollToTextInEditor(editor, text, scrollAreaRef.current, isProgrammaticScroll);
+          if (scrollAreaRef.current) scrollAreaRef.current.style.opacity = '1';
+        }); });
       } else {
         // Restore scroll position then reveal
         restoreScrollRatio(activeTab.filePath, () => {
@@ -814,14 +940,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     requestAnimationFrame(() => {
       if (!editor.state?.doc) return;
       const pos = findNthTagInDoc(editor.state.doc, tag, occurrence);
-      if (pos !== null) {
-        try {
-          const domInfo = editor.view.domAtPos(pos);
-          const node = domInfo.node instanceof HTMLElement ? domInfo.node : domInfo.node.parentElement;
-          node?.scrollIntoView({ block: "center" });
-        } catch {
-          // Position not in DOM
-        }
+      if (pos !== null && scrollAreaRef.current) {
+        scrollPosToCenter(editor, pos, scrollAreaRef.current, isProgrammaticScroll);
       }
     });
   }, [editor, activeTab?.scrollToTag, activeTab?.id, setScrollToTag]);
@@ -832,8 +952,9 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     if (activeTab.id !== lastLoadedTabId.current) return;
     const text = activeTab.scrollToText;
     setScrollToText(activeTab.id, undefined);
+    // Single rAF is enough — content is already rendered for same-tab jumps
     requestAnimationFrame(() => {
-      scrollToTextInEditor(editor, text);
+      scrollToTextInEditor(editor, text, scrollAreaRef.current, isProgrammaticScroll);
     });
   }, [editor, activeTab?.scrollToText, activeTab?.id, setScrollToText]);
 

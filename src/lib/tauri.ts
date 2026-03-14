@@ -100,38 +100,71 @@ export interface AgentInstruction {
 // ACP (Agent Client Protocol) types
 // ---------------------------------------------------------------------------
 
-export interface TagOccurrence {
-  path: string;
-  file_name: string;
-  line_number: number;
-  occurrence_in_file: number;
-  snippet: string;
+// SQLite document index types
+export interface IndexedTag {
+  tag: string;
+  file_count: number;
 }
 
-export interface MentionOccurrence {
+export interface IndexTagOccurrence {
   path: string;
   file_name: string;
-  line_number: number;
-  occurrence_in_file: number;
-  snippet: string;
+  context_before: string;
+  context_after: string;
 }
 
-export interface ContentMatch {
+export interface IndexedMention {
+  mention: string;
+  file_count: number;
+}
+
+export interface IndexedTask {
   path: string;
   file_name: string;
-  line_number: number;
-  snippet: string;
+  text: string;
+  done: boolean;
+  position: number;
+  context_before: string;
+  context_after: string;
+  project_name?: string;
 }
 
-export interface ResearchSearchResult {
+export interface IndexedGoal {
+  path: string;
+  file_name: string;
+  title: string;
+  template: string;
+  total_tasks: number;
+  completed_tasks: number;
+  project_name?: string;
+}
+
+export interface IndexResearchResult {
   file: string;
   title: string;
   tags: string[];
   source_url: string;
   snippet: string;
-  relevance: number;
   date_saved: string;
   word_count: number;
+  project_name?: string;
+}
+
+export interface IndexContentSearchResult {
+  path: string;
+  file_name: string;
+  title?: string;
+  snippet: string;
+  rank: number;
+}
+
+export interface IndexStats {
+  file_count: number;
+  tag_count: number;
+  mention_count: number;
+  task_count: number;
+  goal_count: number;
+  indexed_at: number;
 }
 
 export interface ActionItem {
@@ -557,42 +590,6 @@ export const tauriApi = {
     await invoke("clear_logs");
   },
 
-  // Tag scanning
-  async scanTagsInDirectories(paths: string[]): Promise<Record<string, string[]>> {
-    return await invoke<Record<string, string[]>>("scan_tags_in_directories", { paths });
-  },
-
-  async findTagOccurrences(tag: string, paths: string[]): Promise<TagOccurrence[]> {
-    return await invoke<TagOccurrence[]>("find_tag_occurrences", { tag, paths });
-  },
-
-  // Mention scanning
-  async scanMentionsInDirectories(paths: string[]): Promise<Record<string, string[]>> {
-    return await invoke<Record<string, string[]>>("scan_mentions_in_directories", { paths });
-  },
-
-  async findMentionOccurrences(mention: string, paths: string[]): Promise<MentionOccurrence[]> {
-    return await invoke<MentionOccurrence[]>("find_mention_occurrences", { mention, paths });
-  },
-
-  async searchFileContent(query: string, paths: string[]): Promise<ContentMatch[]> {
-    return await invoke<ContentMatch[]>("search_file_content", { query, paths });
-  },
-
-  async searchResearch(
-    dirs: string[],
-    query?: string,
-    tag?: string,
-    limit?: number,
-  ): Promise<ResearchSearchResult[]> {
-    return await invoke<ResearchSearchResult[]>("search_research", {
-      dirs,
-      query: query ?? null,
-      tag: tag ?? null,
-      limit: limit ?? null,
-    });
-  },
-
   // Action scanning
   async scanActions(
     paths: string[],
@@ -602,6 +599,93 @@ export const tauriApi = {
       paths,
       since: since ?? null,
     });
+  },
+
+  // SQLite document index
+  async indexInit(projectPath?: string): Promise<IndexStats> {
+    return await invoke<IndexStats>("index_init", { projectPath: projectPath ?? null });
+  },
+
+  async indexFile(path: string): Promise<void> {
+    await invoke("index_file", { path });
+  },
+
+  async indexRebuild(projectPath?: string): Promise<IndexStats> {
+    return await invoke<IndexStats>("index_rebuild", { projectPath: projectPath ?? null });
+  },
+
+  async indexTags(projectPaths: string[], query?: string): Promise<IndexedTag[]> {
+    return await invoke<IndexedTag[]>("index_tags", { projectPaths, query: query ?? null });
+  },
+
+  async indexTagOccurrences(tag: string, projectPaths: string[]): Promise<IndexTagOccurrence[]> {
+    return await invoke<IndexTagOccurrence[]>("index_tag_occurrences", { tag, projectPaths });
+  },
+
+  async indexMentions(projectPaths: string[], query?: string): Promise<IndexedMention[]> {
+    return await invoke<IndexedMention[]>("index_mentions", { projectPaths, query: query ?? null });
+  },
+
+  async indexMentionOccurrences(mention: string, projectPaths: string[]): Promise<IndexTagOccurrence[]> {
+    return await invoke<IndexTagOccurrence[]>("index_mention_occurrences", { mention, projectPaths });
+  },
+
+  async indexSearchResearch(
+    projectPaths: string[],
+    query?: string,
+    tag?: string,
+    limit?: number,
+  ): Promise<IndexResearchResult[]> {
+    return await invoke<IndexResearchResult[]>("index_search_research", {
+      projectPaths,
+      query: query ?? null,
+      tag: tag ?? null,
+      limit: limit ?? null,
+    });
+  },
+
+  async indexTasks(
+    projectPaths: string[],
+    done?: boolean,
+    query?: string,
+    limit?: number,
+  ): Promise<IndexedTask[]> {
+    return await invoke<IndexedTask[]>("index_tasks", {
+      projectPaths,
+      done: done ?? null,
+      query: query ?? null,
+      limit: limit ?? null,
+    });
+  },
+
+  async indexToggleTask(
+    path: string,
+    contextBefore: string,
+    contextAfter: string,
+    taskText: string,
+    done: boolean,
+  ): Promise<void> {
+    await invoke("index_toggle_task", { path, contextBefore, contextAfter, taskText, done });
+  },
+
+  async indexGoals(projectPaths: string[]): Promise<IndexedGoal[]> {
+    return await invoke<IndexedGoal[]>("index_goals", { projectPaths });
+  },
+
+  async indexSearchContent(
+    projectPaths: string[],
+    query: string,
+    limit?: number,
+  ): Promise<IndexContentSearchResult[]> {
+    return await invoke<IndexContentSearchResult[]>("index_search_content", {
+      projectPaths,
+      query,
+      limit: limit ?? null,
+    });
+  },
+
+  async indexStats(projectPath?: string): Promise<IndexStats> {
+    return await invoke<IndexStats>("index_stats", { projectPath: projectPath ?? null });
   },
 
   // Skill & agent operations
