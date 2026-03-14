@@ -557,7 +557,13 @@ export function CommandPalette({
                     <FileText className="h-4 w-4 shrink-0" strokeWidth={1.5} />
                     <span className="flex-1 truncate">{match.title || match.file_name}</span>
                   </div>
-                  <span className="text-xs text-muted-foreground truncate w-full pl-6" dangerouslySetInnerHTML={{ __html: match.snippet }} />
+                  <span className="text-xs text-muted-foreground truncate w-full pl-6">
+                    {match.snippet.split(/<b>|<\/b>/).map((part, i) =>
+                      i % 2 === 1
+                        ? <span key={i} className="font-bold text-foreground">{part}</span>
+                        : part
+                    )}
+                  </span>
                 </CommandItem>
               ))}
             </CommandGroup>
