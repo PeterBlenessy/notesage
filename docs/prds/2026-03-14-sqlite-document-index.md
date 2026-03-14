@@ -742,7 +742,7 @@ All UI changes use existing shadcn/ui components and Tauri invoke patterns.
 
 - [x] Deleted files are removed from the index
 
-- [ ] Renamed files update the index
+- [x] Renamed files update the index (watcher emits delete + create)
 
 ### Functional — Research Search
 
@@ -818,7 +818,7 @@ All UI changes use existing shadcn/ui components and Tauri invoke patterns.
 
 - [x] Command palette UX unchanged (same shortcuts, same prefix modes, same drilldown)
 
-- [ ] Status bar shows subtle spinner during bulk reindex only
+- [x] Status bar shows subtle spinner during bulk reindex only
 
 - [x] No new settings or configuration required from user (zero-config)
 
@@ -826,7 +826,7 @@ All UI changes use existing shadcn/ui components and Tauri invoke patterns.
 
 - [x] Existing `tag-store` and `mention-store` Zustand stores deleted
 
-- [ ] No orphaned localStorage keys from removed stores (need to clear on first launch)
+- [x] No orphaned localStorage keys from removed stores (cleared on first launch)
 
 - [x] Old Rust commands removed from `generate_handler![]` and implementations deleted from `file.rs`/`actions.rs`
 
@@ -836,10 +836,10 @@ All UI changes use existing shadcn/ui components and Tauri invoke patterns.
 
 ## Remaining Items
 
-- [ ] Clear orphaned `tag-store` and `mention-store` localStorage keys on first launch after upgrade
-- [ ] Status bar spinner during bulk reindex
+- [x] Clear orphaned `tag-store` and `mention-store` localStorage keys on first launch after upgrade
+- [x] Status bar spinner during bulk reindex
 - [ ] Cross-device iCloud testing (not tested on second device)
-- [ ] Renamed file index update (delete detects removal; create detects new file; but rename is two events that may briefly show stale data)
+- [x] Renamed file index update (watcher emits delete + create events; indexer handles both)
 
 ## Out of Scope
 

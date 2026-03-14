@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import type { Editor } from "@tiptap/core";
 import { ArrowUpCircle, CheckSquare, Command, Cpu, Download, GitBranch, Loader2, ScrollText, X } from "lucide-react";
 import { useActionStore } from "@/stores/action-store";
@@ -105,6 +106,39 @@ function ActionsIndicator({ onOpenActions }: { onOpenActions?: () => void }) {
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
+      <span className="w-px h-2.5 bg-border" />
+    </>
+  );
+}
+
+function IndexProgressIndicator() {
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
+
+  useEffect(() => {
+    let unlisten1: (() => void) | undefined;
+    let unlisten2: (() => void) | undefined;
+
+    import("@tauri-apps/api/event").then(({ listen }) => {
+      listen<{ current: number; total: number }>("index-progress", (event) => {
+        setProgress(event.payload);
+      }).then((fn) => { unlisten1 = fn; });
+
+      listen("index-ready", () => {
+        setProgress(null);
+      }).then((fn) => { unlisten2 = fn; });
+    });
+
+    return () => { unlisten1?.(); unlisten2?.(); };
+  }, []);
+
+  if (!progress) return null;
+
+  return (
+    <>
+      <span className="inline-flex items-center gap-1 text-muted-foreground">
+        <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.5} />
+        <span>Indexing {progress.current}/{progress.total}</span>
+      </span>
       <span className="w-px h-2.5 bg-border" />
     </>
   );
@@ -375,6 +409,7 @@ export function StatusBar({
     return (
       <div className="h-6 border-t border-border px-3 flex items-center text-[11px] shrink-0 overflow-x-auto overflow-y-hidden whitespace-nowrap bg-background text-muted-foreground">
         <div className="flex items-center gap-2 min-w-0">
+          <IndexProgressIndicator />
           <ModelDownloadIndicator />
           <LocalAIIndicator />
           <ActionsIndicator onOpenActions={onOpenActions} />

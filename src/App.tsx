@@ -207,6 +207,9 @@ function App() {
   // Migrate v1 AI settings to v2 connections/routing on first load
   useEffect(() => {
     migrateV1AISettings();
+    // Clear orphaned localStorage keys from removed Zustand stores (v0.20+)
+    localStorage.removeItem('tag-store');
+    localStorage.removeItem('mention-store');
   }, []);
 
   // Sync debug logging setting to Rust backend on startup
