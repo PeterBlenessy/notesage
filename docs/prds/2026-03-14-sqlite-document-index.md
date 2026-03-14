@@ -1,8 +1,6 @@
 # SQLite Document Index & Unified Storage Architecture
 
-**Date:** 2026-03-14
-**Status:** Draft
-**Supersedes:** Partially supersedes `2026-03-07-always-on-memory-agent.md` (storage layer only — memory agent features remain valid)
+**Date:** 2026-03-14 **Status:** Draft **Supersedes:** Partially supersedes `2026-03-07-always-on-memory-agent.md` (storage layer only — memory agent features remain valid)
 
 ## Problem
 
@@ -56,23 +54,23 @@ These are symptoms of a single architectural gap: **there is no persistent, stru
 
 ## User Stories
 
-1. **As a user**, I want tag search (`#` in command palette) to show only real tags from document body text, so that code block comments, YAML keys, and heading markers don't pollute my results.
+ 1. **As a user**, I want tag search (`#` in command palette) to show only real tags from document body text, so that code block comments, YAML keys, and heading markers don't pollute my results.
 
-2. **As a user**, I want to select a tag and see all its occurrences across files, so that I can navigate to any usage with one click.
+ 2. **As a user**, I want to select a tag and see all its occurrences across files, so that I can navigate to any usage with one click.
 
-3. **As a user**, I want mention search (`@`) to show only intentional @mentions, not email addresses or code annotations like `@Override`.
+ 3. **As a user**, I want mention search (`@`) to show only intentional @mentions, not email addresses or code annotations like `@Override`.
 
-4. **As a user**, I want research search (`?`) to find all my research files across projects, even if they don't have perfect YAML frontmatter.
+ 4. **As a user**, I want research search (`?`) to find all my research files across projects, even if they don't have perfect YAML frontmatter.
 
-5. **As a user**, I want search results to appear instantly when I open the command palette, not after a multi-second filesystem scan.
+ 5. **As a user**, I want search results to appear instantly when I open the command palette, not after a multi-second filesystem scan.
 
-6. **As a user**, I want clicking a search result to take me to the exact position in the document, not a wrong line.
+ 6. **As a user**, I want clicking a search result to take me to the exact position in the document, not a wrong line.
 
-7. **As a user**, I want new tags and mentions to appear in search within seconds of saving a file, without restarting the app.
+ 7. **As a user**, I want new tags and mentions to appear in search within seconds of saving a file, without restarting the app.
 
-8. **As a user syncing projects via iCloud**, I want search to work correctly on each device without database corruption.
+ 8. **As a user syncing projects via iCloud**, I want search to work correctly on each device without database corruption.
 
-9. **As a user**, I want the actions dashboard to show only real task items, not example checklists inside code blocks.
+ 9. **As a user**, I want the actions dashboard to show only real task items, not example checklists inside code blocks.
 
 10. **As a user**, I want toggling a task checkbox in the actions dashboard to reliably toggle the correct item, even if I've edited the file since the last scan.
 
@@ -115,17 +113,20 @@ Database locations:
 
 Projects configured for iCloud sync move their files to `~/Library/Mobile Documents/com~apple~CloudDocs/Notesage/`. The `.notesage/` directory travels with the project.
 
-**Index DB (`index.db`):**
+**Index DB (**`index.db`**):**
+
 - Excluded from iCloud sync via `com.apple.metadata:com_apple_backup_excludeItem` extended attribute (set on DB creation)
 - Alternatively: add `index.db`, `index.db-wal`, `index.db-shm` to a `.nosync` suffix convention
 - Each device rebuilds its own index from the synced `.md` files
 - When a synced file arrives (watcher detects create/modify), the local indexer re-parses and updates
 
-**Memory DB (`memory.db`):**
+**Memory DB (**`memory.db`**):**
+
 - Initially: also excluded from iCloud sync (out of scope for this PRD)
 - Future: explore exporting memories as `.md` files in `.notesage/memories/` that sync naturally, then importing on each device
 
 **Implementation:**
+
 ```rust
 // On DB creation, mark as excluded from iCloud backup
 #[cfg(target_os = "macos")]
@@ -220,6 +221,7 @@ VALUES (1, 'climate', 'discussing the impact of ', ' change on coastal cities');
 ```
 
 When the user clicks a tag occurrence:
+
 1. Frontend opens the file with `scrollToText` set atomically on the tab (prevents saved scroll position from racing)
 2. `findTextPositionInDoc` searches ProseMirror's `doc.textContent` for the symbol (e.g. `#climate`)
 3. For multiple occurrences in the same file, the Nth-occurrence index (computed from the occurrence list order) is used to find the correct match
@@ -227,6 +229,7 @@ When the user clicks a tag occurrence:
 5. An `isProgrammaticScroll` guard prevents the `ResizeObserver` and scroll-save listeners from overriding the scroll during a 500ms window
 
 **Key implementation decisions:**
+
 - Context strings (`context_before`/`context_after`) are stored in the index but not used for navigation — ProseMirror's text representation can differ subtly from comrak's AST text nodes. Instead, Nth-occurrence counting provides reliable disambiguation.
 - `scrollToText` is set atomically with tab activation in `openTab()` to prevent a race condition where the saved scroll position restore (triggered by the `ResizeObserver`) overwrites the programmatic scroll.
 - The position search builds a text + position map in a single pass through ProseMirror's document tree, correctly handling non-text leaf nodes (e.g. `hardBreak` → `"\n"`) that contribute to `textContent`.
@@ -273,8 +276,8 @@ Reindexing is debounced (500ms) and batched to avoid thrashing during bulk opera
 2. For each project + global scope: open or create `index.db`
 3. Compare `files.content_hash` against actual file hashes
 4. Re-index any files that changed since last run (or all files on first run)
-5. Full initial index of a typical project (~500 files): < 2 seconds
-6. Subsequent startups with no changes: < 100ms (hash comparison only)
+5. Full initial index of a typical project (\~500 files): &lt; 2 seconds
+6. Subsequent startups with no changes: &lt; 100ms (hash comparison only)
 
 ### Replacing Existing Commands
 
@@ -352,7 +355,7 @@ Research search (`?` mode) becomes more forgiving:
 Subtle indicator during reindexing:
 
 - Small spinner in the status bar during initial index build or bulk reindex
-- No indicator during normal incremental updates (< 100ms, imperceptible)
+- No indicator during normal incremental updates (&lt; 100ms, imperceptible)
 - Toast notification if index rebuild is triggered manually (e.g., after corruption)
 
 ## Data Model
@@ -660,6 +663,7 @@ async fn index_stats(
 ### Frontend Changes
 
 **Remove:**
+
 - `src/stores/tag-store.ts` — replaced by `index_tags` command
 - `src/stores/mention-store.ts` — replaced by `index_mentions` command
 - `refreshTags()` and `refreshMentions()` in `useFileOperations.ts` — indexer handles this
@@ -669,6 +673,7 @@ async fn index_stats(
 - `toggleTaskDone()` line-number-based toggle logic in `action-store.ts`
 
 **Modify:**
+
 - `CommandPalette.tsx` — Call `index_tags`/`index_mentions` instead of reading Zustand stores. Research search calls `index_search_research`. Content search calls `index_search_content`.
 - `SymbolSearchResults.tsx` — Fix drilldown race condition. Receive `TagOccurrence` with context instead of line numbers.
 - `App.tsx` — Remove `refreshTags()` / `refreshMentions()` startup calls. Add `index_init()` call.
@@ -677,11 +682,13 @@ async fn index_stats(
 - `useGoalsDiscovery.ts` — Replace file-by-file frontmatter scanning with `index_goals` command.
 
 **Add:**
+
 - `src/lib/tauri.ts` — New `tauriApi` wrappers for all `index_*` commands
 
 ### Convergence with Memory Agent PRD
 
 The memory agent PRD (`2026-03-07`) specifies:
+
 - `rusqlite` with `bundled` feature — **shared dependency**, added once
 - `~/.notesage/memory.db` and `.notesage/memory.db` — **parallel to** `index.db`, same directory structure
 - `MemoryState` managed state — **parallel to** `IndexState`
@@ -714,89 +721,125 @@ All UI changes use existing shadcn/ui components and Tauri invoke patterns.
 ### Functional — Tag/Mention Search
 
 - [x] `#` in command palette shows tags from document body text, list items, and headings
+
 - [x] Tags inside fenced code blocks are excluded
+
 - [x] Tags inside inline code spans are excluded
+
 - [x] Tags in YAML frontmatter keys/values are excluded (frontmatter `tags:` array parsed separately)
+
 - [x] Tags in heading text are included (comrak strips `#` heading markers, so `#tag` in heading text is genuine)
+
 - [x] Tags in URLs (e.g., `https://example.com#section`) are excluded
+
 - [x] `@` in command palette shows only intentional mentions, not email addresses or code annotations
+
 - [x] Selecting a tag shows all occurrences across files (drilldown works)
+
 - [x] Selecting an occurrence opens the file and scrolls to the correct position (Nth-occurrence matching)
+
 - [x] New tags appear in search within 2 seconds of saving a file
+
 - [x] Deleted files are removed from the index
+
 - [ ] Renamed files update the index
 
 ### Functional — Research Search
 
 - [x] `?` in command palette shows research files from all projects
+
 - [x] Research files without `title` use filename as title
+
 - [x] Research files without `source_url` are still shown
+
 - [x] Multi-line YAML tag arrays are parsed correctly
+
 - [x] Empty query shows all research files sorted by date
+
 - [x] Results show which project each file belongs to
+
 - [x] Selecting a result opens the research file
 
 ### Functional — Task/Action Search
 
 - [x] Actions dashboard shows only task items from document body (not from code blocks)
+
 - [x] Task checkbox toggle reliably toggles the correct item via context matching
+
 - [x] Task toggle works even when lines have been added/removed above the task
+
 - [x] Goals are discovered via frontmatter `type: goal` parsed by comrak (not string matching)
+
 - [x] Goal progress (completed/total tasks) is computed from indexed tasks in the same file
+
 - [x] New tasks appear in actions dashboard within 2 seconds of saving
 
 ### Functional — Content Search (FTS5)
 
 - [x] Content search (Cmd+Shift+F / files mode) queries FTS5 index instead of re-scanning files
+
 - [x] FTS5 results include relevance ranking (most relevant first)
+
 - [x] FTS5 supports partial word matching (prefix queries)
-- [x] Results appear in < 50ms for typical queries
+
+- [x] Results appear in &lt; 50ms for typical queries
+
 - [x] FTS index stays in sync with file changes (watcher-driven)
+
 - [x] Non-markdown text files are also indexed for content search
 
 ### Functional — Index Lifecycle
 
 - [x] Index builds on first app launch (all projects + global scope)
-- [x] Full index of 500 files completes in < 2 seconds
-- [x] Incremental reindex of single file completes in < 100ms
+
+- [x] Full index of 500 files completes in &lt; 2 seconds
+
+- [x] Incremental reindex of single file completes in &lt; 100ms
+
 - [x] Index survives app restart (persisted SQLite)
+
 - [x] Corrupted or deleted `index.db` triggers automatic rebuild with no user action
-- [ ] Index DB excluded from iCloud sync (xattr set on macOS)
-- [ ] No performance degradation during normal editing (indexing is async)
+
+- [x] Index DB excluded from iCloud sync (xattr set on macOS)
+
+- [x] No performance degradation during normal editing (indexing is async via watcher debounce)
 
 ### Functional — Cross-Device (iCloud)
 
-- [ ] Project synced via iCloud builds correct index on second device
+- [ ] Project synced via iCloud builds correct index on second device (not tested)
+
 - [x] Files arriving via iCloud sync trigger reindex via watcher
+
 - [x] No SQLite corruption when project folder is in iCloud
+
 - [x] Index DB is not synced (each device has its own)
 
 ### Design
 
 - [x] Command palette UX unchanged (same shortcuts, same prefix modes, same drilldown)
+
 - [ ] Status bar shows subtle spinner during bulk reindex only
+
 - [x] No new settings or configuration required from user (zero-config)
 
 ### Migration
 
-- [ ] Existing `tag-store` and `mention-store` Zustand stores are removed cleanly (files exist but orphaned — zero imports)
-- [ ] No orphaned localStorage keys from removed stores
-- [ ] Old Rust commands removed from `generate_handler![]` (still registered but unused — pending cleanup)
+- [x] Existing `tag-store` and `mention-store` Zustand stores deleted
+
+- [ ] No orphaned localStorage keys from removed stores (need to clear on first launch)
+
+- [x] Old Rust commands removed from `generate_handler![]` and implementations deleted from `file.rs`/`actions.rs`
+
 - [x] Old frontend scan logic removed: `refreshTags()`, `refreshMentions()`, line-number task toggle
+
 - [x] First launch after upgrade builds index automatically
 
-## Remaining Cleanup (Task 14)
+## Remaining Items
 
-The following old Rust commands are still registered in `generate_handler![]` and implemented in `file.rs`/`actions.rs` but never called from the frontend. They should be removed in a follow-up pass:
-
-- `scan_tags_in_directories`, `find_tag_occurrences` — replaced by `index_tags`, `index_tag_occurrences`
-- `scan_mentions_in_directories`, `find_mention_occurrences` — replaced by `index_mentions`, `index_mention_occurrences`
-- `search_file_content` — replaced by `index_search_content`
-- `search_research` — replaced by `index_search_research`
-
-The `scan_actions` command is still active but only used for comment scanning; task/goal portions are filtered out on the frontend.
-
-Frontend dead code: `src/stores/tag-store.ts`, `src/stores/mention-store.ts` (zero imports), old type interfaces in `tauri.ts`.
+- [ ] Clear orphaned `tag-store` and `mention-store` localStorage keys on first launch after upgrade
+- [ ] Status bar spinner during bulk reindex
+- [ ] Cross-device iCloud testing (not tested on second device)
+- [ ] Renamed file index update (delete detects removal; create detects new file; but rename is two events that may briefly show stale data)
 
 ## Out of Scope
 

@@ -1,31 +1,26 @@
 # SQLite Document Index — Implementation Tasks
 
-**PRD:** `docs/prds/2026-03-14-sqlite-document-index.md`**Date:** 2026-03-14
+**PRD:** `docs/prds/2026-03-14-sqlite-document-index.md`
+**Date:** 2026-03-14
+**Status:** Complete (18/18 tasks done)
 
 ## Summary
 
-**18 tasks: 5S, 8M, 5L**
+**18 tasks: 5S, 8M, 5L — all complete**
 
 The work is structured in four layers:
 
-1. **Foundation (Tasks 1–4):** Add rusqlite, create the index module with schema, DB lifecycle, and iCloud exclusion
-2. **Parser (Tasks 5–7):** comrak-based AST parser for tags, mentions, headings, tasks, goals, body text + FTS
-3. **Watcher & startup (Tasks 8–9):** Incremental reindex via watcher, startup hash-based change detection
-4. **Query commands (Tasks 10–14):** Tauri commands replacing all old scanners
-5. **Frontend integration (Tasks 15–18):** Wire command palette, actions dashboard, remove old stores, fix drilldown
-
-**Risks:**
-
-- comrak's `TaskItem` node support requires enabling the `tasklist` extension (currently only `syntect` feature is enabled in Cargo.toml)
-- The `scan_actions` command also scans comments (JSON files) — that part stays, only task/goal scanning moves to the index
-- FTS5 `content=` sync requires manual trigger on UPDATE (not just INSERT/DELETE) — triggers in schema need an UPDATE variant
-- Removing `tag-store.ts` and `mention-store.ts` touches the `TagSuggestion` extension (autocomplete popup uses tag-store) — needs rewiring
+1. **Foundation (Tasks 1–4):** Add rusqlite, create the index module with schema, DB lifecycle, and iCloud exclusion ✅
+2. **Parser (Tasks 5–7):** comrak-based AST parser for tags, mentions, headings, tasks, goals, body text + FTS ✅
+3. **Watcher & startup (Tasks 8–9):** Incremental reindex via watcher, startup hash-based change detection ✅
+4. **Query commands (Tasks 10–14):** Tauri commands replacing all old scanners ✅
+5. **Frontend integration (Tasks 15–18):** Wire command palette, actions dashboard, remove old stores, fix drilldown ✅
 
 ---
 
 ## Tasks
 
-### 1. Add rusqlite and sha2 to Cargo.toml
+### ✅ 1. Add rusqlite and sha2 to Cargo.toml
 
 | Field | Value |
 | --- | --- |
@@ -48,7 +43,7 @@ The work is structured in four layers:
 
 ---
 
-### 2. Create index module with schema and DB lifecycle
+### ✅ 2. Create index module with schema and DB lifecycle
 
 | Field | Value |
 | --- | --- |
@@ -77,7 +72,7 @@ The work is structured in four layers:
 
 ---
 
-### 3. iCloud exclusion utility
+### ✅ 3. iCloud exclusion utility
 
 | Field | Value |
 | --- | --- |
@@ -100,7 +95,7 @@ The work is structured in four layers:
 
 ---
 
-### 4. Add `index_init` and `index_rebuild` Tauri commands
+### ✅ 4. Add `index_init` and `index_rebuild` Tauri commands
 
 | Field | Value |
 | --- | --- |
@@ -125,7 +120,7 @@ The work is structured in four layers:
 
 ---
 
-### 5. comrak AST parser — tags, mentions, headings
+### ✅ 5. comrak AST parser — tags, mentions, headings
 
 | Field | Value |
 | --- | --- |
@@ -160,7 +155,7 @@ The work is structured in four layers:
 
 ---
 
-### 6. comrak AST parser — tasks, goals, research
+### ✅ 6. comrak AST parser — tasks, goals, research
 
 | Field | Value |
 | --- | --- |
@@ -189,7 +184,7 @@ The work is structured in four layers:
 
 ---
 
-### 7. File indexing pipeline (hash, parse, upsert)
+### ✅ 7. File indexing pipeline (hash, parse, upsert)
 
 | Field | Value |
 | --- | --- |
@@ -219,7 +214,7 @@ The work is structured in four layers:
 
 ---
 
-### 8. Watcher integration for incremental reindex
+### ✅ 8. Watcher integration for incremental reindex
 
 | Field | Value |
 | --- | --- |
@@ -247,7 +242,7 @@ The work is structured in four layers:
 
 ---
 
-### 9. Startup hash-based change detection
+### ✅ 9. Startup hash-based change detection
 
 | Field | Value |
 | --- | --- |
@@ -274,7 +269,7 @@ The work is structured in four layers:
 
 ---
 
-### 10. Tag and mention query commands
+### ✅ 10. Tag and mention query commands
 
 | Field | Value |
 | --- | --- |
@@ -301,7 +296,7 @@ The work is structured in four layers:
 
 ---
 
-### 11. Research, task, and goal query commands
+### ✅ 11. Research, task, and goal query commands
 
 | Field | Value |
 | --- | --- |
@@ -325,7 +320,7 @@ The work is structured in four layers:
 
 ---
 
-### 12. Task toggle command (context-based)
+### ✅ 12. Task toggle command (context-based)
 
 | Field | Value |
 | --- | --- |
@@ -354,7 +349,7 @@ The work is structured in four layers:
 
 ---
 
-### 13. FTS5 content search command
+### ✅ 13. FTS5 content search command
 
 | Field | Value |
 | --- | --- |
@@ -378,7 +373,7 @@ The work is structured in four layers:
 
 ---
 
-### 14. Remove old Rust scanner commands
+### ✅ 14. Remove old Rust scanner commands
 
 | Field | Value |
 | --- | --- |
@@ -402,7 +397,7 @@ The work is structured in four layers:
 
 ---
 
-### 15. Add tauriApi wrappers and wire CommandPalette
+### ✅ 15. Add tauriApi wrappers and wire CommandPalette
 
 | Field | Value |
 | --- | --- |
@@ -431,7 +426,7 @@ The work is structured in four layers:
 
 ---
 
-### 16. Fix SymbolSearchResults drilldown and context-based navigation
+### ✅ 16. Fix SymbolSearchResults drilldown and context-based navigation
 
 | Field | Value |
 | --- | --- |
@@ -457,7 +452,7 @@ The work is structured in four layers:
 
 ---
 
-### 17. Wire actions dashboard to index commands
+### ✅ 17. Wire actions dashboard to index commands
 
 | Field | Value |
 | --- | --- |
@@ -483,7 +478,7 @@ The work is structured in four layers:
 
 ---
 
-### 18. Remove old stores and cleanup
+### ✅ 18. Remove old stores and cleanup
 
 | Field | Value |
 | --- | --- |
