@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileText, FolderDot, FolderOpen, FolderPlus, FilePlus, Loader2 } from "lucide-react";
+import { FileText, FolderKanban, FolderOpen, FolderPlus, FilePlus, Loader2 } from "lucide-react";
 import { tauriApi } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
@@ -110,7 +110,7 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
 
         {/* PROJECTS */}
         <SidebarSection
-          icon={<FolderDot className="h-4 w-4" strokeWidth={1.5} />}
+          icon={<FolderKanban className="h-4 w-4" strokeWidth={1.5} />}
           title="Projects"
           open={!projectsCollapsed}
           onOpenChange={(open) => setProjectsCollapsed(!open)}

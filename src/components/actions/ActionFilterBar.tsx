@@ -1,20 +1,55 @@
-import { useCallback, useState, useEffect } from 'react';
-import { Search } from 'lucide-react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
+import { Search, FolderOpen, FolderKanban, StickyNote, ListChecks, MessageSquare, Bot, Target, Layers, Square, CheckSquare2, Forward, List } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
 import { useActionStore, type ActionSourceType, type ActionStatus } from '@/stores/action-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useSettingsStore } from '@/stores/settings-store';
 
 export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
   const filter = useActionStore((s) => s.filter);
   const setFilter = useActionStore((s) => s.setFilter);
   const projects = useWorkspaceStore((s) => s.projects);
+  const explorerFolders = useWorkspaceStore((s) => s.explorerFolders);
+  const notesRootPath = useSettingsStore((s) => s.notesRootPath);
+
+  const actions = useActionStore((s) => s.actions);
+
+  // Build deduplicated list of all filterable roots with open counts
+  const allRoots = useMemo(() => {
+    const seen = new Set<string>();
+    const roots: { path: string; label: string; count: number; kind: 'project' | 'folder' | 'notes' }[] = [];
+    for (const p of projects) {
+      if (!seen.has(p.path)) {
+        seen.add(p.path);
+        roots.push({ path: p.path, label: p.path.split('/').pop() ?? p.path, count: 0, kind: 'project' });
+      }
+    }
+    for (const f of explorerFolders) {
+      if (!seen.has(f.path)) {
+        seen.add(f.path);
+        roots.push({ path: f.path, label: f.path.split('/').pop() ?? f.path, count: 0, kind: 'folder' });
+      }
+    }
+    if (notesRootPath && !seen.has(notesRootPath)) {
+      roots.push({ path: notesRootPath, label: 'Quick Notes', count: 0, kind: 'notes' });
+    }
+    // Count open actions per root
+    for (const a of actions) {
+      if (a.status === 'done' || a.status === 'completed') continue;
+      const root = roots.find((r) => a.project_root === r.path);
+      if (root) root.count++;
+    }
+    return roots;
+  }, [projects, explorerFolders, notesRootPath, actions]);
 
   const [searchInput, setSearchInput] = useState(filter.search);
 
@@ -39,6 +74,8 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
       setFilter({ status: ['open', 'done', 'delegated', 'pending', 'running', 'completed', 'error'] });
     } else if (value === 'open') {
       setFilter({ status: ['open', 'delegated', 'pending', 'running'] });
+    } else if (value === 'done') {
+      setFilter({ status: ['done', 'completed'] });
     } else {
       setFilter({ status: [value as ActionStatus] });
     }
@@ -48,14 +85,26 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
     setFilter({ project: value === 'all' ? null : value });
   }, [setFilter]);
 
+  // Count actions per status
+  const statusCounts = useMemo(() => {
+    let open = 0, done = 0, delegated = 0;
+    for (const a of actions) {
+      if (a.status === 'open' || a.status === 'pending' || a.status === 'running') open++;
+      else if (a.status === 'done' || a.status === 'completed') done++;
+      else if (a.status === 'delegated') delegated++;
+    }
+    return { open, done, delegated, all: open + done + delegated };
+  }, [actions]);
+
   // Derive current select values from filter state
-  const sourceValue = filter.sourceType.length === 4 ? 'all'
+  const sourceValue = filter.sourceType.length >= 4 ? 'all'
     : filter.sourceType.length === 1 ? filter.sourceType[0]
     : 'all';
 
-  const statusValue = filter.status.length > 3 ? 'all'
-    : filter.status.includes('open') && filter.status.length <= 4 ? 'open'
-    : filter.status.length === 1 ? filter.status[0]
+  const statusValue = filter.status.length >= 7 ? 'all'
+    : filter.status.includes('open') && !filter.status.includes('done') ? 'open'
+    : filter.status.includes('done') && !filter.status.includes('open') ? 'done'
+    : filter.status.length === 1 && filter.status[0] === 'delegated' ? 'delegated'
     : 'all';
 
   return (
@@ -74,45 +123,137 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
       {/* Filter dropdowns */}
       <div className="flex items-center gap-2">
         <Select value={sourceValue} onValueChange={handleSourceType}>
-          <SelectTrigger className="h-7 text-xs w-[110px]">
+          <SelectTrigger className="h-7 text-xs w-auto min-w-[110px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All types</SelectItem>
-            <SelectItem value="task">Tasks</SelectItem>
-            <SelectItem value="comment">Comments</SelectItem>
-            <SelectItem value="agent">Agent tasks</SelectItem>
-            <SelectItem value="goal">Goals</SelectItem>
+            <SelectItem value="all">
+              <span className="flex items-center gap-1.5">
+                <Layers className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                All types
+              </span>
+            </SelectItem>
+            <SelectItem value="task">
+              <span className="flex items-center gap-1.5">
+                <ListChecks className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                Tasks
+              </span>
+            </SelectItem>
+            <SelectItem value="comment">
+              <span className="flex items-center gap-1.5">
+                <MessageSquare className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                Comments
+              </span>
+            </SelectItem>
+            <SelectItem value="agent">
+              <span className="flex items-center gap-1.5">
+                <Bot className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                Agent tasks
+              </span>
+            </SelectItem>
+            <SelectItem value="goal">
+              <span className="flex items-center gap-1.5">
+                <Target className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                Goals
+              </span>
+            </SelectItem>
           </SelectContent>
         </Select>
 
         <Select value={statusValue} onValueChange={handleStatus}>
-          <SelectTrigger className="h-7 text-xs w-[100px]">
+          <SelectTrigger className="h-7 text-xs w-auto min-w-[80px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="open">Open</SelectItem>
-            <SelectItem value="done">Done</SelectItem>
-            <SelectItem value="delegated">Delegated</SelectItem>
-            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="open">
+              <span className="flex items-center gap-1.5">
+                <Square className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                <span>Open</span>
+                <span className="text-muted-foreground/60">{statusCounts.open}</span>
+              </span>
+            </SelectItem>
+            <SelectItem value="done">
+              <span className="flex items-center gap-1.5">
+                <CheckSquare2 className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                <span>Done</span>
+                <span className="text-muted-foreground/60">{statusCounts.done}</span>
+              </span>
+            </SelectItem>
+            <SelectItem value="delegated">
+              <span className="flex items-center gap-1.5">
+                <Forward className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                <span>Delegated</span>
+                <span className="text-muted-foreground/60">{statusCounts.delegated}</span>
+              </span>
+            </SelectItem>
+            <SelectItem value="all">
+              <span className="flex items-center gap-1.5">
+                <List className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                <span>All</span>
+                <span className="text-muted-foreground/60">{statusCounts.all}</span>
+              </span>
+            </SelectItem>
           </SelectContent>
         </Select>
 
-        {projects.length > 1 && (
+        {allRoots.length > 1 && (
           <Select value={filter.project ?? 'all'} onValueChange={handleProject}>
-            <SelectTrigger className="h-7 text-xs w-[130px]">
+            <SelectTrigger className="h-7 text-xs w-auto min-w-[110px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All projects</SelectItem>
-              {projects.map((p) => {
-                const name = p.path.split('/').pop() ?? p.path;
+              <SelectItem value="all">All actions</SelectItem>
+              {(() => {
+                const projectRoots = allRoots.filter((r) => r.kind === 'project');
+                const folderRoots = allRoots.filter((r) => r.kind === 'folder');
+                const notesRoots = allRoots.filter((r) => r.kind === 'notes');
                 return (
-                  <SelectItem key={p.path} value={p.path}>
-                    {name}
-                  </SelectItem>
+                  <>
+                    {projectRoots.length > 0 && (
+                      <SelectGroup>
+                        <SelectLabel>Projects</SelectLabel>
+                        {projectRoots.map((r) => (
+                          <SelectItem key={r.path} value={r.path}>
+                            <span className="flex items-center gap-1.5">
+                              <FolderKanban className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                              <span>{r.label}</span>
+                              <span className="text-muted-foreground/60">{r.count}</span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    )}
+                    {folderRoots.length > 0 && (
+                      <SelectGroup>
+                        <SelectLabel>Folders</SelectLabel>
+                        {folderRoots.map((r) => (
+                          <SelectItem key={r.path} value={r.path}>
+                            <span className="flex items-center gap-1.5">
+                              <FolderOpen className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                              <span>{r.label}</span>
+                              <span className="text-muted-foreground/60">{r.count}</span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    )}
+                    {notesRoots.length > 0 && (
+                      <SelectGroup>
+                        <SelectLabel>Notes</SelectLabel>
+                        {notesRoots.map((r) => (
+                          <SelectItem key={r.path} value={r.path}>
+                            <span className="flex items-center gap-1.5">
+                              <StickyNote className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                              <span>{r.label}</span>
+                              <span className="text-muted-foreground/60">{r.count}</span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    )}
+                  </>
                 );
-              })}
+              })()}
             </SelectContent>
           </Select>
         )}

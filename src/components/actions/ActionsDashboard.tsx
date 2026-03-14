@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import { RefreshCw, ChevronDown, ChevronRight, CheckSquare2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -31,6 +31,18 @@ export function ActionsDashboard({
 
   const handleToggle = onToggleAction ?? defaultToggle;
   const [completedOpen, setCompletedOpen] = useState(false);
+
+  // Minimum spin duration so the refresh button always visibly animates
+  const [spinning, setSpinning] = useState(false);
+  const spinTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const handleRefresh = useCallback(() => {
+    setSpinning(true);
+    clearTimeout(spinTimer.current);
+    fullScan().finally(() => {
+      // Keep spinning for at least 600ms total
+      spinTimer.current = setTimeout(() => setSpinning(false), 600);
+    });
+  }, [fullScan]);
 
   const filtered = useMemo(() => getFilteredActions(), [getFilteredActions, actions, filter]);
 
@@ -70,10 +82,10 @@ export function ActionsDashboard({
               variant="ghost"
               size="sm"
               className="h-7 w-7 p-0 shrink-0"
-              onClick={() => fullScan()}
-              disabled={isScanning}
+              onClick={handleRefresh}
+              disabled={isScanning || spinning}
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${isScanning ? 'animate-spin' : ''}`} strokeWidth={1.5} />
+              <RefreshCw className={`h-3.5 w-3.5 ${isScanning || spinning ? 'animate-spin' : ''}`} strokeWidth={1.5} />
             </Button>
           </ActionFilterBar>
         </div>

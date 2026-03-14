@@ -91,6 +91,29 @@ function agentTasksToActions(): ActionItem[] {
     }));
 }
 
+/** Find the project or explorer folder root that a file path belongs to */
+function findProjectRoot(filePath: string): string | undefined {
+  const ws = useWorkspaceStore.getState();
+  // Check projects first (more specific)
+  for (const p of ws.projects) {
+    if (filePath.startsWith(p.path + '/') || filePath === p.path) {
+      return p.path;
+    }
+  }
+  // Then explorer folders
+  for (const f of ws.explorerFolders) {
+    if (filePath.startsWith(f.path + '/') || filePath === f.path) {
+      return f.path;
+    }
+  }
+  // Then notes root
+  const settings = useSettingsStore.getState();
+  if (settings.notesRootPath && (filePath.startsWith(settings.notesRootPath + '/') || filePath === settings.notesRootPath)) {
+    return settings.notesRootPath;
+  }
+  return undefined;
+}
+
 /** Convert an IndexedTask (from SQLite index, AST-parsed) to an ActionItem */
 function indexedTaskToAction(task: IndexedTask): ActionItem {
   return {
@@ -101,7 +124,7 @@ function indexedTaskToAction(task: IndexedTask): ActionItem {
     file_path: task.path,
     line_number: undefined,
     project_name: task.project_name,
-    project_root: undefined,
+    project_root: findProjectRoot(task.path),
     created_at: undefined,
     updated_at: undefined,
     metadata: {
@@ -121,7 +144,7 @@ function indexedGoalToAction(goal: IndexedGoal): ActionItem {
     file_path: goal.path,
     line_number: undefined,
     project_name: goal.project_name,
-    project_root: undefined,
+    project_root: findProjectRoot(goal.path),
     created_at: undefined,
     updated_at: undefined,
     metadata: {
@@ -133,12 +156,23 @@ function indexedGoalToAction(goal: IndexedGoal): ActionItem {
 }
 
 function rebuildActions(cache: Record<string, { items: ActionItem[] }>): ActionItem[] {
+  const seen = new Set<string>();
   const items: ActionItem[] = [];
   for (const entry of Object.values(cache)) {
-    items.push(...entry.items);
+    for (const item of entry.items) {
+      if (!seen.has(item.id)) {
+        seen.add(item.id);
+        items.push(item);
+      }
+    }
   }
   // Add agent tasks from activity store
-  items.push(...agentTasksToActions());
+  for (const item of agentTasksToActions()) {
+    if (!seen.has(item.id)) {
+      seen.add(item.id);
+      items.push(item);
+    }
+  }
   return items;
 }
 
@@ -161,7 +195,7 @@ export const useActionStore = create<ActionStore>()(
           }
 
           // Fetch tasks and goals from SQLite index (AST-parsed, clean text)
-          // and comments from the old scan_actions command (JSON-based, unaffected)
+          // and comments from scan_actions (JSON sidecar files)
           const [indexedTasks, indexedGoals, scanItems] = await Promise.all([
             tauriApi.indexTasks(paths),
             tauriApi.indexGoals(paths),
@@ -171,14 +205,23 @@ export const useActionStore = create<ActionStore>()(
           // Convert indexed items to ActionItems
           const taskActions = indexedTasks.map(indexedTaskToAction);
           const goalActions = indexedGoals.map(indexedGoalToAction);
-
-          // Keep only comments from scanActions (tasks/goals now come from the index)
           const commentActions = scanItems.filter((item) => item.source_type === 'comment');
+
+          // Deduplicate by action ID — with_dbs queries both project and global
+          // DBs, so the same item can appear multiple times
+          const seen = new Set<string>();
+          const dedupedItems: ActionItem[] = [];
+          for (const item of [...taskActions, ...goalActions, ...commentActions]) {
+            if (!seen.has(item.id)) {
+              seen.add(item.id);
+              dedupedItems.push(item);
+            }
+          }
 
           // Build cache keyed by file path
           const cache: Record<string, { items: ActionItem[]; scannedAt: number }> = {};
           const now = Date.now();
-          for (const item of [...taskActions, ...goalActions, ...commentActions]) {
+          for (const item of dedupedItems) {
             const key = item.file_path;
             if (!cache[key]) {
               cache[key] = { items: [], scannedAt: now };
@@ -232,6 +275,16 @@ export const useActionStore = create<ActionStore>()(
           const goalActions = indexedGoals.map(indexedGoalToAction);
           const commentActions = scanItems.filter((item) => item.source_type === 'comment');
 
+          // Deduplicate by action ID
+          const seen = new Set<string>();
+          const dedupedItems: ActionItem[] = [];
+          for (const item of [...taskActions, ...goalActions, ...commentActions]) {
+            if (!seen.has(item.id)) {
+              seen.add(item.id);
+              dedupedItems.push(item);
+            }
+          }
+
           const cache = { ...get().actionCache };
           const now = Date.now();
 
@@ -243,7 +296,7 @@ export const useActionStore = create<ActionStore>()(
           }
 
           // Add new entries
-          for (const item of [...taskActions, ...goalActions, ...commentActions]) {
+          for (const item of dedupedItems) {
             const key = item.file_path;
             if (!cache[key]) {
               cache[key] = { items: [], scannedAt: now };
