@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
+import DOMPurify from "dompurify";
 import { FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getBinaryData } from "@/lib/binary-cache";
@@ -36,7 +37,7 @@ export function DocxViewer({ filePath, fileName, onConvertToMarkdown }: DocxView
     mammoth
       .convertToHtml({ arrayBuffer: data.buffer })
       .then((result) => {
-        setHtml(result.value);
+        setHtml(DOMPurify.sanitize(result.value));
         if (result.messages.length > 0) {
           console.warn("mammoth warnings:", result.messages);
         }

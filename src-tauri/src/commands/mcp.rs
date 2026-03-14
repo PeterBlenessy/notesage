@@ -780,14 +780,23 @@ fn map_config_entries(
 ) -> Vec<McpServerConfig> {
     entries
         .into_iter()
-        .map(|(name, entry)| McpServerConfig {
-            id: format!("{}:{}", source_prefix(&source), name),
-            name,
-            command: entry.command,
-            args: entry.args,
-            env: entry.env,
-            source: source.clone(),
-            enabled: !entry.disabled,
+        .map(|(name, entry)| {
+            // Project-scoped MCP servers default to disabled for security —
+            // prevents auto-execution of commands from cloned repos
+            let enabled = if source == McpConfigSource::NotesageProject {
+                false
+            } else {
+                !entry.disabled
+            };
+            McpServerConfig {
+                id: format!("{}:{}", source_prefix(&source), name),
+                name,
+                command: entry.command,
+                args: entry.args,
+                env: entry.env,
+                source: source.clone(),
+                enabled,
+            }
         })
         .collect()
 }
