@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { FileText, FolderKanban, FolderOpen, FolderPlus, FilePlus, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { tauriApi } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
@@ -48,7 +49,7 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
         addExplorerFolder(folderPath, tree);
       }
     } catch (error) {
-      console.error("Failed to open folder:", error);
+      toast.error(`Failed to open folder: ${error}`);
     } finally {
       setIsLoading(false);
     }
@@ -58,7 +59,7 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
     try {
       await openFile(filePath, fileName);
     } catch (error) {
-      console.error("Error reading file:", error);
+      toast.error(`Failed to open file: ${error}`);
     }
   };
 

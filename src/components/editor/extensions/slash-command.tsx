@@ -194,7 +194,7 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(
             const isSelected = index === selectedIndex;
             return (
               <button
-                key={index}
+                key={item.title}
                 onClick={() => command(item)}
                 className={cn(
                   "flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left transition-colors duration-150 hover:bg-accent",
@@ -235,8 +235,8 @@ export const SlashCommand = Extension.create({
     return {
       suggestion: {
         char: "/",
-        allow: ({ state, range }: { state: unknown; range: Range }) => {
-          const editorState = state as EditorState;
+        allow: ({ state, range }: { state: EditorState; range: Range }) => {
+          const editorState = state;
           const $from = editorState.doc.resolve(range.from);
           // Suppress in code blocks
           if ($from.parent.type.name === "codeBlock") return false;

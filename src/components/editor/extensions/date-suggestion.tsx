@@ -210,8 +210,8 @@ export const DateSuggestion = Extension.create({
         pluginKey: new PluginKey("dateSuggestion"),
         allowSpaces: false,
         startOfLine: false,
-        allow: ({ state, range }: { state: unknown; range: Range }) => {
-          const editorState = state as EditorState;
+        allow: ({ state, range }: { state: EditorState; range: Range }) => {
+          const editorState = state;
           const $from = editorState.doc.resolve(range.from);
           // Suppress in code blocks
           if ($from.parent.type.name === "codeBlock") return false;
