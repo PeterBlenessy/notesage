@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect, useMemo } from 'react';
-import { Search, FolderOpen, FolderKanban, StickyNote, ListChecks, MessageSquare, Bot, Target, Layers, Square, CheckSquare2, Forward, List } from 'lucide-react';
+import { Search, FolderOpen, FolderKanban, StickyNote, ListChecks, MessageSquare, Bot, Target, Layers, Square, CheckSquare2, List } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useActionStore, type ActionSourceType, type ActionStatus } from '@/stores/action-store';
+import { useActionStore, type ActionSourceType } from '@/stores/action-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 
@@ -76,8 +76,6 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
       setFilter({ status: ['open', 'delegated', 'pending', 'running'] });
     } else if (value === 'done') {
       setFilter({ status: ['done', 'completed'] });
-    } else {
-      setFilter({ status: [value as ActionStatus] });
     }
   }, [setFilter]);
 
@@ -85,15 +83,26 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
     setFilter({ project: value === 'all' ? null : value });
   }, [setFilter]);
 
-  // Count actions per status
-  const statusCounts = useMemo(() => {
-    let open = 0, done = 0, delegated = 0;
+  // Count actions per source type
+  const typeCounts = useMemo(() => {
+    let task = 0, comment = 0, agent = 0, goal = 0;
     for (const a of actions) {
-      if (a.status === 'open' || a.status === 'pending' || a.status === 'running') open++;
-      else if (a.status === 'done' || a.status === 'completed') done++;
-      else if (a.status === 'delegated') delegated++;
+      if (a.source_type === 'task') task++;
+      else if (a.source_type === 'comment') comment++;
+      else if (a.source_type === 'agent') agent++;
+      else if (a.source_type === 'goal') goal++;
     }
-    return { open, done, delegated, all: open + done + delegated };
+    return { task, comment, agent, goal, all: task + comment + agent + goal };
+  }, [actions]);
+
+  // Count actions per status (delegated counted as open — they're in-progress agent tasks)
+  const statusCounts = useMemo(() => {
+    let open = 0, done = 0;
+    for (const a of actions) {
+      if (a.status === 'open' || a.status === 'delegated' || a.status === 'pending' || a.status === 'running') open++;
+      else if (a.status === 'done' || a.status === 'completed') done++;
+    }
+    return { open, done, all: open + done };
   }, [actions]);
 
   // Derive current select values from filter state
@@ -104,7 +113,6 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
   const statusValue = filter.status.length >= 7 ? 'all'
     : filter.status.includes('open') && !filter.status.includes('done') ? 'open'
     : filter.status.includes('done') && !filter.status.includes('open') ? 'done'
-    : filter.status.length === 1 && filter.status[0] === 'delegated' ? 'delegated'
     : 'all';
 
   return (
@@ -130,31 +138,36 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
             <SelectItem value="all">
               <span className="flex items-center gap-1.5">
                 <Layers className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
-                All types
+                <span>All types</span>
+                <span className="text-muted-foreground/60">{typeCounts.all}</span>
               </span>
             </SelectItem>
             <SelectItem value="task">
               <span className="flex items-center gap-1.5">
                 <ListChecks className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
-                Tasks
+                <span>Tasks</span>
+                <span className="text-muted-foreground/60">{typeCounts.task}</span>
               </span>
             </SelectItem>
             <SelectItem value="comment">
               <span className="flex items-center gap-1.5">
                 <MessageSquare className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
-                Comments
+                <span>Comments</span>
+                <span className="text-muted-foreground/60">{typeCounts.comment}</span>
               </span>
             </SelectItem>
             <SelectItem value="agent">
               <span className="flex items-center gap-1.5">
                 <Bot className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
-                Agent tasks
+                <span>Agent tasks</span>
+                <span className="text-muted-foreground/60">{typeCounts.agent}</span>
               </span>
             </SelectItem>
             <SelectItem value="goal">
               <span className="flex items-center gap-1.5">
                 <Target className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
-                Goals
+                <span>Goals</span>
+                <span className="text-muted-foreground/60">{typeCounts.goal}</span>
               </span>
             </SelectItem>
           </SelectContent>
@@ -177,13 +190,6 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
                 <CheckSquare2 className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
                 <span>Done</span>
                 <span className="text-muted-foreground/60">{statusCounts.done}</span>
-              </span>
-            </SelectItem>
-            <SelectItem value="delegated">
-              <span className="flex items-center gap-1.5">
-                <Forward className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.5} />
-                <span>Delegated</span>
-                <span className="text-muted-foreground/60">{statusCounts.delegated}</span>
               </span>
             </SelectItem>
             <SelectItem value="all">
