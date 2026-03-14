@@ -4,11 +4,13 @@ import { Calendar } from "@/components/ui/calendar";
 interface DatePickerState {
   date: string;
   rect: DOMRect;
+  from: number;
+  to: number;
 }
 
 interface DatePickerPopoverProps {
-  /** Called when a new date is selected — receives old date string and new date string */
-  onDateChange?: (oldDate: string, newDate: string, rect: DOMRect) => void;
+  /** Called when a new date is selected — receives old date string, new date string, and ProseMirror position range */
+  onDateChange?: (oldDate: string, newDate: string, from: number, to: number) => void;
 }
 
 export function DatePickerPopover({ onDateChange }: DatePickerPopoverProps) {
@@ -19,8 +21,8 @@ export function DatePickerPopover({ onDateChange }: DatePickerPopoverProps) {
 
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ date: string; rect: DOMRect }>).detail;
-      setState({ date: detail.date, rect: detail.rect });
+      const detail = (e as CustomEvent<{ date: string; rect: DOMRect; from: number; to: number }>).detail;
+      setState({ date: detail.date, rect: detail.rect, from: detail.from, to: detail.to });
     };
 
     window.addEventListener("notesage:open-date-picker", handler);
@@ -31,7 +33,10 @@ export function DatePickerPopover({ onDateChange }: DatePickerPopoverProps) {
   useEffect(() => {
     if (!state) return;
     const handleClick = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      // If the target was removed from DOM by React re-render, don't treat as outside click
+      if (!target.isConnected) return;
+      if (popoverRef.current && !popoverRef.current.contains(target)) {
         close();
       }
     };
@@ -73,7 +78,7 @@ export function DatePickerPopover({ onDateChange }: DatePickerPopoverProps) {
             const d = String(date.getDate()).padStart(2, "0");
             const newDateStr = `${y}-${m}-${d}`;
             if (newDateStr !== state.date) {
-              onDateChange?.(state.date, newDateStr, state.rect);
+              onDateChange?.(state.date, newDateStr, state.from, state.to);
             }
             close();
           }

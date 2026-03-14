@@ -711,8 +711,6 @@
   font-size: 0;
   letter-spacing: -1px;
   overflow: hidden;
-  display: inline-block;
-  width: 0;
 }
 
 .date-badge {

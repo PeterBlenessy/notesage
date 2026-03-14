@@ -1823,31 +1823,43 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         }}
       />
       <DatePickerPopover
-        onDateChange={(oldDate, newDate, rect) => {
+        onDateChange={(oldDate, newDate, from, to) => {
           if (!editor) return;
-          // Find and replace the date text in the document
-          const oldText = `//${oldDate}`;
           const newText = `//${newDate}`;
-          const { doc } = editor.state;
-          let replaced = false;
-          doc.descendants((node, pos) => {
-            if (replaced) return false;
-            if (!node.isText || !node.text) return;
-            const idx = node.text.indexOf(oldText);
-            if (idx !== -1) {
-              // Find the date badge closest to the clicked position
-              const from = pos + idx;
-              const to = from + oldText.length;
-              // Verify this is near the clicked rect by checking all matches
-              const view = editor.view;
-              const coords = view.coordsAtPos(from);
-              const distance = Math.abs(coords.top - rect.top);
-              if (distance < 50) {
-                editor.chain().focus().deleteRange({ from, to }).insertContentAt(from, newText).run();
+          if (from >= 0 && to >= 0) {
+            // Use the exact ProseMirror position from the click handler
+            editor
+              .chain()
+              .focus()
+              .command(({ tr }) => {
+                tr.insertText(newText, from, to);
+                return true;
+              })
+              .run();
+          } else {
+            // Fallback: search the document for the old date text
+            const oldText = `//${oldDate}`;
+            const { doc } = editor.state;
+            let replaced = false;
+            doc.descendants((node, pos) => {
+              if (replaced) return false;
+              if (!node.isText || !node.text) return;
+              const idx = node.text.indexOf(oldText);
+              if (idx !== -1) {
+                const f = pos + idx;
+                const t = f + oldText.length;
+                editor
+                  .chain()
+                  .focus()
+                  .command(({ tr }) => {
+                    tr.insertText(newText, f, t);
+                    return true;
+                  })
+                  .run();
                 replaced = true;
               }
-            }
-          });
+            });
+          }
         }}
       />
     </div>

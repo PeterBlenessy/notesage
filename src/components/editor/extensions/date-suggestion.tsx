@@ -1,6 +1,7 @@
 import { Extension, type Editor, type Range } from "@tiptap/core";
 import { PluginKey } from "@tiptap/pm/state";
 import type { EditorState } from "@tiptap/pm/state";
+import type { DecorationSet } from "@tiptap/pm/view";
 import { ReactRenderer } from "@tiptap/react";
 import { DateHighlightPluginKey } from "./date-highlight";
 import Suggestion from "@tiptap/suggestion";
@@ -214,13 +215,13 @@ export const DateSuggestion = Extension.create({
           const $from = editorState.doc.resolve(range.from);
           // Suppress in code blocks
           if ($from.parent.type.name === "codeBlock") return false;
-          // Suppress when cursor is inside an existing date decoration
-          const dateDecos = DateHighlightPluginKey.getState(editorState);
+          // Suppress when cursor overlaps any existing date decoration
+          const dateDecos = DateHighlightPluginKey.getState(
+            editorState
+          ) as DecorationSet | undefined;
           if (dateDecos) {
             const found = dateDecos.find(range.from, range.to);
-            for (const deco of found) {
-              if (deco.to > range.to) return false;
-            }
+            if (found.length > 0) return false;
           }
           return true;
         },

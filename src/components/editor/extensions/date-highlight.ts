@@ -74,7 +74,7 @@ export const DateHighlight = Extension.create({
             return this.getState(state);
           },
           handleDOMEvents: {
-            mousedown(_view, event) {
+            mousedown(view, event) {
               if (event.button !== 0) return false;
               const target = (event.target as HTMLElement).closest(
                 ".date-badge"
@@ -90,9 +90,39 @@ export const DateHighlight = Extension.create({
               // Get bounding rect for positioning the popover
               const rect = target.getBoundingClientRect();
 
+              // Find the exact ProseMirror position of the clicked date
+              const posInfo = view.posAtCoords({
+                left: event.clientX,
+                top: event.clientY,
+              });
+              let dateFrom = -1;
+              let dateTo = -1;
+              if (posInfo) {
+                const decos = this.getState(view.state) as DecorationSet;
+                if (decos) {
+                  const found = decos.find(
+                    Math.max(0, posInfo.pos - 15),
+                    posInfo.pos + 15
+                  );
+                  for (const deco of found) {
+                    if (
+                      (
+                        deco as Decoration & {
+                          type: { attrs: Record<string, string> };
+                        }
+                      ).type.attrs?.["data-date"] === date
+                    ) {
+                      dateFrom = deco.from - 2;
+                      dateTo = deco.to;
+                      break;
+                    }
+                  }
+                }
+              }
+
               window.dispatchEvent(
                 new CustomEvent("notesage:open-date-picker", {
-                  detail: { date, rect },
+                  detail: { date, rect, from: dateFrom, to: dateTo },
                 })
               );
               return true;

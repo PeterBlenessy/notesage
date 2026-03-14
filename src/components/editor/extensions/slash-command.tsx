@@ -1,10 +1,13 @@
 import { Extension, type Editor, type Range } from "@tiptap/core";
+import type { EditorState } from "@tiptap/pm/state";
+import type { DecorationSet } from "@tiptap/pm/view";
 import { ReactRenderer } from "@tiptap/react";
 import Suggestion from "@tiptap/suggestion";
 import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion";
 import tippy, { type Instance } from "tippy.js";
 import { ComponentType, forwardRef, useEffect, useImperativeHandle, useState } from "react";
 import { cn } from "@/lib/utils";
+import { DateHighlightPluginKey } from "./date-highlight";
 import {
   Heading1,
   Heading2,
@@ -232,6 +235,22 @@ export const SlashCommand = Extension.create({
     return {
       suggestion: {
         char: "/",
+        allow: ({ state, range }: { state: unknown; range: Range }) => {
+          const editorState = state as EditorState;
+          const $from = editorState.doc.resolve(range.from);
+          // Suppress in code blocks
+          if ($from.parent.type.name === "codeBlock") return false;
+          // Suppress when cursor overlaps any existing date decoration
+          // (prevents "/" inside "//YYYY-MM-DD" from triggering slash menu)
+          const dateDecos = DateHighlightPluginKey.getState(
+            editorState
+          ) as DecorationSet | undefined;
+          if (dateDecos) {
+            const found = dateDecos.find(range.from, range.to);
+            if (found.length > 0) return false;
+          }
+          return true;
+        },
         command: ({ editor, range, props }: { editor: Editor; range: Range; props: CommandItem }) => {
           props.command({ editor, range });
         },

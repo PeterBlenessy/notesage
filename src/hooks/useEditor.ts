@@ -112,7 +112,9 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
         // Prevent duplicate extensions
         linkify: false,
       }),
+      DateHighlight,
       SlashCommand,
+      DateSuggestion,
       AISuggestion,
       InlineDiff,
       CommentMark,
@@ -122,8 +124,6 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       TagSuggestion,
       MentionHighlight,
       MentionSuggestion,
-      DateHighlight,
-      DateSuggestion,
       SearchHighlight,
     ],
     content,
