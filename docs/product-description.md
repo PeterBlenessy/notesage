@@ -13,6 +13,7 @@ Notesage is a rich text markdown editor with AI collaboration capabilities, pack
 | Feature | Summary | Details |
 | --- | --- | --- |
 | Editor | Tiptap rich text editor with markdown round-tripping, find & replace, inline tag badges | features/editor.md |
+| Document Index | SQLite-backed index with AST-parsed tags, mentions, tasks, goals, and FTS5 content search | prds/2026-03-14-sqlite-document-index.md |
 | AI Providers | Multi-provider architecture (Anthropic, OpenAI, Ollama, Local AI, ACP agents, Copilot LSP) | features/ai-providers.md |
 | AI Workflows | Chat, agents, skills, MCP, comment delegation, research, voice transcription | features/ai-workflows.md |
 | Document Formats | EPUB viewer, PDF export, DOCX/PDF/plain text viewers | features/document-formats.md |
@@ -53,6 +54,7 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 6. **Provider abstraction (**`AIProvider` **interface)** — Extends to local AI, new providers. Web search implemented as provider-native tools.
 7. **Component modularity** — Sidebar, editor, tabs, chat panel are separate and composable.
 8. **Open standards (Agent Skills + MCP)** — Skills and tools follow widely adopted cross-tool standards. No proprietary format.
+9. **SQLite document index** — Persistent, structure-aware index built from comrak AST parsing. Replaces regex-based filesystem scanning with instant SQL queries for tags, mentions, tasks, goals, and FTS5 content search. Each device rebuilds its own index from files (iCloud safe).
 
 ## Implementation Philosophy
 

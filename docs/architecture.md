@@ -39,6 +39,13 @@ note-sage/
 │   │   │   ├── local_inference.rs # Bundled llama-server lifecycle, model catalog, download, FIM completions
 │   │   │   ├── model_metadata.rs  # Model metadata merge, HF API fetcher, runtime metadata
 │   │   │   └── gguf_parser.rs     # GGUF binary header parser
+│   │   ├── index/          # SQLite document index (tags, mentions, tasks, goals, FTS5)
+│   │   │   ├── mod.rs      # IndexState, Tauri commands, indexing pipeline
+│   │   │   ├── db.rs       # Schema creation, migrations, connection management
+│   │   │   ├── parser.rs   # comrak AST walking — tags, mentions, headings, tasks, goals
+│   │   │   ├── queries.rs  # SQL query builders for all search operations
+│   │   │   ├── tasks.rs    # Task toggle via context-based matching
+│   │   │   └── icloud.rs   # iCloud exclusion (xattr on macOS)
 │   │   └── export/         # PDF export engine
 │   │       ├── mod.rs
 │   │       ├── typst_world.rs      # Typst World trait implementation
@@ -110,6 +117,17 @@ note-sage/
 - Must handle all supported node types
 - **Test strategy**: Reference `.md` files covering all syntax. Round-trip test: parse → serialize → compare. Must pass before any PR.
 
+### Document Index (SQLite)
+
+A persistent SQLite index provides instant search for tags, mentions, tasks, goals, research, and full-text content. Replaces the previous regex-based filesystem scanning approach.
+
+- **Backend**: `src-tauri/src/index/` module with `rusqlite` (bundled SQLite) and `comrak` AST parsing
+- **Per-scope databases**: `~/.notesage/index.db` (global) and `<project>/.notesage/index.db` (per-project)
+- **AST-parsed extraction**: Tags, mentions, tasks, goals extracted from comrak's document tree — no false positives from code blocks, frontmatter, or inline code
+- **FTS5**: Full-text search with porter stemming for content search across all text files
+- **Incremental updates**: Filesystem watcher triggers reindex of changed files via SHA-256 content hashing
+- **iCloud safe**: `index.db` excluded from iCloud sync via xattr; each device rebuilds its own index from synced files
+
 ### State Management (Zustand)
 
 All state stores use Zustand with the persist middleware for localStorage:
@@ -129,7 +147,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `comment-store` | Comments, replies, delegation | JSON sidecar files |
 | `mcp-store` | MCP server registry | Partial (enabled overrides) |
 | `epub-store` | EPUB view mode + bookmarks | Full |
-| `tag-store` | Workspace tag index | None (rebuilt from scan) |
+| ~~`tag-store`~~ | ~~Workspace tag index~~ | Removed — replaced by SQLite document index |
 | `activity-store` | Agent task registry | Full |
 | `recording-store` | Whisper models, downloads, language | Partial (`speechLanguage`, `defaultModel`) |
 | `external-change-store` | Pending external changes with hunks | None |

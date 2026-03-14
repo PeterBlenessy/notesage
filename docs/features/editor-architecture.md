@@ -81,7 +81,7 @@ Each decoration-based extension follows a pattern:
 ## State Stores
 
 - **editor-store**: Open tabs (file path + dirty state + per-tab `copilotDisabled` flag), active tab index, external change tracking per tab
-- **tag-store** (non-persisted): Workspace tag index — all known tags and tag-to-file mapping, rebuilt from periodic scans
+- **SQLite document index**: Tags, mentions, tasks, goals, headings, FTS5 content — persisted in `index.db`, updated incrementally by watcher. Replaces the removed `tag-store` and `mention-store` Zustand stores.
 - **external-change-store** (non-persisted): Pending external file changes with hunks, old/new content, status (`pending` → `deferred`)
 - **comment-store**: Comments per document, replies, delegation status, activity log
 
