@@ -221,7 +221,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     description: 'Free with Google account, or Gemini Code Assist subscription',
     capabilities: ['interactive', 'agent_tasks'],
     agentBinary: 'gemini',
-    agentArgs: ['--experimental-acp'],
+    agentArgs: ['--experimental-acp', '-y'],
     installMeta: {
       githubRepo: 'google-gemini/gemini-cli',
       manualCommand: 'npm install -g @google/gemini-cli',
