@@ -31,10 +31,20 @@ note-sage/
 │   │   │   ├── acp.rs      # ACP agent management (spawn, auth, sessions, permissions, cleanup)
 │   │   │   ├── copilot_lsp.rs # Copilot Language Server (JSON-RPC, inline completions)
 │   │   │   ├── mcp.rs      # MCP client (JSON-RPC stdio transport, server lifecycle, tool discovery/call)
-│   │   │   ├── skills.rs   # Skill/agent discovery, script execution, bundled extraction
+│   │   │   ├── skills.rs   # Skill discovery, YAML parsing, bundled skill extraction
+│   │   │   ├── agents.rs   # Agent discovery, bundled agents, agent instructions
+│   │   │   ├── script_exec.rs # Skill script execution, interpreter resolution, sandboxing
+│   │   │   ├── json_rpc.rs # Shared JSON-RPC 2.0 types, Content-Length framing, pending requests
 │   │   │   ├── export.rs   # PDF export commands
 │   │   │   ├── git.rs      # Git operations
 │   │   │   ├── watcher.rs  # Filesystem watcher (notify crate)
+│   │   │   ├── ai_streaming.rs # AI streaming helpers (Ollama thinking detection)
+│   │   │   ├── actions.rs  # Actions dashboard (task/goal scanning)
+│   │   │   ├── health.rs   # Backend health check
+│   │   │   ├── logging.rs  # Debug logging control
+│   │   │   ├── store.rs    # Key-value store operations
+│   │   │   ├── sync.rs     # iCloud sync settings
+│   │   │   ├── shell_path.rs # Shell PATH resolution
 │   │   │   ├── transcription.rs # Voice recording, Whisper transcription, dictation, model management
 │   │   │   ├── local_inference.rs # Bundled llama-server lifecycle, model catalog, download, FIM completions
 │   │   │   ├── model_metadata.rs  # Model metadata merge, HF API fetcher, runtime metadata
@@ -60,11 +70,15 @@ note-sage/
 │   └── capabilities/
 ├── src/                    # React frontend
 │   ├── main.tsx            # Entry point
-│   ├── App.tsx             # Root layout
+│   ├── App.tsx             # Root component — mounts lifecycle hooks, renders Layout + dialogs
 │   ├── components/
+│   │   ├── Layout.tsx      # Main layout (ResizablePanelGroup: sidebar, editor, chat, activity)
+│   │   ├── ErrorBoundary.tsx # Reusable error boundary (wraps editor, chat, sidebar)
 │   │   ├── editor/         # Tiptap editor components
 │   │   │   ├── Editor.tsx, EditorContent.tsx, Toolbar.tsx, SlashCommand.tsx
 │   │   │   ├── BubbleMenu.tsx, CommentPopover.tsx, CommentListPopover.tsx
+│   │   │   ├── CommentThread.tsx, DelegationPanel.tsx
+│   │   │   ├── TranscriptionOverlay.tsx, SourceModeEditor.tsx
 │   │   │   ├── ChangeListPopover.tsx, FindBar.tsx, StatusBar.tsx
 │   │   │   └── extensions/ # Custom Tiptap extensions (see editor-architecture.md)
 │   │   ├── sidebar/        # Sidebar.tsx, FileTree.tsx, FileTreeItem.tsx, ExplorerFolderItem.tsx
@@ -74,9 +88,9 @@ note-sage/
 │   │   ├── activity/       # ActivityStrip.tsx, ActivityTaskCard.tsx
 │   │   ├── editor/viewers/ # EpubViewer, PdfViewer, DocxViewer, PlainTextViewer
 │   │   └── ui/             # shadcn/ui components (auto-generated)
-│   ├── hooks/              # React hooks (useEditor, useAIOperations, useLocalAI, etc.)
+│   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, etc.)
 │   ├── stores/             # Zustand stores (editor, workspace, ai, chat, skill, etc.)
-│   ├── lib/                # Utilities (markdown, tauri, ai/, dom-search, etc.)
+│   ├── lib/                # Utilities (markdown, tauri, ai/{context,errors}, dom-search, etc.)
 │   └── styles/             # globals.css, editor.css
 ├── public/
 │   ├── foliate-js/         # Vendored EPUB renderer (MIT)

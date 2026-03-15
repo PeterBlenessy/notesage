@@ -92,6 +92,6 @@ Each decoration-based extension follows a pattern:
 | `src/components/editor/extensions/` | All custom Tiptap extensions |
 | `src/lib/markdown.ts` | Markdown ↔ ProseMirror conversion |
 | `src/lib/dom-search.ts` | Shared DOM text search utility (DOCX, plain text viewers) |
-| `src/lib/ai/ai-suggestion.ts` | `setSuggestion()` / `hasActiveSuggestion()` for inline diff display |
-| `src/lib/ai/pm-replace.ts` | `extractReplacementText()` and `resolveAnchorRange()` |
+| `src/components/editor/extensions/ai-suggestion.ts` | `setSuggestion()` / `hasActiveSuggestion()` for inline diff display |
+| `src/lib/pm-replace.ts` | `extractReplacementText()` and `resolveAnchorRange()` |
 | `src/styles/editor.css` | Editor-specific styles (ProseMirror overrides) |

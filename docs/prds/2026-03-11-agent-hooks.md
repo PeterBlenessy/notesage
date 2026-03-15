@@ -522,7 +522,7 @@ interface HookContext {
 
 ### Rust
 
-- No new dependencies — YAML parsing via `serde_yaml` (already in use)
+- No new dependencies — YAML parsing via `serde_yml` (already in use)
 
 ### Frontend
 
