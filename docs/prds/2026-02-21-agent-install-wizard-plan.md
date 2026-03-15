@@ -1,9 +1,6 @@
 # Agent Binary Management & Runtime Sandboxing — Implementation Plan
 
-**Status:** 🔮 Future
-**PRD:** `docs/prds/2026-02-21-agent-install-wizard.md`
-**Tasks:** `docs/prds/2026-02-21-agent-install-wizard-tasks.md`
-**Date:** 2026-03-01
+**Status:** 🔮 Future **PRD:** `docs/prds/2026-02-21-agent-install-wizard.md`**Tasks:** `docs/prds/2026-02-21-agent-install-wizard-tasks.md`**Date:** 2026-03-01
 
 ## Approach: Thin Vertical Slices
 
@@ -13,22 +10,29 @@ Build end-to-end for one agent first, then scale. Each slice is independently sh
 
 Before writing production code, validate the two riskiest assumptions.
 
-### Spike A: GitHub Release Binary Downloads (~30 min, manual research)
+### Spike A: GitHub Release Binary Downloads (\~30 min, manual research)
 
 Verify that pre-built binaries are actually available and usable:
 
 - [ ] Check `zed-industries/claude-agent-acp` GitHub Releases — what are the actual asset names?
+
 - [ ] Check `zed-industries/codex-acp` GitHub Releases — same
+
 - [ ] Check `github/copilot-cli` (or npm registry) — where are native binaries hosted?
+
 - [ ] Check `github/copilot-language-server-release` — same
+
 - [ ] Are binaries standalone or do they need sibling files/directories?
+
 - [ ] Does `claude-agent-acp` pre-built binary still need `claude` CLI installed for auth?
+
 - [ ] Does macOS Gatekeeper quarantine downloaded binaries? Need `xattr -d com.apple.quarantine`?
+
 - [ ] What checksum/signature verification is available per release?
 
 **Exit criteria:** Documented asset naming patterns and download URLs for each agent, or a decision to fall back to npm-based install for specific agents.
 
-### Spike B: Seatbelt Sandbox Compatibility (~15 min, manual test)
+### Spike B: Seatbelt Sandbox Compatibility (\~15 min, manual test)
 
 Verify `sandbox-exec` doesn't break agent functionality:
 
@@ -52,11 +56,17 @@ sandbox-exec -f /tmp/test-agent.sb claude-agent-acp
 ```
 
 Test:
+
 - [ ] Agent starts and completes ACP initialize handshake
+
 - [ ] Agent can read files in the allowed project directory
+
 - [ ] Agent can write files in the allowed project directory
+
 - [ ] Agent cannot read `~/.ssh/` (verify with a tool call that attempts it)
+
 - [ ] Agent can make network requests (API calls work)
+
 - [ ] Agent can spawn child processes (git, grep, etc.)
 
 **Exit criteria:** Confirmed that Seatbelt sandboxing works with at least one ACP agent, or identified what profile adjustments are needed.
@@ -64,18 +74,17 @@ Test:
 ### Additional Spike: Verify Gemini CLI ACP flag
 
 - [ ] Test `gemini --acp` — does it work or does it need `--experimental-acp`?
+
 - [ ] Update `connections.ts` `agentArgs` if needed
 
 ## Slice 1: Managed Install for One Agent (end-to-end)
 
-**Target agent:** `claude-agent-acp`
-**Goal:** User clicks "Install" → binary downloads → agent works from `~/.notesage/agents/bin/`
-**Estimated effort:** 3-4 days
-**Tasks:** #1, #2, #3, #4, #6, #10, #11 (scoped to single agent)
+**Target agent:** `claude-agent-acp`**Goal:** User clicks "Install" → binary downloads → agent works from `~/.notesage/agents/bin/`**Estimated effort:** 3-4 days **Tasks:** #1, #2, #3, #4, #6, #10, #11 (scoped to single agent)
 
 ### Backend
 
-1. **New `src-tauri/src/commands/agent_manager.rs`:**
+1. **New** `src-tauri/src/commands/agent_manager.rs`**:**
+
    - `ensure_agent_dirs()` — create `~/.notesage/agents/{bin,lib}`, `~/.notesage/runtime/`, `~/.notesage/sandbox/profiles/`
    - `detect_platform()` — returns `darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64`
    - `agent_resolve_binary(agent_id)` — check managed dir first, then system PATH, return `{ path, source }`
@@ -83,19 +92,21 @@ Test:
    - Download with progress events (`agent-install-progress`)
    - Concurrency guard (one install at a time)
 
-2. **Register in `src-tauri/src/lib.rs`:** Add new commands to `generate_handler![]`
+2. **Register in** `src-tauri/src/lib.rs`**:** Add new commands to `generate_handler![]`
 
-3. **Update `src-tauri/src/commands/acp.rs`:** Use `agent_resolve_binary()` for binary lookup instead of raw PATH search
+3. **Update** `src-tauri/src/commands/acp.rs`**:** Use `agent_resolve_binary()` for binary lookup instead of raw PATH search
 
 ### Frontend
 
-4. **Update `src/lib/ai/connections.ts`:**
+4. **Update** `src/lib/ai/connections.ts`**:**
+
    - Add `AgentInstallMeta` interface
    - Add `installMeta` to `ProviderOption`
    - Populate for `claude-agent-acp`
    - Add `binarySource` and `sandboxEnabled` to `Connection`
 
-5. **Update `src/components/settings/ConnectionsSettings.tsx`:**
+5. **Update** `src/components/settings/ConnectionsSettings.tsx`**:**
+
    - When binary not found: show "Install" button with download progress bar
    - Progress phases: downloading → verifying → extracting → configuring
    - Keep manual install command as fallback
@@ -105,16 +116,18 @@ Test:
 ### Test Checklist
 
 - [ ] Fresh system (no claude-agent-acp on PATH): Install button appears, download works, agent starts
+
 - [ ] System with existing claude-agent-acp: uses system binary, no install offered
+
 - [ ] Download failure: error message with retry
+
 - [ ] `cargo check` + `npx tsc --noEmit` pass
+
 - [ ] Light and dark mode
 
 ## Slice 2: Scale to All Agents + Gemini Special Case
 
-**Goal:** All 5 agents installable via managed download
-**Estimated effort:** 1-2 days
-**Tasks:** #5, remainder of #6, #10
+**Goal:** All 5 agents installable via managed download **Estimated effort:** 1-2 days **Tasks:** #5, remainder of #6, #10
 
 ### Work
 
@@ -127,25 +140,27 @@ Test:
 ### Test Checklist
 
 - [ ] Each agent: install from scratch, authenticate, run a prompt
+
 - [ ] Gemini: portable Node.js downloads, npm install works in prefix mode
+
 - [ ] No interference between managed agents
 
 ## Slice 3: Filesystem Sandboxing
 
-**Goal:** Managed agents run inside OS-level filesystem sandbox
-**Estimated effort:** 2-3 days
-**Tasks:** #7, #8
+**Goal:** Managed agents run inside OS-level filesystem sandbox **Estimated effort:** 2-3 days **Tasks:** #7, #8
 
 ### Backend
 
-1. **New `src-tauri/src/commands/sandbox.rs`:**
+1. **New** `src-tauri/src/commands/sandbox.rs`**:**
+
    - `generate_seatbelt_profile(working_dir, config)` → writes `.sb` file, returns path
    - Hardcoded deny: `~/.ssh`, `~/.aws`, `~/.gnupg`, `.env` files
    - Hardcoded read-only: `.git/` directories
    - Allow write: project dir, `/tmp`
    - `build_bwrap_args(working_dir, config)` → Linux equivalent
 
-2. **Modify spawn in `src-tauri/src/commands/acp.rs`:**
+2. **Modify spawn in** `src-tauri/src/commands/acp.rs`**:**
+
    - Accept `sandbox_enabled` in spawn request (default based on binary source)
    - `#[cfg(target_os = "macos")]`: wrap with `sandbox-exec -f <profile>`
    - `#[cfg(target_os = "linux")]`: wrap with `bwrap` or apply Landlock
@@ -159,17 +174,20 @@ Test:
 ### Test Checklist
 
 - [ ] Sandboxed agent can read/write project directory
+
 - [ ] Sandboxed agent cannot read `~/.ssh/` (attempt fails gracefully)
+
 - [ ] Sandboxed agent can make network requests
+
 - [ ] Sandboxed agent can spawn git, grep, etc.
+
 - [ ] System-installed agent runs without sandbox (no regression)
+
 - [ ] User can toggle sandbox on/off per connection
 
 ## Slice 4: Update Checking
 
-**Goal:** Users know when updates are available, can update with one click
-**Estimated effort:** 2 days
-**Tasks:** #9, #12
+**Goal:** Users know when updates are available, can update with one click **Estimated effort:** 2 days **Tasks:** #9, #12
 
 ### Backend
 
@@ -188,16 +206,18 @@ Test:
 ### Test Checklist
 
 - [ ] Update detected when newer release exists
+
 - [ ] Update badge appears on connection card
+
 - [ ] Update flow: stop → download → replace → restart
+
 - [ ] Running agent prompted before restart
+
 - [ ] Manual "Check for updates" works
 
 ## Slice 5 (Phase 2): Network Sandboxing
 
-**Goal:** Sandboxed agents can only reach approved network domains
-**Estimated effort:** 5-7 days
-**Tasks:** #13, #14, #15, #16
+**Goal:** Sandboxed agents can only reach approved network domains **Estimated effort:** 5-7 days **Tasks:** #13, #14, #15, #16
 
 ### Backend
 
@@ -211,21 +231,23 @@ Test:
 
 ### Frontend
 
-8. Domain permission prompt (Allow once / session / always / Deny)
-9. Allowed domains list in connection settings
+ 8. Domain permission prompt (Allow once / session / always / Deny)
+ 9. Allowed domains list in connection settings
 10. Integrate with existing permission store patterns
 
 ### Test Checklist
 
 - [ ] Sandboxed agent's API calls work through proxy
+
 - [ ] Sandboxed agent cannot reach unlisted domains
+
 - [ ] Unknown domain triggers user prompt
+
 - [ ] "Allow always" persists across sessions
 
 ## Phase 3: User-Configurable Policies
 
-**Tasks:** #17, #18
-**Estimated effort:** 2-3 days
+**Tasks:** #17, #18 **Estimated effort:** 2-3 days
 
 Defer until Phases 1-2 are solid. Adds custom writable paths, denied paths, and domains per connection via Settings UI.
 
@@ -251,7 +273,7 @@ src/
 ## Risk Register
 
 | Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
+| --- | --- | --- | --- |
 | GitHub Release asset naming varies per repo | Medium | High | Spike A validates; npm fallback exists |
 | Seatbelt breaks agent functionality | Low | High | Spike B validates before any code |
 | Gatekeeper quarantines downloaded binaries | Medium | Medium | `xattr -d com.apple.quarantine` after download |
@@ -263,7 +285,7 @@ src/
 ## Decision Log
 
 | Decision | Rationale |
-|----------|-----------|
+| --- | --- |
 | Download binaries from GitHub Releases, not npm | 4 of 5 agents are native binaries; npm is just delivery. Eliminates Node.js dependency. |
 | Prefer system-installed binaries | Respect user's existing setup. Only offer managed install when binary not found. |
 | Sandbox managed installs by default, not system | Managed = Notesage's responsibility. System = user's choice. |

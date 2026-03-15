@@ -16,7 +16,7 @@ Users need a way to see exactly what changed and decide whether to accept or rej
 
 1. **Show what changed** — inline diff decorations (green inserts, red deletes) for every external file change
 2. **Two response tiers** — Accept (frictionless via toast) or Review Later (deferred to status bar)
-3. **Non-disruptive** — toast auto-dismisses after ~8 seconds, deferring to the status bar change tracker
+3. **Non-disruptive** — toast auto-dismisses after \~8 seconds, deferring to the status bar change tracker
 4. **Status bar change tracker** — persistent cross-file visibility of pending changes with per-hunk controls
 5. **Reuse existing infrastructure** — build on the `InlineDiff` ProseMirror extension, `diff-match-patch` library, and `CommentListPopover` pattern
 
@@ -132,6 +132,7 @@ This extension is shared with git branch diff review. Only one diff review sourc
 ### Sync effect
 
 A transaction listener in Editor.tsx keeps the store's hunks in sync with the InlineDiff plugin state. When individual hunks are accepted/rejected via inline controls, the sync effect:
+
 - Updates store hunks when hunk count changes (keeps ChangeListPopover accurate)
 - Resolves the change entry and saves when all hunks are resolved
 - Guards against race conditions via `lastExternalDecoratedFile` ref
@@ -185,7 +186,7 @@ A transaction listener in Editor.tsx keeps the store's hunks in sync with the In
 └────────────────────────────────────────────────┘
 ```
 
-Each row: `[filename] : [change preview]  [✓] [✗]`
+Each row: `[filename] : [change preview] [✓] [✗]`
 
 - **Filename** truncated to 80px, full path shown on hover (tooltip)
 - **Change preview** shows red strikethrough (deleted) + green (inserted) text
@@ -243,35 +244,61 @@ No new libraries required.
 ### Functional
 
 - [x] External file change shows toast with Accept button and close X
+
 - [x] Accept button applies new content immediately and saves to disk
+
 - [x] Inline diff decorations (green/red) appear in the editor for pending changes
-- [x] Toast auto-dismisses after ~8 seconds, deferring to status bar tracker
+
+- [x] Toast auto-dismisses after \~8 seconds, deferring to status bar tracker
+
 - [x] Deferred changes show decorations when tab is active
+
 - [x] Per-hunk accept/reject via inline click controls
+
 - [x] Per-hunk accept/reject via popover ✓/✗ buttons (focused file)
+
 - [x] `Cmd+Enter` accepts next hunk, `Cmd+Backspace` rejects next hunk
+
 - [x] Accept All / Reject All work from the popover header
+
 - [x] Status bar shows change count when changes are pending
+
 - [x] Status bar popover lists all changes across all files with filename and preview
+
 - [x] Clicking a change in the popover navigates to the file and scrolls to the hunk
+
 - [x] Counter disappears when all changes are resolved
+
 - [x] Dirty tabs still show the reload/keep banner (no change to dirty tab behavior)
+
 - [x] Multiple files can have independent pending changes
+
 - [x] Switching tabs shows/hides decorations for the active file
+
 - [x] Git branch diff review takes priority (external changes auto-accept during git review)
+
 - [x] Self-write filtering works via backend suppression (no false notifications)
+
 - [x] No duplicate toasts for the same file
+
 - [x] Tab-switch race condition handled (rAF ensures editor content loaded before diffing)
 
 ### Design
 
 - [x] Toast follows neutral color palette (no chromatic accents)
+
 - [x] Toast close X is flat, top-right, window-style (not bubble)
+
 - [x] Diff decorations match existing git branch review styling
+
 - [x] Status bar change tracker matches comment counter styling
+
 - [x] ChangeListPopover: w-96, filename + change preview + per-hunk ✓/✗
+
 - [x] Per-hunk buttons: green check / red X on hover, muted grey background
+
 - [x] All interactive elements have hover/focus states
+
 - [x] Works correctly in both light and dark mode
 
 ## Implementation Decisions
@@ -288,12 +315,12 @@ Decisions made during implementation that differ from the original proposal:
 
 5. **Per-hunk popover controls only for focused file:** Per-hunk accept/reject from the popover dispatches to the ProseMirror plugin, which only works for the currently loaded document. Non-focused file hunks navigate to the file on click.
 
-6. **Status `reviewing` removed:** Only `pending` and `deferred` statuses used. `pending` = just detected, not yet processed. `deferred` = decorations loaded, tracked in status bar.
+6. **Status** `reviewing` **removed:** Only `pending` and `deferred` statuses used. `pending` = just detected, not yet processed. `deferred` = decorations loaded, tracked in status bar.
 
 ## Files
 
 | File | Role |
-|------|------|
+| --- | --- |
 | `src/lib/external-diff.ts` | `computeExternalDiff()` and `mapExternalChangeToPM()` |
 | `src/stores/external-change-store.ts` | Zustand store for pending changes |
 | `src/components/editor/ChangeListPopover.tsx` | Status bar popover with per-hunk controls |

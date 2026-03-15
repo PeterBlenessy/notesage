@@ -227,59 +227,59 @@ src-tauri/src/
 
 ### Functional
 
-- [x]Cmd+Shift+E opens export dialog
+- \[x\]Cmd+Shift+E opens export dialog
 
-- [x]All three presets produce visually distinct PDFs
+- \[x\]All three presets produce visually distinct PDFs
 
-- [x]Headings (H1-H6) render with correct hierarchy
+- \[x\]Headings (H1-H6) render with correct hierarchy
 
-- [x]Bold, italic, underline, strikethrough, inline code render correctly
+- \[x\]Bold, italic, underline, strikethrough, inline code render correctly
 
-- [x]Bullet lists, ordered lists, and task lists render correctly
+- \[x\]Bullet lists, ordered lists, and task lists render correctly
 
-- [x]Code blocks render with monospace font and language label
+- \[x\]Code blocks render with monospace font and language label
 
-- [x]Tables render with headers and borders
+- \[x\]Tables render with headers and borders
 
-- [x]Table rows are kept together when page breaks
+- \[x\]Table rows are kept together when page breaks
 
-- [x]Headings are kept together with next section when page breaks
+- \[x\]Headings are kept together with next section when page breaks
 
-- [x]Images embedded in PDF (local file paths resolved)
+- \[x\]Images embedded in PDF (local file paths resolved)
 
-- [x]Links are clickable in the PDF
+- \[x\]Links are clickable in the PDF
 
-- [x]Blockquotes styled distinctly
+- \[x\]Blockquotes styled distinctly
 
-- [x]Horizontal rules render as visual separators
+- \[x\]Horizontal rules render as visual separators
 
-- [x]Table of contents generated from headings when enabled
+- \[x\]Table of contents generated from headings when enabled
 
-- [x]Page numbers appear in footer when enabled
+- \[x\]Page numbers appear in footer when enabled
 
-- [x]All three page sizes (A4, Letter, A5) work
+- \[x\]All three page sizes (A4, Letter, A5) work
 
-- [x]Native save dialog appears with suggested filename
+- \[x\]Native save dialog appears with suggested filename
 
-- [x]Success toast shown after export
+- \[x\]Success toast shown after export
 
-- [x]Error toast shown if export fails
+- \[x\]Error toast shown if export fails
 
-- [x]Export completes in under 2 seconds for a 10-page document
+- \[x\]Export completes in under 2 seconds for a 10-page document
 
-- [x]User's last export settings remembered across sessions
+- \[x\]User's last export settings remembered across sessions
 
-- [x]YAML frontmatter stripped from PDF output (not rendered)
+- \[x\]YAML frontmatter stripped from PDF output (not rendered)
 
 ### Design
 
-- [x]Export dialog follows design system (neutral palette, transitions, proper spacing)
+- \[x\]Export dialog follows design system (neutral palette, transitions, proper spacing)
 
-- [x]Style cards are visually clear and show which is selected
+- \[x\]Style cards are visually clear and show which is selected
 
-- [x]Dialog works in both light and dark mode
+- \[x\]Dialog works in both light and dark mode
 
-- [x]Loading state during export is smooth (not jarring)
+- \[x\]Loading state during export is smooth (not jarring)
 
 ## Out of Scope
 

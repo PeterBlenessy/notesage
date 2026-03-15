@@ -2,7 +2,7 @@
 
 **PRD:** `docs/prds/2026-03-11-model-metadata-enrichment.md`
 
-**Total: 9 tasks — 2S, 4M, 3L — ALL DONE ✓**
+**Total: 9 tasks — 2S, 4M, 3L —**  ✅ Complete
 
 **Suggested order:** Tasks 1-2 in parallel (backend data enrichment), then 3-4 (backend parsers/fetchers), then 5 (merge command), then 6-7 (frontend), then 8-9 (runtime + post-download).
 

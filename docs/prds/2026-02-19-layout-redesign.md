@@ -560,7 +560,7 @@ This PRD covers a large surface area. Suggested implementation order:
 
 - [x] Focus mode transitions smoothly (200ms fade)
 
-- [x]Status bar items fade in/out contextually (deferred — instant show/hide for now)
+- \[x\]Status bar items fade in/out contextually (deferred — instant show/hide for now)
 
 - [x] Page break markers are subtle and don't interfere with reading
 

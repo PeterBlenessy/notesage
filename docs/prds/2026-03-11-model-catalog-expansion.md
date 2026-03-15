@@ -1,6 +1,6 @@
 # PRD: Local AI Model Catalog Expansion
 
-**Date:** 2026-03-11 **Phase:** 11 **Status:** Implemented
+**Date:** 2026-03-11 **Phase:** 11 **Status:** ✅ Complete
 
 ---
 
@@ -297,43 +297,43 @@ if model.supports_tool_calling.unwrap_or(false) {
 
 ### Functional
 
-- [ ] All 18 models have correct download URLs (verified, not 404)
+- [x] All 18 models have correct download URLs (verified, not 404)
 
-- [ ] All models download successfully and load in llama-server
+- [x] All models download successfully and load in llama-server
 
-- [ ] RAM requirements are accurate (within 500MB of actual)
+- [x] RAM requirements are accurate (within 500MB of actual)
 
-- [ ] `supports_tool_calling` is correct for each model (tested with structured tool call)
+- [x] `supports_tool_calling` is correct for each model (tested with structured tool call)
 
-- [ ] `supports_thinking` is correct (thinking content properly extracted)
+- [x] `supports_thinking` is correct (thinking content properly extracted)
 
-- [ ] `thinking_tags` match actual model output format
+- [x] `thinking_tags` match actual model output format
 
-- [ ] Category filter works in Settings UI
+- [x] Category filter works in Settings UI
 
-- [ ] RAM-based recommendations are correct for 8/16/32/64 GB
+- [x] RAM-based recommendations are correct for 8/16/32/64 GB
 
-- [ ] Capability badges display correctly on model cards
+- [x] Capability badges display correctly on model cards
 
-- [ ] Existing models (from old catalog) continue to work without re-download
+- [x] Existing models (from old catalog) continue to work without re-download
 
-- [ ] Custom models (from `custom-models.json`) coexist with catalog models
+- [x] Custom models (from `custom-models.json`) coexist with catalog models
 
 ### Performance
 
-- [ ] Catalog loading is instant (embedded at compile time)
+- [x] Catalog loading is instant (embedded at compile time)
 
-- [ ] Model list rendering is smooth with 18+ entries
+- [x] Model list rendering is smooth with 18+ entries
 
 ### Design
 
-- [ ] Model cards with badges follow design system
+- [x] Model cards with badges follow design system
 
-- [ ] Category tabs are clean and functional
+- [x] Category tabs are clean and functional
 
-- [ ] Recommended section is visually distinct
+- [x] Recommended section is visually distinct
 
-- [ ] All UI works in light and dark mode
+- [x] All UI works in light and dark mode
 
 ---
 

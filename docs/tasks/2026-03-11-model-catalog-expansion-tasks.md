@@ -199,25 +199,25 @@
 
 ---
 
-### #8 — Verify all download URLs and model capabilities
+### #8 — Verify all download URLs and model capabilities ✅
 
-**Status:** Pending (manual verification)
+**Status:** Done
 
 **Description:** Manual verification task. For each of the 18 models: (1) Verify the `huggingface_url` returns 200 (not 404 or redirect to error). (2) For new models, download and test loading in llama-server. (3) Verify `supports_thinking` models actually produce thinking output. (4) Verify `thinking_tags` match actual output format. (5) Verify `supports_tool_calling` models accept structured tool schemas via `--jinja`. (6) Verify RAM estimates are within 500MB of actual usage.
 
 **Acceptance criteria:**
 
-- [ ] All 18 URLs verified (HEAD request returns 200)
+- [x] All 18 URLs verified (HEAD request returns 200)
 
-- [ ] All 9 new models load in llama-server without error
+- [x] All 9 new models load in llama-server without error
 
-- [ ] Thinking content extracted correctly for all `supports_thinking: true` models
+- [x] Thinking content extracted correctly for all `supports_thinking: true` models
 
-- [ ] Tool calling works for all `supports_tool_calling: true` models
+- [x] Tool calling works for all `supports_tool_calling: true` models
 
-- [ ] RAM estimates accurate within 500MB
+- [x] RAM estimates accurate within 500MB
 
-- [ ] Existing models from old catalog work without re-download
+- [x] Existing models from old catalog work without re-download
 
 **Complexity:** M **Category:** both **Dependencies:** #1, #2, #3 **Files:**
 
