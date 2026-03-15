@@ -1,6 +1,6 @@
 # PRD: Codebase Health Improvements
 
-**Date:** 2026-03-10 (updated 2026-03-15) **Status:** 📋 Planned **Source:** `docs/research/codebase-analysis.md` (2026-03-09) **Structure:** 12 independent, incremental tasks — each can ship in any release, in any order.
+**Date:** 2026-03-10 (updated 2026-03-15) **Status:** ✅ Done **Source:** `docs/research/codebase-analysis.md` (2026-03-09) **Structure:** 12 independent, incremental tasks — each can ship in any release, in any order.
 
 ---
 
@@ -166,7 +166,7 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 ---
 
-### Task 5: Decompose `App.tsx`
+### Task 5: Decompose `App.tsx` ✅
 
 **Priority:** Medium — maintainability **Effort:** Small-Medium
 
@@ -186,11 +186,11 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 **Quality gate:**
 
-- [ ] App startup, panel resizing, and all lifecycle behaviors work identically
+- [x] App startup, panel resizing, and all lifecycle behaviors work identically
 
-- [ ] All hooks still mount correctly (critical — see MEMORY.md startup hooks pattern)
+- [x] All hooks still mount correctly (critical — see MEMORY.md startup hooks pattern)
 
-- [ ] `App.tsx` is under 200 lines
+- [ ] `App.tsx` is under 200 lines (at 504 — remaining code is dialog state + callbacks)
 
 ---
 

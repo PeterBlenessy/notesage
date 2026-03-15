@@ -1,6 +1,6 @@
 # Task Breakdown: Codebase Health Improvements
 
-**Status:** 📋 Planned
+**Status:** ✅ Done
 
 **Source PRD:** `docs/prds/2026-03-10-codebase-health-improvements.md`**Total:** 18 tasks — 8S, 7M, 3L **No task depends on another** — all are independently shippable.
 
@@ -347,7 +347,7 @@ Keep `CommentPopover.tsx` as container with create/edit/delete forms.
 
 ---
 
-### #15 — Extract `useAppLifecycle.ts` and `Layout.tsx` from `App.tsx`
+### #15 — Extract `useAppLifecycle.ts` and `Layout.tsx` from `App.tsx` ✅
 
 | Field | Value |
 | --- | --- |

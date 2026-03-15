@@ -1,10 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { TabBar } from "@/components/tabs/TabBar";
-import { Editor } from "@/components/editor/Editor";
+import { useState, useEffect, useCallback } from "react";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { CommandPalette } from "@/components/CommandPalette";
-import { ChatPanel } from "@/components/chat/ChatPanel";
-import { ActivityRail, ActivityPanel } from "@/components/activity/ActivityStrip";
 import { SettingsDialog, type SettingsTab } from "@/components/settings/SettingsDialog";
 import { ProjectSettingsDialog } from "@/components/settings/ProjectSettingsDialog";
 import { NewNoteDialog } from "@/components/NewNoteDialog";
@@ -12,9 +8,8 @@ import { NewProjectDialog } from "@/components/NewProjectDialog";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { KeyboardShortcutsDialog } from "@/components/KeyboardShortcutsDialog";
 import { ActionsDialog } from "@/components/actions/ActionsDialog";
+import { Layout } from "@/components/Layout";
 import { useActionScanner } from "@/hooks/useActionScanner";
-import { TitleBar } from "@/components/TitleBar";
-import { SidebarPanel } from "@/components/SidebarPanel";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useProjectMetadata } from "@/hooks/useProjectMetadata";
@@ -26,87 +21,19 @@ import { useMcpDiscovery } from "@/hooks/useMcpOperations";
 import { useLocalAI } from "@/hooks/useLocalAI";
 import { useAgentTaskOperations } from "@/hooks/useAgentTaskOperations";
 import { useActivityNavigation } from "@/hooks/useActivityNavigation";
+import { useAppLifecycle } from "@/hooks/useAppLifecycle";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
-import { useSyncStore } from "@/stores/sync-store";
-import { useEditorStylesStore } from "@/stores/editor-styles-store";
 import { useActivityStore } from "@/stores/activity-store";
 import { useCommentStore, clearPartialReply } from "@/stores/comment-store";
-import { useChatStore } from "@/stores/chat-store";
+import { useSyncStore } from "@/stores/sync-store";
 import { tauriApi } from "@/lib/tauri";
-import { parseFrontmatter } from "@/lib/frontmatter";
-import { getFileType, isBinaryFileType } from "@/lib/file-utils";
-import { setBinaryData } from "@/lib/binary-cache";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
-import { migrateV1AISettings } from "@/lib/ai/migration";
-import { scanICloudForProjects } from "@/lib/scan-icloud-projects";
 import { log } from "@/lib/logger";
 import type { PaletteMode } from "@/lib/command-palette";
-import { stopAcpAgent } from "@/hooks/useAIOperations";
-import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
-import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from "@/components/ui/resizable";
-import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
-
-const PANEL_SIZES_KEY = "notesage-panel-sizes";
-
-function layoutConfigKey(panelIds: string[]): string {
-  return `main:${[...panelIds].sort().join(",")}`;
-}
-
-function savePanelSizes(layout: Record<string, number>) {
-  try {
-    const key = layoutConfigKey(Object.keys(layout));
-    const stored = JSON.parse(localStorage.getItem(PANEL_SIZES_KEY) || "{}");
-    stored[key] = layout;
-    localStorage.setItem(PANEL_SIZES_KEY, JSON.stringify(stored));
-  } catch {
-    // localStorage may be full or unavailable
-  }
-}
-
-function loadPanelSize(configKey: string, panel: string, fallback: number): number {
-  try {
-    const stored = JSON.parse(localStorage.getItem(PANEL_SIZES_KEY) || "{}");
-    return stored[configKey]?.[panel] ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-interface EditorAreaProps {
-  onNewNote?: () => void;
-  onNewProject?: () => void;
-  onOpenFolder?: () => void;
-  onOpenProject?: (path: string) => void;
-  onOpenFile?: (path: string, name: string) => void;
-  exportOpen?: boolean;
-  onExportOpenChange?: (open: boolean) => void;
-  focusMode?: boolean;
-  outlineOpen?: boolean;
-  onOutlineOpenChange?: (open: boolean) => void;
-  updateAvailable?: boolean;
-  updateVersion?: string | null;
-  onUpdateClick?: () => void;
-  onShortcutsOpen?: () => void;
-  onOpenActions?: () => void;
-}
-
-// Editor area with document-style presentation
-function EditorArea({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick, onShortcutsOpen, onOpenActions }: EditorAreaProps) {
-  return (
-    <div className="flex flex-col h-full overflow-hidden bg-muted">
-      {!focusMode && <TabBar />}
-      <Editor onNewNote={onNewNote} onNewProject={onNewProject} onOpenFolder={onOpenFolder} onOpenProject={onOpenProject} onOpenFile={onOpenFile} exportOpen={exportOpen} onExportOpenChange={onExportOpenChange} focusMode={focusMode} outlineOpen={outlineOpen} onOutlineOpenChange={onOutlineOpenChange} updateAvailable={updateAvailable} updateVersion={updateVersion} onUpdateClick={onUpdateClick} onShortcutsOpen={onShortcutsOpen} onOpenActions={onOpenActions} />
-    </div>
-  );
-}
 
 function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -127,18 +54,28 @@ function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [actionsDialogOpen, setActionsDialogOpen] = useState(false);
 
-  const { chatPanelOpen, setChatPanelOpen } = useSettingsStore();
   const { state: updateState, checkForUpdate, downloadAndInstall, restartNow, dismiss: dismissUpdate } = useAutoUpdate();
-
   const { addProject, addExplorerFolder } = useWorkspaceStore();
   const { projectPath: activeProjectPath } = useActiveProject();
 
+  // ============================================================
+  // CRITICAL: All lifecycle hooks MUST remain mounted here.
+  // Removing any of these will silently break features.
+  // ============================================================
   useProjectMetadata();
   useStartWatchers();
   useSkillDiscovery();
   useMcpDiscovery();
   useLocalAI();
   useActionScanner();
+
+  // Consolidated startup effects and event listeners
+  const onOpenPalette = useCallback((mode: PaletteMode, drilldown: string) => {
+    setCommandPaletteDrilldown(drilldown);
+    setCommandPaletteInitialMode(mode);
+    setCommandPaletteOpen(true);
+  }, []);
+  useAppLifecycle({ onOpenPalette });
 
   // Activity strip — cancel handler and navigation
   const { cancelTask } = useAgentTaskOperations();
@@ -149,8 +86,6 @@ function App() {
     async (taskId: string) => {
       try {
         await cancelTask(taskId);
-
-        // Sync comment store when cancelling a comment-related task
         const task = useActivityStore.getState().tasks.find((t) => t.id === taskId);
         if (task?.commentId && task?.documentId) {
           const cs = useCommentStore.getState();
@@ -159,14 +94,12 @@ function App() {
           const comments = cs.commentsByDocument[task.documentId] ?? [];
           const comment = comments.find((c) => c.id === task.commentId);
           const hasReplies = (comment?.replies?.length ?? 0) > 0;
-          cs.setCommentStatus(task.documentId, task.commentId, hasReplies ? 'done' : 'open');
+          cs.setCommentStatus(task.documentId, task.commentId, hasReplies ? "done" : "open");
           cs.clearDelegationMode(task.commentId);
-
-          // Resolve project root for saving
           const ws = useWorkspaceStore.getState();
           const settings = useSettingsStore.getState();
-          const projectRoot = ws.projects.find((p) => task.sourceFile?.startsWith(p.path + '/'))?.path
-            ?? settings.notesRootPath;
+          const projectRoot =
+            ws.projects.find((p) => task.sourceFile?.startsWith(p.path + "/"))?.path ?? settings.notesRootPath;
           if (projectRoot) {
             cs.saveComments(task.documentId, projectRoot);
           }
@@ -178,363 +111,45 @@ function App() {
     [cancelTask]
   );
 
-  // Narrow rail always visible; wide strip toggles via isManuallyHidden
   const stripExpanded = !isManuallyHidden && !focusMode;
 
-  // Listen for tag badge clicks → open command palette with tag drilldown
+  const { openFile, openFileAtTag, openFileAtText } = useFileOperations();
+
+  // Handle file-open events from macOS file association
   useEffect(() => {
-    const handler = (e: Event) => {
-      const tag = (e as CustomEvent<{ tag: string }>).detail.tag;
-      setCommandPaletteDrilldown(tag);
-      setCommandPaletteInitialMode("tags");
-      setCommandPaletteOpen(true);
-    };
-    window.addEventListener("notesage:open-tag-search", handler);
-    return () => window.removeEventListener("notesage:open-tag-search", handler);
-  }, []);
-
-  // Listen for mention badge clicks → open command palette with mention occurrence results
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const mention = (e as CustomEvent<{ mention: string }>).detail.mention;
-      setCommandPaletteDrilldown(mention);
-      setCommandPaletteInitialMode("mentions");
-      setCommandPaletteOpen(true);
-    };
-    window.addEventListener("notesage:open-mention-search", handler);
-    return () => window.removeEventListener("notesage:open-mention-search", handler);
-  }, []);
-
-  // Migrate v1 AI settings to v2 connections/routing on first load
-  useEffect(() => {
-    migrateV1AISettings();
-    // Clear orphaned localStorage keys from removed Zustand stores (v0.20+)
-    localStorage.removeItem('tag-store');
-    localStorage.removeItem('mention-store');
-  }, []);
-
-  // Sync debug logging setting to Rust backend on startup
-  useEffect(() => {
-    const { debugLogging } = useSettingsStore.getState();
-    if (debugLogging) {
-      tauriApi.setDebugLogging(true);
-    }
-  }, []);
-
-  // Stop ACP agent processes on window close (supplementary to Rust exit hook)
-  // MCP servers rely solely on McpState::stop_all_sync() in RunEvent::Exit
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      stopAcpAgent();
-      stopTaskAgent();
-      tauriApi.stopLocalServer().catch(() => {});
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      handleBeforeUnload();
-    };
-  }, []);
-
-  // Visibility-change wake handler: detect resume from sleep/background and
-  // verify that Tauri backend processes are still alive.
-  const lastWakeCheckRef = useRef(0);
-  useEffect(() => {
-    const handleVisibilityChange = async () => {
-      if (document.visibilityState !== 'visible') return;
-
-      // Debounce: skip if last check was within 5 seconds
-      const now = Date.now();
-      if (now - lastWakeCheckRef.current < 5000) return;
-      lastWakeCheckRef.current = now;
-
-      log.info('lifecycle', 'App became visible, checking backend health');
-
-      // Ping with 500ms timeout to detect dead WebView process
-      try {
-        await Promise.race([
-          tauriApi.ping(),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('ping timeout')), 500)
-          ),
-        ]);
-      } catch {
-        log.info('lifecycle', 'Ping failed or timed out, reloading WebView');
-        window.location.reload();
-        return;
-      }
-
-      // Ping succeeded — run full health check
-      try {
-        const health = await tauriApi.healthCheck();
-        log.info('lifecycle', `Health check: watcher=${health.watcher_alive}, acp=${health.acp_agents.length}, mcp=${health.mcp_servers.length}`);
-
-        // Re-establish filesystem watcher if dead
-        if (!health.watcher_alive) {
-          log.info('lifecycle', 'Watcher dead, re-watching workspace paths');
-          const ws = useWorkspaceStore.getState();
-          for (const project of ws.projects) {
-            try {
-              await tauriApi.watchDirectory(project.path);
-            } catch (err) {
-              log.info('lifecycle', `Failed to re-watch ${project.path}: ${err}`);
-            }
-          }
-          for (const folder of ws.explorerFolders) {
-            try {
-              await tauriApi.watchDirectory(folder.path);
-            } catch (err) {
-              log.info('lifecycle', `Failed to re-watch ${folder.path}: ${err}`);
-            }
-          }
-        }
-
-        // Check if any AI-related processes died
-        const deadAcp = health.acp_agents.some((a) => !a.alive);
-        const deadCopilot = health.copilot_lsp != null && !health.copilot_lsp.alive;
-        const deadMcp = health.mcp_servers.some((s) => !s.alive);
-        if (deadAcp || deadCopilot || deadMcp) {
-          log.info('lifecycle', 'Some AI processes died — they will be lazily respawned on next use');
-          toast.info('Reconnected to AI services');
-        }
-      } catch (err) {
-        log.info('lifecycle', `Health check failed: ${err}`);
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
-
-  // Prevent browser default drop behavior (WKWebView navigates on unhandled drops)
-  useEffect(() => {
-    const preventDrop = (e: DragEvent) => {
-      // Only prevent if no Notesage drag data — allow our handled drops through
-      if (!e.defaultPrevented) {
-        e.preventDefault();
-      }
-    };
-    const preventDragOver = (e: DragEvent) => {
-      if (!e.defaultPrevented) {
-        e.preventDefault();
-      }
-    };
-    document.addEventListener('drop', preventDrop);
-    document.addEventListener('dragover', preventDragOver);
-    return () => {
-      document.removeEventListener('drop', preventDrop);
-      document.removeEventListener('dragover', preventDragOver);
-    };
-  }, []);
-
-  // Reload file trees for all persisted projects on startup
-  useEffect(() => {
-    async function reloadTrees() {
-      const ws = useWorkspaceStore.getState();
-      const settings = useSettingsStore.getState();
-
-      // Resolve ~ in notes root path
-      let notesRoot = settings.notesRootPath;
-      if (notesRoot.startsWith("~")) {
-        try {
-          const homeDir = await tauriApi.getHomeDir();
-          notesRoot = notesRoot.replace("~", homeDir);
-          settings.setNotesRootPath(notesRoot);
-        } catch {
-          log.error('startup', 'Failed to resolve home directory');
-        }
-      }
-
-      // Reload explorer folder trees (remove invalid ones)
-      const validFolders: string[] = [];
-      for (const folder of ws.explorerFolders) {
-        try {
-          const tree = await tauriApi.listDirectory(folder.path);
-          ws.updateExplorerTree(folder.path, tree);
-          validFolders.push(folder.path);
-        } catch {
-          // Folder no longer exists — will be removed below
-        }
-      }
-      // Remove invalid folders
-      for (const folder of ws.explorerFolders) {
-        if (!validFolders.includes(folder.path)) {
-          ws.removeExplorerFolder(folder.path);
-        }
-      }
-
-      // Reload all project trees
-      for (const project of ws.projects) {
-        try {
-          const tree = await tauriApi.listDirectory(project.path);
-          ws.updateProjectTree(project.path, tree);
-        } catch {
-          ws.removeProject(project.path);
-        }
-      }
-
-      // Ensure notes directory exists
-      if (notesRoot) {
-        try {
-          const exists = await tauriApi.pathExists(notesRoot);
-          if (!exists) {
-            await tauriApi.createDirectory(notesRoot);
-          }
-          const metaDir = `${notesRoot}/.notesage`;
-          const metaDirExists = await tauriApi.pathExists(metaDir);
-          if (!metaDirExists) {
-            await tauriApi.createDirectory(metaDir);
-          }
-        } catch {
-          // Notes root creation failed, that's fine on first launch
-        }
-      }
-
-      // Load editor typography settings from disk
-      if (notesRoot) {
-        await useEditorStylesStore.getState().loadSettings(notesRoot);
-      }
-
-      // Detect iCloud availability
-      try {
-        const icloudRoot = await tauriApi.getICloudPath();
-        if (icloudRoot) {
-          const icloudNotesagePath = `${icloudRoot}/Notesage`;
-          settings.setICloudAvailable(true);
-          settings.setICloudNotesagePath(icloudNotesagePath);
-        }
-      } catch {
-        // iCloud detection failed, that's fine
-      }
-
-      // Load sync settings from disk
-      if (notesRoot) {
-        const syncStore = useSyncStore.getState();
-        await syncStore.loadSettings(notesRoot);
-
-        // If iCloud sync is enabled, verify iCloud is still available and load synced content
-        if (syncStore.icloudEnabled) {
-          const icloudNotesagePath = settings.icloudNotesagePath;
-          if (!icloudNotesagePath || !settings.icloudAvailable) {
-            // iCloud was enabled but is now unavailable (user signed out)
-            syncStore.setICloudEnabled(false);
-            await syncStore.saveSettings(notesRoot);
-            toast.info("iCloud is no longer available. Sync has been disabled.");
-          } else {
-            // Load file trees for synced projects from iCloud
-            for (const syncedPath of syncStore.syncedProjectPaths) {
-              try {
-                const tree = await tauriApi.listDirectory(syncedPath);
-                ws.addProject(syncedPath, tree);
-              } catch {
-                // Synced project no longer exists in iCloud
-                syncStore.removeSyncedProject(syncedPath);
+    let unlisten: (() => void) | undefined;
+    import("@tauri-apps/api/event").then(({ listen }) => {
+      listen<string[]>("open-files", async (event) => {
+        for (const filePath of event.payload) {
+          const fileName = filePath.split("/").pop() ?? filePath;
+          try {
+            await openFile(filePath, fileName);
+            const parentDir = filePath.substring(0, filePath.lastIndexOf("/"));
+            if (parentDir) {
+              const ws = useWorkspaceStore.getState();
+              const isKnown =
+                ws.projects.some((p) => filePath.startsWith(p.path)) ||
+                ws.explorerFolders.some((f) => filePath.startsWith(f.path));
+              if (!isKnown) {
+                try {
+                  const tree = await tauriApi.listDirectory(parentDir);
+                  addExplorerFolder(parentDir, tree);
+                } catch {
+                  // Parent directory may not be listable
+                }
               }
             }
-
-            // Discover projects synced from other machines
-            try {
-              const found = await scanICloudForProjects(icloudNotesagePath);
-              if (found) {
-                await syncStore.saveSettings(notesRoot);
-              }
-            } catch {
-              // iCloud scan failed, non-critical
-            }
-
-            // Save any cleanup (removed stale projects)
-            await syncStore.saveSettings(notesRoot);
+          } catch (error) {
+            log.error("lifecycle", "Failed to open file from association", error);
+            toast.error(`Failed to open file: ${error}`);
           }
         }
-      }
+      }).then((fn) => { unlisten = fn; });
+    });
+    return () => { unlisten?.(); };
+  }, [openFile, addExplorerFolder]);
 
-      // Prune stale project paths from chat conversations
-      {
-        const wsNow = useWorkspaceStore.getState();
-        const validProjectPaths = new Set([
-          ...wsNow.projects.map((p) => p.path),
-          ...wsNow.explorerFolders.map((f) => f.path),
-        ]);
-        useChatStore.getState().pruneStaleProjectPaths(validProjectPaths);
-      }
-
-      // Load Quick Notes tree (after iCloud + sync settings are known, so we
-      // get it right in one shot — no flash of local-only then merged content)
-      await refreshNotesTree();
-
-      // Initialize the SQLite document index (global scope + per-project)
-      try {
-        await tauriApi.indexInit(); // global index
-        for (const project of useWorkspaceStore.getState().projects) {
-          await tauriApi.indexInit(project.path);
-        }
-      } catch (error) {
-        log.error('lifecycle', 'Failed to initialize index', error);
-      }
-
-      // Signal that startup tree validation is complete — watchers can now start
-      settings.setStartupReady(true);
-
-      // Re-open persisted tabs in order, then restore active tab
-      const { persistedTabs, persistedActiveFilePath } = useEditorStore.getState();
-      if (persistedTabs.length > 0) {
-        // Read all files in parallel, but open tabs in persisted order
-        const results = await Promise.allSettled(
-          persistedTabs.map(async (pt) => {
-            const fileType = getFileType(pt.fileName);
-
-            if (fileType === "image") {
-              // Images use asset protocol — no file read needed
-              return { filePath: pt.filePath, fileName: pt.fileName, content: "", frontmatter: null, fileType };
-            }
-
-            if (isBinaryFileType(fileType)) {
-              // Binary files (PDF, DOCX): read as bytes and populate cache
-              const bytes = await tauriApi.readBinaryFile(pt.filePath);
-              setBinaryData(pt.filePath, new Uint8Array(bytes));
-              return { filePath: pt.filePath, fileName: pt.fileName, content: "", frontmatter: null, fileType };
-            }
-
-            // Text files (markdown, other): read as UTF-8
-            const raw = await tauriApi.readFile(pt.filePath);
-            if (fileType === "markdown") {
-              const { frontmatter, content } = parseFrontmatter(raw);
-              return { filePath: pt.filePath, fileName: pt.fileName, content, frontmatter, fileType };
-            }
-            return { filePath: pt.filePath, fileName: pt.fileName, content: raw, frontmatter: null, fileType };
-          })
-        );
-        const failedPaths: string[] = [];
-        for (let i = 0; i < results.length; i++) {
-          const result = results[i];
-          if (result.status === "fulfilled") {
-            const { filePath, fileName, content, frontmatter, fileType } = result.value;
-            useEditorStore.getState().openTab(filePath, fileName, content, frontmatter, fileType);
-          } else {
-            // File no longer exists — remove from persisted list
-            failedPaths.push(persistedTabs[i].filePath);
-          }
-        }
-        if (failedPaths.length > 0) {
-          const store = useEditorStore.getState();
-          const cleaned = store.persistedTabs.filter((p) => !failedPaths.includes(p.filePath));
-          useEditorStore.setState({ persistedTabs: cleaned });
-        }
-        // Restore the previously active tab
-        if (persistedActiveFilePath) {
-          const { tabs } = useEditorStore.getState();
-          const match = tabs.find((t) => t.filePath === persistedActiveFilePath);
-          if (match) {
-            useEditorStore.getState().setActiveTab(match.id);
-          }
-        }
-      }
-    }
-
-    reloadTrees();
-  }, []);
+  // --- Callbacks ---
 
   const handleOpenFolder = useCallback(async () => {
     try {
@@ -549,54 +164,17 @@ function App() {
         }
       }
     } catch (error) {
-      log.error('lifecycle', 'Failed to open folder', error);
+      log.error("lifecycle", "Failed to open folder", error);
       toast.error(`Failed to open folder: ${error}`);
     }
   }, [addProject, addExplorerFolder]);
-
-  const { openFile, openFileAtTag, openFileAtText } = useFileOperations();
-
-  // Handle file-open events from macOS file association (double-click .md in Finder)
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    import("@tauri-apps/api/event").then(({ listen }) => {
-      listen<string[]>("open-files", async (event) => {
-        for (const filePath of event.payload) {
-          const fileName = filePath.split("/").pop() ?? filePath;
-          try {
-            await openFile(filePath, fileName);
-            // Ensure parent directory is in the workspace
-            const parentDir = filePath.substring(0, filePath.lastIndexOf("/"));
-            if (parentDir) {
-              const ws = useWorkspaceStore.getState();
-              const isKnown =
-                ws.projects.some((p) => filePath.startsWith(p.path)) ||
-                ws.explorerFolders.some((f) => filePath.startsWith(f.path));
-              if (!isKnown) {
-                try {
-                  const tree = await tauriApi.listDirectory(parentDir);
-                  addExplorerFolder(parentDir, tree);
-                } catch {
-                  // Parent directory may not be listable, ignore
-                }
-              }
-            }
-          } catch (error) {
-            log.error("lifecycle", "Failed to open file from association", error);
-            toast.error(`Failed to open file: ${error}`);
-          }
-        }
-      }).then((fn) => { unlisten = fn; });
-    });
-    return () => { unlisten?.(); };
-  }, [openFile, addExplorerFolder]);
 
   const handleOpenProject = useCallback(async (projectPath: string) => {
     try {
       const tree = await tauriApi.listDirectory(projectPath);
       addProject(projectPath, tree);
     } catch (error) {
-      log.error('lifecycle', 'Failed to open project', error);
+      log.error("lifecycle", "Failed to open project", error);
       toast.error(`Failed to open project: ${error}`);
     }
   }, [addProject]);
@@ -605,7 +183,7 @@ function App() {
     try {
       await openFile(filePath, fileName);
     } catch (error) {
-      log.error('lifecycle', 'Failed to open file', error);
+      log.error("lifecycle", "Failed to open file", error);
       toast.error(`Failed to open file: ${error}`);
     }
   }, [openFile]);
@@ -614,7 +192,7 @@ function App() {
     try {
       await openFileAtTag(filePath, fileName, symbol, occurrenceInFile);
     } catch (error) {
-      log.error('lifecycle', 'Failed to open file at tag', error);
+      log.error("lifecycle", "Failed to open file at tag", error);
       toast.error(`Failed to open file: ${error}`);
     }
   }, [openFileAtTag]);
@@ -632,7 +210,7 @@ function App() {
         addProject(folderPath, tree);
       }
     } catch (error) {
-      log.error('lifecycle', 'Failed to open project', error);
+      log.error("lifecycle", "Failed to open project", error);
       toast.error(`Failed to open project: ${error}`);
     }
   }, [addProject]);
@@ -647,7 +225,7 @@ function App() {
       const tree = await tauriApi.listDirectory(path);
       addProject(path, tree);
     } catch (error) {
-      log.error('lifecycle', 'Failed to make project', error);
+      log.error("lifecycle", "Failed to make project", error);
       toast.error(`Failed to create project: ${error}`);
     }
   }, [addProject]);
@@ -655,7 +233,6 @@ function App() {
   const handleNoteCreated = useCallback(async (filePath: string, fileName: string) => {
     try {
       await tauriApi.createFile(filePath);
-
       const ws = useWorkspaceStore.getState();
       for (const project of ws.projects) {
         if (filePath.startsWith(project.path + "/")) {
@@ -680,11 +257,10 @@ function App() {
       ) {
         await refreshNotesTree();
       }
-
       const content = await tauriApi.readFile(filePath);
       useEditorStore.getState().openTab(filePath, fileName, content);
     } catch (err) {
-      log.error('lifecycle', 'Failed to create note', err);
+      log.error("lifecycle", "Failed to create note", err);
       toast.error(`Failed to create note: ${err}`);
     }
   }, []);
@@ -733,17 +309,6 @@ function App() {
     setProjectSettingsPath(projectPath);
     setProjectSettingsOpen(true);
   }, []);
-
-  const handlePanelLayout = useCallback((layout: Record<string, number>) => {
-    savePanelSizes(layout);
-  }, []);
-
-  // Panel config key (editor + optional chat + optional activity)
-  const configKey = layoutConfigKey([
-    "editor",
-    ...(chatPanelOpen ? ["chat"] : []),
-    ...(stripExpanded ? ["activity"] : []),
-  ]);
 
   // Show toast when update becomes available
   useEffect(() => {
@@ -806,104 +371,32 @@ function App() {
   return (
     <ThemeProvider>
       <div className="flex h-screen w-screen overflow-hidden">
-        {/* Left: SidebarPanel — full window height, rail + drawer (hidden in focus mode) */}
-        {!focusMode && (
-          <ErrorBoundary name="Sidebar">
-            <SidebarPanel
-              onOpenSettings={() => setSettingsOpen(true)}
-              onNewNote={handleNewNote}
-              onNewProject={handleNewProject}
-              onOpenExistingProject={handleBrowseForProject}
-              onOpenProjectSettings={handleOpenProjectSettings}
-              onMakeProject={handleMakeProject}
-              onExportFile={handleExportFile}
-            />
-          </ErrorBoundary>
-        )}
-
-        {/* Right: Title bar + editor + chat */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {!focusMode && (
-            <TitleBar
-              onToggleChat={() => setChatPanelOpen(!chatPanelOpen)}
-              onToggleActivityStrip={() => {
-                useActivityStore.getState().setManuallyHidden(!isManuallyHidden);
-              }}
-            />
-          )}
-
-          <div className="flex flex-1 min-h-0 overflow-hidden">
-            <ResizablePanelGroup
-              orientation="horizontal"
-              className="flex h-full w-full"
-              onLayoutChanged={handlePanelLayout}
-            >
-              <ResizablePanel
-                id="editor"
-                defaultSize={loadPanelSize(configKey, "editor", chatPanelOpen || stripExpanded ? 65 : 100)}
-                minSize={300}
-              >
-                <ErrorBoundary name="Editor">
-                  <EditorArea
-                    onNewNote={handleNewNote}
-                    onNewProject={handleNewProject}
-                    onOpenFolder={handleOpenFolder}
-                    onOpenProject={handleOpenProject}
-                    onOpenFile={handleOpenFile}
-                    exportOpen={exportOpen}
-                    onExportOpenChange={setExportOpen}
-                    focusMode={focusMode}
-                    outlineOpen={outlineOpen}
-                    onOutlineOpenChange={setOutlineOpen}
-                    updateAvailable={!!updateState.updateInfo}
-                    updateVersion={updateState.updateInfo?.version ?? null}
-                    onUpdateClick={() => setUpdateDialogOpen(true)}
-                    onShortcutsOpen={() => setShortcutsOpen(true)}
-                    onOpenActions={() => setActionsDialogOpen(true)}
-                  />
-                </ErrorBoundary>
-              </ResizablePanel>
-
-              {chatPanelOpen && !focusMode && (
-                <>
-                  <ResizableHandle withHandle />
-                  <ResizablePanel
-                    id="chat"
-                    defaultSize={loadPanelSize(configKey, "chat", 35)}
-                    minSize={280}
-                    maxSize={500}
-                  >
-                    <ErrorBoundary name="Chat">
-                      <ChatPanel />
-                    </ErrorBoundary>
-                  </ResizablePanel>
-                </>
-              )}
-
-              {stripExpanded && !focusMode && (
-                <>
-                  <ResizableHandle withHandle />
-                  <ResizablePanel
-                    id="activity"
-                    defaultSize={loadPanelSize(configKey, "activity", 25)}
-                    minSize={240}
-                    maxSize={500}
-                  >
-                    <ActivityPanel
-                      onCancelTask={handleCancelTask}
-                      onClickTask={handleClickTask}
-                    />
-                  </ResizablePanel>
-                </>
-              )}
-            </ResizablePanelGroup>
-
-            {/* Activity rail — narrow 40px strip, always visible */}
-            {!focusMode && !stripExpanded && (
-              <ActivityRail />
-            )}
-          </div>
-        </div>
+        <Layout
+          focusMode={focusMode}
+          stripExpanded={stripExpanded}
+          isManuallyHidden={isManuallyHidden}
+          onNewNote={handleNewNote}
+          onNewProject={handleNewProject}
+          onOpenFolder={handleOpenFolder}
+          onOpenProject={handleOpenProject}
+          onOpenFile={handleOpenFile}
+          exportOpen={exportOpen}
+          onExportOpenChange={setExportOpen}
+          outlineOpen={outlineOpen}
+          onOutlineOpenChange={setOutlineOpen}
+          updateAvailable={!!updateState.updateInfo}
+          updateVersion={updateState.updateInfo?.version ?? null}
+          onUpdateClick={() => setUpdateDialogOpen(true)}
+          onShortcutsOpen={() => setShortcutsOpen(true)}
+          onOpenActions={() => setActionsDialogOpen(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onBrowseForProject={handleBrowseForProject}
+          onOpenProjectSettings={handleOpenProjectSettings}
+          onMakeProject={handleMakeProject}
+          onExportFile={handleExportFile}
+          onCancelTask={handleCancelTask}
+          onClickTask={handleClickTask}
+        />
 
         {/* Focus mode hint overlay */}
         {focusMode && (
@@ -935,7 +428,7 @@ function App() {
             onPathChanged={setProjectSettingsPath}
             onOpenAISettings={() => {
               setProjectSettingsOpen(false);
-              setSettingsInitialTab('ai');
+              setSettingsInitialTab("ai");
               setSettingsOpen(true);
             }}
           />
@@ -990,10 +483,10 @@ function App() {
           onOpenChange={setActionsDialogOpen}
           onActionClick={(action) => {
             if (action.file_path) {
-              const fileName = action.file_path.split('/').pop() ?? action.file_path;
+              const fileName = action.file_path.split("/").pop() ?? action.file_path;
               if (action.text) {
                 openFileAtText(action.file_path, fileName, action.text).catch((error) => {
-                  log.error('lifecycle', 'Failed to open file', error);
+                  log.error("lifecycle", "Failed to open file", error);
                   toast.error(`Failed to open file: ${error}`);
                 });
               } else {
