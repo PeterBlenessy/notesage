@@ -488,8 +488,8 @@ export const tauriApi = {
   },
 
   // ACP (Agent Client Protocol) operations
-  async acpAgentSpawn(agentBinary: string, agentArgs: string[] | null, role: string, workingDirectory: string): Promise<AcpSpawnResult> {
-    return await invoke<AcpSpawnResult>("acp_agent_spawn", { agentBinary, agentArgs, role, workingDirectory });
+  async acpAgentSpawn(agentBinary: string, agentArgs: string[] | null, role: string, workingDirectory: string, sandboxPaths?: string[] | null): Promise<AcpSpawnResult> {
+    return await invoke<AcpSpawnResult>("acp_agent_spawn", { agentBinary, agentArgs, role, workingDirectory, sandboxPaths: sandboxPaths ?? null });
   },
 
   async acpAgentStop(instanceId: string): Promise<void> {

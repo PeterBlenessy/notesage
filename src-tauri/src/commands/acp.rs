@@ -289,6 +289,7 @@ fn run_agent_thread(
     working_directory: String,
     env_vars: HashMap<String, String>,
     sandbox_enabled: bool,
+    sandbox_writable_paths: Vec<String>,
     mut cmd_rx: mpsc::Receiver<AgentCmd>,
     init_tx: oneshot::Sender<Result<InitInfo, String>>,
 ) {
@@ -317,7 +318,7 @@ fn run_agent_thread(
         // Spawn agent process — optionally wrapped in OS-level sandbox
         // Inject login shell PATH so the agent (and child processes) can find tools
         let mut spawn_cmd = if sandbox_enabled {
-            match super::sandbox::sandboxed_command(&working_directory) {
+            match super::sandbox::sandboxed_command(&sandbox_writable_paths) {
                 Ok((program, prefix_args)) => {
                     log::info!(target: "notesage::acp", "Spawning {} in sandbox ({})", agent_binary, program);
                     let mut cmd = tokio::process::Command::new(&program);
@@ -860,6 +861,7 @@ pub async fn acp_agent_spawn(
     working_directory: String,
     env_vars: Option<HashMap<String, String>>,
     sandbox_enabled: Option<bool>,
+    sandbox_paths: Option<Vec<String>>,
 ) -> Result<SpawnResult, String> {
     let env = env_vars.unwrap_or_default();
     let args = agent_args.unwrap_or_default();
@@ -871,6 +873,10 @@ pub async fn acp_agent_spawn(
     // Determine sandbox policy: explicit override, or default based on binary source
     let sandbox = sandbox_enabled
         .unwrap_or_else(|| super::sandbox::should_sandbox_by_default(&resolved_binary));
+
+    // Writable paths: explicit list, or fall back to [working_directory]
+    let writable_paths = sandbox_paths
+        .unwrap_or_else(|| vec![working_directory.clone()]);
 
     // Generate instance ID before spawning so the thread can use it for events
     let ts = std::time::SystemTime::now()
@@ -894,7 +900,7 @@ pub async fn acp_agent_spawn(
     let thread_handle = std::thread::Builder::new()
         .name(format!("acp-{}", &binary))
         .spawn(move || {
-            run_agent_thread(app, iid, binary, spawn_args, cwd, env, sandbox, cmd_rx, init_tx);
+            run_agent_thread(app, iid, binary, spawn_args, cwd, env, sandbox, writable_paths, cmd_rx, init_tx);
         })
         .map_err(|e| format!("Failed to spawn agent thread: {}", e))?;
 

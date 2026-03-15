@@ -4,13 +4,13 @@ use std::path::{Path, PathBuf};
 ///
 /// The profile:
 /// - Allows reading all files (agents need system libraries, binaries, configs)
-/// - Allows writing only to the project directory and /tmp
+/// - Allows writing only to the specified paths and /tmp
 /// - Denies reading sensitive directories (~/.ssh, ~/.aws, ~/.gnupg, .env files)
 /// - Denies writing to .git/ directories (read-only access)
 /// - Allows all network access (Phase 2 adds proxy-based filtering)
 /// - Allows process execution (agents spawn git, grep, etc.)
 #[cfg(target_os = "macos")]
-pub fn generate_seatbelt_profile(working_directory: &str) -> Result<PathBuf, String> {
+pub fn generate_seatbelt_profile(writable_paths: &[String]) -> Result<PathBuf, String> {
     let home = dirs::home_dir()
         .ok_or_else(|| "Cannot determine home directory".to_string())?;
 
@@ -18,19 +18,30 @@ pub fn generate_seatbelt_profile(working_directory: &str) -> Result<PathBuf, Str
     std::fs::create_dir_all(&profiles_dir)
         .map_err(|e| format!("Failed to create sandbox profiles dir: {}", e))?;
 
-    // Use a hash of the working directory for the profile filename
-    // so each project gets its own profile
-    let dir_hash = {
+    // Hash all paths together for the profile filename
+    let path_hash = {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        working_directory.hash(&mut hasher);
+        for p in writable_paths {
+            p.hash(&mut hasher);
+        }
         format!("{:x}", hasher.finish())
     };
-    let profile_path = profiles_dir.join(format!("agent-{}.sb", &dir_hash[..8]));
+    let profile_path = profiles_dir.join(format!("agent-{}.sb", &path_hash[..8]));
 
     let home_str = home.to_string_lossy();
 
-    // Escape paths for Seatbelt regex (backslash special chars)
+    // Build writable subpath entries
+    let writable_entries: Vec<String> = writable_paths
+        .iter()
+        .map(|p| format!("  (subpath \"{}\")", p))
+        .collect();
+    let writable_block = if writable_entries.is_empty() {
+        String::new()
+    } else {
+        writable_entries.join("\n")
+    };
+
     let profile = format!(
         r#"(version 1)
 (deny default)
@@ -38,9 +49,9 @@ pub fn generate_seatbelt_profile(working_directory: &str) -> Result<PathBuf, Str
 ;; Allow reading system files (agents need binaries, libraries, configs)
 (allow file-read*)
 
-;; Allow writing to project directory and temp
+;; Allow writing to specified directories and temp
 (allow file-write*
-  (subpath "{working_dir}")
+{writable_block}
   (subpath "/tmp")
   (subpath "/private/tmp")
   (subpath "/private/var/folders"))
@@ -71,7 +82,7 @@ pub fn generate_seatbelt_profile(working_directory: &str) -> Result<PathBuf, Str
 (allow signal)
 (allow ipc-posix-shm*)
 "#,
-        working_dir = working_directory,
+        writable_block = writable_block,
         home = home_str,
     );
 
@@ -85,9 +96,9 @@ pub fn generate_seatbelt_profile(working_directory: &str) -> Result<PathBuf, Str
 /// Returns (program, prefix_args) that should be prepended to the actual agent command.
 #[cfg(target_os = "macos")]
 pub fn sandboxed_command(
-    working_directory: &str,
+    writable_paths: &[String],
 ) -> Result<(String, Vec<String>), String> {
-    let profile_path = generate_seatbelt_profile(working_directory)?;
+    let profile_path = generate_seatbelt_profile(writable_paths)?;
     Ok((
         "sandbox-exec".to_string(),
         vec![
@@ -107,12 +118,11 @@ pub fn should_sandbox_by_default(binary_path: &str) -> bool {
     Path::new(binary_path).starts_with(&managed_dir)
 }
 
-/// Linux sandbox support via bubblewrap (future — placeholder for now)
+/// Linux sandbox support via bubblewrap
 #[cfg(target_os = "linux")]
 pub fn sandboxed_command(
-    working_directory: &str,
+    writable_paths: &[String],
 ) -> Result<(String, Vec<String>), String> {
-    // Check if bwrap is available
     let bwrap = std::process::Command::new("which")
         .arg("bwrap")
         .output()
@@ -124,19 +134,22 @@ pub fn sandboxed_command(
         return Err("bubblewrap (bwrap) not found — install it for sandbox support".to_string());
     }
 
-    Ok((
-        "bwrap".to_string(),
-        vec![
-            "--ro-bind".to_string(), "/usr".to_string(), "/usr".to_string(),
-            "--ro-bind".to_string(), "/lib".to_string(), "/lib".to_string(),
-            "--ro-bind".to_string(), "/lib64".to_string(), "/lib64".to_string(),
-            "--ro-bind".to_string(), "/bin".to_string(), "/bin".to_string(),
-            "--ro-bind".to_string(), "/etc/resolv.conf".to_string(), "/etc/resolv.conf".to_string(),
-            "--bind".to_string(), working_directory.to_string(), working_directory.to_string(),
-            "--bind".to_string(), "/tmp".to_string(), "/tmp".to_string(),
-            "--dev".to_string(), "/dev".to_string(),
-            "--proc".to_string(), "/proc".to_string(),
-            "--".to_string(),
-        ],
-    ))
+    let mut args = vec![
+        "--ro-bind".to_string(), "/usr".to_string(), "/usr".to_string(),
+        "--ro-bind".to_string(), "/lib".to_string(), "/lib".to_string(),
+        "--ro-bind".to_string(), "/lib64".to_string(), "/lib64".to_string(),
+        "--ro-bind".to_string(), "/bin".to_string(), "/bin".to_string(),
+        "--ro-bind".to_string(), "/etc/resolv.conf".to_string(), "/etc/resolv.conf".to_string(),
+    ];
+    for path in writable_paths {
+        args.extend(["--bind".to_string(), path.clone(), path.clone()]);
+    }
+    args.extend([
+        "--bind".to_string(), "/tmp".to_string(), "/tmp".to_string(),
+        "--dev".to_string(), "/dev".to_string(),
+        "--proc".to_string(), "/proc".to_string(),
+        "--".to_string(),
+    ]);
+
+    Ok(("bwrap".to_string(), args))
 }

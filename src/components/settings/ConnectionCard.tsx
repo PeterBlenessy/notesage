@@ -83,6 +83,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect }: Connec
             agentArgs: args.length > 0 ? args : null,
             role: 'interactive',
             workingDirectory: '/tmp',
+            sandboxPaths: [],  // Health check: /tmp only
           });
 
           try {

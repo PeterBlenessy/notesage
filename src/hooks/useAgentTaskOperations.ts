@@ -74,7 +74,7 @@ export function stopTaskAgent(): void {
   }
 }
 
-async function ensureTaskAgent(connection: Connection, cwd: string): Promise<string> {
+async function ensureTaskAgent(connection: Connection, cwd: string, sandboxPaths?: string[]): Promise<string> {
   if (taskAgent && taskAgent.connectionId !== connection.id) {
     try {
       await tauriApi.acpAgentStop(taskAgent.instanceId);
@@ -89,16 +89,22 @@ async function ensureTaskAgent(connection: Connection, cwd: string): Promise<str
   }
 
   const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[] };
-  // Inject --model flag if the connection has a model configured
+  // Inject model flag — codex-acp uses -c model="...", others use --model
   const args = [...(creds.agentArgs ?? [])];
   if (connection.config?.model) {
-    args.push('--model', connection.config.model);
+    if (creds.agentBinary === 'codex-acp') {
+      args.push('-c', `model="${connection.config.model}"`);
+    } else {
+      args.push('--model', connection.config.model);
+    }
   }
+  // Delegation: sandbox to single folder only
   const result = await tauriApi.acpAgentSpawn(
     creds.agentBinary,
     args.length > 0 ? args : null,
     'task',
     cwd,
+    sandboxPaths ?? (cwd !== '/tmp' ? [cwd] : []),
   );
 
   // Try to authenticate — some agents handle auth internally

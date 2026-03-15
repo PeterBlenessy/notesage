@@ -8,6 +8,16 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { log } from '@/lib/logger';
 import { friendlyAIError } from '@/lib/ai/errors';
+import { useWorkspaceStore } from '@/stores/workspace-store';
+
+/** Get all workspace folder paths (projects + explorer folders) for sandbox scope */
+function getAllWorkspacePaths(): string[] {
+  const ws = useWorkspaceStore.getState();
+  const paths = new Set<string>();
+  for (const p of ws.projects) paths.add(p.path);
+  for (const f of ws.explorerFolders) paths.add(f.path);
+  return [...paths];
+}
 
 // ---------------------------------------------------------------------------
 // ACP types
@@ -133,7 +143,7 @@ export function stopAcpAgent(): void {
  * Reuses the existing agent if the connection matches. Stops and replaces
  * if the connection changed.
  */
-async function ensureAcpAgent(connection: Connection, cwd: string): Promise<string> {
+async function ensureAcpAgent(connection: Connection, cwd: string, sandboxPaths?: string[]): Promise<string> {
   if (acpAgent && acpAgent.connectionId !== connection.id) {
     try {
       await invoke('acp_agent_stop', { instanceId: acpAgent.instanceId });
@@ -165,6 +175,7 @@ async function ensureAcpAgent(connection: Connection, cwd: string): Promise<stri
     agentArgs: args.length > 0 ? args : null,
     role: 'interactive',
     workingDirectory: cwd,
+    sandboxPaths: sandboxPaths ?? null,
   });
   // Try to authenticate — some agents handle auth internally
   // (e.g. claude-agent-acp uses Claude CLI's stored credentials)
@@ -212,7 +223,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage }: AcpLi
       const cwd = selectedProjectPaths[0] || '/tmp';
       let instanceId: string;
       try {
-        instanceId = await ensureAcpAgent(effectiveConnection, cwd);
+        // Inline actions: sandbox to the document's parent folder only
+        const inlineSandboxPaths = cwd !== '/tmp' ? [cwd] : [];
+        instanceId = await ensureAcpAgent(effectiveConnection, cwd, inlineSandboxPaths);
       } catch (error) {
         stopAcpAgent();
         throw error;
@@ -303,7 +316,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage }: AcpLi
 
       try {
         const cwd = selectedProjectPaths[0] || '/tmp';
-        const instanceId = await ensureAcpAgent(effectiveConnection, cwd);
+        // Chat: sandbox covers all workspace folders for instant project switching
+        const instanceId = await ensureAcpAgent(effectiveConnection, cwd, getAllWorkspacePaths());
 
         // New conversation (no prior messages) -> create a fresh session
         let isNewSession = false;
