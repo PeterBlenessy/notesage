@@ -293,7 +293,7 @@ export function ConnectionConfigDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[440px]">
+      <DialogContent className="sm:max-w-[440px]" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle className="text-base">
             Configure {connection.label}
