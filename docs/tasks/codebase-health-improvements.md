@@ -228,7 +228,7 @@ Drop-in replacement. `serde_yaml` is archived; `serde_yml` is the maintained for
 
 ## Frontend Decomposition
 
-### #10 — Extract `lib/ai/context.ts` and `lib/ai/errors.ts`
+### #10 — Extract `lib/ai/context.ts` and `lib/ai/errors.ts` ✅
 
 | Field | Value |
 | --- | --- |

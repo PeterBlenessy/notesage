@@ -3,114 +3,21 @@ import { useAIStore } from '@/stores/ai-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
-import { useProjectMetadataStore, type ProjectMetadata } from '@/stores/project-metadata-store';
+import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useEditorStore } from '@/stores/editor-store';
 import { getAIProvider } from '@/lib/ai';
 import type { AIProviderType, ChatMessage, Citation } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
-import type { FileEntry } from '@/lib/tauri';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import { useSkillStore } from '@/stores/skill-store';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { log } from '@/lib/logger';
-
-/**
- * Extract a user-friendly error message from AI provider errors.
- * Provider backends return raw JSON error bodies — parse out the message field.
- * Includes provider name so the user knows which connection failed.
- */
-function friendlyAIError(error: unknown, provider?: string): string {
-  const raw = error instanceof Error ? error.message : String(error);
-  const prefix = provider ? `${provider}: ` : '';
-
-  // Try to extract the nested JSON message from provider error strings
-  // e.g. 'Anthropic API error: {"type":"error","error":{"type":"...","message":"Your credit balance..."}}'
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      const msg = parsed?.error?.message || parsed?.message;
-      if (msg) return prefix + msg;
-    } catch {
-      // Not valid JSON, fall through
-    }
-  }
-
-  // Strip common prefixes like "Anthropic API error: " or "OpenAI API error: "
-  const stripped = raw.replace(/^(Anthropic|OpenAI|Ollama)\s+API\s+error:\s*/i, '').trim();
-  return prefix + (stripped || 'Something went wrong. Please try again.');
-}
-
-/**
- * Build a context string from discovered goal files.
- */
-function buildGoalsContext(goalFiles: { name: string; content: string }[]): string {
-  if (goalFiles.length === 0) return '';
-
-  const sections = goalFiles
-    .map((g) => `### ${g.name}\n${g.content}`)
-    .join('\n\n');
-
-  return `## Project Goals\n\nThe following goal files exist in this project:\n\n${sections}`;
-}
-
-/**
- * Build a context block for a single project (name, description, custom context).
- */
-function buildProjectHeader(metadata: ProjectMetadata, rootPath?: string): string {
-  const lines: string[] = [];
-  if (metadata.name) lines.push(`Project: ${metadata.name}`);
-  if (rootPath) lines.push(`Project root: ${rootPath}`);
-  if (metadata.description) lines.push(`Description: ${metadata.description}`);
-  if (metadata.ai.projectContext) lines.push(`Project context: ${metadata.ai.projectContext}`);
-  return lines.join('\n');
-}
-
-/** Directories to skip when building file tree context for AI. */
-const IGNORED_DIRS = new Set([
-  'node_modules', '.git', '.next', '.nuxt', '.svelte-kit',
-  'dist', 'build', 'out', '.output', 'target',
-  '.cache', '.turbo', '.parcel-cache',
-  '__pycache__', '.venv', 'venv',
-  '.notesage',
-]);
-
-/**
- * Build a compact text representation of a file tree for AI context.
- * Limits depth and total file count to avoid bloating the system message.
- */
-function buildFileTreeContext(tree: FileEntry[], rootPath: string, maxDepth = 3, maxFiles = 100): string {
-  const lines: string[] = [];
-  let fileCount = 0;
-
-  function walk(entries: FileEntry[], depth: number, prefix: string) {
-    if (depth > maxDepth || fileCount >= maxFiles) return;
-    for (const entry of entries) {
-      if (fileCount >= maxFiles) {
-        lines.push(`${prefix}... (truncated)`);
-        return;
-      }
-      if (entry.is_directory && IGNORED_DIRS.has(entry.name)) continue;
-      const icon = entry.is_directory ? '/' : '';
-      lines.push(`${prefix}${entry.name}${icon}`);
-      fileCount++;
-      if (entry.is_directory && entry.children) {
-        walk(entry.children, depth + 1, prefix + '  ');
-      }
-    }
-  }
-
-  walk(tree, 0, '  ');
-
-  if (lines.length === 0) return '';
-
-  const rootName = rootPath.split('/').pop() || rootPath;
-  return `## Project Files\n\n${rootName}/\n${lines.join('\n')}`;
-}
+import { friendlyAIError } from '@/lib/ai/errors';
+import { buildGoalsContext, buildProjectHeader, buildFileTreeContext } from '@/lib/ai/context';
 
 // ---------------------------------------------------------------------------
 // ACP types and lazy agent management (module-level)
