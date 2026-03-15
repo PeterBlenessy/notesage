@@ -36,6 +36,9 @@ export function ContextDivider({ segment, previousSegment }: ContextDividerProps
 
       {expanded && (
         <div className="pl-[18px] mt-1 space-y-0.5 text-[10px] text-muted-foreground">
+          {names.length > 0 && (
+            <p>Included: {names.join(', ')}</p>
+          )}
           {prevNames.length > 0 && (
             <p>Switched from: {prevNames.join(', ')}</p>
           )}
