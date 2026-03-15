@@ -505,6 +505,15 @@ const COPILOT_BINARY: &str = "copilot-language-server";
 /// Checks: 1) system PATH via `which`, 2) common npm global install locations,
 /// 3) bundled node_modules relative to the app.
 fn resolve_copilot_binary(app: &AppHandle) -> Option<String> {
+    // 0. Check managed install directory (~/.notesage/agents/bin/)
+    let managed_bin = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".notesage/agents/bin")
+        .join(COPILOT_BINARY);
+    if managed_bin.exists() {
+        return Some(managed_bin.to_string_lossy().to_string());
+    }
+
     // 1. Check PATH via `which` — use login shell PATH if available
     //    (macOS GUI apps have a minimal inherited PATH)
     let which_cmd = if cfg!(target_os = "windows") {

@@ -53,6 +53,7 @@ pub fn run() {
         .manage(McpState::new())
         .manage(TranscriptionState::new())
         .manage(LocalInferenceState::new())
+        .manage(AgentManagerState::new())
         .manage(IndexState::new())
         .invoke_handler(tauri::generate_handler![
             open_devtools,
@@ -106,6 +107,9 @@ pub fn run() {
             migrate_to_icloud,
             migrate_from_icloud,
             migrate_quick_notes,
+            agent_resolve_binary,
+            agent_install,
+            agent_uninstall,
             acp_agent_check_availability,
             acp_agent_spawn,
             acp_agent_authenticate,

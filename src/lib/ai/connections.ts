@@ -97,6 +97,8 @@ export interface Connection {
   credentials: ConnectionCredentials;
   capabilities: AICapability[];     // Resolved from PROVIDER_CAPABILITIES
   config?: ConnectionConfig;        // Optional model/temperature/maxTokens/baseUrl configuration
+  binarySource?: BinarySource;      // 'managed' (Notesage-installed) or 'system' (user-installed)
+  sandboxEnabled?: boolean;         // OS-level sandbox (default: true for managed, false for system)
   createdAt: number;
 }
 
@@ -120,6 +122,19 @@ export const EMPTY_ROUTING: UseCaseRouting = {
   inline_completion: { connectionId: null },
 };
 
+// --- Agent install metadata ---
+
+export type BinarySource = 'managed' | 'system';
+
+export interface AgentInstallMeta {
+  /** GitHub repo for binary downloads (owner/repo) */
+  githubRepo: string;
+  /** Manual install command for guidance fallback */
+  manualCommand: string;
+  /** Whether this agent requires a Node.js runtime */
+  requiresNodeRuntime?: boolean;
+}
+
 // --- Provider metadata (for UI display) ---
 
 export interface ProviderOption {
@@ -131,6 +146,7 @@ export interface ProviderOption {
   agentBinary?: string;             // For agent_managed providers (ACP protocol)
   agentArgs?: string[];             // Additional CLI args (e.g., ["--acp"] for Copilot)
   lspBinary?: string;               // For LSP-based providers (e.g., copilot-language-server)
+  installMeta?: AgentInstallMeta;   // For managed agent binary downloads
 }
 
 /** Available provider options for the "Add Connection" picker */
@@ -142,6 +158,10 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     description: 'Requires Claude Pro or Max',
     capabilities: ['interactive', 'agent_tasks'],
     agentBinary: 'claude-agent-acp',
+    installMeta: {
+      githubRepo: 'zed-industries/claude-agent-acp',
+      manualCommand: 'npm install -g @zed-industries/claude-agent-acp',
+    },
   },
   {
     provider: 'anthropic',
@@ -157,6 +177,10 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     description: 'Requires ChatGPT Plus/Pro',
     capabilities: ['interactive', 'agent_tasks'],
     agentBinary: 'codex-acp',
+    installMeta: {
+      githubRepo: 'zed-industries/codex-acp',
+      manualCommand: 'npm install -g @zed-industries/codex-acp',
+    },
   },
   {
     provider: 'openai',
@@ -173,6 +197,10 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     capabilities: ['interactive', 'agent_tasks'],
     agentBinary: 'copilot',
     agentArgs: ['--acp'],
+    installMeta: {
+      githubRepo: 'github/copilot-cli',
+      manualCommand: 'npm install -g @github/copilot',
+    },
   },
   {
     provider: 'github',
@@ -181,6 +209,10 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     description: 'Chat, completions, and agents via Language Server',
     capabilities: ['interactive', 'inline_completion', 'agent_tasks'],
     lspBinary: 'copilot-language-server',
+    installMeta: {
+      githubRepo: 'github/copilot-language-server-release',
+      manualCommand: 'npm install -g @github/copilot-language-server',
+    },
   },
   {
     provider: 'google',
@@ -190,6 +222,11 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     capabilities: ['interactive', 'agent_tasks'],
     agentBinary: 'gemini',
     agentArgs: ['--experimental-acp'],
+    installMeta: {
+      githubRepo: 'google-gemini/gemini-cli',
+      manualCommand: 'npm install -g @google/gemini-cli',
+      requiresNodeRuntime: true,
+    },
   },
   {
     provider: 'ollama',
@@ -218,6 +255,25 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
 
 import { DEFAULT_MODELS as _DEFAULT_MODELS } from './constants';
 export const DEFAULT_MODELS: Partial<Record<ConnectionProvider, string>> = _DEFAULT_MODELS;
+
+// --- Agent model cache (runtime, not persisted) ---
+
+export interface AgentModel {
+  modelId: string;
+  name: string;
+  description: string | null;
+}
+
+/** Runtime cache of models reported by ACP agents during session creation */
+const agentModelCache = new Map<string, { models: AgentModel[]; currentModel: string | null }>();
+
+export function setAgentModels(connectionId: string, models: AgentModel[], currentModel: string | null): void {
+  agentModelCache.set(connectionId, { models, currentModel });
+}
+
+export function getAgentModels(connectionId: string): { models: AgentModel[]; currentModel: string | null } | undefined {
+  return agentModelCache.get(connectionId);
+}
 
 // --- Capability display labels ---
 

@@ -9,18 +9,64 @@ export function friendlyAIError(error: unknown, provider?: string): string {
 
   // Try to extract the nested JSON message from provider error strings
   // e.g. 'Anthropic API error: {"type":"error","error":{"type":"...","message":"Your credit balance..."}}'
+  // e.g. ACP: 'Prompt failed: Internal error: {"codex_error_info":"other","message":"{\"detail\":\"...\"}"}'
+  let msg = '';
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
     try {
       const parsed = JSON.parse(jsonMatch[0]);
-      const msg = parsed?.error?.message || parsed?.message;
-      if (msg) return prefix + msg;
+      msg = parsed?.error?.message || parsed?.message || '';
+
+      // Handle doubly-escaped JSON in message field (ACP agents wrap provider errors)
+      if (msg && msg.startsWith('{')) {
+        try {
+          const inner = JSON.parse(msg);
+          msg = inner?.detail || inner?.message || inner?.error?.message || msg;
+        } catch {
+          // Not nested JSON, use as-is
+        }
+      }
     } catch {
       // Not valid JSON, fall through
     }
   }
 
-  // Strip common prefixes like "Anthropic API error: " or "OpenAI API error: "
-  const stripped = raw.replace(/^(Anthropic|OpenAI|Ollama)\s+API\s+error:\s*/i, '').trim();
-  return prefix + (stripped || 'Something went wrong. Please try again.');
+  if (!msg) {
+    // Strip common prefixes like "Anthropic API error: " or "Prompt failed: Internal error: "
+    msg = raw
+      .replace(/^(Anthropic|OpenAI|Ollama)\s+API\s+error:\s*/i, '')
+      .replace(/^Prompt failed:\s*(Internal error:\s*)?/i, '')
+      .trim();
+  }
+
+  const friendly = msg || 'Something went wrong. Please try again.';
+
+  // Add actionable hints for common errors
+  const hint = getErrorHint(friendly);
+  return prefix + friendly + (hint ? `\n\n${hint}` : '');
+}
+
+/**
+ * Return an actionable hint for common error patterns.
+ */
+function getErrorHint(message: string): string | null {
+  const lower = message.toLowerCase();
+
+  if (lower.includes('model is not supported') || lower.includes('model not found') || lower.includes('does not exist')) {
+    return 'Tip: You can change the model in Settings → Connections → click the gear icon on this connection.';
+  }
+
+  if (lower.includes('credit balance') || lower.includes('insufficient') || lower.includes('billing')) {
+    return 'Tip: Check your account billing status with the provider.';
+  }
+
+  if (lower.includes('rate limit') || lower.includes('too many requests')) {
+    return 'Tip: Wait a moment and try again, or switch to a different provider.';
+  }
+
+  if (lower.includes('authentication') || lower.includes('unauthorized') || lower.includes('invalid api key') || lower.includes('401')) {
+    return 'Tip: Re-check your credentials in Settings → Connections.';
+  }
+
+  return null;
 }

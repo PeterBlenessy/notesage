@@ -1013,7 +1013,7 @@ function ConnectCopilotLsp({
 
 // --- Connection timeout helper ---
 
-const CONNECTION_TIMEOUT_MS = 60_000;
+const CONNECTION_TIMEOUT_MS = 120_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -1026,7 +1026,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 
 // --- Agent connection flow ---
 
-type AgentPhase = 'checking' | 'not_installed' | 'not_authenticated' | 'connecting' | 'connected' | 'error';
+type AgentPhase = 'checking' | 'not_installed' | 'installing' | 'not_authenticated' | 'connecting' | 'connected' | 'error';
 
 function ConnectAgent({
   option,
@@ -1041,6 +1041,9 @@ function ConnectAgent({
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [retrying, setRetrying] = useState(false);
+  const [installProgress, setInstallProgress] = useState<{ phase: string; progress: number; total: number; message: string } | null>(null);
+  const [showManualGuide, setShowManualGuide] = useState(false);
+  const [binarySource, setBinarySource] = useState<'managed' | 'system' | null>(null);
   const isRetryRef = useRef(false);
   const onConnectedRef = useRef(onConnected);
   onConnectedRef.current = onConnected;
@@ -1075,6 +1078,17 @@ function ConnectAgent({
         );
         if (!active) return;
         await endRetry();
+
+        // Also check binary source via new resolver
+        try {
+          const resolution = await invoke<{ path: string; source: string; version: string | null } | null>('agent_resolve_binary', { agentId: binary });
+          if (resolution) {
+            setBinarySource(resolution.source as 'managed' | 'system');
+          }
+        } catch {
+          // Non-critical — source tracking is informational
+        }
+
         if (!avail.installed) {
           setPhase('not_installed');
           return;
@@ -1119,7 +1133,6 @@ function ConnectAgent({
         instanceId = result.instance_id;
 
         // Try to authenticate — some agents handle auth internally
-        // (e.g. claude-agent-acp uses Claude CLI's stored credentials)
         try {
           await withTimeout(
             invoke('acp_agent_authenticate', { instanceId }),
@@ -1128,7 +1141,6 @@ function ConnectAgent({
           );
         } catch (authErr) {
           const msg = String(authErr);
-          // "not implemented" means the agent doesn't need explicit auth — that's fine
           if (!msg.toLowerCase().includes('not implemented')) {
             throw authErr;
           }
@@ -1138,7 +1150,6 @@ function ConnectAgent({
           return;
         }
 
-        // Stop temporary agent used for the connection test
         invoke('acp_agent_stop', { instanceId }).catch(() => {});
 
         setPhase('connected');
@@ -1157,12 +1168,41 @@ function ConnectAgent({
   }, [option, retryCount]);
 
   const binary = option.agentBinary!;
+  const canManagedInstall = !!option.installMeta && !option.installMeta.requiresNodeRuntime;
 
   const handleRetry = useCallback(() => {
     isRetryRef.current = true;
     setRetrying(true);
     setRetryCount((c) => c + 1);
   }, []);
+
+  const handleManagedInstall = useCallback(async () => {
+    setPhase('installing');
+    setInstallProgress(null);
+    setError(null);
+
+    const unlisten = await listen<{ agent_id: string; phase: string; progress: number; total: number; message: string }>(
+      'agent-install-progress',
+      (event) => {
+        if (event.payload.agent_id === binary) {
+          setInstallProgress(event.payload);
+        }
+      },
+    );
+
+    try {
+      await invoke('agent_install', { agentId: binary });
+      setBinarySource('managed');
+      // Trigger retry to proceed through the connection flow
+      isRetryRef.current = true;
+      setRetryCount((c) => c + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setPhase('error');
+    } finally {
+      unlisten();
+    }
+  }, [binary]);
 
   const retryButton = (
     <Button
@@ -1182,6 +1222,11 @@ function ConnectAgent({
       <div className="flex items-center gap-2">
         <ProviderLogo provider={option.provider} className="w-5 h-5 shrink-0" />
         <span className="text-sm font-medium">{option.label}</span>
+        {binarySource && phase === 'connected' && (
+          <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded border border-border">
+            {binarySource === 'managed' ? 'Managed' : 'System'}
+          </span>
+        )}
       </div>
 
       {phase === 'checking' && (
@@ -1196,15 +1241,68 @@ function ConnectAgent({
       {phase === 'not_installed' && (
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            {option.label} wasn't found on your system. Follow the steps below to install it.
+            {option.label} wasn't found on your system.
           </p>
-          <SetupGuideView guide={getInstallGuide(binary)} />
+
+          {canManagedInstall && !showManualGuide && (
+            <>
+              <Button
+                size="sm"
+                onClick={handleManagedInstall}
+                className="w-full"
+              >
+                <Download className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+                Install {option.label}
+              </Button>
+              <button
+                onClick={() => setShowManualGuide(true)}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer w-full text-center"
+              >
+                or install manually
+              </button>
+            </>
+          )}
+
+          {(!canManagedInstall || showManualGuide) && (
+            <>
+              <SetupGuideView guide={getInstallGuide(binary)} />
+              {canManagedInstall && showManualGuide && (
+                <button
+                  onClick={() => setShowManualGuide(false)}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer w-full text-center"
+                >
+                  or install automatically
+                </button>
+              )}
+            </>
+          )}
+
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
               Back
             </Button>
             {retryButton}
           </div>
+        </div>
+      )}
+
+      {phase === 'installing' && (
+        <div className="space-y-3 py-2">
+          <div className="flex items-center gap-2.5">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" strokeWidth={1.5} />
+            <span className="text-sm text-muted-foreground">
+              {installProgress?.message || 'Preparing install...'}
+            </span>
+          </div>
+          {installProgress && installProgress.total > 0 && (
+            <Progress
+              value={installProgress.total > 0 ? (installProgress.progress / installProgress.total) * 100 : 0}
+              className="h-1.5"
+            />
+          )}
+          <p className="text-[10px] text-muted-foreground capitalize">
+            {installProgress?.phase || 'initializing'}
+          </p>
         </div>
       )}
 
@@ -1249,7 +1347,7 @@ function ConnectAgent({
               <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" strokeWidth={1.5} />
               <div>
                 <p className="text-sm font-medium text-destructive">
-                  Connection failed
+                  {phase === 'error' && installProgress ? 'Install failed' : 'Connection failed'}
                 </p>
                 {error && (
                   <p className="text-xs text-destructive/80 mt-1 break-words">

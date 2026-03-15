@@ -37,7 +37,7 @@ import { useLocalAIStore } from '@/stores/local-ai-store';
 import { stopAcpAgent } from '@/hooks/useAIOperations';
 import { stopTaskAgent } from '@/hooks/useAgentTaskOperations';
 import type { Connection, ConnectionConfig } from '@/lib/ai/connections';
-import { DEFAULT_MODELS } from '@/lib/ai/connections';
+import { DEFAULT_MODELS, getAgentModels } from '@/lib/ai/connections';
 import { cn } from '@/lib/utils';
 
 const TEMPERATURE_LABELS: { value: number; label: string }[] = [
@@ -79,9 +79,40 @@ function formatTokenCount(tokens: number): string {
 /** Model placeholder hints per provider for agent-managed connections */
 const AGENT_MODEL_HINTS: Record<string, string> = {
   anthropic: 'e.g. sonnet, opus, haiku',
-  openai: 'e.g. gpt-5.3-codex, gpt-5.2',
+  openai: 'e.g. gpt-5.2-codex, o4-mini',
   github: 'e.g. claude-sonnet-4, gpt-5.2',
   google: 'e.g. gemini-2.5-pro, gemini-2.5-flash',
+};
+
+/** Known models per agent binary — curated list for the model picker */
+interface AgentModelOption {
+  id: string;
+  label: string;
+  note?: string;
+}
+
+const AGENT_KNOWN_MODELS: Record<string, AgentModelOption[]> = {
+  'claude-agent-acp': [
+    { id: 'sonnet', label: 'Claude Sonnet', note: 'Default — fast and capable' },
+    { id: 'opus', label: 'Claude Opus', note: 'Most capable, slower' },
+    { id: 'haiku', label: 'Claude Haiku', note: 'Fastest, lightweight' },
+  ],
+  'codex-acp': [
+    { id: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', note: 'Recommended — works with all account types' },
+    { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', note: 'Requires paid plan' },
+    { id: 'gpt-5.4', label: 'GPT-5.4', note: 'Latest flagship — requires paid plan' },
+    { id: 'o4-mini', label: 'o4-mini', note: 'Fast reasoning model' },
+  ],
+  'copilot': [
+    { id: 'claude-sonnet-4', label: 'Claude Sonnet 4', note: 'Default' },
+    { id: 'gpt-5.2', label: 'GPT-5.2' },
+    { id: 'o4-mini', label: 'o4-mini' },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+  ],
+  'gemini': [
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', note: 'Default — most capable' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', note: 'Fast and efficient' },
+  ],
 };
 
 interface ConnectionConfigDialogProps {
@@ -311,22 +342,108 @@ export function ConnectionConfigDialog({
             </div>
           )}
 
-          {/* Model — agent-managed: simple text input; API providers: combobox with fetch */}
+          {/* Model — agent-managed: combobox with known models; API providers: combobox with fetch */}
           {!isLocalBundled && <div className="space-y-1.5">
             <Label className="text-sm">Model</Label>
-            {isAgentManaged ? (
-              <>
-                <Input
-                  placeholder={AGENT_MODEL_HINTS[connection.provider] ?? 'Model name or alias'}
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  className="w-full"
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  Passed as <code className="text-[10px] bg-muted px-1 py-0.5 rounded">--model</code> to the agent CLI. Leave blank for the agent's default.
-                </p>
-              </>
-            ) : (
+            {isAgentManaged ? (() => {
+              const agentBinary = connection.credentials.type === 'agent_managed'
+                ? (connection.credentials as { agentBinary: string }).agentBinary
+                : '';
+
+              // Prefer dynamic models from ACP session, fall back to hardcoded
+              const cached = getAgentModels(connection.id);
+              const dynamicModels = cached?.models.map((m) => ({
+                id: m.modelId,
+                label: m.name,
+                note: m.description ?? undefined,
+              })) ?? [];
+              const fallbackModels = AGENT_KNOWN_MODELS[agentBinary] ?? [];
+              const displayModels = dynamicModels.length > 0 ? dynamicModels : fallbackModels;
+              const currentModel = cached?.currentModel;
+
+              return (
+                <>
+                  <Popover open={modelPopoverOpen} onOpenChange={setModelPopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={modelPopoverOpen}
+                        className="w-full justify-between font-normal"
+                      >
+                        <span className="truncate">
+                          {model || (
+                            <span className="text-muted-foreground">
+                              {currentModel ? `Default (${currentModel})` : 'Agent default'}
+                            </span>
+                          )}
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                      <Command>
+                        <CommandInput
+                          placeholder={AGENT_MODEL_HINTS[connection.provider] ?? 'Search or type model name…'}
+                          value={model}
+                          onValueChange={setModel}
+                          className="flex-1"
+                        />
+                        <CommandList>
+                          <CommandEmpty>
+                            Type a model name to use it
+                          </CommandEmpty>
+                          {displayModels.length > 0 && (
+                            <CommandGroup heading={dynamicModels.length > 0 ? 'Available models' : 'Suggested models'}>
+                              {displayModels.map((m) => (
+                                <CommandItem
+                                  key={m.id}
+                                  value={m.id}
+                                  onSelect={(val) => {
+                                    setModel(val);
+                                    setModelPopoverOpen(false);
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      'mr-2 h-3.5 w-3.5 shrink-0',
+                                      model === m.id ? 'opacity-100' : 'opacity-0'
+                                    )}
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <span className="text-sm">{m.label}</span>
+                                    {m.id !== m.label && (
+                                      <span className="text-xs text-muted-foreground ml-1.5">{m.id}</span>
+                                    )}
+                                    {currentModel === m.id && (
+                                      <span className="text-[10px] text-muted-foreground ml-1.5">(current)</span>
+                                    )}
+                                    {m.note && (
+                                      <p className="text-xs text-muted-foreground">{m.note}</p>
+                                    )}
+                                  </div>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          )}
+                          {displayModels.length === 0 && (
+                            <p className="px-3 py-2 text-xs text-muted-foreground">
+                              Connect and send a message first to discover available models.
+                            </p>
+                          )}
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <p className="text-[11px] text-muted-foreground">
+                    Leave blank to use the agent's default model.
+                    {dynamicModels.length === 0 && displayModels.length > 0 && (
+                      <span className="italic"> Models shown are suggestions — connect first for the full list.</span>
+                    )}
+                  </p>
+                </>
+              );
+            })() : (
               <Popover open={modelPopoverOpen} onOpenChange={setModelPopoverOpen}>
                 <PopoverTrigger asChild>
                   <Button

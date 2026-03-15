@@ -51,8 +51,17 @@ pub struct AuthStatus {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+pub struct AgentModelInfo {
+    pub model_id: String,
+    pub name: String,
+    pub description: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SessionResult {
     pub session_id: String,
+    pub current_model: Option<String>,
+    pub available_models: Vec<AgentModelInfo>,
 }
 
 // ---------------------------------------------------------------------------
@@ -144,12 +153,12 @@ enum AgentCmd {
     },
     NewSession {
         working_directory: String,
-        reply: oneshot::Sender<Result<String, String>>,
+        reply: oneshot::Sender<Result<SessionResult, String>>,
     },
     LoadSession {
         session_id: String,
         working_directory: String,
-        reply: oneshot::Sender<Result<String, String>>,
+        reply: oneshot::Sender<Result<SessionResult, String>>,
     },
     Prompt {
         session_id: String,
@@ -451,7 +460,28 @@ fn run_agent_thread(
                     let req = NewSessionRequest::new(PathBuf::from(cwd));
                     match conn.new_session(req).await {
                         Ok(resp) => {
-                            let _ = reply.send(Ok(resp.session_id.to_string()));
+                            let mut current_model = None;
+                            let mut available_models = Vec::new();
+
+                            if let Some(ref model_state) = resp.models {
+                                current_model =
+                                    Some(model_state.current_model_id.to_string());
+                                available_models = model_state
+                                    .available_models
+                                    .iter()
+                                    .map(|m| AgentModelInfo {
+                                        model_id: m.model_id.to_string(),
+                                        name: m.name.clone(),
+                                        description: m.description.clone(),
+                                    })
+                                    .collect();
+                            }
+
+                            let _ = reply.send(Ok(SessionResult {
+                                session_id: resp.session_id.to_string(),
+                                current_model,
+                                available_models,
+                            }));
                         }
                         Err(e) => {
                             let _ =
@@ -469,10 +499,29 @@ fn run_agent_thread(
                         PathBuf::from(cwd),
                     );
                     match conn.load_session(req).await {
-                        Ok(_) => {
-                            // LoadSessionResponse doesn't return session_id —
-                            // it was provided in the request.
-                            let _ = reply.send(Ok(sid));
+                        Ok(resp) => {
+                            let mut current_model = None;
+                            let mut available_models = Vec::new();
+
+                            if let Some(ref model_state) = resp.models {
+                                current_model =
+                                    Some(model_state.current_model_id.to_string());
+                                available_models = model_state
+                                    .available_models
+                                    .iter()
+                                    .map(|m| AgentModelInfo {
+                                        model_id: m.model_id.to_string(),
+                                        name: m.name.clone(),
+                                        description: m.description.clone(),
+                                    })
+                                    .collect();
+                            }
+
+                            let _ = reply.send(Ok(SessionResult {
+                                session_id: sid,
+                                current_model,
+                                available_models,
+                            }));
                         }
                         Err(e) => {
                             let _ =
@@ -554,6 +603,15 @@ fn run_agent_thread(
 /// not include user-installed directories, so we must check common locations
 /// explicitly as fallback.
 fn resolve_agent_binary(agent_id: &str, app: &AppHandle) -> Option<String> {
+    // 0. Check managed install directory (~/.notesage/agents/bin/)
+    let managed_bin = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".notesage/agents/bin")
+        .join(agent_id);
+    if managed_bin.exists() {
+        return Some(managed_bin.to_string_lossy().to_string());
+    }
+
     // 1. Check PATH via `which` — use login shell PATH if available
     //    (macOS GUI apps have a minimal inherited PATH)
     let which_cmd = if cfg!(target_os = "windows") {
@@ -938,11 +996,11 @@ pub async fn acp_session_new(
 
     drop(agents);
 
-    let session_id = reply_rx
+    let result = reply_rx
         .await
         .map_err(|_| "Agent thread did not respond to new_session".to_string())??;
 
-    Ok(SessionResult { session_id })
+    Ok(result)
 }
 
 /// Load an existing ACP session.
@@ -972,11 +1030,11 @@ pub async fn acp_session_load(
 
     drop(agents);
 
-    let sid = reply_rx
+    let result = reply_rx
         .await
         .map_err(|_| "Agent thread did not respond to load_session".to_string())??;
 
-    Ok(SessionResult { session_id: sid })
+    Ok(result)
 }
 
 /// Send a prompt to an ACP session. Blocks until the agent completes the turn.

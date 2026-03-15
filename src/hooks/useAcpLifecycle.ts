@@ -3,6 +3,7 @@ import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import type { ChatMessage } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
+import { setAgentModels } from '@/lib/ai/connections';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { log } from '@/lib/logger';
@@ -19,8 +20,16 @@ interface AcpSpawnResult {
   auth_methods: { id: string; name: string; description: string | null }[];
 }
 
+interface AcpModelInfo {
+  model_id: string;
+  name: string;
+  description: string | null;
+}
+
 interface AcpSessionResult {
   session_id: string;
+  current_model: string | null;
+  available_models: AcpModelInfo[];
 }
 
 interface AcpSessionUpdatePayload {
@@ -138,10 +147,17 @@ async function ensureAcpAgent(connection: Connection, cwd: string): Promise<stri
   }
 
   const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[] };
-  // Inject --model flag if the connection has a model configured
+  // Inject model flag if the connection has a model configured
+  // Different agents use different flag formats:
+  //   codex-acp: -c model="<model>"
+  //   others:    --model <model>
   const args = [...(creds.agentArgs ?? [])];
   if (connection.config?.model) {
-    args.push('--model', connection.config.model);
+    if (creds.agentBinary === 'codex-acp') {
+      args.push('-c', `model="${connection.config.model}"`);
+    } else {
+      args.push('--model', connection.config.model);
+    }
   }
   const result = await invoke<AcpSpawnResult>('acp_agent_spawn', {
     agentBinary: creds.agentBinary,
@@ -301,6 +317,19 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage }: AcpLi
           });
           acpAgent!.chatSessionId = session.session_id;
           isNewSession = true;
+
+          // Cache available models from the agent for the config dialog
+          if (session.available_models.length > 0 && effectiveConnection) {
+            setAgentModels(
+              effectiveConnection.id,
+              session.available_models.map((m) => ({
+                modelId: m.model_id,
+                name: m.name,
+                description: m.description,
+              })),
+              session.current_model,
+            );
+          }
         }
 
         let streamedContent = '';

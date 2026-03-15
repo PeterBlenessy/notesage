@@ -1,30 +1,30 @@
 # Agent Binary Management & Runtime Sandboxing — Tasks
 
-**PRD:** `docs/prds/2026-02-21-agent-install-wizard.md`**Status:** 🔮 Future
+**PRD:** `docs/prds/2026-02-21-agent-install-wizard.md`**Status:** 🚧 In Progress
 
 ## Phase 1 — Managed Installation + Filesystem Sandbox
 
 **Total:** 12 tasks (3S, 6M, 3L)
 
-### #1 — Create `~/.notesage/agents/` filesystem layout
+### #1 — Create `~/.notesage/agents/` filesystem layout ✅
 
 - **Complexity:** S | **Category:** backend
 - **Description:** Create utility functions to ensure the managed agents directory structure exists (`~/.notesage/agents/bin/`, `~/.notesage/agents/lib/`, `~/.notesage/runtime/`, `~/.notesage/sandbox/profiles/`). Cross-platform home directory resolution. Initialize `versions.json` if missing.
 - **Files:** `src-tauri/src/commands/agent_manager.rs` (new)
 
-### #2 — Platform detection utility
+### #2 — Platform detection utility ✅
 
 - **Complexity:** S | **Category:** backend
 - **Description:** Add `detect_platform()` function that returns the current OS + architecture string used for GitHub Release asset matching (e.g., `darwin-arm64`, `darwin-x64`, `linux-x64`). Used by both binary download and sandbox profile generation.
 - **Files:** `src-tauri/src/commands/agent_manager.rs`
 
-### #3 — Binary resolution with source tracking
+### #3 — Binary resolution with source tracking ✅
 
 - **Complexity:** M | **Category:** backend | **Depends on:** #1
 - **Description:** New `agent_resolve_binary` Tauri command. Checks `~/.notesage/agents/bin/` first (→ `managed`), then system PATH and common paths (→ `system`). Returns `BinaryResolution { path, source, version }`. Update existing `acp_agent_check_availability` to use this resolver. Register in `lib.rs`.
 - **Files:** `src-tauri/src/commands/agent_manager.rs`, `src-tauri/src/commands/acp.rs`, `src-tauri/src/lib.rs`
 
-### #4 — GitHub Release download engine
+### #4 — GitHub Release download engine ✅
 
 - **Complexity:** L | **Category:** backend | **Depends on:** #2
 - **Description:** Add `download_github_release()` function. Queries GitHub Releases API for latest version of a given `owner/repo`. Selects platform-specific asset by naming pattern. Downloads with progress events (`agent-install-progress`). Verifies SHA-256 checksum if available. Extracts binary to `~/.notesage/agents/bin/`. Sets executable permissions. Updates `versions.json`. Handles errors (network, checksum mismatch, disk space). Add concurrency guard (one install at a time).
@@ -36,7 +36,7 @@
 - **Description:** Add `agent_install_node_runtime` Tauri command. Downloads official Node.js standalone binary for the current platform from nodejs.org. Extracts to `~/.notesage/runtime/node/`. Verifies the downloaded `node` and `npm` binaries work. Skips if already present and working. Emits progress events.
 - **Files:** `src-tauri/src/commands/agent_manager.rs`
 
-### #6 — `agent_install` Tauri command
+### #6 — `agent_install` Tauri command ✅ (native agents only; Gemini deferred to Slice 2)
 
 - **Complexity:** M | **Category:** backend | **Depends on:** #3, #4, #5
 - **Description:** New Tauri command that orchestrates installation for any agent. For native-binary agents (claude-agent-acp, codex-acp, copilot, copilot-language-server): delegates to GitHub Release download. For Gemini CLI: ensures portable Node.js is available, then runs `npm install --prefix`. Emits `agent-install-progress` and `agent-install-done` events. Validates agent_id against allowlist. Register in `lib.rs`.
@@ -60,13 +60,13 @@
 - **Description:** Add `agent_check_updates` Tauri command. Reads `versions.json`, queries GitHub Releases API (or npm registry for Gemini) for each managed agent. Returns list of agents with updates available. Respects rate limiting (cache `lastChecked` timestamp, minimum 24h between automatic checks). Add `agent_update` command that stops running agent, downloads new version, replaces binary, updates `versions.json`. Emits `agent-update-available` events.
 - **Files:** `src-tauri/src/commands/agent_manager.rs`, `src-tauri/src/lib.rs`
 
-### #10 — Update `AgentInstallMeta` and `ProviderOption`
+### #10 — Update `AgentInstallMeta` and `ProviderOption` ✅
 
 - **Complexity:** S | **Category:** frontend
 - **Description:** Replace `AgentInstallInfo` with `AgentInstallMeta` interface. Add `githubRepo`, `npmPackage`, `manualCommand`, `docsUrl`, `requiresNodeRuntime`, `allowedDomains` fields. Add `installMeta` to `ProviderOption`. Populate for all agent entries. Add `binarySource` and `sandboxEnabled` to `Connection` interface.
 - **Files:** `src/lib/ai/connections.ts`
 
-### #11 — Redesign install wizard UI
+### #11 — Redesign install wizard UI ✅
 
 - **Complexity:** L | **Category:** frontend | **Depends on:** #6, #10
 - **Description:** Redesign `ConnectAgent` component. When binary not found on system, show "Install" button (managed download) with progress bar + phase indicator (downloading → verifying → extracting → configuring). Show manual install command as fallback. On install failure, show error with retry. When binary found on system, skip install phase entirely. Add source indicator to connection card ("Managed by Notesage" vs "System install"). Add sandbox toggle per connection (default based on source). After successful managed install, auto-proceed to auth phase.
