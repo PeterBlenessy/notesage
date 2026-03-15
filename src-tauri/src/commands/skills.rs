@@ -68,7 +68,7 @@ struct SkillFrontmatter {
 fn parse_frontmatter(content: &str) -> (Option<SkillFrontmatter>, String) {
     let (yaml_str, body) = parse_frontmatter_raw(content);
     match yaml_str {
-        Some(yaml) => match serde_yml::from_str::<SkillFrontmatter>(yaml) {
+        Some(yaml) => match serde_norway::from_str::<SkillFrontmatter>(yaml) {
             Ok(fm) => (Some(fm), body.to_string()),
             Err(_) => (None, content.to_string()),
         },
