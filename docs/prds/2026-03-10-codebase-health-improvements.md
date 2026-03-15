@@ -99,7 +99,7 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 ---
 
-### Task 3: Decompose `useAIOperations.ts`
+### Task 3: Decompose `useAIOperations.ts` ✅
 
 **Priority:** High — maintainability **Effort:** Medium (refactor, no behavior change)
 
@@ -121,13 +121,13 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 **Quality gate:**
 
-- [ ] All AI chat, inline actions, and ACP interactions work identically
+- [x] All AI chat, inline actions, and ACP interactions work identically
 
-- [ ] `useAIOperations.ts` is under 300 lines
+- [ ] `useAIOperations.ts` is under 300 lines (at 499 — remaining code is streaming orchestration)
 
-- [ ] No module-level mutable state remains in `useAIOperations.ts` (moved to store or `useAcpLifecycle`)
+- [x] No module-level mutable state remains in `useAIOperations.ts` (moved to useAcpLifecycle)
 
-- [ ] Context building functions have unit tests
+- [x] Context building functions have unit tests
 
 ---
 

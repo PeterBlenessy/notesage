@@ -254,7 +254,7 @@ Update `useAIOperations.ts` to import from these modules.
 
 ---
 
-### #11 — Extract `useAcpLifecycle.ts` hook
+### #11 — Extract `useAcpLifecycle.ts` hook ✅
 
 | Field | Value |
 | --- | --- |
