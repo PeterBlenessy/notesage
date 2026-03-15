@@ -378,7 +378,7 @@ Keep `CommentPopover.tsx` as container with create/edit/delete forms.
 
 ---
 
-### #17 — Audit `hound` crate and slim `tokio` features
+### #17 — Audit `hound` crate and slim `tokio` features ✅
 
 | Field | Value |
 |-------|-------|
