@@ -111,12 +111,12 @@ If both managed and system binaries exist, prefer the system binary. The user ca
 
 Each agent maps to a GitHub repository for binary downloads:
 
-| Agent | GitHub repo | Asset naming pattern |
-| --- | --- | --- |
-| `claude-agent-acp` | `zed-industries/claude-agent-acp` | `claude-agent-acp-{os}-{arch}` |
-| `codex-acp` | `zed-industries/codex-acp` | `codex-acp-{os}-{arch}` |
-| `copilot` | `github/copilot-cli` (or npm registry) | `copilot-{os}-{arch}` |
-| `copilot-language-server` | `github/copilot-language-server-release` | `copilot-language-server-{os}-{arch}` |
+| Agent | GitHub repo | Asset naming pattern | Archive format |
+| --- | --- | --- | --- |
+| `claude-agent-acp` | `zed-industries/claude-agent-acp` | `claude-agent-acp-{os}-{arch}` | `.zip` (macOS/Win), `.tar.gz` (Linux) |
+| `codex-acp` | `zed-industries/codex-acp` | `codex-acp-{version}-{rust-triple}` (e.g., `aarch64-apple-darwin`) | `.tar.gz` (macOS/Linux), `.zip` (Win) |
+| `copilot` | `github/copilot-cli` | `copilot-{os}-{arch}` (uses `win32` not `windows`) | `.tar.gz` (macOS/Linux), `.zip` (Win) |
+| `copilot-language-server` | `github/copilot-language-server-release` | `copilot-language-server-{os}-{arch}-{version}` (no `v` prefix on tag) | `.zip` |
 
 Platform detection maps to: `darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64`.
 
@@ -763,15 +763,15 @@ ACP permissions alone are advisory — the agent *chooses* to ask. The OS-level 
 
 ## Open Questions
 
-- [ ] Verify Gemini CLI flag: `--acp` vs `--experimental-acp`
+- [x] Verify Gemini CLI flag: `--experimental-acp` confirmed (not `--acp`). Fixed in `connections.ts`.
 
-- [ ] Confirm GitHub Release asset naming patterns for each agent repo
+- [x] Confirm GitHub Release asset naming patterns: claude-agent-acp uses `{name}-{os}-{arch}`, codex-acp uses `{name}-{version}-{rust-triple}`, copilot uses `copilot-{os}-{arch}`, copilot-language-server uses `{name}-{os}-{arch}-{version}` (no `v` prefix on tag).
 
-- [ ] Determine if `claude-agent-acp` pre-built binaries include the Claude Agent SDK or still need Claude Code installed for auth
+- [x] `claude-agent-acp` bundles Claude Agent SDK — does NOT need `claude` CLI for auth. Authenticates via `ANTHROPIC_API_KEY` env or `/login` OAuth.
 
 - [ ] Windows strategy: WSL2-based sandboxing or Windows Job Objects?
 
-- [ ] Code signing: does macOS Gatekeeper block downloaded unsigned binaries? May need `xattr -d com.apple.quarantine` or direct binary download without archive
+- [x] macOS Gatekeeper: YES, quarantines downloaded binaries. Must run `xattr -d com.apple.quarantine` after download.
 
 ## Out of Scope
 

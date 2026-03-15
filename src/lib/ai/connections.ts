@@ -189,7 +189,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     description: 'Free with Google account, or Gemini Code Assist subscription',
     capabilities: ['interactive', 'agent_tasks'],
     agentBinary: 'gemini',
-    agentArgs: ['--acp'],
+    agentArgs: ['--experimental-acp'],
   },
   {
     provider: 'ollama',

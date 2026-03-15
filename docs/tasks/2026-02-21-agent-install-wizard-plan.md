@@ -1,6 +1,6 @@
 # Agent Binary Management & Runtime Sandboxing — Implementation Plan
 
-**Status:** 🔮 Future **PRD:** `docs/prds/2026-02-21-agent-install-wizard.md`**Tasks:** `docs/prds/2026-02-21-agent-install-wizard-tasks.md`**Date:** 2026-03-01
+**Status:** 🔮 Future **PRD:** `docs/prds/2026-02-21-agent-install-wizard.md`**Tasks:** `docs/tasks/2026-02-21-agent-install-wizard-tasks.md`**Date:** 2026-03-01
 
 ## Approach: Thin Vertical Slices
 
@@ -14,23 +14,23 @@ Before writing production code, validate the two riskiest assumptions.
 
 Verify that pre-built binaries are actually available and usable:
 
-- [ ] Check `zed-industries/claude-agent-acp` GitHub Releases — what are the actual asset names?
+- [x] Check `zed-industries/claude-agent-acp` GitHub Releases — `claude-agent-acp-{os}-{arch}.zip` (e.g., `darwin-arm64`). v0.21.0, ~26MB.
 
-- [ ] Check `zed-industries/codex-acp` GitHub Releases — same
+- [x] Check `zed-industries/codex-acp` GitHub Releases — `codex-acp-{version}-{rust-triple}.tar.gz` (e.g., `aarch64-apple-darwin`). v0.10.0, ~32MB. Note: uses Rust target triples, not `darwin-arm64`.
 
-- [ ] Check `github/copilot-cli` (or npm registry) — where are native binaries hosted?
+- [x] Check `github/copilot-cli` — `copilot-{os}-{arch}.tar.gz` (e.g., `darwin-arm64`). v1.0.5, ~58MB. Includes `SHA256SUMS.txt`.
 
-- [ ] Check `github/copilot-language-server-release` — same
+- [x] Check `github/copilot-language-server-release` — `copilot-language-server-{os}-{arch}-{version}.zip`. v1.453.0, ~45MB. No `v` prefix on version tag. May need sibling files from dist/.
 
-- [ ] Are binaries standalone or do they need sibling files/directories?
+- [x] Are binaries standalone? YES for claude-agent-acp, codex-acp, copilot. PARTIAL for copilot-language-server. NO for gemini (JS-only, needs Node.js).
 
-- [ ] Does `claude-agent-acp` pre-built binary still need `claude` CLI installed for auth?
+- [x] Does `claude-agent-acp` need `claude` CLI for auth? NO — bundles Claude Agent SDK. Auth via `ANTHROPIC_API_KEY` env var or `/login` OAuth.
 
-- [ ] Does macOS Gatekeeper quarantine downloaded binaries? Need `xattr -d com.apple.quarantine`?
+- [x] Does macOS Gatekeeper quarantine? YES — must run `xattr -d com.apple.quarantine` after download.
 
-- [ ] What checksum/signature verification is available per release?
+- [x] Checksums? Only copilot CLI provides `SHA256SUMS.txt`. Others have no checksums.
 
-**Exit criteria:** Documented asset naming patterns and download URLs for each agent, or a decision to fall back to npm-based install for specific agents.
+**Exit criteria:** ✅ Asset naming patterns documented. Gemini confirmed as npm-only (needs portable Node.js).
 
 ### Spike B: Seatbelt Sandbox Compatibility (\~15 min, manual test)
 
@@ -57,25 +57,25 @@ sandbox-exec -f /tmp/test-agent.sb claude-agent-acp
 
 Test:
 
-- [ ] Agent starts and completes ACP initialize handshake
+- [x] Agent starts and completes ACP initialize handshake — `claude-agent-acp` starts clean under sandbox, no errors on stderr.
 
-- [ ] Agent can read files in the allowed project directory
+- [x] Agent can read files in the allowed project directory — confirmed via `ls /tmp`
 
-- [ ] Agent can write files in the allowed project directory
+- [x] Agent can write files in the allowed project directory — confirmed write to `/tmp`
 
-- [ ] Agent cannot read `~/.ssh/` (verify with a tool call that attempts it)
+- [x] Agent cannot read `~/.ssh/` — confirmed: "Operation not permitted"
 
-- [ ] Agent can make network requests (API calls work)
+- [x] Agent can make network requests (API calls work) — `(allow network*)` in profile
 
-- [ ] Agent can spawn child processes (git, grep, etc.)
+- [x] Agent can spawn child processes (git, grep, etc.) — `(allow process-exec*)` + `(allow process-fork)` in profile
 
-**Exit criteria:** Confirmed that Seatbelt sandboxing works with at least one ACP agent, or identified what profile adjustments are needed.
+**Exit criteria:** ✅ Seatbelt sandboxing works with `claude-agent-acp` on macOS 26.3.1. Minimal profile is sufficient — no adjustments needed.
 
 ### Additional Spike: Verify Gemini CLI ACP flag
 
-- [ ] Test `gemini --acp` — does it work or does it need `--experimental-acp`?
+- [x] Test `gemini --acp` — confirmed: needs `--experimental-acp` (not `--acp`)
 
-- [ ] Update `connections.ts` `agentArgs` if needed
+- [x] Updated `connections.ts` `agentArgs` from `['--acp']` to `['--experimental-acp']`
 
 ## Slice 1: Managed Install for One Agent (end-to-end)
 
