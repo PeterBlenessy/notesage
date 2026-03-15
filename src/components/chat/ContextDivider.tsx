@@ -6,9 +6,11 @@ const basename = (p: string) => p.split('/').pop() || p;
 interface ContextDividerProps {
   segment: ConversationSegment;
   previousSegment?: ConversationSegment;
+  /** Actual count of messages before this segment (accounts for deletions) */
+  priorMessageCount?: number;
 }
 
-export function ContextDivider({ segment, previousSegment }: ContextDividerProps) {
+export function ContextDivider({ segment, previousSegment, priorMessageCount }: ContextDividerProps) {
   const [expanded, setExpanded] = useState(false);
 
   const names = segment.projectPaths.map((p) => basename(p));
@@ -42,7 +44,10 @@ export function ContextDivider({ segment, previousSegment }: ContextDividerProps
           {prevNames.length > 0 && (
             <p>Switched from: {prevNames.join(', ')}</p>
           )}
-          <p>History: {segment.historyIncluded ? `Included — ${segment.startMessageIndex} prior message${segment.startMessageIndex !== 1 ? 's' : ''}` : 'Not included'}</p>
+          <p>History: {segment.historyIncluded ? (() => {
+            const count = priorMessageCount ?? segment.startMessageIndex;
+            return `Included — ${count} prior message${count !== 1 ? 's' : ''}`;
+          })() : 'Not included'}</p>
           <p>Session: {segment.sessionId ? 'Active' : 'Pending'}</p>
         </div>
       )}

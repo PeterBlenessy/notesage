@@ -433,7 +433,7 @@ export function ChatPanel() {
               return (
                 <div key={index}>
                   {segment && (
-                    <ContextDivider segment={segment} previousSegment={prevSegment} />
+                    <ContextDivider segment={segment} previousSegment={prevSegment} priorMessageCount={index} />
                   )}
                   <ChatMessage message={displayMessage} isLast={isLast} />
                   {isLastAssistant && parsed && parsed.replies.length > 0 && (
@@ -446,7 +446,7 @@ export function ChatPanel() {
             {segments.length > 1 && (() => {
               const lastSeg = segments[segments.length - 1];
               if (lastSeg.startMessageIndex >= messages.length && !pendingProjectSwitch) {
-                return <ContextDivider segment={lastSeg} previousSegment={segments[segments.length - 2]} />;
+                return <ContextDivider segment={lastSeg} previousSegment={segments[segments.length - 2]} priorMessageCount={messages.length} />;
               }
               return null;
             })()}
