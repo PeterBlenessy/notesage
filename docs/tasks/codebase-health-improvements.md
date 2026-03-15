@@ -151,7 +151,7 @@ Replace the inline JSON-RPC types, Content-Length framing, and pending request m
 
 ---
 
-### #7 — Extract `agents.rs` from `skills.rs`
+### #7 — Extract `agents.rs` from `skills.rs` ✅
 
 | Field | Value |
 | --- | --- |
