@@ -53,7 +53,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ExportDialog } from "@/components/ExportDialog";
 import { Toolbar } from "./Toolbar";
-import { SourceEditor } from "./SourceEditor";
+import { SourceModeEditor } from "./SourceModeEditor";
 import { ImageInsertDialog } from "./ImageInsertDialog";
 import { ImageViewer } from "./viewers/ImageViewer";
 import { PlainTextViewer } from "./viewers/PlainTextViewer";
@@ -62,20 +62,14 @@ import { DocxViewer } from "./viewers/DocxViewer";
 import { EpubViewer } from "./viewers/EpubViewer";
 import { BubbleMenu } from "./BubbleMenu";
 
-import { SourceBubbleMenu } from "./SourceBubbleMenu";
 import { FindBar } from "./FindBar";
-import { RecordingBar } from "@/components/recording/RecordingBar";
-import { TranscriptionDialog } from "@/components/recording/TranscriptionDialog";
-import { useRecording } from "@/hooks/useRecording";
-import type { AudioBufferInfo } from "@/lib/tauri";
-import { openSearchPanel } from "@codemirror/search";
+import { TranscriptionOverlay } from "./TranscriptionOverlay";
 import { DiffReviewBanner } from "./DiffReviewBanner";
 import { BranchDiffSelector } from "./BranchDiffSelector";
 import { CommentPopover } from "./CommentPopover";
 import { DatePickerPopover } from "./DatePickerPopover";
 import { StatusBar } from "./StatusBar";
 import { FrontmatterBlock } from "./FrontmatterBlock";
-import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
 import { DocumentOutline } from "@/components/DocumentOutline";
 import { getMarkdownFromEditor, loadRawMarkdownIntoEditor } from "@/lib/markdown";
 import { getDocumentDir } from "@/lib/image-utils";
@@ -357,16 +351,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const [commentListOpen, setCommentListOpen] = useState(false);
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
   const [cmView, setCmView] = useState<CMEditorView | null>(null);
-
-  // Source mode: holds the full raw text (frontmatter + body) for CodeMirror
-  const [sourceContent, setSourceContent] = useState("");
-  // Prevents the init effect from clobbering user edits
-  const sourceUserEditRef = useRef(false);
-
-  // Recording state
-  const recording = useRecording();
-  const [transcriptionDialogOpen, setTranscriptionDialogOpen] = useState(false);
-  const [lastBufferInfo, setLastBufferInfo] = useState<AudioBufferInfo | null>(null);
 
   // Find in document state
   const [findBarOpen, setFindBarOpen] = useState(false);
@@ -904,18 +888,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     }
   }, [editor, activeTab?.viewMode, activeTab?.id]);
 
-  // Initialize source content when entering source mode, switching tabs, or on external change.
-  // Skipped when the change came from the user editing in CodeMirror (sourceUserEditRef).
-  useEffect(() => {
-    if (activeTab?.viewMode !== "source") return;
-    if (sourceUserEditRef.current) {
-      sourceUserEditRef.current = false;
-      return;
-    }
-    const raw = serializeFrontmatter(activeTab.frontmatter, activeTab.content);
-    setSourceContent(raw);
-  }, [activeTab?.id, activeTab?.viewMode, activeTab?.content, activeTab?.frontmatter]);
-
   // Handle view mode toggle — sync content between WYSIWYG and Source
   const handleToggleViewMode = useCallback(() => {
     if (!activeTab || activeTab.fileType !== "markdown") return;
@@ -968,20 +940,12 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     return () => window.removeEventListener("keydown", handleToggle);
   }, [handleToggleViewMode]);
 
-  // Find in document — listen for custom events from App.tsx
+  // Find in document — listen for custom events from App.tsx (WYSIWYG mode only; source mode handled by SourceModeEditor)
   useEffect(() => {
     const handleFindOpen = () => {
-      if (!activeTab) return;
+      if (!activeTab || activeTab.viewMode === "source") return;
 
-      // Source mode: delegate to CodeMirror's built-in search
-      if (activeTab.viewMode === "source" && cmView) {
-        openSearchPanel(cmView);
-        return;
-      }
-
-      // WYSIWYG mode: open our FindBar
       if (activeTab.fileType === "markdown" && editor) {
-        // Capture selected text as initial query
         const { from, to } = editor.state.selection;
         const selectedText = from !== to ? editor.state.doc.textBetween(from, to) : "";
         setFindInitialQuery(selectedText);
@@ -990,12 +954,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     };
 
     const handleFindReplaceOpen = () => {
-      if (!activeTab) return;
-
-      if (activeTab.viewMode === "source" && cmView) {
-        openSearchPanel(cmView);
-        return;
-      }
+      if (!activeTab || activeTab.viewMode === "source") return;
 
       if (activeTab.fileType === "markdown" && editor) {
         const { from, to } = editor.state.selection;
@@ -1012,25 +971,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       window.removeEventListener("notesage:find-open", handleFindOpen);
       window.removeEventListener("notesage:find-replace-open", handleFindReplaceOpen);
     };
-  }, [activeTab, editor, cmView]);
-
-  // Toggle recording via global keyboard shortcut event
-  useEffect(() => {
-    const handleToggleRecording = () => {
-      if (recording.isRecording) {
-        recording.stopRecording().then((info) => {
-          if (info) {
-            setLastBufferInfo(info);
-            setTranscriptionDialogOpen(true);
-          }
-        });
-      } else {
-        recording.startRecording("microphone");
-      }
-    };
-    window.addEventListener("notesage:toggle-recording", handleToggleRecording);
-    return () => window.removeEventListener("notesage:toggle-recording", handleToggleRecording);
-  }, [recording]);
+  }, [activeTab, editor]);
 
   // Clear find state on tab switch
   const prevFindTabId = useRef<string | undefined>(undefined);
@@ -1365,36 +1306,21 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         />
       )}
       {activeTab?.viewMode === "source" ? (
-        <div className="flex-1 overflow-auto relative">
-          <SourceEditor
-            content={sourceContent}
-            wordWrap={sourceWordWrap}
-            onUpdate={(raw) => {
-              if (activeTab) {
-                sourceUserEditRef.current = true;
-                setSourceContent(raw);
-                const { frontmatter, content } = parseFrontmatter(raw);
-                const bodyChanged = content !== activeTab.content;
-                const fmChanged = JSON.stringify(frontmatter) !== JSON.stringify(activeTab.frontmatter);
-                updateTabContent(activeTab.id, content, activeTab.isDirty || bodyChanged || fmChanged);
-                if (fmChanged) setFrontmatter(activeTab.id, frontmatter);
-              }
-            }}
-            onSave={async () => {
-              if (activeTab && activeTab.isDirty) {
-                try {
-                  await saveFile(activeTab.filePath, activeTab.content, activeTab.id);
-                } catch (error) {
-                  toast.error(`Failed to save file: ${error}`);
-                }
-              }
-            }}
-            onToggleViewMode={handleToggleViewMode}
-            onToggleWordWrap={() => setSourceWordWrap(!sourceWordWrap)}
-            onViewReady={setCmView}
-          />
-          {showFloatingToolbar && <SourceBubbleMenu cmView={cmView} />}
-        </div>
+        <SourceModeEditor
+          tabId={activeTab.id}
+          content={activeTab.content}
+          frontmatter={activeTab.frontmatter}
+          isDirty={activeTab.isDirty}
+          filePath={activeTab.filePath}
+          sourceWordWrap={sourceWordWrap}
+          showFloatingToolbar={showFloatingToolbar}
+          updateTabContent={updateTabContent}
+          setFrontmatter={setFrontmatter}
+          saveFile={saveFile}
+          onToggleViewMode={handleToggleViewMode}
+          onToggleWordWrap={() => setSourceWordWrap(!sourceWordWrap)}
+          onCmViewChange={setCmView}
+        />
       ) : (
         <div className="flex-1 overflow-hidden relative">
           {findBarOpen && activeTab?.fileType === "markdown" && (
@@ -1412,20 +1338,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
               onReplace={handleFindReplace}
               onReplaceAll={handleFindReplaceAll}
               initialQuery={findInitialQuery}
-            />
-          )}
-          {recording.isRecording && (
-            <RecordingBar
-              elapsedTime={recording.elapsedTime}
-              source={recording.source}
-              micLevel={recording.micLevel}
-              onStop={async () => {
-                const info = await recording.stopRecording();
-                if (info) {
-                  setLastBufferInfo(info);
-                  setTranscriptionDialogOpen(true);
-                }
-              }}
             />
           )}
           <div ref={scrollAreaRef} className="h-full overflow-y-auto">
@@ -1568,6 +1480,12 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           }}
         />
       )}
+      <TranscriptionOverlay
+        projectPath={projectPath}
+        onInsertAtCursor={editor ? (text) => {
+          editor.chain().focus().insertContent(text).run();
+        } : undefined}
+      />
       <DocumentOutline open={outlineOpen ?? false} onOpenChange={(open) => onOutlineOpenChange?.(open)} editor={editor} />
       <ExportDialog
         open={exportOpen ?? false}
@@ -1577,27 +1495,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           onExportOpenChange?.(false);
         }}
         isExporting={isExporting}
-      />
-      <TranscriptionDialog
-        open={transcriptionDialogOpen}
-        onOpenChange={setTranscriptionDialogOpen}
-        bufferInfo={lastBufferInfo}
-        onSaveAsNote={async (content, title) => {
-          if (projectPath) {
-            const fileName = `${title.replace(/[^a-zA-Z0-9 —-]/g, '').replace(/ /g, '-').toLowerCase()}.md`;
-            const filePath = `${projectPath}/${fileName}`;
-            try {
-              const { tauriApi: api } = await import('@/lib/tauri');
-              await api.writeFile(filePath, content);
-              toast.success(`Saved: ${fileName}`);
-            } catch (err) {
-              toast.error(`Failed to save: ${err}`);
-            }
-          }
-        }}
-        onInsertAtCursor={editor ? (text) => {
-          editor.chain().focus().insertContent(text).run();
-        } : undefined}
       />
       <CommentPopover
         comment={commentOps.activeComment}

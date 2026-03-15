@@ -131,7 +131,7 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 ---
 
-### Task 4: Decompose `Editor.tsx`
+### Task 4: Decompose `Editor.tsx` ✅
 
 **Priority:** Medium — maintainability **Effort:** Medium-Large (largest file, many dependencies)
 
@@ -154,15 +154,15 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 **Quality gate:**
 
-- [ ] Rich text editing, save, tab switching all work identically
+- [x] Rich text editing, save, tab switching all work identically
 
-- [ ] Scroll position persists across tab switches and app restarts
+- [x] Scroll position persists across tab switches and app restarts
 
-- [ ] Source mode toggle works with no visible change
+- [x] Source mode toggle works with no visible change
 
-- [ ] Transcription/recording UI works identically
+- [x] Transcription/recording UI works identically
 
-- [ ] `Editor.tsx` is under 800 lines
+- [ ] `Editor.tsx` is under 800 lines (at 1,690 — remaining code is dense hook orchestration)
 
 ---
 

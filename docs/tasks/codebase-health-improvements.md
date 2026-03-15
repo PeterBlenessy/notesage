@@ -304,7 +304,7 @@ These are the most self-contained extractable units from Editor.tsx.
 
 ---
 
-### #13 — Extract `TranscriptionOverlay.tsx` and `SourceModeEditor.tsx`
+### #13 — Extract `TranscriptionOverlay.tsx` and `SourceModeEditor.tsx` ✅
 
 | Field | Value |
 | --- | --- |
