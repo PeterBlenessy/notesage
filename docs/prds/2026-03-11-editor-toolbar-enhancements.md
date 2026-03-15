@@ -422,51 +422,51 @@ Features 1–3 are quick wins (a few hours each). Features 4–6 are medium effo
 
 ### Functional
 
-- [ ] Double-clicking a `.md` file in Finder opens it in Notesage (after setting as default)
+- [x] Double-clicking a `.md` file in Finder opens it in Notesage (after setting as default)
 
-- [ ] Heading level picker shows current block type and allows changing heading level or converting to paragraph
+- [x] Heading level picker shows current block type and allows changing heading level or converting to paragraph
 
-- [ ] Alignment buttons reflect current alignment and toggle correctly for headings and paragraphs
+- [x] Alignment buttons reflect current alignment and toggle correctly for headings and paragraphs
 
-- [ ] Indent/outdent buttons work for all list types (bullet, ordered, task) and are disabled outside lists
+- [x] Indent/outdent buttons work for all list types (bullet, ordered, task) and are disabled outside lists
 
-- [ ] Floating table toolbar appears when cursor is inside a table, disappears when leaving
+- [x] Floating table toolbar appears when cursor is inside a table, disappears when leaving
 
-- [ ] All table operations work: add/remove rows and columns, merge/split cells, toggle header, delete table
+- [x] All table operations work: add/remove rows and columns, merge/split cells, toggle header, delete table
 
-- [ ] Text color can be set from a curated palette and persists through save/reload
+- [x] Text color can be set from a curated palette and persists through save/reload
 
-- [ ] Background highlight can be applied and removed, persists through save/reload
+- [x] Background highlight can be applied and removed, persists through save/reload
 
-- [ ] Colors round-trip correctly through markdown serialization (HTML spans/marks)
+- [x] Colors round-trip correctly through markdown serialization (HTML spans/marks)
 
-- [ ] Item annotations display in the left margin with correct icon/color
+- [ ] ~~Item annotations display in the left margin with correct icon/color~~ (DEFERRED — needs unified gutter design)
 
-- [ ] Annotations survive save/reload (markdown round-trip via `{emoji}` prefix)
+- [ ] ~~Annotations survive save/reload (markdown round-trip via `{emoji}` prefix)~~ (DEFERRED — needs unified gutter design)
 
-- [ ] Block drag handles appear on hover and allow reordering blocks
+- [ ] ~~Block drag handles appear on hover and allow reordering blocks~~ (DEFERRED — needs unified gutter design)
 
-- [ ] No console errors during normal operation with new features
+- [x] No console errors during normal operation with new features
 
-- [ ] All new controls disabled appropriately in source mode
+- [x] All new controls disabled appropriately in source mode
 
 ### Design
 
-- [ ] New toolbar controls match existing button style (size, spacing, active state, muted-foreground color)
+- [x] New toolbar controls match existing button style (size, spacing, active state, muted-foreground color)
 
-- [ ] Floating table toolbar has frosted glass effect matching bubble menu
+- [x] Floating table toolbar has frosted glass effect matching bubble menu
 
-- [ ] Color picker popover is compact and tasteful — no garish color grid
+- [x] Color picker popover is compact and tasteful — no garish color grid
 
-- [ ] Annotation picker is cleanly laid out with clear iconography
+- [ ] ~~Annotation picker is cleanly laid out with clear iconography~~ (DEFERRED)
 
-- [ ] Drag handle is subtle (low opacity) and doesn't clutter the reading experience
+- [ ] ~~Drag handle is subtle (low opacity) and doesn't clutter the reading experience~~ (DEFERRED)
 
-- [ ] All new controls have tooltips with descriptions
+- [x] All new controls have tooltips with descriptions
 
-- [ ] All new features work correctly in both light and dark mode
+- [x] All new features work correctly in both light and dark mode
 
-- [ ] New toolbar items don't cause toolbar overflow on 800px minimum window width
+- [x] New toolbar items don't cause toolbar overflow on 800px minimum window width
 
 ## Out of Scope
 

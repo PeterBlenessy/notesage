@@ -2,9 +2,7 @@
 
 **Status:** ✅ Complete
 
-**PRD:** `docs/prds/2026-03-01-agent-auto-apply.md`
-**Dependency:** `docs/prds/2026-03-01-diff-fidelity.md` (done)
-**Date:** 2026-03-01
+**PRD:** `docs/prds/2026-03-01-agent-auto-apply.md`**Dependency:** `docs/prds/2026-03-01-diff-fidelity.md` (done) **Date:** 2026-03-01
 
 ## Summary
 
@@ -13,12 +11,14 @@
 All tasks are frontend-only. No backend (Rust/Tauri) changes needed.
 
 Two main work streams:
+
 - **Part A (Multi-turn threads):** Allow user to reply to agent in the comment thread, creating a back-and-forth conversation before applying.
 - **Part B (Apply-to-document):** Explicit "Apply" button on agent replies that shows inline diff via existing `ai-suggestion.ts` infrastructure.
 
 **Suggested implementation order:** #1 → #2 → #3 → #4 → #5 → #6 → #7 → #8 → #9
 
 **Risks:**
+
 - ACP session reuse: continuing an existing agent session for follow-up replies is ideal but may not work if the session was cleaned up. Fallback: start new session with conversation history in the prompt.
 - Editor access for Apply: the Apply button is in the CommentPopover which may not have direct editor access. The `CommentMarkPluginKey` dispatches are already used for comment creation — same pattern can pass apply intent.
 - Suggestion queueing: `ai-suggestion.ts` supports one suggestion at a time. Multiple Apply clicks need a queue or a "one at a time" guard.
@@ -27,10 +27,10 @@ Two main work streams:
 
 ## Tasks
 
-### #1 — Add Reply input to CommentPopover
+### #1 — Add Reply input to CommentPopover ✅
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | **Complexity** | M |
 | **Category** | frontend |
 | **Dependencies** | — |
@@ -52,10 +52,10 @@ When a comment has status `done` (agent has responded), show a reply input below
 
 ---
 
-### #2 — Add `extractReplacementText()` helper
+### #2 — Add `extractReplacementText()` helper ✅
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | **Complexity** | S |
 | **Category** | frontend |
 | **Dependencies** | — |
@@ -82,10 +82,10 @@ export function extractReplacementText(response: string): string {
 
 ---
 
-### #3 — Add `delegateReply()` to `useCommentDelegation`
+### #3 — Add `delegateReply()` to `useCommentDelegation` ✅
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | **Complexity** | L |
 | **Category** | frontend |
 | **Dependencies** | #1 |
@@ -135,6 +135,7 @@ const delegateReply = useCallback(
 Wire the reply input from #1 to call `delegateReply()` on send.
 
 **Acceptance:**
+
 - User types reply in CommentPopover → user reply appears in thread → status becomes `delegated` → agent responds → new agent reply appears
 - Conversation history is included in the prompt so agent has context
 - Multi-turn: 3+ exchanges work correctly
@@ -142,10 +143,10 @@ Wire the reply input from #1 to call `delegateReply()` on send.
 
 ---
 
-### #4 — Add `resolveAnchorRange()` helper
+### #4 — Add `resolveAnchorRange()` helper ✅
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | **Complexity** | M |
 | **Category** | frontend |
 | **Dependencies** | — |
@@ -156,12 +157,14 @@ Wire the reply input from #1 to call `delegateReply()` on send.
 Find the current document position of a comment's anchor text. Two strategies:
 
 **Strategy 1 — CommentMark decoration positions (primary):**
+
 - Import `CommentMarkPluginKey` from `@/components/editor/extensions/comment-mark`
 - Call `CommentMarkPluginKey.getState(editor.state)` to get the comment mark state
 - Search the comments array for the matching `commentId` — returns `{ from, to }`
 - Positions are accurate even after edits because they're remapped through ProseMirror's mapping
 
 **Strategy 2 — Text search fallback:**
+
 - If no decoration found, walk `editor.state.doc.descendants()` looking for `comment.anchorText` in text nodes
 - Return `{ from, to }` of the first match
 
@@ -175,6 +178,7 @@ export function resolveAnchorRange(
 Return `null` if anchor text cannot be found.
 
 **Acceptance:**
+
 - Returns correct positions for a comment whose anchor text hasn't moved
 - Returns correct positions after the document has been edited (positions remapped)
 - Returns `null` when anchor text has been deleted
@@ -182,10 +186,10 @@ Return `null` if anchor text cannot be found.
 
 ---
 
-### #5 — Add Apply button to agent replies in CommentPopover
+### #5 — Add Apply button to agent replies in CommentPopover ✅
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | **Complexity** | M |
 | **Category** | frontend |
 | **Dependencies** | #2, #4 |
@@ -202,6 +206,7 @@ Each agent-authored reply in the comment popover gets an "Apply" button. Only vi
 5. If another suggestion is active: toast "Accept or reject the current suggestion first"
 
 **UI:**
+
 - Small ghost button aligned right below each agent reply: `[Apply]`
 - Use `FileOutput` or `Replace` icon from lucide-react
 - Disabled when status is `delegated` (agent still responding)
@@ -212,6 +217,7 @@ Each agent-authored reply in the comment popover gets an "Apply" button. Only vi
 Import `setSuggestion`, `hasActiveSuggestion` from `@/components/editor/extensions/ai-suggestion` and `extractReplacementText`, `resolveAnchorRange` from `@/lib/pm-replace`.
 
 **Acceptance:**
+
 - Agent reply shows Apply button
 - Click Apply → inline diff decoration appears on anchor text
 - Accept (Cmd+Enter) → text replaced
@@ -221,10 +227,10 @@ Import `setSuggestion`, `hasActiveSuggestion` from `@/components/editor/extensio
 
 ---
 
-### #6 — Handle suggestion collision guard
+### #6 — Handle suggestion collision guard ✅
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | **Complexity** | S |
 | **Category** | frontend |
 | **Dependencies** | #5 |
@@ -240,10 +246,10 @@ This is the minimal approach — no queueing. The user must handle one suggestio
 
 ---
 
-### #7 — Add suggestion queue for Delegate All
+### #7 — Add suggestion queue for Delegate All ✅
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | **Complexity** | L |
 | **Category** | frontend |
 | **Dependencies** | #5, #6 |
@@ -256,6 +262,7 @@ When "Delegate All" is used and multiple agents respond, the user gets multiple 
 However, if we want a smoother UX for bulk operations, add optional queue support:
 
 **Module-level queue:**
+
 ```typescript
 const suggestionQueue: PendingSuggestion[] = [];
 
@@ -274,15 +281,16 @@ export function enqueueOrShowSuggestion(editor, from, to, original, suggested) {
 **Note:** This task is optional/deferred. The manual Apply-one-at-a-time flow from #5/#6 is a complete UX. Queue is an enhancement for power users doing bulk delegation.
 
 **Acceptance:**
+
 - Without queue: multiple Apply buttons work one at a time with collision guard
 - With queue (if implemented): accept → next queued suggestion auto-shows
 
 ---
 
-### #8 — Update comment lifecycle UI
+### #8 — Update comment lifecycle UI ✅
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | **Complexity** | S |
 | **Category** | frontend |
 | **Dependencies** | #5 |
@@ -300,10 +308,10 @@ Update the action buttons at the bottom of the CommentPopover for the new flow:
 
 ---
 
-### #9 — Verify quality gates and edge cases
+### #9 — Verify quality gates and edge cases ✅
 
 | Field | Value |
-|-------|-------|
+| --- | --- |
 | **Complexity** | M |
 | **Category** | frontend |
 | **Dependencies** | #8 |
@@ -313,21 +321,21 @@ Update the action buttons at the bottom of the CommentPopover for the new flow:
 
 Verify all quality gates from the PRD:
 
-- [x]`npx tsc --noEmit` passes
-- [x]Delegate comment → agent responds → Apply button visible on reply
-- [x]Click Apply → inline suggestion appears on anchor text
-- [x]Accept suggestion → text replaced, comment can be resolved
-- [x]Reject suggestion → text unchanged, can Apply again or Reply
-- [x]Reply to agent → agent responds with updated suggestion → Apply new version
-- [x]Multi-turn: user sends 3+ messages, agent responds each time
-- [x]"Explain this" comment → agent explains → user resolves without Apply
-- [x]Anchor text deleted → Apply button disabled or toast error
-- [x]Another suggestion active → toast warning, Apply blocked
-- [x]Comment reply visible in thread regardless of accept/reject
-- [x]Agent response with preamble stripped correctly on Apply
-- [x]Works in both light and dark mode
-- [x]BubbleMenu AI actions (Improve/Summarize/Expand) still work correctly
-- [x]External change diff review still works correctly
+- \[x\]`npx tsc --noEmit` passes
+- \[x\]Delegate comment → agent responds → Apply button visible on reply
+- \[x\]Click Apply → inline suggestion appears on anchor text
+- \[x\]Accept suggestion → text replaced, comment can be resolved
+- \[x\]Reject suggestion → text unchanged, can Apply again or Reply
+- \[x\]Reply to agent → agent responds with updated suggestion → Apply new version
+- \[x\]Multi-turn: user sends 3+ messages, agent responds each time
+- \[x\]"Explain this" comment → agent explains → user resolves without Apply
+- \[x\]Anchor text deleted → Apply button disabled or toast error
+- \[x\]Another suggestion active → toast warning, Apply blocked
+- \[x\]Comment reply visible in thread regardless of accept/reject
+- \[x\]Agent response with preamble stripped correctly on Apply
+- \[x\]Works in both light and dark mode
+- \[x\]BubbleMenu AI actions (Improve/Summarize/Expand) still work correctly
+- \[x\]External change diff review still works correctly
 
 Fix any issues found.
 
@@ -345,5 +353,4 @@ Fix any issues found.
                                               └──▶ #8 (lifecycle UI) ───────────────────────┘
 ```
 
-Tasks #1, #2, #4 can be done in parallel (no dependencies between them).
-Task #7 is optional — the flow works without it via manual one-at-a-time Apply.
+Tasks #1, #2, #4 can be done in parallel (no dependencies between them). Task #7 is optional — the flow works without it via manual one-at-a-time Apply.

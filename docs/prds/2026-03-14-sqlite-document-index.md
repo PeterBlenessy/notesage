@@ -1,6 +1,6 @@
 # SQLite Document Index & Unified Storage Architecture
 
-**Date:** 2026-03-14 **Status:** Draft **Supersedes:** Partially supersedes `2026-03-07-always-on-memory-agent.md` (storage layer only — memory agent features remain valid)
+**Date:** 2026-03-14 **Status:** ✅ Complete **Supersedes:** Partially supersedes `2026-03-07-always-on-memory-agent.md` (storage layer only — memory agent features remain valid)
 
 ## Problem
 

@@ -1,7 +1,6 @@
 # Task Breakdown: AI Provider Architecture v2
 
-**PRD:** `docs/prds/2026-02-21-ai-provider-architecture-v2.md`
-**Status:** ✅ Complete
+**PRD:** `docs/prds/2026-02-21-ai-provider-architecture-v2.md`**Status:** ✅ Complete
 
 **Total tasks:** 26 (6S, 10M, 10L) — all implemented
 
@@ -499,7 +498,7 @@
 - Provider picker shows clear capability comparison
 - When user has no connections: show a helpful "Get started" state explaining the options
 - When user connects first provider: show a "You're set!" confirmation with what's enabled and what they could add
-- Free GitHub tier highlighted as a complement: "Add Copilot for free inline completions alongside your [provider] subscription"
+- Free GitHub tier highlighted as a complement: "Add Copilot for free inline completions alongside your \[provider\] subscription"
 - Subscription notes are accurate and up-to-date for all providers
 - Empty routing slots show a friendly "Add a connection to enable this" message with link to add connection
 
@@ -509,8 +508,8 @@
 
 ## Summary Table
 
-| # | Title | Complexity | Category | Phase | Dependencies | Status |
-|---|-------|-----------|----------|-------|-------------|--------|
+| \# | Title | Complexity | Category | Phase | Dependencies | Status |
+| --- | --- | --- | --- | --- | --- | --- |
 | 1 | Define connection and routing types | S | frontend | 6a | — | ✅ Done |
 | 2 | Create connections-store | M | frontend | 6a | #1 | ✅ Done |
 | 3 | Create routing-store | M | frontend | 6a | #1, #2 | ✅ Done |

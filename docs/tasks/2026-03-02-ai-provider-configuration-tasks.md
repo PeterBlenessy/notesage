@@ -32,9 +32,9 @@ Add `ConnectionConfig` interface, per-use-case model slots, and OpenAI-compatibl
 
 **Acceptance:**
 
-- [x]TypeScript compiles with new types
+- \[x\]TypeScript compiles with new types
 
-- [x]Existing connection creation still works (config is optional)
+- \[x\]Existing connection creation still works (config is optional)
 
 ---
 
@@ -62,11 +62,11 @@ Parameterize all hardcoded models, URLs, and generation options in the Rust back
 
 **Acceptance:**
 
-- [x]`cargo build` succeeds
+- \[x\]`cargo build` succeeds
 
-- [x]Existing frontend calls (no new params) still work
+- \[x\]Existing frontend calls (no new params) still work
 
-- [x]Passing a custom model via invoke changes the model used
+- \[x\]Passing a custom model via invoke changes the model used
 
 ---
 
@@ -93,9 +93,9 @@ Add provider functions for OpenAI-compatible APIs using the standard Chat Comple
 
 **Acceptance:**
 
-- [x]Can invoke `ai_chat_stream` with `provider: "openai_compatible"` and a valid base URL
+- \[x\]Can invoke `ai_chat_stream` with `provider: "openai_compatible"` and a valid base URL
 
-- [x]Streaming works with standard Chat Completions SSE format
+- \[x\]Streaming works with standard Chat Completions SSE format
 
 ---
 
@@ -122,13 +122,13 @@ Fetch available models dynamically from any provider's API.
 
 **Acceptance:**
 
-- [x]With valid Anthropic API key, returns Anthropic model IDs
+- \[x\]With valid Anthropic API key, returns Anthropic model IDs
 
-- [x]With valid OpenAI API key, returns OpenAI model IDs
+- \[x\]With valid OpenAI API key, returns OpenAI model IDs
 
-- [x]With Ollama running, returns installed model names
+- \[x\]With Ollama running, returns installed model names
 
-- [x]Returns error message when provider is unreachable or auth fails
+- \[x\]Returns error message when provider is unreachable or auth fails
 
 ---
 
@@ -154,11 +154,11 @@ Pass model, temperature, maxTokens, and baseUrl from ConnectionConfig through to
 
 **Acceptance:**
 
-- [x]TypeScript compiles
+- \[x\]TypeScript compiles
 
-- [x]Provider classes pass config fields to Tauri when present
+- \[x\]Provider classes pass config fields to Tauri when present
 
-- [x]`getAIProviderFromConnection` works for all provider types including `openai_compatible`
+- \[x\]`getAIProviderFromConnection` works for all provider types including `openai_compatible`
 
 ---
 
@@ -186,11 +186,11 @@ Migrate routing store from `string | null` to `UseCaseSlot` objects and propagat
 
 **Acceptance:**
 
-- [x]Existing persisted routing (string IDs) migrates cleanly to UseCaseSlot objects
+- \[x\]Existing persisted routing (string IDs) migrates cleanly to UseCaseSlot objects
 
-- [x]Per-use-case model override takes priority over connection default
+- \[x\]Per-use-case model override takes priority over connection default
 
-- [x]Chat and inline actions use the resolved model
+- \[x\]Chat and inline actions use the resolved model
 
 ---
 
@@ -220,15 +220,15 @@ Build the settings dialog for editing connection configuration and wire it to th
 
 **Acceptance:**
 
-- [x]Clicking gear icon opens config dialog
+- \[x\]Clicking gear icon opens config dialog
 
-- [x]Model dropdown fetches models from Anthropic/OpenAI/Ollama APIs
+- \[x\]Model dropdown fetches models from Anthropic/OpenAI/Ollama APIs
 
-- [x]Can manually type a model name
+- \[x\]Can manually type a model name
 
-- [x]Saving updates connection config
+- \[x\]Saving updates connection config
 
-- [x]ConnectionCard shows model badge
+- \[x\]ConnectionCard shows model badge
 
 ---
 
@@ -254,13 +254,13 @@ Add per-use-case model selection below each connection dropdown in Advanced Rout
 
 **Acceptance:**
 
-- [x]Model selector appears below each use-case connection dropdown
+- \[x\]Model selector appears below each use-case connection dropdown
 
-- [x]Fetches models from the assigned connection's provider
+- \[x\]Fetches models from the assigned connection's provider
 
-- [x]Setting a model override uses it for that use case
+- \[x\]Setting a model override uses it for that use case
 
-- [x]"Default" clears the override, falling back to connection config
+- \[x\]"Default" clears the override, falling back to connection config
 
 ---
 
@@ -285,10 +285,10 @@ Add the OpenAI-Compatible provider option to the add-connection popover.
 
 **Acceptance:**
 
-- [x]"OpenAI-Compatible" appears in the add connection provider list
+- \[x\]"OpenAI-Compatible" appears in the add connection provider list
 
-- [x]Can create connection with base URL + API key + model
+- \[x\]Can create connection with base URL + API key + model
 
-- [x]Connection shows Server icon and correct capabilities
+- \[x\]Connection shows Server icon and correct capabilities
 
-- [x]Chat works through the new OpenAI-Compatible connection
+- \[x\]Chat works through the new OpenAI-Compatible connection

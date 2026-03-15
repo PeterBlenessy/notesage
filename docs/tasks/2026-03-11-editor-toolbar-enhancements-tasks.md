@@ -1,10 +1,9 @@
 # Tasks: Editor & Toolbar Enhancements
 
-**PRD:** `docs/prds/2026-03-11-editor-toolbar-enhancements.md`
-**Total:** 16 tasks — 5S, 7M, 4L
-**Suggested order:** Quick wins first (#1–#3), then medium features (#4–#9), then complex features (#10–#16)
+**PRD:** `docs/prds/2026-03-11-editor-toolbar-enhancements.md`**Total:** 16 tasks — 5S, 7M, 4L **Suggested order:** Quick wins first (#1–#3), then medium features (#4–#9), then complex features (#10–#16)
 
 **Risks & open questions:**
+
 - Markdown round-trip for colors requires enabling `html: true` in tiptap-markdown — need to verify this doesn't break existing round-trip tests
 - Item annotation `{emoji}` serialization convention is non-standard — need to confirm prosemirror-markdown can be extended to parse/serialize it
 - Block drag handles interact with the same left-margin space as item annotations — implement annotations first so drag handles can account for them
@@ -19,6 +18,7 @@
 Add a `DropdownMenu` (or `Select`) at the start of the toolbar that shows the current block type (Paragraph, H1–H6) and allows switching.
 
 **Acceptance criteria:**
+
 - Dropdown placed before Undo/Redo in toolbar
 - Shows "Paragraph" when cursor is in a paragraph, "Heading 1"–"Heading 6" when in a heading
 - Each heading option styled with representative size/weight
@@ -27,6 +27,7 @@ Add a `DropdownMenu` (or `Select`) at the start of the toolbar that shows the cu
 - Dropdown disabled in source mode
 
 **Files:**
+
 - `src/components/editor/Toolbar.tsx` — add `HeadingPicker` component
 
 ---
@@ -38,6 +39,7 @@ Add a `DropdownMenu` (or `Select`) at the start of the toolbar that shows the cu
 Expose the already-loaded `TextAlign` extension via toolbar buttons.
 
 **Acceptance criteria:**
+
 - Three buttons (AlignLeft, AlignCenter, AlignRight) or a single dropdown showing current alignment
 - Active state highlights the matching alignment button
 - Only enabled for heading and paragraph nodes (matching TextAlign config `types: ["heading", "paragraph"]`)
@@ -45,6 +47,7 @@ Expose the already-loaded `TextAlign` extension via toolbar buttons.
 - Disabled in source mode
 
 **Files:**
+
 - `src/components/editor/Toolbar.tsx` — add alignment buttons/dropdown
 
 ---
@@ -56,6 +59,7 @@ Expose the already-loaded `TextAlign` extension via toolbar buttons.
 Add two buttons for list indentation after the list type buttons.
 
 **Acceptance criteria:**
+
 - Indent button calls `sinkListItem('listItem')` (falls back to `sinkListItem('taskItem')`)
 - Outdent button calls `liftListItem('listItem')` (falls back to `liftListItem('taskItem')`)
 - Buttons disabled when cursor is not inside any list
@@ -64,6 +68,7 @@ Add two buttons for list indentation after the list type buttons.
 - Disabled in source mode
 
 **Files:**
+
 - `src/components/editor/Toolbar.tsx` — add indent/outdent buttons
 
 ---
@@ -75,6 +80,7 @@ Add two buttons for list indentation after the list type buttons.
 Create a floating toolbar that appears when the cursor is inside a table.
 
 **Acceptance criteria:**
+
 - New `TableToolbar.tsx` component rendered inside the editor area
 - Uses Tiptap's `BubbleMenu` (with `shouldShow` checking `editor.isActive('table')`) or a custom floating element positioned relative to the table DOM node
 - Frosted glass style matching existing BubbleMenu (border, bg-popover, backdrop-blur-sm, shadow-lg)
@@ -83,6 +89,7 @@ Create a floating toolbar that appears when the cursor is inside a table.
 - Not shown in source mode
 
 **Files:**
+
 - `src/components/editor/TableToolbar.tsx` — new component
 - `src/components/editor/EditorContent.tsx` — render TableToolbar alongside BubbleMenu
 
@@ -95,6 +102,7 @@ Create a floating toolbar that appears when the cursor is inside a table.
 Add all table manipulation buttons to the floating toolbar with proper icons, tooltips, and disabled states.
 
 **Acceptance criteria:**
+
 - Buttons: Add Row Above, Add Row Below, Add Column Left, Add Column Right, Delete Row, Delete Column, Toggle Header Row, Merge Cells, Split Cell, Delete Table
 - Each button calls the corresponding Tiptap table command
 - Merge Cells disabled when selection doesn't span multiple cells
@@ -104,6 +112,7 @@ Add all table manipulation buttons to the floating toolbar with proper icons, to
 - Compact layout with separator groups: row/column add | row/column delete | merge/split | header | delete table
 
 **Files:**
+
 - `src/components/editor/TableToolbar.tsx` — add button group
 - `src/styles/editor.css` — any table toolbar-specific styles
 
@@ -116,6 +125,7 @@ Add all table manipulation buttons to the floating toolbar with proper icons, to
 Install and register `@tiptap/extension-color`, `@tiptap/extension-text-style`, and `@tiptap/extension-highlight`.
 
 **Acceptance criteria:**
+
 - `pnpm add @tiptap/extension-color @tiptap/extension-text-style @tiptap/extension-highlight`
 - Extensions added to `useEditor.ts` with `Highlight.configure({ multicolor: true })`
 - `TextStyle` extension registered (required by Color)
@@ -123,6 +133,7 @@ Install and register `@tiptap/extension-color`, `@tiptap/extension-text-style`, 
 - Existing round-trip tests still pass
 
 **Files:**
+
 - `package.json` — new dependencies
 - `src/hooks/useEditor.ts` — add extensions
 
@@ -135,6 +146,7 @@ Install and register `@tiptap/extension-color`, `@tiptap/extension-text-style`, 
 Add text color and highlight toolbar buttons with color palette popovers.
 
 **Acceptance criteria:**
+
 - Two toolbar buttons after the Code (inline) button: Text Color (`Baseline` icon with colored underline) and Highlight (`Highlighter` icon)
 - Each button opens a shadcn/ui `Popover` with a grid of curated color swatches
 - Text colors: Default (reset), Red, Orange, Yellow, Green, Blue, Purple, Grey — each with a specific oklch value that works in both light and dark mode
@@ -142,9 +154,10 @@ Add text color and highlight toolbar buttons with color palette popovers.
 - Clicking a swatch applies the color to the selection and closes the popover
 - Button icon shows the currently active color (colored underline for text, colored background for highlight)
 - "Reset" / "Remove" option to clear color/highlight from selection
-- Popovers compact: ~200px wide, swatch grid with labels
+- Popovers compact: \~200px wide, swatch grid with labels
 
 **Files:**
+
 - `src/components/editor/Toolbar.tsx` — add `TextColorPopover` and `HighlightPopover` components
 - `src/styles/editor.css` — any highlight/color-specific editor styles
 
@@ -157,6 +170,7 @@ Add text color and highlight toolbar buttons with color palette popovers.
 Ensure text colors and highlights survive markdown save/reload.
 
 **Acceptance criteria:**
+
 - Text color serializes as `<span style="color: #hex">text</span>` in markdown
 - Highlight serializes as `<mark style="background-color: #hex">text</mark>` in markdown
 - Both parse back correctly when the file is reopened
@@ -165,6 +179,7 @@ Ensure text colors and highlights survive markdown save/reload.
 - Round-trip test passes with new fixture
 
 **Files:**
+
 - `src/hooks/useEditor.ts` — adjust Markdown extension config if needed
 - `src/lib/markdown.ts` — custom serialization rules if tiptap-markdown doesn't handle it natively
 - `tests/fixtures/colors.md` — new test fixture
@@ -178,6 +193,7 @@ Ensure text colors and highlights survive markdown save/reload.
 Register Notesage as a handler for `.md` files on macOS and handle the file-open event in the frontend.
 
 **Acceptance criteria:**
+
 - `fileAssociations` added to `bundle` in `tauri.conf.json` for extensions `md`, `markdown`, `mdown`, `mkd`
 - Info.plist updated with `CFBundleDocumentTypes` if Tauri doesn't auto-generate it
 - Tauri `deep-link` or `cli` plugin installed and configured to receive file paths
@@ -187,6 +203,7 @@ Register Notesage as a handler for `.md` files on macOS and handle the file-open
 - Works both when app is freshly launched and when app is already running
 
 **Files:**
+
 - `src-tauri/tauri.conf.json` — fileAssociations config
 - `src-tauri/Info.plist` — CFBundleDocumentTypes (if needed)
 - `src-tauri/Cargo.toml` — deep-link plugin dependency (if needed)
@@ -205,6 +222,7 @@ Register Notesage as a handler for `.md` files on macOS and handle the file-open
 Create a `ItemAnnotation` Tiptap extension that adds an `annotation` attribute to list item and task item nodes.
 
 **Acceptance criteria:**
+
 - New extension file `src/components/editor/extensions/item-annotation.ts`
 - Extends `ListItem` and `TaskItem` nodes to include `annotation` attribute (JSON string: `{ icon, color }`)
 - ProseMirror plugin renders annotation as a widget decoration or `::before` pseudo-element in the left margin
@@ -214,6 +232,7 @@ Create a `ItemAnnotation` Tiptap extension that adds an `annotation` attribute t
 - Extension registered in `useEditor.ts`
 
 **Files:**
+
 - `src/components/editor/extensions/item-annotation.ts` — new extension
 - `src/components/editor/extensions/index.ts` — export
 - `src/hooks/useEditor.ts` — register extension
@@ -230,6 +249,7 @@ Create a `ItemAnnotation` Tiptap extension that adds an `annotation` attribute t
 Create the annotation picker popover that appears when clicking the margin area.
 
 **Acceptance criteria:**
+
 - React component `AnnotationPicker.tsx` rendered inside the editor area
 - Positioned at the clicked annotation margin position (use ProseMirror coordinate mapping)
 - Grid layout: row of colored dots (red, orange, yellow, green, blue, purple, grey), row of category emojis (phone, email, calendar, chat, brain, lightbulb, question)
@@ -239,6 +259,7 @@ Create the annotation picker popover that appears when clicking the margin area.
 - Matches existing popover styling (shadcn/ui Popover or custom positioned div)
 
 **Files:**
+
 - `src/components/editor/AnnotationPicker.tsx` — new component
 - `src/components/editor/EditorContent.tsx` — render AnnotationPicker
 
@@ -253,8 +274,9 @@ Create the annotation picker popover that appears when clicking the margin area.
 Implement `{emoji}` prefix serialization for item annotations in markdown.
 
 **Acceptance criteria:**
-- On serialize: list items with annotation attribute emit `{emoji} ` prefix before content text
-- On parse: list items starting with `{emoji} ` pattern extract the emoji and set the annotation attribute
+
+- On serialize: list items with annotation attribute emit `{emoji} `prefix before content text
+- On parse: list items starting with `{emoji} `pattern extract the emoji and set the annotation attribute
 - Pattern: single emoji character wrapped in `{}` at the very start of the list item content
 - Task items: `- [ ] {📞} Call team` → annotation + unchecked task
 - Works for both bullet lists, ordered lists, and task lists
@@ -262,6 +284,7 @@ Implement `{emoji}` prefix serialization for item annotations in markdown.
 - Add test fixture `tests/fixtures/annotations.md`
 
 **Files:**
+
 - `src/lib/markdown.ts` — custom parse/serialize rules for annotation prefix
 - `src/hooks/useEditor.ts` — Markdown extension config adjustments if needed
 - `tests/fixtures/annotations.md` — new test fixture
@@ -277,6 +300,7 @@ Implement `{emoji}` prefix serialization for item annotations in markdown.
 Create a ProseMirror plugin that shows a drag handle in the left margin on block hover.
 
 **Acceptance criteria:**
+
 - New extension file `src/components/editor/extensions/drag-handle.ts`
 - On mousemove over the editor, detect the nearest top-level node (depth 1 in the document)
 - Render a grip icon (GripVertical from lucide or ⠿ character) as a widget decoration or absolutely positioned DOM element
@@ -286,6 +310,7 @@ Create a ProseMirror plugin that shows a drag handle in the left margin on block
 - Extension registered in `useEditor.ts`
 
 **Files:**
+
 - `src/components/editor/extensions/drag-handle.ts` — new extension
 - `src/components/editor/extensions/index.ts` — export
 - `src/hooks/useEditor.ts` — register extension
@@ -302,6 +327,7 @@ Create a ProseMirror plugin that shows a drag handle in the left margin on block
 Implement the actual drag-and-drop reordering of blocks via the drag handle.
 
 **Acceptance criteria:**
+
 - Dragging the handle initiates a ProseMirror drag (or HTML5 drag-and-drop with node serialization)
 - During drag: source block gets subtle highlight (0.5 opacity or outline), a 2px horizontal drop indicator line shows between blocks at the drop target
 - On drop: block moves to the new position via ProseMirror transaction (delete from old pos + insert at new pos)
@@ -311,6 +337,7 @@ Implement the actual drag-and-drop reordering of blocks via the drag handle.
 - Does not interfere with text selection or other editor interactions
 
 **Files:**
+
 - `src/components/editor/extensions/drag-handle.ts` — add drag behavior
 - `src/styles/editor.css` — drag indicator and highlight styles
 
@@ -323,12 +350,14 @@ Implement the actual drag-and-drop reordering of blocks via the drag handle.
 Update `docs/keyboard-shortcuts.md` with any new shortcuts and toolbar actions.
 
 **Acceptance criteria:**
+
 - Document new toolbar controls in the keyboard shortcuts table (even if they're mouse-only, note that they exist)
 - Update the "Editor Formatting" section with color/highlight if keyboard shortcuts are added
 - Update the "Slash Commands" section if any new slash commands are added
 - Keep format consistent with existing documentation
 
 **Files:**
+
 - `docs/keyboard-shortcuts.md`
 - `docs/features/editor.md` — update feature description with new toolbar capabilities
 
@@ -341,12 +370,14 @@ Update `docs/keyboard-shortcuts.md` with any new shortcuts and toolbar actions.
 Update feature documentation to reflect all new editor capabilities.
 
 **Acceptance criteria:**
+
 - `docs/features/editor.md` updated with: heading picker, alignment controls, indent/outdent, table controls, text color & highlight, item annotations, block drag handles
 - `docs/features/editor-architecture.md` updated with new extensions: ItemAnnotation, DragHandle
 - `docs/architecture.md` project structure updated if new files added to extensions/
 - PRD status updated from "Draft" to "Complete" (or appropriate partial status)
 
 **Files:**
+
 - `docs/features/editor.md`
 - `docs/features/editor-architecture.md`
 - `docs/architecture.md`

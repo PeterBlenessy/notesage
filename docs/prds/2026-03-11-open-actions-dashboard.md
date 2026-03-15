@@ -1,6 +1,6 @@
 # PRD: Open Actions & Task Tracking Dashboard
 
-**Date:** 2026-03-11 **Updated:** 2026-03-13 **Phase:** 12 **Status:** Draft
+**Date:** 2026-03-11 **Updated:** 2026-03-13 **Phase:** 12 **Status:** ✅ Complete
 
 ---
 
@@ -8,7 +8,7 @@
 
 Notesage users create tasks, delegate comments to AI agents, and track work across multiple projects. But there's no unified view of what's open, what's in progress, and what's done. The information exists in scattered locations:
 
-- **Task lists** (`- [ ]` / `- [x]`) spread across dozens of markdown files
+- **Task lists** (`- [x]` / `- [x]`) spread across dozens of markdown files
 - **Open comments** in `.notesage/comments/` JSON sidecar files
 - **Delegated agent tasks** in the activity store (may have pending replies)
 - **Research items** with follow-up actions in `.notesage/research/`
@@ -67,7 +67,7 @@ A user with 5 projects and 200 notes has no way to answer "what do I need to do 
 
 | Source | Detection Method | Status States |
 | --- | --- | --- |
-| Task lists | Parse `- [ ]` / `- [x]` from markdown files | open, done |
+| Task lists | Parse `- [x]` / `- [x]` from markdown files | open, done |
 | Comments | Read `.notesage/comments/*.json` sidecar files | open, delegated, done, resolved |
 | Agent tasks | Read activity-store (persisted) | pending, running, completed, error |
 | Goals | Scan frontmatter `type: goal` with checklist items | open, done |
@@ -122,7 +122,7 @@ pub struct ActionItem {
 
 ```rust
 // Regex-based parser for markdown task lists
-// Matches: "- [ ] Task text" and "- [x] Done task"
+// Matches: "- [x] Task text" and "- [x] Done task"
 // Also matches: "* [ ]", "1. [ ]", nested tasks
 // Returns line number and nesting level
 fn parse_task_items(content: &str) -> Vec<TaskItem> { ... }
@@ -177,10 +177,10 @@ async function toggleTaskDone(action: ActionItem) {
   const line = lines[action.line_number - 1];
 
   // Toggle [ ] ↔ [x]
-  if (line.includes('- [ ]')) {
-    lines[action.line_number - 1] = line.replace('- [ ]', '- [x]');
+  if (line.includes('- [x]')) {
+    lines[action.line_number - 1] = line.replace('- [x]', '- [x]');
   } else if (line.includes('- [x]')) {
-    lines[action.line_number - 1] = line.replace('- [x]', '- [ ]');
+    lines[action.line_number - 1] = line.replace('- [x]', '- [x]');
   }
 
   await tauriApi.markSelfWrite(action.file_path);
@@ -310,7 +310,7 @@ When no actions found:
 │                                                                         │
 │              No open actions                                            │
 │                                                                         │
-│    Create tasks with "- [ ] Task text" in any                           │
+│    Create tasks with "- [x] Task text" in any                           │
 │    markdown file, or delegate comments to agents.                       │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -371,91 +371,91 @@ Cache invalidated when file modification time changes (detected by incremental s
 
 ### Functional
 
-- [ ] Task lists (`- [ ]` / `- [x]`) are correctly parsed from all markdown files
+- [x] Task lists (`- [x]` / `- [x]`) are correctly parsed from all markdown files
 
-- [ ] Nested task lists maintain correct hierarchy
+- [x] Nested task lists maintain correct hierarchy
 
-- [ ] Open comments from `.notesage/comments/` appear as actions
+- [x] Open comments from `.notesage/comments/` appear as actions
 
-- [ ] Delegated comments show correct status (delegated, done with reply count)
+- [x] Delegated comments show correct status (delegated, done with reply count)
 
-- [ ] Agent tasks from activity-store appear with correct status
+- [x] Agent tasks from activity-store appear with correct status
 
-- [ ] Goal items from frontmatter appear as actions
+- [x] Goal items from frontmatter appear as actions
 
-- [ ] Clicking an action navigates to the source file and line
+- [x] Clicking an action navigates to the source file and line
 
-- [ ] Checking off a task in the dashboard updates the source markdown file
+- [x] Checking off a task in the dashboard updates the source markdown file
 
-- [ ] If the task's file is open in editor, the editor content refreshes
+- [x] If the task's file is open in editor, the editor content refreshes
 
-- [ ] Project grouping is correct (items under correct project)
+- [x] Project grouping is correct (items under correct project)
 
-- [ ] Non-project files (explorer folders, Quick Notes) grouped separately
+- [x] Non-project files (explorer folders, Quick Notes) grouped separately
 
-- [ ] Filter by source type works
+- [x] Filter by source type works
 
-- [ ] Filter by status works
+- [x] Filter by status works
 
-- [ ] Text search across actions works
+- [x] Text search across actions works
 
-- [ ] Project filter works
+- [x] Project filter works
 
-- [ ] Full scan completes in &lt; 2 seconds for 500 files
+- [x] Full scan completes in &lt; 2 seconds for 500 files
 
-- [ ] Incremental update on file change works
+- [x] Incremental update on file change works
 
-- [ ] File watcher triggers action refresh for modified files
+- [x] File watcher triggers action refresh for modified files
 
-- [ ] Status bar count updates in real-time
+- [x] Status bar count updates in real-time
 
-- [ ] Completed section is collapsible
+- [x] Completed section is collapsible
 
-- [ ] Dashboard renders as landing page when no tabs are open
+- [x] Dashboard renders as landing page when no tabs are open
 
-- [ ] Falls back to welcome screen when no tabs and no actions
+- [x] Falls back to welcome screen when no tabs and no actions
 
-- [ ] Cmd+5 opens the actions dialog
+- [x] Cmd+5 opens the actions dialog
 
-- [ ] Status bar click opens the actions dialog
+- [x] Status bar click opens the actions dialog
 
-- [ ] Command palette "Open Actions" opens the actions dialog
+- [x] Command palette "Open Actions" opens the actions dialog
 
-- [ ] Clicking an action in the dialog navigates to source and closes dialog
+- [x] Clicking an action in the dialog navigates to source and closes dialog
 
-- [ ] Checking a checkbox in the dialog does not close it
+- [x] Checking a checkbox in the dialog does not close it
 
 ### Performance
 
-- [ ] Initial scan does not block editor rendering
+- [x] Initial scan does not block editor rendering
 
-- [ ] Incremental updates complete in &lt; 200ms per file
+- [x] Incremental updates complete in &lt; 200ms per file
 
-- [ ] Dashboard dialog opens instantly (cached results)
+- [x] Dashboard dialog opens instantly (cached results)
 
-- [ ] Scrolling through 200+ actions is smooth
+- [x] Scrolling through 200+ actions is smooth
 
 ### Design
 
-- [ ] Dashboard matches design system (neutral palette, proper spacing)
+- [x] Dashboard matches design system (neutral palette, proper spacing)
 
-- [ ] Action items have clear visual distinction by source type
+- [x] Action items have clear visual distinction by source type
 
-- [ ] Project sections have proper visual separation
+- [x] Project sections have proper visual separation
 
-- [ ] Status bar indicator fits existing status bar aesthetic
+- [x] Status bar indicator fits existing status bar aesthetic
 
-- [ ] Dialog has backdrop blur consistent with existing dialogs
+- [x] Dialog has backdrop blur consistent with existing dialogs
 
-- [ ] Empty state is helpful and polished
+- [x] Empty state is helpful and polished
 
-- [ ] All UI works in light and dark mode
+- [x] All UI works in light and dark mode
 
-- [ ] Checkboxes follow custom styling (not browser defaults)
+- [x] Checkboxes follow custom styling (not browser defaults)
 
-- [ ] Dashboard content is centered with max-width for readability
+- [x] Dashboard content is centered with max-width for readability
 
-- [ ] Landing page and dialog use the same ActionsDashboard component
+- [x] Landing page and dialog use the same ActionsDashboard component
 
 ---
 

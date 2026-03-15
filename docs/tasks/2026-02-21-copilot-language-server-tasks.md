@@ -1,9 +1,6 @@
 # Copilot Language Server Integration — Task Breakdown
 
-**PRD:** [2026-02-21-copilot-language-server.md](2026-02-21-copilot-language-server.md)
-**Total:** 10 tasks — 3S, 4M, 3L + 1 bonus task
-**Status:** ✅ Complete (2026-02-21)
-**Estimated phases:** Backend plumbing (Tasks 1-5) → Frontend integration (Tasks 6-10) → Polish (Task 11)
+**PRD:** [2026-02-21-copilot-language-server.md](2026-02-21-copilot-language-server.md)**Total:** 10 tasks — 3S, 4M, 3L + 1 bonus task **Status:** ✅ Complete (2026-02-21) **Estimated phases:** Backend plumbing (Tasks 1-5) → Frontend integration (Tasks 6-10) → Polish (Task 11)
 
 ## Summary
 
@@ -193,6 +190,7 @@ Add Tauri commands for requesting and accepting inline completions.
 ### Acceptance Criteria
 
 - `copilot_lsp_request_completion(uri, line, character, version)` command:
+
   - Sends `textDocument/inlineCompletion` request with:
 
     ```json
@@ -203,8 +201,11 @@ Add Tauri commands for requesting and accepting inline completions.
       "formattingOptions": { "tabSize": 2, "insertSpaces": true }
     }
     ```
+
   - Returns `Vec<InlineCompletionItem>` (parsed from response `items[]`)
+
   - Returns empty vec if LSP returns null or error
+
 - `InlineCompletionItem` struct:
 
   ```rust
@@ -215,9 +216,12 @@ Add Tauri commands for requesting and accepting inline completions.
       pub command: Option<CompletionCommand>,
   }
   ```
+
 - `copilot_lsp_accept_completion(command_name, args)` command:
+
   - Sends `workspace/executeCommand` with the acceptance tracking command
   - Sends `textDocument/didShowCompletion` notification (required by LSP spec)
+
 - Handle cancellation: if a new completion request comes in while one is pending, the LSP auto-cancels the previous one
 
 ### Implementation Notes

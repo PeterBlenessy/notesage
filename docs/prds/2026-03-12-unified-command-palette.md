@@ -1,6 +1,6 @@
 # PRD: Unified Command Palette with Prefix-Based Mode Switching
 
-**Date:** 2026-03-12 **Phase:** — **Status:** Complete
+**Date:** 2026-03-12 **Phase:** — **Status:** ✅ Complete
 
 ---
 
@@ -306,65 +306,65 @@ None. This is a pure frontend refactor using existing dependencies (React, cmdk/
 
 ### Functional
 
-- [ ] Cmd+K opens palette in default mode (recent files + actions + file search)
+- [x] Cmd+K opens palette in default mode (recent files + actions + file search)
 
-- [ ] Typing `#` switches to tag search mode; tag list appears immediately
+- [x] Typing `#` switches to tag search mode; tag list appears immediately
 
-- [ ] Typing `@` switches to mention search mode; mention list appears immediately
+- [x] Typing `@` switches to mention search mode; mention list appears immediately
 
-- [ ] Typing `>` switches to commands mode; action list appears filtered
+- [x] Typing `>` switches to commands mode; action list appears filtered
 
-- [ ] Typing `?` switches to research search mode; debounced search activates
+- [x] Typing `?` switches to research search mode; debounced search activates
 
-- [ ] Backspacing past a prefix character returns to default mode
+- [x] Backspacing past a prefix character returns to default mode
 
-- [ ] Cmd+3 opens palette with `#` pre-filled, tag search active
+- [x] Cmd+3 opens palette with `#` pre-filled, tag search active
 
-- [ ] Cmd+2 opens palette with `@` pre-filled, mention search active
+- [x] Cmd+2 opens palette with `@` pre-filled, mention search active
 
-- [ ] Cmd+4 opens palette with `?` pre-filled, research search active
+- [x] Cmd+4 opens palette with `?` pre-filled, research search active
 
-- [ ] Cmd+Shift+F opens palette in file search mode (no prefix — dedicated mode)
+- [x] Cmd+Shift+F opens palette in file search mode (no prefix — dedicated mode)
 
-- [ ] Tag badge click in editor opens palette with `#tagName` pre-filled and drilled into occurrences
+- [x] Tag badge click in editor opens palette with `#tagName` pre-filled and drilled into occurrences
 
-- [ ] Mention badge click in editor opens palette with `@mentionName` pre-filled and drilled into occurrences
+- [x] Mention badge click in editor opens palette with `@mentionName` pre-filled and drilled into occurrences
 
-- [ ] Tag drilldown: selecting a tag shows occurrences; editing input exits drilldown
+- [x] Tag drilldown: selecting a tag shows occurrences; editing input exits drilldown
 
-- [ ] Mention drilldown: selecting a mention shows occurrences; editing input exits drilldown
+- [x] Mention drilldown: selecting a mention shows occurrences; editing input exits drilldown
 
-- [ ] Research results show title, tags, domain, word count (unchanged)
+- [x] Research results show title, tags, domain, word count (unchanged)
 
-- [ ] Content search (files mode) shows file name, line number, snippet (unchanged)
+- [x] Content search (files mode) shows file name, line number, snippet (unchanged)
 
-- [ ] All search results open the correct file on selection
+- [x] All search results open the correct file on selection
 
-- [ ] Palette closes cleanly (Escape or click outside) and resets all state
+- [x] Palette closes cleanly (Escape or click outside) and resets all state
 
-- [ ] No regressions: round-trip test passes, no console errors
+- [x] No regressions: round-trip test passes, no console errors
 
 ### Design
 
-- [ ] Footer shows mode hints in default mode, styled consistently with existing `kbd` elements
+- [x] Footer shows mode hints in default mode, styled consistently with existing `kbd` elements
 
-- [ ] Footer shows "back to search" hint in active mode
+- [x] Footer shows "back to search" hint in active mode
 
-- [ ] Prefix character visible in input field, not as a separate badge
+- [x] Prefix character visible in input field, not as a separate badge
 
-- [ ] Mode transitions feel instant (no flicker between modes)
+- [x] Mode transitions feel instant (no flicker between modes)
 
-- [ ] Both light and dark mode look correct
+- [x] Both light and dark mode look correct
 
 ### Code Quality
 
-- [ ] App.tsx palette state reduced from 7 variables to ≤3
+- [x] App.tsx palette state reduced from 7 variables to ≤3
 
-- [ ] CommandPalette props reduced from 11 mode-related to ≤4
+- [x] CommandPalette props reduced from 11 mode-related to ≤4
 
-- [ ] No duplicated tag/mention rendering logic
+- [x] No duplicated tag/mention rendering logic
 
-- [ ] Component line count reduced (target: &lt;600 lines from current 760)
+- [x] Component line count reduced (target: &lt;600 lines from current 760)
 
 ---
 

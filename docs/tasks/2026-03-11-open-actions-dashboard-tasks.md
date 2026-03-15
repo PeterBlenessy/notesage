@@ -1,6 +1,6 @@
 # Tasks: Open Actions & Task Tracking Dashboard
 
-**PRD:** `docs/prds/2026-03-11-open-actions-dashboard.md`**Created:** 2026-03-13
+**PRD:** `docs/prds/2026-03-11-open-actions-dashboard.md` **Created:** 2026-03-13 **Status:** ✅ Complete
 
 ## Summary
 
@@ -24,7 +24,7 @@ The feature has three layers: Rust backend scanning, Zustand state management, a
 
 ## Tasks
 
-### #1 — Add `scan_actions` Tauri command (Rust)
+### #1 — Add `scan_actions` Tauri command (Rust) ✅
 
 **Description:** Create `src-tauri/src/commands/actions.rs` with the `scan_actions` command. Parses markdown files for task lists (`- [ ]` / `- [x]`, `* [ ]`, `1. [ ]`), reads `.notesage/comments/*.json` for open/delegated comments, and scans frontmatter for `type: goal` documents with checklist items. Supports incremental scanning via `since` timestamp (only process files modified after that time). Returns `Vec<ActionItem>` with all fields from the PRD data model.
 
@@ -44,7 +44,7 @@ The feature has three layers: Rust backend scanning, Zustand state management, a
 
 ---
 
-### #2 — Register `scan_actions` command
+### #2 — Register `scan_actions` command ✅
 
 **Description:** Add the new `actions` module to `commands/mod.rs` and register `scan_actions` in `generate_handler![]` in `lib.rs`.
 
@@ -60,7 +60,7 @@ The feature has three layers: Rust backend scanning, Zustand state management, a
 
 ---
 
-### #3 — Create action-store (Zustand)
+### #3 — Create action-store (Zustand) ✅
 
 **Description:** Create `src/stores/action-store.ts` with the `ActionStore` interface from the PRD. Includes `ActionItem` and `ActionFilter` TypeScript interfaces, persisted `actionCache` (file path → items + timestamp), non-persisted `actions` array (flattened from cache), computed helpers (`getActionsByProject`, `getOpenCount`, `getOpenCountByProject`), and mutation methods (`fullScan`, `incrementalUpdate`, `setFilter`). The `fullScan` method calls `scan_actions` via Tauri invoke, then merges with agent tasks from `activity-store` (frontend-only source). The `toggleTaskDone` method is stubbed here and implemented in #12.
 
@@ -79,7 +79,7 @@ The feature has three layers: Rust backend scanning, Zustand state management, a
 
 ---
 
-### #4 — Create useActionScanner hook
+### #4 — Create useActionScanner hook ✅
 
 **Description:** Create `src/hooks/useActionScanner.ts` that orchestrates action scanning. Triggers `fullScan()` on startup (after `startupReady`), listens to file watcher events for incremental updates, subscribes to comment-store and activity-store changes to refresh those action sources. Mount in `App.tsx` alongside existing lifecycle hooks.
 
@@ -98,7 +98,7 @@ The feature has three layers: Rust backend scanning, Zustand state management, a
 
 ---
 
-### #5 — Build ActionItem component
+### #5 — Build ActionItem component ✅
 
 **Description:** Create `src/components/actions/ActionItem.tsx` — individual action row. Shows custom checkbox (for tasks/goals), icon by source type, action text (truncated), source type badge, and file location (relative path + line number). Click navigates to source file and line. Checkbox toggles task completion. Right-click context menu with Open file, Copy text, Mark done.
 
@@ -121,7 +121,7 @@ The feature has three layers: Rust backend scanning, Zustand state management, a
 
 ---
 
-### #6 — Build ActionFilter component
+### #6 — Build ActionFilter component ✅
 
 **Description:** Create `src/components/actions/ActionFilter.tsx` — filter bar for the dashboard. Source type dropdown (All, Tasks, Comments, Agent tasks, Goals), status dropdown (Open, Delegated, Done, All), project dropdown (All projects + list of projects), and text search input. Reads and writes to `action-store.filter`.
 
@@ -141,7 +141,7 @@ The feature has three layers: Rust backend scanning, Zustand state management, a
 
 ---
 
-### #7 — Build ActionsDashboard component
+### #7 — Build ActionsDashboard component ✅
 
 **Description:** Create `src/components/actions/ActionsDashboard.tsx` — the main dashboard view shared by both the landing page and the dialog. Centered content with max-width matching editor content area. Renders project-grouped action lists with section headers showing project name and open count. Includes the filter bar (#6) at the top. Collapsible "Completed" section at the bottom. Empty state when no actions match filters.
 
@@ -163,7 +163,7 @@ The feature has three layers: Rust backend scanning, Zustand state management, a
 
 ---
 
-### #8 — Build ActionsDialog component
+### #8 — Build ActionsDialog component ✅
 
 **Description:** Create `src/components/actions/ActionsDialog.tsx` — a full-screen dialog wrapper using shadcn/ui `Dialog`. Renders `ActionsDashboard` inside. Clicking an action item navigates to the source file and closes the dialog. Checking a checkbox does not close the dialog. Escape or backdrop click dismisses.
 
@@ -183,7 +183,7 @@ The feature has three layers: Rust backend scanning, Zustand state management, a
 
 ---
 
-### #9 — Add status bar actions indicator
+### #9 — Add status bar actions indicator ✅
 
 **Description:** Add an open actions count to the StatusBar left zone. Shows `CheckSquare` icon + count + "actions" label. Hidden when count is 0. Clicking opens the actions dialog. Positioned before the git branch indicator.
 
@@ -202,7 +202,7 @@ The feature has three layers: Rust backend scanning, Zustand state management, a
 
 ---
 
-### #10 — Add landing page dashboard + dialog wiring in App.tsx
+### #10 — Add landing page dashboard + dialog wiring in App.tsx ✅
 
 **Description:** Two integration points: (1) When no tabs are open in Editor.tsx, show `ActionsDashboard` if there are open actions, otherwise show the existing welcome screen. (2) In App.tsx, manage the `actionsDialogOpen` state, pass it to `ActionsDialog`, and wire status bar clicks and keyboard shortcut to open it.
 
@@ -221,7 +221,7 @@ The feature has three layers: Rust backend scanning, Zustand state management, a
 
 ---
 
-### #11 — Add Cmd+5 shortcut and command palette entry
+### #11 — Add Cmd+5 shortcut and command palette entry ✅
 
 **Description:** Register `Cmd+5` keyboard shortcut to open the actions dialog. Add "Open Actions" to the command palette actions list (shown in `>` commands mode and default mode).
 
@@ -239,7 +239,7 @@ The feature has three layers: Rust backend scanning, Zustand state management, a
 
 ---
 
-### #12 — Implement check-off integration
+### #12 — Implement check-off integration ✅
 
 **Description:** Implement `toggleTaskDone` in action-store. When a user checks/unchecks a task in the dashboard, read the source file, toggle `[ ]` ↔ `[x]` at the correct line, write the file back (with `markSelfWrite`), and refresh the open editor tab if the file is currently open. Handle edge cases: file may have changed since scan (line number drift), file may be deleted, task may no longer be at expected line.
 

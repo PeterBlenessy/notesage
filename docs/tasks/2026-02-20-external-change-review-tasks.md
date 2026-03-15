@@ -1,8 +1,6 @@
 # External Change Review — Task Breakdown
 
-**PRD:** [2026-02-20-external-change-review.md](2026-02-20-external-change-review.md)
-**Status:** ✅ Complete
-**Total: 10 tasks (3S, 5M, 2L) — all implemented**
+**PRD:** [2026-02-20-external-change-review.md](2026-02-20-external-change-review.md)**Status:** ✅ Complete **Total: 10 tasks (3S, 5M, 2L) — all implemented**
 
 All frontend — no Rust/Tauri backend work required.
 
@@ -70,6 +68,7 @@ Clean tabs call `addChange()` instead of old `setExternalChange()`. Dirty tabs u
 | **Files** | `src/components/editor/Editor.tsx` |
 
 Implemented:
+
 - Toast with Accept button (ghost style), close X, 8s auto-dismiss
 - Inline diff decorations loaded immediately via `mapExternalChangeToPM()` + `showInlineDiff()`
 - Tab-switch decoration load/unload with `requestAnimationFrame` (fixes race condition where pending-change effect fires before tab content is loaded)
@@ -78,6 +77,7 @@ Implemented:
 - Sync effect: transaction listener keeps store hunks in sync with PM plugin state, auto-resolves when all hunks cleared
 
 **Implementation decisions:**
+
 - Removed "Review" button — decorations always loaded immediately, simpler two-tier model
 - Removed `ExternalReviewBanner` — caused confusion (dual toast + banner) and race conditions
 - Removed frontend `markSelfWrite` calls — backend handles it, frontend guard caused false suppression
@@ -101,8 +101,9 @@ Originally planned as a banner for "Review Now" mode. **Removed during implement
 | **Files** | `src/components/editor/ChangeListPopover.tsx` |
 
 Wider popover (`w-96` / 384px) with cross-file layout:
+
 - Header: "Pending Changes (N)" + Reject All / Accept All buttons
-- Each row: `[filename] : [change preview]  [✓] [✗]`
+- Each row: `[filename] : [change preview] [✓] [✗]`
 - Filename truncated to 80px with full-path tooltip
 - Change preview: red strikethrough (deleted) + green (inserted) text
 - Per-hunk ✓/✗ buttons for focused file hunks (green/red on hover, muted grey background)
@@ -136,6 +137,7 @@ Wider popover (`w-96` / 384px) with cross-file layout:
 Old `externalChanges` field in editor-store still used for dirty tab reload/keep banner flow. Frontend `self-write-guard.ts` is dead code (no longer imported). `ExternalReviewBanner.tsx` is dead code (no longer imported).
 
 **Remaining cleanup (low priority):**
+
 - Delete `src/lib/self-write-guard.ts`
 - Delete `src/components/editor/ExternalReviewBanner.tsx`
 - Consider migrating dirty-tab flow to external-change-store

@@ -1,8 +1,6 @@
 # Auto-Update — Implementation Tasks
 
-**PRD:** `docs/prds/2026-02-23-auto-update.md`
-**Status:** ✅ Complete
-**Total tasks:** 7 (2S, 4M, 1L) — all implemented **Estimated effort:** \~5-6 hours
+**PRD:** `docs/prds/2026-02-23-auto-update.md`**Status:** ✅ Complete **Total tasks:** 7 (2S, 4M, 1L) — all implemented **Estimated effort:** \~5-6 hours
 
 ## Summary
 

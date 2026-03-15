@@ -12,7 +12,7 @@ Implementation order: Foundation first (shared helper), then fix existing code p
 
 ## Feature A: Diff Fidelity — Mark-Preserving Inline Changes
 
-### #1 — Create `replaceRangeWithMarkdown()` shared helper
+### #1 — Create `replaceRangeWithMarkdown()` shared helper ✅
 
 | Field | Value |
 | --- | --- |
@@ -35,7 +35,7 @@ Create `src/lib/pm-replace.ts` with the core `replaceRangeWithMarkdown(editor, t
 
 ---
 
-### #2 — Update `acceptSuggestion()` in ai-suggestion.ts
+### #2 — Update `acceptSuggestion()` in ai-suggestion.ts ✅
 
 | Field | Value |
 | --- | --- |
@@ -55,7 +55,7 @@ Replace the current `editor.chain().deleteRange().insertContentAt()` (lines 173-
 
 ---
 
-### #3 — Update `acceptDiffHunk()` in inline-diff.ts
+### #3 — Update `acceptDiffHunk()` in inline-diff.ts ✅
 
 | Field | Value |
 | --- | --- |
@@ -76,7 +76,7 @@ Replace `tr.insertText(hunk.insertText, hunk.from, hunk.to)` (line \~315) with `
 
 ---
 
-### #4 — Update `acceptAllDiffHunks()` in inline-diff.ts
+### #4 — Update `acceptAllDiffHunks()` in inline-diff.ts ✅
 
 | Field | Value |
 | --- | --- |
@@ -93,7 +93,7 @@ Same fix applied within the bottom-to-top loop (lines \~342-362). Each hunk's re
 
 ---
 
-### #5 — Verify edge cases and code block safety
+### #5 — Verify edge cases and code block safety ✅
 
 | Field | Value |
 | --- | --- |
@@ -118,7 +118,7 @@ Test that:
 
 ## Feature B: Agent Auto-Apply — Inline Suggestions from Comment Delegation
 
-### #6 — Add `extractReplacementText()` helper
+### #6 — Add `extractReplacementText()` helper ✅
 
 | Field | Value |
 | --- | --- |
@@ -140,7 +140,7 @@ Use regex replacements as specified in the agent-auto-apply PRD.
 
 ---
 
-### #7 — Add `resolveAnchorRange()` helper
+### #7 — Add `resolveAnchorRange()` helper ✅
 
 | Field | Value |
 | --- | --- |
@@ -162,7 +162,7 @@ Find the current position of a comment's anchor text in the editor.
 
 ---
 
-### #8 — Wire auto-apply in `useCommentDelegation.onComplete`
+### #8 — Wire auto-apply in `useCommentDelegation.onComplete` ✅
 
 | Field | Value |
 | --- | --- |
@@ -192,7 +192,7 @@ Need access to the editor instance — either pass it to `delegateComment()` or 
 
 ---
 
-### #9 — Handle suggestion queueing for multiple delegations
+### #9 — Handle suggestion queueing for multiple delegations ✅
 
 | Field | Value |
 | --- | --- |

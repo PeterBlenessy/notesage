@@ -298,39 +298,39 @@ None — YAML frontmatter parsing can use the existing `serde_yaml` (already in 
 
 ### Functional
 
-- [ ] `download-webpage` saves files with full research frontmatter (source_url, title, author, date_saved, tags)
-- [ ] Author and publication date extracted from page metadata when available
-- [ ] `save-research` skill creates properly formatted research files with slugified filenames
-- [ ] `save-research` detects duplicate URLs and offers overwrite/keep-both/skip
-- [ ] `search-research` finds files by tag name (exact match)
-- [ ] `search-research` finds files by title/content keyword (substring match)
-- [ ] `search-research` searches both project and global research directories
-- [ ] `Cmd+4` opens command palette in research search mode with results from `search_research` Tauri command
-- [ ] Selecting a search result opens the research file in a new tab
-- [ ] `synthesize-sources` reads multiple research files and generates a coherent synthesis
-- [ ] Synthesis output includes per-source attribution and cross-source theme analysis
-- [ ] `insert-citation` inserts inline link citations correctly at cursor position
-- [ ] `insert-citation` inserts footnote citations with references section at document end
-- [ ] `insert-citation` generates APA/MLA/Chicago formatted citations with bibliography
-- [ ] Citation format preference persisted per-project in project metadata
-- [ ] Batch URL saving works (multiple URLs processed sequentially with summary)
-- [ ] Research files appear in the file tree under `.notesage/research/`
-- [ ] Images downloaded by `download-webpage` are saved to `.notesage/research/images/`
-- [ ] No console errors during normal research operations
+- [x] `download-webpage` saves files with full research frontmatter (source_url, title, author, date_saved, tags)
+- [x] Author and publication date extracted from page metadata when available
+- [x] `save-research` skill creates properly formatted research files with slugified filenames
+- [x] `save-research` detects duplicate URLs and offers overwrite/keep-both/skip
+- [x] `search-research` finds files by tag name (exact match)
+- [x] `search-research` finds files by title/content keyword (substring match)
+- [x] `search-research` searches both project and global research directories
+- [x] `Cmd+4` opens command palette in research search mode with results from `search_research` Tauri command
+- [x] Selecting a search result opens the research file in a new tab
+- [x] `synthesize-sources` reads multiple research files and generates a coherent synthesis
+- [x] Synthesis output includes per-source attribution and cross-source theme analysis
+- [x] `insert-citation` inserts inline link citations correctly at cursor position
+- [x] `insert-citation` inserts footnote citations with references section at document end
+- [x] `insert-citation` generates APA/MLA/Chicago formatted citations with bibliography
+- [x] Citation format preference persisted per-project in project metadata
+- [x] Batch URL saving works (multiple URLs processed sequentially with summary)
+- [x] Research files appear in the file tree under `.notesage/research/`
+- [x] Images downloaded by `download-webpage` are saved to `.notesage/research/images/`
+- [x] No console errors during normal research operations
 
 ### Design
 
-- [ ] Command palette research mode matches existing tag search (Cmd+3) visual style
-- [ ] Research search results show title, tags as pills, source domain, and word count
-- [ ] Smooth keyboard navigation in research search results
-- [ ] Works correctly in both light and dark mode
+- [x] Command palette research mode matches existing tag search (Cmd+3) visual style
+- [x] Research search results show title, tags as pills, source domain, and word count
+- [x] Smooth keyboard navigation in research search results
+- [x] Works correctly in both light and dark mode
 
 ### Skill Quality
 
-- [ ] All new skills follow the Agent Skills specification (valid SKILL.md frontmatter, proper structure)
-- [ ] Skills are discoverable by all connection types (ACP and direct API)
-- [ ] AI-only skills (synthesize-sources, insert-citation) work without scripts
-- [ ] Script-based skills (save-research, search-research) handle errors gracefully with clear messages
+- [x] All new skills follow the Agent Skills specification (valid SKILL.md frontmatter, proper structure)
+- [x] Skills are discoverable by all connection types (ACP and direct API)
+- [x] AI-only skills (synthesize-sources, insert-citation) work without scripts
+- [x] Script-based skills (save-research, search-research) handle errors gracefully with clear messages
 
 ## Out of Scope
 
