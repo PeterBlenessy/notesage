@@ -275,6 +275,53 @@ export function getAgentModels(connectionId: string): { models: AgentModel[]; cu
   return agentModelCache.get(connectionId);
 }
 
+// --- Model display names ---
+
+/** Map model IDs to human-readable display names. Falls through to titleCase if not found. */
+const MODEL_DISPLAY_NAMES: Record<string, string> = {
+  // Claude
+  'sonnet': 'Claude Sonnet',
+  'opus': 'Claude Opus',
+  'haiku': 'Claude Haiku',
+  'claude-sonnet-4-6': 'Claude Sonnet 4.6',
+  'claude-sonnet-4-5': 'Claude Sonnet 4.5',
+  'claude-sonnet-4': 'Claude Sonnet 4',
+  'claude-opus-4-6': 'Claude Opus 4.6',
+  'claude-opus-4-6-fast': 'Claude Opus 4.6 Fast',
+  'claude-opus-4-5': 'Claude Opus 4.5',
+  'claude-haiku-4-5': 'Claude Haiku 4.5',
+  // OpenAI / Codex
+  'gpt-5.4': 'GPT-5.4',
+  'gpt-5.3-codex': 'GPT-5.3 Codex',
+  'gpt-5.3-codex-spark': 'GPT-5.3 Codex Spark',
+  'gpt-5.2-codex': 'GPT-5.2 Codex',
+  'gpt-5.2': 'GPT-5.2',
+  'gpt-5.1-codex': 'GPT-5.1 Codex',
+  'gpt-5.1-codex-max': 'GPT-5.1 Codex Max',
+  'gpt-5.1-codex-mini': 'GPT-5.1 Codex Mini',
+  'gpt-5.1': 'GPT-5.1',
+  'gpt-5-mini': 'GPT-5 Mini',
+  'gpt-5-codex-mini': 'GPT-5 Codex Mini',
+  'gpt-4.1': 'GPT-4.1',
+  'o4-mini': 'o4-mini',
+  'o3': 'o3',
+  // Gemini
+  'gemini-2.5-pro': 'Gemini 2.5 Pro',
+  'gemini-2.5-flash': 'Gemini 2.5 Flash',
+  'gemini-3-pro-preview': 'Gemini 3 Pro (Preview)',
+};
+
+/** Get a human-readable display name for a model ID */
+export function prettyModelName(modelId: string): string {
+  if (MODEL_DISPLAY_NAMES[modelId]) return MODEL_DISPLAY_NAMES[modelId];
+
+  // Auto-format: remove dashes, capitalize segments
+  return modelId
+    .split(/[-_]/)
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .join(' ');
+}
+
 // --- Capability display labels ---
 
 export const CAPABILITY_LABELS: Record<AICapability, string> = {

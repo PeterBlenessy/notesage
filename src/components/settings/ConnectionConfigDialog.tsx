@@ -37,7 +37,7 @@ import { useLocalAIStore } from '@/stores/local-ai-store';
 import { stopAcpAgent } from '@/hooks/useAIOperations';
 import { stopTaskAgent } from '@/hooks/useAgentTaskOperations';
 import type { Connection, ConnectionConfig } from '@/lib/ai/connections';
-import { DEFAULT_MODELS, getAgentModels } from '@/lib/ai/connections';
+import { DEFAULT_MODELS, getAgentModels, prettyModelName } from '@/lib/ai/connections';
 import { cn } from '@/lib/utils';
 
 const TEMPERATURE_LABELS: { value: number; label: string }[] = [
@@ -76,14 +76,6 @@ function formatTokenCount(tokens: number): string {
   return String(tokens);
 }
 
-/** Model placeholder hints per provider for agent-managed connections */
-const AGENT_MODEL_HINTS: Record<string, string> = {
-  anthropic: 'e.g. sonnet, opus, haiku',
-  openai: 'e.g. gpt-5.2-codex, o4-mini',
-  github: 'e.g. claude-sonnet-4, gpt-5.2',
-  google: 'e.g. gemini-2.5-pro, gemini-2.5-flash',
-};
-
 /** Known models per agent binary — curated list for the model picker */
 interface AgentModelOption {
   id: string;
@@ -104,9 +96,24 @@ const AGENT_KNOWN_MODELS: Record<string, AgentModelOption[]> = {
     { id: 'o4-mini', label: 'o4-mini', note: 'Fast reasoning model' },
   ],
   'copilot': [
+    { id: 'claude-sonnet-4.6', label: 'Claude Sonnet 4.6' },
+    { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5' },
     { id: 'claude-sonnet-4', label: 'Claude Sonnet 4', note: 'Default' },
+    { id: 'claude-opus-4.6', label: 'Claude Opus 4.6' },
+    { id: 'claude-opus-4.6-fast', label: 'Claude Opus 4.6 Fast' },
+    { id: 'claude-opus-4.5', label: 'Claude Opus 4.5' },
+    { id: 'claude-haiku-4.5', label: 'Claude Haiku 4.5' },
+    { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex' },
+    { id: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
     { id: 'gpt-5.2', label: 'GPT-5.2' },
+    { id: 'gpt-5.1-codex', label: 'GPT-5.1 Codex' },
+    { id: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
+    { id: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini' },
+    { id: 'gpt-5.1', label: 'GPT-5.1' },
+    { id: 'gpt-5-mini', label: 'GPT-5 Mini' },
+    { id: 'gpt-4.1', label: 'GPT-4.1' },
     { id: 'o4-mini', label: 'o4-mini' },
+    { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro (Preview)' },
     { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
   ],
   'gemini': [
@@ -114,6 +121,8 @@ const AGENT_KNOWN_MODELS: Record<string, AgentModelOption[]> = {
     { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', note: 'Fast and efficient' },
   ],
 };
+// Copilot LSP shares the same model catalog as Copilot CLI
+AGENT_KNOWN_MODELS['copilot-language-server'] = AGENT_KNOWN_MODELS['copilot'];
 
 interface ConnectionConfigDialogProps {
   connection: Connection | null;
@@ -361,86 +370,40 @@ export function ConnectionConfigDialog({
               const displayModels = dynamicModels.length > 0 ? dynamicModels : fallbackModels;
               const currentModel = cached?.currentModel;
 
+              const defaultLabel = currentModel
+                ? `Agent default (${prettyModelName(currentModel)})`
+                : 'Agent default';
+
               return (
                 <>
-                  <Popover open={modelPopoverOpen} onOpenChange={setModelPopoverOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={modelPopoverOpen}
-                        className="w-full justify-between font-normal"
-                      >
-                        <span className="truncate">
-                          {model || (
-                            <span className="text-muted-foreground">
-                              {currentModel ? `Default (${currentModel})` : 'Agent default'}
-                            </span>
-                          )}
-                        </span>
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                      <Command>
-                        <CommandInput
-                          placeholder={AGENT_MODEL_HINTS[connection.provider] ?? 'Search or type model name…'}
-                          value={model}
-                          onValueChange={setModel}
-                          className="flex-1"
-                        />
-                        <CommandList>
-                          <CommandEmpty>
-                            Type a model name to use it
-                          </CommandEmpty>
-                          {displayModels.length > 0 && (
-                            <CommandGroup heading={dynamicModels.length > 0 ? 'Available models' : 'Suggested models'}>
-                              {displayModels.map((m) => (
-                                <CommandItem
-                                  key={m.id}
-                                  value={m.id}
-                                  onSelect={(val) => {
-                                    setModel(val);
-                                    setModelPopoverOpen(false);
-                                  }}
-                                >
-                                  <Check
-                                    className={cn(
-                                      'mr-2 h-3.5 w-3.5 shrink-0',
-                                      model === m.id ? 'opacity-100' : 'opacity-0'
-                                    )}
-                                  />
-                                  <div className="flex-1 min-w-0">
-                                    <span className="text-sm">{m.label}</span>
-                                    {m.id !== m.label && (
-                                      <span className="text-xs text-muted-foreground ml-1.5">{m.id}</span>
-                                    )}
-                                    {currentModel === m.id && (
-                                      <span className="text-[10px] text-muted-foreground ml-1.5">(current)</span>
-                                    )}
-                                    {m.note && (
-                                      <p className="text-xs text-muted-foreground">{m.note}</p>
-                                    )}
-                                  </div>
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          )}
-                          {displayModels.length === 0 && (
-                            <p className="px-3 py-2 text-xs text-muted-foreground">
-                              Connect and send a message first to discover available models.
-                            </p>
-                          )}
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                  <p className="text-[11px] text-muted-foreground">
-                    Leave blank to use the agent's default model.
-                    {dynamicModels.length === 0 && displayModels.length > 0 && (
-                      <span className="italic"> Models shown are suggestions — connect first for the full list.</span>
-                    )}
-                  </p>
+                  <Select
+                    value={model || '__default__'}
+                    onValueChange={(val) => setModel(val === '__default__' ? '' : val)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__default__">
+                        <span className="text-muted-foreground">{defaultLabel}</span>
+                      </SelectItem>
+                      {displayModels.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          <span className="flex items-center gap-2">
+                            <span>{prettyModelName(m.id)}</span>
+                            {currentModel === m.id && (
+                              <span className="text-[10px] text-muted-foreground">(current)</span>
+                            )}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {displayModels.length === 0 && (
+                    <p className="text-[11px] text-muted-foreground italic">
+                      Connect and send a message first to discover available models.
+                    </p>
+                  )}
                 </>
               );
             })() : (
@@ -453,16 +416,16 @@ export function ConnectionConfigDialog({
                     className="w-full justify-between font-normal"
                   >
                     <span className="truncate">
-                      {model || (
+                      {model ? prettyModelName(model) : (
                         <span className="text-muted-foreground">
-                          {defaultModel ? `Default (${defaultModel})` : 'Select model\u2026'}
+                          {defaultModel ? `Default (${prettyModelName(defaultModel)})` : 'Select model\u2026'}
                         </span>
                       )}
                     </span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start" collisionPadding={8}>
                   <Command>
                     <div className="flex items-center gap-1 px-1">
                       <CommandInput
@@ -488,7 +451,7 @@ export function ConnectionConfigDialog({
                         )}
                       </Button>
                     </div>
-                    <CommandList>
+                    <CommandList className="max-h-[240px]">
                       {modelsError && (
                         <p className="px-3 py-2 text-xs text-destructive">
                           {modelsError}

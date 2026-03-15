@@ -1,8 +1,11 @@
+import { useState, useCallback } from 'react';
 import type { Connection } from '@/lib/ai/connections';
-import { CAPABILITY_LABELS } from '@/lib/ai/connections';
+import { CAPABILITY_LABELS, prettyModelName, setAgentModels } from '@/lib/ai/connections';
+import { useConnectionsStore } from '@/stores/connections-store';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { Button } from '@/components/ui/button';
-import { Settings2, Unplug } from 'lucide-react';
+import { Settings2, Unplug, HeartPulse, Loader2, Check, X } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 
 const AUTH_BADGES: Record<string, string> = {
   api_key: 'API Key',
@@ -34,6 +37,8 @@ function StatusDot({ status, tooltip }: { status: Connection['status']; tooltip?
   );
 }
 
+type HealthState = 'idle' | 'testing' | 'ok' | 'fail';
+
 interface ConnectionCardProps {
   connection: Connection;
   onConfigure?: (connection: Connection) => void;
@@ -41,6 +46,114 @@ interface ConnectionCardProps {
 }
 
 export function ConnectionCard({ connection, onConfigure, onDisconnect }: ConnectionCardProps) {
+  const [health, setHealth] = useState<HealthState>('idle');
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const updateConnection = useConnectionsStore((s) => s.updateConnection);
+
+  const testConnection = useCallback(async () => {
+    setHealth('testing');
+    setHealthError(null);
+
+    try {
+      if (connection.authMethod === 'agent_managed') {
+        const creds = connection.credentials as { agentBinary: string; agentArgs?: string[] };
+        const isLsp = creds.agentBinary === 'copilot-language-server';
+
+        if (isLsp) {
+          // Copilot LSP: check status via LSP protocol (don't use ACP)
+          const status = await invoke<{ authenticated: boolean; message: string; kind: string }>(
+            'copilot_lsp_status'
+          );
+          if (!status.authenticated) {
+            throw new Error(status.message || 'Not authenticated');
+          }
+        } else {
+          // ACP: spawn agent, create session, check for models, stop
+          const args = [...(creds.agentArgs ?? [])];
+          if (connection.config?.model) {
+            if (creds.agentBinary === 'codex-acp') {
+              args.push('-c', `model="${connection.config.model}"`);
+            } else {
+              args.push('--model', connection.config.model);
+            }
+          }
+
+          const spawn = await invoke<{ instance_id: string }>('acp_agent_spawn', {
+            agentBinary: creds.agentBinary,
+            agentArgs: args.length > 0 ? args : null,
+            role: 'interactive',
+            workingDirectory: '/tmp',
+          });
+
+          try {
+            // Try authenticate
+            try {
+              await invoke('acp_agent_authenticate', { instanceId: spawn.instance_id });
+            } catch (authErr) {
+              const msg = String(authErr);
+              if (!msg.toLowerCase().includes('not implemented')) {
+                throw authErr;
+              }
+            }
+
+            // Create session to get models
+            const session = await invoke<{
+              session_id: string;
+              current_model: string | null;
+              available_models: { model_id: string; name: string; description: string | null }[];
+            }>('acp_session_new', {
+              instanceId: spawn.instance_id,
+              workingDirectory: '/tmp',
+            });
+
+            // Cache models
+            if (session.available_models.length > 0) {
+              setAgentModels(
+                connection.id,
+                session.available_models.map((m) => ({
+                  modelId: m.model_id,
+                  name: m.name,
+                  description: m.description,
+                })),
+                session.current_model,
+              );
+            }
+          } finally {
+            invoke('acp_agent_stop', { instanceId: spawn.instance_id }).catch(() => {});
+          }
+        }
+
+        updateConnection(connection.id, { status: 'connected' });
+        setHealth('ok');
+      } else if (connection.authMethod === 'api_key') {
+        // API key: try listing models
+        const key = connection.credentials.type === 'api_key' ? connection.credentials.key : undefined;
+        const baseUrl = connection.config?.baseUrl;
+        const provider = connection.provider === 'openai_compatible' ? 'openai_compatible' : connection.provider;
+        await invoke('list_models', { provider, apiKey: key, baseUrl: baseUrl ?? null });
+        updateConnection(connection.id, { status: 'connected' });
+        setHealth('ok');
+      } else if (connection.authMethod === 'local') {
+        // Ollama: check tags endpoint
+        const url = connection.credentials.type === 'local' ? connection.credentials.url : 'http://localhost:11434';
+        await invoke('list_models', { provider: 'ollama', apiKey: null, baseUrl: url });
+        updateConnection(connection.id, { status: 'connected' });
+        setHealth('ok');
+      } else {
+        // local_bundled — check health endpoint
+        setHealth('ok');
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setHealthError(msg);
+      updateConnection(connection.id, { status: 'error' });
+      setHealth('fail');
+    }
+
+    // Reset indicator after 4 seconds
+    setTimeout(() => setHealth('idle'), 4000);
+  }, [connection, updateConnection]);
+
   // Derive a contextual tooltip for the status dot
   const statusTooltip = (() => {
     if (connection.authMethod === 'local_bundled' && connection.status === 'expired') {
@@ -50,68 +163,88 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect }: Connec
   })();
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground/50 transition-colors duration-150">
-      {/* Logo + status */}
-      <div className="relative shrink-0">
-        <ProviderLogo provider={connection.provider} />
-        <span className="absolute -bottom-0.5 -right-0.5">
-          <StatusDot status={connection.status} tooltip={statusTooltip} />
-        </span>
-      </div>
-
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium truncate">
-            {connection.label}
+    <div className="space-y-0">
+      <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground/50 transition-colors duration-150">
+        {/* Logo + status */}
+        <div className="relative shrink-0">
+          <ProviderLogo provider={connection.provider} />
+          <span className="absolute -bottom-0.5 -right-0.5">
+            <StatusDot status={connection.status} tooltip={statusTooltip} />
           </span>
-          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
-            {AUTH_BADGES[connection.authMethod] ?? connection.authMethod}
-          </span>
-          {connection.config?.model && (
-            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0 max-w-[140px] truncate" title={connection.config.model}>
-              {connection.config.model}
-            </span>
-          )}
         </div>
-        {/* Capability badges */}
-        <div className="flex items-center gap-1.5 mt-1">
-          {connection.capabilities.map((cap) => (
-            <span
-              key={cap}
-              className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground"
-            >
-              {CAPABILITY_LABELS[cap]}
-            </span>
-          ))}
-        </div>
-      </div>
 
-      {/* Actions */}
-      <div className="flex items-center gap-1 shrink-0">
-        {onConfigure && (
+        {/* Info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium truncate">
+              {connection.label}
+            </span>
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+              {AUTH_BADGES[connection.authMethod] ?? connection.authMethod}
+            </span>
+            {connection.config?.model && (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0 max-w-[140px] truncate" title={connection.config.model}>
+                {prettyModelName(connection.config.model)}
+              </span>
+            )}
+          </div>
+          {/* Capability badges */}
+          <div className="flex items-center gap-1.5 mt-1">
+            {connection.capabilities.map((cap) => (
+              <span
+                key={cap}
+                className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground"
+              >
+                {CAPABILITY_LABELS[cap]}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-1 shrink-0">
           <Button
             variant="ghost"
             size="icon"
             className="h-8 w-8 text-muted-foreground hover:text-foreground"
-            onClick={() => onConfigure(connection)}
-            title="Configure"
+            onClick={testConnection}
+            disabled={health === 'testing'}
+            title="Test connection"
           >
-            <Settings2 className="h-4 w-4" strokeWidth={1.5} />
+            {health === 'testing' && <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.5} />}
+            {health === 'ok' && <Check className="h-4 w-4 text-green-500" strokeWidth={1.5} />}
+            {health === 'fail' && <X className="h-4 w-4 text-destructive" strokeWidth={1.5} />}
+            {health === 'idle' && <HeartPulse className="h-4 w-4" strokeWidth={1.5} />}
           </Button>
-        )}
-        {onDisconnect && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-destructive"
-            onClick={() => onDisconnect(connection)}
-            title="Disconnect"
-          >
-            <Unplug className="h-4 w-4" strokeWidth={1.5} />
-          </Button>
-        )}
+          {onConfigure && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              onClick={() => onConfigure(connection)}
+              title="Configure"
+            >
+              <Settings2 className="h-4 w-4" strokeWidth={1.5} />
+            </Button>
+          )}
+          {onDisconnect && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+              onClick={() => onDisconnect(connection)}
+              title="Disconnect"
+            >
+              <Unplug className="h-4 w-4" strokeWidth={1.5} />
+            </Button>
+          )}
+        </div>
       </div>
+      {health === 'fail' && healthError && (
+        <p className="text-xs text-destructive px-4 py-1.5 break-words">
+          {healthError}
+        </p>
+      )}
     </div>
   );
 }
