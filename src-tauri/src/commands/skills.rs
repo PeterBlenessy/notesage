@@ -122,7 +122,7 @@ struct SkillFrontmatter {
 fn parse_frontmatter(content: &str) -> (Option<SkillFrontmatter>, String) {
     let (yaml_str, body) = parse_frontmatter_raw(content);
     match yaml_str {
-        Some(yaml) => match serde_yaml::from_str::<SkillFrontmatter>(yaml) {
+        Some(yaml) => match serde_yml::from_str::<SkillFrontmatter>(yaml) {
             Ok(fm) => (Some(fm), body.to_string()),
             Err(_) => (None, content.to_string()),
         },
@@ -134,7 +134,7 @@ fn parse_frontmatter(content: &str) -> (Option<SkillFrontmatter>, String) {
 fn parse_agent_frontmatter(content: &str) -> (Option<AgentFrontmatter>, String) {
     let (yaml_str, body) = parse_frontmatter_raw(content);
     match yaml_str {
-        Some(yaml) => match serde_yaml::from_str::<AgentFrontmatter>(yaml) {
+        Some(yaml) => match serde_yml::from_str::<AgentFrontmatter>(yaml) {
             Ok(fm) => (Some(fm), body.to_string()),
             Err(_) => (None, content.to_string()),
         },

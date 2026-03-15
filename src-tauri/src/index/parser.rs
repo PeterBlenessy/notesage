@@ -235,43 +235,43 @@ pub fn parse_file(content: &str, file_name: &str, is_in_research_dir: bool) -> P
 }
 
 fn parse_frontmatter(text: &str) -> Option<Frontmatter> {
-    let value: serde_yaml::Value = serde_yaml::from_str(text).ok()?;
+    let value: serde_yml::Value = serde_yml::from_str(text).ok()?;
     let mapping = value.as_mapping()?;
 
     let title = mapping
-        .get(&serde_yaml::Value::String("title".into()))
+        .get(&serde_yml::Value::String("title".into()))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
     let source_url = mapping
-        .get(&serde_yaml::Value::String("source_url".into()))
+        .get(&serde_yml::Value::String("source_url".into()))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
     let date_saved = mapping
-        .get(&serde_yaml::Value::String("date_saved".into()))
+        .get(&serde_yml::Value::String("date_saved".into()))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
     let doc_type = mapping
-        .get(&serde_yaml::Value::String("type".into()))
+        .get(&serde_yml::Value::String("type".into()))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
     let template = mapping
-        .get(&serde_yaml::Value::String("template".into()))
+        .get(&serde_yml::Value::String("template".into()))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
     let tags = mapping
-        .get(&serde_yaml::Value::String("tags".into()))
+        .get(&serde_yml::Value::String("tags".into()))
         .and_then(|v| match v {
-            serde_yaml::Value::Sequence(seq) => Some(
+            serde_yml::Value::Sequence(seq) => Some(
                 seq.iter()
                     .filter_map(|item| item.as_str().map(|s| s.to_string()))
                     .collect(),
             ),
-            serde_yaml::Value::String(s) => {
+            serde_yml::Value::String(s) => {
                 // Handle comma-separated tags
                 Some(s.split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect())
             }

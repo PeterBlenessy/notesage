@@ -49,7 +49,7 @@ rusqlite = { version = "0.34", features = ["bundled"] }
 sha2 = "0.10"
 
 # Skills & Agents Platform (Phase 7)
-serde_yaml = "0.9"
+serde_yml = "0.0.12"
 
 # Filesystem watcher (Phase 5)
 notify = { version = "7", features = ["macos_fsevent"] }
