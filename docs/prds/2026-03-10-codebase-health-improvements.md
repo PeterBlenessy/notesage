@@ -89,7 +89,7 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 **Quality gate:**
 
-- [ ] Copilot LSP inline completions work identically to before
+- [x] Copilot LSP inline completions work identically to before
 
 - [ ] MCP server start/stop/tool-call work identically to before
 

@@ -1,18 +1,19 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{AsyncReadExt, BufReader, BufWriter};
 use tokio::process::{Child, ChildStdin, ChildStdout};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::Mutex;
 use tokio::time::timeout;
 
+use super::json_rpc::{
+    self, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, PendingRequests,
+};
 use super::shell_path::get_shell_path;
 
 // ---------------------------------------------------------------------------
@@ -58,53 +59,6 @@ pub struct SignInResponse {
 }
 
 // ---------------------------------------------------------------------------
-// JSON-RPC 2.0 message types
-// ---------------------------------------------------------------------------
-
-#[derive(Serialize, Debug)]
-struct JsonRpcRequest {
-    jsonrpc: &'static str,
-    id: u64,
-    method: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    params: Option<Value>,
-}
-
-#[derive(Serialize, Debug)]
-struct JsonRpcNotification {
-    jsonrpc: &'static str,
-    method: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    params: Option<Value>,
-}
-
-/// A response from the server, or a request from the server (has id + method).
-#[derive(Deserialize, Debug)]
-struct JsonRpcMessage {
-    #[allow(dead_code)]
-    jsonrpc: Option<String>,
-    id: Option<Value>,
-    method: Option<String>,
-    params: Option<Value>,
-    result: Option<Value>,
-    error: Option<JsonRpcError>,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct JsonRpcError {
-    pub code: i64,
-    pub message: String,
-    #[allow(dead_code)]
-    pub data: Option<Value>,
-}
-
-impl std::fmt::Display for JsonRpcError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "JSON-RPC error {}: {}", self.code, self.message)
-    }
-}
-
-// ---------------------------------------------------------------------------
 // JSON-RPC Transport
 // ---------------------------------------------------------------------------
 
@@ -116,8 +70,7 @@ impl std::fmt::Display for JsonRpcError {
 /// to Tauri events.
 pub struct JsonRpcTransport {
     writer: Arc<Mutex<BufWriter<ChildStdin>>>,
-    next_id: Arc<AtomicU64>,
-    pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, JsonRpcError>>>>>,
+    pending: PendingRequests,
 }
 
 impl JsonRpcTransport {
@@ -129,13 +82,10 @@ impl JsonRpcTransport {
     /// - Emits server→client notifications as Tauri events
     pub fn new(stdin: ChildStdin, stdout: ChildStdout, child_pid: Option<u32>, app: AppHandle) -> Self {
         let writer = Arc::new(Mutex::new(BufWriter::new(stdin)));
-        let next_id = Arc::new(AtomicU64::new(1));
-        let pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, JsonRpcError>>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
+        let pending = json_rpc::new_pending_requests();
 
         let reader_pending = pending.clone();
         let reader_writer = writer.clone();
-        let reader_next_id = next_id.clone();
 
         // Spawn the reader loop
         tokio::spawn(async move {
@@ -143,7 +93,6 @@ impl JsonRpcTransport {
                 stdout,
                 reader_pending,
                 reader_writer,
-                reader_next_id,
                 child_pid,
                 app,
             )
@@ -155,7 +104,6 @@ impl JsonRpcTransport {
 
         Self {
             writer,
-            next_id,
             pending,
         }
     }
@@ -166,20 +114,16 @@ impl JsonRpcTransport {
         method: &str,
         params: Option<Value>,
     ) -> Result<Value, String> {
-        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let id = json_rpc::next_request_id();
+        let msg = JsonRpcRequest::new(id, method, params);
 
-        let msg = JsonRpcRequest {
-            jsonrpc: "2.0",
-            id,
-            method: method.to_string(),
-            params,
-        };
-
-        let (tx, rx) = oneshot::channel();
+        let (tx, rx) = tokio::sync::oneshot::channel();
         self.pending.lock().await.insert(id, tx);
 
-        self.write_message(&serde_json::to_string(&msg).map_err(|e| e.to_string())?)
-            .await?;
+        let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
+        let mut writer = self.writer.lock().await;
+        json_rpc::write_message(&mut *writer, &json).await?;
+        drop(writer);
 
         match rx.await {
             Ok(Ok(value)) => Ok(value),
@@ -194,33 +138,10 @@ impl JsonRpcTransport {
         method: &str,
         params: Option<Value>,
     ) -> Result<(), String> {
-        let msg = JsonRpcNotification {
-            jsonrpc: "2.0",
-            method: method.to_string(),
-            params,
-        };
-
-        self.write_message(&serde_json::to_string(&msg).map_err(|e| e.to_string())?)
-            .await
-    }
-
-    /// Write a raw JSON-RPC message with Content-Length framing.
-    async fn write_message(&self, json: &str) -> Result<(), String> {
-        let header = format!("Content-Length: {}\r\n\r\n", json.len());
+        let msg = JsonRpcNotification::new(method, params);
+        let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
         let mut writer = self.writer.lock().await;
-        writer
-            .write_all(header.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to write header: {}", e))?;
-        writer
-            .write_all(json.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to write body: {}", e))?;
-        writer
-            .flush()
-            .await
-            .map_err(|e| format!("Failed to flush: {}", e))?;
-        Ok(())
+        json_rpc::write_message(&mut *writer, &json).await
     }
 }
 
@@ -228,33 +149,13 @@ impl JsonRpcTransport {
 // Reader loop
 // ---------------------------------------------------------------------------
 
-/// Check if a process is still alive using its PID.
-fn is_process_alive(pid: Option<u32>) -> bool {
-    match pid {
-        Some(pid) => {
-            // On Unix, kill(pid, 0) checks existence without sending a signal
-            #[cfg(unix)]
-            {
-                unsafe { libc::kill(pid as i32, 0) == 0 }
-            }
-            #[cfg(not(unix))]
-            {
-                let _ = pid;
-                true // Assume alive on non-Unix platforms
-            }
-        }
-        None => true, // No PID available, assume alive
-    }
-}
-
 const READER_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Continuously reads JSON-RPC messages from the LSP server stdout.
 async fn reader_loop(
     stdout: ChildStdout,
-    pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, JsonRpcError>>>>>,
+    pending: PendingRequests,
     writer: Arc<Mutex<BufWriter<ChildStdin>>>,
-    next_id: Arc<AtomicU64>,
     child_pid: Option<u32>,
     app: AppHandle,
 ) -> Result<(), String> {
@@ -262,11 +163,11 @@ async fn reader_loop(
 
     loop {
         // 1. Read headers until we find Content-Length (with timeout)
-        let content_length = match timeout(READER_TIMEOUT, read_content_length(&mut reader)).await {
+        let content_length = match timeout(READER_TIMEOUT, json_rpc::read_content_length(&mut reader)).await {
             Ok(result) => result?,
             Err(_) => {
                 log::warn!(target: "notesage::copilot_lsp", "Reader timeout — checking process health");
-                if !is_process_alive(child_pid) {
+                if !json_rpc::is_process_alive(child_pid) {
                     log::error!(target: "notesage::copilot_lsp", "LSP process is dead after reader timeout");
                     let _ = app.emit(
                         "copilot-status-changed",
@@ -290,7 +191,7 @@ async fn reader_loop(
             }
             Err(_) => {
                 log::warn!(target: "notesage::copilot_lsp", "Reader timeout reading body — checking process health");
-                if !is_process_alive(child_pid) {
+                if !json_rpc::is_process_alive(child_pid) {
                     log::error!(target: "notesage::copilot_lsp", "LSP process is dead after body read timeout");
                     let _ = app.emit(
                         "copilot-status-changed",
@@ -326,7 +227,6 @@ async fn reader_loop(
                     msg.id.as_ref().unwrap(),
                     msg.params.as_ref(),
                     &writer,
-                    &next_id,
                     &app,
                 )
                 .await;
@@ -334,56 +234,11 @@ async fn reader_loop(
                 // Server→client notification
                 handle_server_notification(method, msg.params.as_ref(), &app).await;
             }
-        } else if let Some(id_val) = &msg.id {
+        } else if msg.id.is_some() {
             // Response to a client→server request
-            let id = match id_val {
-                Value::Number(n) => n.as_u64().unwrap_or(0),
-                _ => 0,
-            };
-
-            let mut map = pending.lock().await;
-            if let Some(tx) = map.remove(&id) {
-                if let Some(err) = msg.error {
-                    let _ = tx.send(Err(err));
-                } else {
-                    let _ = tx.send(Ok(msg.result.unwrap_or(Value::Null)));
-                }
-            }
+            json_rpc::dispatch_response(&pending, &msg).await;
         }
     }
-}
-
-/// Parse Content-Length from LSP headers.
-/// Headers are `Key: Value\r\n` lines terminated by an empty `\r\n` line.
-async fn read_content_length(
-    reader: &mut BufReader<ChildStdout>,
-) -> Result<usize, String> {
-    let mut content_length: Option<usize> = None;
-
-    loop {
-        let mut line = String::new();
-        let bytes_read = reader
-            .read_line(&mut line)
-            .await
-            .map_err(|e| format!("Failed to read header line: {}", e))?;
-
-        if bytes_read == 0 {
-            return Err("EOF while reading headers (LSP process exited)".to_string());
-        }
-
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            // End of headers
-            break;
-        }
-
-        if let Some(val) = trimmed.strip_prefix("Content-Length:") {
-            content_length = val.trim().parse().ok();
-        }
-        // Ignore other headers (e.g., Content-Type)
-    }
-
-    content_length.ok_or_else(|| "Missing Content-Length header".to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -396,7 +251,6 @@ async fn handle_server_request(
     id: &Value,
     params: Option<&Value>,
     writer: &Arc<Mutex<BufWriter<ChildStdin>>>,
-    next_id: &Arc<AtomicU64>,
     app: &AppHandle,
 ) {
     let response_result = match method {
@@ -454,22 +308,17 @@ async fn handle_server_request(
                         .unwrap_or(Value::Array(vec![]));
 
                     if !cmd_name.is_empty() {
-                        let exec_id = next_id.fetch_add(1, Ordering::SeqCst);
-                        let exec_req = serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "id": exec_id,
-                            "method": "workspace/executeCommand",
-                            "params": {
+                        let exec_req = JsonRpcRequest::new(
+                            json_rpc::next_request_id(),
+                            "workspace/executeCommand",
+                            Some(serde_json::json!({
                                 "command": cmd_name,
                                 "arguments": cmd_args,
-                            },
-                        });
+                            })),
+                        );
                         if let Ok(json) = serde_json::to_string(&exec_req) {
-                            let header = format!("Content-Length: {}\r\n\r\n", json.len());
                             let mut w = writer.lock().await;
-                            let _ = w.write_all(header.as_bytes()).await;
-                            let _ = w.write_all(json.as_bytes()).await;
-                            let _ = w.flush().await;
+                            let _ = json_rpc::write_message(&mut *w, &json).await;
                         }
                     }
                 }
@@ -543,11 +392,8 @@ async fn handle_server_request(
     });
 
     if let Ok(json) = serde_json::to_string(&response) {
-        let header = format!("Content-Length: {}\r\n\r\n", json.len());
         let mut w = writer.lock().await;
-        let _ = w.write_all(header.as_bytes()).await;
-        let _ = w.write_all(json.as_bytes()).await;
-        let _ = w.flush().await;
+        let _ = json_rpc::write_message(&mut *w, &json).await;
     }
 }
 

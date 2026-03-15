@@ -113,7 +113,7 @@ Add unit tests for message framing (serialize, parse, round-trip).
 
 ---
 
-### #5 — Refactor `copilot_lsp.rs` to use shared JSON-RPC
+### #5 — Refactor `copilot_lsp.rs` to use shared JSON-RPC ✅
 
 | Field | Value |
 | --- | --- |
