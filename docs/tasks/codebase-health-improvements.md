@@ -280,7 +280,7 @@ Slim `useAIOperations.ts` to an orchestration layer that delegates to `useAcpLif
 
 ---
 
-### #12 — Extract `useScrollPersistence.ts` and `useEditorResize.ts` from `Editor.tsx`
+### #12 — Extract `useScrollPersistence.ts` and `useEditorResize.ts` from `Editor.tsx` ✅
 
 | Field | Value |
 | --- | --- |

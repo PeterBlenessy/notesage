@@ -1,4 +1,6 @@
 import { useEffect, useCallback, useRef, useState, useMemo, type MutableRefObject } from "react";
+import { useScrollPersistence } from "@/hooks/useScrollPersistence";
+import { useEditorResize } from "@/hooks/useEditorResize";
 import { EditorContent } from "@tiptap/react";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
@@ -313,7 +315,7 @@ interface EditorProps {
 }
 
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick, onShortcutsOpen, onOpenActions }: EditorProps) {
-  const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, scrollPositions, setScrollPosition, externalChanges, clearExternalChange, toggleCopilotForTab, toggleViewMode, setScrollToTag, setScrollToText } = useEditorStore();
+  const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, externalChanges, clearExternalChange, toggleCopilotForTab, toggleViewMode, setScrollToTag, setScrollToText } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, pageBreaks, notesRootPath, sourceWordWrap, setSourceWordWrap } = useSettingsStore();
   const editorStyles = useEditorStylesStore();
@@ -327,13 +329,30 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const isPaperMode = contentWidth === 'a4' || contentWidth === 'a5' || contentWidth === 'letter';
   const pageHeight = isPaperMode ? CONTENT_HEIGHTS[contentWidth] : undefined;
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
-  const lastLoadedTabId = useRef<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const isResizing = useRef(false);
-  const isProgrammaticScroll = useRef(false);
-  const resizeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const [renderedWidth, setRenderedWidth] = useState<number | null>(null);
+
+  const {
+    isProgrammaticScroll,
+    isResizing,
+    lastLoadedTabId,
+    restoreScrollRatio,
+    saveOutgoingTabScroll,
+  } = useScrollPersistence({
+    scrollAreaRef,
+    activeTabId,
+    activeTabFilePath: activeTab?.filePath,
+  });
+
+  const { renderedWidth } = useEditorResize({
+    contentRef,
+    scrollAreaRef,
+    isProgrammaticScroll,
+    isResizing,
+    activeTabId,
+    activeTabFilePath: activeTab?.filePath,
+    restoreScrollRatio,
+  });
   const [pageInfo, setPageInfo] = useState<{ current: number; total: number } | null>(null);
   const [commentListOpen, setCommentListOpen] = useState(false);
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
@@ -361,88 +380,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const paddingBottom = `${marginBottom * PX_PER_CM}px`;
   const paddingLeft = `${marginLeft * PX_PER_CM}px`;
   const paddingRight = `${marginRight * PX_PER_CM}px`;
-
-  // Save current scroll position as a ratio (0–1) keyed by file path
-  const saveScrollRatio = useCallback(() => {
-    const el = scrollAreaRef.current;
-    // Skip save during resize, programmatic scroll, or before first tab load
-    if (!el || !activeTab || isResizing.current || isProgrammaticScroll.current || !lastLoadedTabId.current) return;
-    const maxScroll = el.scrollHeight - el.clientHeight;
-    const ratio = maxScroll > 0 ? el.scrollTop / maxScroll : 0;
-    setScrollPosition(activeTab.filePath, ratio);
-  }, [activeTab, setScrollPosition]);
-
-  // Restore scroll position from the persisted ratio
-  const restoreScrollRatio = useCallback((filePath: string, onComplete?: () => void) => {
-    const el = scrollAreaRef.current;
-    if (!el) return;
-    const ratio = scrollPositions[filePath] ?? 0;
-    // Double-RAF: first waits for ProseMirror DOM update, second for layout
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (!scrollAreaRef.current) return;
-        const maxScroll = scrollAreaRef.current.scrollHeight - scrollAreaRef.current.clientHeight;
-        scrollAreaRef.current.scrollTop = ratio * maxScroll;
-        onComplete?.();
-      });
-    });
-  }, [scrollPositions]);
-
-  // Save scroll position on scroll events (debounced)
-  useEffect(() => {
-    const el = scrollAreaRef.current;
-    if (!el || !activeTab) return;
-    let timeout: ReturnType<typeof setTimeout>;
-    const onScroll = () => {
-      clearTimeout(timeout);
-      timeout = setTimeout(saveScrollRatio, 150);
-    };
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      el.removeEventListener('scroll', onScroll);
-      clearTimeout(timeout);
-    };
-  }, [activeTab, saveScrollRatio]);
-
-  // Observe rendered width of content container
-  useEffect(() => {
-    const el = contentRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setRenderedWidth(entry.contentRect.width);
-      }
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [activeTab]);
-
-  // Observe scroll container for resize — suppress scroll saves and restore after settling.
-  // Skip restore if a programmatic scroll-to-text/tag is active.
-  useEffect(() => {
-    const el = scrollAreaRef.current;
-    if (!el || !activeTab) return;
-    const observer = new ResizeObserver(() => {
-      if (isProgrammaticScroll.current) return; // Don't interfere with scroll-to-text
-      isResizing.current = true;
-      clearTimeout(resizeTimer.current);
-      resizeTimer.current = setTimeout(() => {
-        if (isProgrammaticScroll.current) { isResizing.current = false; return; }
-        restoreScrollRatio(activeTab.filePath);
-        // Allow saves again after restore has been fully applied (matches double-RAF in restore)
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            isResizing.current = false;
-          });
-        });
-      }, 100);
-    });
-    observer.observe(el);
-    return () => {
-      observer.disconnect();
-      clearTimeout(resizeTimer.current);
-    };
-  }, [activeTab, restoreScrollRatio]);
 
   const handleUpdate = useCallback(
     (content: string) => {
@@ -855,21 +792,11 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   // Update editor content when switching tabs, saving/restoring scroll position
   useEffect(() => {
     if (editor && activeTab && activeTab.id !== lastLoadedTabId.current) {
-      // Save scroll position of the tab we're LEAVING.
-      // Cannot use saveScrollRatio() here because activeTab already points to the
-      // new tab in this render.  Instead, look up the previous tab by its id.
-      const el = scrollAreaRef.current;
-      const prevTabId = lastLoadedTabId.current;
-      if (el && prevTabId && !isResizing.current) {
-        const prevTab = tabs.find((t) => t.id === prevTabId);
-        if (prevTab) {
-          const maxScroll = el.scrollHeight - el.clientHeight;
-          const ratio = maxScroll > 0 ? el.scrollTop / maxScroll : 0;
-          setScrollPosition(prevTab.filePath, ratio);
-        }
-      }
+      // Save scroll position of the tab we're LEAVING
+      saveOutgoingTabScroll();
 
       // Hide scroll area to prevent flicker (content renders at top before scroll restores)
+      const el = scrollAreaRef.current;
       if (el) {
         el.style.opacity = '0';
       }
@@ -927,7 +854,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         });
       }
     }
-  }, [activeTab?.id, editor, activeTab, tabs, setScrollPosition, restoreScrollRatio, externalChanges, updateTabContent, clearExternalChange, setScrollToTag, setScrollToText]);
+  }, [activeTab?.id, editor, activeTab, saveOutgoingTabScroll, restoreScrollRatio, externalChanges, updateTabContent, clearExternalChange, setScrollToTag, setScrollToText]);
 
   // Scroll to tag when scrollToTag is set on the already-active tab (same-tab jump)
   useEffect(() => {
