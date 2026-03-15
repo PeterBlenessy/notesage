@@ -219,7 +219,7 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
                   <>
                     {projectRoots.length > 0 && (
                       <SelectGroup>
-                        <SelectLabel>Projects</SelectLabel>
+                        <SelectLabel className="uppercase tracking-wider text-[10px]">Projects</SelectLabel>
                         {projectRoots.map((r) => (
                           <SelectItem key={r.path} value={r.path}>
                             <span className="flex items-center gap-1.5">
@@ -233,7 +233,7 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
                     )}
                     {folderRoots.length > 0 && (
                       <SelectGroup>
-                        <SelectLabel>Folders</SelectLabel>
+                        <SelectLabel className="uppercase tracking-wider text-[10px]">Folders</SelectLabel>
                         {folderRoots.map((r) => (
                           <SelectItem key={r.path} value={r.path}>
                             <span className="flex items-center gap-1.5">
@@ -247,7 +247,7 @@ export function ActionFilterBar({ children }: { children?: React.ReactNode }) {
                     )}
                     {notesRoots.length > 0 && (
                       <SelectGroup>
-                        <SelectLabel>Notes</SelectLabel>
+                        <SelectLabel className="uppercase tracking-wider text-[10px]">Notes</SelectLabel>
                         {notesRoots.map((r) => (
                           <SelectItem key={r.path} value={r.path}>
                             <span className="flex items-center gap-1.5">
