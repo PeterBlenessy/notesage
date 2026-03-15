@@ -42,7 +42,7 @@ export function ContextDivider({ segment, previousSegment }: ContextDividerProps
           {prevNames.length > 0 && (
             <p>Switched from: {prevNames.join(', ')}</p>
           )}
-          <p>History: {segment.historyIncluded ? 'Included (user opted in)' : 'Not included'}</p>
+          <p>History: {segment.historyIncluded ? `Included — ${segment.startMessageIndex} prior message${segment.startMessageIndex !== 1 ? 's' : ''}` : 'Not included'}</p>
           <p>Session: {segment.sessionId ? 'Active' : 'Pending'}</p>
         </div>
       )}
