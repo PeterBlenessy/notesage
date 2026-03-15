@@ -178,7 +178,7 @@ Update `mod.rs` exports and `lib.rs` `generate_handler![]` if function paths cha
 
 ---
 
-### #8 — Extract `script_exec.rs` from `skills.rs`
+### #8 — Extract `script_exec.rs` from `skills.rs` ✅
 
 | Field | Value |
 | --- | --- |
