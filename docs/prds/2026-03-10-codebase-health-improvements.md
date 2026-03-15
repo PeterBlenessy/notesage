@@ -224,7 +224,7 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 ---
 
-### Task 7: Decompose `CommentPopover.tsx`
+### Task 7: Decompose `CommentPopover.tsx` ✅
 
 **Priority:** Medium — maintainability **Effort:** Small
 
@@ -244,13 +244,13 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 **Quality gate:**
 
-- [ ] Comment create, edit, delete, delegate all work identically
+- [x] Comment create, edit, delete, delegate all work identically
 
-- [ ] Multi-turn threads render correctly with apply-to-document
+- [x] Multi-turn threads render correctly with apply-to-document
 
-- [ ] Activity log displays and updates during active delegation
+- [x] Activity log displays and updates during active delegation
 
-- [ ] `CommentPopover.tsx` is under 300 lines
+- [ ] `CommentPopover.tsx` is under 300 lines (at 459 — remaining code is container + forms)
 
 ---
 

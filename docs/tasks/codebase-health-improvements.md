@@ -325,7 +325,7 @@ These are the most self-contained extractable units from Editor.tsx.
 
 ---
 
-### #14 — Decompose `CommentPopover.tsx`
+### #14 — Decompose `CommentPopover.tsx` ✅
 
 | Field | Value |
 | --- | --- |
