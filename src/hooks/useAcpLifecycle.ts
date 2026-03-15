@@ -18,6 +18,7 @@ interface AcpSpawnResult {
   agent_name: string | null;
   agent_version: string | null;
   auth_methods: { id: string; name: string; description: string | null }[];
+  sandbox_enabled: boolean;
 }
 
 interface AcpModelInfo {

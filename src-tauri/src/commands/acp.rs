@@ -35,6 +35,7 @@ pub struct SpawnResult {
     pub agent_name: Option<String>,
     pub agent_version: Option<String>,
     pub auth_methods: Vec<AuthMethodInfo>,
+    pub sandbox_enabled: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -287,6 +288,7 @@ fn run_agent_thread(
     agent_args: Vec<String>,
     working_directory: String,
     env_vars: HashMap<String, String>,
+    sandbox_enabled: bool,
     mut cmd_rx: mpsc::Receiver<AgentCmd>,
     init_tx: oneshot::Sender<Result<InitInfo, String>>,
 ) {
@@ -312,11 +314,31 @@ fn run_agent_thread(
             next_request_id: Cell::new(0),
         };
 
-        // Spawn agent process — inject login shell PATH so the agent
-        // (and its child processes) can find Node.js and other tools
-        let mut spawn_cmd = tokio::process::Command::new(&agent_binary);
+        // Spawn agent process — optionally wrapped in OS-level sandbox
+        // Inject login shell PATH so the agent (and child processes) can find tools
+        let mut spawn_cmd = if sandbox_enabled {
+            match super::sandbox::sandboxed_command(&working_directory) {
+                Ok((program, prefix_args)) => {
+                    log::info!(target: "notesage::acp", "Spawning {} in sandbox ({})", agent_binary, program);
+                    let mut cmd = tokio::process::Command::new(&program);
+                    cmd.args(&prefix_args);
+                    cmd.arg(&agent_binary);
+                    cmd.args(&agent_args);
+                    cmd
+                }
+                Err(e) => {
+                    log::warn!(target: "notesage::acp", "Sandbox unavailable, spawning unsandboxed: {}", e);
+                    let mut cmd = tokio::process::Command::new(&agent_binary);
+                    cmd.args(&agent_args);
+                    cmd
+                }
+            }
+        } else {
+            let mut cmd = tokio::process::Command::new(&agent_binary);
+            cmd.args(&agent_args);
+            cmd
+        };
         spawn_cmd
-            .args(&agent_args)
             .current_dir(&working_directory)
             .envs(&env_vars)
             .stdin(std::process::Stdio::piped())
@@ -837,6 +859,7 @@ pub async fn acp_agent_spawn(
     role: AgentRole,
     working_directory: String,
     env_vars: Option<HashMap<String, String>>,
+    sandbox_enabled: Option<bool>,
 ) -> Result<SpawnResult, String> {
     let env = env_vars.unwrap_or_default();
     let args = agent_args.unwrap_or_default();
@@ -844,6 +867,10 @@ pub async fn acp_agent_spawn(
     // Resolve the actual binary path (system PATH or bundled node_modules)
     let resolved_binary = resolve_agent_binary(&agent_binary, &app)
         .ok_or_else(|| format!("Agent binary '{}' not found", agent_binary))?;
+
+    // Determine sandbox policy: explicit override, or default based on binary source
+    let sandbox = sandbox_enabled
+        .unwrap_or_else(|| super::sandbox::should_sandbox_by_default(&resolved_binary));
 
     // Generate instance ID before spawning so the thread can use it for events
     let ts = std::time::SystemTime::now()
@@ -867,7 +894,7 @@ pub async fn acp_agent_spawn(
     let thread_handle = std::thread::Builder::new()
         .name(format!("acp-{}", &binary))
         .spawn(move || {
-            run_agent_thread(app, iid, binary, spawn_args, cwd, env, cmd_rx, init_tx);
+            run_agent_thread(app, iid, binary, spawn_args, cwd, env, sandbox, cmd_rx, init_tx);
         })
         .map_err(|e| format!("Failed to spawn agent thread: {}", e))?;
 
@@ -903,6 +930,7 @@ pub async fn acp_agent_spawn(
         agent_name: init_info.agent_name,
         agent_version: init_info.agent_version,
         auth_methods: init_info.auth_methods,
+        sandbox_enabled: sandbox,
     })
 }
 

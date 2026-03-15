@@ -42,13 +42,13 @@
 - **Description:** New Tauri command that orchestrates installation for any agent. For native-binary agents (claude-agent-acp, codex-acp, copilot, copilot-language-server): delegates to GitHub Release download. For Gemini CLI: ensures portable Node.js is available, then runs `npm install --prefix`. Emits `agent-install-progress` and `agent-install-done` events. Validates agent_id against allowlist. Register in `lib.rs`.
 - **Files:** `src-tauri/src/commands/agent_manager.rs`, `src-tauri/src/lib.rs`
 
-### #7 — Seatbelt sandbox profile generation (macOS)
+### #7 — Seatbelt sandbox profile generation (macOS) ✅
 
 - **Complexity:** M | **Category:** backend
 - **Description:** Add `generate_seatbelt_profile()` function that produces a `.sb` file for a given working directory and sandbox config. Hardcoded deny rules for `~/.ssh`, `~/.aws`, `~/.gnupg`, `.env` files. Read-only `.git/`. Writable project dir + `/tmp`. Write profile to `~/.notesage/sandbox/profiles/`. Returns the profile path.
 - **Files:** `src-tauri/src/commands/sandbox.rs` (new)
 
-### #8 — Sandboxed agent spawn in `acp.rs`
+### #8 — Sandboxed agent spawn in `acp.rs` ✅
 
 - **Complexity:** M | **Category:** backend | **Depends on:** #3, #7
 - **Description:** Modify the agent spawn code in `acp_agent_spawn`. Read `sandbox_enabled` from the spawn request (default: true for managed, false for system). On macOS: wrap spawn with `sandbox-exec -f <profile>`. On Linux: wrap with `bwrap` arguments (or apply Landlock). Preserve existing stdio piping, `kill_on_drop`, and ACP initialization. Add `sandbox_enabled` field to `SpawnResult` for frontend awareness. Conditionally compile per platform.

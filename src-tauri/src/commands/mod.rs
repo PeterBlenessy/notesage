@@ -23,6 +23,7 @@ pub mod gguf_parser;
 pub mod model_metadata;
 pub mod actions;
 pub mod agent_manager;
+pub mod sandbox;
 pub mod constants;
 
 pub use file::*;
