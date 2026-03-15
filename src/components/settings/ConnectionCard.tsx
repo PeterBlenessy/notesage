@@ -164,36 +164,35 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect }: Connec
 
   return (
     <div className="space-y-0">
-      <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground/50 transition-colors duration-150">
+      <div className="flex items-start gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground/50 transition-colors duration-150">
         {/* Logo + status */}
-        <div className="relative shrink-0">
+        <div className="relative shrink-0 mt-0.5">
           <ProviderLogo provider={connection.provider} />
           <span className="absolute -bottom-0.5 -right-0.5">
             <StatusDot status={connection.status} tooltip={statusTooltip} />
           </span>
         </div>
 
-        {/* Info */}
+        {/* Center: name + badges */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium truncate">
+            <span className="text-sm font-medium">
               {connection.label}
             </span>
             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
               {AUTH_BADGES[connection.authMethod] ?? connection.authMethod}
             </span>
+          </div>
+          <div className="flex items-center gap-1.5 mt-1">
             {connection.config?.model && (
               <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0 max-w-[140px] truncate" title={connection.config.model}>
                 {prettyModelName(connection.config.model)}
               </span>
             )}
-          </div>
-          {/* Capability badges */}
-          <div className="flex items-center gap-1.5 mt-1">
             {connection.capabilities.map((cap) => (
               <span
                 key={cap}
-                className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground"
+                className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground shrink-0"
               >
                 {CAPABILITY_LABELS[cap]}
               </span>
@@ -201,41 +200,41 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect }: Connec
           </div>
         </div>
 
-        {/* Actions */}
+        {/* Right: action buttons */}
         <div className="flex items-center gap-1 shrink-0">
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            className="h-7 w-7 text-muted-foreground hover:text-foreground"
             onClick={testConnection}
             disabled={health === 'testing'}
             title="Test connection"
           >
-            {health === 'testing' && <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.5} />}
-            {health === 'ok' && <Check className="h-4 w-4 text-green-500" strokeWidth={1.5} />}
-            {health === 'fail' && <X className="h-4 w-4 text-destructive" strokeWidth={1.5} />}
-            {health === 'idle' && <HeartPulse className="h-4 w-4" strokeWidth={1.5} />}
+            {health === 'testing' && <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />}
+            {health === 'ok' && <Check className="h-3.5 w-3.5 text-green-500" strokeWidth={1.5} />}
+            {health === 'fail' && <X className="h-3.5 w-3.5 text-destructive" strokeWidth={1.5} />}
+            {health === 'idle' && <HeartPulse className="h-3.5 w-3.5" strokeWidth={1.5} />}
           </Button>
           {onConfigure && (
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
               onClick={() => onConfigure(connection)}
               title="Configure"
             >
-              <Settings2 className="h-4 w-4" strokeWidth={1.5} />
+              <Settings2 className="h-3.5 w-3.5" strokeWidth={1.5} />
             </Button>
           )}
           {onDisconnect && (
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+              className="h-7 w-7 text-muted-foreground hover:text-destructive"
               onClick={() => onDisconnect(connection)}
               title="Disconnect"
             >
-              <Unplug className="h-4 w-4" strokeWidth={1.5} />
+              <Unplug className="h-3.5 w-3.5" strokeWidth={1.5} />
             </Button>
           )}
         </div>
