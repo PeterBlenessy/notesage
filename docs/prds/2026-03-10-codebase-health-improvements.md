@@ -1,12 +1,12 @@
 # PRD: Codebase Health Improvements
 
-**Date:** 2026-03-10 **Status:** 📋 Planned **Source:** `docs/research/codebase-analysis.md` (2026-03-09) **Structure:** 12 independent, incremental tasks — each can ship in any release, in any order.
+**Date:** 2026-03-10 (updated 2026-03-15) **Status:** 📋 Planned **Source:** `docs/research/codebase-analysis.md` (2026-03-09) **Structure:** 12 independent, incremental tasks — each can ship in any release, in any order.
 
 ---
 
 ## Problem
 
-Notesage has grown from a simple markdown editor to a 27K-line codebase (15K frontend, 12K Rust) with 85+ Tauri commands, 13+ Zustand stores, and 6 concurrent ProseMirror decoration layers. The dependency choices and core architecture are sound, but organic growth has created:
+Notesage has grown from a simple markdown editor to a 29K-line codebase (16K frontend, 13K Rust) with 85+ Tauri commands, 13+ Zustand stores, and 6 concurrent ProseMirror decoration layers. The dependency choices and core architecture are sound, but organic growth has created:
 
 1. **Reliability gaps** — no React error boundaries means a single hook crash blanks the entire app; duplicated JSON-RPC transport code means protocol bugs must be fixed in two places.
 2. **Maintainability pressure** — 7 files exceed 700 lines (largest: Editor.tsx at 1,649), making changes risky and code review slow.
@@ -269,7 +269,8 @@ None of these are blocking users today, but each increases the cost and risk of 
 **Files to modify:**
 
 - `src-tauri/Cargo.toml`
-- Any `.rs` files that import `serde_yaml` (likely `skills.rs`, possibly `file.rs`)
+- `src-tauri/src/commands/skills.rs` (imports `serde_yaml`)
+- `src-tauri/src/index/parser.rs` (imports `serde_yaml`)
 
 **Quality gate:**
 

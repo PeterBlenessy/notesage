@@ -203,12 +203,12 @@ Move script execution logic out of `skills.rs` into a new `script_exec.rs`:
 | **Complexity** | S |
 | **Category** | backend |
 | **Dependencies** | None |
-| **Files** | `src-tauri/Cargo.toml`, `src-tauri/src/commands/skills.rs` |
+| **Files** | `src-tauri/Cargo.toml`, `src-tauri/src/commands/skills.rs`, `src-tauri/src/index/parser.rs` |
 
 Drop-in replacement. `serde_yaml` is archived; `serde_yml` is the maintained fork with identical API.
 
 - Replace `serde_yaml = "0.9"` with `serde_yml = "0.9"` in `Cargo.toml`
-- Find-and-replace `serde_yaml::` with `serde_yml::` in `skills.rs` (the only consumer)
+- Find-and-replace `serde_yaml::` with `serde_yml::` in `skills.rs` and `index/parser.rs` (the two consumers)
 - Run `cargo build` to verify
 
 **Acceptance criteria:**
@@ -356,7 +356,7 @@ Keep `CommentPopover.tsx` as container with create/edit/delete forms.
 
 ## Dependency Cleanup
 
-### #16 — Remove unused `next-themes` dependency
+### #16 — Remove unused `next-themes` dependency ✅
 
 | Field | Value |
 |-------|-------|
