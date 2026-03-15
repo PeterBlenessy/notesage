@@ -4,7 +4,8 @@ import { CAPABILITY_LABELS, prettyModelName, setAgentModels } from '@/lib/ai/con
 import { useConnectionsStore } from '@/stores/connections-store';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { Button } from '@/components/ui/button';
-import { Settings2, Unplug, HeartPulse, Loader2, Check, X } from 'lucide-react';
+import { Settings2, Unplug, HeartPulse, Loader2, Check, X, ArrowUpCircle } from 'lucide-react';
+import { toast } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
 
 const AUTH_BADGES: Record<string, string> = {
@@ -39,15 +40,24 @@ function StatusDot({ status, tooltip }: { status: Connection['status']; tooltip?
 
 type HealthState = 'idle' | 'testing' | 'ok' | 'fail';
 
+export interface AgentUpdateAvailable {
+  agentId: string;
+  currentVersion: string;
+  latestVersion: string;
+}
+
 interface ConnectionCardProps {
   connection: Connection;
   onConfigure?: (connection: Connection) => void;
   onDisconnect?: (connection: Connection) => void;
+  updateAvailable?: AgentUpdateAvailable | null;
+  onUpdateComplete?: () => void;
 }
 
-export function ConnectionCard({ connection, onConfigure, onDisconnect }: ConnectionCardProps) {
+export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAvailable, onUpdateComplete }: ConnectionCardProps) {
   const [health, setHealth] = useState<HealthState>('idle');
   const [healthError, setHealthError] = useState<string | null>(null);
+  const [updating, setUpdating] = useState(false);
   const updateConnection = useConnectionsStore((s) => s.updateConnection);
 
   const testConnection = useCallback(async () => {
@@ -155,6 +165,20 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect }: Connec
     setTimeout(() => setHealth('idle'), 4000);
   }, [connection, updateConnection]);
 
+  const handleUpdate = useCallback(async () => {
+    if (!updateAvailable) return;
+    setUpdating(true);
+    try {
+      const newVersion = await invoke<string>('agent_update', { agentId: updateAvailable.agentId });
+      toast.success(`Updated ${updateAvailable.agentId} to v${newVersion}`);
+      onUpdateComplete?.();
+    } catch (err) {
+      toast.error(`Update failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setUpdating(false);
+    }
+  }, [updateAvailable, onUpdateComplete]);
+
   // Derive a contextual tooltip for the status dot
   const statusTooltip = (() => {
     if (connection.authMethod === 'local_bundled' && connection.status === 'expired') {
@@ -198,6 +222,21 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect }: Connec
                 {CAPABILITY_LABELS[cap]}
               </span>
             ))}
+            {updateAvailable && (
+              <button
+                onClick={handleUpdate}
+                disabled={updating}
+                className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-foreground/10 text-foreground shrink-0 hover:bg-foreground/20 transition-colors cursor-pointer flex items-center gap-1"
+                title={`Update from v${updateAvailable.currentVersion} to v${updateAvailable.latestVersion}`}
+              >
+                {updating ? (
+                  <Loader2 className="h-2.5 w-2.5 animate-spin" strokeWidth={2} />
+                ) : (
+                  <ArrowUpCircle className="h-2.5 w-2.5" strokeWidth={2} />
+                )}
+                v{updateAvailable.currentVersion} → v{updateAvailable.latestVersion}
+              </button>
+            )}
           </div>
         </div>
 

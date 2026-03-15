@@ -54,7 +54,7 @@
 - **Description:** Modify the agent spawn code in `acp_agent_spawn`. Read `sandbox_enabled` from the spawn request (default: true for managed, false for system). On macOS: wrap spawn with `sandbox-exec -f <profile>`. On Linux: wrap with `bwrap` arguments (or apply Landlock). Preserve existing stdio piping, `kill_on_drop`, and ACP initialization. Add `sandbox_enabled` field to `SpawnResult` for frontend awareness. Conditionally compile per platform.
 - **Files:** `src-tauri/src/commands/acp.rs`, `src-tauri/src/commands/sandbox.rs`
 
-### #9 — Update checking system
+### #9 — Update checking system ✅
 
 - **Complexity:** M | **Category:** backend | **Depends on:** #4
 - **Description:** Add `agent_check_updates` Tauri command. Reads `versions.json`, queries GitHub Releases API (or npm registry for Gemini) for each managed agent. Returns list of agents with updates available. Respects rate limiting (cache `lastChecked` timestamp, minimum 24h between automatic checks). Add `agent_update` command that stops running agent, downloads new version, replaces binary, updates `versions.json`. Emits `agent-update-available` events.
@@ -72,7 +72,7 @@
 - **Description:** Redesign `ConnectAgent` component. When binary not found on system, show "Install" button (managed download) with progress bar + phase indicator (downloading → verifying → extracting → configuring). Show manual install command as fallback. On install failure, show error with retry. When binary found on system, skip install phase entirely. Add source indicator to connection card ("Managed by Notesage" vs "System install"). Add sandbox toggle per connection (default based on source). After successful managed install, auto-proceed to auth phase.
 - **Files:** `src/components/settings/ConnectionsSettings.tsx`
 
-### #12 — Update indicator and update UI
+### #12 — Update indicator and update UI ✅
 
 - **Complexity:** L | **Category:** frontend + backend | **Depends on:** #9, #11
 - **Description:** Trigger background update check on app launch and every 24h. Show update badge on connection cards when update available ("v1.2 → v1.3"). Add "Check for updates" action per connection and in connections header. Update flow: confirm if agent is running ("Restart to update?"), show progress, toast on completion. Add "Managed Agents" section to settings showing all managed binaries with versions and update status.

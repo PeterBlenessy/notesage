@@ -110,6 +110,8 @@ pub fn run() {
             agent_resolve_binary,
             agent_install,
             agent_uninstall,
+            agent_check_updates,
+            agent_update,
             acp_agent_check_availability,
             acp_agent_spawn,
             acp_agent_authenticate,

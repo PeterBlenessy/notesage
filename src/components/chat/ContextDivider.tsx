@@ -6,11 +6,9 @@ const basename = (p: string) => p.split('/').pop() || p;
 interface ContextDividerProps {
   segment: ConversationSegment;
   previousSegment?: ConversationSegment;
-  /** Actual count of messages before this segment (accounts for deletions) */
-  priorMessageCount?: number;
 }
 
-export function ContextDivider({ segment, previousSegment, priorMessageCount }: ContextDividerProps) {
+export function ContextDivider({ segment, previousSegment }: ContextDividerProps) {
   const [expanded, setExpanded] = useState(false);
 
   const names = segment.projectPaths.map((p) => basename(p));

@@ -79,6 +79,21 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
   const [oaiBaseUrl, setOaiBaseUrl] = useState('');
   const [oaiModel, setOaiModel] = useState('');
 
+  // Agent update checking
+  const [agentUpdates, setAgentUpdates] = useState<Record<string, { currentVersion: string; latestVersion: string }>>({});
+  useEffect(() => {
+    // Check for updates on mount (rate-limited server-side)
+    invoke<{ agent_id: string; current_version: string; latest_version: string }[]>('agent_check_updates')
+      .then((updates) => {
+        const map: Record<string, { currentVersion: string; latestVersion: string }> = {};
+        for (const u of updates) {
+          map[u.agent_id] = { currentVersion: u.current_version, latestVersion: u.latest_version };
+        }
+        if (Object.keys(map).length > 0) setAgentUpdates(map);
+      })
+      .catch(() => {});
+  }, []);
+
   const resetFlow = useCallback(() => {
     setFlow({ step: 'pick' });
     setInputValue('');
@@ -450,6 +465,24 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
               connection={conn}
               onConfigure={setConfigDialogConnection}
               onDisconnect={handleDisconnect}
+              updateAvailable={
+                conn.credentials.type === 'agent_managed'
+                  ? (() => {
+                      const creds = conn.credentials as { agentBinary: string };
+                      const u = agentUpdates[creds.agentBinary];
+                      return u ? { agentId: creds.agentBinary, ...u } : null;
+                    })()
+                  : null
+              }
+              onUpdateComplete={() => {
+                // Clear the update for this agent
+                setAgentUpdates((prev) => {
+                  const next = { ...prev };
+                  const creds = conn.credentials as { agentBinary?: string };
+                  if (creds.agentBinary) delete next[creds.agentBinary];
+                  return next;
+                });
+              }}
             />
           ))}
         </div>

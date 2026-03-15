@@ -771,6 +771,92 @@ async fn do_agent_install(app: &AppHandle, agent_id: &str) -> Result<Option<Stri
     Ok(Some(version))
 }
 
+// ---------------------------------------------------------------------------
+// Update checking
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AgentUpdateInfo {
+    pub agent_id: String,
+    pub current_version: String,
+    pub latest_version: String,
+    pub repo: String,
+}
+
+#[tauri::command]
+pub async fn agent_check_updates(app: AppHandle) -> Result<Vec<AgentUpdateInfo>, String> {
+    let mut versions = read_versions();
+
+    // Rate limit: minimum 1 hour between checks
+    if let Some(ref last) = versions.last_checked {
+        if let Ok(last_time) = chrono::DateTime::parse_from_rfc3339(last) {
+            let elapsed = chrono::Utc::now().signed_duration_since(last_time);
+            if elapsed.num_hours() < 1 {
+                // Return empty — too soon to check again
+                return Ok(vec![]);
+            }
+        }
+    }
+
+    versions.last_checked = Some(chrono::Utc::now().to_rfc3339());
+    let _ = write_versions(&versions);
+
+    let mut updates = Vec::new();
+
+    for (agent_id, entry) in &versions.agents {
+        let config = match agent_config(agent_id) {
+            Some(c) => c,
+            None => continue,
+        };
+
+        match fetch_latest_release(config.repo).await {
+            Ok(release) => {
+                let latest = release.tag_name.trim_start_matches('v').to_string();
+                if latest != entry.version {
+                    updates.push(AgentUpdateInfo {
+                        agent_id: agent_id.clone(),
+                        current_version: entry.version.clone(),
+                        latest_version: latest,
+                        repo: config.repo.to_string(),
+                    });
+                }
+            }
+            Err(e) => {
+                log::warn!(target: "notesage::agent_manager", "Failed to check updates for {}: {}", agent_id, e);
+            }
+        }
+    }
+
+    // Emit events for each available update
+    for update in &updates {
+        let _ = app.emit("agent-update-available", update.clone());
+    }
+
+    Ok(updates)
+}
+
+#[tauri::command]
+pub async fn agent_update(
+    app: AppHandle,
+    state: tauri::State<'_, AgentManagerState>,
+    agent_id: String,
+) -> Result<String, String> {
+    // Reuse the install flow — it downloads latest and overwrites
+    let result = agent_install(app, state, agent_id.clone()).await;
+    if result.is_err() {
+        return Err(result.err().unwrap());
+    }
+
+    // Return the new version
+    let versions = read_versions();
+    let version = versions
+        .agents
+        .get(&agent_id)
+        .map(|e| e.version.clone())
+        .unwrap_or_default();
+    Ok(version)
+}
+
 #[tauri::command]
 pub async fn agent_uninstall(agent_id: String) -> Result<(), String> {
     let bin_path = agents_bin_dir().join(&agent_id);
