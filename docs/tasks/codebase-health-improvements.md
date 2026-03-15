@@ -132,7 +132,7 @@ Replace the inline JSON-RPC types, Content-Length framing, and pending request m
 
 ---
 
-### #6 — Refactor `mcp.rs` to use shared JSON-RPC
+### #6 — Refactor `mcp.rs` to use shared JSON-RPC ✅
 
 | Field | Value |
 | --- | --- |

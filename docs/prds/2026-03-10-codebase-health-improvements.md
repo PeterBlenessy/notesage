@@ -64,7 +64,7 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 ---
 
-### Task 2: Shared JSON-RPC Transport (Rust)
+### Task 2: Shared JSON-RPC Transport (Rust) ✅
 
 **Priority:** High — reliability, deduplication **Effort:** Medium (\~300 lines moved, \~100 new)
 
@@ -91,9 +91,9 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 - [x] Copilot LSP inline completions work identically to before
 
-- [ ] MCP server start/stop/tool-call work identically to before
+- [x] MCP server start/stop/tool-call work identically to before
 
-- [ ] No duplicated Content-Length framing or request dispatch logic remains
+- [x] No duplicated Content-Length framing or request dispatch logic remains
 
 - [x] `json_rpc.rs` has unit tests for message framing and request/response matching
 

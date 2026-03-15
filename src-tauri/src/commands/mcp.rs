@@ -2,15 +2,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{AsyncReadExt, BufReader, BufWriter};
 use tokio::process::{Child, ChildStdin, ChildStdout};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::Mutex;
 use tokio::time::timeout;
 
+use super::json_rpc::{
+    self, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, PendingRequests,
+};
 use super::shell_path::get_shell_path;
 
 // ---------------------------------------------------------------------------
@@ -92,59 +94,12 @@ pub struct McpContent {
 }
 
 // ---------------------------------------------------------------------------
-// JSON-RPC 2.0 message types (MCP-specific, separate from copilot_lsp)
-// ---------------------------------------------------------------------------
-
-#[derive(Serialize, Debug)]
-struct JsonRpcRequest {
-    jsonrpc: &'static str,
-    id: u64,
-    method: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    params: Option<Value>,
-}
-
-#[derive(Serialize, Debug)]
-struct JsonRpcNotification {
-    jsonrpc: &'static str,
-    method: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    params: Option<Value>,
-}
-
-#[derive(Deserialize, Debug)]
-struct JsonRpcMessage {
-    #[allow(dead_code)]
-    jsonrpc: Option<String>,
-    id: Option<Value>,
-    #[allow(dead_code)]
-    method: Option<String>,
-    result: Option<Value>,
-    error: Option<JsonRpcError>,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-struct JsonRpcError {
-    code: i64,
-    message: String,
-    #[allow(dead_code)]
-    data: Option<Value>,
-}
-
-impl std::fmt::Display for JsonRpcError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "JSON-RPC error {}: {}", self.code, self.message)
-    }
-}
-
-// ---------------------------------------------------------------------------
 // MCP Transport
 // ---------------------------------------------------------------------------
 
 struct McpTransport {
     writer: Arc<Mutex<BufWriter<ChildStdin>>>,
-    next_id: Arc<AtomicU64>,
-    pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, JsonRpcError>>>>>,
+    pending: PendingRequests,
 }
 
 impl McpTransport {
@@ -152,16 +107,13 @@ impl McpTransport {
     fn clone_handle(&self) -> Self {
         Self {
             writer: self.writer.clone(),
-            next_id: self.next_id.clone(),
             pending: self.pending.clone(),
         }
     }
 
     fn new(stdin: ChildStdin, stdout: ChildStdout, child_pid: Option<u32>, server_id: String, app: AppHandle) -> Self {
         let writer = Arc::new(Mutex::new(BufWriter::new(stdin)));
-        let next_id = Arc::new(AtomicU64::new(1));
-        let pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, JsonRpcError>>>>> =
-            Arc::new(Mutex::new(HashMap::new()));
+        let pending = json_rpc::new_pending_requests();
 
         let reader_pending = pending.clone();
 
@@ -181,26 +133,22 @@ impl McpTransport {
 
         Self {
             writer,
-            next_id,
             pending,
         }
     }
 
     async fn send_request(&self, method: &str, params: Option<Value>) -> Result<Value, String> {
-        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let id = json_rpc::next_request_id();
 
-        let msg = JsonRpcRequest {
-            jsonrpc: "2.0",
-            id,
-            method: method.to_string(),
-            params,
-        };
+        let msg = JsonRpcRequest::new(id, method, params);
 
-        let (tx, rx) = oneshot::channel();
+        let (tx, rx) = tokio::sync::oneshot::channel();
         self.pending.lock().await.insert(id, tx);
 
-        self.write_message(&serde_json::to_string(&msg).map_err(|e| e.to_string())?)
-            .await?;
+        let json_str = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
+        let mut writer = self.writer.lock().await;
+        json_rpc::write_message(&mut *writer, &json_str).await?;
+        drop(writer);
 
         match rx.await {
             Ok(Ok(value)) => Ok(value),
@@ -210,32 +158,11 @@ impl McpTransport {
     }
 
     async fn send_notification(&self, method: &str, params: Option<Value>) -> Result<(), String> {
-        let msg = JsonRpcNotification {
-            jsonrpc: "2.0",
-            method: method.to_string(),
-            params,
-        };
+        let msg = JsonRpcNotification::new(method, params);
 
-        self.write_message(&serde_json::to_string(&msg).map_err(|e| e.to_string())?)
-            .await
-    }
-
-    async fn write_message(&self, json: &str) -> Result<(), String> {
-        let header = format!("Content-Length: {}\r\n\r\n", json.len());
+        let json_str = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
         let mut writer = self.writer.lock().await;
-        writer
-            .write_all(header.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to write header: {}", e))?;
-        writer
-            .write_all(json.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to write body: {}", e))?;
-        writer
-            .flush()
-            .await
-            .map_err(|e| format!("Failed to flush: {}", e))?;
-        Ok(())
+        json_rpc::write_message(&mut *writer, &json_str).await
     }
 }
 
@@ -243,29 +170,11 @@ impl McpTransport {
 // Reader loop
 // ---------------------------------------------------------------------------
 
-/// Check if a process is still alive using its PID.
-fn is_process_alive(pid: Option<u32>) -> bool {
-    match pid {
-        Some(pid) => {
-            #[cfg(unix)]
-            {
-                unsafe { libc::kill(pid as i32, 0) == 0 }
-            }
-            #[cfg(not(unix))]
-            {
-                let _ = pid;
-                true
-            }
-        }
-        None => true,
-    }
-}
-
 const MCP_READER_TIMEOUT: Duration = Duration::from_secs(30);
 
 async fn mcp_reader_loop(
     stdout: ChildStdout,
-    pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, JsonRpcError>>>>>,
+    pending: PendingRequests,
     child_pid: Option<u32>,
     server_id: &str,
     app: &AppHandle,
@@ -273,11 +182,11 @@ async fn mcp_reader_loop(
     let mut reader = BufReader::new(stdout);
 
     loop {
-        let content_length = match timeout(MCP_READER_TIMEOUT, mcp_read_content_length(&mut reader)).await {
+        let content_length = match timeout(MCP_READER_TIMEOUT, json_rpc::read_content_length(&mut reader)).await {
             Ok(result) => result?,
             Err(_) => {
                 log::warn!(target: "notesage::mcp", "Reader timeout for server {} — checking process health", server_id);
-                if !is_process_alive(child_pid) {
+                if !json_rpc::is_process_alive(child_pid) {
                     log::error!(target: "notesage::mcp", "MCP server {} process is dead after reader timeout", server_id);
                     let _ = app.emit(
                         "mcp-server-status",
@@ -301,7 +210,7 @@ async fn mcp_reader_loop(
             }
             Err(_) => {
                 log::warn!(target: "notesage::mcp", "Reader timeout reading body for server {} — checking process health", server_id);
-                if !is_process_alive(child_pid) {
+                if !json_rpc::is_process_alive(child_pid) {
                     log::error!(target: "notesage::mcp", "MCP server {} process is dead after body read timeout", server_id);
                     let _ = app.emit(
                         "mcp-server-status",
@@ -330,49 +239,8 @@ async fn mcp_reader_loop(
 
         // MCP servers primarily send responses. We don't handle server-initiated
         // requests or notifications in v1 (no sampling, no notifications support).
-        if let Some(id_val) = &msg.id {
-            let id = match id_val {
-                Value::Number(n) => n.as_u64().unwrap_or(0),
-                _ => 0,
-            };
-
-            let mut map = pending.lock().await;
-            if let Some(tx) = map.remove(&id) {
-                if let Some(err) = msg.error {
-                    let _ = tx.send(Err(err));
-                } else {
-                    let _ = tx.send(Ok(msg.result.unwrap_or(Value::Null)));
-                }
-            }
-        }
+        json_rpc::dispatch_response(&pending, &msg).await;
     }
-}
-
-async fn mcp_read_content_length(reader: &mut BufReader<ChildStdout>) -> Result<usize, String> {
-    let mut content_length: Option<usize> = None;
-
-    loop {
-        let mut line = String::new();
-        let bytes_read = reader
-            .read_line(&mut line)
-            .await
-            .map_err(|e| format!("Failed to read header line: {}", e))?;
-
-        if bytes_read == 0 {
-            return Err("EOF while reading headers (MCP server exited)".to_string());
-        }
-
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            break;
-        }
-
-        if let Some(val) = trimmed.strip_prefix("Content-Length:") {
-            content_length = val.trim().parse().ok();
-        }
-    }
-
-    content_length.ok_or_else(|| "Missing Content-Length header".to_string())
 }
 
 // ---------------------------------------------------------------------------
