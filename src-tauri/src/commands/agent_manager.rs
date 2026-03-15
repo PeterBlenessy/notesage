@@ -689,8 +689,13 @@ pub async fn agent_install(
 }
 
 async fn do_agent_install(app: &AppHandle, agent_id: &str) -> Result<Option<String>, String> {
+    // Gemini CLI has a special install flow (requires Node.js)
+    if agent_id == "gemini" {
+        return do_gemini_install(app).await;
+    }
+
     let config = agent_config(agent_id)
-        .ok_or_else(|| format!("Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server", agent_id))?;
+        .ok_or_else(|| format!("Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server, gemini", agent_id))?;
 
     ensure_agent_dirs()?;
 
@@ -769,6 +774,309 @@ async fn do_agent_install(app: &AppHandle, agent_id: &str) -> Result<Option<Stri
     );
 
     Ok(Some(version))
+}
+
+// ---------------------------------------------------------------------------
+// Node.js runtime + Gemini CLI install
+// ---------------------------------------------------------------------------
+
+fn node_runtime_dir() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_default()
+        .join(".notesage/runtime/node")
+}
+
+fn node_binary_path() -> PathBuf {
+    node_runtime_dir().join("bin/node")
+}
+
+fn npm_binary_path() -> PathBuf {
+    node_runtime_dir().join("bin/npm")
+}
+
+fn is_node_runtime_available() -> bool {
+    // Check portable runtime first
+    if node_binary_path().exists() {
+        return true;
+    }
+    // Check system node
+    Command::new("node")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+fn get_node_binary() -> String {
+    let portable = node_binary_path();
+    if portable.exists() {
+        return portable.to_string_lossy().to_string();
+    }
+    "node".to_string()
+}
+
+fn get_npm_binary() -> String {
+    let portable = npm_binary_path();
+    if portable.exists() {
+        return portable.to_string_lossy().to_string();
+    }
+    "npm".to_string()
+}
+
+async fn download_node_runtime(app: &AppHandle) -> Result<(), String> {
+    if node_binary_path().exists() {
+        // Verify it works
+        let output = Command::new(node_binary_path().to_string_lossy().as_ref())
+            .arg("--version")
+            .output()
+            .map_err(|e| format!("Node.js runtime check failed: {}", e))?;
+        if output.status.success() {
+            return Ok(());
+        }
+    }
+
+    let _ = app.emit(
+        "agent-install-progress",
+        AgentInstallProgress {
+            agent_id: "gemini".to_string(),
+            phase: "downloading".to_string(),
+            progress: 0,
+            total: 0,
+            message: "Downloading Node.js runtime...".to_string(),
+        },
+    );
+
+    let (os, arch) = detect_platform()?;
+    let node_arch = match arch {
+        "arm64" => "arm64",
+        "x64" => "x64",
+        _ => return Err(format!("Unsupported architecture: {}", arch)),
+    };
+    let node_os = match os {
+        "darwin" => "darwin",
+        "linux" => "linux",
+        _ => return Err("Node.js portable runtime is only supported on macOS and Linux".to_string()),
+    };
+
+    // Download Node.js 22 LTS
+    let url = format!(
+        "https://nodejs.org/dist/v22.14.0/node-v22.14.0-{}-{}.tar.gz",
+        node_os, node_arch
+    );
+
+    use futures::StreamExt;
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Node.js download failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Node.js download returned {}", resp.status()));
+    }
+
+    let total = resp.content_length().unwrap_or(0);
+    let mut stream = resp.bytes_stream();
+    let mut data = Vec::with_capacity(total as usize);
+    let mut downloaded: u64 = 0;
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Download error: {}", e))?;
+        downloaded += chunk.len() as u64;
+        data.extend_from_slice(&chunk);
+
+        let _ = app.emit(
+            "agent-install-progress",
+            AgentInstallProgress {
+                agent_id: "gemini".to_string(),
+                phase: "downloading".to_string(),
+                progress: downloaded,
+                total,
+                message: format!(
+                    "Downloading Node.js... {:.1} MB / {:.1} MB",
+                    downloaded as f64 / 1_048_576.0,
+                    total as f64 / 1_048_576.0
+                ),
+            },
+        );
+    }
+
+    let _ = app.emit(
+        "agent-install-progress",
+        AgentInstallProgress {
+            agent_id: "gemini".to_string(),
+            phase: "extracting".to_string(),
+            progress: 0,
+            total: 1,
+            message: "Extracting Node.js runtime...".to_string(),
+        },
+    );
+
+    // Extract tar.gz to ~/.notesage/runtime/node/
+    use flate2::read::GzDecoder;
+    use tar::Archive;
+
+    let runtime_dir = node_runtime_dir();
+    std::fs::create_dir_all(&runtime_dir)
+        .map_err(|e| format!("Failed to create runtime dir: {}", e))?;
+
+    let gz = GzDecoder::new(std::io::Cursor::new(&data));
+    let mut archive = Archive::new(gz);
+
+    // Node.js tarballs have a top-level directory like node-v22.14.0-darwin-arm64/
+    // We need to strip that prefix and extract into runtime_dir
+    for entry in archive.entries().map_err(|e| format!("Tar error: {}", e))? {
+        let mut entry = entry.map_err(|e| format!("Tar entry error: {}", e))?;
+        let path = entry.path().map_err(|e| format!("Path error: {}", e))?.to_path_buf();
+
+        // Strip first path component (e.g., node-v22.14.0-darwin-arm64/)
+        let stripped: PathBuf = path.components().skip(1).collect();
+        if stripped.as_os_str().is_empty() {
+            continue;
+        }
+
+        let dest = runtime_dir.join(&stripped);
+        if entry.header().entry_type().is_dir() {
+            std::fs::create_dir_all(&dest).ok();
+        } else {
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+            let mut outfile = std::fs::File::create(&dest)
+                .map_err(|e| format!("Create {}: {}", dest.display(), e))?;
+            std::io::copy(&mut entry, &mut outfile)
+                .map_err(|e| format!("Extract {}: {}", stripped.display(), e))?;
+
+            // Preserve executable permission
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(mode) = entry.header().mode() {
+                    std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(mode)).ok();
+                }
+            }
+        }
+    }
+
+    // Verify
+    let node = node_binary_path();
+    if !node.exists() {
+        return Err("Node.js binary not found after extraction".to_string());
+    }
+    let check = Command::new(node.to_string_lossy().as_ref())
+        .arg("--version")
+        .output()
+        .map_err(|e| format!("Node.js verification failed: {}", e))?;
+    if !check.status.success() {
+        return Err("Node.js binary extracted but failed to run".to_string());
+    }
+
+    Ok(())
+}
+
+async fn do_gemini_install(app: &AppHandle) -> Result<Option<String>, String> {
+    ensure_agent_dirs()?;
+
+    // Step 1: Ensure Node.js is available
+    if !is_node_runtime_available() {
+        download_node_runtime(app).await?;
+    }
+
+    let _ = app.emit(
+        "agent-install-progress",
+        AgentInstallProgress {
+            agent_id: "gemini".to_string(),
+            phase: "configuring".to_string(),
+            progress: 0,
+            total: 1,
+            message: "Installing Gemini CLI via npm...".to_string(),
+        },
+    );
+
+    // Step 2: npm install --prefix ~/.notesage/agents/lib/ @google/gemini-cli
+    let npm = get_npm_binary();
+    let lib_dir = agents_lib_dir();
+
+    let output = Command::new(&npm)
+        .args(["install", "--prefix"])
+        .arg(lib_dir.to_string_lossy().as_ref())
+        .arg("@google/gemini-cli")
+        .output()
+        .map_err(|e| format!("npm install failed: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("npm install failed: {}", stderr));
+    }
+
+    // Step 3: Create symlink in bin dir
+    let bin_path = agents_bin_dir().join("gemini");
+    let target = lib_dir.join("node_modules/.bin/gemini");
+
+    // Remove old symlink if exists
+    if bin_path.exists() || bin_path.is_symlink() {
+        std::fs::remove_file(&bin_path).ok();
+    }
+
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&target, &bin_path)
+            .map_err(|e| format!("Failed to create symlink: {}", e))?;
+    }
+
+    // Verify it works
+    let node = get_node_binary();
+    let check = Command::new(&node)
+        .arg(target.to_string_lossy().as_ref())
+        .arg("--help")
+        .output();
+
+    // Get version from package.json
+    let pkg_json = lib_dir.join("node_modules/@google/gemini-cli/package.json");
+    let version = if pkg_json.exists() {
+        std::fs::read_to_string(&pkg_json)
+            .ok()
+            .and_then(|s| {
+                serde_json::from_str::<serde_json::Value>(&s)
+                    .ok()
+                    .and_then(|v| v["version"].as_str().map(|s| s.to_string()))
+            })
+            .unwrap_or_else(|| "unknown".to_string())
+    } else {
+        "unknown".to_string()
+    };
+
+    // Update versions.json
+    let mut versions = read_versions();
+    versions.agents.insert(
+        "gemini".to_string(),
+        AgentVersionEntry {
+            version: version.clone(),
+            installed_at: chrono::Utc::now().to_rfc3339(),
+            source: "npm".to_string(),
+            repo: Some("google-gemini/gemini-cli".to_string()),
+        },
+    );
+    write_versions(&versions)?;
+
+    let _ = app.emit(
+        "agent-install-progress",
+        AgentInstallProgress {
+            agent_id: "gemini".to_string(),
+            phase: "done".to_string(),
+            progress: 1,
+            total: 1,
+            message: format!("Installed Gemini CLI v{}", version),
+        },
+    );
+
+    Ok(Some(version))
+}
+
+#[tauri::command]
+pub async fn agent_install_node_runtime(app: AppHandle) -> Result<(), String> {
+    download_node_runtime(&app).await
 }
 
 // ---------------------------------------------------------------------------

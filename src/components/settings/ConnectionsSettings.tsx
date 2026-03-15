@@ -1201,7 +1201,7 @@ function ConnectAgent({
   }, [option, retryCount]);
 
   const binary = option.agentBinary!;
-  const canManagedInstall = !!option.installMeta && !option.installMeta.requiresNodeRuntime;
+  const canManagedInstall = !!option.installMeta;
 
   const handleRetry = useCallback(() => {
     isRetryRef.current = true;

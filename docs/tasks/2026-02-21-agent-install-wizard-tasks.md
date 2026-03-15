@@ -30,13 +30,13 @@
 - **Description:** Add `download_github_release()` function. Queries GitHub Releases API for latest version of a given `owner/repo`. Selects platform-specific asset by naming pattern. Downloads with progress events (`agent-install-progress`). Verifies SHA-256 checksum if available. Extracts binary to `~/.notesage/agents/bin/`. Sets executable permissions. Updates `versions.json`. Handles errors (network, checksum mismatch, disk space). Add concurrency guard (one install at a time).
 - **Files:** `src-tauri/src/commands/agent_manager.rs`
 
-### #5 — Portable Node.js download (for Gemini CLI)
+### #5 — Portable Node.js download (for Gemini CLI) ✅
 
 - **Complexity:** M | **Category:** backend | **Depends on:** #2
 - **Description:** Add `agent_install_node_runtime` Tauri command. Downloads official Node.js standalone binary for the current platform from nodejs.org. Extracts to `~/.notesage/runtime/node/`. Verifies the downloaded `node` and `npm` binaries work. Skips if already present and working. Emits progress events.
 - **Files:** `src-tauri/src/commands/agent_manager.rs`
 
-### #6 — `agent_install` Tauri command ✅ (native agents only; Gemini deferred to Slice 2)
+### #6 — `agent_install` Tauri command ✅
 
 - **Complexity:** M | **Category:** backend | **Depends on:** #3, #4, #5
 - **Description:** New Tauri command that orchestrates installation for any agent. For native-binary agents (claude-agent-acp, codex-acp, copilot, copilot-language-server): delegates to GitHub Release download. For Gemini CLI: ensures portable Node.js is available, then runs `npm install --prefix`. Emits `agent-install-progress` and `agent-install-done` events. Validates agent_id against allowlist. Register in `lib.rs`.
