@@ -68,3 +68,4 @@ Chronological log of major implementation milestones and changes.
 | 062 | [Release v0.19.3](062-release-v0.19.3.md) | Open Actions Dashboard — unified task/comment/goal view with filters and navigation |
 | 063 | [Release v0.20.0](063-release-v0.20.0.md) | SQLite document index, date pill fixes, actions dashboard improvements, security hardening |
 | 064 | [Release v0.20.1](064-release-v0.20.1.md) | Codebase health — error boundaries, JSON-RPC dedup, file decomposition, dependency cleanup |
+| 065 | [Release v0.20.2](065-release-v0.20.2.md) | Shared constants consolidation, comment delegation UX, security fixes |
