@@ -6,7 +6,7 @@
 
 - [ ] Move files between projects and folders. Phase 2 implements dragging and dropping them in the file / project explorer.
 
-## New ideas 
+## New ideas
 
 - [ ] Add an AI tool for fetching web pages and convert it to markdown
 

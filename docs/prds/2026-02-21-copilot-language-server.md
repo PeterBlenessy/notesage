@@ -1,10 +1,6 @@
 # Copilot Language Server Integration — Inline Completions (Phase 6e)
 
-**Status:** ✅ Complete
-**Date:** 2026-02-21
-**Author:** Claude (with Peter)
-**Depends on:** Phase 6a-6d (AI Provider Architecture v2) — completed
-**Implemented:** 2026-02-21 (Tasks 1-10 complete, plus per-document toggle and status bar indicator)
+**Status:** ✅ Complete **Date:** 2026-02-21 **Author:** Claude (with Peter) **Depends on:** Phase 6a-6d (AI Provider Architecture v2) — completed **Implemented:** 2026-02-21 (Tasks 1-10 complete, plus per-document toggle and status bar indicator)
 
 ## Problem
 
@@ -125,6 +121,7 @@ New command module following the pattern established by `acp.rs`.
 **JSON-RPC transport:**
 
 Implement a minimal JSON-RPC 2.0 over stdio transport:
+
 - Write: `Content-Length: {len}\r\n\r\n{json}`
 - Read: Parse `Content-Length` header, read exact bytes, parse JSON
 - Use `tokio::io::BufReader` / `BufWriter` on child process stdin/stdout
@@ -172,7 +169,7 @@ New Tiptap extension: `src/components/editor/extensions/ghost-text.ts`
 **Keyboard shortcuts:**
 
 | Key | Action |
-|-----|--------|
+| --- | --- |
 | `Tab` | Accept full completion (insert text) |
 | `Escape` | Dismiss completion |
 | Any other key | Dismiss and process keystroke normally |
@@ -216,11 +213,9 @@ Reuse the existing `ConnectAgent` flow in `ConnectionsSettings.tsx`:
 
 The LSP requires incremental text changes, not full document replacement. Two approaches:
 
-**Option A — Full content on each change (simpler):**
-Send the entire document content as a single change with range covering the whole document. Many LSP servers accept this even in incremental mode. Start with this.
+**Option A — Full content on each change (simpler)**:Send the entire document content as a single change with range covering the whole document. Many LSP servers accept this even in incremental mode. Start with this.
 
-**Option B — True incremental (if needed for performance):**
-Track ProseMirror transactions, compute text-level diffs, send minimal change ranges. Only implement if Option A proves too slow.
+**Option B — True incremental (if needed for performance)**:Track ProseMirror transactions, compute text-level diffs, send minimal change ranges. Only implement if Option A proves too slow.
 
 ## UI/UX
 
@@ -297,8 +292,8 @@ copilot_lsp_check_availability(app: AppHandle) -> Result<bool, String>
 ### Tauri Events
 
 | Event | Payload | Direction |
-|-------|---------|-----------|
-| `copilot-status-changed` | `{ message: string, kind: "Normal" \| "Error" \| "Warning" \| "Inactive" }` | Server → Frontend |
+| --- | --- | --- |
+| `copilot-status-changed` | \`{ message: string, kind: "Normal" | "Error" |
 | `copilot-auth-device-code` | `{ userCode: string, verificationUri: string }` | Server → Frontend |
 
 ### TypeScript Types
@@ -326,51 +321,77 @@ interface CopilotStatus {
 ## Dependencies
 
 | Package | Purpose | Where |
-|---------|---------|-------|
+| --- | --- | --- |
 | `@github/copilot-language-server` | The LSP binary | User-installed globally via npm (or auto-install via install wizard) |
 | `tokio` | Async process spawn + I/O | Already in Cargo.toml |
 | `serde_json` | JSON-RPC message parsing | Already in Cargo.toml |
 
-No new Rust crate dependencies needed — JSON-RPC 2.0 over stdio is simple enough to implement with existing deps. The LSP client is intentionally minimal (we only use ~10 methods).
+No new Rust crate dependencies needed — JSON-RPC 2.0 over stdio is simple enough to implement with existing deps. The LSP client is intentionally minimal (we only use \~10 methods).
 
 ## Quality Gates
 
 ### Functional
 
 - [x] `copilot-language-server` binary detected when installed globally
+
 - [x] LSP process starts and completes `initialize` handshake
+
 - [x] OAuth device flow works — user can sign in via browser
+
 - [x] `didChangeStatus` correctly updates connection status indicator
+
 - [x] Document opens are synced to LSP when tab becomes active
+
 - [x] Document changes are synced incrementally as user types
-- [x] Completion request fires ~150ms after typing pause
+
+- [x] Completion request fires \~150ms after typing pause
+
 - [x] Ghost text appears at cursor position with suggested text
+
 - [x] Tab accepts the completion and inserts text
+
 - [x] Escape dismisses the completion
+
 - [x] Any keystroke dismisses the completion and processes normally
+
 - [x] Ghost text does not appear during text selection
+
 - [x] Ghost text does not interfere with slash commands or bubble menu
+
 - [x] Completions work across tab switches (didClose old, didOpen new)
+
 - [x] LSP process shuts down cleanly when app closes
+
 - [x] LSP process restarts if it crashes
+
 - [x] Works when Copilot is the only connection (no other providers configured)
+
 - [x] Works alongside other providers (e.g., Claude for chat + Copilot for completions)
 
 ### Design
 
 - [x] Ghost text is clearly distinguishable from real content (dimmed, italic)
+
 - [x] Ghost text feels native — no jarring appearance/disappearance
+
 - [x] Smooth fade-in transition (100ms)
+
 - [x] No layout shift when ghost text appears/disappears
+
 - [x] Auth flow reuses existing connection card design
+
 - [x] Device code display is clear and prominent
+
 - [x] Both light and dark mode look correct
 
 ### Performance
 
 - [x] Completion request-to-display under 500ms in normal conditions
+
 - [x] No visible editor lag while LSP is running
+
 - [x] Document sync does not block the editor
+
 - [x] Dismissed completions don't cause flickering
 
 ## Out of Scope

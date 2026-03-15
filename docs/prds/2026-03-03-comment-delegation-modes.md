@@ -280,8 +280,10 @@ User clicks "Move to Chat" in popover
 └─────────────────────────────────┘
 ```
 
-- [x]
+- [ ] 
 
+- \[ \]
+- \[x\]
 - \[ \]
 - \[ \]
 - ➡ Delegate icon (SendHorizontal): Background handoff — no separate Chat icon (use Chat from create mode for new comments)
@@ -385,57 +387,57 @@ No new libraries. All changes use existing infrastructure:
 
 ### Functional
 
-- [x]"Chat" button in create mode saves comment, keeps popover open, and streams agent response inline
+- \[x\]"Chat" button in create mode saves comment, keeps popover open, and streams agent response inline
 
-- [x]"Delegate" button in create mode saves comment, closes popover, and routes to activity panel (existing behavior preserved)
+- \[x\]"Delegate" button in create mode saves comment, closes popover, and routes to activity panel (existing behavior preserved)
 
-- [x]"Add" button unchanged — saves without delegation
+- \[x\]"Add" button unchanged — saves without delegation
 
-- [x]Chat mode: NO activity appears in the agent panel — fully contained in popover
+- \[x\]Chat mode: NO activity appears in the agent panel — fully contained in popover
 
-- [x]Delegate mode: popover closes, progress visible in activity panel
+- \[x\]Delegate mode: popover closes, progress visible in activity panel
 
-- [x]Chat mode streaming: popover stays open, reply input appears on completion
+- \[x\]Chat mode streaming: popover stays open, reply input appears on completion
 
-- [x]Multi-turn works in both modes — full conversation history sent with each turn
+- \[x\]Multi-turn works in both modes — full conversation history sent with each turn
 
-- [x]Reply + Delegate: sends with full conversation history, shows in agent panel, popover closes
+- \[x\]Reply + Delegate: sends with full conversation history, shows in agent panel, popover closes
 
-- [x]"Move to Chat" creates a NEW conversation thread (not appending to existing)
+- \[x\]"Move to Chat" creates a NEW conversation thread (not appending to existing)
 
-- [x]"Move to Chat" auto-selects the document's project in the new conversation
+- \[x\]"Move to Chat" auto-selects the document's project in the new conversation
 
-- [x]Chat panel conversation list: create, switch, delete conversations
+- \[x\]Chat panel conversation list: create, switch, delete conversations
 
-- [x]Persist migration: old flat chat history wrapped in a conversation on upgrade
+- \[x\]Persist migration: old flat chat history wrapped in a conversation on upgrade
 
-- [x]Activity section collapsed by default in comment popover
+- \[x\]Activity section collapsed by default in comment popover
 
-- [x]Bulk delegation from comment list popover unchanged
+- \[x\]Bulk delegation from comment list popover unchanged
 
-- [x]Cancel/Stop works in both modes, clears delegation mode
+- \[x\]Cancel/Stop works in both modes, clears delegation mode
 
-- [x]Cancel from activity panel updates comment store — spinners stop, status reverts to open
+- \[x\]Cancel from activity panel updates comment store — spinners stop, status reverts to open
 
-- [x]Agent activity panel does NOT auto-expand when new tasks are delegated — strip shows icon only
+- \[x\]Agent activity panel does NOT auto-expand when new tasks are delegated — strip shows icon only
 
-- [x]Error handling: chat mode reverts status and shows error inline; delegate mode shows toast
+- \[x\]Error handling: chat mode reverts status and shows error inline; delegate mode shows toast
 
-- [x]Apply-to-document works on agent replies regardless of delegation mode
+- \[x\]Apply-to-document works on agent replies regardless of delegation mode
 
 ### Design
 
-- [x]Button icons clearly communicate "stay here" vs "hand off" intent
+- \[x\]Button icons clearly communicate "stay here" vs "hand off" intent
 
-- [x]Chat mode streaming feels responsive — same quality as current delegation streaming
+- \[x\]Chat mode streaming feels responsive — same quality as current delegation streaming
 
-- [x]"Move to Chat" transition feels smooth — new conversation opens with full context
+- \[x\]"Move to Chat" transition feels smooth — new conversation opens with full context
 
-- [x]Conversation selector in chat panel header is clean and intuitive
+- \[x\]Conversation selector in chat panel header is clean and intuitive
 
-- [x]No visual regression in comment list popover
+- \[x\]No visual regression in comment list popover
 
-- [x]Works in both light and dark mode
+- \[x\]Works in both light and dark mode
 
 ## Out of Scope
 

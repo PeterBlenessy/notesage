@@ -22,7 +22,7 @@ Key decisions and deviations made during development:
 
 **Device-native sample rate with resampling:** Rather than forcing `cpal` to open the mic at 16kHz (which fails on many devices that only support 44.1kHz or 48kHz), the implementation captures at the device's native sample rate and resamples to 16kHz mono f32 before feeding to whisper-rs. This ensures compatibility across all macOS audio hardware.
 
-**Hallucination filtering:** Whisper models produce hallucinated output on silence or background noise (e.g., repeated "Thank you", "Bye", "you", or artifacts like "[BLANK_AUDIO]"). The implementation includes a hallucination filter that detects and suppresses these patterns — checking for repetitive short segments, known hallucination phrases, and segments that are suspiciously uniform. This significantly improves transcript quality for recordings with pauses or low-quality audio.
+**Hallucination filtering:** Whisper models produce hallucinated output on silence or background noise (e.g., repeated "Thank you", "Bye", "you", or artifacts like "\[BLANK_AUDIO\]"). The implementation includes a hallucination filter that detects and suppresses these patterns — checking for repetitive short segments, known hallucination phrases, and segments that are suspiciously uniform. This significantly improves transcript quality for recordings with pauses or low-quality audio.
 
 **Concurrent model downloads with cancel support:** The model management system supports downloading multiple models simultaneously, each with independent progress tracking. Downloads can be cancelled mid-flight without leaving partial files (uses temp file + atomic rename pattern). The frontend shows per-model progress bars with cancel buttons.
 

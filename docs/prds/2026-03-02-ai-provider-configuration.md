@@ -148,7 +148,7 @@ New entry in the "Add Connection" provider list:
 
 - [x] Can type a custom model name manually in any provider
 
-- [x]Per-use-case model override works (e.g., Haiku for chat, Opus for agent tasks)
+- \[x\]Per-use-case model override works (e.g., Haiku for chat, Opus for agent tasks)
 
 - [x] Can add "OpenAI-Compatible" connection with custom base URL, model, and API key
 

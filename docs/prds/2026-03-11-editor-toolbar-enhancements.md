@@ -442,7 +442,7 @@ Features 1–3 are quick wins (a few hours each). Features 4–6 are medium effo
 
 - [ ] ~~Item annotations display in the left margin with correct icon/color~~ (DEFERRED — needs unified gutter design)
 
-- [ ] ~~Annotations survive save/reload (markdown round-trip via `{emoji}` prefix)~~ (DEFERRED — needs unified gutter design)
+- [ ] ~~Annotations survive save/reload (markdown round-trip via~~ `{emoji}` ~~prefix)~~ (DEFERRED — needs unified gutter design)
 
 - [ ] ~~Block drag handles appear on hover and allow reordering blocks~~ (DEFERRED — needs unified gutter design)
 

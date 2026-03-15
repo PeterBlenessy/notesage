@@ -110,7 +110,7 @@ You are an editor. Your job is to ensure consistency in voice, structure, and qu
 | --- | --- | --- | --- |
 | `name` | string | **required** | Agent identifier (lowercase, hyphens) |
 | `description` | string | **required** | Brief explanation shown in picker dropdown |
-| `model` | string | string\[\] | (use routing default) | Preferred model(s). Maps to available connections. |
+| `model` | string | string\[\] | (use routing default) |
 | `icon` | string | `user-round` | Lucide icon name or single emoji |
 | `allowed-tools` | string\[\] | (all skills) | Skill names this agent can access. Empty = all. |
 | `user-invocable` | boolean | `true` | Show in agent picker and `@` menu |

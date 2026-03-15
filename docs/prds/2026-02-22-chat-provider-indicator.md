@@ -1,8 +1,6 @@
 # Chat Provider Indicator
 
-**Date:** 2026-02-22
-**Status:** ✅ Complete
-**Parent:** Phase 6.5 — Chat UX & Agent Polish
+**Date:** 2026-02-22 **Status:** ✅ Complete **Parent:** Phase 6.5 — Chat UX & Agent Polish
 
 ## Problem
 
@@ -65,7 +63,7 @@ Small provider logo + label below assistant message content, above activity log 
 ## Files Modified
 
 | File | Change |
-|------|--------|
+| --- | --- |
 | `src/components/ProviderLogo.tsx` | New — shared component extracted from settings |
 | `src/lib/ai/types.ts` | Add 3 optional fields to ChatMessage |
 | `src/hooks/useAIOperations.ts` | Stamp provider info on assistant messages |
@@ -77,13 +75,23 @@ Small provider logo + label below assistant message content, above activity log 
 ## Quality Gates
 
 - [x] `npx tsc --noEmit` passes
+
 - [x] Footer shows active provider logo + label when connection is configured
+
 - [x] Clicking footer indicator opens popover with interactive-capable connections
+
 - [x] Selecting a connection changes the active provider; new messages use it
+
 - [x] Active connection highlighted in the list
+
 - [x] Footer hides gracefully when no connection is configured
+
 - [x] Assistant messages show provider badge after completion (not during streaming)
+
 - [x] Switching providers mid-conversation: old messages keep old badge, new messages get new badge
+
 - [x] Removing a connection doesn't break badges on existing messages (snapshot fields)
+
 - [x] Provider logos render correctly in both light and dark mode
+
 - [x] Visual style matches design system (neutral greyscale, consistent sizing)

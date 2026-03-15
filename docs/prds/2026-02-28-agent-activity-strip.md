@@ -40,7 +40,7 @@ This creates two gaps:
 Two components on the right edge of the app, separate from the chat panel:
 
 - **Agent activity strip** (`ActivityRail`): narrow 40px rail always visible when agent tasks exist, showing per-task status icons with tooltips
-- **Agent activity panel** (`ActivityPanel`): resizable sidebar (default ~25%, min 240px, max 500px) with full task details, toggled via title bar button or Cmd+Shift+A
+- **Agent activity panel** (`ActivityPanel`): resizable sidebar (default \~25%, min 240px, max 500px) with full task details, toggled via title bar button or Cmd+Shift+A
 
 **Visibility behavior:**
 
@@ -348,7 +348,7 @@ No new libraries. Uses existing:
 
 - [x] Strip and panel work in both light and dark mode
 
-- [x]Transitions for panel show/hide are smooth (slide in/out)
+- \[x\]Transitions for panel show/hide are smooth (slide in/out)
 
 - [x] Task status icons are clear and distinguishable
 

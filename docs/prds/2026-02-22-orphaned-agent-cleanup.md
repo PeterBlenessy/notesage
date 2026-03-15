@@ -1,9 +1,6 @@
 # PRD: Orphaned Agent Process Cleanup
 
-**Date:** 2026-02-22
-**Phase:** 6.5 — Chat UX & Agent Polish
-**Status:** ✅ Complete (v0.15.0)
-**Version:** 0.14.1
+**Date:** 2026-02-22 **Phase:** 6.5 — Chat UX & Agent Polish **Status:** ✅ Complete (v0.15.0) **Version:** 0.14.1
 
 ## Problem
 
@@ -119,20 +116,20 @@ None. All required APIs (`kill_on_drop`, `RunEvent::Exit`, `try_lock`) are alrea
 
 ### Functional
 
-- [x]`cargo build` passes with no warnings on new code
-- [x]`npx tsc --noEmit` passes
-- [x]Start app → connect ACP agent → verify process running (`ps aux | grep acp`) → quit app (Cmd+Q) → verify process gone
-- [x]Start app → connect ACP agent → force-close window → verify process gone
-- [x]Start app → trigger ACP error path → verify no orphaned process remains
-- [x]Copilot LSP behavior unchanged (already has `kill_on_drop`)
-- [x]Normal ACP chat/inline actions still work after changes
-- [x]`acp_agent_stop` Tauri command still works for explicit stop
+- \[x\]`cargo build` passes with no warnings on new code
+- \[x\]`npx tsc --noEmit` passes
+- \[x\]Start app → connect ACP agent → verify process running (`ps aux | grep acp`) → quit app (Cmd+Q) → verify process gone
+- \[x\]Start app → connect ACP agent → force-close window → verify process gone
+- \[x\]Start app → trigger ACP error path → verify no orphaned process remains
+- \[x\]Copilot LSP behavior unchanged (already has `kill_on_drop`)
+- \[x\]Normal ACP chat/inline actions still work after changes
+- \[x\]`acp_agent_stop` Tauri command still works for explicit stop
 
 ### Code quality
 
-- [x]ACP spawn uses `kill_on_drop(true)` matching Copilot LSP pattern
-- [x]`lib.rs` uses `build().run()` pattern with `RunEvent::Exit`
-- [x]No `acpAgent = null` without corresponding `stopAcpAgent()` call in error paths
+- \[x\]ACP spawn uses `kill_on_drop(true)` matching Copilot LSP pattern
+- \[x\]`lib.rs` uses `build().run()` pattern with `RunEvent::Exit`
+- \[x\]No `acpAgent = null` without corresponding `stopAcpAgent()` call in error paths
 
 ## Out of Scope
 

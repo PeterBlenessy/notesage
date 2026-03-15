@@ -1,6 +1,6 @@
 # PRD: Codebase Health Improvements
 
-**Date:** 2026-03-10 (updated 2026-03-15) **Status:** ✅ Done **Source:** `docs/research/codebase-analysis.md` (2026-03-09) **Structure:** 12 independent, incremental tasks — each can ship in any release, in any order.
+**Date:** 2026-03-10 (updated 2026-03-15) **Status:** ✅ Complete **Source:** `docs/research/codebase-analysis.md` (2026-03-09) **Structure:** 12 independent, incremental tasks — each can ship in any release, in any order.
 
 ---
 
@@ -370,7 +370,7 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 - [x] Recording and transcription still work if `hound` was removed
 
-- [ ] ~~Or: document the specific code path that requires `hound`~~ (N/A — removed, zero imports)
+- [ ] ~~Or: document the specific code path that requires~~ `hound` (N/A — removed, zero imports)
 
 ---
 

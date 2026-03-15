@@ -1,8 +1,6 @@
 # PRD: AI-Assisted Research (Phase 8)
 
-**Date:** 2026-03-08
-**Status:** ✅ Complete
-**Phase:** 8 — AI-Assisted Research (Skill Pack)
+**Date:** 2026-03-08 **Status:** ✅ Complete **Phase:** 8 — AI-Assisted Research (Skill Pack)
 
 ## Problem
 
@@ -28,20 +26,24 @@ Writers, students, and knowledge workers collect information from multiple web s
 ## User Stories
 
 **Collecting:**
-- As a writer, I want to say "save this article: [URL]" in chat, so that the page is downloaded with metadata and stored in my research folder
+
+- As a writer, I want to say "save this article: \[URL\]" in chat, so that the page is downloaded with metadata and stored in my research folder
 - As a researcher, I want to paste a list of URLs and have them all saved, so I can batch-collect sources for a topic
 - As a user, I want saved research to include the original URL, title, date saved, and my tags, so I can find it later
 
 **Organizing:**
+
 - As a user, I want to search my saved research by tag or keyword (e.g., "find my research about climate policy"), so I can locate relevant sources
 - As a writer, I want to see a summary of all research I've collected for a project, so I can assess coverage gaps
 
 **Synthesizing:**
-- As a researcher, I want to ask the AI to "synthesize my research on [topic]", so I get a summary of findings across all relevant sources
+
+- As a researcher, I want to ask the AI to "synthesize my research on \[topic\]", so I get a summary of findings across all relevant sources
 - As a student, I want the AI to compare two or more sources and highlight agreements, disagreements, and unique points
 
 **Drafting:**
-- As a writer, I want to ask the AI to "draft a section about [topic] using my research", so I get a well-cited first draft
+
+- As a writer, I want to ask the AI to "draft a section about \[topic\] using my research", so I get a well-cited first draft
 - As a user, I want to choose my citation format (links, footnotes, or academic), so citations match my document's style
 - As a researcher, I want to insert a citation for a specific source into my document at the cursor position
 
@@ -54,7 +56,7 @@ All research capabilities are implemented as **bundled skills** using the existi
 ### Skills
 
 | Skill | Purpose | Scripts |
-|-------|---------|---------|
+| --- | --- | --- |
 | `download-webpage` | Fetch URL → clean markdown + images | **Exists** — enhance with research metadata |
 | `save-research` | Organize research files with tags and metadata | `scripts/save.mjs` |
 | `search-research` | Search research corpus by tag, source, keyword | `scripts/search.mjs` |
@@ -97,12 +99,14 @@ The existing skill already fetches and converts web pages. Enhancements:
 Organizes a research file — adds/updates tags, moves between directories, generates a filename from the title.
 
 **SKILL.md body instructs the AI to:**
+
 1. Accept content (pasted text, URL, or file path) and metadata (tags, notes)
 2. If input is a URL, delegate to `download-webpage` first
 3. Run `scripts/save.mjs` to write the file with proper frontmatter
 4. Report where the file was saved
 
-**Script (`scripts/save.mjs`):**
+**Script (**`scripts/save.mjs`**):**
+
 - Input: `[content_or_path, output_dir, --title "...", --tags "tag1,tag2", --url "..."]`
 - Output: JSON with `{ file, title, tags, status }`
 - Handles filename slugification, duplicate detection, frontmatter generation
@@ -111,13 +115,15 @@ Organizes a research file — adds/updates tags, moves between directories, gene
 
 Searches the research corpus across all project and global research directories.
 
-**Script (`scripts/search.mjs`):**
+**Script (**`scripts/search.mjs`**):**
+
 - Input: `[query, ...search_dirs, --tag "tagname", --limit 20]`
 - Searches frontmatter fields (title, tags, source_url) and body content
 - Output: JSON array of matches with `{ file, title, tags, source_url, snippet, relevance }`
 - Supports tag-only filtering (`--tag`), full-text search, or both
 
 **Command palette integration:**
+
 - New keyboard shortcut: `Cmd+4` opens command palette in research search mode
 - Uses `search-research` script results to populate the palette
 - Select a result to open the research file
@@ -202,6 +208,7 @@ Research interaction happens entirely through:
 ### Command Palette Research Mode
 
 When triggered via `Cmd+4`:
+
 - Search input with placeholder "Search research..."
 - Results show: title, tags as pills, source URL domain, word count
 - Select to open the research file in a new tab
@@ -217,6 +224,7 @@ When triggered via `Cmd+4`:
 ### Research Summary in Chat
 
 When AI synthesizes sources, the response includes:
+
 - Source count and coverage overview
 - Per-source cards (collapsible) with title, URL, key findings
 - Identified themes with supporting source references
@@ -299,37 +307,61 @@ None — YAML frontmatter parsing can use the existing `serde_yaml` (already in 
 ### Functional
 
 - [x] `download-webpage` saves files with full research frontmatter (source_url, title, author, date_saved, tags)
+
 - [x] Author and publication date extracted from page metadata when available
+
 - [x] `save-research` skill creates properly formatted research files with slugified filenames
+
 - [x] `save-research` detects duplicate URLs and offers overwrite/keep-both/skip
+
 - [x] `search-research` finds files by tag name (exact match)
+
 - [x] `search-research` finds files by title/content keyword (substring match)
+
 - [x] `search-research` searches both project and global research directories
+
 - [x] `Cmd+4` opens command palette in research search mode with results from `search_research` Tauri command
+
 - [x] Selecting a search result opens the research file in a new tab
+
 - [x] `synthesize-sources` reads multiple research files and generates a coherent synthesis
+
 - [x] Synthesis output includes per-source attribution and cross-source theme analysis
+
 - [x] `insert-citation` inserts inline link citations correctly at cursor position
+
 - [x] `insert-citation` inserts footnote citations with references section at document end
+
 - [x] `insert-citation` generates APA/MLA/Chicago formatted citations with bibliography
+
 - [x] Citation format preference persisted per-project in project metadata
+
 - [x] Batch URL saving works (multiple URLs processed sequentially with summary)
+
 - [x] Research files appear in the file tree under `.notesage/research/`
+
 - [x] Images downloaded by `download-webpage` are saved to `.notesage/research/images/`
+
 - [x] No console errors during normal research operations
 
 ### Design
 
 - [x] Command palette research mode matches existing tag search (Cmd+3) visual style
+
 - [x] Research search results show title, tags as pills, source domain, and word count
+
 - [x] Smooth keyboard navigation in research search results
+
 - [x] Works correctly in both light and dark mode
 
 ### Skill Quality
 
 - [x] All new skills follow the Agent Skills specification (valid SKILL.md frontmatter, proper structure)
+
 - [x] Skills are discoverable by all connection types (ACP and direct API)
+
 - [x] AI-only skills (synthesize-sources, insert-citation) work without scripts
+
 - [x] Script-based skills (save-research, search-research) handle errors gracefully with clear messages
 
 ## Out of Scope

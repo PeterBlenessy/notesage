@@ -272,47 +272,47 @@ The public key goes in `tauri.conf.json`, the private key stays as a GitHub secr
 
 ### Functional
 
-- [x]App checks for updates on launch (after 5s delay) when auto-check is enabled
+- \[x\]App checks for updates on launch (after 5s delay) when auto-check is enabled
 
-- [x]"Check for Updates" in Settings triggers a manual check and shows result
+- \[x\]"Check for Updates" in Settings triggers a manual check and shows result
 
-- [x]Update available notification appears in status bar and as toast
+- \[x\]Update available notification appears in status bar and as toast
 
-- [x]Update dialog shows correct version number and release notes
+- \[x\]Update dialog shows correct version number and release notes
 
-- [x]Download progress is displayed accurately
+- \[x\]Download progress is displayed accurately
 
-- [x]"Install & Restart" downloads, installs, and relaunches the app
+- \[x\]"Install & Restart" downloads, installs, and relaunches the app
 
-- [x]"Later" dismisses the dialog; status bar indicator remains
+- \[x\]"Later" dismisses the dialog; status bar indicator remains
 
-- [x]Dismissed version is not re-notified on subsequent app launches
+- \[x\]Dismissed version is not re-notified on subsequent app launches
 
-- [x]Next new version after dismissed one triggers notification again
+- \[x\]Next new version after dismissed one triggers notification again
 
-- [x]Update signature verification works (tampered updates are rejected)
+- \[x\]Update signature verification works (tampered updates are rejected)
 
-- [x]No update check when auto-check is disabled
+- \[x\]No update check when auto-check is disabled
 
-- [x]Works on macOS (primary), with CI building for Windows and Linux
+- \[x\]Works on macOS (primary), with CI building for Windows and Linux
 
-- [x]App startup is not delayed by update check (async, post-delay)
+- \[x\]App startup is not delayed by update check (async, post-delay)
 
-- [x]No console errors during update flow
+- \[x\]No console errors during update flow
 
 ### Design
 
-- [x]Update indicator in status bar is subtle and consistent with existing indicators
+- \[x\]Update indicator in status bar is subtle and consistent with existing indicators
 
-- [x]Update dialog follows design system (neutral palette, consistent spacing, backdrop blur)
+- \[x\]Update dialog follows design system (neutral palette, consistent spacing, backdrop blur)
 
-- [x]Progress bar uses shadcn/ui `Progress` component
+- \[x\]Progress bar uses shadcn/ui `Progress` component
 
-- [x]Release notes are readable in both light and dark mode
+- \[x\]Release notes are readable in both light and dark mode
 
-- [x]All interactive elements have hover/active/focus states
+- \[x\]All interactive elements have hover/active/focus states
 
-- [x]Transitions are smooth (dialog open/close, progress bar animation)
+- \[x\]Transitions are smooth (dialog open/close, progress bar animation)
 
 ## Out of Scope
 

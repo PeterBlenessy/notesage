@@ -1,8 +1,6 @@
 # Interactive Permission Approval UI
 
-**Date:** 2026-02-22
-**Status:** ✅ Complete (v0.15.0)
-**Parent:** Phase 6.5 — Chat UX & Agent Polish
+**Date:** 2026-02-22 **Status:** ✅ Complete (v0.15.0) **Parent:** Phase 6.5 — Chat UX & Agent Polish
 
 ## Problem
 
@@ -34,6 +32,7 @@ ACP agents (Claude Code, Codex, Copilot, Gemini CLI) request permission for ever
 ### Permission flow change
 
 The existing `acp-permission-request` event listener in `useAIOperations.ts` classifies tools via `isReadOnlyTool()`:
+
 - **Read-only tools** (`read`, `read_file`, `glob`, `list`, `grep`, `fetch`, `web_search`): auto-approve immediately, no UI
 - **Write tools** (everything else): currently added to `permission-store` AND auto-approved. Change: add to store but do NOT call `acp_permission_respond` — let the UI handle it.
 
@@ -42,6 +41,7 @@ The Rust backend already waits on a `oneshot::channel` for each permission reque
 ### PermissionCard component
 
 New `src/components/chat/PermissionCard.tsx` — inline card rendered in the chat message area showing:
+
 - Tool icon (lucide, based on `toolKind`)
 - Tool label (via existing `formatAcpToolName`)
 - Tool input preview (truncated, muted)
@@ -88,7 +88,7 @@ Cards rendered after loading/tool status indicators, before `messagesEndRef`. Au
 ### Icon mapping
 
 | Tool kind | Icon |
-|-----------|------|
+| --- | --- |
 | `write` / `write_file` | `FileEdit` |
 | `edit` | `Pencil` |
 | `bash` / `terminal` | `Terminal` |
@@ -128,7 +128,7 @@ None — all required components (Button, permission store, Tauri invoke, lucide
 ## Files Modified
 
 | File | Change |
-|------|--------|
+| --- | --- |
 | `src/stores/permission-store.ts` | Add `clearAll` method |
 | `src/hooks/useAIOperations.ts` | Export utils, stop auto-approving writes, add cleanup |
 | `src/components/chat/PermissionCard.tsx` | New — inline permission card component |
@@ -136,17 +136,17 @@ None — all required components (Button, permission store, Tauri invoke, lucide
 
 ## Quality Gates
 
-- [x]`npx tsc --noEmit` passes
-- [x]Read-only tool calls auto-approve silently (no UI change)
-- [x]Write tool calls show a permission card with Allow/Deny buttons
-- [x]Clicking Allow sends approval, card disappears, agent continues
-- [x]Clicking Deny sends cancellation, card disappears, agent handles gracefully
-- [x]Multiple pending requests stack as separate cards
-- [x]Cancelling chat denies and clears all pending requests
-- [x]Clearing chat denies and clears all pending requests
-- [x]Agent stream error/completion cleans up pending requests
-- [x]Permission cards render correctly in both light and dark mode
-- [x]Card styling matches design system (greyscale, rounded-lg, proper spacing)
+- \[x\]`npx tsc --noEmit` passes
+- \[x\]Read-only tool calls auto-approve silently (no UI change)
+- \[x\]Write tool calls show a permission card with Allow/Deny buttons
+- \[x\]Clicking Allow sends approval, card disappears, agent continues
+- \[x\]Clicking Deny sends cancellation, card disappears, agent handles gracefully
+- \[x\]Multiple pending requests stack as separate cards
+- \[x\]Cancelling chat denies and clears all pending requests
+- \[x\]Clearing chat denies and clears all pending requests
+- \[x\]Agent stream error/completion cleans up pending requests
+- \[x\]Permission cards render correctly in both light and dark mode
+- \[x\]Card styling matches design system (greyscale, rounded-lg, proper spacing)
 
 ## Out of Scope
 
