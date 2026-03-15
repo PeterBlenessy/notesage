@@ -86,7 +86,7 @@ Skill script permissions are already tested in `permission-store-skills.test.ts`
 
 ## Rust Backend Refactors
 
-### #4 — Extract shared JSON-RPC types and framing
+### #4 — Extract shared JSON-RPC types and framing ✅
 
 | Field | Value |
 | --- | --- |

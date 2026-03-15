@@ -34,7 +34,7 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 ## Tasks
 
-### Task 1: React Error Boundaries
+### Task 1: React Error Boundaries ✅
 
 **Priority:** High — reliability **Effort:** Small (\~50 lines of code)
 
@@ -54,13 +54,13 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 **Quality gate:**
 
-- [ ] Throwing an error in a hook within Editor.tsx shows the fallback UI, not a white screen
+- [x] Throwing an error in a hook within Editor.tsx shows the fallback UI, not a white screen
 
-- [ ] Chat panel and sidebar can crash independently without affecting the editor
+- [x] Chat panel and sidebar can crash independently without affecting the editor
 
-- [ ] "Reload" button recovers the crashed zone without a full page reload
+- [x] "Reload" button recovers the crashed zone without a full page reload
 
-- [ ] No visual change during normal operation
+- [x] No visual change during normal operation
 
 ---
 
@@ -95,7 +95,7 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 - [ ] No duplicated Content-Length framing or request dispatch logic remains
 
-- [ ] `json_rpc.rs` has unit tests for message framing and request/response matching
+- [x] `json_rpc.rs` has unit tests for message framing and request/response matching
 
 ---
 
@@ -194,7 +194,7 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 ---
 
-### Task 6: Decompose `skills.rs` (Rust)
+### Task 6: Decompose `skills.rs` (Rust) ✅
 
 **Priority:** Medium — maintainability **Effort:** Medium
 
@@ -216,11 +216,11 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 **Quality gate:**
 
-- [ ] Skill discovery, agent discovery, and script execution all work identically
+- [x] Skill discovery, agent discovery, and script execution all work identically
 
-- [ ] `skills.rs` is under 600 lines
+- [x] `skills.rs` is under 600 lines
 
-- [ ] All Tauri commands still registered and callable from frontend
+- [x] All Tauri commands still registered and callable from frontend
 
 ---
 
@@ -254,7 +254,7 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 ---
 
-### Task 8: Migrate `serde_yaml` to `serde_yml`
+### Task 8: Migrate `serde_yaml` to `serde_yml` ✅
 
 **Priority:** Medium — dependency health **Effort:** Tiny (drop-in replacement)
 
@@ -274,15 +274,15 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 **Quality gate:**
 
-- [ ] `cargo build` succeeds with no warnings from the YAML crate
+- [x] `cargo build` succeeds with no warnings from the YAML crate
 
-- [ ] Skill/agent YAML frontmatter parsing works identically
+- [x] Skill/agent YAML frontmatter parsing works identically
 
-- [ ] No references to `serde_yaml` remain in the codebase
+- [x] No references to `serde_yaml` remain in the codebase
 
 ---
 
-### Task 9: Replace `next-themes` with Custom Hook
+### Task 9: Replace `next-themes` with Custom Hook ✅
 
 **Priority:** Medium — dependency hygiene **Effort:** Small (\~30 lines)
 
@@ -306,17 +306,17 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 **Quality gate:**
 
-- [ ] Light/dark toggle (Cmd+T) works identically
+- [x] Light/dark toggle (Cmd+T) works identically
 
-- [ ] System preference following works
+- [x] System preference following works
 
-- [ ] Theme persists across app restarts
+- [x] Theme persists across app restarts
 
-- [ ] `next-themes` no longer in `node_modules` after `pnpm install`
+- [x] `next-themes` no longer in `node_modules` after `pnpm install`
 
 ---
 
-### Task 10: Add Permission Store Unit Tests
+### Task 10: Add Permission Store Unit Tests ✅
 
 **Priority:** Medium — reliability **Effort:** Small
 
@@ -340,15 +340,15 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 **Quality gate:**
 
-- [ ] All test cases pass via `pnpm test`
+- [x] All test cases pass via `pnpm test`
 
-- [ ] Coverage of all public methods on the permission store
+- [x] Coverage of all public methods on the permission store
 
-- [ ] Tests verify persistence behavior (session = volatile, always = persisted)
+- [x] Tests verify persistence behavior (session = volatile, always = persisted)
 
 ---
 
-### Task 11: Audit and Remove `hound` Crate
+### Task 11: Audit and Remove `hound` Crate ✅
 
 **Priority:** Low — compile time **Effort:** Tiny
 
@@ -366,15 +366,15 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 **Quality gate:**
 
-- [ ] `cargo build` succeeds
+- [x] `cargo build` succeeds
 
-- [ ] Recording and transcription still work if `hound` was removed
+- [x] Recording and transcription still work if `hound` was removed
 
-- [ ] Or: document the specific code path that requires `hound`
+- [ ] ~~Or: document the specific code path that requires `hound`~~ (N/A — removed, zero imports)
 
 ---
 
-### Task 12: Slim `tokio` Features and Move `@types` to devDependencies
+### Task 12: Slim `tokio` Features and Move `@types` to devDependencies ✅
 
 **Priority:** Low — build hygiene **Effort:** Tiny
 
@@ -396,11 +396,11 @@ None of these are blocking users today, but each increases the cost and risk of 
 
 **Quality gate:**
 
-- [ ] `cargo build` succeeds with slimmed features
+- [x] `cargo build` succeeds with slimmed features
 
-- [ ] `pnpm build` succeeds
+- [x] `pnpm build` succeeds
 
-- [ ] All async operations (AI streaming, subprocess management, file ops) still work
+- [x] All async operations (AI streaming, subprocess management, file ops) still work
 
 ---
 

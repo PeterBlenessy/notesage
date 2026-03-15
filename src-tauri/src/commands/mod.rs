@@ -13,6 +13,7 @@ pub mod skills;
 pub mod script_exec;
 pub mod agents;
 pub mod mcp;
+pub mod json_rpc;
 pub mod logging;
 pub mod store;
 pub mod health;
