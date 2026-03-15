@@ -1,6 +1,6 @@
 # Agent Binary Management & Runtime Sandboxing
 
-**Date:** 2026-02-21 (revised 2026-03-01) **Status:** 🔮 Future **Parent:** AI Provider Architecture v2
+**Date:** 2026-02-21 (revised 2026-03-15) **Status:** 🚧 In Progress **Parent:** AI Provider Architecture v2
 
 ## Problem
 
@@ -737,29 +737,29 @@ ACP permissions alone are advisory — the agent *chooses* to ask. The OS-level 
 
 ## Quality Gates
 
-- [ ] `cargo check` passes
+- [x] `cargo check` passes
 
-- [ ] `npx tsc --noEmit` passes
+- [x] `npx tsc --noEmit` passes
 
-- [ ] Managed install works for claude-agent-acp on macOS (download + extract + permissions)
+- [x] Managed install works for claude-agent-acp on macOS (download + extract + permissions)
 
-- [ ] Managed install works for Gemini CLI (portable Node.js + npm install)
+- [ ] Managed install works for Gemini CLI (portable Node.js + npm install) — code written, untested (user has system gemini)
 
-- [ ] System binary detected and used when available (no install offered)
+- [x] System binary detected and used when available (no install offered)
 
-- [ ] Sandbox blocks write to `~/.ssh/` from sandboxed agent (manual test)
+- [x] Sandbox blocks write to `~/.ssh/` from sandboxed agent (manual test)
 
-- [ ] Sandbox allows write to project directory from sandboxed agent
+- [x] Sandbox allows write to project directory from sandboxed agent
 
-- [ ] Unsandboxed spawn still works for system binaries (no regression)
+- [x] Unsandboxed spawn still works for system binaries (no regression)
 
-- [ ] Update check detects newer version on GitHub
+- [x] Update check detects newer version on GitHub
 
-- [ ] Update flow: stop agent → replace binary → restart agent
+- [ ] Update flow: stop agent → replace binary → restart agent — backend done, UI untested
 
-- [ ] Connection settings show source (managed/system) and sandbox toggle
+- [ ] Connection settings show source (managed/system) and sandbox toggle — source shown, sandbox toggle not yet added
 
-- [ ] Looks correct in both light and dark mode
+- [x] Looks correct in both light and dark mode
 
 ## Open Questions
 
@@ -772,6 +772,8 @@ ACP permissions alone are advisory — the agent *chooses* to ask. The OS-level 
 - [ ] Windows strategy: WSL2-based sandboxing or Windows Job Objects?
 
 - [x] macOS Gatekeeper: YES, quarantines downloaded binaries. Must run `xattr -d com.apple.quarantine` after download.
+
+- [ ] **Gemini CLI ACP authentication**: The `authenticate` ACP method triggers an OAuth browser flow, but Gemini writes an interactive "Do you want to continue? [Y/n]:" prompt to stdout (corrupting JSON-RPC) and the browser may not open reliably from a subprocess. Current workaround: detect unauthenticated state and show manual auth guide. **Need to research**: How does Zed editor handle Gemini ACP auth? Does Gemini support device code flow (like Copilot)? Can we use `GEMINI_API_KEY` as an alternative? Is there a headless OAuth flag?
 
 ## Out of Scope
 

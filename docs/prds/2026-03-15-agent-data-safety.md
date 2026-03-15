@@ -1,6 +1,6 @@
 # Agent Data Safety — Sandboxing & Context Isolation
 
-**Date:** 2026-03-15 **Status:** Draft **Parent:** Agent Binary Management & Runtime Sandboxing
+**Date:** 2026-03-15 **Status:** 🚧 In Progress **Parent:** Agent Binary Management & Runtime Sandboxing
 
 ## Problem
 
@@ -255,41 +255,41 @@ pub async fn acp_agent_spawn(
 
 ### Functional
 
-- [ ] Managed agent spawns in sandbox with correct writable paths
+- [x] Managed agent spawns in sandbox with correct writable paths
 
-- [ ] Chat: changing project shows inline prompt (Include history / Start fresh)
+- [x] Chat: changing project shows inline prompt (Include history / Start fresh)
 
-- [ ] Chat: "Start fresh" creates new session, prior messages NOT sent to agent
+- [x] Chat: "Start fresh" creates new session, prior messages NOT sent to agent
 
-- [ ] Chat: "Include history" creates new session, prior messages included
+- [x] Chat: "Include history" creates new session, prior messages included
 
-- [ ] Chat: context divider visible in message list
+- [x] Chat: context divider visible in message list
 
-- [ ] Delegation: agent can only write to document's parent project folder
+- [x] Delegation: agent can only write to document's parent project folder
 
-- [ ] Delegation: agent cannot read files in other project folders (verify with tool call)
+- [ ] Delegation: agent cannot read files in other project folders (verify with tool call) — code in place, needs manual verification
 
-- [ ] Sensitive dirs always blocked: `~/.ssh`, `~/.aws`, `~/.gnupg`, `.env`
+- [x] Sensitive dirs always blocked: `~/.ssh`, `~/.aws`, `~/.gnupg`, `.env`
 
-- [ ] `.git` directories are read-only (no writes)
+- [x] `.git` directories are read-only (no writes)
 
-- [ ] System-installed agents: sandbox off by default, opt-in available
+- [x] System-installed agents: sandbox off by default, opt-in available
 
-- [ ] Provider change in chat: agent respawned (no data leak)
+- [x] Provider change in chat: agent respawned (no data leak)
 
-- [ ] Workspace change (add/remove folder): agent respawned with updated sandbox
+- [x] Workspace change (add/remove folder): agent respawned with updated sandbox
 
-- [ ] `cargo check` passes
+- [x] `cargo check` passes
 
-- [ ] `npx tsc --noEmit` passes
+- [x] `npx tsc --noEmit` passes
 
 ### Design
 
-- [ ] Project switch prompt matches existing card styling (PermissionCard reference)
+- [x] Project switch prompt matches existing card styling (PermissionCard reference)
 
-- [ ] Context divider is subtle and readable in both light and dark mode
+- [x] Context divider is subtle and readable in both light and dark mode
 
-- [ ] No jarring transitions on project switch
+- [x] No jarring transitions on project switch
 
 ## Out of Scope
 
