@@ -49,12 +49,18 @@ pub fn generate_seatbelt_profile(writable_paths: &[String]) -> Result<PathBuf, S
 ;; Allow reading system files (agents need binaries, libraries, configs)
 (allow file-read*)
 
-;; Allow writing to specified directories and temp
+;; Allow writing to specified directories, temp, and agent config dirs
 (allow file-write*
 {writable_block}
   (subpath "/tmp")
   (subpath "/private/tmp")
-  (subpath "/private/var/folders"))
+  (subpath "/private/var/folders")
+  (subpath "{home}/.gemini")
+  (subpath "{home}/.claude")
+  (subpath "{home}/.codex")
+  (subpath "{home}/.copilot")
+  (subpath "{home}/.notesage")
+  (subpath "{home}/.config"))
 
 ;; DENY reading sensitive directories (non-configurable)
 (deny file-read*
