@@ -1,7 +1,7 @@
 # Agent Data Safety — Tasks
 
 **PRD:** `docs/prds/2026-03-15-agent-data-safety.md`
-**Status:** Pending
+**Status:** 🚧 In Progress
 
 **Total:** 11 tasks (3S, 5M, 3L)
 

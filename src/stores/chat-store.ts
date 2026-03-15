@@ -3,6 +3,14 @@ import { persist } from 'zustand/middleware';
 import type { ChatMessage, Citation, AgentActivity } from '@/lib/ai/types';
 import { createTauriStorage } from '@/lib/tauri-storage';
 
+/** Tracks a project context boundary within a conversation */
+export interface ConversationSegment {
+  projectPaths: string[];
+  sessionId: string | null;
+  startMessageIndex: number;
+  historyIncluded: boolean;
+}
+
 export interface Conversation {
   id: string;
   title: string;
@@ -10,6 +18,13 @@ export interface Conversation {
   createdAt: number;
   updatedAt: number;
   projectPaths: string[];
+  segments: ConversationSegment[];
+  activeSegmentIndex: number;
+  /** True when a project switch prompt is pending user decision */
+  pendingProjectSwitch?: {
+    newPaths: string[];
+    previousPaths: string[];
+  } | null;
   sourceCommentId?: string;
   sourceDocumentId?: string;
 }
@@ -56,6 +71,19 @@ interface ChatStore {
   addActivity: (messageTimestamp: number, activity: AgentActivity) => void;
   completeLastActivity: (messageTimestamp: number) => void;
   completeAllActivities: (messageTimestamp: number) => void;
+
+  // ---------------------------------------------------------------------------
+  // Segment management (context isolation)
+  // ---------------------------------------------------------------------------
+
+  /** Set a pending project switch — shows prompt in chat, blocks sending */
+  setPendingProjectSwitch: (newPaths: string[], previousPaths: string[]) => void;
+  /** Resolve a pending project switch with the user's choice */
+  resolveProjectSwitch: (includeHistory: boolean) => void;
+  /** Get the active segment for the current conversation */
+  getActiveSegment: () => ConversationSegment | undefined;
+  /** Update the session ID on the active segment */
+  setSegmentSessionId: (sessionId: string) => void;
 
   /** Remove project paths that no longer exist from all conversations. */
   pruneStaleProjectPaths: (validPaths: Set<string>) => void;
@@ -128,13 +156,22 @@ export const useChatStore = create<ChatStore>()(
       createConversation: (opts) => {
         const id = crypto.randomUUID();
         const now = Date.now();
+        const initialPaths = opts?.projectPaths ?? [];
         const conv: Conversation = {
           id,
           title: opts?.title ?? '',
           messages: [],
           createdAt: now,
           updatedAt: now,
-          projectPaths: opts?.projectPaths ?? [],
+          projectPaths: initialPaths,
+          segments: [{
+            projectPaths: initialPaths,
+            sessionId: null,
+            startMessageIndex: 0,
+            historyIncluded: false,
+          }],
+          activeSegmentIndex: 0,
+          pendingProjectSwitch: null,
           sourceCommentId: opts?.sourceCommentId,
           sourceDocumentId: opts?.sourceDocumentId,
         };
@@ -303,6 +340,48 @@ export const useChatStore = create<ChatStore>()(
           }),
         }))),
 
+      // ----- Segment management -----
+
+      setPendingProjectSwitch: (newPaths, previousPaths) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          pendingProjectSwitch: { newPaths, previousPaths },
+        }))),
+
+      resolveProjectSwitch: (includeHistory) =>
+        set((state) => updateActiveConv(state, (c) => {
+          if (!c.pendingProjectSwitch) return c;
+          const newSegment: ConversationSegment = {
+            projectPaths: c.pendingProjectSwitch.newPaths,
+            sessionId: null,
+            startMessageIndex: c.messages.length,
+            historyIncluded: includeHistory,
+          };
+          return {
+            ...c,
+            projectPaths: c.pendingProjectSwitch.newPaths,
+            segments: [...c.segments, newSegment],
+            activeSegmentIndex: c.segments.length,
+            pendingProjectSwitch: null,
+          };
+        })),
+
+      getActiveSegment: () => {
+        const state = get();
+        if (!state.activeConversationId) return undefined;
+        const conv = state.conversations.find((c) => c.id === state.activeConversationId);
+        if (!conv) return undefined;
+        return conv.segments[conv.activeSegmentIndex];
+      },
+
+      setSegmentSessionId: (sessionId) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          segments: c.segments.map((s, i) =>
+            i === c.activeSegmentIndex ? { ...s, sessionId } : s
+          ),
+        }))),
+
       pruneStaleProjectPaths: (validPaths) =>
         set((state) => {
           let changed = false;
@@ -318,7 +397,7 @@ export const useChatStore = create<ChatStore>()(
     {
       name: 'notesage-chat-history',
       storage: createTauriStorage(),
-      version: 2,
+      version: 3,
       // Exclude transient UI state from persistence to avoid excessive
       // writes during streaming (isLoading/activeTool toggle rapidly).
       partialize: (state) => ({
@@ -327,6 +406,24 @@ export const useChatStore = create<ChatStore>()(
         webSearchEnabled: state.webSearchEnabled,
       }),
       migrate: (persisted: unknown, version: number) => {
+        // v2 → v3: add segments to conversations
+        if (version === 2) {
+          const old = persisted as { conversations?: Conversation[]; [key: string]: unknown };
+          if (old.conversations) {
+            old.conversations = old.conversations.map((c) => ({
+              ...c,
+              segments: c.segments ?? [{
+                projectPaths: c.projectPaths ?? [],
+                sessionId: null,
+                startMessageIndex: 0,
+                historyIncluded: false,
+              }],
+              activeSegmentIndex: c.activeSegmentIndex ?? 0,
+              pendingProjectSwitch: null,
+            }));
+          }
+          return old;
+        }
         if (version < 2) {
           // v1 → v2: wrap flat messages into a conversation
           const old = persisted as {
@@ -340,13 +437,17 @@ export const useChatStore = create<ChatStore>()(
 
           if (messages.length > 0) {
             const id = 'migrated-default';
+            const paths = old.selectedProjectPaths ?? [];
             conversations.push({
               id,
               title: 'Chat History',
               messages,
               createdAt: messages[0]?.timestamp ?? Date.now(),
               updatedAt: messages[messages.length - 1]?.timestamp ?? Date.now(),
-              projectPaths: old.selectedProjectPaths ?? [],
+              projectPaths: paths,
+              segments: [{ projectPaths: paths, sessionId: null, startMessageIndex: 0, historyIncluded: false }],
+              activeSegmentIndex: 0,
+              pendingProjectSwitch: null,
             });
             activeConversationId = id;
           }
@@ -382,6 +483,25 @@ export function selectProjectPaths(state: Pick<ChatStore, 'conversations' | 'act
   return state.conversations.find((c) => c.id === state.activeConversationId)?.projectPaths ?? EMPTY_PATHS;
 }
 
+/** Pending project switch from the active conversation. */
+export function selectPendingProjectSwitch(state: Pick<ChatStore, 'conversations' | 'activeConversationId'>): Conversation['pendingProjectSwitch'] {
+  if (!state.activeConversationId) return null;
+  return state.conversations.find((c) => c.id === state.activeConversationId)?.pendingProjectSwitch ?? null;
+}
+
+/** Segments from the active conversation. */
+export function selectSegments(state: Pick<ChatStore, 'conversations' | 'activeConversationId'>): ConversationSegment[] {
+  if (!state.activeConversationId) return EMPTY_SEGMENTS;
+  return state.conversations.find((c) => c.id === state.activeConversationId)?.segments ?? EMPTY_SEGMENTS;
+}
+
+/** Active segment index from the active conversation. */
+export function selectActiveSegmentIndex(state: Pick<ChatStore, 'conversations' | 'activeConversationId'>): number {
+  if (!state.activeConversationId) return 0;
+  return state.conversations.find((c) => c.id === state.activeConversationId)?.activeSegmentIndex ?? 0;
+}
+
 // Stable empty arrays to avoid unnecessary re-renders
 const EMPTY_MESSAGES: ChatMessage[] = [];
 const EMPTY_PATHS: string[] = [];
+const EMPTY_SEGMENTS: ConversationSegment[] = [];

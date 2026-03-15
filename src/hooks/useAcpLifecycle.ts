@@ -1,5 +1,5 @@
-import { useCallback, useRef } from 'react';
-import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
+import { useCallback, useEffect, useRef } from 'react';
+import { useChatStore, selectProjectPaths, selectPendingProjectSwitch } from '@/stores/chat-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import type { ChatMessage } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
@@ -212,6 +212,23 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage }: AcpLi
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const cleanupRef = useRef<(() => void) | null>(null);
 
+  // Respawn agent when workspace folders change (sandbox paths need updating)
+  const workspaceProjects = useWorkspaceStore((s) => s.projects);
+  const workspaceExplorerFolders = useWorkspaceStore((s) => s.explorerFolders);
+  const prevWorkspaceKeyRef = useRef('');
+  useEffect(() => {
+    const key = [
+      ...workspaceProjects.map((p) => p.path),
+      ...workspaceExplorerFolders.map((f) => f.path),
+    ].sort().join('|');
+
+    if (prevWorkspaceKeyRef.current && prevWorkspaceKeyRef.current !== key && acpAgent) {
+      log.info('ai', 'Workspace folders changed — restarting agent for updated sandbox');
+      stopAcpAgent();
+    }
+    prevWorkspaceKeyRef.current = key;
+  }, [workspaceProjects, workspaceExplorerFolders]);
+
   /**
    * Generate text via ACP agent (single-turn, auto-approve permissions).
    * Used for inline actions (Improve, Summarize, Expand).
@@ -319,10 +336,23 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage }: AcpLi
         // Chat: sandbox covers all workspace folders for instant project switching
         const instanceId = await ensureAcpAgent(effectiveConnection, cwd, getAllWorkspacePaths());
 
-        // New conversation (no prior messages) -> create a fresh session
+        // Block sending if a project switch is pending user decision
+        const pendingSwitch = selectPendingProjectSwitch(useChatStore.getState());
+        if (pendingSwitch) {
+          throw new Error('Please resolve the project context change before sending a message.');
+        }
+
+        // Use segment-based session tracking for context isolation
+        const segment = useChatStore.getState().getActiveSegment();
         let isNewSession = false;
+
+        // New conversation or new segment → need a fresh ACP session
         if (messages.length === 0 && acpAgent) {
           acpAgent.chatSessionId = null;
+        }
+        // Segment has no session yet (new segment from project switch)
+        if (segment && !segment.sessionId) {
+          acpAgent!.chatSessionId = null;
         }
 
         if (!acpAgent!.chatSessionId) {
@@ -332,6 +362,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage }: AcpLi
           });
           acpAgent!.chatSessionId = session.session_id;
           isNewSession = true;
+
+          // Track session in the segment
+          useChatStore.getState().setSegmentSessionId(session.session_id);
 
           // Cache available models from the agent for the config dialog
           if (session.available_models.length > 0 && effectiveConnection) {

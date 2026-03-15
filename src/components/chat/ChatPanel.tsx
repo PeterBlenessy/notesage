@@ -3,7 +3,7 @@ import { Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe, Shield, T
 import { toast } from 'sonner';
 import { AgentIcon } from '@/components/AgentIcon';
 import { ProviderLogo } from '@/components/ProviderLogo';
-import { useChatStore, selectMessages, selectProjectPaths } from '@/stores/chat-store';
+import { useChatStore, selectMessages, selectProjectPaths, selectPendingProjectSwitch, selectSegments } from '@/stores/chat-store';
 import { useAIStore } from '@/stores/ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
@@ -19,6 +19,8 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { LocalAISetupCard } from './LocalAISetupCard';
 import { PermissionCard } from './PermissionCard';
+import { ProjectSwitchCard } from './ProjectSwitchCard';
+import { ContextDivider } from './ContextDivider';
 import { QuickReplies, parseQuickReplies } from './QuickReplies';
 import {
   Tooltip,
@@ -54,9 +56,11 @@ function getToolIcon(kind: string): LucideIcon {
 }
 
 export function ChatPanel() {
-  const { isLoading, activeTool, clearMessages, setSelectedProjectPaths, toggleProjectPath, webSearchEnabled, setWebSearchEnabled, conversations, activeConversationId, createConversation, deleteConversation, setActiveConversation } = useChatStore();
+  const { isLoading, activeTool, clearMessages, setSelectedProjectPaths, toggleProjectPath, webSearchEnabled, setWebSearchEnabled, conversations, activeConversationId, createConversation, deleteConversation, setActiveConversation, setPendingProjectSwitch } = useChatStore();
   const messages = useChatStore(selectMessages);
   const selectedProjectPaths = useChatStore(selectProjectPaths);
+  const pendingProjectSwitch = useChatStore(selectPendingProjectSwitch);
+  const segments = useChatStore(selectSegments);
   const legacyProvider = useAIStore((s) => s.provider);
   const agents = useSkillStore((s) => s.agents);
   const agentEnabledOverrides = useSkillStore((s) => s.agentEnabledOverrides);
@@ -101,6 +105,27 @@ export function ChatPanel() {
 
   const isAcpConnection = effectiveConnection?.authMethod === 'agent_managed';
   const hasProjectOverride = !!projectOverrideConnection;
+
+  // Detect project selection changes → trigger context isolation prompt
+  const prevProjectPathsRef = useRef<string[]>(selectedProjectPaths);
+  useEffect(() => {
+    const prev = prevProjectPathsRef.current;
+    const curr = selectedProjectPaths;
+    prevProjectPathsRef.current = curr;
+
+    // Skip on first render or if no messages yet (no context to isolate)
+    if (messages.length === 0) return;
+
+    // Check if the set actually changed
+    const prevSet = new Set(prev);
+    const currSet = new Set(curr);
+    if (prevSet.size === currSet.size && [...prevSet].every((p) => currSet.has(p))) return;
+
+    // Don't stack prompts — skip if already pending
+    if (pendingProjectSwitch) return;
+
+    setPendingProjectSwitch(curr, prev);
+  }, [selectedProjectPaths, messages.length, pendingProjectSwitch, setPendingProjectSwitch]);
 
   // Compute tools list: pre-populated + any dynamic session/always approvals
   const toolsList = useMemo(() => {
@@ -394,14 +419,22 @@ export function ChatPanel() {
             {messages.map((message, index) => {
               const isLast = index === messages.length - 1;
               const isLastAssistant = !isLoading && message.role === 'assistant' && isLast;
-              // Parse quick-reply tags from assistant messages — strip from rendered content
               const isAssistant = message.role === 'assistant';
               const parsed = isAssistant && message.content ? parseQuickReplies(message.content) : null;
               const displayMessage = parsed && parsed.strippedContent !== message.content
                 ? { ...message, content: parsed.strippedContent }
                 : message;
+
+              // Check if a segment boundary falls before this message
+              const segmentAtIndex = segments.findIndex((s, si) => si > 0 && s.startMessageIndex === index);
+              const segment = segmentAtIndex >= 0 ? segments[segmentAtIndex] : null;
+              const prevSegment = segmentAtIndex >= 1 ? segments[segmentAtIndex - 1] : undefined;
+
               return (
                 <div key={index}>
+                  {segment && (
+                    <ContextDivider segment={segment} previousSegment={prevSegment} />
+                  )}
                   <ChatMessage message={displayMessage} isLast={isLast} />
                   {isLastAssistant && parsed && parsed.replies.length > 0 && (
                     <QuickReplies replies={parsed.replies} onSelect={handleSend} />
@@ -409,6 +442,21 @@ export function ChatPanel() {
                 </div>
               );
             })}
+            {/* Context divider for the latest segment (when no messages sent in it yet) */}
+            {segments.length > 1 && (() => {
+              const lastSeg = segments[segments.length - 1];
+              if (lastSeg.startMessageIndex >= messages.length && !pendingProjectSwitch) {
+                return <ContextDivider segment={lastSeg} previousSegment={segments[segments.length - 2]} />;
+              }
+              return null;
+            })()}
+            {/* Pending project switch prompt — shown after all messages */}
+            {pendingProjectSwitch && (
+              <ProjectSwitchCard
+                newPaths={pendingProjectSwitch.newPaths}
+                previousPaths={pendingProjectSwitch.previousPaths}
+              />
+            )}
             {isLoading && !activeTool && (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -440,8 +488,8 @@ export function ChatPanel() {
           onSend={handleSend}
           onStop={cancelChat}
           isLoading={isLoading}
-          disabled={!hasAIProvider}
-          placeholder={chatPlaceholder}
+          disabled={!hasAIProvider || !!pendingProjectSwitch}
+          placeholder={pendingProjectSwitch ? 'Resolve project context change first...' : chatPlaceholder}
           footer={
             <>
               {(interactiveConnections.length > 0 || hasProjectOverride) && (
