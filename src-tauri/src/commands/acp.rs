@@ -276,6 +276,102 @@ impl agent_client_protocol::Client for NotesageClient {
 }
 
 // ---------------------------------------------------------------------------
+// Stdout JSON line filter — strips non-JSON lines from agent stdout
+// ---------------------------------------------------------------------------
+
+/// Wraps an AsyncRead and filters out non-JSON lines.
+/// Some agents (e.g., Gemini CLI) write interactive prompts or log messages
+/// to stdout in ACP mode, corrupting the JSON-RPC stream. This filter reads
+/// line-by-line and only passes through lines that start with '{'.
+struct JsonLineFilter<R> {
+    inner: tokio::io::BufReader<R>,
+    buf: Vec<u8>,
+}
+
+impl<R: tokio::io::AsyncRead + Unpin> JsonLineFilter<R> {
+    fn new(inner: R) -> Self {
+        Self {
+            inner: tokio::io::BufReader::new(inner),
+            buf: Vec::new(),
+        }
+    }
+}
+
+impl<R: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for JsonLineFilter<R> {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        use tokio::io::AsyncBufRead;
+
+        let this = self.get_mut();
+
+        // If we have buffered JSON data, return it first
+        if !this.buf.is_empty() {
+            let n = std::cmp::min(buf.remaining(), this.buf.len());
+            buf.put_slice(&this.buf[..n]);
+            this.buf.drain(..n);
+            return std::task::Poll::Ready(Ok(()));
+        }
+
+        // Read lines until we find one starting with '{'
+        loop {
+            let inner = std::pin::Pin::new(&mut this.inner);
+            let internal_buf = match inner.poll_fill_buf(cx) {
+                std::task::Poll::Ready(Ok(data)) => data,
+                std::task::Poll::Ready(Err(e)) => {
+                    return std::task::Poll::Ready(Err(e));
+                }
+                std::task::Poll::Pending => return std::task::Poll::Pending,
+            };
+
+            if internal_buf.is_empty() {
+                // EOF
+                return std::task::Poll::Ready(Ok(()));
+            }
+
+            // Find a newline in the buffer
+            if let Some(newline_pos) = internal_buf.iter().position(|&b| b == b'\n') {
+                let line = &internal_buf[..=newline_pos];
+                let trimmed = line.iter().position(|b| !b.is_ascii_whitespace());
+
+                if let Some(start) = trimmed {
+                    if line[start] == b'{' {
+                        // JSON line — buffer it and return
+                        this.buf.extend_from_slice(line);
+                        let consume_len = newline_pos + 1;
+                        std::pin::Pin::new(&mut this.inner).consume(consume_len);
+
+                        let n = std::cmp::min(buf.remaining(), this.buf.len());
+                        buf.put_slice(&this.buf[..n]);
+                        this.buf.drain(..n);
+                        return std::task::Poll::Ready(Ok(()));
+                    }
+                }
+
+                // Non-JSON line — skip it silently
+                let skip_text = String::from_utf8_lossy(&internal_buf[..newline_pos]).to_string();
+                if !skip_text.trim().is_empty() {
+                    log::debug!(target: "notesage::acp", "Filtered non-JSON stdout: {}", skip_text.trim());
+                }
+                let consume_len = newline_pos + 1;
+                std::pin::Pin::new(&mut this.inner).consume(consume_len);
+                // Loop to try the next line
+            } else {
+                // No newline yet — need more data. Return pending to let the reader buffer more.
+                // But first check if the entire buffer is non-JSON (very long non-JSON line)
+                if internal_buf.len() > 4096 {
+                    let consume_len = internal_buf.len();
+                    std::pin::Pin::new(&mut this.inner).consume(consume_len);
+                }
+                return std::task::Poll::Pending;
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Agent thread: owns the !Send ClientSideConnection
 // ---------------------------------------------------------------------------
 
@@ -361,9 +457,22 @@ fn run_agent_thread(
             }
         };
 
+        // Pre-send "Y\n" for agents that prompt for confirmation before ACP starts
+        // (e.g., Gemini CLI asks "Do you want to continue? [Y/n]:" during auth)
+        {
+            use tokio::io::AsyncWriteExt;
+            if let Some(ref mut stdin_handle) = child.stdin {
+                let _ = stdin_handle.write_all(b"Y\n").await;
+                let _ = stdin_handle.flush().await;
+            }
+        }
+
         // Bridge tokio IO → futures IO for ACP
+        // Wrap stdout in a filter that strips non-JSON lines — some agents
+        // (e.g., Gemini CLI) write interactive prompts to stdout in ACP mode
         let stdin = child.stdin.take().unwrap().compat_write();
-        let stdout = child.stdout.take().unwrap().compat();
+        let raw_stdout = child.stdout.take().unwrap();
+        let stdout = JsonLineFilter::new(raw_stdout).compat();
 
         let (conn, io_task) = ClientSideConnection::new(
             client,
@@ -802,6 +911,23 @@ fn check_agent_auth(agent_id: &str) -> Option<bool> {
                         || stdout.contains("\"loggedIn\": true") || stdout.contains("\"loggedIn\":true"))
                 }
                 _ => None,
+            }
+        }
+        "gemini" => {
+            // Gemini stores auth in ~/.gemini/settings.json
+            let settings = dirs::home_dir()
+                .unwrap_or_default()
+                .join(".gemini/settings.json");
+            if !settings.exists() {
+                return Some(false);
+            }
+            // If settings.json exists, check if it has auth configured
+            match std::fs::read_to_string(&settings) {
+                Ok(content) => {
+                    Some(content.contains("\"authMethod\"") || content.contains("\"oauth\"")
+                        || content.contains("GEMINI_API_KEY"))
+                }
+                Err(_) => Some(false),
             }
         }
         _ => None,

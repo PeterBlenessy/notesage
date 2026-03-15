@@ -1505,7 +1505,8 @@ function getAuthGuide(binary: string): SetupGuide {
       return {
         title: 'Sign in to Google',
         steps: [
-          { label: 'Run in your terminal:', command: 'gemini auth login' },
+          { label: 'Run in your terminal:', command: 'gemini' },
+          { note: 'Complete the Google sign-in in your browser when prompted, then close the terminal session' },
           { note: 'Free with any Google account' },
         ],
       };
