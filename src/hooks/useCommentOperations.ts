@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import type { Editor } from '@tiptap/core';
 import type { Transaction } from '@tiptap/pm/state';
+import { toast } from 'sonner';
 import { useEditorStore } from '@/stores/editor-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useCommentStore } from '@/stores/comment-store';
@@ -98,6 +99,15 @@ export function useCommentOperations(editor: Editor | null) {
 
       if (meta.requestCreateComment) {
         pendingCreateRef.current = meta.requestCreateComment;
+      }
+
+      // Delegated comment clicked — show toast instead of opening popover
+      if (meta.delegatedClick) {
+        toast.info('An agent is working on this comment. Check the activity panel for progress.', {
+          id: 'delegated-comment',
+          duration: 3000,
+        });
+        return;
       }
 
       // Bridge ProseMirror click → Zustand store so React effects fire

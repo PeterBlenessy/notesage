@@ -109,6 +109,14 @@ export function CommentPopover({
   // Subscribe to delegation mode for dismiss guard
   const delegationMode = useCommentStore((s) => comment ? s.delegationModeByComment[comment.id] : undefined);
 
+  // Auto-close popover when comment is delegated in background (non-chat) mode.
+  // The 'delegate' mode sends work to the agent panel — popover should dismiss immediately.
+  useEffect(() => {
+    if (open && delegationMode === 'delegate' && comment?.status === 'delegated') {
+      onOpenChange(false);
+    }
+  }, [open, delegationMode, comment?.status, onOpenChange]);
+
   // Read linked conversation from chat store (if comment was moved to chat)
   const linkedConversation = useChatStore((s) => {
     if (!comment?.linkedConversationId) return null;
@@ -330,7 +338,7 @@ export function CommentPopover({
                             <Button
                               variant="ghost"
                               size="icon-xs"
-                              onClick={() => { onDelegateExisting(); onOpenChange(false); }}
+                              onClick={() => onDelegateExisting()}
                               className="text-muted-foreground hover:text-foreground"
                             >
                               <BotMessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />

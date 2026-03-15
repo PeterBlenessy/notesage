@@ -22,6 +22,7 @@ pub mod local_inference;
 pub mod gguf_parser;
 pub mod model_metadata;
 pub mod actions;
+pub mod constants;
 
 pub use file::*;
 pub use dialog::*;

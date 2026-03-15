@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use super::constants;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChatMessage {
@@ -116,7 +117,7 @@ pub async fn list_models(
             let response = client
                 .get(&url)
                 .header("x-api-key", api_key)
-                .header("anthropic-version", "2023-06-01")
+                .header("anthropic-version", constants::ANTHROPIC_API_VERSION)
                 .send()
                 .await
                 .map_err(|e| format!("Failed to fetch Anthropic models: {}", e))?;
@@ -224,7 +225,7 @@ async fn anthropic_generate(request: &AIRequest) -> Result<String, String> {
         .as_ref()
         .ok_or("Anthropic API key is required")?;
 
-    let model = request.model.as_deref().unwrap_or("claude-sonnet-4-5-20250929");
+    let model = request.model.as_deref().unwrap_or(constants::DEFAULT_MODEL_ANTHROPIC);
     let max_tokens = request.max_tokens.unwrap_or(4096);
     let api_url = format!(
         "{}/v1/messages",
@@ -249,7 +250,7 @@ async fn anthropic_generate(request: &AIRequest) -> Result<String, String> {
     let response = client
         .post(&api_url)
         .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
+        .header("anthropic-version", constants::ANTHROPIC_API_VERSION)
         .header("content-type", "application/json")
         .json(&body)
         .send()
@@ -283,7 +284,7 @@ async fn anthropic_chat(
     base_url: &Option<String>,
 ) -> Result<String, String> {
     let api_key = api_key.as_ref().ok_or("Anthropic API key is required")?;
-    let model = model.as_deref().unwrap_or("claude-sonnet-4-5-20250929");
+    let model = model.as_deref().unwrap_or(constants::DEFAULT_MODEL_ANTHROPIC);
     let max_tokens = max_tokens.unwrap_or(4096);
     let api_url = format!(
         "{}/v1/messages",
@@ -326,7 +327,7 @@ async fn anthropic_chat(
     let response = client
         .post(&api_url)
         .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
+        .header("anthropic-version", constants::ANTHROPIC_API_VERSION)
         .header("content-type", "application/json")
         .json(&body)
         .send()
@@ -354,7 +355,7 @@ async fn anthropic_chat(
 // OpenAI Responses API implementation
 async fn openai_generate(request: &AIRequest) -> Result<String, String> {
     let api_key = request.api_key.as_ref().ok_or("OpenAI API key is required")?;
-    let model = request.model.as_deref().unwrap_or("gpt-4o");
+    let model = request.model.as_deref().unwrap_or(constants::DEFAULT_MODEL_OPENAI);
     let api_url = format!(
         "{}/v1/responses",
         request.base_url.as_deref().unwrap_or("https://api.openai.com")
@@ -412,7 +413,7 @@ async fn openai_chat(
     base_url: &Option<String>,
 ) -> Result<String, String> {
     let api_key = api_key.as_ref().ok_or("OpenAI API key is required")?;
-    let model = model.as_deref().unwrap_or("gpt-4o");
+    let model = model.as_deref().unwrap_or(constants::DEFAULT_MODEL_OPENAI);
     let api_url = format!(
         "{}/v1/responses",
         base_url.as_deref().unwrap_or("https://api.openai.com")
@@ -500,7 +501,7 @@ async fn ollama_generate(request: &AIRequest) -> Result<String, String> {
     let base = request.base_url.as_deref()
         .or(request.ollama_url.as_deref())
         .unwrap_or("http://localhost:11434");
-    let model = request.model.as_deref().unwrap_or("llama3.2");
+    let model = request.model.as_deref().unwrap_or(constants::DEFAULT_MODEL_OLLAMA);
 
     // Ollama may need to load the model on first request — generous timeout
     let client = reqwest::Client::builder()
@@ -555,7 +556,7 @@ async fn ollama_chat(
     let base = base_url.as_deref()
         .or(ollama_url.as_deref())
         .unwrap_or("http://localhost:11434");
-    let model = model.as_deref().unwrap_or("llama3.2");
+    let model = model.as_deref().unwrap_or(constants::DEFAULT_MODEL_OLLAMA);
 
     // Ollama may need to load the model on first request — generous timeout
     let client = reqwest::Client::builder()
@@ -688,7 +689,7 @@ pub async fn ollama_fim_completion(
         "stream": false,
         "options": {
             "num_predict": 128,
-            "temperature": 0.2,
+            "temperature": constants::CHAT_TEMPERATURE_FIM_FALLBACK,
             "stop": ["\n\n", "\n#", "\n//"]
         }
     });
@@ -746,7 +747,7 @@ pub async fn openai_completions_fim(
         "prompt": prefix,
         "suffix": suffix,
         "max_tokens": max_tokens.unwrap_or(128),
-        "temperature": 0.2,
+        "temperature": constants::CHAT_TEMPERATURE_FIM_FALLBACK,
         "stop": ["\n\n"]
     });
 

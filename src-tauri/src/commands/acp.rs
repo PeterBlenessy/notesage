@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
 use super::shell_path::get_shell_path;
+use super::constants;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -580,10 +581,12 @@ fn resolve_agent_binary(agent_id: &str, app: &AppHandle) -> Option<String> {
     let mut candidates: Vec<PathBuf> = vec![
         // ~/.local/bin (Claude Code, pipx, etc.)
         home.join(".local/bin").join(agent_id),
-        // Homebrew (macOS Apple Silicon)
-        PathBuf::from("/opt/homebrew/bin").join(agent_id),
-        // Homebrew (macOS Intel) / system-level
-        PathBuf::from("/usr/local/bin").join(agent_id),
+    ];
+    // macOS Homebrew paths
+    for path in constants::MACOS_FALLBACK_BIN_PATHS {
+        candidates.push(PathBuf::from(path).join(agent_id));
+    }
+    candidates.extend([
         // npm global (default prefix)
         home.join(".npm-global/bin").join(agent_id),
         // pnpm global (macOS)
@@ -594,7 +597,7 @@ fn resolve_agent_binary(agent_id: &str, app: &AppHandle) -> Option<String> {
         home.join(".volta/bin").join(agent_id),
         // Cargo
         home.join(".cargo/bin").join(agent_id),
-    ];
+    ]);
 
     // nvm: scan for node versions
     let nvm_dir = home.join(".nvm/versions/node");
@@ -619,12 +622,9 @@ fn resolve_agent_binary(agent_id: &str, app: &AppHandle) -> Option<String> {
     //    `npm root -g` typically resolves to <prefix>/lib/node_modules
     //    and binaries are linked in <prefix>/bin — already covered above,
     //    but some setups put bins directly in the node_modules/.bin.
-    candidates.push(
-        PathBuf::from("/opt/homebrew/lib/node_modules/.bin").join(agent_id),
-    );
-    candidates.push(
-        PathBuf::from("/usr/local/lib/node_modules/.bin").join(agent_id),
-    );
+    for path in constants::MACOS_FALLBACK_NODE_MODULE_PATHS {
+        candidates.push(PathBuf::from(path).join(agent_id));
+    }
 
     for candidate in &candidates {
         if candidate.exists() {
@@ -662,16 +662,19 @@ fn resolve_cli_binary(name: &str) -> Option<String> {
 
     // Fallback: check common install locations (macOS GUI apps have minimal PATH)
     let home = dirs::home_dir().unwrap_or_default();
-    let candidates = [
+    let mut candidates: Vec<PathBuf> = vec![
         home.join(".local/bin").join(name),
-        PathBuf::from("/opt/homebrew/bin").join(name),
-        PathBuf::from("/usr/local/bin").join(name),
+    ];
+    for path in constants::MACOS_FALLBACK_BIN_PATHS {
+        candidates.push(PathBuf::from(path).join(name));
+    }
+    candidates.extend([
         home.join(".npm-global/bin").join(name),
         home.join("Library/pnpm").join(name),
         home.join(".local/share/pnpm").join(name),
         home.join(".volta/bin").join(name),
         home.join(".cargo/bin").join(name),
-    ];
+    ]);
 
     for candidate in &candidates {
         if candidate.exists() {

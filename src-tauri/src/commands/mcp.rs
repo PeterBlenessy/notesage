@@ -8,6 +8,7 @@ use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncReadExt, BufReader, BufWriter};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::Mutex;
+use super::constants;
 use tokio::time::timeout;
 
 use super::json_rpc::{
@@ -332,7 +333,7 @@ impl McpState {
 
 async fn mcp_initialize(transport: &McpTransport) -> Result<Value, String> {
     let init_params = serde_json::json!({
-        "protocolVersion": "2024-11-05",
+        "protocolVersion": constants::MCP_PROTOCOL_VERSION,
         "capabilities": {},
         "clientInfo": {
             "name": "notesage",

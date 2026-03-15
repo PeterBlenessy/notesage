@@ -3,6 +3,7 @@ use serde_json;
 use tauri::Emitter;
 use futures::StreamExt;
 use super::ChatMessage;
+use super::constants;
 
 /// Citation data emitted to the frontend via the `ai-citation` event.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -201,7 +202,7 @@ pub async fn anthropic_chat_stream(
     base_url: &Option<String>,
 ) -> Result<(), String> {
     let api_key = api_key.as_ref().ok_or("Anthropic API key is required")?;
-    let model = model.as_deref().unwrap_or("claude-sonnet-4-5-20250929");
+    let model = model.as_deref().unwrap_or(constants::DEFAULT_MODEL_ANTHROPIC);
     let max_tokens = max_tokens.unwrap_or(4096);
     let api_url = format!(
         "{}/v1/messages",
@@ -244,16 +245,16 @@ pub async fn anthropic_chat_stream(
     // Add web search tool when enabled
     if web_search_enabled {
         body["tools"] = serde_json::json!([{
-            "type": "web_search_20250305",
+            "type": constants::ANTHROPIC_WEB_SEARCH_TOOL,
             "name": "web_search",
-            "max_uses": 5
+            "max_uses": constants::ANTHROPIC_WEB_SEARCH_MAX_USES
         }]);
     }
 
     let response = client
         .post(&api_url)
         .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
+        .header("anthropic-version", constants::ANTHROPIC_API_VERSION)
         .header("content-type", "application/json")
         .json(&body)
         .send()
@@ -412,7 +413,7 @@ pub async fn openai_chat_stream(
     base_url: &Option<String>,
 ) -> Result<(), String> {
     let api_key = api_key.as_ref().ok_or("OpenAI API key is required")?;
-    let model = model.as_deref().unwrap_or("gpt-4o");
+    let model = model.as_deref().unwrap_or(constants::DEFAULT_MODEL_OPENAI);
     let api_url = format!(
         "{}/v1/responses",
         base_url.as_deref().unwrap_or("https://api.openai.com")
@@ -470,7 +471,7 @@ pub async fn openai_chat_stream(
 
     if web_search_enabled {
         body["tools"] = serde_json::json!([{
-            "type": "web_search_preview",
+            "type": constants::OPENAI_WEB_SEARCH_TOOL,
             "search_context_size": "medium"
         }]);
     }
@@ -590,7 +591,7 @@ pub async fn ollama_chat_stream(
     let base = base_url.as_deref()
         .or(ollama_url.as_deref())
         .unwrap_or("http://localhost:11434");
-    let model = model.as_deref().unwrap_or("llama3.2");
+    let model = model.as_deref().unwrap_or(constants::DEFAULT_MODEL_OLLAMA);
 
     // Ollama may need to load the model into memory on first request — use a generous timeout
     let client = reqwest::Client::builder()

@@ -216,11 +216,8 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
 
 // --- Default models per provider ---
 
-export const DEFAULT_MODELS: Partial<Record<ConnectionProvider, string>> = {
-  anthropic: 'claude-sonnet-4-5-20250929',
-  openai: 'gpt-4o',
-  ollama: 'llama3.2',
-};
+import { DEFAULT_MODELS as _DEFAULT_MODELS } from './constants';
+export const DEFAULT_MODELS: Partial<Record<ConnectionProvider, string>> = _DEFAULT_MODELS;
 
 // --- Capability display labels ---
 

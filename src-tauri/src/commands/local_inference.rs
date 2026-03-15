@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
+use super::constants;
 
 // ---------------------------------------------------------------------------
 // Managed state
@@ -16,6 +17,9 @@ pub struct LocalInferenceState {
     active_model: tokio::sync::Mutex<Option<String>>,
     pub models_dir: PathBuf,
     download_cancels: std::sync::Mutex<HashMap<String, Arc<AtomicBool>>>,
+    /// Cached thinking tags detected from /props chat_template for the active model.
+    /// Set after model load; cleared on model switch.
+    detected_thinking_tags: tokio::sync::Mutex<Option<Option<(String, String)>>>,
 }
 
 impl LocalInferenceState {
@@ -31,6 +35,7 @@ impl LocalInferenceState {
             active_model: tokio::sync::Mutex::new(None),
             models_dir,
             download_cancels: std::sync::Mutex::new(HashMap::new()),
+            detected_thinking_tags: tokio::sync::Mutex::new(None),
         }
     }
 
@@ -769,6 +774,7 @@ pub async fn start_local_server(
     // Store state
     *state.port.lock().await = Some(port);
     *state.active_model.lock().await = Some(model_id.clone());
+    *state.detected_thinking_tags.lock().await = None; // clear cache on model switch
 
     let _ = app.emit(
         "local-server-status",
@@ -1088,6 +1094,131 @@ pub async fn cancel_llama_server_download(
 // Streaming chat proxy (local_bundled provider)
 // ---------------------------------------------------------------------------
 
+/// Detect thinking tags from llama-server's /props chat_template.
+/// Returns None if no thinking pattern is found in the template.
+async fn detect_thinking_tags_from_template(port: u16) -> Option<(String, String)> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .ok()?;
+    let resp = client
+        .get(format!("http://127.0.0.1:{}/props", port))
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let props: serde_json::Value = resp.json().await.ok()?;
+    let template = props.get("chat_template")?.as_str()?;
+    parse_thinking_tags_from_jinja(template)
+}
+
+/// Parse a Jinja2 chat template for thinking tag patterns.
+/// Looks for blocks like `{% if thinking %}`, `{% if message.role == "thinking" %}`
+/// and extracts the surrounding XML-like delimiter tags.
+fn parse_thinking_tags_from_jinja(template: &str) -> Option<(String, String)> {
+    // Common patterns in Jinja2 chat templates for thinking blocks:
+    //   {% if thinking %}...<think>{{ thinking }}</think>...{% endif %}
+    //   {%- if message.role == "thinking" -%}<think>{{ message.content }}</think>{%- endif -%}
+    //   {%- if message['role'] == 'thinking' -%}
+    // We scan for these patterns and extract the XML tags surrounding them.
+
+    // Strategy 1: Look for a thinking-related Jinja block and extract tags
+    let thinking_indicators = [
+        "if thinking",
+        "message.role == \"thinking\"",
+        "message.role == 'thinking'",
+        "message['role'] == 'thinking'",
+        "message['role'] == \"thinking\"",
+        "if message.thinking",
+    ];
+
+    for indicator in &thinking_indicators {
+        if let Some(pos) = template.find(indicator) {
+            // Search for XML-like tags near this position
+            let region_start = pos.saturating_sub(200);
+            let region_end = (pos + 400).min(template.len());
+            let region = &template[region_start..region_end];
+
+            if let Some(tags) = extract_xml_tags_from_region(region) {
+                return Some(tags);
+            }
+        }
+    }
+
+    // Strategy 2: Look for known thinking tag patterns directly in the template
+    let known_patterns = [
+        ("<think>", "</think>"),
+        ("<thinking>", "</thinking>"),
+        ("<thought>", "</thought>"),
+        ("<reasoning>", "</reasoning>"),
+    ];
+
+    for (open, close) in &known_patterns {
+        if template.contains(open) && template.contains(close) {
+            return Some((open.to_string(), close.to_string()));
+        }
+    }
+
+    None
+}
+
+/// Extract XML-like opening/closing tag pair from a template region.
+fn extract_xml_tags_from_region(region: &str) -> Option<(String, String)> {
+    // Look for patterns like <think>...</think>, <|think|>...<|/think|>
+    let re_patterns = [
+        // Standard XML tags: <tagname>...</tagname>
+        ("<think>", "</think>"),
+        ("<thinking>", "</thinking>"),
+        ("<thought>", "</thought>"),
+        ("<reasoning>", "</reasoning>"),
+        ("<reflection>", "</reflection>"),
+        // Pipe-delimited: <|think|>...<|/think|>
+        ("<|think|>", "<|/think|>"),
+        ("<|thinking|>", "<|/thinking|>"),
+    ];
+
+    for (open, close) in &re_patterns {
+        if region.contains(open) {
+            return Some((open.to_string(), close.to_string()));
+        }
+    }
+
+    None
+}
+
+/// Get thinking tags for a custom/unknown model, using cached /props detection
+/// with fallback to FALLBACK_THINKING_TAGS.
+async fn get_thinking_tags_for_custom_model(
+    state: &LocalInferenceState,
+    port: u16,
+) -> Vec<(String, String)> {
+    // Check cache first
+    let cached = state.detected_thinking_tags.lock().await.clone();
+    if let Some(cached_result) = cached {
+        return match cached_result {
+            Some((open, close)) => vec![(open, close)],
+            None => constants::FALLBACK_THINKING_TAGS
+                .iter()
+                .map(|(o, c)| (o.to_string(), c.to_string()))
+                .collect(),
+        };
+    }
+
+    // Not cached yet — detect from /props
+    let detected = detect_thinking_tags_from_template(port).await;
+    *state.detected_thinking_tags.lock().await = Some(detected.clone());
+
+    match detected {
+        Some((open, close)) => vec![(open, close)],
+        None => constants::FALLBACK_THINKING_TAGS
+            .iter()
+            .map(|(o, c)| (o.to_string(), c.to_string()))
+            .collect(),
+    }
+}
+
 /// Stream chat completions through the local llama-server.
 /// Uses the OpenAI-compatible `/v1/chat/completions` endpoint with SSE.
 pub async fn local_bundled_chat_stream(
@@ -1122,7 +1253,7 @@ pub async fn local_bundled_chat_stream(
         "model": model_name,
         "messages": api_messages,
         "stream": true,
-        "repeat_penalty": 1.1,
+        "repeat_penalty": constants::REPEAT_PENALTY,
         "frequency_penalty": 0.1
     });
 
@@ -1164,16 +1295,8 @@ pub async fn local_bundled_chat_stream(
             None => vec![("<think>".to_string(), "</think>".to_string())],
         },
         None => {
-            // Custom/unknown model — use full hardcoded set
-            [
-                ("<think>", "</think>"),
-                ("<summary>", "</summary>"),
-                ("<discussion>", "</discussion>"),
-                ("<reflection>", "</reflection>"),
-                ("<reasoning>", "</reasoning>"),
-                ("<scratchpad>", "</scratchpad>"),
-                ("<internal_thoughts>", "</internal_thoughts>"),
-            ].iter().map(|(o, c)| (o.to_string(), c.to_string())).collect()
+            // Custom/unknown model — try /props detection, then fallback
+            get_thinking_tags_for_custom_model(state, port).await
         }
     };
     let thinking_tags_refs: Vec<(&str, &str)> = catalog_thinking_tags.iter()
@@ -1328,7 +1451,7 @@ pub async fn local_bundled_chat(
     let mut body = serde_json::json!({
         "model": model_name,
         "messages": api_messages,
-        "repeat_penalty": 1.1,
+        "repeat_penalty": constants::REPEAT_PENALTY,
         "frequency_penalty": 0.1
     });
 
@@ -1365,30 +1488,37 @@ pub async fn local_bundled_chat(
     // Strip thinking/reasoning tags from non-streaming responses using catalog metadata
     let active_model_id = state.active_model.lock().await.clone().unwrap_or_default();
     let catalog_entry = find_model_entry(&state.models_dir, &active_model_id);
-    let content = strip_thinking_tags_for_model(&raw_content, catalog_entry.as_ref());
+    // For custom models, use cached /props detection
+    let detected_tags = if catalog_entry.is_none() {
+        state.detected_thinking_tags.lock().await.clone().flatten()
+    } else {
+        None
+    };
+    let content = strip_thinking_tags_for_model(&raw_content, catalog_entry.as_ref(), detected_tags.as_ref());
 
     Ok(content)
 }
 
 /// Strip thinking/reasoning XML tags from model output, using catalog metadata when available.
-fn strip_thinking_tags_for_model(text: &str, catalog_entry: Option<&CatalogEntry>) -> String {
+/// `detected_tags` provides /props-detected tags for custom models (cached by the streaming path).
+fn strip_thinking_tags_for_model(
+    text: &str,
+    catalog_entry: Option<&CatalogEntry>,
+    detected_tags: Option<&(String, String)>,
+) -> String {
     let tag_pairs_owned: Vec<(String, String)> = match catalog_entry {
         Some(entry) if !entry.supports_thinking => return text.trim().to_string(),
         Some(entry) => match &entry.thinking_tags {
             Some(tags) => vec![(tags.open.clone(), tags.close.clone())],
             None => vec![("<think>".to_string(), "</think>".to_string())],
         },
-        None => {
-            // Custom/unknown model — use full hardcoded set
-            [
-                ("<think>", "</think>"),
-                ("<summary>", "</summary>"),
-                ("<discussion>", "</discussion>"),
-                ("<reflection>", "</reflection>"),
-                ("<reasoning>", "</reasoning>"),
-                ("<scratchpad>", "</scratchpad>"),
-                ("<internal_thoughts>", "</internal_thoughts>"),
-            ].iter().map(|(o, c)| (o.to_string(), c.to_string())).collect()
+        None => match detected_tags {
+            Some((open, close)) => vec![(open.clone(), close.clone())],
+            None => {
+                // Custom/unknown model, no /props detection — use shared fallback set
+                constants::FALLBACK_THINKING_TAGS
+                    .iter().map(|(o, c)| (o.to_string(), c.to_string())).collect()
+            }
         }
     };
 
@@ -1450,7 +1580,7 @@ pub async fn local_bundled_fim(
         "input_prefix": prefix,
         "input_suffix": suffix,
         "n_predict": max_tok,
-        "temperature": 0.1,
+        "temperature": constants::FIM_TEMPERATURE,
         "stop": ["\n\n", "\n"],
     });
 
@@ -1484,9 +1614,9 @@ pub async fn local_bundled_fim(
                 }
             ],
             "max_tokens": max_tok,
-            "temperature": 0.1,
+            "temperature": constants::FIM_TEMPERATURE,
             "stop": ["\n\n"],
-            "repeat_penalty": 1.1,
+            "repeat_penalty": constants::REPEAT_PENALTY,
         });
 
         let chat_resp = client

@@ -502,7 +502,9 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     return () => { editor.off('transaction', check); };
   }, [editor, commentOps]);
 
-  // Listen for comment click (active comment changed)
+  // Listen for comment click (active comment changed).
+  // Only depend on activeCommentId — not the full activeComment object, which changes
+  // on status/reply updates and would re-open the popover during delegation.
   useEffect(() => {
     if (commentOps.activeCommentId && commentOps.activeComment && editor) {
       setPendingCommentRange(null);
@@ -512,7 +514,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       setCommentAnchorPos({ top: coords.bottom, left: coords.left });
       setCommentPopoverOpen(true);
     }
-  }, [commentOps.activeCommentId, commentOps.activeComment, editor]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commentOps.activeCommentId, editor]);
 
   // Scroll-to-comment: triggered by external navigation (e.g. activity panel click)
   const scrollToCommentId = useCommentStore((s) => s.scrollToCommentId);
@@ -1554,9 +1557,15 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             }
           }
         }}
-        onDelegateExisting={async () => {
-          if (commentOps.activeComment && commentOps.commentKey && commentStorageRoot) {
-            await delegateComment(commentOps.activeComment, commentOps.commentKey, commentStorageRoot, 'delegate');
+        onDelegateExisting={() => {
+          const comment = commentOps.activeComment;
+          const key = commentOps.commentKey;
+          if (comment && key && commentStorageRoot) {
+            // Close popover and clear active comment BEFORE delegation starts
+            setCommentPopoverOpen(false);
+            commentOps.setActiveComment(null);
+            // Delegate async after popover is closed
+            delegateComment(comment, key, commentStorageRoot, 'delegate');
           }
         }}
         onChatExisting={async () => {

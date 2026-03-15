@@ -103,6 +103,15 @@ export const CommentMark = Extension.create({
 
             const clicked = (state.comments as CommentDecoration[]).find((c) => pos >= c.from && pos <= c.to);
             if (clicked) {
+              if (clicked.status === 'delegated') {
+                // Comment is being worked on by an agent — notify instead of opening
+                view.dispatch(
+                  view.state.tr.setMeta(CommentMarkPluginKey, {
+                    delegatedClick: clicked.commentId,
+                  })
+                );
+                return false;
+              }
               view.dispatch(
                 view.state.tr.setMeta(CommentMarkPluginKey, {
                   setActiveComment: clicked.commentId,

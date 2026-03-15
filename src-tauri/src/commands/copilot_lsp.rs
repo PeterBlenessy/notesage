@@ -15,6 +15,7 @@ use super::json_rpc::{
     self, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, PendingRequests,
 };
 use super::shell_path::get_shell_path;
+use super::constants;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -528,16 +529,18 @@ fn resolve_copilot_binary(app: &AppHandle) -> Option<String> {
 
     // 2. Check common npm global install locations (Tauri GUI apps don't inherit shell PATH)
     let home = dirs::home_dir().unwrap_or_default();
-    let mut candidates: Vec<PathBuf> = vec![
-        // Homebrew (macOS)
-        PathBuf::from("/opt/homebrew/bin").join(COPILOT_BINARY),
-        PathBuf::from("/usr/local/bin").join(COPILOT_BINARY),
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    // Homebrew (macOS)
+    for path in constants::MACOS_FALLBACK_BIN_PATHS {
+        candidates.push(PathBuf::from(path).join(COPILOT_BINARY));
+    }
+    candidates.extend([
         // npm global (default)
         home.join(".npm-global/bin").join(COPILOT_BINARY),
         // pnpm global
         home.join("Library/pnpm").join(COPILOT_BINARY),
         home.join(".local/share/pnpm").join(COPILOT_BINARY),
-    ];
+    ]);
 
     // nvm: scan for node versions
     let nvm_dir = home.join(".nvm/versions/node");
