@@ -1,6 +1,6 @@
 # Tasks: Expand Ollama Capabilities — Agent Tasks + Inline Completions
 
-**PRD:** `2026-03-02-ollama-expanded-capabilities.md`**Status:** All tasks completed
+**PRD:** `2026-03-02-ollama-expanded-capabilities.md`**Status:** ✅ All tasks completed
 
 ## Task 1: Update Ollama capabilities
 

@@ -1,6 +1,6 @@
 # AI Provider Configuration — Implementation Tasks
 
-**PRD:** `docs/prds/2026-03-02-ai-provider-configuration.md` **Total: 9 tasks — 2S, 3M, 4L** **Status:** Complete (verified 2026-03-05)
+**PRD:** `docs/prds/2026-03-02-ai-provider-configuration.md` **Total: 9 tasks — 2S, 3M, 4L** **Status:** ✅ Complete (verified 2026-03-05)
 
 **Suggested order:** Data model → Rust backend → Frontend providers → Tauri wrapper → Hook layer → Routing store migration → Config dialog → Routing UI model selector → Add connection flow
 

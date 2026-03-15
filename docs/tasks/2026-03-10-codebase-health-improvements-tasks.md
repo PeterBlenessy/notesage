@@ -1,6 +1,6 @@
 # Task Breakdown: Codebase Health Improvements
 
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 **Source PRD:** `docs/prds/2026-03-10-codebase-health-improvements.md`**Total:** 18 tasks — 8S, 7M, 3L **No task depends on another** — all are independently shippable.
 

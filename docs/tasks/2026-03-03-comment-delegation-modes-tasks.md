@@ -1,6 +1,6 @@
 # Task Breakdown: Comment Delegation Modes (v2)
 
-**PRD:** `docs/prds/2026-03-03-comment-delegation-modes.md` **Total:** 9 tasks (2S, 5M, 1L, 1M-verify) **Status:** Complete
+**PRD:** `docs/prds/2026-03-03-comment-delegation-modes.md` **Total:** 9 tasks (2S, 5M, 1L, 1M-verify) **Status:** ✅ Complete
 
 **Note:** Tasks #1–#7 from the v1 breakdown are complete (committed in 258ff74, fb6c9e3, 9078741). All v2 tasks below are also complete — verified against codebase 2026-03-05.
 
@@ -273,48 +273,48 @@ interface Conversation {
 
 **Functional checks:**
 
-- [x]Chat button in create mode: saves, streams inline, popover stays open, NO agent panel activity
+- \[x\]Chat button in create mode: saves, streams inline, popover stays open, NO agent panel activity
 
-- [x]Delegate button in create mode: saves, closes, visible in activity panel
+- \[x\]Delegate button in create mode: saves, closes, visible in activity panel
 
-- [x]Add button: unchanged
+- \[x\]Add button: unchanged
 
-- [x]View mode header: Delegate icon for open comments, Move to Chat for done comments (no Chat button)
+- \[x\]View mode header: Delegate icon for open comments, Move to Chat for done comments (no Chat button)
 
-- [x]Chat mode streaming: popover open, reply input on completion, activity collapsed
+- \[x\]Chat mode streaming: popover open, reply input on completion, activity collapsed
 
-- [x]Delegate mode: popover closes, activity panel shows task
+- \[x\]Delegate mode: popover closes, activity panel shows task
 
-- [x]Reply + Send: chat mode, popover stays open, no agent panel
+- \[x\]Reply + Send: chat mode, popover stays open, no agent panel
 
-- [x]Reply + Delegate: delegate mode, full history sent, visible in agent panel, popover closes
+- \[x\]Reply + Delegate: delegate mode, full history sent, visible in agent panel, popover closes
 
-- [x]"Move to Chat": creates NEW conversation thread with mapped messages + project auto-selected
+- \[x\]"Move to Chat": creates NEW conversation thread with mapped messages + project auto-selected
 
-- [x]Conversation management: create, switch, delete conversations in chat panel
+- \[x\]Conversation management: create, switch, delete conversations in chat panel
 
-- [x]Persist migration: old flat chat history wrapped in conversation
+- \[x\]Persist migration: old flat chat history wrapped in conversation
 
-- [x]Bulk delegation: unchanged behavior
+- \[x\]Bulk delegation: unchanged behavior
 
-- [x]Cancel/Stop: works in both modes, clears delegation mode
+- \[x\]Cancel/Stop: works in both modes, clears delegation mode
 
-- [x]Cancel from activity panel: spinners stop in comment popover and comment list
+- \[x\]Cancel from activity panel: spinners stop in comment popover and comment list
 
-- [x]Agent panel does NOT auto-expand when tasks are delegated — strip shows icon only
+- \[x\]Agent panel does NOT auto-expand when tasks are delegated — strip shows icon only
 
-- [x]Error handling: chat mode shows error inline, delegate mode shows toast
+- \[x\]Error handling: chat mode shows error inline, delegate mode shows toast
 
-- [x]Apply-to-document: works on agent replies regardless of delegation mode
+- \[x\]Apply-to-document: works on agent replies regardless of delegation mode
 
 **Design checks:**
 
-- [x]Button icons communicate intent clearly
+- \[x\]Button icons communicate intent clearly
 
-- [x]Conversation selector in chat panel is clean and intuitive
+- \[x\]Conversation selector in chat panel is clean and intuitive
 
-- [x]No visual regression in comment list popover
+- \[x\]No visual regression in comment list popover
 
-- [x]Light and dark mode
+- \[x\]Light and dark mode
 
-- [x]Popover doesn't accidentally dismiss during chat streaming
+- \[x\]Popover doesn't accidentally dismiss during chat streaming

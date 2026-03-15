@@ -67,3 +67,4 @@ Chronological log of major implementation milestones and changes.
 | 061 | [Release v0.19.2](061-release-v0.19.2.md) | Model catalog expansion, command palette unification, @mentions, date badges |
 | 062 | [Release v0.19.3](062-release-v0.19.3.md) | Open Actions Dashboard — unified task/comment/goal view with filters and navigation |
 | 063 | [Release v0.20.0](063-release-v0.20.0.md) | SQLite document index, date pill fixes, actions dashboard improvements, security hardening |
+| 064 | [Release v0.20.1](064-release-v0.20.1.md) | Codebase health — error boundaries, JSON-RPC dedup, file decomposition, dependency cleanup |

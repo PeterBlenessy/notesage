@@ -6,8 +6,8 @@ PRD: `docs/prds/2026-03-07-mcp-client-integration.md`
 
 ## Task Overview
 
-| # | Task | Depends On | Effort |
-|---|------|-----------|--------|
+| \# | Task | Depends On | Effort |
+| --- | --- | --- | --- |
 | 1 | MCP JSON-RPC transport & protocol | — | Large |
 | 2 | MCP managed state & Tauri commands | 1 | Medium |
 | 3 | Config file parsing & import | — | Medium |
@@ -28,6 +28,7 @@ PRD: `docs/prds/2026-03-07-mcp-client-integration.md`
 **Goal:** Implement the MCP client protocol over stdio in Rust.
 
 **What to build:**
+
 - `src-tauri/src/commands/mcp.rs` — new file
 - Reuse the `JsonRpcTransport` pattern from `copilot_lsp.rs`: Content-Length framing, async reader loop, pending request map with oneshot channels
 - MCP-specific protocol handshake:
@@ -39,6 +40,7 @@ PRD: `docs/prds/2026-03-07-mcp-client-integration.md`
 - Graceful shutdown: send `close` notification, wait briefly, force kill
 
 **Key types:**
+
 ```rust
 struct McpTransport {
     stdin: ChildStdin,
@@ -71,10 +73,12 @@ struct McpToolResult {
 **Depends on:** Task 1
 
 **What to build:**
+
 - `McpState` struct with `Mutex<HashMap<String, McpServerHandle>>` — register in `lib.rs` alongside `AcpState`, `CopilotLspState`, `WatcherState`
 - `McpServerHandle`: child process, transport, cached tools, config, status
 
 **Tauri commands:**
+
 ```rust
 mcp_start_server(config: McpServerConfig) -> Result<McpServerInfo, String>
 mcp_stop_server(server_id: String) -> Result<(), String>
@@ -89,6 +93,7 @@ mcp_get_server_status() -> Result<Vec<McpServerInfo>, String>
 - Emit `mcp-server-status` Tauri events when server status changes (starting, running, error, stopped)
 
 **Files to modify:**
+
 - `src-tauri/src/commands/mcp.rs` (extend from Task 1)
 - `src-tauri/src/commands/mod.rs` (add `pub mod mcp;`)
 - `src-tauri/src/lib.rs` (register state, add commands to handler, add Exit hook)
@@ -104,6 +109,7 @@ mcp_get_server_status() -> Result<Vec<McpServerInfo>, String>
 **What to build:**
 
 **Rust commands:**
+
 ```rust
 mcp_discover_configs(base_dirs: Vec<String>) -> Result<Vec<McpServerConfig>, String>
 mcp_import_configs(source: String) -> Result<Vec<McpServerConfig>, String>
@@ -111,6 +117,7 @@ mcp_save_config(path: String, configs: HashMap<String, McpServerConfigEntry>) ->
 ```
 
 **Config format** (Claude Desktop-compatible):
+
 ```json
 {
   "mcpServers": {
@@ -124,12 +131,14 @@ mcp_save_config(path: String, configs: HashMap<String, McpServerConfigEntry>) ->
 ```
 
 **Import sources:**
+
 - Claude Desktop: `~/.claude/claude_desktop_config.json` → read `mcpServers` key
 - Cursor: `~/.cursor/mcp.json` → same format
 - VS Code: `~/Library/Application Support/Code/User/settings.json` → read `mcp.servers` key
 
 **Hierarchy:**
-- Project `.notesage/mcp.json` > Global `~/.notesage/mcp.json` > Imported (read-only)
+
+- Project `.notesage/mcp.json` &gt; Global `~/.notesage/mcp.json` &gt; Imported (read-only)
 - Same-named servers: highest priority wins (same pattern as skills)
 
 **Done when:** Can read configs from all sources, merge with hierarchy, write back to Notesage config files.
@@ -141,6 +150,7 @@ mcp_save_config(path: String, configs: HashMap<String, McpServerConfigEntry>) ->
 **Goal:** Frontend state management for MCP servers.
 
 **What to build:**
+
 - `src/stores/mcp-store.ts` — new file
 
 ```typescript
@@ -180,9 +190,11 @@ interface McpStore {
 **Depends on:** Tasks 2, 3, 4
 
 **What to build:**
+
 - `src/hooks/useMcpOperations.ts` — new file with two exported hooks:
 
-**`useMcpDiscovery()`** — mounted in `App.tsx`:
+`useMcpDiscovery()` — mounted in `App.tsx`:
+
 1. Wait for `startupReady` (same gate as `useSkillDiscovery`)
 2. Scan config files: `~/.notesage/mcp.json`, all project `.notesage/mcp.json` paths
 3. Populate `mcp-store` with discovered servers
@@ -190,14 +202,16 @@ interface McpStore {
 5. After start, call `mcp_list_tools` and update store
 6. Observe `rescanCounter` for re-discovery on file watcher events
 
-**`useMcpOperations()`** — used by components:
+`useMcpOperations()` — used by components:
+
 - `startServer(id)`, `stopServer(id)`, `restartServer(id)`
 - `callTool(serverId, toolName, args)` — wraps `mcp_call_tool` invoke
 - Status event listener: `listen('mcp-server-status', ...)` → update store
 
-**Mount `useMcpDiscovery()` in `App.tsx`** alongside existing hooks.
+**Mount** `useMcpDiscovery()` **in** `App.tsx` alongside existing hooks.
 
 **Files to modify:**
+
 - `src/hooks/useMcpOperations.ts` (new)
 - `src/App.tsx` (mount `useMcpDiscovery`)
 - `src/hooks/useFileWatcher.ts` (trigger `mcp-store.requestRescan()` on `.notesage/mcp.json` changes)
@@ -213,6 +227,7 @@ interface McpStore {
 **Depends on:** Task 4
 
 **What to build:**
+
 - Add "MCP Servers" section to `SkillsSettings.tsx` (or create separate `McpServersSettings.tsx` if the file gets too large)
 - Server card component showing:
   - Server name and command
@@ -226,6 +241,7 @@ interface McpStore {
 - Empty state: "No MCP servers configured. Add one or import from another tool."
 
 **Design guidelines:**
+
 - Follow existing `SkillCard` visual pattern
 - Status dots: green (running), grey (stopped), yellow (starting), red (error)
 - Use shadcn/ui Card, Switch, Badge, Collapsible, DropdownMenu
@@ -244,6 +260,7 @@ interface McpStore {
 **What to build:**
 
 **Add Server Dialog:**
+
 - Command input (required, with placeholder: `npx -y @modelcontextprotocol/server-filesystem`)
 - Arguments input (comma or space separated, converted to array)
 - Environment variables (dynamic key-value pair list with add/remove)
@@ -252,10 +269,12 @@ interface McpStore {
 - Save → writes to appropriate `mcp.json` file → triggers rescan
 
 **Edit Server Dialog:**
+
 - Same as Add but pre-populated with existing config
 - Save → updates config file → restarts server if running
 
 **Import Dialog:**
+
 - "Import from" section with buttons for each source
 - On click: scans source config, shows preview list with checkboxes
 - Each preview item shows: server name, command, tool count (if detectable)
@@ -273,6 +292,7 @@ interface McpStore {
 **Depends on:** Tasks 2, 4
 
 **What to build:**
+
 - Modify `ChatPanel.tsx` Tools popover to include MCP tools section
 - MCP tools displayed under "MCP Tools" header, separated from "Agent Tools"
 - Each tool shows: `[server-name] tool-name` with green dot for running servers
@@ -280,6 +300,7 @@ interface McpStore {
 - For direct API connections: MCP tool descriptions available for system prompt injection (future — note in code comment)
 
 **Files to modify:**
+
 - `src/components/chat/ChatPanel.tsx` — extend Tools popover
 - Read from `mcp-store.getActiveTools()` for tool list
 
@@ -296,21 +317,25 @@ interface McpStore {
 **What to build:**
 
 **Startup:**
+
 - `useMcpDiscovery` auto-starts enabled servers after config scan
 - Stagger startup: don't spawn all servers simultaneously (100ms delay between)
 - Failed starts logged and shown as error status in store
 
 **Shutdown:**
+
 - `McpState::stop_all()` in Rust: iterate all servers, send close notification, wait 2s, force kill
 - Called from `RunEvent::Exit` in `lib.rs`
 - Frontend `beforeunload`: call `mcp_stop_server` for each running server (secondary defense)
 
 **Crash recovery:**
+
 - If a server process exits unexpectedly, emit `mcp-server-status` event with error
 - Frontend updates store status to `error` with exit code/message
 - Auto-restart: not in v1 (user can manually restart from Settings)
 
 **Files to modify:**
+
 - `src-tauri/src/lib.rs` — add `McpState::stop_all()` to Exit hook
 - `src/hooks/useMcpOperations.ts` — startup sequencing, status event listener
 - `src/App.tsx` — ensure cleanup on unmount
@@ -326,18 +351,20 @@ interface McpStore {
 **Depends on:** All previous tasks
 
 **What to test:**
-1. Install `@modelcontextprotocol/server-filesystem` and `@modelcontextprotocol/server-everything` for testing
-2. Add via Settings UI → verify server starts and tools appear
-3. Import from Claude Desktop config → verify servers discovered
-4. Enable/disable toggle → verify server starts/stops
-5. App restart → verify enabled servers auto-start
-6. App quit → verify no orphaned processes (`ps aux | grep mcp`)
-7. Remove server → verify stopped and config removed
-8. Project-scoped server → verify only active when project is open
-9. Server crash simulation → verify error status displayed
+
+ 1. Install `@modelcontextprotocol/server-filesystem` and `@modelcontextprotocol/server-everything` for testing
+ 2. Add via Settings UI → verify server starts and tools appear
+ 3. Import from Claude Desktop config → verify servers discovered
+ 4. Enable/disable toggle → verify server starts/stops
+ 5. App restart → verify enabled servers auto-start
+ 6. App quit → verify no orphaned processes (`ps aux | grep mcp`)
+ 7. Remove server → verify stopped and config removed
+ 8. Project-scoped server → verify only active when project is open
+ 9. Server crash simulation → verify error status displayed
 10. Light + dark mode → verify all UI states look correct
 
 **Polish items:**
+
 - Error messages are user-friendly (not raw stderr)
 - Loading states during server startup
 - Transition animations on status changes
