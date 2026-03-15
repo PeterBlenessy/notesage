@@ -54,7 +54,6 @@
     "@tiptap/react": "^3.19.0",
     "@tiptap/starter-kit": "^3.19.0",
     "@tiptap/suggestion": "^3.19.0",
-    "@types/diff-match-patch": "^1.0.36",
     "@zed-industries/claude-agent-acp": "^0.18.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -65,7 +64,6 @@
     "lowlight": "^3.3.0",
     "lucide-react": "^0.564.0",
     "mammoth": "^1.11.0",
-
     "pdfjs-dist": "^5.4.624",
     "radix-ui": "^1.4.3",
     "react": "^19.1.0",
@@ -82,6 +80,7 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@types/diff-match-patch": "^1.0.36",
     "@tailwindcss/vite": "^4.1.18",
     "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",

@@ -400,7 +400,7 @@ Two small Cargo.toml cleanups:
 
 ---
 
-### #18 — Move `@types/diff-match-patch` to devDependencies
+### #18 — Move `@types/diff-match-patch` to devDependencies ✅
 
 | Field | Value |
 |-------|-------|
