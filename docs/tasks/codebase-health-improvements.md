@@ -56,7 +56,7 @@ Wrap three critical zones in `<ErrorBoundary>`: the editor panel, the chat panel
 
 ---
 
-### #3 — Add ACP tool permission unit tests
+### #3 — Add ACP tool permission unit tests ✅
 
 | Field | Value |
 | --- | --- |
