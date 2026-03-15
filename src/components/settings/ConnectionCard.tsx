@@ -150,9 +150,15 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
         await invoke('list_models', { provider: 'ollama', apiKey: null, baseUrl: url });
         updateConnection(connection.id, { status: 'connected' });
         setHealth('ok');
-      } else {
-        // local_bundled — check health endpoint
-        setHealth('ok');
+      } else if (connection.authMethod === 'local_bundled') {
+        // Local AI: check if llama-server is actually running
+        const status = await invoke<{ running: boolean; port: number | null }>('get_local_server_status');
+        if (status.running) {
+          updateConnection(connection.id, { status: 'connected' });
+          setHealth('ok');
+        } else {
+          throw new Error('Local AI server is not running. Enable it in the Local AI tab.');
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
