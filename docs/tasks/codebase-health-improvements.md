@@ -36,7 +36,7 @@ Create a reusable React Error Boundary using `componentDidCatch` / `getDerivedSt
 
 ---
 
-### #2 — Wrap critical zones in error boundaries
+### #2 — Wrap critical zones in error boundaries ✅
 
 | Field | Value |
 | --- | --- |
@@ -214,7 +214,7 @@ Move script execution logic out of `skills.rs` into a new `script_exec.rs`:
 
 Drop-in replacement. `serde_yaml` is archived; `serde_yml` is the maintained fork with identical API.
 
-- Replace `serde_yaml = "0.9"` with `serde_yml = "0.9"` in `Cargo.toml`
+- Replace `serde_yaml = "0.9"` with `serde_yml = “0.0.12"` in `Cargo.toml`
 - Find-and-replace `serde_yaml::` with `serde_yml::` in `skills.rs` and `index/parser.rs` (the two consumers)
 - Run `cargo build` to verify
 

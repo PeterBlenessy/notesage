@@ -50,6 +50,7 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 
@@ -807,15 +808,17 @@ function App() {
       <div className="flex h-screen w-screen overflow-hidden">
         {/* Left: SidebarPanel — full window height, rail + drawer (hidden in focus mode) */}
         {!focusMode && (
-          <SidebarPanel
-            onOpenSettings={() => setSettingsOpen(true)}
-            onNewNote={handleNewNote}
-            onNewProject={handleNewProject}
-            onOpenExistingProject={handleBrowseForProject}
-            onOpenProjectSettings={handleOpenProjectSettings}
-            onMakeProject={handleMakeProject}
-            onExportFile={handleExportFile}
-          />
+          <ErrorBoundary name="Sidebar">
+            <SidebarPanel
+              onOpenSettings={() => setSettingsOpen(true)}
+              onNewNote={handleNewNote}
+              onNewProject={handleNewProject}
+              onOpenExistingProject={handleBrowseForProject}
+              onOpenProjectSettings={handleOpenProjectSettings}
+              onMakeProject={handleMakeProject}
+              onExportFile={handleExportFile}
+            />
+          </ErrorBoundary>
         )}
 
         {/* Right: Title bar + editor + chat */}
@@ -840,23 +843,25 @@ function App() {
                 defaultSize={loadPanelSize(configKey, "editor", chatPanelOpen || stripExpanded ? 65 : 100)}
                 minSize={300}
               >
-                <EditorArea
-                  onNewNote={handleNewNote}
-                  onNewProject={handleNewProject}
-                  onOpenFolder={handleOpenFolder}
-                  onOpenProject={handleOpenProject}
-                  onOpenFile={handleOpenFile}
-                  exportOpen={exportOpen}
-                  onExportOpenChange={setExportOpen}
-                  focusMode={focusMode}
-                  outlineOpen={outlineOpen}
-                  onOutlineOpenChange={setOutlineOpen}
-                  updateAvailable={!!updateState.updateInfo}
-                  updateVersion={updateState.updateInfo?.version ?? null}
-                  onUpdateClick={() => setUpdateDialogOpen(true)}
-                  onShortcutsOpen={() => setShortcutsOpen(true)}
-                  onOpenActions={() => setActionsDialogOpen(true)}
-                />
+                <ErrorBoundary name="Editor">
+                  <EditorArea
+                    onNewNote={handleNewNote}
+                    onNewProject={handleNewProject}
+                    onOpenFolder={handleOpenFolder}
+                    onOpenProject={handleOpenProject}
+                    onOpenFile={handleOpenFile}
+                    exportOpen={exportOpen}
+                    onExportOpenChange={setExportOpen}
+                    focusMode={focusMode}
+                    outlineOpen={outlineOpen}
+                    onOutlineOpenChange={setOutlineOpen}
+                    updateAvailable={!!updateState.updateInfo}
+                    updateVersion={updateState.updateInfo?.version ?? null}
+                    onUpdateClick={() => setUpdateDialogOpen(true)}
+                    onShortcutsOpen={() => setShortcutsOpen(true)}
+                    onOpenActions={() => setActionsDialogOpen(true)}
+                  />
+                </ErrorBoundary>
               </ResizablePanel>
 
               {chatPanelOpen && !focusMode && (
@@ -868,7 +873,9 @@ function App() {
                     minSize={280}
                     maxSize={500}
                   >
-                    <ChatPanel />
+                    <ErrorBoundary name="Chat">
+                      <ChatPanel />
+                    </ErrorBoundary>
                   </ResizablePanel>
                 </>
               )}
