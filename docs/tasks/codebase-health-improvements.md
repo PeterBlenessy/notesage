@@ -16,7 +16,7 @@ Grouped by effort-to-impact ratio. Pick any task at any time.
 
 ## Reliability
 
-### #1 — Create reusable `ErrorBoundary` component
+### #1 — Create reusable `ErrorBoundary` component ✅
 
 | Field | Value |
 | --- | --- |
