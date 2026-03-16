@@ -83,10 +83,10 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
   const [agentUpdates, setAgentUpdates] = useState<Record<string, { currentVersion: string; latestVersion: string }>>({});
   const [checkingUpdates, setCheckingUpdates] = useState(false);
 
-  const checkForUpdates = useCallback(() => {
+  const checkForUpdates = useCallback((force = false) => {
     setCheckingUpdates(true);
     const minDelay = new Promise((r) => setTimeout(r, 1000));
-    const check = invoke<{ agent_id: string; current_version: string; latest_version: string }[]>('agent_check_updates')
+    const check = invoke<{ agent_id: string; current_version: string; latest_version: string }[]>('agent_check_updates', { force })
       .then((updates) => {
         const map: Record<string, { currentVersion: string; latestVersion: string }> = {};
         for (const u of updates) {
@@ -471,7 +471,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
             <div className="flex items-center justify-end">
               <button
                 className="text-[11px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
-                onClick={checkForUpdates}
+                onClick={() => checkForUpdates(true)}
                 disabled={checkingUpdates}
               >
                 {checkingUpdates

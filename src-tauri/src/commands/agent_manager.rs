@@ -1092,16 +1092,17 @@ pub struct AgentUpdateInfo {
 }
 
 #[tauri::command]
-pub async fn agent_check_updates(app: AppHandle) -> Result<Vec<AgentUpdateInfo>, String> {
+pub async fn agent_check_updates(app: AppHandle, force: Option<bool>) -> Result<Vec<AgentUpdateInfo>, String> {
     let mut versions = read_versions();
 
-    // Rate limit: minimum 1 hour between checks
-    if let Some(ref last) = versions.last_checked {
-        if let Ok(last_time) = chrono::DateTime::parse_from_rfc3339(last) {
-            let elapsed = chrono::Utc::now().signed_duration_since(last_time);
-            if elapsed.num_hours() < 1 {
-                // Return empty — too soon to check again
-                return Ok(vec![]);
+    // Rate limit: minimum 1 hour between automatic checks (skipped when force=true)
+    if !force.unwrap_or(false) {
+        if let Some(ref last) = versions.last_checked {
+            if let Ok(last_time) = chrono::DateTime::parse_from_rfc3339(last) {
+                let elapsed = chrono::Utc::now().signed_duration_since(last_time);
+                if elapsed.num_hours() < 1 {
+                    return Ok(vec![]);
+                }
             }
         }
     }
