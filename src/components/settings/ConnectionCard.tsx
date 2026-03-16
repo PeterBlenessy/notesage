@@ -4,7 +4,7 @@ import { CAPABILITY_LABELS, prettyModelName, setAgentModels } from '@/lib/ai/con
 import { useConnectionsStore } from '@/stores/connections-store';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { Button } from '@/components/ui/button';
-import { Settings2, Unplug, HeartPulse, Loader2, Check, X, ArrowUpCircle } from 'lucide-react';
+import { Settings2, Unplug, HeartPulse, Loader2, Check, X, ArrowUpCircle, Shield, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -228,6 +228,23 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
                 {CAPABILITY_LABELS[cap]}
               </span>
             ))}
+            {connection.authMethod === 'agent_managed' && connection.sandboxEnabled !== false && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground shrink-0 flex items-center gap-0.5" title="Filesystem sandbox enabled">
+                <Shield className="h-2.5 w-2.5" strokeWidth={2} />
+                Sandbox
+              </span>
+            )}
+            {connection.networkSandboxEnabled && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground shrink-0 flex items-center gap-0.5" title="Network restriction enabled">
+                <Globe className="h-2.5 w-2.5" strokeWidth={2} />
+                Network
+              </span>
+            )}
+            {connection.binarySource === 'managed' && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground shrink-0" title="Installed by Notesage">
+                Managed
+              </span>
+            )}
             {updateAvailable && (
               <button
                 onClick={handleUpdate}

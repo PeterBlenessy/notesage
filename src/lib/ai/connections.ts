@@ -196,7 +196,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     installMeta: {
       githubRepo: 'zed-industries/codex-acp',
       manualCommand: 'npm install -g @zed-industries/codex-acp',
-      allowedDomains: ['api.openai.com', 'chatgpt.com', '*.chatgpt.com', 'github.com', '*.githubusercontent.com'],
+      allowedDomains: ['api.openai.com', 'github.com', '*.githubusercontent.com'],
     },
   },
   {

@@ -30,7 +30,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, RefreshCw, ChevronsUpDown, Check, Eye, EyeOff, Globe, X as XIcon, Plus } from 'lucide-react';
+import { Loader2, RefreshCw, ChevronsUpDown, Check, Eye, EyeOff, GlobeLock, Shield, X as XIcon, Plus, Brain } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
 import { tauriApi } from '@/lib/tauri';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useLocalAIStore } from '@/stores/local-ai-store';
@@ -162,6 +163,9 @@ export function ConnectionConfigDialog({
   const localModels = useLocalAIStore((s) => s.models);
   const downloadedLocalModels = localModels.filter((m) => m.downloaded);
 
+  // Sandbox state
+  const [sandboxEnabled, setSandboxEnabled] = useState(true);
+
   // Reasoning effort (codex-acp) — undefined means "agent default" (no suffix appended)
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | undefined>(undefined);
 
@@ -195,6 +199,7 @@ export function ConnectionConfigDialog({
       setShowApiKey(false);
       setModels([]);
       setModelsError(null);
+      setSandboxEnabled(connection.sandboxEnabled !== false); // default true for managed
       setReasoningEffort(connection.config?.reasoningEffort ?? undefined);
       setNetworkSandbox(connection.networkSandboxEnabled ?? false);
       setNewDomain('');
@@ -264,7 +269,8 @@ export function ConnectionConfigDialog({
 
     const updates: Partial<Connection> = {
       config: Object.keys(config).length > 0 ? config : undefined,
-      networkSandboxEnabled: isAgentManaged ? networkSandbox : undefined,
+      sandboxEnabled: isAgentManaged ? sandboxEnabled : undefined,
+      networkSandboxEnabled: isAgentManaged ? (sandboxEnabled && networkSandbox) : undefined,
     };
 
     // Update API key if changed
@@ -312,473 +318,447 @@ export function ConnectionConfigDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[440px]" aria-describedby={undefined}>
+      <DialogContent className="sm:max-w-[500px]" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle className="text-base">
             Configure {connection.label}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          {/* Local AI model picker — shows downloaded models */}
-          {isLocalBundled && (
-            <div className="space-y-1.5">
-              <Label className="text-sm">Model</Label>
-              {downloadedLocalModels.length > 0 ? (
-                <Select
-                  value={localModelId ?? ''}
-                  onValueChange={setLocalModelId}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select a model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {downloadedLocalModels.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        <span className="flex items-center gap-2">
-                          <span>{m.name}</span>
-                          {m.size_bytes > 0 && (
-                            <span className="text-xs text-muted-foreground">
-                              {m.size_bytes < 1_000_000_000
-                                ? `${(m.size_bytes / 1_000_000).toFixed(0)} MB`
-                                : `${(m.size_bytes / 1_000_000_000).toFixed(1)} GB`}
-                            </span>
-                          )}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  No models downloaded yet. Download one in the{' '}
-                  {onNavigateToTab ? (
-                    <button
-                      className="underline hover:text-foreground transition-colors"
-                      onClick={() => {
-                        onOpenChange(false);
-                        onNavigateToTab('local-ai');
-                      }}
-                    >
-                      Local AI tab
-                    </button>
-                  ) : (
-                    'Local AI tab'
-                  )}.
-                </p>
-              )}
-            </div>
-          )}
+        <div className="space-y-5 py-2 max-h-[70vh] overflow-y-auto pr-1">
 
-          {/* Model — agent-managed: combobox with known models; API providers: combobox with fetch */}
-          {!isLocalBundled && <div className="space-y-1.5">
-            <Label className="text-sm">Model</Label>
-            {isAgentManaged ? (() => {
-              const agentBinary = connection.credentials.type === 'agent_managed'
-                ? (connection.credentials as { agentBinary: string }).agentBinary
-                : '';
-
-              // Prefer dynamic models from ACP session, fall back to hardcoded
-              const cached = getAgentModels(connection.id);
-              const dynamicModels = cached?.models.map((m) => ({
-                id: m.modelId,
-                label: m.name,
-                note: m.description ?? undefined,
-              })) ?? [];
-              const fallbackModels = AGENT_KNOWN_MODELS[agentBinary] ?? [];
-              const displayModels = dynamicModels.length > 0 ? dynamicModels : fallbackModels;
-              const currentModel = cached?.currentModel;
-
-              const defaultLabel = currentModel
-                ? `Agent default (${prettyModelName(currentModel)})`
-                : 'Agent default';
-
-              return (
-                <>
+          {/* ── Model Section ── */}
+          <div className="space-y-3">
+            {/* Local AI model picker */}
+            {isLocalBundled && (
+              <div className="space-y-1.5">
+                <Label className="text-sm">Model</Label>
+                {downloadedLocalModels.length > 0 ? (
                   <Select
-                    value={model || '__default__'}
-                    onValueChange={(val) => setModel(val === '__default__' ? '' : val)}
+                    value={localModelId ?? ''}
+                    onValueChange={setLocalModelId}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue />
+                      <SelectValue placeholder="Select a model" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="__default__">
-                        <span className="text-muted-foreground">{defaultLabel}</span>
-                      </SelectItem>
-                      {displayModels.map((m) => (
+                      {downloadedLocalModels.map((m) => (
                         <SelectItem key={m.id} value={m.id}>
                           <span className="flex items-center gap-2">
-                            <span>{prettyModelName(m.id)}</span>
-                            {currentModel === m.id && (
-                              <span className="text-[10px] text-muted-foreground">(current)</span>
+                            <span>{m.name}</span>
+                            {m.size_bytes > 0 && (
+                              <span className="text-xs text-muted-foreground">
+                                {m.size_bytes < 1_000_000_000
+                                  ? `${(m.size_bytes / 1_000_000).toFixed(0)} MB`
+                                  : `${(m.size_bytes / 1_000_000_000).toFixed(1)} GB`}
+                              </span>
                             )}
                           </span>
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  {displayModels.length === 0 && (
-                    <p className="text-[11px] text-muted-foreground italic">
-                      Connect and send a message first to discover available models.
-                    </p>
-                  )}
-                </>
-              );
-            })() : (
-              <Popover open={modelPopoverOpen} onOpenChange={setModelPopoverOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={modelPopoverOpen}
-                    className="w-full justify-between font-normal"
-                  >
-                    <span className="truncate">
-                      {model ? prettyModelName(model) : (
-                        <span className="text-muted-foreground">
-                          {defaultModel ? `Default (${prettyModelName(defaultModel)})` : 'Select model\u2026'}
-                        </span>
-                      )}
-                    </span>
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start" collisionPadding={8}>
-                  <Command>
-                    <div className="flex items-center gap-1 px-1">
-                      <CommandInput
-                        placeholder="Search or type model name\u2026"
-                        value={model}
-                        onValueChange={setModel}
-                        className="flex-1"
-                      />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 shrink-0"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          fetchModels();
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    No models downloaded yet. Download one in the{' '}
+                    {onNavigateToTab ? (
+                      <button
+                        className="underline hover:text-foreground transition-colors"
+                        onClick={() => {
+                          onOpenChange(false);
+                          onNavigateToTab('local-ai');
                         }}
-                        disabled={modelsLoading}
                       >
-                        {modelsLoading ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <RefreshCw className="h-3.5 w-3.5" />
-                        )}
-                      </Button>
-                    </div>
-                    <CommandList className="max-h-[240px]">
-                      {modelsError && (
-                        <p className="px-3 py-2 text-xs text-destructive">
-                          {modelsError}
-                        </p>
-                      )}
-                      {!modelsLoading && !modelsError && models.length === 0 && (
-                        <CommandEmpty>
-                          Type a model name or click refresh
-                        </CommandEmpty>
-                      )}
-                      {models.length > 0 && (
-                        <CommandGroup>
-                          {models.map((m) => (
-                            <CommandItem
-                              key={m}
-                              value={m}
-                              onSelect={(val) => {
-                                setModel(val);
-                                setModelPopoverOpen(false);
-                              }}
-                            >
-                              <Check
-                                className={cn(
-                                  'mr-2 h-3.5 w-3.5',
-                                  model === m ? 'opacity-100' : 'opacity-0'
-                                )}
-                              />
-                              <span className="truncate text-sm">{m}</span>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      )}
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
+                        Local AI tab
+                      </button>
+                    ) : (
+                      'Local AI tab'
+                    )}.
+                  </p>
+                )}
+              </div>
             )}
-          </div>}
 
-          {/* Reasoning Effort — codex-acp with paid accounts only */}
-          {isCodexAgent && !connection.freeAccount && (() => {
-            const EFFORT_OPTIONS: { value: ReasoningEffort | undefined; label: string }[] = [
-              { value: undefined, label: 'Default' },
-              { value: 'low', label: 'Low' },
-              { value: 'medium', label: 'Medium' },
-              { value: 'high', label: 'High' },
-              { value: 'xhigh', label: 'Extra High' },
-            ];
-            const currentIndex = EFFORT_OPTIONS.findIndex((o) => o.value === reasoningEffort);
-            return (
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm">Thinking Effort</Label>
-                  <span className="text-xs text-muted-foreground">
-                    {EFFORT_OPTIONS[currentIndex]?.label ?? 'Default'}
-                  </span>
-                </div>
-                <Slider
-                  min={0}
-                  max={EFFORT_OPTIONS.length - 1}
-                  step={1}
-                  value={[currentIndex >= 0 ? currentIndex : 0]}
-                  onValueChange={([val]) => setReasoningEffort(EFFORT_OPTIONS[val].value)}
-                />
-                <div className="flex justify-between px-0.5">
-                  {EFFORT_OPTIONS.map((opt) => (
-                    <span
-                      key={opt.label}
-                      className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
-                      onClick={() => setReasoningEffort(opt.value)}
-                    >
-                      {opt.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Temperature — for direct API and local_bundled connections */}
-          {!isAgentManaged && (
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm">Creativity</Label>
-                <span className="text-xs text-muted-foreground">
-                  {temperature !== null
-                    ? `${getTemperatureLabel(temperature)} (${temperature.toFixed(1)})`
-                    : 'Default'}
-                </span>
-              </div>
-              <Slider
-                min={0}
-                max={2}
-                step={0.1}
-                value={temperature !== null ? [temperature] : [1.0]}
-                onValueChange={([val]) => setTemperature(val)}
-                className={cn(temperature === null && 'opacity-40')}
-              />
-              <div className="flex justify-between px-0.5">
-                {TEMPERATURE_LABELS.map((t) => (
-                  <span
-                    key={t.value}
-                    className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
-                    onClick={() => setTemperature(t.value)}
-                  >
-                    {t.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Max Tokens (Response Length) — only for direct API connections */}
-          {!isAgentManaged && (
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm">Response Length</Label>
-                <span className="text-xs text-muted-foreground">
-                  {maxTokensIndex !== null
-                    ? `${formatTokenCount(MAX_TOKEN_PRESETS[maxTokensIndex])} tokens`
-                    : 'Default'}
-                </span>
-              </div>
-              <Slider
-                min={0}
-                max={MAX_TOKEN_PRESETS.length - 1}
-                step={1}
-                value={maxTokensIndex !== null ? [maxTokensIndex] : [4]}
-                onValueChange={([val]) => setMaxTokensIndex(val)}
-                className={cn(maxTokensIndex === null && 'opacity-40')}
-              />
-              <div className="flex justify-between px-0.5">
-                <span className="text-[10px] text-muted-foreground">Short</span>
-                <span className="text-[10px] text-muted-foreground">Medium</span>
-                <span className="text-[10px] text-muted-foreground">Long</span>
-              </div>
-            </div>
-          )}
-
-          {/* Server settings — local_bundled only */}
-          {isLocalBundled && (
-            <>
-              <div className="flex items-center justify-between">
-                <Label className="text-sm">Context Length</Label>
-                <Select
-                  value={String(contextLength)}
-                  onValueChange={(v) => setContextLength(Number(v))}
-                >
-                  <SelectTrigger className="w-28 h-8 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="2048">2,048</SelectItem>
-                    <SelectItem value="4096">4,096</SelectItem>
-                    <SelectItem value="8192">8,192</SelectItem>
-                    <SelectItem value="16384">16,384</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-center justify-between">
-                <Label className="text-sm">GPU Layers</Label>
-                <Select
-                  value={String(gpuLayers)}
-                  onValueChange={(v) => setGpuLayers(Number(v))}
-                >
-                  <SelectTrigger className="w-28 h-8 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="-1">Auto (all)</SelectItem>
-                    <SelectItem value="0">CPU only</SelectItem>
-                    <SelectItem value="16">16 layers</SelectItem>
-                    <SelectItem value="32">32 layers</SelectItem>
-                    <SelectItem value="48">48 layers</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </>
-          )}
-
-          {/* Network Sandbox — agent_managed connections only */}
-          {isAgentManaged && connection.sandboxEnabled !== false && (
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Globe className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
-                  <Label className="text-sm">Network Restriction</Label>
-                </div>
-                <Switch
-                  checked={networkSandbox}
-                  onCheckedChange={setNetworkSandbox}
-                />
-              </div>
-              {networkSandbox && (() => {
-                const agentBinary = connection.credentials.type === 'agent_managed'
+            {/* Agent-managed or API model picker */}
+            {!isLocalBundled && <div className="space-y-1.5">
+              <Label className="text-sm">Model</Label>
+              {isAgentManaged ? (() => {
+                const ab = connection.credentials.type === 'agent_managed'
                   ? (connection.credentials as { agentBinary: string }).agentBinary
                   : '';
-                const provOpt = PROVIDER_OPTIONS.find(
-                  (o) => o.agentBinary === agentBinary || o.lspBinary === agentBinary
-                );
-                const builtInDomains = provOpt?.installMeta?.allowedDomains ?? [];
-                const userDomains = domainAlwaysAllowed[connection.id] ?? [];
+                const cached = getAgentModels(connection.id);
+                const dynamicModels = cached?.models.map((m) => ({
+                  id: m.modelId,
+                  label: m.name,
+                  note: m.description ?? undefined,
+                })) ?? [];
+                const fallbackModels = AGENT_KNOWN_MODELS[ab] ?? [];
+                const displayModels = dynamicModels.length > 0 ? dynamicModels : fallbackModels;
+                const currentModel = cached?.currentModel;
+                const defaultLabel = currentModel
+                  ? `Agent default (${prettyModelName(currentModel)})`
+                  : 'Agent default';
 
                 return (
-                  <div className="space-y-1.5 pl-5.5">
-                    <p className="text-[11px] text-muted-foreground">
-                      Only these domains can be reached. Unknown domains require approval.
-                    </p>
-                    <div className="space-y-1">
-                      {builtInDomains.map((d) => (
-                        <div key={d} className="flex items-center gap-2 text-xs">
-                          <span className="font-mono text-muted-foreground flex-1 truncate">{d}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">built-in</span>
-                        </div>
-                      ))}
-                      {userDomains.map((d) => (
-                        <div key={d} className="flex items-center gap-2 text-xs">
-                          <span className="font-mono text-foreground flex-1 truncate">{d}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">always</span>
-                          <button
-                            className="text-muted-foreground hover:text-destructive transition-colors"
-                            onClick={() => usePermissionStore.getState().removeDomain(connection.id, d)}
-                            title="Remove"
-                          >
-                            <XIcon className="h-3 w-3" strokeWidth={1.5} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <Input
-                        type="text"
-                        placeholder="example.com"
-                        value={newDomain}
-                        onChange={(e) => setNewDomain(e.target.value)}
-                        className="h-7 text-xs flex-1"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && newDomain.trim()) {
-                            usePermissionStore.getState().allowDomain(connection.id, newDomain.trim(), 'always');
-                            setNewDomain('');
-                          }
-                        }}
-                      />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 shrink-0"
-                        onClick={() => {
-                          if (newDomain.trim()) {
-                            usePermissionStore.getState().allowDomain(connection.id, newDomain.trim(), 'always');
-                            setNewDomain('');
-                          }
-                        }}
-                      >
-                        <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
-                      </Button>
-                    </div>
-                  </div>
+                  <>
+                    <Select
+                      value={model || '__default__'}
+                      onValueChange={(val) => setModel(val === '__default__' ? '' : val)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__default__">
+                          <span className="text-muted-foreground">{defaultLabel}</span>
+                        </SelectItem>
+                        {displayModels.map((m) => (
+                          <SelectItem key={m.id} value={m.id}>
+                            <span className="flex items-center gap-2">
+                              <span>{prettyModelName(m.id)}</span>
+                              {currentModel === m.id && (
+                                <span className="text-[10px] text-muted-foreground">(current)</span>
+                              )}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {displayModels.length === 0 && (
+                      <p className="text-[11px] text-muted-foreground italic">
+                        Send a message first to discover available models.
+                      </p>
+                    )}
+                  </>
                 );
-              })()}
-            </div>
-          )}
+              })() : (
+                <Popover open={modelPopoverOpen} onOpenChange={setModelPopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={modelPopoverOpen}
+                      className="w-full justify-between font-normal"
+                    >
+                      <span className="truncate">
+                        {model ? prettyModelName(model) : (
+                          <span className="text-muted-foreground">
+                            {defaultModel ? `Default (${prettyModelName(defaultModel)})` : 'Select model\u2026'}
+                          </span>
+                        )}
+                      </span>
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start" collisionPadding={8}>
+                    <Command>
+                      <div className="flex items-center gap-1 px-1">
+                        <CommandInput
+                          placeholder="Search or type model name\u2026"
+                          value={model}
+                          onValueChange={setModel}
+                          className="flex-1"
+                        />
+                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={(e) => { e.stopPropagation(); fetchModels(); }} disabled={modelsLoading}>
+                          {modelsLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                        </Button>
+                      </div>
+                      <CommandList className="max-h-[240px]">
+                        {modelsError && <p className="px-3 py-2 text-xs text-destructive">{modelsError}</p>}
+                        {!modelsLoading && !modelsError && models.length === 0 && <CommandEmpty>Type a model name or click refresh</CommandEmpty>}
+                        {models.length > 0 && (
+                          <CommandGroup>
+                            {models.map((m) => (
+                              <CommandItem key={m} value={m} onSelect={(val) => { setModel(val); setModelPopoverOpen(false); }}>
+                                <Check className={cn('mr-2 h-3.5 w-3.5', model === m ? 'opacity-100' : 'opacity-0')} />
+                                <span className="truncate text-sm">{m}</span>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        )}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              )}
+            </div>}
 
-          {/* Base URL */}
-          {showBaseUrl && (
-            <div className="space-y-1.5">
-              <Label className="text-sm">
-                Base URL
-                {connection.provider === 'openai_compatible' && (
-                  <span className="text-destructive ml-1">*</span>
-                )}
-              </Label>
-              <Input
-                type="url"
-                placeholder={placeholderUrl || 'https://api.example.com'}
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                className="w-full"
-              />
-            </div>
-          )}
+            {/* Thinking Effort — codex-acp with paid accounts */}
+            {isCodexAgent && !connection.freeAccount && (() => {
+              const EFFORT_OPTIONS: { value: ReasoningEffort | undefined; label: string }[] = [
+                { value: undefined, label: 'Default' },
+                { value: 'low', label: 'Low' },
+                { value: 'medium', label: 'Medium' },
+                { value: 'high', label: 'High' },
+                { value: 'xhigh', label: 'Extra High' },
+              ];
+              const currentIndex = EFFORT_OPTIONS.findIndex((o) => o.value === reasoningEffort);
+              return (
+                <div className="rounded-lg border border-border p-3 space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <Brain className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+                    <Label className="text-sm font-medium">Thinking Effort</Label>
+                    <span className="text-xs text-muted-foreground ml-auto">
+                      {EFFORT_OPTIONS[currentIndex]?.label ?? 'Default'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Controls how much reasoning the model does before responding. Higher effort produces more thorough answers but uses more tokens and takes longer.
+                  </p>
+                  <Slider
+                    min={0}
+                    max={EFFORT_OPTIONS.length - 1}
+                    step={1}
+                    value={[currentIndex >= 0 ? currentIndex : 0]}
+                    onValueChange={([val]) => setReasoningEffort(EFFORT_OPTIONS[val].value)}
+                  />
+                  <div className="flex justify-between px-0.5">
+                    {EFFORT_OPTIONS.map((opt) => (
+                      <span
+                        key={opt.label}
+                        className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
+                        onClick={() => setReasoningEffort(opt.value)}
+                      >
+                        {opt.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
-          {/* API Key */}
-          {showApiKeyField && (
-            <div className="space-y-1.5">
-              <Label className="text-sm">API Key</Label>
-              <div className="relative">
+            {/* Temperature + Response Length — direct API and local_bundled */}
+            {!isAgentManaged && (
+              <>
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm">Creativity</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {temperature !== null
+                        ? `${getTemperatureLabel(temperature)} (${temperature.toFixed(1)})`
+                        : 'Default'}
+                    </span>
+                  </div>
+                  <Slider
+                    min={0} max={2} step={0.1}
+                    value={temperature !== null ? [temperature] : [1.0]}
+                    onValueChange={([val]) => setTemperature(val)}
+                    className={cn(temperature === null && 'opacity-40')}
+                  />
+                  <div className="flex justify-between px-0.5">
+                    {TEMPERATURE_LABELS.map((t) => (
+                      <span key={t.value} className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors" onClick={() => setTemperature(t.value)}>
+                        {t.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm">Response Length</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {maxTokensIndex !== null
+                        ? `${formatTokenCount(MAX_TOKEN_PRESETS[maxTokensIndex])} tokens`
+                        : 'Default'}
+                    </span>
+                  </div>
+                  <Slider
+                    min={0} max={MAX_TOKEN_PRESETS.length - 1} step={1}
+                    value={maxTokensIndex !== null ? [maxTokensIndex] : [4]}
+                    onValueChange={([val]) => setMaxTokensIndex(val)}
+                    className={cn(maxTokensIndex === null && 'opacity-40')}
+                  />
+                  <div className="flex justify-between px-0.5">
+                    <span className="text-[10px] text-muted-foreground">Short</span>
+                    <span className="text-[10px] text-muted-foreground">Medium</span>
+                    <span className="text-[10px] text-muted-foreground">Long</span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Server settings — local_bundled */}
+            {isLocalBundled && (
+              <>
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm">Context Length</Label>
+                  <Select value={String(contextLength)} onValueChange={(v) => setContextLength(Number(v))}>
+                    <SelectTrigger className="w-28 h-8 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="2048">2,048</SelectItem>
+                      <SelectItem value="4096">4,096</SelectItem>
+                      <SelectItem value="8192">8,192</SelectItem>
+                      <SelectItem value="16384">16,384</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm">GPU Layers</Label>
+                  <Select value={String(gpuLayers)} onValueChange={(v) => setGpuLayers(Number(v))}>
+                    <SelectTrigger className="w-28 h-8 text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="-1">Auto (all)</SelectItem>
+                      <SelectItem value="0">CPU only</SelectItem>
+                      <SelectItem value="16">16 layers</SelectItem>
+                      <SelectItem value="32">32 layers</SelectItem>
+                      <SelectItem value="48">48 layers</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
+
+            {/* Base URL */}
+            {showBaseUrl && (
+              <div className="space-y-1.5">
+                <Label className="text-sm">
+                  Base URL
+                  {connection.provider === 'openai_compatible' && <span className="text-destructive ml-1">*</span>}
+                </Label>
                 <Input
-                  type={showApiKey ? 'text' : 'password'}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  className="w-full pr-10"
+                  type="url"
+                  placeholder={placeholderUrl || 'https://api.example.com'}
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  className="w-full"
                 />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-0 top-0 h-full w-10 text-muted-foreground hover:text-foreground"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                >
-                  {showApiKey ? (
-                    <EyeOff className="h-4 w-4" strokeWidth={1.5} />
-                  ) : (
-                    <Eye className="h-4 w-4" strokeWidth={1.5} />
-                  )}
-                </Button>
               </div>
-            </div>
+            )}
+
+            {/* API Key */}
+            {showApiKeyField && (
+              <div className="space-y-1.5">
+                <Label className="text-sm">API Key</Label>
+                <div className="relative">
+                  <Input
+                    type={showApiKey ? 'text' : 'password'}
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    className="w-full pr-10"
+                  />
+                  <Button
+                    type="button" variant="ghost" size="icon"
+                    className="absolute right-0 top-0 h-full w-10 text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                  >
+                    {showApiKey ? <EyeOff className="h-4 w-4" strokeWidth={1.5} /> : <Eye className="h-4 w-4" strokeWidth={1.5} />}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Security Section ── */}
+          {isAgentManaged && (
+            <>
+              <Separator />
+              <div className="space-y-3">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Security</p>
+
+                {/* Sandbox */}
+                <div className="rounded-lg border border-border p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Shield className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+                      <Label className="text-sm font-medium">Sandbox</Label>
+                    </div>
+                    <Switch
+                      checked={sandboxEnabled}
+                      onCheckedChange={(checked) => {
+                        setSandboxEnabled(checked);
+                        if (!checked) setNetworkSandbox(false);
+                      }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Restricts agent file system access. The agent can only write to your project folders, temp directories, and its own config. Sensitive directories like ~/.ssh and ~/.aws are always blocked.
+                  </p>
+                </div>
+
+                {/* Network Restriction */}
+                {sandboxEnabled && (
+                  <div className="rounded-lg border border-border p-3 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <GlobeLock className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+                        <Label className="text-sm font-medium">Network Restriction</Label>
+                      </div>
+                      <Switch
+                        checked={networkSandbox}
+                        onCheckedChange={setNetworkSandbox}
+                      />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Routes all agent network traffic through a local proxy that filters by domain. Only approved domains can be reached. Requests to unknown domains require your explicit approval before they go through.
+                    </p>
+                    {networkSandbox && (() => {
+                      const ab = connection.credentials.type === 'agent_managed'
+                        ? (connection.credentials as { agentBinary: string }).agentBinary
+                        : '';
+                      const provOpt = PROVIDER_OPTIONS.find(
+                        (o) => o.agentBinary === ab || o.lspBinary === ab
+                      );
+                      const builtInDomains = provOpt?.installMeta?.allowedDomains ?? [];
+                      const userDomains = domainAlwaysAllowed[connection.id] ?? [];
+
+                      return (
+                        <div className="space-y-2 pt-1">
+                          <p className="text-[11px] font-medium text-muted-foreground">Allowed domains</p>
+                          <div className="space-y-1">
+                            {builtInDomains.map((d) => (
+                              <div key={d} className="flex items-center gap-2 text-xs">
+                                <span className="font-mono text-muted-foreground flex-1 truncate">{d}</span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">built-in</span>
+                              </div>
+                            ))}
+                            {userDomains.map((d) => (
+                              <div key={d} className="flex items-center gap-2 text-xs">
+                                <span className="font-mono text-foreground flex-1 truncate">{d}</span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">always</span>
+                                <button
+                                  className="text-muted-foreground hover:text-destructive transition-colors"
+                                  onClick={() => usePermissionStore.getState().removeDomain(connection.id, d)}
+                                  title="Remove"
+                                >
+                                  <XIcon className="h-3 w-3" strokeWidth={1.5} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <Input
+                              type="text"
+                              placeholder="Add domain..."
+                              value={newDomain}
+                              onChange={(e) => setNewDomain(e.target.value)}
+                              className="h-7 text-xs flex-1"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && newDomain.trim()) {
+                                  usePermissionStore.getState().allowDomain(connection.id, newDomain.trim(), 'always');
+                                  setNewDomain('');
+                                }
+                              }}
+                            />
+                            <Button
+                              variant="ghost" size="icon" className="h-7 w-7 shrink-0"
+                              onClick={() => {
+                                if (newDomain.trim()) {
+                                  usePermissionStore.getState().allowDomain(connection.id, newDomain.trim(), 'always');
+                                  setNewDomain('');
+                                }
+                              }}
+                            >
+                              <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
 

@@ -50,16 +50,35 @@ pub fn generate_seatbelt_profile(
         writable_entries.join("\n")
     };
 
-    // Network rules: unrestricted or proxy-only
-    // Network sandbox enforcement strategy:
-    // - Primary: HTTP_PROXY/HTTPS_PROXY env vars route traffic through our domain-filtering proxy
-    // - Seatbelt keeps (allow network*) because (deny network*) breaks agent startup
-    //   (agents need network for auth, socket creation, DNS, etc. during init)
-    // - If an agent ignores proxy env vars, its requests bypass the filter but still work
-    //   (this is acceptable — most HTTP clients respect proxy vars by default)
-    // - Future: investigate per-destination Seatbelt rules that don't break agent init
-    let _network_config = network_config; // acknowledged but not used for Seatbelt rules yet
-    let network_block = ";; Allow network (proxy env vars provide domain filtering)\n(allow network*)".to_string();
+    // Network rules: unrestricted or localhost-only
+    let network_block = match network_config {
+        None => {
+            ";; Allow all network (network sandbox not enabled)\n(allow network*)".to_string()
+        }
+        Some(_config) => {
+            // Deny only outbound (not network*) — network-bind, network-inbound, and
+            // system-socket must stay allowed for agent startup and IPC.
+            // Pattern from Anthropic's sandbox-runtime and OpenAI Codex.
+            // Seatbelt evaluates top-to-bottom; first matching allow wins.
+            r#";; DNS resolution via mDNSResponder (local daemon, not direct internet)
+(allow network-outbound (literal "/private/var/run/mDNSResponder"))
+
+;; Unix domain sockets for system services and IPC
+(allow network-outbound (remote unix-socket))
+
+;; Outbound TCP only to localhost (where network proxy listens)
+(allow network-outbound (remote ip "localhost:*"))
+(allow network-outbound (remote ip "127.0.0.1:*"))
+
+;; Socket creation, binding, inbound — needed for agent startup
+(allow network-bind)
+(allow network-inbound)
+(allow system-socket)
+
+;; Deny all other outbound (catch-all)
+(deny network-outbound)"#.to_string()
+        }
+    };
 
     let profile = format!(
         r#"(version 1)

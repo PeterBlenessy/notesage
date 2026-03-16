@@ -586,8 +586,6 @@ pub fn default_allowed_domains(agent_id: &str) -> Vec<String> {
         "codex-acp" => {
             domains.extend([
                 "api.openai.com".to_string(),
-                "chatgpt.com".to_string(),
-                "*.chatgpt.com".to_string(),
             ]);
         }
         "copilot" | "copilot-language-server" => {
