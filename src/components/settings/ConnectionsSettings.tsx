@@ -81,17 +81,24 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
 
   // Agent update checking
   const [agentUpdates, setAgentUpdates] = useState<Record<string, { currentVersion: string; latestVersion: string }>>({});
-  useEffect(() => {
-    // Check for updates on mount (rate-limited server-side)
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
+
+  const checkForUpdates = useCallback(() => {
+    setCheckingUpdates(true);
     invoke<{ agent_id: string; current_version: string; latest_version: string }[]>('agent_check_updates')
       .then((updates) => {
         const map: Record<string, { currentVersion: string; latestVersion: string }> = {};
         for (const u of updates) {
           map[u.agent_id] = { currentVersion: u.current_version, latestVersion: u.latest_version };
         }
-        if (Object.keys(map).length > 0) setAgentUpdates(map);
+        setAgentUpdates(map);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setCheckingUpdates(false));
+  }, []);
+
+  useEffect(() => {
+    checkForUpdates();
   }, []);
 
   const resetFlow = useCallback(() => {
@@ -459,6 +466,21 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
       {/* Connection list */}
       {connections.length > 0 ? (
         <div className="space-y-2">
+          {connections.some((c) => c.binarySource === 'managed') && (
+            <div className="flex items-center justify-end">
+              <button
+                className="text-[11px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+                onClick={checkForUpdates}
+                disabled={checkingUpdates}
+              >
+                {checkingUpdates
+                  ? <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.5} />
+                  : <RefreshCw className="h-3 w-3" strokeWidth={1.5} />
+                }
+                Check for updates
+              </button>
+            </div>
+          )}
           {connections.map((conn) => (
             <ConnectionCard
               key={conn.id}

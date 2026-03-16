@@ -165,6 +165,8 @@ export function ConnectionConfigDialog({
 
   // Sandbox state
   const [sandboxEnabled, setSandboxEnabled] = useState(true);
+  const [extraWritablePaths, setExtraWritablePaths] = useState<string[]>([]);
+  const [newWritablePath, setNewWritablePath] = useState('');
 
   // Reasoning effort (codex-acp) — undefined means "agent default" (no suffix appended)
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | undefined>(undefined);
@@ -200,6 +202,8 @@ export function ConnectionConfigDialog({
       setModels([]);
       setModelsError(null);
       setSandboxEnabled(connection.sandboxEnabled !== false); // default true for managed
+      setExtraWritablePaths(connection.extraWritablePaths ?? []);
+      setNewWritablePath('');
       setReasoningEffort(connection.config?.reasoningEffort ?? undefined);
       setNetworkSandbox(connection.networkSandboxEnabled ?? false);
       setNewDomain('');
@@ -271,6 +275,8 @@ export function ConnectionConfigDialog({
       config: Object.keys(config).length > 0 ? config : undefined,
       sandboxEnabled: isAgentManaged ? sandboxEnabled : undefined,
       networkSandboxEnabled: isAgentManaged ? (sandboxEnabled && networkSandbox) : undefined,
+      extraWritablePaths: isAgentManaged && sandboxEnabled && extraWritablePaths.length > 0
+        ? extraWritablePaths : undefined,
     };
 
     // Update API key if changed
@@ -674,6 +680,51 @@ export function ConnectionConfigDialog({
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
                     Restricts agent file system access. The agent can only write to your project folders, temp directories, and its own config. Sensitive directories like ~/.ssh and ~/.aws are always blocked.
                   </p>
+                  {sandboxEnabled && extraWritablePaths.length > 0 && (
+                    <div className="space-y-1 pt-1">
+                      <p className="text-[11px] font-medium text-muted-foreground">Extra writable paths</p>
+                      {extraWritablePaths.map((p) => (
+                        <div key={p} className="flex items-center gap-2 text-xs">
+                          <span className="font-mono text-muted-foreground flex-1 truncate">{p}</span>
+                          <button
+                            className="text-muted-foreground hover:text-destructive transition-colors"
+                            onClick={() => setExtraWritablePaths((prev) => prev.filter((x) => x !== p))}
+                            title="Remove"
+                          >
+                            <XIcon className="h-3 w-3" strokeWidth={1.5} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {sandboxEnabled && (
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        type="text"
+                        placeholder="Add writable path..."
+                        value={newWritablePath}
+                        onChange={(e) => setNewWritablePath(e.target.value)}
+                        className="h-7 text-xs flex-1"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newWritablePath.trim()) {
+                            setExtraWritablePaths((prev) => [...prev, newWritablePath.trim()]);
+                            setNewWritablePath('');
+                          }
+                        }}
+                      />
+                      <Button
+                        variant="ghost" size="icon" className="h-7 w-7 shrink-0"
+                        onClick={() => {
+                          if (newWritablePath.trim()) {
+                            setExtraWritablePaths((prev) => [...prev, newWritablePath.trim()]);
+                            setNewWritablePath('');
+                          }
+                        }}
+                      >
+                        <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Network Restriction */}

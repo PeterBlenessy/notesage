@@ -103,6 +103,7 @@ export interface Connection {
   binarySource?: BinarySource;      // 'managed' (Notesage-installed) or 'system' (user-installed)
   sandboxEnabled?: boolean;         // OS-level filesystem sandbox (default: true for managed, false for system)
   networkSandboxEnabled?: boolean;  // Network sandbox via proxy (requires sandboxEnabled)
+  extraWritablePaths?: string[];    // Additional writable paths for the sandbox (user-configured)
   freeAccount?: boolean;            // Detected at runtime — disables reasoning effort tiers
   createdAt: number;
 }

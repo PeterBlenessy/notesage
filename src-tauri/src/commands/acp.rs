@@ -516,9 +516,9 @@ fn run_agent_thread(
                     .iter()
                     .map(|m| {
                         (
-                            m.id.to_string(),
-                            m.name.clone(),
-                            m.description.clone(),
+                            m.id().to_string(),
+                            m.name().to_string(),
+                            m.description().map(|s| s.to_string()),
                         )
                     })
                     .collect();
