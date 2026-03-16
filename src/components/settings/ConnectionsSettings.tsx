@@ -4,6 +4,7 @@ import { useRoutingStore } from '@/stores/routing-store';
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import { stopAcpAgent } from '@/hooks/useAIOperations';
 import { tauriApi } from '@/lib/tauri';
+import { toast } from 'sonner';
 import { ConnectionCard } from './ConnectionCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -86,6 +87,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
   const checkForUpdates = useCallback((force = false) => {
     setCheckingUpdates(true);
     const minDelay = new Promise((r) => setTimeout(r, 1000));
+    let toastMsg: (() => void) | null = null;
     const check = invoke<{ agent_id: string; current_version: string; latest_version: string }[]>('agent_check_updates', { force })
       .then((updates) => {
         const map: Record<string, { currentVersion: string; latestVersion: string }> = {};
@@ -93,9 +95,19 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
           map[u.agent_id] = { currentVersion: u.current_version, latestVersion: u.latest_version };
         }
         setAgentUpdates(map);
+        if (force) {
+          toastMsg = updates.length > 0
+            ? () => toast.info(`${updates.length} update${updates.length > 1 ? 's' : ''} available`)
+            : () => toast.success('All agents are up to date');
+        }
       })
-      .catch(() => {});
-    Promise.all([check, minDelay]).then(() => setCheckingUpdates(false));
+      .catch(() => {
+        if (force) toastMsg = () => toast.error('Failed to check for updates');
+      });
+    Promise.all([check, minDelay]).then(() => {
+      setCheckingUpdates(false);
+      toastMsg?.();
+    });
   }, []);
 
   useEffect(() => {
