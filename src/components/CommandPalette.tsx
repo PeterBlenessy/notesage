@@ -206,6 +206,28 @@ export function CommandPalette({
   const { theme, setTheme, sidebarPinned, setSidebarPinned, chatPanelOpen, setChatPanelOpen } = useSettingsStore();
   const { openFile } = useFileOperations();
 
+  // Helper: find the parent category + folder name for a file path
+  const getFileLocation = useMemo(() => {
+    const projectPaths = projects.map((p) => p.path);
+    const explorerPaths = explorerFolders.map((f) => f.path);
+    return (filePath: string): { category: string; name: string } | null => {
+      // Check projects first (longest match)
+      for (const root of [...projectPaths].sort((a, b) => b.length - a.length)) {
+        if (filePath.startsWith(root + '/') || filePath === root) {
+          return { category: 'PROJECTS', name: root.split('/').pop() || root };
+        }
+      }
+      // Check explorer folders
+      for (const root of [...explorerPaths].sort((a, b) => b.length - a.length)) {
+        if (filePath.startsWith(root + '/') || filePath === root) {
+          return { category: 'FOLDERS', name: root.split('/').pop() || root };
+        }
+      }
+      // Quick Notes (files from notesTree not in projects or explorer folders)
+      return { category: 'QUICK NOTES', name: '' };
+    };
+  }, [projects, explorerFolders]);
+
   const allFiles = useMemo(() => {
     const files: FileEntry[] = [];
     const flatten = (entries: FileEntry[]) => {
@@ -476,12 +498,19 @@ export function CommandPalette({
                 key={`recent-${file.path}`}
                 value={`recent ${file.name} ${file.path}`}
                 onSelect={() => handleOpenFile(file.path, file.name)}
+                title={file.path}
               >
-                <Clock className="h-4 w-4" strokeWidth={1.5} />
+                <Clock className="h-4 w-4 shrink-0" strokeWidth={1.5} />
                 <span className="flex-1 truncate">{file.name}</span>
-                <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-                  {file.path}
-                </span>
+                {(() => {
+                  const loc = getFileLocation(file.path);
+                  if (!loc) return null;
+                  return (
+                    <span className="text-[10px] text-muted-foreground shrink-0 tracking-wide">
+                      {loc.category}{loc.name ? ` : ${loc.name}` : ''}
+                    </span>
+                  );
+                })()}
               </CommandItem>
             ))}
           </CommandGroup>
@@ -520,12 +549,19 @@ export function CommandPalette({
                   key={`file-${file.path}`}
                   value={`file ${file.name} ${file.path}`}
                   onSelect={() => handleOpenFile(file.path, file.name)}
+                  title={file.path}
                 >
-                  <File className="h-4 w-4" strokeWidth={1.5} />
+                  <File className="h-4 w-4 shrink-0" strokeWidth={1.5} />
                   <span className="flex-1 truncate">{file.name}</span>
-                  <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-                    {file.path}
-                  </span>
+                  {(() => {
+                    const loc = getFileLocation(file.path);
+                    if (!loc) return null;
+                    return (
+                      <span className="text-[10px] text-muted-foreground shrink-0 tracking-wide">
+                        {loc.category}{loc.name ? ` : ${loc.name}` : ''}
+                      </span>
+                    );
+                  })()}
                 </CommandItem>
               ))}
             </CommandGroup>
