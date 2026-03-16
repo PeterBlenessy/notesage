@@ -1,6 +1,6 @@
 # Network Sandboxing — Tasks
 
-**PRD:** `docs/prds/2026-03-16-network-sandboxing.md` **Status:** 🚧 In Progress
+**PRD:** `docs/prds/2026-03-16-network-sandboxing.md` **Status:** ✅ Complete
 
 **Total:** 14 tasks (3S, 7M, 4L)
 
@@ -210,7 +210,7 @@
 
 ## Testing
 
-### #14 — Manual integration testing with real agents
+### #14 — Manual integration testing with real agents ✅
 
 - **Complexity:** M | **Category:** both | **Depends on:** all above
 - **Description:** Verify end-to-end with each supported agent:

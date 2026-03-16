@@ -14,13 +14,13 @@ Before writing production code, validate the two riskiest assumptions.
 
 Verify that pre-built binaries are actually available and usable:
 
-- [x] Check `zed-industries/claude-agent-acp` GitHub Releases — `claude-agent-acp-{os}-{arch}.zip` (e.g., `darwin-arm64`). v0.21.0, ~26MB.
+- [x] Check `zed-industries/claude-agent-acp` GitHub Releases — `claude-agent-acp-{os}-{arch}.zip` (e.g., `darwin-arm64`). v0.21.0, \~26MB.
 
-- [x] Check `zed-industries/codex-acp` GitHub Releases — `codex-acp-{version}-{rust-triple}.tar.gz` (e.g., `aarch64-apple-darwin`). v0.10.0, ~32MB. Note: uses Rust target triples, not `darwin-arm64`.
+- [x] Check `zed-industries/codex-acp` GitHub Releases — `codex-acp-{version}-{rust-triple}.tar.gz` (e.g., `aarch64-apple-darwin`). v0.10.0, \~32MB. Note: uses Rust target triples, not `darwin-arm64`.
 
-- [x] Check `github/copilot-cli` — `copilot-{os}-{arch}.tar.gz` (e.g., `darwin-arm64`). v1.0.5, ~58MB. Includes `SHA256SUMS.txt`.
+- [x] Check `github/copilot-cli` — `copilot-{os}-{arch}.tar.gz` (e.g., `darwin-arm64`). v1.0.5, \~58MB. Includes `SHA256SUMS.txt`.
 
-- [x] Check `github/copilot-language-server-release` — `copilot-language-server-{os}-{arch}-{version}.zip`. v1.453.0, ~45MB. No `v` prefix on version tag. May need sibling files from dist/.
+- [x] Check `github/copilot-language-server-release` — `copilot-language-server-{os}-{arch}-{version}.zip`. v1.453.0, \~45MB. No `v` prefix on version tag. May need sibling files from dist/.
 
 - [x] Are binaries standalone? YES for claude-agent-acp, codex-acp, copilot. PARTIAL for copilot-language-server. NO for gemini (JS-only, needs Node.js).
 
@@ -215,9 +215,9 @@ Test:
 
 - [ ] Manual "Check for updates" works
 
-## Slice 5 (Phase 2): Network Sandboxing
+## Slice 5 (Phase 2): Network Sandboxing ✅
 
-**Goal:** Sandboxed agents can only reach approved network domains **Estimated effort:** 5-7 days **Tasks:** #13, #14, #15, #16
+**Goal:** Sandboxed agents can only reach approved network domains **Estimated effort:** 5-7 days **Tasks:** #13, #14, #15, #16 **PRD:** `docs/prds/2026-03-16-network-sandboxing.md`
 
 ### Backend
 
