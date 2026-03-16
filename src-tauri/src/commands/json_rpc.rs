@@ -216,6 +216,7 @@ pub async fn read_content_length<R: AsyncBufRead + Unpin>(
 ///
 /// Returns `Ok(Some(value))` on success, `Ok(None)` should not normally occur
 /// (EOF is reported as `Err`), and `Err` on I/O or parse failure.
+#[allow(dead_code)] // Used in tests; kept as public utility for JSON-RPC consumers
 pub async fn read_message<R: AsyncBufRead + Unpin>(
     reader: &mut R,
 ) -> Result<Value, String> {

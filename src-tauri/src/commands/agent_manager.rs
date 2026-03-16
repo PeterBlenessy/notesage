@@ -1027,7 +1027,7 @@ async fn do_gemini_install(app: &AppHandle) -> Result<Option<String>, String> {
 
     // Verify it works
     let node = get_node_binary();
-    let check = Command::new(&node)
+    let _check = Command::new(&node)
         .arg(target.to_string_lossy().as_ref())
         .arg("--help")
         .output();
