@@ -85,7 +85,8 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
 
   const checkForUpdates = useCallback(() => {
     setCheckingUpdates(true);
-    invoke<{ agent_id: string; current_version: string; latest_version: string }[]>('agent_check_updates')
+    const minDelay = new Promise((r) => setTimeout(r, 1000));
+    const check = invoke<{ agent_id: string; current_version: string; latest_version: string }[]>('agent_check_updates')
       .then((updates) => {
         const map: Record<string, { currentVersion: string; latestVersion: string }> = {};
         for (const u of updates) {
@@ -93,8 +94,8 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
         }
         setAgentUpdates(map);
       })
-      .catch(() => {})
-      .finally(() => setCheckingUpdates(false));
+      .catch(() => {});
+    Promise.all([check, minDelay]).then(() => setCheckingUpdates(false));
   }, []);
 
   useEffect(() => {
@@ -466,7 +467,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
       {/* Connection list */}
       {connections.length > 0 ? (
         <div className="space-y-2">
-          {connections.some((c) => c.binarySource === 'managed') && (
+          {connections.some((c) => c.authMethod === 'agent_managed') && (
             <div className="flex items-center justify-end">
               <button
                 className="text-[11px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"

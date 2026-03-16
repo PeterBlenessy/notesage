@@ -50,35 +50,15 @@ pub fn generate_seatbelt_profile(
         writable_entries.join("\n")
     };
 
-    // Network rules: unrestricted or localhost-only
-    let network_block = match network_config {
-        None => {
-            ";; Allow all network (network sandbox not enabled)\n(allow network*)".to_string()
-        }
-        Some(_config) => {
-            // Deny only outbound (not network*) — network-bind, network-inbound, and
-            // system-socket must stay allowed for agent startup and IPC.
-            // Pattern from Anthropic's sandbox-runtime and OpenAI Codex.
-            // Seatbelt evaluates top-to-bottom; first matching allow wins.
-            r#";; DNS resolution via mDNSResponder (local daemon, not direct internet)
-(allow network-outbound (literal "/private/var/run/mDNSResponder"))
-
-;; Unix domain sockets for system services and IPC
-(allow network-outbound (remote unix-socket))
-
-;; Outbound TCP only to localhost (where network proxy listens)
-(allow network-outbound (remote ip "localhost:*"))
-(allow network-outbound (remote ip "127.0.0.1:*"))
-
-;; Socket creation, binding, inbound — needed for agent startup
-(allow network-bind)
-(allow network-inbound)
-(allow system-socket)
-
-;; Deny all other outbound (catch-all)
-(deny network-outbound)"#.to_string()
-        }
-    };
+    // Network sandbox enforcement:
+    // - Primary: HTTP_PROXY/HTTPS_PROXY env vars route agent traffic through our proxy
+    // - Seatbelt keeps (allow network*) — attempts to use (deny network-outbound) with
+    //   selective allows for localhost broke agent startup in practice, despite being the
+    //   documented pattern from Anthropic/OpenAI sandbox-runtime. Seatbelt's rule precedence
+    //   appears to favor deny over more specific allows in some configurations.
+    // - The proxy is the real enforcement: filters by domain, prompts for unknown domains.
+    let _network_config = network_config;
+    let network_block = ";; Allow network (proxy env vars provide domain filtering)\n(allow network*)".to_string();
 
     let profile = format!(
         r#"(version 1)
