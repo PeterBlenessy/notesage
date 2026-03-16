@@ -25,6 +25,11 @@ export interface Conversation {
     newPaths: string[];
     previousPaths: string[];
   } | null;
+  /** True when an agent switch prompt is pending user decision */
+  pendingAgentSwitch?: {
+    newAgent: string;
+    previousAgent: string;
+  } | null;
   sourceCommentId?: string;
   sourceDocumentId?: string;
 }
@@ -80,6 +85,10 @@ interface ChatStore {
   setPendingProjectSwitch: (newPaths: string[], previousPaths: string[]) => void;
   /** Resolve a pending project switch with the user's choice */
   resolveProjectSwitch: (includeHistory: boolean) => void;
+  /** Set a pending agent switch — shows prompt in chat, blocks sending */
+  setPendingAgentSwitch: (newAgent: string, previousAgent: string) => void;
+  /** Resolve a pending agent switch with the user's choice */
+  resolveAgentSwitch: (includeHistory: boolean) => void;
   /** Get the active segment for the current conversation */
   getActiveSegment: () => ConversationSegment | undefined;
   /** Update the session ID on the active segment */
@@ -366,6 +375,29 @@ export const useChatStore = create<ChatStore>()(
           };
         })),
 
+      setPendingAgentSwitch: (newAgent, previousAgent) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          pendingAgentSwitch: { newAgent, previousAgent },
+        }))),
+
+      resolveAgentSwitch: (includeHistory) =>
+        set((state) => updateActiveConv(state, (c) => {
+          if (!c.pendingAgentSwitch) return c;
+          const newSegment: ConversationSegment = {
+            projectPaths: c.projectPaths,
+            sessionId: null,
+            startMessageIndex: c.messages.length,
+            historyIncluded: includeHistory,
+          };
+          return {
+            ...c,
+            segments: [...c.segments, newSegment],
+            activeSegmentIndex: c.segments.length,
+            pendingAgentSwitch: null,
+          };
+        })),
+
       getActiveSegment: () => {
         const state = get();
         if (!state.activeConversationId) return undefined;
@@ -487,6 +519,12 @@ export function selectProjectPaths(state: Pick<ChatStore, 'conversations' | 'act
 export function selectPendingProjectSwitch(state: Pick<ChatStore, 'conversations' | 'activeConversationId'>): Conversation['pendingProjectSwitch'] {
   if (!state.activeConversationId) return null;
   return state.conversations.find((c) => c.id === state.activeConversationId)?.pendingProjectSwitch ?? null;
+}
+
+/** Pending agent switch from the active conversation. */
+export function selectPendingAgentSwitch(state: Pick<ChatStore, 'conversations' | 'activeConversationId'>): Conversation['pendingAgentSwitch'] {
+  if (!state.activeConversationId) return null;
+  return state.conversations.find((c) => c.id === state.activeConversationId)?.pendingAgentSwitch ?? null;
 }
 
 /** Segments from the active conversation. */

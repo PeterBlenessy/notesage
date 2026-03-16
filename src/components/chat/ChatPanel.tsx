@@ -3,7 +3,7 @@ import { Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe, Shield, T
 import { toast } from 'sonner';
 import { AgentIcon } from '@/components/AgentIcon';
 import { ProviderLogo } from '@/components/ProviderLogo';
-import { useChatStore, selectMessages, selectProjectPaths, selectPendingProjectSwitch, selectSegments } from '@/stores/chat-store';
+import { useChatStore, selectMessages, selectProjectPaths, selectPendingProjectSwitch, selectPendingAgentSwitch, selectSegments } from '@/stores/chat-store';
 import { useAIStore } from '@/stores/ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
@@ -24,6 +24,7 @@ import { LocalAISetupCard } from './LocalAISetupCard';
 import { PermissionCard } from './PermissionCard';
 import { DomainApprovalCard, type DomainApprovalRequest } from './DomainApprovalCard';
 import { ProjectSwitchCard } from './ProjectSwitchCard';
+import { AgentSwitchCard } from './AgentSwitchCard';
 import { ContextDivider } from './ContextDivider';
 import { QuickReplies, parseQuickReplies } from './QuickReplies';
 import {
@@ -60,10 +61,11 @@ function getToolIcon(kind: string): LucideIcon {
 }
 
 export function ChatPanel() {
-  const { isLoading, activeTool, clearMessages, setSelectedProjectPaths, toggleProjectPath, webSearchEnabled, setWebSearchEnabled, conversations, activeConversationId, createConversation, deleteConversation, setActiveConversation, setPendingProjectSwitch } = useChatStore();
+  const { isLoading, activeTool, clearMessages, setSelectedProjectPaths, toggleProjectPath, webSearchEnabled, setWebSearchEnabled, conversations, activeConversationId, createConversation, deleteConversation, setActiveConversation, setPendingProjectSwitch, setPendingAgentSwitch } = useChatStore();
   const messages = useChatStore(selectMessages);
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const pendingProjectSwitch = useChatStore(selectPendingProjectSwitch);
+  const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
   const segments = useChatStore(selectSegments);
   const legacyProvider = useAIStore((s) => s.provider);
   const agents = useSkillStore((s) => s.agents);
@@ -132,6 +134,27 @@ export function ChatPanel() {
 
     setPendingProjectSwitch(curr, prev);
   }, [selectedProjectPaths, messages.length, pendingProjectSwitch, setPendingProjectSwitch]);
+
+  // Detect provider connection changes → trigger context isolation prompt
+  const prevConnectionRef = useRef<string | undefined>(effectiveConnection?.id);
+  useEffect(() => {
+    const prev = prevConnectionRef.current;
+    const curr = effectiveConnection?.id;
+    prevConnectionRef.current = curr;
+
+    if (messages.length === 0) return;
+    if (prev === curr) return;
+    if (!prev || !curr) return;
+    if (pendingAgentSwitch) return;
+
+    // Look up labels for display
+    const prevConn = allConnections.find((c) => c.id === prev);
+    const currConn = allConnections.find((c) => c.id === curr);
+    setPendingAgentSwitch(
+      currConn?.label ?? 'Unknown provider',
+      prevConn?.label ?? 'Unknown provider',
+    );
+  }, [effectiveConnection?.id, messages.length, pendingAgentSwitch, setPendingAgentSwitch, allConnections]);
 
   // Compute tools list: pre-populated + any dynamic session/always approvals
   const toolsList = useMemo(() => {
@@ -505,6 +528,13 @@ export function ChatPanel() {
                 previousPaths={pendingProjectSwitch.previousPaths}
               />
             )}
+            {/* Pending agent switch prompt */}
+            {pendingAgentSwitch && (
+              <AgentSwitchCard
+                newAgent={pendingAgentSwitch.newAgent}
+                previousAgent={pendingAgentSwitch.previousAgent}
+              />
+            )}
             {isLoading && !activeTool && (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -543,8 +573,8 @@ export function ChatPanel() {
           onSend={handleSend}
           onStop={cancelChat}
           isLoading={isLoading}
-          disabled={!hasAIProvider || !!pendingProjectSwitch}
-          placeholder={pendingProjectSwitch ? 'Resolve project context change first...' : chatPlaceholder}
+          disabled={!hasAIProvider || !!pendingProjectSwitch || !!pendingAgentSwitch}
+          placeholder={pendingProjectSwitch ? 'Resolve project context change first...' : pendingAgentSwitch ? 'Resolve provider change first...' : chatPlaceholder}
           footer={
             <>
               {(interactiveConnections.length > 0 || hasProjectOverride) && (
