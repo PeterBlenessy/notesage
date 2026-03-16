@@ -471,7 +471,7 @@ export function useAIOperations() {
           cleanupRef.current();
         }
         log.error('ai', 'Stream error', error);
-        setMessageError(assistantMessageId, friendlyAIError(error, effectiveConnection?.label || resolved?.provider));
+        setMessageError(assistantMessageId, friendlyAIError(error, effectiveConnection?.label || resolved?.provider, effectiveConnection?.id));
         setLoading(false);
         setActiveTool(null);
       }

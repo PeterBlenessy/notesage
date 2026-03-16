@@ -6,10 +6,13 @@ import { ProviderLogo } from '@/components/ProviderLogo';
 import { useChatStore, selectMessages, selectProjectPaths, selectPendingProjectSwitch, selectSegments } from '@/stores/chat-store';
 import { useAIStore } from '@/stores/ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
+import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { tauriApi } from '@/lib/tauri';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { useAIOperations } from '@/hooks/useAIOperations';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { usePermissionStore, type PermissionTier } from '@/stores/permission-store';
@@ -19,6 +22,7 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { LocalAISetupCard } from './LocalAISetupCard';
 import { PermissionCard } from './PermissionCard';
+import { DomainApprovalCard, type DomainApprovalRequest } from './DomainApprovalCard';
 import { ProjectSwitchCard } from './ProjectSwitchCard';
 import { ContextDivider } from './ContextDivider';
 import { QuickReplies, parseQuickReplies } from './QuickReplies';
@@ -102,6 +106,8 @@ export function ChatPanel() {
   const [projectOpen, setProjectOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [convListOpen, setConvListOpen] = useState(false);
+
+  const [domainRequests, setDomainRequests] = useState<DomainApprovalRequest[]>([]);
 
   const isAcpConnection = effectiveConnection?.authMethod === 'agent_managed';
   const hasProjectOverride = !!projectOverrideConnection;
@@ -190,7 +196,49 @@ export function ChatPanel() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, permissionRequests.length]);
+  }, [messages, permissionRequests.length, domainRequests.length]);
+
+  // Listen for network domain approval requests from the proxy
+  useEffect(() => {
+    const unlisten = listen<{
+      instanceId: string;
+      agentId: string;
+      domain: string;
+      port: number;
+      requestId: string;
+    }>('network-domain-request', (event) => {
+      const { instanceId, agentId, domain, port, requestId } = event.payload;
+
+      // Auto-approve if domain is already allowed (built-in, session, or always)
+      const connId = effectiveConnection?.id;
+      if (connId) {
+        const provOpt = PROVIDER_OPTIONS.find(
+          (o) => o.agentBinary === agentId
+        );
+        const builtIn = provOpt?.installMeta?.allowedDomains ?? [];
+        const permStore = usePermissionStore.getState();
+        if (permStore.isDomainAllowed(connId, domain, builtIn)) {
+          // Auto-respond with allow_once
+          invoke('network_domain_respond', {
+            instanceId,
+            requestId,
+            decision: 'allow_once',
+          }).catch(() => {});
+          return;
+        }
+      }
+
+      setDomainRequests((prev) => [
+        ...prev,
+        { instanceId, agentId, domain, port, requestId, connectionId: connId ?? '' },
+      ]);
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [effectiveConnection?.id]);
+
+  const handleDomainResolved = (requestId: string) => {
+    setDomainRequests((prev) => prev.filter((r) => r.requestId !== requestId));
+  };
 
   // Auto-create a conversation when none exists (e.g. after deleting the last one)
   useEffect(() => {
@@ -471,10 +519,17 @@ export function ChatPanel() {
                 </span>
               </div>
             )}
-            {permissionRequests.length > 0 && (
+            {(permissionRequests.length > 0 || domainRequests.length > 0) && (
               <div className="flex flex-col gap-2 mt-2">
                 {permissionRequests.map((req) => (
                   <PermissionCard key={req.id} request={req} />
+                ))}
+                {domainRequests.map((req) => (
+                  <DomainApprovalCard
+                    key={req.requestId}
+                    request={req}
+                    onResolved={handleDomainResolved}
+                  />
                 ))}
               </div>
             )}

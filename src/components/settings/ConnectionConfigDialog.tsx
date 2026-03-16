@@ -30,14 +30,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, RefreshCw, ChevronsUpDown, Check, Eye, EyeOff } from 'lucide-react';
+import { Loader2, RefreshCw, ChevronsUpDown, Check, Eye, EyeOff, Globe, X as XIcon, Plus } from 'lucide-react';
 import { tauriApi } from '@/lib/tauri';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import { stopAcpAgent } from '@/hooks/useAIOperations';
 import { stopTaskAgent } from '@/hooks/useAgentTaskOperations';
-import type { Connection, ConnectionConfig } from '@/lib/ai/connections';
-import { DEFAULT_MODELS, getAgentModels, prettyModelName } from '@/lib/ai/connections';
+import type { Connection, ConnectionConfig, ReasoningEffort } from '@/lib/ai/connections';
+import { DEFAULT_MODELS, getAgentModels, prettyModelName, PROVIDER_OPTIONS } from '@/lib/ai/connections';
+import { usePermissionStore } from '@/stores/permission-store';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 
 const TEMPERATURE_LABELS: { value: number; label: string }[] = [
@@ -160,6 +162,14 @@ export function ConnectionConfigDialog({
   const localModels = useLocalAIStore((s) => s.models);
   const downloadedLocalModels = localModels.filter((m) => m.downloaded);
 
+  // Reasoning effort (codex-acp) — undefined means "agent default" (no suffix appended)
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | undefined>(undefined);
+
+  // Network sandbox state
+  const [networkSandbox, setNetworkSandbox] = useState(false);
+  const [newDomain, setNewDomain] = useState('');
+  const domainAlwaysAllowed = usePermissionStore((s) => s.domainAlwaysAllowed);
+
   // Model list state
   const [models, setModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -185,6 +195,9 @@ export function ConnectionConfigDialog({
       setShowApiKey(false);
       setModels([]);
       setModelsError(null);
+      setReasoningEffort(connection.config?.reasoningEffort ?? undefined);
+      setNetworkSandbox(connection.networkSandboxEnabled ?? false);
+      setNewDomain('');
 
       // Local AI server settings
       if (connection.authMethod === 'local_bundled') {
@@ -229,6 +242,10 @@ export function ConnectionConfigDialog({
 
   const hasCustomValues = temperature !== null || maxTokensIndex !== null;
   const isAgentManaged = connection?.authMethod === 'agent_managed';
+  const agentBinary = connection?.credentials.type === 'agent_managed'
+    ? (connection.credentials as { agentBinary: string }).agentBinary
+    : '';
+  const isCodexAgent = agentBinary === 'codex-acp';
 
   const handleResetDefaults = () => {
     setTemperature(null);
@@ -243,9 +260,11 @@ export function ConnectionConfigDialog({
     if (temperature !== null) config.temperature = temperature;
     if (maxTokensIndex !== null) config.maxTokens = MAX_TOKEN_PRESETS[maxTokensIndex];
     if (baseUrl.trim()) config.baseUrl = baseUrl.trim();
+    if (isCodexAgent && reasoningEffort && !connection.freeAccount) config.reasoningEffort = reasoningEffort;
 
     const updates: Partial<Connection> = {
       config: Object.keys(config).length > 0 ? config : undefined,
+      networkSandboxEnabled: isAgentManaged ? networkSandbox : undefined,
     };
 
     // Update API key if changed
@@ -491,6 +510,46 @@ export function ConnectionConfigDialog({
             )}
           </div>}
 
+          {/* Reasoning Effort — codex-acp with paid accounts only */}
+          {isCodexAgent && !connection.freeAccount && (() => {
+            const EFFORT_OPTIONS: { value: ReasoningEffort | undefined; label: string }[] = [
+              { value: undefined, label: 'Default' },
+              { value: 'low', label: 'Low' },
+              { value: 'medium', label: 'Medium' },
+              { value: 'high', label: 'High' },
+              { value: 'xhigh', label: 'Extra High' },
+            ];
+            const currentIndex = EFFORT_OPTIONS.findIndex((o) => o.value === reasoningEffort);
+            return (
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm">Thinking Effort</Label>
+                  <span className="text-xs text-muted-foreground">
+                    {EFFORT_OPTIONS[currentIndex]?.label ?? 'Default'}
+                  </span>
+                </div>
+                <Slider
+                  min={0}
+                  max={EFFORT_OPTIONS.length - 1}
+                  step={1}
+                  value={[currentIndex >= 0 ? currentIndex : 0]}
+                  onValueChange={([val]) => setReasoningEffort(EFFORT_OPTIONS[val].value)}
+                />
+                <div className="flex justify-between px-0.5">
+                  {EFFORT_OPTIONS.map((opt) => (
+                    <span
+                      key={opt.label}
+                      className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
+                      onClick={() => setReasoningEffort(opt.value)}
+                    >
+                      {opt.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Temperature — for direct API and local_bundled connections */}
           {!isAgentManaged && (
             <div className="space-y-2.5">
@@ -590,6 +649,89 @@ export function ConnectionConfigDialog({
                 </Select>
               </div>
             </>
+          )}
+
+          {/* Network Sandbox — agent_managed connections only */}
+          {isAgentManaged && connection.sandboxEnabled !== false && (
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Globe className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+                  <Label className="text-sm">Network Restriction</Label>
+                </div>
+                <Switch
+                  checked={networkSandbox}
+                  onCheckedChange={setNetworkSandbox}
+                />
+              </div>
+              {networkSandbox && (() => {
+                const agentBinary = connection.credentials.type === 'agent_managed'
+                  ? (connection.credentials as { agentBinary: string }).agentBinary
+                  : '';
+                const provOpt = PROVIDER_OPTIONS.find(
+                  (o) => o.agentBinary === agentBinary || o.lspBinary === agentBinary
+                );
+                const builtInDomains = provOpt?.installMeta?.allowedDomains ?? [];
+                const userDomains = domainAlwaysAllowed[connection.id] ?? [];
+
+                return (
+                  <div className="space-y-1.5 pl-5.5">
+                    <p className="text-[11px] text-muted-foreground">
+                      Only these domains can be reached. Unknown domains require approval.
+                    </p>
+                    <div className="space-y-1">
+                      {builtInDomains.map((d) => (
+                        <div key={d} className="flex items-center gap-2 text-xs">
+                          <span className="font-mono text-muted-foreground flex-1 truncate">{d}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">built-in</span>
+                        </div>
+                      ))}
+                      {userDomains.map((d) => (
+                        <div key={d} className="flex items-center gap-2 text-xs">
+                          <span className="font-mono text-foreground flex-1 truncate">{d}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">always</span>
+                          <button
+                            className="text-muted-foreground hover:text-destructive transition-colors"
+                            onClick={() => usePermissionStore.getState().removeDomain(connection.id, d)}
+                            title="Remove"
+                          >
+                            <XIcon className="h-3 w-3" strokeWidth={1.5} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <Input
+                        type="text"
+                        placeholder="example.com"
+                        value={newDomain}
+                        onChange={(e) => setNewDomain(e.target.value)}
+                        className="h-7 text-xs flex-1"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newDomain.trim()) {
+                            usePermissionStore.getState().allowDomain(connection.id, newDomain.trim(), 'always');
+                            setNewDomain('');
+                          }
+                        }}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => {
+                          if (newDomain.trim()) {
+                            usePermissionStore.getState().allowDomain(connection.id, newDomain.trim(), 'always');
+                            setNewDomain('');
+                          }
+                        }}
+                      >
+                        <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
           )}
 
           {/* Base URL */}

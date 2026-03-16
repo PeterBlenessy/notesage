@@ -1,9 +1,26 @@
+// Lazy import to avoid circular dependency
+let _flagFreeAccount: ((connectionId: string) => void) | null = null;
+function flagFreeAccount(connectionId: string) {
+  if (!_flagFreeAccount) {
+    import('@/stores/connections-store').then((mod) => {
+      _flagFreeAccount = (id: string) =>
+        mod.useConnectionsStore.getState().updateConnection(id, { freeAccount: true });
+      _flagFreeAccount(connectionId);
+    });
+  } else {
+    _flagFreeAccount(connectionId);
+  }
+}
+
 /**
  * Extract a user-friendly error message from AI provider errors.
  * Provider backends return raw JSON error bodies — parse out the message field.
  * Includes provider name so the user knows which connection failed.
+ *
+ * If connectionId is provided, certain error patterns auto-flag the connection
+ * (e.g., free account detection disables reasoning effort tiers).
  */
-export function friendlyAIError(error: unknown, provider?: string): string {
+export function friendlyAIError(error: unknown, provider?: string, connectionId?: string): string {
   const raw = error instanceof Error ? error.message : String(error);
   const prefix = provider ? `${provider}: ` : '';
 
@@ -40,6 +57,11 @@ export function friendlyAIError(error: unknown, provider?: string): string {
   }
 
   const friendly = msg || 'Something went wrong. Please try again.';
+
+  // Detect free account limitations and flag the connection
+  if (connectionId && friendly.toLowerCase().includes('chatgpt account')) {
+    flagFreeAccount(connectionId);
+  }
 
   // Add actionable hints for common errors
   const hint = getErrorHint(friendly);

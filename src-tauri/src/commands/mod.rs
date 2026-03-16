@@ -24,6 +24,7 @@ pub mod model_metadata;
 pub mod actions;
 pub mod agent_manager;
 pub mod sandbox;
+pub mod network_proxy;
 pub mod constants;
 
 pub use file::*;
@@ -46,4 +47,5 @@ pub use transcription::*;
 pub use local_inference::*;
 pub use model_metadata::*;
 pub use agent_manager::*;
+pub use network_proxy::*;
 pub use actions::*;

@@ -54,6 +54,7 @@ pub fn run() {
         .manage(TranscriptionState::new())
         .manage(LocalInferenceState::new())
         .manage(AgentManagerState::new())
+        .manage(NetworkProxyState::new())
         .manage(IndexState::new())
         .invoke_handler(tauri::generate_handler![
             open_devtools,
@@ -211,6 +212,10 @@ pub fn run() {
             get_runtime_model_metadata,
             // Actions dashboard
             scan_actions,
+            // Network sandboxing proxy
+            network_domain_respond,
+            network_proxy_status,
+            network_default_domains,
         ])
         .setup(|app| {
             log::info!(target: "notesage::lifecycle", "Notesage starting up (version {})", app.package_info().version);
@@ -238,6 +243,8 @@ pub fn run() {
                     log::info!(target: "notesage::lifecycle", "App exiting — stopping child processes");
                     // Stop all ACP agent subprocesses
                     app_handle.state::<AcpState>().stop_all_sync();
+                    // Stop all network proxies (after ACP agents so connections close first)
+                    app_handle.state::<NetworkProxyState>().stop_all_sync();
                     // Stop all MCP server subprocesses
                     app_handle.state::<McpState>().stop_all_sync();
                     // Stop local inference server

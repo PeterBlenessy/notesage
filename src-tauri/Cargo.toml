@@ -82,6 +82,12 @@ sysinfo = "0.35"
 # Local AI binary download (zip extraction)
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
+# Network sandboxing proxy (Phase 2)
+hyper = { version = "1", features = ["http1", "server", "client"] }
+hyper-util = { version = "0.1", features = ["tokio", "http1"] }
+http-body-util = "0.1"
+uuid = { version = "1", features = ["v4"] }
+
 # Voice transcription
 whisper-rs = "0.15"
 cpal = "0.15"

@@ -36,6 +36,7 @@ pub struct SpawnResult {
     pub agent_version: Option<String>,
     pub auth_methods: Vec<AuthMethodInfo>,
     pub sandbox_enabled: bool,
+    pub network_sandbox_enabled: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -386,11 +387,17 @@ fn run_agent_thread(
     env_vars: HashMap<String, String>,
     sandbox_enabled: bool,
     sandbox_writable_paths: Vec<String>,
+    network_config: Option<super::network_proxy::NetworkSandboxConfig>,
     mut cmd_rx: mpsc::Receiver<AgentCmd>,
     init_tx: oneshot::Sender<Result<InitInfo, String>>,
 ) {
     use agent_client_protocol::*;
     use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+
+    // Clone for proxy cleanup after the command loop exits
+    let proxy_instance_id = instance_id.clone();
+    let has_network_proxy = network_config.is_some();
+    let proxy_cleanup_app = if has_network_proxy { Some(app.clone()) } else { None };
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -414,7 +421,7 @@ fn run_agent_thread(
         // Spawn agent process — optionally wrapped in OS-level sandbox
         // Inject login shell PATH so the agent (and child processes) can find tools
         let mut spawn_cmd = if sandbox_enabled {
-            match super::sandbox::sandboxed_command(&sandbox_writable_paths) {
+            match super::sandbox::sandboxed_command(&sandbox_writable_paths, network_config.as_ref()) {
                 Ok((program, prefix_args)) => {
                     log::info!(target: "notesage::acp", "Spawning {} in sandbox ({})", agent_binary, program);
                     let mut cmd = tokio::process::Command::new(&program);
@@ -721,6 +728,24 @@ fn run_agent_thread(
             }
         }
     });
+
+    // Clean up network proxy after agent thread exits
+    if has_network_proxy {
+        if let Some(cleanup_app) = proxy_cleanup_app {
+            let proxy_state = cleanup_app.state::<super::network_proxy::NetworkProxyState>();
+            // Use a temporary runtime since the thread's runtime is shutting down
+            if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                let iid = proxy_instance_id;
+                rt.block_on(async {
+                    proxy_state.stop_proxy(&iid).await;
+                    log::info!(target: "notesage::acp", "Cleaned up network proxy for {}", iid);
+                });
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -981,6 +1006,7 @@ pub async fn acp_agent_check_availability(
 pub async fn acp_agent_spawn(
     app: AppHandle,
     state: State<'_, AcpState>,
+    network_proxy_state: State<'_, super::network_proxy::NetworkProxyState>,
     agent_binary: String,
     agent_args: Option<Vec<String>>,
     role: AgentRole,
@@ -988,8 +1014,10 @@ pub async fn acp_agent_spawn(
     env_vars: Option<HashMap<String, String>>,
     sandbox_enabled: Option<bool>,
     sandbox_paths: Option<Vec<String>>,
+    network_sandbox_enabled: Option<bool>,
+    network_allowed_domains: Option<Vec<String>>,
 ) -> Result<SpawnResult, String> {
-    let env = env_vars.unwrap_or_default();
+    let mut env = env_vars.unwrap_or_default();
     let args = agent_args.unwrap_or_default();
 
     // Resolve the actual binary path (system PATH or bundled node_modules)
@@ -1015,6 +1043,44 @@ pub async fn acp_agent_spawn(
         &format!("{:x}", ts.wrapping_mul(6364136223846793005).wrapping_add(1))[..8]
     );
 
+    // Start network proxy if network sandboxing is enabled (requires filesystem sandbox)
+    let network_config = if sandbox && network_sandbox_enabled.unwrap_or(false) {
+        let domains = network_allowed_domains
+            .unwrap_or_else(|| super::network_proxy::default_allowed_domains(&agent_binary));
+
+        match network_proxy_state
+            .start_proxy(&instance_id, &agent_binary, domains, app.clone())
+            .await
+        {
+            Ok(config) => {
+                // Inject proxy env vars into the agent's environment
+                let proxy_url = format!("http://{}", config.proxy_addr);
+                env.insert("HTTP_PROXY".to_string(), proxy_url.clone());
+                env.insert("HTTPS_PROXY".to_string(), proxy_url.clone());
+                env.insert("http_proxy".to_string(), format!("http://{}", config.proxy_addr));
+                env.insert("https_proxy".to_string(), format!("http://{}", config.proxy_addr));
+                env.insert("NO_PROXY".to_string(), "localhost,127.0.0.1".to_string());
+                env.insert("no_proxy".to_string(), "localhost,127.0.0.1".to_string());
+                log::info!(target: "notesage::acp",
+                    "Network proxy started for {} at {}",
+                    agent_binary, config.proxy_addr
+                );
+                Some(config)
+            }
+            Err(e) => {
+                log::warn!(target: "notesage::acp",
+                    "Failed to start network proxy for {}: {} — spawning without network sandbox",
+                    agent_binary, e
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let has_network_sandbox = network_config.is_some();
+
     let (init_tx, init_rx) = oneshot::channel();
     let (cmd_tx, cmd_rx) = mpsc::channel(32);
 
@@ -1026,7 +1092,7 @@ pub async fn acp_agent_spawn(
     let thread_handle = std::thread::Builder::new()
         .name(format!("acp-{}", &binary))
         .spawn(move || {
-            run_agent_thread(app, iid, binary, spawn_args, cwd, env, sandbox, writable_paths, cmd_rx, init_tx);
+            run_agent_thread(app, iid, binary, spawn_args, cwd, env, sandbox, writable_paths, network_config, cmd_rx, init_tx);
         })
         .map_err(|e| format!("Failed to spawn agent thread: {}", e))?;
 
@@ -1063,6 +1129,7 @@ pub async fn acp_agent_spawn(
         agent_version: init_info.agent_version,
         auth_methods: init_info.auth_methods,
         sandbox_enabled: sandbox,
+        network_sandbox_enabled: has_network_sandbox,
     })
 }
 

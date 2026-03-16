@@ -186,6 +186,7 @@ export interface AcpSpawnResult {
   agent_name: string | null;
   agent_version: string | null;
   auth_methods: { id: string; name: string; description: string | null }[];
+  network_sandbox_enabled: boolean;
 }
 
 export interface AcpSessionResult {
@@ -488,8 +489,24 @@ export const tauriApi = {
   },
 
   // ACP (Agent Client Protocol) operations
-  async acpAgentSpawn(agentBinary: string, agentArgs: string[] | null, role: string, workingDirectory: string, sandboxPaths?: string[] | null): Promise<AcpSpawnResult> {
-    return await invoke<AcpSpawnResult>("acp_agent_spawn", { agentBinary, agentArgs, role, workingDirectory, sandboxPaths: sandboxPaths ?? null });
+  async acpAgentSpawn(
+    agentBinary: string,
+    agentArgs: string[] | null,
+    role: string,
+    workingDirectory: string,
+    sandboxPaths?: string[] | null,
+    networkSandboxEnabled?: boolean | null,
+    networkAllowedDomains?: string[] | null,
+  ): Promise<AcpSpawnResult> {
+    return await invoke<AcpSpawnResult>("acp_agent_spawn", {
+      agentBinary,
+      agentArgs,
+      role,
+      workingDirectory,
+      sandboxPaths: sandboxPaths ?? null,
+      networkSandboxEnabled: networkSandboxEnabled ?? null,
+      networkAllowedDomains: networkAllowedDomains ?? null,
+    });
   },
 
   async acpAgentStop(instanceId: string): Promise<void> {

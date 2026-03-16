@@ -3,7 +3,7 @@ import { useChatStore, selectProjectPaths, selectPendingProjectSwitch } from '@/
 import { usePermissionStore } from '@/stores/permission-store';
 import type { ChatMessage } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
-import { setAgentModels } from '@/lib/ai/connections';
+import { setAgentModels, PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { log } from '@/lib/logger';
@@ -29,6 +29,7 @@ interface AcpSpawnResult {
   agent_version: string | null;
   auth_methods: { id: string; name: string; description: string | null }[];
   sandbox_enabled: boolean;
+  network_sandbox_enabled: boolean;
 }
 
 interface AcpModelInfo {
@@ -164,18 +165,38 @@ async function ensureAcpAgent(connection: Connection, cwd: string, sandboxPaths?
   //   others:    --model <model>
   const args = [...(creds.agentArgs ?? [])];
   if (connection.config?.model) {
+    // Append reasoning effort suffix for codex-acp (e.g., "gpt-5.2-codex" → "gpt-5.2-codex/low")
+    let modelId = connection.config.model;
+    if (creds.agentBinary === 'codex-acp' && connection.config.reasoningEffort) {
+      modelId = `${modelId}/${connection.config.reasoningEffort}`;
+    }
     if (creds.agentBinary === 'codex-acp') {
-      args.push('-c', `model="${connection.config.model}"`);
+      args.push('-c', `model="${modelId}"`);
     } else {
-      args.push('--model', connection.config.model);
+      args.push('--model', modelId);
     }
   }
+  // Build network sandbox config if enabled
+  const networkSandboxEnabled = connection.networkSandboxEnabled ?? false;
+  let networkAllowedDomains: string[] | null = null;
+  if (networkSandboxEnabled) {
+    const providerOption = PROVIDER_OPTIONS.find(
+      (o) => o.agentBinary === creds.agentBinary || o.lspBinary === creds.agentBinary
+    );
+    const builtIn = providerOption?.installMeta?.allowedDomains ?? [];
+    const permStore = usePermissionStore.getState();
+    const userDomains = permStore.getDomainAllowedList(connection.id);
+    networkAllowedDomains = [...builtIn, ...userDomains];
+  }
+
   const result = await invoke<AcpSpawnResult>('acp_agent_spawn', {
     agentBinary: creds.agentBinary,
     agentArgs: args.length > 0 ? args : null,
     role: 'interactive',
     workingDirectory: cwd,
     sandboxPaths: sandboxPaths ?? null,
+    networkSandboxEnabled: networkSandboxEnabled || null,
+    networkAllowedDomains,
   });
   // Try to authenticate — some agents handle auth internally
   // (e.g. claude-agent-acp uses Claude CLI's stored credentials)
@@ -515,7 +536,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage }: AcpLi
         }
         stopAcpAgent();
         log.error('ai', 'ACP chat error', error);
-        setMessageError(assistantMessageId, friendlyAIError(error, effectiveConnection?.label || effectiveConnection?.provider));
+        setMessageError(assistantMessageId, friendlyAIError(error, effectiveConnection?.label || effectiveConnection?.provider, effectiveConnection?.id));
         setLoading(false);
         setActiveTool(null);
       }

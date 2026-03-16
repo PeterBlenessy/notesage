@@ -4,6 +4,7 @@ import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import { useActivityStore, type AgentTaskType } from '@/stores/activity-store';
 import type { Connection } from '@/lib/ai/connections';
+import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import { tauriApi } from '@/lib/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -92,12 +93,29 @@ async function ensureTaskAgent(connection: Connection, cwd: string, sandboxPaths
   // Inject model flag — codex-acp uses -c model="...", others use --model
   const args = [...(creds.agentArgs ?? [])];
   if (connection.config?.model) {
+    let modelId = connection.config.model;
+    if (creds.agentBinary === 'codex-acp' && connection.config.reasoningEffort) {
+      modelId = `${modelId}/${connection.config.reasoningEffort}`;
+    }
     if (creds.agentBinary === 'codex-acp') {
-      args.push('-c', `model="${connection.config.model}"`);
+      args.push('-c', `model="${modelId}"`);
     } else {
-      args.push('--model', connection.config.model);
+      args.push('--model', modelId);
     }
   }
+  // Build network sandbox config if enabled
+  const networkSandboxEnabled = connection.networkSandboxEnabled ?? false;
+  let networkAllowedDomains: string[] | null = null;
+  if (networkSandboxEnabled) {
+    const providerOption = PROVIDER_OPTIONS.find(
+      (o) => o.agentBinary === creds.agentBinary || o.lspBinary === creds.agentBinary
+    );
+    const builtIn = providerOption?.installMeta?.allowedDomains ?? [];
+    const permStore = usePermissionStore.getState();
+    const userDomains = permStore.getDomainAllowedList(connection.id);
+    networkAllowedDomains = [...builtIn, ...userDomains];
+  }
+
   // Delegation: sandbox to single folder only
   const result = await tauriApi.acpAgentSpawn(
     creds.agentBinary,
@@ -105,6 +123,8 @@ async function ensureTaskAgent(connection: Connection, cwd: string, sandboxPaths
     'task',
     cwd,
     sandboxPaths ?? (cwd !== '/tmp' ? [cwd] : []),
+    networkSandboxEnabled || null,
+    networkAllowedDomains,
   );
 
   // Try to authenticate — some agents handle auth internally

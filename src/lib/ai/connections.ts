@@ -77,11 +77,14 @@ export function getCapabilities(provider: ConnectionProvider, authMethod: AuthMe
 
 // --- Connection Config ---
 
+export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+
 export interface ConnectionConfig {
-  model?: string;        // Default model for this connection
-  temperature?: number;  // 0.0 - 2.0
-  maxTokens?: number;    // Provider-specific max
-  baseUrl?: string;      // Custom API endpoint override
+  model?: string;              // Default model for this connection
+  temperature?: number;        // 0.0 - 2.0
+  maxTokens?: number;          // Provider-specific max
+  baseUrl?: string;            // Custom API endpoint override
+  reasoningEffort?: ReasoningEffort;  // Codex reasoning effort tier (appended as /low, /medium, etc.)
 }
 
 // --- Connections ---
@@ -98,7 +101,9 @@ export interface Connection {
   capabilities: AICapability[];     // Resolved from PROVIDER_CAPABILITIES
   config?: ConnectionConfig;        // Optional model/temperature/maxTokens/baseUrl configuration
   binarySource?: BinarySource;      // 'managed' (Notesage-installed) or 'system' (user-installed)
-  sandboxEnabled?: boolean;         // OS-level sandbox (default: true for managed, false for system)
+  sandboxEnabled?: boolean;         // OS-level filesystem sandbox (default: true for managed, false for system)
+  networkSandboxEnabled?: boolean;  // Network sandbox via proxy (requires sandboxEnabled)
+  freeAccount?: boolean;            // Detected at runtime — disables reasoning effort tiers
   createdAt: number;
 }
 
@@ -133,6 +138,16 @@ export interface AgentInstallMeta {
   manualCommand: string;
   /** Whether this agent requires a Node.js runtime */
   requiresNodeRuntime?: boolean;
+  /** Required network domains when sandboxed (built-in, not removable) */
+  allowedDomains?: string[];
+}
+
+/** Per-agent domain allowlist (built-in + user-added) */
+export interface DomainAllowlist {
+  /** Built-in domains required for the agent to function (not removable) */
+  builtIn: string[];
+  /** User-approved domains persisted across sessions */
+  userAllowed: string[];
 }
 
 // --- Provider metadata (for UI display) ---
@@ -161,6 +176,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     installMeta: {
       githubRepo: 'zed-industries/claude-agent-acp',
       manualCommand: 'npm install -g @zed-industries/claude-agent-acp',
+      allowedDomains: ['api.anthropic.com', 'sentry.io', '*.sentry.io', 'github.com', '*.githubusercontent.com'],
     },
   },
   {
@@ -180,6 +196,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     installMeta: {
       githubRepo: 'zed-industries/codex-acp',
       manualCommand: 'npm install -g @zed-industries/codex-acp',
+      allowedDomains: ['api.openai.com', 'chatgpt.com', '*.chatgpt.com', 'github.com', '*.githubusercontent.com'],
     },
   },
   {
@@ -200,6 +217,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     installMeta: {
       githubRepo: 'github/copilot-cli',
       manualCommand: 'npm install -g @github/copilot',
+      allowedDomains: ['api.github.com', 'copilot-proxy.githubusercontent.com', '*.githubcopilot.com', 'github.com', '*.githubusercontent.com'],
     },
   },
   {
@@ -212,6 +230,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     installMeta: {
       githubRepo: 'github/copilot-language-server-release',
       manualCommand: 'npm install -g @github/copilot-language-server',
+      allowedDomains: ['api.github.com', 'copilot-proxy.githubusercontent.com', '*.githubcopilot.com', 'github.com', '*.githubusercontent.com'],
     },
   },
   {
@@ -226,6 +245,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
       githubRepo: 'google-gemini/gemini-cli',
       manualCommand: 'npm install -g @google/gemini-cli',
       requiresNodeRuntime: true,
+      allowedDomains: ['generativelanguage.googleapis.com', 'oauth2.googleapis.com', 'github.com', '*.githubusercontent.com'],
     },
   },
   {
@@ -267,8 +287,30 @@ export interface AgentModel {
 /** Runtime cache of models reported by ACP agents during session creation */
 const agentModelCache = new Map<string, { models: AgentModel[]; currentModel: string | null }>();
 
+/** Reasoning effort suffixes reported by some agents (e.g., codex-acp) */
+const EFFORT_SUFFIXES = ['/low', '/medium', '/high', '/xhigh'];
+
+/** Strip reasoning effort suffix from a model ID (e.g., "gpt-5.2-codex/medium" → "gpt-5.2-codex") */
+function stripEffortSuffix(modelId: string): string {
+  for (const suffix of EFFORT_SUFFIXES) {
+    if (modelId.endsWith(suffix)) return modelId.slice(0, -suffix.length);
+  }
+  return modelId;
+}
+
 export function setAgentModels(connectionId: string, models: AgentModel[], currentModel: string | null): void {
-  agentModelCache.set(connectionId, { models, currentModel });
+  // Deduplicate models that differ only by reasoning effort suffix
+  const seen = new Set<string>();
+  const deduped: AgentModel[] = [];
+  for (const m of models) {
+    const base = stripEffortSuffix(m.modelId);
+    if (!seen.has(base)) {
+      seen.add(base);
+      deduped.push({ modelId: base, name: m.name.split('/')[0] || m.name, description: m.description });
+    }
+  }
+  const baseCurrentModel = currentModel ? stripEffortSuffix(currentModel) : null;
+  agentModelCache.set(connectionId, { models: deduped, currentModel: baseCurrentModel });
 }
 
 export function getAgentModels(connectionId: string): { models: AgentModel[]; currentModel: string | null } | undefined {

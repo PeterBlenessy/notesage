@@ -1,5 +1,6 @@
 import { FileEdit, Pencil, Terminal, Shield, ChevronDown } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { useChatStore } from '@/stores/chat-store';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -74,6 +75,10 @@ export function PermissionCard({ request }: PermissionCardProps) {
       requestId: request.requestId,
       optionId: null,
     }).catch(() => {});
+    useChatStore.getState().addMessage({
+      role: 'assistant',
+      content: `Tool call "${label}" was denied.`,
+    });
     removeRequest(request.requestId);
   };
 
