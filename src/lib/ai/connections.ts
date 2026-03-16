@@ -176,7 +176,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     installMeta: {
       githubRepo: 'zed-industries/claude-agent-acp',
       manualCommand: 'npm install -g @zed-industries/claude-agent-acp',
-      allowedDomains: ['api.anthropic.com', 'sentry.io', '*.sentry.io', 'github.com', '*.githubusercontent.com'],
+      allowedDomains: ['api.anthropic.com', 'github.com', '*.githubusercontent.com'],
     },
   },
   {

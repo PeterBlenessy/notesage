@@ -579,8 +579,6 @@ pub fn default_allowed_domains(agent_id: &str) -> Vec<String> {
         "claude-agent-acp" => {
             domains.extend([
                 "api.anthropic.com".to_string(),
-                "sentry.io".to_string(),
-                "*.sentry.io".to_string(),
             ]);
         }
         "codex-acp" => {
