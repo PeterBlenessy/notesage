@@ -243,8 +243,8 @@ export function Layout({
                 <ResizablePanel
                   id="chat"
                   defaultSize={loadPanelSize(configKey, "chat", 35)}
-                  minSize={280}
-                  maxSize={500}
+                  minSize="20%"
+                  maxSize="50%"
                 >
                   <ErrorBoundary name="Chat">
                     <ChatPanel />
