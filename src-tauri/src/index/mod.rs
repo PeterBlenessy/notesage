@@ -270,7 +270,7 @@ fn reindex_file_in_db(
             .map(|s| s.to_string_lossy().to_string());
 
         conn.execute(
-            "INSERT INTO files (path, name, project_path, content_hash, title, has_frontmatter, indexed_at)
+            "INSERT OR REPLACE INTO files (path, name, project_path, content_hash, title, has_frontmatter, indexed_at)
              VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6)",
             rusqlite::params![
                 file_path,

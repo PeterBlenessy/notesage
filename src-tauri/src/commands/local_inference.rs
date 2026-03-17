@@ -611,20 +611,33 @@ fn find_available_port(start: u16) -> Option<u16> {
     None
 }
 
+/// Get the Tauri sidecar binary name (with target triple suffix for prod builds).
+fn sidecar_binary_name() -> String {
+    let triple = format!("{}-{}", std::env::consts::ARCH, match std::env::consts::OS {
+        "macos" => "apple-darwin",
+        "linux" => "unknown-linux-gnu",
+        "windows" => "pc-windows-msvc",
+        _ => "unknown",
+    });
+    format!("llama-server-{}", triple)
+}
+
 /// Resolve the llama-server binary path.
 /// Checks: 1) next to the app executable (bundled sidecar), 2) ~/.notesage/bin/, 3) PATH
 fn resolve_llama_server_binary() -> Result<PathBuf, String> {
     // 1. Bundled sidecar — next to the app executable
+    //    Tauri v2 externalBin keeps the target triple suffix in prod (llama-server-aarch64-apple-darwin)
+    //    but uses the plain name in dev (llama-server)
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let binary = dir.join("llama-server");
-            if binary.exists() {
-                // In dev mode (target/debug/), also check lib/ exists — cargo clean
-                // wipes lib/ but leaves a stale binary that can't load dylibs.
-                // In prod, the binary is static (no dylibs needed).
-                let is_dev = dir.to_string_lossy().contains("/target/");
-                if !is_dev || dir.join("lib").exists() {
-                    return Ok(binary);
+            // Try with triple suffix first (prod), then without (dev)
+            for name in &[sidecar_binary_name(), "llama-server".to_string()] {
+                let binary = dir.join(name);
+                if binary.exists() {
+                    let is_dev = dir.to_string_lossy().contains("/target/");
+                    if !is_dev || dir.join("lib").exists() {
+                        return Ok(binary);
+                    }
                 }
             }
         }
@@ -919,18 +932,20 @@ pub struct BinaryStatus {
 
 #[tauri::command]
 pub async fn check_llama_server_available() -> Result<BinaryStatus, String> {
-    // 1. Bundled sidecar — next to the app executable
+    // 1. Bundled sidecar — with triple suffix (prod) or plain name (dev)
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let binary = dir.join("llama-server");
-            if binary.exists() {
-                let is_dev = dir.to_string_lossy().contains("/target/");
-                if !is_dev || dir.join("lib").exists() {
-                    return Ok(BinaryStatus {
-                        available: true,
-                        location: "bundled".to_string(),
-                        path: Some(binary.to_string_lossy().to_string()),
-                    });
+            for name in &[sidecar_binary_name(), "llama-server".to_string()] {
+                let binary = dir.join(name);
+                if binary.exists() {
+                    let is_dev = dir.to_string_lossy().contains("/target/");
+                    if !is_dev || dir.join("lib").exists() {
+                        return Ok(BinaryStatus {
+                            available: true,
+                            location: "bundled".to_string(),
+                            path: Some(binary.to_string_lossy().to_string()),
+                        });
+                    }
                 }
             }
         }
