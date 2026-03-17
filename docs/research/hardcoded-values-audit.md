@@ -1,6 +1,11 @@
 # Hardcoded Values Audit
 
-**Date:** 2026-03-10 **Status:** Research complete, pending implementation decisions
+**Date:** 2026-03-10 **Status:** Fully implemented
+
+**Implementation:**
+- **PRD:** [docs/prds/2026-03-15-hardcoded-values-cleanup.md](../prds/2026-03-15-hardcoded-values-cleanup.md) (all quality gates passed)
+- **Tasks (complete):** [docs/tasks/2026-03-15-hardcoded-values-cleanup-tasks.md](../tasks/2026-03-15-hardcoded-values-cleanup-tasks.md) (7/7 done)
+- **Tasks (remaining):** [docs/tasks/2026-03-17-hardcoded-values-remaining-tasks.md](../tasks/2026-03-17-hardcoded-values-remaining-tasks.md) (4 tasks)
 
 ## Overview
 
@@ -8,7 +13,9 @@ Comprehensive audit of hardcoded values across the Notesage codebase that should
 
 ---
 
-## 1. Thinking/Reasoning Tags — Local AI (HIGH PRIORITY)
+## 1. Thinking/Reasoning Tags — Local AI (HIGH PRIORITY) — DONE
+
+> **Status:** Fully resolved. Deduplicated into `constants::FALLBACK_THINKING_TAGS`. Dynamic detection from `/props` chat_template implemented via `detect_thinking_tags_from_template()`. Catalog models use per-model `thinking_tags` metadata.
 
 ### Problem
 
@@ -83,7 +90,9 @@ The only hardcoded part is the fallback at lines \~109-110, which is acceptable.
 
 ---
 
-## 2. Model Catalog — Static at Compile Time (MEDIUM PRIORITY)
+## 2. Model Catalog — Static at Compile Time (MEDIUM PRIORITY) — DONE
+
+> **Status:** Fully resolved. Catalog expansion + metadata enrichment PRDs handled catalog models. GGUF-based FIM token detection for custom models added in [remaining Task 1](../tasks/2026-03-17-hardcoded-values-remaining-tasks.md) — parses `tokenizer.ggml.{prefix,suffix,middle}_token_id` from GGUF headers.
 
 ### Problem
 
@@ -164,7 +173,9 @@ GGUF files have a rich key-value metadata header:
 
 ---
 
-## 3. Default Model Names — Pinned & Duplicated (HIGH PRIORITY)
+## 3. Default Model Names — Pinned & Duplicated (HIGH PRIORITY) — DONE
+
+> **Status:** Fully resolved. All defaults centralized in `constants.rs` and `src/lib/ai/constants.ts`. All 9 references updated. Smart Ollama fallback added in [remaining Task 2](../tasks/2026-03-17-hardcoded-values-remaining-tasks.md) — queries `/api/tags` and picks first available model when default isn't pulled.
 
 ### Problem
 
@@ -211,7 +222,9 @@ Neither Anthropic nor OpenAI expose context window, tool support, or thinking ca
 
 ---
 
-## 4. Anthropic API Version Header (MEDIUM PRIORITY)
+## 4. Anthropic API Version Header (MEDIUM PRIORITY) — DONE
+
+> **Status:** Centralized into `constants::ANTHROPIC_API_VERSION`. Verified `2023-06-01` is the latest stable version per Anthropic's API docs — no update needed.
 
 ### Problem
 
@@ -225,7 +238,9 @@ Move to a `const ANTHROPIC_API_VERSION: &str = "2023-06-01"` in a shared constan
 
 ---
 
-## 5. NPM/Binary Path Lookups — macOS-Only (HIGH for cross-platform)
+## 5. NPM/Binary Path Lookups — macOS-Only (HIGH for cross-platform) — DONE
+
+> **Status:** Fully resolved. Both files now use dynamic PATH resolution via `shell_path.rs`. Hardcoded macOS paths moved to `constants::MACOS_FALLBACK_BIN_PATHS` as last-resort fallbacks only. Cross-platform paths deferred until Windows/Linux ship.
 
 ### Problem
 
@@ -257,7 +272,9 @@ Move to a `const ANTHROPIC_API_VERSION: &str = "2023-06-01"` in a shared constan
 
 ---
 
-## 6. Whisper Model File Sizes (LOW PRIORITY)
+## 6. Whisper Model File Sizes (LOW PRIORITY) — DONE
+
+> **Status:** Updated hardcoded sizes to exact byte values from HuggingFace CDN `Content-Length` headers → [Task 3 in remaining tasks](../tasks/2026-03-17-hardcoded-values-remaining-tasks.md). Downloaded models already use `fs::metadata` for actual size.
 
 ### Problem
 
@@ -279,7 +296,9 @@ Query `Content-Length` header from HuggingFace during download (already making t
 
 ---
 
-## 7. Web Search Tool Identifiers (LOW but fragile)
+## 7. Web Search Tool Identifiers (LOW but fragile) — DONE
+
+> **Status:** Fully resolved. Centralized into `constants::ANTHROPIC_WEB_SEARCH_TOOL`, `constants::ANTHROPIC_WEB_SEARCH_MAX_USES`, and `constants::OPENAI_WEB_SEARCH_TOOL`.
 
 ### Problem
 
@@ -322,25 +341,25 @@ No dynamic alternative exists — providers don't expose tool catalogs via API. 
 
 ---
 
-## Priority Action Items
+## Priority Action Items — Status
 
-### High Priority
+### High Priority — ALL DONE
 
-1. **Thinking tags** → Parse from llama-server `/props` `chat_template` dynamically; deduplicate shared constant as immediate fix
-2. **Default model names** → Consolidate to single constants file, remove duplication between `ai.rs` and `ai_streaming.rs`
-3. **NPM binary paths** → Use `which`/`PATH` instead of hardcoded macOS paths; extract shared utility
+1. ~~**Thinking tags** → Parse from llama-server `/props` `chat_template` dynamically; deduplicate shared constant as immediate fix~~ ✅
+2. ~~**Default model names** → Consolidate to single constants file, remove duplication between `ai.rs` and `ai_streaming.rs`~~ ✅
+3. ~~**NPM binary paths** → Use `which`/`PATH` instead of hardcoded macOS paths; extract shared utility~~ ✅
 
-### Medium Priority
+### Medium Priority — ALL DONE
 
-4. **Model catalog FIM/context** → Read from GGUF file headers instead of static JSON
-5. **Anthropic API version** → Update to current version, move to shared constant
-6. **Model metadata caching** → Parse GGUF headers on download, cache as `.meta.json`
+4. ~~**Model catalog FIM/context** → Read from GGUF file headers instead of static JSON~~ ✅ (catalog expansion + metadata enrichment PRDs + GGUF FIM token detection)
+5. ~~**Anthropic API version** → Move to shared constant~~ ✅ (centralized; `2023-06-01` confirmed as latest stable)
+6. ~~**Model metadata caching** → Parse GGUF headers on download, cache as `.meta.json`~~ ✅ (metadata enrichment PRD)
 
-### Low Priority
+### Low Priority — ALL DONE
 
-7. Whisper model sizes → Use `Content-Length` from download response
-8. Web search tool names → Move to constants file
-9. Various magic numbers → Extract to named constants
+7. ~~Whisper model sizes → Updated to exact byte values from HuggingFace~~ ✅
+8. ~~Web search tool names → Move to constants file~~ ✅
+9. ~~Various magic numbers → Extract to named constants~~ ✅
 
 ---
 

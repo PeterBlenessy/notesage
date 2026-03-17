@@ -110,12 +110,14 @@ struct WhisperModelMeta {
     description: &'static str,
 }
 
+// Pre-download size estimates from huggingface.co/ggerganov/whisper.cpp (2026-03).
+// For downloaded models, list_whisper_models() uses the actual file size from disk.
 const KNOWN_MODELS: &[WhisperModelMeta] = &[
-    WhisperModelMeta { name: "tiny", size_bytes: 75_000_000, parameters: "39M", description: "Fastest, least accurate" },
-    WhisperModelMeta { name: "base", size_bytes: 142_000_000, parameters: "74M", description: "Good balance for short recordings" },
-    WhisperModelMeta { name: "small", size_bytes: 466_000_000, parameters: "244M", description: "Accurate for most languages" },
-    WhisperModelMeta { name: "medium", size_bytes: 1_500_000_000, parameters: "769M", description: "High accuracy, slower" },
-    WhisperModelMeta { name: "large-v3", size_bytes: 2_900_000_000, parameters: "1550M", description: "Best accuracy, slowest" },
+    WhisperModelMeta { name: "tiny", size_bytes: 77_691_713, parameters: "39M", description: "Fastest, least accurate" },
+    WhisperModelMeta { name: "base", size_bytes: 147_951_465, parameters: "74M", description: "Good balance for short recordings" },
+    WhisperModelMeta { name: "small", size_bytes: 487_601_967, parameters: "244M", description: "Accurate for most languages" },
+    WhisperModelMeta { name: "medium", size_bytes: 1_533_763_059, parameters: "769M", description: "High accuracy, slower" },
+    WhisperModelMeta { name: "large-v3", size_bytes: 3_095_033_483, parameters: "1550M", description: "Best accuracy, slowest" },
 ];
 
 fn model_download_url(size: &str) -> String {

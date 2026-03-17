@@ -591,7 +591,7 @@ pub async fn ollama_chat_stream(
     let base = base_url.as_deref()
         .or(ollama_url.as_deref())
         .unwrap_or("http://localhost:11434");
-    let model = model.as_deref().unwrap_or(constants::DEFAULT_MODEL_OLLAMA);
+    let model = super::ai::resolve_ollama_model(base, model.as_deref()).await;
 
     // Ollama may need to load the model into memory on first request — use a generous timeout
     let client = reqwest::Client::builder()
@@ -611,7 +611,7 @@ pub async fn ollama_chat_stream(
 
     // Query model capabilities before streaming to determine thinking support.
     // This avoids hardcoding model-specific tag patterns.
-    let thinking = detect_thinking_support(&client, base, model).await;
+    let thinking = detect_thinking_support(&client, base, &model).await;
     let has_native_thinking = thinking.has_native;
     let thinking_tags = thinking.tags;
 

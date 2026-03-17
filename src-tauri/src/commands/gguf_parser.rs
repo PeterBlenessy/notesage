@@ -20,6 +20,8 @@ pub struct GgufMetadata {
     pub context_length: Option<u64>,
     pub block_count: Option<u64>,
     pub embedding_length: Option<u64>,
+    /// True if all three FIM token IDs (prefix, suffix, middle) are present.
+    pub supports_fim: Option<bool>,
 }
 
 // GGUF value types
@@ -289,6 +291,14 @@ pub fn parse_gguf_header(file_path: &Path) -> Result<GgufMetadata, String> {
         if let Some(v) = kv_pairs.get(&embd_key) {
             meta.embedding_length = v.as_u64();
         }
+    }
+
+    // FIM detection: all three FIM token IDs must be present
+    let has_prefix = kv_pairs.get("tokenizer.ggml.prefix_token_id").and_then(|v| v.as_u32()).is_some();
+    let has_suffix = kv_pairs.get("tokenizer.ggml.suffix_token_id").and_then(|v| v.as_u32()).is_some();
+    let has_middle = kv_pairs.get("tokenizer.ggml.middle_token_id").and_then(|v| v.as_u32()).is_some();
+    if has_prefix && has_suffix && has_middle {
+        meta.supports_fim = Some(true);
     }
 
     Ok(meta)

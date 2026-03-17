@@ -496,12 +496,47 @@ async fn openai_chat(
     Ok(content)
 }
 
+/// Resolve the Ollama model: use the requested model, fall back to the default,
+/// or query /api/tags and pick the first available model if the default isn't pulled.
+pub async fn resolve_ollama_model(base_url: &str, requested: Option<&str>) -> String {
+    if let Some(model) = requested {
+        return model.to_string();
+    }
+    // Check if the default model is available
+    if let Ok(resp) = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .ok()
+        .unwrap_or_default()
+        .get(format!("{}/api/tags", base_url))
+        .send()
+        .await
+    {
+        if let Ok(json) = resp.json::<serde_json::Value>().await {
+            if let Some(models) = json.get("models").and_then(|v| v.as_array()) {
+                let names: Vec<&str> = models.iter()
+                    .filter_map(|m| m.get("name").and_then(|n| n.as_str()))
+                    .collect();
+                // Default is available
+                if names.iter().any(|n| n.starts_with(constants::DEFAULT_MODEL_OLLAMA)) {
+                    return constants::DEFAULT_MODEL_OLLAMA.to_string();
+                }
+                // Use first available model
+                if let Some(first) = names.first() {
+                    return first.to_string();
+                }
+            }
+        }
+    }
+    constants::DEFAULT_MODEL_OLLAMA.to_string()
+}
+
 // Ollama API implementation
 async fn ollama_generate(request: &AIRequest) -> Result<String, String> {
     let base = request.base_url.as_deref()
         .or(request.ollama_url.as_deref())
         .unwrap_or("http://localhost:11434");
-    let model = request.model.as_deref().unwrap_or(constants::DEFAULT_MODEL_OLLAMA);
+    let model = resolve_ollama_model(base, request.model.as_deref()).await;
 
     // Ollama may need to load the model on first request — generous timeout
     let client = reqwest::Client::builder()
@@ -556,7 +591,7 @@ async fn ollama_chat(
     let base = base_url.as_deref()
         .or(ollama_url.as_deref())
         .unwrap_or("http://localhost:11434");
-    let model = model.as_deref().unwrap_or(constants::DEFAULT_MODEL_OLLAMA);
+    let model = resolve_ollama_model(base, model.as_deref()).await;
 
     // Ollama may need to load the model on first request — generous timeout
     let client = reqwest::Client::builder()

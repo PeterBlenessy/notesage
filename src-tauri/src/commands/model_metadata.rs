@@ -42,6 +42,8 @@ pub struct ModelMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub block_count: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub supports_fim: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub languages: Option<Vec<String>>,
 
     // Provenance
@@ -450,6 +452,7 @@ pub async fn get_model_metadata(
                             if let Some(v) = gguf.context_length { merged.context_length = Some(v); }
                             if let Some(v) = gguf.block_count { merged.block_count = Some(v); }
                             if let Some(v) = gguf.embedding_length { merged.embedding_length = Some(v); }
+                            if let Some(true) = gguf.supports_fim { merged.supports_fim = Some(true); }
                             if let Some(ft) = gguf.general_file_type {
                                 if let Some(q) = gguf_parser::file_type_to_quantization(ft) {
                                     merged.quantization = Some(q.to_string());
