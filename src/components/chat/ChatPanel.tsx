@@ -412,15 +412,17 @@ export function ChatPanel() {
             )}
             <div className="max-h-64 overflow-y-auto thin-scrollbar">
               {conversations.map((conv) => (
-                <button
-                  type="button"
+                <div
+                  role="button"
+                  tabIndex={0}
                   key={conv.id}
-                  className={`group w-full flex items-center justify-between gap-1 px-2 py-1.5 rounded text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                  className={`group w-full flex items-center justify-between gap-1 px-2 py-1.5 rounded text-xs transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                     conv.id === activeConversationId
                       ? 'bg-accent text-accent-foreground'
                       : 'text-foreground hover:bg-accent/50'
                   }`}
                   onClick={() => { setActiveConversation(conv.id); setConvListOpen(false); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setActiveConversation(conv.id); setConvListOpen(false); } }}
                 >
                   <span className="truncate min-w-0 text-left">{conv.title || 'New Chat'}</span>
                   <button
@@ -430,7 +432,7 @@ export function ChatPanel() {
                   >
                     <X className="h-3 w-3" strokeWidth={1.5} />
                   </button>
-                </button>
+                </div>
               ))}
             </div>
           </PopoverContent>

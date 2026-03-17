@@ -9,9 +9,20 @@ use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
+
+/// Lock a Mutex, recovering from poison if a previous thread panicked while holding it.
+fn lock_or_recover<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>, String> {
+    match mutex.lock() {
+        Ok(guard) => Ok(guard),
+        Err(poisoned) => {
+            log::warn!(target: "notesage::index", "Recovering from poisoned lock");
+            Ok(poisoned.into_inner())
+        }
+    }
+}
 
 /// Text file extensions for FTS-only indexing (non-markdown files).
 const TEXT_EXTENSIONS: &[&str] = &[
@@ -51,7 +62,7 @@ impl IndexState {
 
     /// Queue a file for reindexing (called from watcher).
     pub fn queue_reindex(&self, path: String, kind: String) {
-        if let Ok(mut queue) = self.reindex_queue.lock() {
+        if let Ok(mut queue) = lock_or_recover(&self.reindex_queue) {
             queue.push(ReindexEntry { path, kind });
         }
     }
@@ -64,7 +75,7 @@ fn init_global_db(state: &IndexState) -> Result<(), String> {
 
     let conn = db::open_or_create(&db_path)?;
 
-    let mut global = state.global_db.lock().map_err(|e| e.to_string())?;
+    let mut global = lock_or_recover(&state.global_db)?;
     *global = Some(conn);
 
     log::info!(target: "notesage::index", "Global index DB initialized at {}", db_path.display());
@@ -79,7 +90,7 @@ fn init_project_db(state: &IndexState, project_path: &str) -> Result<(), String>
 
     let conn = db::open_or_create(&db_path)?;
 
-    let mut projects = state.project_dbs.lock().map_err(|e| e.to_string())?;
+    let mut projects = lock_or_recover(&state.project_dbs)?;
     projects.insert(PathBuf::from(project_path), conn);
 
     log::info!(target: "notesage::index", "Project index DB initialized at {}", db_path.display());
@@ -432,7 +443,7 @@ pub fn process_reindex_queue(app: &AppHandle) {
 
     // Check if already processing
     {
-        let mut processing = match state.processing.lock() {
+        let mut processing = match lock_or_recover(&state.processing) {
             Ok(p) => p,
             Err(_) => return,
         };
@@ -444,10 +455,10 @@ pub fn process_reindex_queue(app: &AppHandle) {
 
     // Drain the queue
     let entries: Vec<ReindexEntry> = {
-        let mut queue = match state.reindex_queue.lock() {
+        let mut queue = match lock_or_recover(&state.reindex_queue) {
             Ok(q) => q,
             Err(_) => {
-                let _ = state.processing.lock().map(|mut p| *p = false);
+                let _ = lock_or_recover(&state.processing).map(|mut p| *p = false);
                 return;
             }
         };
@@ -455,22 +466,22 @@ pub fn process_reindex_queue(app: &AppHandle) {
     };
 
     if entries.is_empty() {
-        let _ = state.processing.lock().map(|mut p| *p = false);
+        let _ = lock_or_recover(&state.processing).map(|mut p| *p = false);
         return;
     }
 
-    let global = match state.global_db.lock() {
+    let global = match lock_or_recover(&state.global_db) {
         Ok(g) => g,
         Err(_) => {
-            let _ = state.processing.lock().map(|mut p| *p = false);
+            let _ = lock_or_recover(&state.processing).map(|mut p| *p = false);
             return;
         }
     };
 
-    let projects = match state.project_dbs.lock() {
+    let projects = match lock_or_recover(&state.project_dbs) {
         Ok(p) => p,
         Err(_) => {
-            let _ = state.processing.lock().map(|mut p| *p = false);
+            let _ = lock_or_recover(&state.processing).map(|mut p| *p = false);
             return;
         }
     };
@@ -485,7 +496,7 @@ pub fn process_reindex_queue(app: &AppHandle) {
         }
     }
 
-    let _ = state.processing.lock().map(|mut p| *p = false);
+    let _ = lock_or_recover(&state.processing).map(|mut p| *p = false);
 }
 
 // ---- Tauri Commands ----
@@ -501,7 +512,7 @@ pub async fn index_init(
     if let Some(ref pp) = project_path {
         init_project_db(&state, pp)?;
 
-        let projects = state.project_dbs.lock().map_err(|e| e.to_string())?;
+        let projects = lock_or_recover(&state.project_dbs)?;
         if let Some(conn) = projects.get(&PathBuf::from(pp)) {
             let stats = reindex_directory(conn, pp, Some(pp), Some(&app))?;
             let _ = app.emit("index-ready", serde_json::json!({ "project_path": pp }));
@@ -511,7 +522,7 @@ pub async fn index_init(
     } else {
         init_global_db(&state)?;
 
-        let global = state.global_db.lock().map_err(|e| e.to_string())?;
+        let global = lock_or_recover(&state.global_db)?;
         if let Some(ref conn) = *global {
             // For global, index the ~/Notesage directory if it exists
             let home = dirs::home_dir().ok_or("Cannot find home directory")?;
@@ -534,8 +545,8 @@ pub async fn index_file(
     state: tauri::State<'_, IndexState>,
     path: String,
 ) -> Result<(), String> {
-    let global = state.global_db.lock().map_err(|e| e.to_string())?;
-    let projects = state.project_dbs.lock().map_err(|e| e.to_string())?;
+    let global = lock_or_recover(&state.global_db)?;
+    let projects = lock_or_recover(&state.project_dbs)?;
 
     if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &path) {
         reindex_file_in_db(conn, &path, project_path.as_deref())?;
@@ -551,14 +562,14 @@ pub async fn index_rebuild(
     project_path: Option<String>,
 ) -> Result<IndexStats, String> {
     if let Some(ref pp) = project_path {
-        let projects = state.project_dbs.lock().map_err(|e| e.to_string())?;
+        let projects = lock_or_recover(&state.project_dbs)?;
         if let Some(conn) = projects.get(&PathBuf::from(pp)) {
             db::clear_all(conn)?;
             return reindex_directory(conn, pp, Some(pp), Some(&app));
         }
         Err("Project not initialized".to_string())
     } else {
-        let global = state.global_db.lock().map_err(|e| e.to_string())?;
+        let global = lock_or_recover(&state.global_db)?;
         if let Some(ref conn) = *global {
             db::clear_all(conn)?;
             let home = dirs::home_dir().ok_or("Cannot find home directory")?;
@@ -581,8 +592,8 @@ fn with_dbs<T, F>(
 where
     F: Fn(&Connection) -> Result<Vec<T>, String>,
 {
-    let global = state.global_db.lock().map_err(|e| e.to_string())?;
-    let projects = state.project_dbs.lock().map_err(|e| e.to_string())?;
+    let global = lock_or_recover(&state.global_db)?;
+    let projects = lock_or_recover(&state.project_dbs)?;
 
     let mut results = Vec::new();
 
@@ -745,8 +756,8 @@ pub async fn index_toggle_task(
         .map_err(|e| format!("Failed to write file: {}", e))?;
 
     // Reindex the file
-    let global = state.global_db.lock().map_err(|e| e.to_string())?;
-    let projects = state.project_dbs.lock().map_err(|e| e.to_string())?;
+    let global = lock_or_recover(&state.global_db)?;
+    let projects = lock_or_recover(&state.project_dbs)?;
     if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &path) {
         reindex_file_in_db(conn, &path, project_path.as_deref())?;
     }
@@ -784,13 +795,13 @@ pub async fn index_stats(
     project_path: Option<String>,
 ) -> Result<IndexStats, String> {
     if let Some(ref pp) = project_path {
-        let projects = state.project_dbs.lock().map_err(|e| e.to_string())?;
+        let projects = lock_or_recover(&state.project_dbs)?;
         if let Some(conn) = projects.get(&PathBuf::from(pp)) {
             return queries::query_stats(conn);
         }
         Err("Project not initialized".to_string())
     } else {
-        let global = state.global_db.lock().map_err(|e| e.to_string())?;
+        let global = lock_or_recover(&state.global_db)?;
         if let Some(ref conn) = *global {
             return queries::query_stats(conn);
         }
