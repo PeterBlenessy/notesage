@@ -31,6 +31,8 @@ interface SettingsStore {
   sourceWordWrap: boolean;
   copilotMaxCompletionChars: number;
   fimContextChars: number;
+  /** Global toggle — disables inline completions across all documents */
+  inlineCompletionsDisabled: boolean;
   chatHistoryLimit: number;
   skillManagement: boolean;
   debugLogging: boolean;
@@ -68,6 +70,7 @@ interface SettingsStore {
   setSourceWordWrap: (enabled: boolean) => void;
   setCopilotMaxCompletionChars: (chars: number) => void;
   setFimContextChars: (chars: number) => void;
+  setInlineCompletionsDisabled: (disabled: boolean) => void;
   setChatHistoryLimit: (limit: number) => void;
   setSkillManagement: (enabled: boolean) => void;
   setDebugLogging: (enabled: boolean) => void;
@@ -112,6 +115,7 @@ export const useSettingsStore = create<SettingsStore>()(
       sourceWordWrap: true,
       copilotMaxCompletionChars: 80,
       fimContextChars: 500,
+      inlineCompletionsDisabled: false,
       chatHistoryLimit: 0,
       skillManagement: false,
       debugLogging: false,
@@ -205,6 +209,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setFimContextChars: (chars: number) => {
         set({ fimContextChars: chars });
+      },
+
+      setInlineCompletionsDisabled: (disabled: boolean) => {
+        set({ inlineCompletionsDisabled: disabled });
       },
 
       setChatHistoryLimit: (limit: number) => {

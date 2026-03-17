@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { log } from '@/lib/logger';
 import { useRoutingStore } from '@/stores/routing-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { useEditorStore } from '@/stores/editor-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import {
@@ -171,7 +172,7 @@ export function useCopilotCompletion(editor: Editor | null) {
       if (!editor || !lspReady) return;
 
       // Don't request if completions disabled for this tab
-      if (activeTab?.copilotDisabled) return;
+      if (useSettingsStore.getState().inlineCompletionsDisabled) return;
 
       // Don't request if selection is not collapsed, or inline diff is active
       const { selection } = editor.state;
@@ -252,7 +253,7 @@ export function useCopilotCompletion(editor: Editor | null) {
         // Silently ignore completion errors
       }
     },
-    [editor, lspReady, activeTab?.copilotDisabled]
+    [editor, lspReady, useSettingsStore.getState().inlineCompletionsDisabled]
   );
 
   useEffect(() => {
@@ -274,7 +275,7 @@ export function useCopilotCompletion(editor: Editor | null) {
       }).catch(() => {});
 
       // Skip completion request if disabled for this tab
-      if (activeTab.copilotDisabled) return;
+      if (useSettingsStore.getState().inlineCompletionsDisabled) return;
 
       // Debounce completion request: wait 150ms after typing stops
       if (completionTimeout.current) {
@@ -300,10 +301,10 @@ export function useCopilotCompletion(editor: Editor | null) {
   // -------------------------------------------------------------------------
 
   useEffect(() => {
-    if (editor && activeTab?.copilotDisabled && hasActiveGhostText(editor)) {
+    if (editor && useSettingsStore.getState().inlineCompletionsDisabled && hasActiveGhostText(editor)) {
       clearGhostText(editor);
     }
-  }, [editor, activeTab?.copilotDisabled]);
+  }, [editor, useSettingsStore.getState().inlineCompletionsDisabled]);
 
   // -------------------------------------------------------------------------
   // Accept tracking: when ghost text is accepted via Tab, notify LSP

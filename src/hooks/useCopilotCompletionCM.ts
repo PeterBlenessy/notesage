@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import type { EditorView } from "@codemirror/view";
 import { invoke } from "@tauri-apps/api/core";
 import { useRoutingStore } from "@/stores/routing-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useEditorStore } from "@/stores/editor-store";
 import {
   setGhostTextCM,
@@ -106,7 +107,7 @@ export function useCopilotCompletionCM(cmView: EditorView | null) {
   const requestCompletion = useCallback(
     async (filePath: string, version: number) => {
       if (!cmView || !isActive) return;
-      if (activeTab?.copilotDisabled) return;
+      if (useSettingsStore.getState().inlineCompletionsDisabled) return;
 
       const sel = cmView.state.selection.main;
       if (!sel.empty) return;
@@ -178,7 +179,7 @@ export function useCopilotCompletionCM(cmView: EditorView | null) {
         // Silently ignore completion errors
       }
     },
-    [cmView, isActive, activeTab?.copilotDisabled],
+    [cmView, isActive, useSettingsStore.getState().inlineCompletionsDisabled],
   );
 
   // -------------------------------------------------------------------------
@@ -201,7 +202,7 @@ export function useCopilotCompletionCM(cmView: EditorView | null) {
       version,
     }).catch(() => {});
 
-    if (activeTab.copilotDisabled) return;
+    if (useSettingsStore.getState().inlineCompletionsDisabled) return;
 
     if (completionTimeout.current) clearTimeout(completionTimeout.current);
     completionTimeout.current = setTimeout(() => {
@@ -246,8 +247,8 @@ export function useCopilotCompletionCM(cmView: EditorView | null) {
   // -------------------------------------------------------------------------
 
   useEffect(() => {
-    if (cmView && activeTab?.copilotDisabled && hasActiveGhostTextCM(cmView)) {
+    if (cmView && useSettingsStore.getState().inlineCompletionsDisabled && hasActiveGhostTextCM(cmView)) {
       clearGhostTextCM(cmView);
     }
-  }, [cmView, activeTab?.copilotDisabled]);
+  }, [cmView, useSettingsStore.getState().inlineCompletionsDisabled]);
 }

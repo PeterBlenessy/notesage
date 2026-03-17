@@ -309,7 +309,7 @@ interface EditorProps {
 }
 
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick, onShortcutsOpen, onOpenActions }: EditorProps) {
-  const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, externalChanges, clearExternalChange, toggleCopilotForTab, toggleViewMode, setScrollToTag, setScrollToText } = useEditorStore();
+  const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, externalChanges, clearExternalChange, toggleViewMode, setScrollToTag, setScrollToText } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, pageBreaks, notesRootPath, sourceWordWrap, setSourceWordWrap } = useSettingsStore();
   const editorStyles = useEditorStylesStore();
@@ -1448,8 +1448,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           canDelegate={canDelegate}
           viewMode={activeTab?.viewMode}
           copilotActive={!!copilotConnection}
-          copilotDisabledForTab={activeTab?.copilotDisabled ?? false}
-          onToggleCopilot={() => { if (activeTabId) toggleCopilotForTab(activeTabId); }}
           updateAvailable={updateAvailable}
           updateVersion={updateVersion}
           onUpdateClick={onUpdateClick}

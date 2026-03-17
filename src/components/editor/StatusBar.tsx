@@ -360,8 +360,6 @@ interface StatusBarProps {
   onDelegateAll?: () => void;
   canDelegate?: boolean;
   copilotActive?: boolean;
-  copilotDisabledForTab?: boolean;
-  onToggleCopilot?: () => void;
   viewMode?: ViewMode;
   updateAvailable?: boolean;
   updateVersion?: string | null;
@@ -396,8 +394,6 @@ export function StatusBar({
   onDelegateAll,
   canDelegate = false,
   copilotActive = false,
-  copilotDisabledForTab = false,
-  onToggleCopilot,
   viewMode,
   updateAvailable = false,
   updateVersion = null,
@@ -526,55 +522,56 @@ export function StatusBar({
           </>
         )}
         <AgentInstructionsIndicator />
-        {copilotActive && onToggleCopilot && (
-          <>
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  className={`inline-flex items-center gap-1 hover:text-foreground transition-colors ${
-                    copilotDisabledForTab ? "opacity-40" : ""
-                  }`}
-                  title="Inline completions"
-                >
-                  <InlineCompletionIcon className="h-3.5 w-3.5" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-56 p-3" sideOffset={6}>
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <InlineCompletionIcon className="h-3.5 w-3.5 shrink-0" />
-                    <span className="text-xs font-medium">Inline Completions</span>
-                    <span
-                      className={`ml-auto h-1.5 w-1.5 rounded-full shrink-0 ${
-                        copilotDisabledForTab ? "bg-muted-foreground/40" : "bg-foreground/70"
-                      }`}
-                    />
+        {copilotActive && (() => {
+          const disabled = useSettingsStore.getState().inlineCompletionsDisabled;
+          const toggle = () => useSettingsStore.getState().setInlineCompletionsDisabled(!disabled);
+          return (
+            <>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    className={`inline-flex items-center gap-1 hover:text-foreground transition-colors ${
+                      disabled ? "opacity-40" : ""
+                    }`}
+                    title="Inline completions"
+                  >
+                    <InlineCompletionIcon className="h-3.5 w-3.5" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-56 p-3" sideOffset={6}>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <InlineCompletionIcon className="h-3.5 w-3.5 shrink-0" />
+                      <span className="text-xs font-medium">Inline Completions</span>
+                      <span
+                        className={`ml-auto h-1.5 w-1.5 rounded-full shrink-0 ${
+                          disabled ? "bg-muted-foreground/40" : "bg-foreground/70"
+                        }`}
+                      />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground/60 leading-tight">
+                      Inline completions suggest text as you type. Press Tab to accept, Escape to dismiss.
+                    </p>
+                    <div className="flex items-center justify-between">
+                      <label htmlFor="copilot-toggle" className="text-xs text-muted-foreground">
+                        Enabled
+                      </label>
+                      <Switch
+                        id="copilot-toggle"
+                        checked={!disabled}
+                        onCheckedChange={toggle}
+                        className="scale-75 origin-center"
+                      />
+                    </div>
+                    <CopilotMaxCharsSlider />
+                    <FimContextSlider />
                   </div>
-                  <p className="text-[10px] text-muted-foreground/60 leading-tight">
-                    Inline completions suggest text as you type. Press Tab to accept, Escape to dismiss.
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <label htmlFor="copilot-toggle" className="text-xs text-muted-foreground">
-                      Enable for this document
-                    </label>
-                    <Switch
-                      id="copilot-toggle"
-                      checked={!copilotDisabledForTab}
-                      onCheckedChange={() => onToggleCopilot()}
-                      className="scale-75 origin-center"
-                    />
-                  </div>
-                  <p className="text-[10px] text-muted-foreground/60 leading-tight">
-                    Session only — resets when tab is closed
-                  </p>
-                  <CopilotMaxCharsSlider />
-                  <FimContextSlider />
-                </div>
-              </PopoverContent>
-            </Popover>
-            <span className="w-px h-2.5 bg-border" />
-          </>
-        )}
+                </PopoverContent>
+              </Popover>
+              <span className="w-px h-2.5 bg-border" />
+            </>
+          );
+        })()}
         {viewMode && (
           <>
             <span className="uppercase tracking-wider font-medium">

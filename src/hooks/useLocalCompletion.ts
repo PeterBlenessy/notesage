@@ -81,7 +81,7 @@ export function useLocalCompletion(editor: Editor | null) {
       if (consecutiveErrors.current >= 5) return;
 
       // Don't request if completions disabled for this tab
-      if (activeTab?.copilotDisabled) return;
+      if (useSettingsStore.getState().inlineCompletionsDisabled) return;
 
       // Don't request if selection is not collapsed, or inline diff is active
       const { selection } = editor.state;
@@ -169,7 +169,7 @@ export function useLocalCompletion(editor: Editor | null) {
         }
       }
     },
-    [editor, isActive, activeTab?.copilotDisabled, activeTab?.filePath, model, ollamaUrl, baseUrl, apiKey, connection?.authMethod, fimContextChars]
+    [editor, isActive, useSettingsStore.getState().inlineCompletionsDisabled, activeTab?.filePath, model, ollamaUrl, baseUrl, apiKey, connection?.authMethod, fimContextChars]
   );
 
   // -------------------------------------------------------------------------
@@ -183,7 +183,7 @@ export function useLocalCompletion(editor: Editor | null) {
       if (!activeTab) return;
 
       // Skip completion request if disabled for this tab
-      if (activeTab.copilotDisabled) return;
+      if (useSettingsStore.getState().inlineCompletionsDisabled) return;
 
       // Debounce: 300ms after typing stops
       if (completionTimeout.current) {
@@ -202,17 +202,17 @@ export function useLocalCompletion(editor: Editor | null) {
         clearTimeout(completionTimeout.current);
       }
     };
-  }, [editor, isActive, activeTab?.filePath, activeTab?.copilotDisabled, requestCompletion]);
+  }, [editor, isActive, activeTab?.filePath, useSettingsStore.getState().inlineCompletionsDisabled, requestCompletion]);
 
   // -------------------------------------------------------------------------
   // Clear ghost text when completions are disabled for the active tab
   // -------------------------------------------------------------------------
 
   useEffect(() => {
-    if (editor && activeTab?.copilotDisabled && hasActiveGhostText(editor)) {
+    if (editor && useSettingsStore.getState().inlineCompletionsDisabled && hasActiveGhostText(editor)) {
       clearGhostText(editor);
     }
-  }, [editor, activeTab?.copilotDisabled]);
+  }, [editor, useSettingsStore.getState().inlineCompletionsDisabled]);
 
   // -------------------------------------------------------------------------
   // Clear ghost text on tab switch
