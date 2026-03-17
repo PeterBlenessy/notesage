@@ -178,7 +178,7 @@ fn reindex_file_in_db(
 
         // Insert file record
         conn.execute(
-            "INSERT INTO files (path, name, project_path, content_hash, title, has_frontmatter, indexed_at)
+            "INSERT OR REPLACE INTO files (path, name, project_path, content_hash, title, has_frontmatter, indexed_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             rusqlite::params![
                 file_path,

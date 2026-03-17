@@ -614,14 +614,18 @@ fn find_available_port(start: u16) -> Option<u16> {
 /// Resolve the llama-server binary path.
 /// Checks: 1) next to the app executable (bundled sidecar), 2) ~/.notesage/bin/, 3) PATH
 fn resolve_llama_server_binary() -> Result<PathBuf, String> {
-    // 1. Bundled sidecar — next to the app executable (with dylibs)
+    // 1. Bundled sidecar — next to the app executable
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let binary = dir.join("llama-server");
-            let lib_dir = dir.join("lib");
-            // Only use if both binary AND its lib directory exist (cargo clean wipes lib/)
-            if binary.exists() && lib_dir.exists() {
-                return Ok(binary);
+            if binary.exists() {
+                // In dev mode (target/debug/), also check lib/ exists — cargo clean
+                // wipes lib/ but leaves a stale binary that can't load dylibs.
+                // In prod, the binary is static (no dylibs needed).
+                let is_dev = dir.to_string_lossy().contains("/target/");
+                if !is_dev || dir.join("lib").exists() {
+                    return Ok(binary);
+                }
             }
         }
     }
@@ -915,17 +919,19 @@ pub struct BinaryStatus {
 
 #[tauri::command]
 pub async fn check_llama_server_available() -> Result<BinaryStatus, String> {
-    // 1. Bundled sidecar (with dylibs)
+    // 1. Bundled sidecar — next to the app executable
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let binary = dir.join("llama-server");
-            let lib_dir = dir.join("lib");
-            if binary.exists() && lib_dir.exists() {
-                return Ok(BinaryStatus {
-                    available: true,
-                    location: "bundled".to_string(),
-                    path: Some(binary.to_string_lossy().to_string()),
-                });
+            if binary.exists() {
+                let is_dev = dir.to_string_lossy().contains("/target/");
+                if !is_dev || dir.join("lib").exists() {
+                    return Ok(BinaryStatus {
+                        available: true,
+                        location: "bundled".to_string(),
+                        path: Some(binary.to_string_lossy().to_string()),
+                    });
+                }
             }
         }
     }
@@ -1101,6 +1107,15 @@ pub async fn download_llama_server_binary(
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&dest_path, std::fs::Permissions::from_mode(0o755))
             .map_err(|e| format!("Failed to set permissions: {}", e))?;
+    }
+
+    // Remove macOS Gatekeeper quarantine from binary and all dylibs
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("xattr")
+            .args(["-dr", "com.apple.quarantine"])
+            .arg(&dest_dir)
+            .output();
     }
 
     // Fix rpath so the binary finds dylibs in lib/ next to itself
