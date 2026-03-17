@@ -28,7 +28,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Download, Trash2, X, Cpu, Plus, Link, Shield, HeartPulse, Loader2, FolderOpen, Star, ArrowUpDown, Check } from 'lucide-react';
+import { Download, Trash2, X, Plus, Link, Shield, HeartPulse, Loader2, FolderOpen, Star, ArrowUpDown, Check } from 'lucide-react';
 import { toast } from 'sonner';
 
 type ModelSort = 'name' | 'size' | 'ram';
@@ -449,14 +449,11 @@ export function LocalAISettings() {
     <div className="space-y-6">
       {/* Header + description */}
       <div>
-        <div className="flex items-center gap-3">
-          <Cpu className="h-5 w-5 text-muted-foreground" strokeWidth={1.5} />
-          <div>
-            <h3 className="text-sm font-medium">Local AI</h3>
-            <p className="text-xs text-muted-foreground">
-              On-device inference — your data stays private
-            </p>
-          </div>
+        <div>
+          <h3 className="text-sm font-semibold">Local AI</h3>
+          <p className="text-xs text-muted-foreground mt-1">
+            On-device inference — your data stays private
+          </p>
         </div>
         <div className="mt-3 p-3 rounded-md border border-border bg-muted/30">
           <div className="flex items-start gap-2">

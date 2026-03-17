@@ -198,12 +198,19 @@ export function TranscriptionSettings() {
       </div>
 
       {/* Preferences */}
-      <div className="space-y-4">
-        <h3 className="text-sm font-medium">Preferences</h3>
+      <div className="space-y-2">
+        <div>
+          <Label className="text-sm font-semibold">Preferences</Label>
+        </div>
 
         {/* Default model */}
-        <div className="flex items-center justify-between">
-          <Label className="text-sm">Default model</Label>
+        <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+          <div>
+            <Label className="text-sm font-medium">Default model</Label>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Whisper model used for transcription
+            </p>
+          </div>
           <Select
             value={defaultModel}
             onValueChange={setDefaultModel}
@@ -223,8 +230,13 @@ export function TranscriptionSettings() {
         </div>
 
         {/* Speech language */}
-        <div className="flex items-center justify-between">
-          <Label className="text-sm">Speech language</Label>
+        <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+          <div>
+            <Label className="text-sm font-medium">Speech language</Label>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Language for speech recognition
+            </p>
+          </div>
           <Select value={speechLanguage} onValueChange={setSpeechLanguage}>
             <SelectTrigger className="w-32">
               <SelectValue />
