@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe, Plus, MessageSquare, History, Clock } from 'lucide-react';
+import { Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe, Plus, MessageSquare, History, Clock, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentIcon } from '@/components/AgentIcon';
 import { ProviderLogo } from '@/components/ProviderLogo';
@@ -7,6 +7,12 @@ import { useChatStore, selectMessages, selectProjectPaths, selectPendingProjectS
 import { useAIStore } from '@/stores/ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
@@ -262,6 +268,45 @@ export function ChatPanel() {
     createConversation();
   };
 
+  const handleExportConversation = (conv: typeof conversations[0], format: 'markdown' | 'json') => {
+    let content: string;
+    let filename: string;
+    const title = conv.title || 'conversation';
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
+
+    if (format === 'markdown') {
+      const lines = [`# ${title}`, ''];
+      for (const msg of conv.messages) {
+        const role = msg.role === 'user' ? 'You' : msg.role === 'system' ? 'System' : 'Assistant';
+        const time = msg.timestamp ? new Date(msg.timestamp).toLocaleString() : '';
+        lines.push(`## ${role}${time ? ` — ${time}` : ''}`, '', msg.content, '');
+      }
+      content = lines.join('\n');
+      filename = `${slug}.md`;
+    } else {
+      content = JSON.stringify({
+        title: conv.title,
+        createdAt: new Date(conv.createdAt).toISOString(),
+        updatedAt: new Date(conv.updatedAt).toISOString(),
+        messages: conv.messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp ? new Date(m.timestamp).toISOString() : undefined,
+        })),
+      }, null, 2);
+      filename = `${slug}.json`;
+    }
+
+    const blob = new Blob([content], { type: format === 'markdown' ? 'text/markdown' : 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported as ${filename}`);
+  };
+
   const activeConvTitle = useMemo(() => {
     if (!activeConversationId) return 'New Chat';
     const conv = conversations.find((c) => c.id === activeConversationId);
@@ -398,14 +443,36 @@ export function ChatPanel() {
                       </span>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
-                    className="opacity-0 group-hover:opacity-100 shrink-0 h-6 w-6 inline-flex items-center justify-center rounded text-muted-foreground hover:text-destructive active:opacity-75 transition-opacity"
-                    title="Delete conversation"
-                  >
-                    <Trash2 className="h-3 w-3" strokeWidth={1.5} />
-                  </button>
+                  <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={(e) => e.stopPropagation()}
+                          className="h-6 w-6 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground active:opacity-75"
+                          title="Export conversation"
+                        >
+                          <Download className="h-3 w-3" strokeWidth={1.5} />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-[140px]">
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExportConversation(conv, 'markdown'); }}>
+                          Export as Markdown
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExportConversation(conv, 'json'); }}>
+                          Export as JSON
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
+                      className="h-6 w-6 inline-flex items-center justify-center rounded text-muted-foreground hover:text-destructive active:opacity-75"
+                      title="Delete conversation"
+                    >
+                      <Trash2 className="h-3 w-3" strokeWidth={1.5} />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
