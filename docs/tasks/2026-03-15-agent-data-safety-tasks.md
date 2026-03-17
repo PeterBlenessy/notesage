@@ -1,7 +1,6 @@
 # Agent Data Safety — Tasks
 
-**PRD:** `docs/prds/2026-03-15-agent-data-safety.md`
-**Status:** ✅ Complete
+**PRD:** `docs/prds/2026-03-15-agent-data-safety.md`**Status:** ✅ Complete
 
 **Total:** 11 tasks (3S, 5M, 3L) — all implemented
 

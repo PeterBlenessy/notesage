@@ -1,6 +1,6 @@
 # Agent Binary Management & Runtime Sandboxing — Tasks
 
-**PRD:** `docs/prds/2026-02-21-agent-install-wizard.md`**Status:** 🚧 In Progress
+**PRD:** `docs/prds/2026-02-21-agent-install-wizard.md`**Status:** ✅ Complete
 
 ## Phase 1 — Managed Installation + Filesystem Sandbox
 
@@ -82,42 +82,48 @@
 
 **Total:** 4 tasks (1S, 1M, 2L)
 
-### #13 — Per-agent domain allowlist configuration
+### #13 — Per-agent domain allowlist configuration ✅
 
 - **Complexity:** S | **Category:** backend
 - **Description:** Define static domain allowlists per agent in `sandbox.rs`. Add `allowed_domains` to `SandboxConfig`. Store custom domain additions in settings.
 - **Files:** `src-tauri/src/commands/sandbox.rs`
+- **Implemented in:** `docs/tasks/2026-03-16-network-sandboxing-tasks.md` (#4)
 
-### #14 — HTTP/SOCKS5 proxy with domain filtering
+### #14 — HTTP/SOCKS5 proxy with domain filtering ✅
 
 - **Complexity:** L | **Category:** backend | **Depends on:** #13
 - **Description:** Implement a lightweight HTTP+SOCKS5 proxy in Rust that listens on a Unix domain socket. Proxy inspects connection targets against the agent's domain allowlist. Allowed domains are forwarded. Unknown domains emit a Tauri event for user confirmation (allow once / allow for session / allow always). TLS passthrough (CONNECT method) for HTTPS.
-- **Files:** `src-tauri/src/commands/proxy.rs` (new)
+- **Files:** `src-tauri/src/commands/network_proxy.rs`
+- **Implemented in:** `docs/tasks/2026-03-16-network-sandboxing-tasks.md` (#1–#3)
 
-### #15 — Update sandbox profiles for network isolation
+### #15 — Update sandbox profiles for network isolation ✅
 
 - **Complexity:** M | **Category:** backend | **Depends on:** #8, #14
 - **Description:** Update Seatbelt profiles to deny all network access (`(deny network*)`) except Unix domain sockets. Update bwrap invocation with `--unshare-net`. Set `HTTP_PROXY` and `HTTPS_PROXY` environment variables on the sandboxed agent process pointing to the Unix socket. Ensure the proxy is started before the agent and stopped after.
 - **Files:** `src-tauri/src/commands/sandbox.rs`, `src-tauri/src/commands/acp.rs`
+- **Implemented in:** `docs/tasks/2026-03-16-network-sandboxing-tasks.md` (#5–#7)
 
-### #16 — Network permission UI
+### #16 — Network permission UI ✅
 
 - **Complexity:** L | **Category:** frontend | **Depends on:** #14
 - **Description:** Handle `domain-permission-request` Tauri events. Show inline prompt in chat/activity panel: "Agent wants to connect to example.com — Allow once / Allow for session / Allow always / Deny". Persist always-allowed domains per agent. Show allowed domains list in connection settings. Integrate with existing permission store patterns.
-- **Files:** `src/components/settings/ConnectionsSettings.tsx`, `src/stores/permission-store.ts`
+- **Files:** `src/components/chat/DomainApprovalCard.tsx`, `src/stores/permission-store.ts`
+- **Implemented in:** `docs/tasks/2026-03-16-network-sandboxing-tasks.md` (#8–#12)
 
 ## Phase 3 — User-Configurable Policies
 
 **Total:** 2 tasks (1M, 1L)
 
-### #17 — Sandbox policy settings data model
+### #17 — Sandbox policy settings data model ✅
 
 - **Complexity:** M | **Category:** both
 - **Description:** Add per-connection sandbox policy to connections store: custom writable paths, custom denied paths, custom allowed domains. Add Tauri commands to read/write policy. Update sandbox profile generation to incorporate custom rules.
 - **Files:** `src/stores/connections-store.ts`, `src-tauri/src/commands/sandbox.rs`
+- **Implemented in:** Connection config dialog Security section with writable paths, network toggle, domain allowlists
 
-### #18 — Sandbox policy settings UI
+### #18 — Sandbox policy settings UI ✅
 
 - **Complexity:** L | **Category:** frontend | **Depends on:** #17
 - **Description:** Add "Sandbox Policy" section to connection detail settings. Editable lists for: additional writable paths (with folder picker), additional denied paths, additional allowed domains. Preview of effective policy. Reset to defaults button.
-- **Files:** `src/components/settings/ConnectionsSettings.tsx`
+- **Files:** `src/components/settings/ConnectionConfigDialog.tsx`
+- **Implemented in:** `docs/tasks/2026-03-16-network-sandboxing-tasks.md` (#12)
