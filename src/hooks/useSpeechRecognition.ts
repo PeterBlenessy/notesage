@@ -36,6 +36,15 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
 
   const startWhisperDictation = useCallback(async () => {
     try {
+      // Ensure the base Whisper model is downloaded before starting dictation
+      const models = await tauriApi.listWhisperModels();
+      const baseModel = models.find((m: { name: string; downloaded: boolean }) => m.name === 'base');
+      if (!baseModel?.downloaded) {
+        toast.info('Downloading speech recognition model...');
+        await tauriApi.downloadWhisperModel('base');
+        toast.success('Speech model ready');
+      }
+
       const unlisten = await listen<{ text: string; is_final: boolean; error?: string }>(
         'dictation-result',
         (event) => {
