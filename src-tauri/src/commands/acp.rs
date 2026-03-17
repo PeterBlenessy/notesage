@@ -477,8 +477,20 @@ fn run_agent_thread(
         // Bridge tokio IO → futures IO for ACP
         // Wrap stdout in a filter that strips non-JSON lines — some agents
         // (e.g., Gemini CLI) write interactive prompts to stdout in ACP mode
-        let stdin = child.stdin.take().unwrap().compat_write();
-        let raw_stdout = child.stdout.take().unwrap();
+        let stdin = match child.stdin.take() {
+            Some(s) => s.compat_write(),
+            None => {
+                let _ = init_tx.send(Err("Failed to acquire agent stdin pipe".to_string()));
+                return;
+            }
+        };
+        let raw_stdout = match child.stdout.take() {
+            Some(s) => s,
+            None => {
+                let _ = init_tx.send(Err("Failed to acquire agent stdout pipe".to_string()));
+                return;
+            }
+        };
         let stdout = JsonLineFilter::new(raw_stdout).compat();
 
         let (conn, io_task) = ClientSideConnection::new(

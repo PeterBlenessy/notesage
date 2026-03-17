@@ -143,13 +143,6 @@ export interface AgentInstallMeta {
   allowedDomains?: string[];
 }
 
-/** Per-agent domain allowlist (built-in + user-added) */
-export interface DomainAllowlist {
-  /** Built-in domains required for the agent to function (not removable) */
-  builtIn: string[];
-  /** User-approved domains persisted across sessions */
-  userAllowed: string[];
-}
 
 // --- Provider metadata (for UI display) ---
 

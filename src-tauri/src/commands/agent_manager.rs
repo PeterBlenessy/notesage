@@ -657,11 +657,8 @@ pub async fn agent_install(
     // Concurrency guard
     {
         let mut installing = state.installing.lock().await;
-        if installing.is_some() {
-            return Err(format!(
-                "Already installing {}. Please wait.",
-                installing.as_ref().unwrap()
-            ));
+        if let Some(current) = installing.as_deref() {
+            return Err(format!("Already installing {}. Please wait.", current));
         }
         *installing = Some(agent_id.clone());
     }
@@ -1151,10 +1148,7 @@ pub async fn agent_update(
     agent_id: String,
 ) -> Result<String, String> {
     // Reuse the install flow — it downloads latest and overwrites
-    let result = agent_install(app, state, agent_id.clone()).await;
-    if result.is_err() {
-        return Err(result.err().unwrap());
-    }
+    agent_install(app, state, agent_id.clone()).await?;
 
     // Return the new version
     let versions = read_versions();

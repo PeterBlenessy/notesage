@@ -61,6 +61,9 @@ function getTemperatureLabel(value: number): string {
 
 const MAX_TOKEN_PRESETS = [256, 512, 1024, 2048, 4096, 8192, 16384, 32768] as const;
 
+/** Telemetry domains managed by the toggle (not shown in the domain list) */
+const TELEMETRY_DOMAINS: readonly string[] = ['sentry.io', '*.sentry.io'];
+
 function nearestPresetIndex(tokens: number): number {
   let bestIdx = 0;
   let bestDist = Math.abs(MAX_TOKEN_PRESETS[0] - tokens);
@@ -752,7 +755,6 @@ export function ConnectionConfigDialog({
                       );
                       const builtInDomains = provOpt?.installMeta?.allowedDomains ?? [];
                       const userDomains = domainAlwaysAllowed[connection.id] ?? [];
-                      const TELEMETRY_DOMAINS = ['sentry.io', '*.sentry.io'];
                       const hasTelemetryOption = ab === 'claude-agent-acp';
                       const telemetryEnabled = TELEMETRY_DOMAINS.some((d) =>
                         userDomains.includes(d)

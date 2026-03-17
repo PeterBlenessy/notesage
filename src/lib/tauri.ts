@@ -181,6 +181,8 @@ export interface ActionItem {
   metadata?: Record<string, unknown>;
 }
 
+export type DomainDecision = 'allow_once' | 'allow_session' | 'allow_always' | 'deny';
+
 export interface AcpSpawnResult {
   instance_id: string;
   agent_name: string | null;
@@ -616,6 +618,15 @@ export const tauriApi = {
       paths,
       since: since ?? null,
     });
+  },
+
+  // Network sandboxing proxy
+  async networkDomainRespond(instanceId: string, requestId: string, decision: DomainDecision): Promise<void> {
+    await invoke('network_domain_respond', { instanceId, requestId, decision });
+  },
+
+  async networkDefaultDomains(agentId: string): Promise<string[]> {
+    return await invoke<string[]>('network_default_domains', { agentId });
   },
 
   // SQLite document index

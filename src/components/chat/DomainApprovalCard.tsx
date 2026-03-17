@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Globe, ChevronDown } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { toast } from 'sonner';
+import { tauriApi, type DomainDecision } from '@/lib/tauri';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -37,11 +38,7 @@ export function DomainApprovalCard({ request, onResolved }: DomainApprovalCardPr
     const timer = setTimeout(() => {
       if (resolvedRef.current) return;
       resolvedRef.current = true;
-      invoke('network_domain_respond', {
-        instanceId: request.instanceId,
-        requestId: request.requestId,
-        decision: 'deny',
-      }).catch(() => {});
+      tauriApi.networkDomainRespond(request.instanceId, request.requestId, 'deny').catch(() => {});
       useChatStore.getState().addMessage({
         role: 'assistant',
         content: `Network request to ${request.domain} timed out — denied.`,
@@ -53,15 +50,11 @@ export function DomainApprovalCard({ request, onResolved }: DomainApprovalCardPr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request.requestId]);
 
-  const respond = (decision: string) => {
+  const respond = (decision: DomainDecision) => {
     if (resolvedRef.current) return;
     resolvedRef.current = true;
-    invoke('network_domain_respond', {
-      instanceId: request.instanceId,
-      requestId: request.requestId,
-      decision,
-    }).catch((err) => {
-      console.warn('network_domain_respond failed:', err);
+    tauriApi.networkDomainRespond(request.instanceId, request.requestId, decision).catch((err) => {
+      toast.error(`Failed to respond to network request: ${err}`);
     });
   };
 
