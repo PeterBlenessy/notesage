@@ -641,6 +641,7 @@ pub async fn start_dictation(
                     Err(_) => continue,
                 };
                 if buffer.len() < raw_chunk_size {
+                    log::debug!(target: "notesage::transcription", "Dictation: buffer {} < chunk size {}, waiting", buffer.len(), raw_chunk_size);
                     continue;
                 }
                 let raw = buffer.clone();
@@ -650,6 +651,7 @@ pub async fn start_dictation(
             };
 
             if audio_chunk.is_empty() {
+                log::debug!(target: "notesage::transcription", "Dictation: empty audio chunk after resample");
                 continue;
             }
 
@@ -657,7 +659,9 @@ pub async fn start_dictation(
             let rms = (audio_chunk.iter().map(|s| s * s).sum::<f32>()
                 / audio_chunk.len() as f32)
                 .sqrt();
+            log::debug!(target: "notesage::transcription", "Dictation: chunk {} samples, RMS {:.4}", audio_chunk.len(), rms);
             if rms < SILENCE_RMS_THRESHOLD {
+                log::debug!(target: "notesage::transcription", "Dictation: skipping silent chunk (RMS {:.4} < {})", rms, SILENCE_RMS_THRESHOLD);
                 continue;
             }
 
@@ -675,29 +679,40 @@ pub async fn start_dictation(
                 Err(_) => continue,
             };
 
-            if ws.full(wparams, &audio_chunk).is_ok() {
-                let n = ws.full_n_segments();
-                let mut text = String::new();
-                for i in 0..n {
-                    if let Some(seg) = ws.get_segment(i) {
-                        if let Ok(t) = seg.to_str_lossy() {
-                            let segment_text = t.trim();
-                            // Filter out hallucinated segments
-                            if !is_hallucination(segment_text) {
-                                text.push_str(segment_text);
-                                text.push(' ');
+            match ws.full(wparams, &audio_chunk) {
+                Ok(_) => {
+                    let n = ws.full_n_segments();
+                    log::debug!(target: "notesage::transcription", "Dictation: whisper returned {} segments", n);
+                    let mut text = String::new();
+                    for i in 0..n {
+                        if let Some(seg) = ws.get_segment(i) {
+                            if let Ok(t) = seg.to_str_lossy() {
+                                let segment_text = t.trim();
+                                if is_hallucination(segment_text) {
+                                    log::debug!(target: "notesage::transcription", "Dictation: filtered hallucination: {:?}", segment_text);
+                                } else {
+                                    text.push_str(segment_text);
+                                    text.push(' ');
+                                }
                             }
                         }
                     }
+                    let trimmed = text.trim().to_string();
+                    if trimmed.is_empty() {
+                        log::debug!(target: "notesage::transcription", "Dictation: empty result after filtering");
+                    } else if trimmed == last_emitted {
+                        log::debug!(target: "notesage::transcription", "Dictation: duplicate, skipping: {:?}", trimmed);
+                    } else {
+                        log::info!(target: "notesage::transcription", "Dictation: emitting: {:?}", trimmed);
+                        last_emitted = trimmed.clone();
+                        let _ = app.emit(
+                            "dictation-result",
+                            serde_json::json!({ "text": trimmed, "is_final": false }),
+                        );
+                    }
                 }
-                let trimmed = text.trim().to_string();
-                // Skip empty results and exact duplicates of the last emission
-                if !trimmed.is_empty() && trimmed != last_emitted {
-                    last_emitted = trimmed.clone();
-                    let _ = app.emit(
-                        "dictation-result",
-                        serde_json::json!({ "text": trimmed, "is_final": false }),
-                    );
+                Err(e) => {
+                    log::warn!(target: "notesage::transcription", "Dictation: whisper inference failed: {}", e);
                 }
             }
         }
