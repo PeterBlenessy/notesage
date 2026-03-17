@@ -83,15 +83,37 @@ fn init_global_db(state: &IndexState) -> Result<(), String> {
 }
 
 /// Initialize a per-project index database.
+/// Stored under ~/.notesage/indexes/<hash>/ to avoid iCloud sync corruption.
+/// Previously stored in <project>/.notesage/index.db which caused corruption
+/// when the project folder was on iCloud Drive (multi-device SQLite writes).
 fn init_project_db(state: &IndexState, project_path: &str) -> Result<(), String> {
-    let db_path = Path::new(project_path)
-        .join(".notesage")
-        .join("index.db");
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Cannot determine home directory".to_string())?;
+    let path_hash = {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        project_path.hash(&mut hasher);
+        format!("{:x}", hasher.finish())
+    };
+    let db_dir = home.join(".notesage").join("indexes").join(&path_hash);
+    std::fs::create_dir_all(&db_dir)
+        .map_err(|e| format!("Failed to create index dir: {}", e))?;
+    let db_path = db_dir.join("index.db");
 
     let conn = db::open_or_create(&db_path)?;
 
     let mut projects = lock_or_recover(&state.project_dbs)?;
     projects.insert(PathBuf::from(project_path), conn);
+
+    // Migrate: remove old index.db from project's .notesage/ folder (was synced via iCloud)
+    let old_db = Path::new(project_path).join(".notesage").join("index.db");
+    if old_db.exists() {
+        for suffix in &["", "-wal", "-shm"] {
+            let p = format!("{}{}", old_db.display(), suffix);
+            let _ = std::fs::remove_file(&p);
+        }
+        log::info!(target: "notesage::index", "Migrated: removed old index.db from {}", old_db.display());
+    }
 
     log::info!(target: "notesage::index", "Project index DB initialized at {}", db_path.display());
     Ok(())
@@ -158,23 +180,55 @@ fn reindex_file_in_db(
         .ok();
 
     if existing_hash.as_deref() == Some(hash.as_str()) {
+        log::debug!(target: "notesage::index", "Skipping {} (hash unchanged)", file_path);
         return Ok(false); // No change
     }
 
+    log::debug!(target: "notesage::index", "Indexing {} (hash {} → {})",
+        file_path,
+        existing_hash.as_deref().unwrap_or("new"),
+        &hash[..8]
+    );
+
+    // Remove old data for this file and re-index inside a savepoint.
+    // If any step fails, the savepoint rolls back so the stale hash doesn't
+    // prevent future re-indexing of tags/mentions.
+    conn.execute_batch("SAVEPOINT index_file").map_err(|e| format!("Savepoint: {}", e))?;
+    let result = index_file_inner(conn, file_path, project_path, &content, &hash);
+    if let Err(ref e) = result {
+        log::warn!(target: "notesage::index", "Index failed for {}: {}", file_path, e);
+        let _ = conn.execute_batch("ROLLBACK TO SAVEPOINT index_file");
+    } else {
+        let _ = conn.execute_batch("RELEASE SAVEPOINT index_file");
+    }
+    return result;
+}
+
+fn index_file_inner(
+    conn: &rusqlite::Connection,
+    file_path: &str,
+    project_path: Option<&str>,
+    content: &str,
+    hash: &str,
+) -> Result<bool, String> {
+    let path = std::path::Path::new(file_path);
     let file_name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-
     let is_markdown = file_path.ends_with(".md");
     let is_in_research_dir = file_path.contains("/research/");
 
-    // Remove old data for this file
     let _ = db::remove_file(conn, file_path);
 
     if is_markdown {
         // Full AST parsing for markdown files
         let parsed = parser::parse_file(&content, &file_name, is_in_research_dir);
+        log::debug!(target: "notesage::index",
+            "Parsed {}: {} tags, {} mentions, {} headings, {} tasks",
+            file_path, parsed.tags.len(), parsed.mentions.len(),
+            parsed.headings.len(), parsed.tasks.len()
+        );
 
         // Insert file record
         conn.execute(

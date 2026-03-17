@@ -74,6 +74,10 @@ export function useFileWatcher() {
         refreshDebounce.current = setTimeout(() => {
           refreshFileTree();
         }, 300);
+        // Index new files for tags/mentions/FTS; remove deleted files
+        if (kind === "create") {
+          tauriApi.indexFile(normalizePath(path)).catch(() => {});
+        }
       }
 
       // Runtime iCloud project discovery — detect new projects synced from other machines
@@ -184,6 +188,8 @@ export function useFileWatcher() {
         modifyDebounce.current[normalizedPath] = setTimeout(async () => {
           delete modifyDebounce.current[normalizedPath];
           await handleModifyEvent(path, normalizedPath);
+          // Incrementally reindex the changed file for tags/mentions/FTS
+          tauriApi.indexFile(normalizedPath).catch(() => {});
         }, 200);
       }
     }

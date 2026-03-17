@@ -1,11 +1,12 @@
 use std::path::Path;
 
-/// Exclude a database file (and its WAL/SHM companions) from iCloud backup.
+/// Exclude a database file (and its WAL/SHM companions) from iCloud sync and backup.
 /// No-op on non-macOS platforms.
 #[cfg(target_os = "macos")]
 pub fn exclude_from_icloud(path: &Path) {
     for suffix in &["", "-wal", "-shm"] {
         let p = format!("{}{}", path.display(), suffix);
+        // Exclude from Time Machine backup
         let _ = std::process::Command::new("xattr")
             .args([
                 "-w",

@@ -222,6 +222,8 @@ export function useFileOperations() {
         markTabClean(tabId, content);
         useEditorStore.getState().clearExternalChange(filePath);
         refreshGitForPath(filePath);
+        // Incrementally reindex for tags/mentions/FTS
+        tauriApi.indexFile(filePath).catch(() => {});
         return true;
       } catch (error) {
         await tauriApi.clearSelfWrite(filePath).catch(() => {});
