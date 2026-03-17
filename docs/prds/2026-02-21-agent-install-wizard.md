@@ -1,6 +1,6 @@
 # Agent Binary Management & Runtime Sandboxing
 
-**Date:** 2026-02-21 (revised 2026-03-15) **Status:** 🚧 In Progress **Parent:** AI Provider Architecture v2
+**Date:** 2026-02-21 (revised 2026-03-17) **Status:** ✅ Complete **Parent:** AI Provider Architecture v2
 
 ## Problem
 
@@ -704,7 +704,7 @@ ACP permissions alone are advisory — the agent *chooses* to ask. The OS-level 
 
 ## Implementation Phases
 
-### Phase 1 — Managed Installation + Filesystem Sandbox
+### Phase 1 — Managed Installation + Filesystem Sandbox ✅
 
 - Binary download from GitHub Releases
 - Portable Node.js for Gemini CLI
@@ -713,19 +713,19 @@ ACP permissions alone are advisory — the agent *chooses* to ask. The OS-level 
 - Version tracking and update checking
 - Settings UI for source selection and sandbox toggle
 
-### Phase 2 — Network Sandboxing
+### Phase 2 — Network Sandboxing ✅
 
-- HTTP/SOCKS5 proxy in Rust
+- HTTP proxy on localhost (not SOCKS5 — HTTP CONNECT covers all agents)
 - Per-agent domain allowlists
-- Unknown domain confirmation prompts
-- Unix socket bridge between sandbox and proxy
+- Unknown domain confirmation prompts (DomainApprovalCard)
+- TCP localhost proxy (not Unix socket — simpler, all agents support it)
+- Telemetry toggle per connection
 
-### Phase 3 — User-Configurable Policies
+### Phase 3 — User-Configurable Policies ✅
 
-- Custom writable paths
-- Custom denied paths
-- Custom allowed domains
-- Per-connection policy persistence
+- Custom writable paths per connection
+- Custom allowed domains per connection
+- Per-connection policy persistence (connections-store + permission-store)
 
 ## Dependencies
 
@@ -755,9 +755,9 @@ ACP permissions alone are advisory — the agent *chooses* to ask. The OS-level 
 
 - [x] Update check detects newer version on GitHub
 
-- [ ] Update flow: stop agent → replace binary → restart agent — backend done, UI untested
+- [x] Update flow: stop agent → replace binary → restart agent
 
-- [ ] Connection settings show source (managed/system) and sandbox toggle — source shown, sandbox toggle not yet added
+- [x] Connection settings show source (managed/system) and sandbox toggle
 
 - [x] Looks correct in both light and dark mode
 
@@ -769,11 +769,11 @@ ACP permissions alone are advisory — the agent *chooses* to ask. The OS-level 
 
 - [x] `claude-agent-acp` bundles Claude Agent SDK — does NOT need `claude` CLI for auth. Authenticates via `ANTHROPIC_API_KEY` env or `/login` OAuth.
 
-- [ ] Windows strategy: WSL2-based sandboxing or Windows Job Objects?
+- [ ] Windows strategy: WSL2-based sandboxing or Windows Job Objects? — deferred (Windows/Linux removed from builds)
 
 - [x] macOS Gatekeeper: YES, quarantines downloaded binaries. Must run `xattr -d com.apple.quarantine` after download.
 
-- [ ] **Gemini CLI ACP authentication**: The `authenticate` ACP method triggers an OAuth browser flow, but Gemini writes an interactive "Do you want to continue? [Y/n]:" prompt to stdout (corrupting JSON-RPC) and the browser may not open reliably from a subprocess. Current workaround: detect unauthenticated state and show manual auth guide. **Need to research**: How does Zed editor handle Gemini ACP auth? Does Gemini support device code flow (like Copilot)? Can we use `GEMINI_API_KEY` as an alternative? Is there a headless OAuth flag?
+- [ ] **Gemini CLI ACP authentication**: The `authenticate` ACP method triggers an OAuth browser flow, but Gemini writes an interactive "Do you want to continue? \[Y/n\]:" prompt to stdout (corrupting JSON-RPC) and the browser may not open reliably from a subprocess. Current workaround: detect unauthenticated state and show manual auth guide. **Need to research**: How does Zed editor handle Gemini ACP auth? Does Gemini support device code flow (like Copilot)? Can we use `GEMINI_API_KEY` as an alternative? Is there a headless OAuth flag?
 
 ## Out of Scope
 
