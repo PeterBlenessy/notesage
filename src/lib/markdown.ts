@@ -141,6 +141,74 @@ export function injectAnnotationsIntoMarkdown(
 }
 
 // ---------------------------------------------------------------------------
+// Task list normalization
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalize empty task list items so they survive round-tripping.
+ *
+ * `markdown-it-task-lists` requires a space after the checkbox bracket
+ * (e.g. `[ ] ` not `[ ]`). Empty task items serialize to `- [ ]` with no
+ * trailing content — the trailing space may be stripped during save. On
+ * reload, the parser fails to recognize them and they render as raw `[ ]`
+ * text inside a bullet list item.
+ *
+ * This function ensures every checkbox bracket has at least one trailing
+ * space so the parser always matches.
+ */
+function normalizeEmptyTaskItems(markdown: string): string {
+  // Match task items where the checkbox bracket is the last thing on the line
+  // (no content after it). Add a trailing space so markdown-it-task-lists matches.
+  return markdown.replace(
+    /^([ \t]*[-+*][ \t]+\[[ xX]\])$/gm,
+    "$1 ",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Trailing empty task item cleanup
+// ---------------------------------------------------------------------------
+
+/**
+ * Remove empty task items at the end of a task list.
+ *
+ * ProseMirror can retain invisible empty task items (Tiptap "Bullet List
+ * Limbo" — issue #3128). These persist in the document tree and serialize
+ * as blank `- [ ]` or `- [ ] ` lines. Stripping them during serialization
+ * prevents ghost items from accumulating.
+ *
+ * Only removes empty task items that are followed by either another task
+ * item or the end of the file / a blank line (i.e. trailing items in a
+ * task list block). Empty items in the middle of a list are kept.
+ */
+function stripTrailingEmptyTaskItems(markdown: string): string {
+  const lines = markdown.split("\n");
+  const taskItemRe = /^[ \t]*[-+*][ \t]+\[[ xX]\]/;
+  const emptyTaskItemRe = /^[ \t]*[-+*][ \t]+\[[ xX]\][ \t]*$/;
+
+  // Walk backwards through the lines. When we find an empty task item
+  // at the tail of a consecutive task-item block, mark it for removal.
+  const remove = new Set<number>();
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    // Skip trailing blank lines
+    if (line.trim() === "") continue;
+    // If this line is an empty task item, mark for removal and continue
+    if (emptyTaskItemRe.test(line)) {
+      remove.add(i);
+      continue;
+    }
+    // If this is a non-empty task item, stop — we only strip from the tail
+    if (taskItemRe.test(line)) break;
+    // Non-task-item content — stop
+    break;
+  }
+
+  if (remove.size === 0) return markdown;
+  return lines.filter((_, i) => !remove.has(i)).join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Image path space encoding
 // ---------------------------------------------------------------------------
 
@@ -229,12 +297,15 @@ export function getMarkdownFromEditor(editor: Editor): string {
     return editor.getText();
   }
 
+  // Strip ghost empty trailing task items before injecting annotations
+  markdown = stripTrailingEmptyTaskItems(markdown);
+
   // Inject {emoji} prefixes from the current ProseMirror document annotations
   return injectAnnotationsIntoMarkdown(markdown, editor);
 }
 
 export function setMarkdownInEditor(editor: Editor, markdown: string): void {
-  setContentWithoutHistory(editor, encodeImagePathSpaces(markdown));
+  setContentWithoutHistory(editor, encodeImagePathSpaces(normalizeEmptyTaskItems(markdown)));
 }
 
 /**
@@ -264,7 +335,7 @@ export function loadRawMarkdownIntoEditor(
   rawMarkdown: string
 ): void {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
-  const encoded = encodeImagePathSpaces(cleaned);
+  const encoded = encodeImagePathSpaces(normalizeEmptyTaskItems(cleaned));
   editor.chain().setMeta("addToHistory", false).setContent(encoded).run();
 
   if (annotations.size > 0) {
@@ -285,5 +356,5 @@ export function prepareInitialContent(rawMarkdown: string): {
   annotations: Map<number, string>;
 } {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
-  return { content: encodeImagePathSpaces(cleaned), annotations };
+  return { content: encodeImagePathSpaces(normalizeEmptyTaskItems(cleaned)), annotations };
 }

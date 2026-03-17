@@ -80,14 +80,14 @@ export function TableToolbarContent({ editor, onClose }: TableToolbarContentProp
         onClick={() => run(() => editor.chain().focus().addRowBefore().run())}
         title="Add row above"
       >
-        <BetweenVerticalStart className="size-3.5" strokeWidth={1.5} />
+        <BetweenHorizontalStart className="size-3.5" strokeWidth={1.5} />
       </TableButton>
 
       <TableButton
         onClick={() => run(() => editor.chain().focus().addRowAfter().run())}
         title="Add row below"
       >
-        <BetweenVerticalEnd className="size-3.5" strokeWidth={1.5} />
+        <BetweenHorizontalEnd className="size-3.5" strokeWidth={1.5} />
       </TableButton>
 
       {/* Add columns */}
@@ -95,14 +95,14 @@ export function TableToolbarContent({ editor, onClose }: TableToolbarContentProp
         onClick={() => run(() => editor.chain().focus().addColumnBefore().run())}
         title="Add column left"
       >
-        <BetweenHorizontalStart className="size-3.5" strokeWidth={1.5} />
+        <BetweenVerticalStart className="size-3.5" strokeWidth={1.5} />
       </TableButton>
 
       <TableButton
         onClick={() => run(() => editor.chain().focus().addColumnAfter().run())}
         title="Add column right"
       >
-        <BetweenHorizontalEnd className="size-3.5" strokeWidth={1.5} />
+        <BetweenVerticalEnd className="size-3.5" strokeWidth={1.5} />
       </TableButton>
 
       <TableSeparator />

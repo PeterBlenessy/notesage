@@ -3,6 +3,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { LocalImage } from "@/components/editor/extensions/local-image";
 import { Table } from "@tiptap/extension-table";
+import { serializeTable } from "@/components/editor/extensions/table-markdown";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { TableHeader } from "@tiptap/extension-table-header";
@@ -76,7 +77,17 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
           class: "bg-muted rounded-lg p-4 font-mono text-sm",
         },
       }),
-      Table.configure({
+      Table.extend({
+        addStorage() {
+          return {
+            ...this.parent?.(),
+            markdown: {
+              serialize: serializeTable,
+              parse: {},
+            },
+          };
+        },
+      }).configure({
         resizable: true,
         HTMLAttributes: {
           class: "border-collapse table-auto w-full",
