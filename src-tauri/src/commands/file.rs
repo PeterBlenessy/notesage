@@ -13,36 +13,39 @@ pub struct FileEntry {
 
 #[tauri::command]
 pub async fn read_file(path: String) -> Result<String, String> {
-    fs::read_to_string(&path).map_err(|e| e.to_string())
+    fs::read_to_string(&path).map_err(|e| format!("Failed to read file {}: {}", path, e))
 }
 
 #[tauri::command]
 pub async fn read_binary_file(path: String) -> Result<Vec<u8>, String> {
-    fs::read(&path).map_err(|e| e.to_string())
+    fs::read(&path).map_err(|e| format!("Failed to read file {}: {}", path, e))
 }
 
 #[tauri::command]
 pub async fn write_file(path: String, content: String) -> Result<(), String> {
-    fs::write(&path, content).map_err(|e| e.to_string())
+    fs::write(&path, content).map_err(|e| format!("Failed to write file {}: {}", path, e))
 }
+
+const MAX_DIRECTORY_DEPTH: usize = 50;
 
 #[tauri::command]
 pub async fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
-    let dir_path = Path::new(&path);
+    list_directory_recursive(&path, 0).await
+}
 
-    if !dir_path.exists() {
-        return Err(format!("Path does not exist: {}", path));
-    }
+async fn list_directory_recursive(path: &str, depth: usize) -> Result<Vec<FileEntry>, String> {
+    let dir_path = Path::new(path);
 
     if !dir_path.is_dir() {
         return Err(format!("Path is not a directory: {}", path));
     }
 
     let mut entries = Vec::new();
-    let read_dir = fs::read_dir(dir_path).map_err(|e| e.to_string())?;
+    let read_dir = fs::read_dir(dir_path)
+        .map_err(|e| format!("Failed to read directory {}: {}", path, e))?;
 
     for entry in read_dir {
-        let entry = entry.map_err(|e| e.to_string())?;
+        let entry = entry.map_err(|e| format!("Failed to read entry in {}: {}", path, e))?;
         let entry_path = entry.path();
         let file_name = entry.file_name().to_string_lossy().to_string();
 
@@ -54,12 +57,17 @@ pub async fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
         let is_directory = entry_path.is_dir();
         let path_str = entry_path.to_string_lossy().to_string();
 
-        let children = if is_directory {
-            // Recursively list children using Box::pin for async recursion
-            match Box::pin(list_directory(path_str.clone())).await {
+        let children = if is_directory && depth < MAX_DIRECTORY_DEPTH {
+            match Box::pin(list_directory_recursive(&path_str, depth + 1)).await {
                 Ok(children) => Some(children),
-                Err(_) => Some(Vec::new()),
+                Err(e) => {
+                    log::warn!(target: "notesage::file", "Skipping unreadable directory {}: {}", path_str, e);
+                    Some(Vec::new())
+                }
             }
+        } else if is_directory {
+            // Depth limit reached — return empty children
+            Some(Vec::new())
         } else {
             None
         };
@@ -132,47 +140,35 @@ pub async fn list_files_shallow(path: String) -> Result<Vec<FileEntry>, String> 
 
 #[tauri::command]
 pub async fn create_file(path: String) -> Result<(), String> {
-    if Path::new(&path).exists() {
-        return Err(format!("File already exists: {}", path));
-    }
-
-    fs::write(&path, "").map_err(|e| e.to_string())
+    fs::write(&path, "").map_err(|e| match e.kind() {
+        std::io::ErrorKind::AlreadyExists => format!("File already exists: {}", path),
+        _ => format!("Failed to create file {}: {}", path, e),
+    })
 }
 
 #[tauri::command]
 pub async fn create_directory(path: String) -> Result<(), String> {
-    if Path::new(&path).exists() {
-        return Err(format!("Directory already exists: {}", path));
-    }
-
-    fs::create_dir_all(&path).map_err(|e| e.to_string())
+    fs::create_dir_all(&path).map_err(|e| format!("Failed to create directory {}: {}", path, e))
 }
 
 #[tauri::command]
 pub async fn rename_path(old_path: String, new_path: String) -> Result<(), String> {
-    if !Path::new(&old_path).exists() {
-        return Err(format!("Source path does not exist: {}", old_path));
-    }
-
     if Path::new(&new_path).exists() {
-        return Err(format!("Destination path already exists: {}", new_path));
+        return Err(format!("Destination already exists: {}", new_path));
     }
 
-    fs::rename(&old_path, &new_path).map_err(|e| e.to_string())
+    fs::rename(&old_path, &new_path)
+        .map_err(|e| format!("Failed to rename {} to {}: {}", old_path, new_path, e))
 }
 
 #[tauri::command]
 pub async fn delete_path(path: String) -> Result<(), String> {
     let file_path = Path::new(&path);
 
-    if !file_path.exists() {
-        return Err(format!("Path does not exist: {}", path));
-    }
-
     if file_path.is_dir() {
-        fs::remove_dir_all(&path).map_err(|e| e.to_string())
+        fs::remove_dir_all(&path).map_err(|e| format!("Failed to delete directory {}: {}", path, e))
     } else {
-        fs::remove_file(&path).map_err(|e| e.to_string())
+        fs::remove_file(&path).map_err(|e| format!("Failed to delete file {}: {}", path, e))
     }
 }
 

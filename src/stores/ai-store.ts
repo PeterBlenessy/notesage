@@ -2,8 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AIProviderType } from '@/lib/ai/types';
 
-
-/** @deprecated Use addressable agents (skill-store) instead. Kept for migration compatibility. */
+/** Kept for persona→agent migration compatibility (useSkillOperations). */
 export interface AIPersona {
   id: string;
   name: string;
@@ -19,71 +18,17 @@ export interface CustomPrompt {
   template: string;
 }
 
-/** @deprecated Use bundled agents instead. Kept for migration compatibility. */
-export const BUILT_IN_PERSONAS: AIPersona[] = [
-  {
-    id: 'general',
-    name: 'General Assistant',
-    icon: '🤖',
-    systemMessage: 'You are a helpful writing assistant. Provide clear, concise, and accurate assistance with writing tasks.',
-    builtIn: true,
-  },
-  {
-    id: 'creative',
-    name: 'Creative Writer',
-    icon: '✨',
-    systemMessage: 'You are a creative writing assistant. Help with imaginative expression, storytelling, vivid descriptions, and engaging narratives. Use metaphors, varied sentence structures, and evocative language.',
-    builtIn: true,
-  },
-  {
-    id: 'technical',
-    name: 'Technical Editor',
-    icon: '⚙️',
-    systemMessage: 'You are a technical writing editor. Focus on clarity, precision, and accuracy. Explain complex concepts simply, define jargon, and ensure logical flow. Prefer active voice and concrete examples.',
-    builtIn: true,
-  },
-  {
-    id: 'fact-checker',
-    name: 'Fact Checker',
-    icon: '🔍',
-    systemMessage: 'You are a fact checker. Verify claims, ask for sources, identify unsupported statements, and suggest evidence-based improvements. Be skeptical but constructive.',
-    builtIn: true,
-  },
-  {
-    id: 'academic',
-    name: 'Academic Writer',
-    icon: '🎓',
-    systemMessage: 'You are an academic writing assistant. Use formal, scholarly language. Focus on logical argumentation, proper citations, objective tone, and structured presentation of ideas.',
-    builtIn: true,
-  },
-  {
-    id: 'copywriter',
-    name: 'Copywriter',
-    icon: '💼',
-    systemMessage: 'You are a marketing copywriter. Create persuasive, engaging content that drives action. Focus on benefits, emotional appeal, clear calls-to-action, and audience connection.',
-    builtIn: true,
-  },
-  {
-    id: 'proofreader',
-    name: 'Proofreader',
-    icon: '📝',
-    systemMessage: 'You are a meticulous proofreader. Check grammar, spelling, punctuation, and consistency. Suggest corrections while preserving the author\'s voice and intent.',
-    builtIn: true,
-  },
-];
-
 interface AIStore {
   provider: AIProviderType | null;
   apiKeys: Record<string, string | undefined>;
   ollamaUrl: string;
   suggestionsEnabled: boolean;
 
-  /** @deprecated Use skill-store activeAgentName instead. */
+  /** Kept for persona→agent migration. */
   activePersonaId: string;
-  /** @deprecated Use addressable agents (agent .md files) instead. Read by migration. */
+  /** Kept for persona→agent migration. */
   customPersonas: AIPersona[];
 
-  // Custom Prompts
   customPrompts: CustomPrompt[];
 
   setProvider: (provider: AIProviderType | null) => void;
@@ -91,13 +36,6 @@ interface AIStore {
   setOllamaUrl: (url: string) => void;
   toggleSuggestions: () => void;
 
-  /** @deprecated Use skill-store setActiveAgent instead. */
-  setActivePersona: (personaId: string) => void;
-  addCustomPersona: (persona: Omit<AIPersona, 'id' | 'builtIn'>) => void;
-  updateCustomPersona: (id: string, persona: Partial<AIPersona>) => void;
-  deleteCustomPersona: (id: string) => void;
-
-  // Custom prompt actions
   addCustomPrompt: (prompt: Omit<CustomPrompt, 'id'>) => void;
   updateCustomPrompt: (id: string, prompt: Partial<CustomPrompt>) => void;
   deleteCustomPrompt: (id: string) => void;
@@ -123,27 +61,6 @@ export const useAIStore = create<AIStore>()(
       toggleSuggestions: () =>
         set((state) => ({ suggestionsEnabled: !state.suggestionsEnabled })),
 
-      // Persona actions
-      setActivePersona: (personaId) => set({ activePersonaId: personaId }),
-      addCustomPersona: (persona) =>
-        set((state) => ({
-          customPersonas: [
-            ...state.customPersonas,
-            { ...persona, id: Date.now().toString(), builtIn: false },
-          ],
-        })),
-      updateCustomPersona: (id, updates) =>
-        set((state) => ({
-          customPersonas: state.customPersonas.map((p) =>
-            p.id === id ? { ...p, ...updates } : p
-          ),
-        })),
-      deleteCustomPersona: (id) =>
-        set((state) => ({
-          customPersonas: state.customPersonas.filter((p) => p.id !== id),
-        })),
-
-      // Custom prompt actions
       addCustomPrompt: (prompt) =>
         set((state) => ({
           customPrompts: [
@@ -165,15 +82,3 @@ export const useAIStore = create<AIStore>()(
     { name: 'notesage-ai-settings' }
   )
 );
-
-/** @deprecated Use skill-store getUserInvocableAgents instead. */
-export const getAllPersonas = (store: AIStore): AIPersona[] => [
-  ...BUILT_IN_PERSONAS,
-  ...store.customPersonas,
-];
-
-/** @deprecated Use skill-store getActiveAgent instead. */
-export const getActivePersona = (store: AIStore): AIPersona => {
-  const allPersonas = getAllPersonas(store);
-  return allPersonas.find((p) => p.id === store.activePersonaId) || BUILT_IN_PERSONAS[0];
-};
