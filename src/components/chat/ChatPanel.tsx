@@ -272,7 +272,7 @@ export function ChatPanel() {
     let content: string;
     let filename: string;
     const title = conv.title || 'conversation';
-    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '').slice(0, 40);
 
     if (format === 'markdown') {
       const lines = [`# ${title}`, ''];
@@ -297,14 +297,25 @@ export function ChatPanel() {
       filename = `${slug}.json`;
     }
 
-    const blob = new Blob([content], { type: format === 'markdown' ? 'text/markdown' : 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success(`Exported as ${filename}`);
+    // Use Tauri save dialog for native file picker
+    import('@tauri-apps/plugin-dialog').then(async ({ save }) => {
+      const filePath = await save({
+        defaultPath: filename,
+        filters: format === 'markdown'
+          ? [{ name: 'Markdown', extensions: ['md'] }]
+          : [{ name: 'JSON', extensions: ['json'] }],
+      });
+      if (!filePath) return;
+      await tauriApi.writeFile(filePath, content);
+      toast.success(`Exported to ${filePath.split('/').pop()}`, {
+        action: {
+          label: 'Reveal',
+          onClick: () => tauriApi.revealInFinder(filePath),
+        },
+      });
+    }).catch((err) => {
+      toast.error(`Export failed: ${err}`);
+    });
   };
 
   const activeConvTitle = useMemo(() => {
