@@ -614,17 +614,39 @@ fn find_available_port(start: u16) -> Option<u16> {
 /// Resolve the llama-server binary path.
 /// Checks: 1) next to the app executable (bundled sidecar), 2) ~/.notesage/bin/, 3) PATH
 fn resolve_llama_server_binary() -> Result<PathBuf, String> {
-    // 1. Bundled sidecar — next to the app executable
+    // 1. Bundled sidecar — next to the app executable (with dylibs)
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let binary = dir.join("llama-server");
-            if binary.exists() {
+            let lib_dir = dir.join("lib");
+            // Only use if both binary AND its lib directory exist (cargo clean wipes lib/)
+            if binary.exists() && lib_dir.exists() {
                 return Ok(binary);
             }
         }
     }
 
-    // 2. Managed install location
+    // 2. Dev mode fallback — source binaries directory (survives cargo clean)
+    if let Ok(exe) = std::env::current_exe() {
+        // In dev mode, exe is at src-tauri/target/debug/notesage
+        // Binaries are at src-tauri/binaries/llama-server-{triple}
+        if let Some(target_dir) = exe.parent() {
+            let triple = format!("{}-{}", std::env::consts::ARCH, match std::env::consts::OS {
+                "macos" => "apple-darwin",
+                "linux" => "unknown-linux-gnu",
+                _ => "",
+            });
+            // Walk up from target/debug/ to src-tauri/binaries/
+            if let Some(src_tauri) = target_dir.parent().and_then(|p| p.parent()) {
+                let dev_binary = src_tauri.join("binaries").join(format!("llama-server-{}", triple));
+                if dev_binary.exists() {
+                    return Ok(dev_binary);
+                }
+            }
+        }
+    }
+
+    // 3. Managed install location
     if let Some(home) = dirs::home_dir() {
         let managed = home.join(".notesage").join("bin").join("llama-server");
         if managed.exists() {
@@ -893,11 +915,12 @@ pub struct BinaryStatus {
 
 #[tauri::command]
 pub async fn check_llama_server_available() -> Result<BinaryStatus, String> {
-    // 1. Bundled sidecar
+    // 1. Bundled sidecar (with dylibs)
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let binary = dir.join("llama-server");
-            if binary.exists() {
+            let lib_dir = dir.join("lib");
+            if binary.exists() && lib_dir.exists() {
                 return Ok(BinaryStatus {
                     available: true,
                     location: "bundled".to_string(),
@@ -907,7 +930,28 @@ pub async fn check_llama_server_available() -> Result<BinaryStatus, String> {
         }
     }
 
-    // 2. Managed install
+    // 2. Dev mode fallback — source binaries directory
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(target_dir) = exe.parent() {
+            let triple = format!("{}-{}", std::env::consts::ARCH, match std::env::consts::OS {
+                "macos" => "apple-darwin",
+                "linux" => "unknown-linux-gnu",
+                _ => "",
+            });
+            if let Some(src_tauri) = target_dir.parent().and_then(|p| p.parent()) {
+                let dev_binary = src_tauri.join("binaries").join(format!("llama-server-{}", triple));
+                if dev_binary.exists() {
+                    return Ok(BinaryStatus {
+                        available: true,
+                        location: "bundled".to_string(),
+                        path: Some(dev_binary.to_string_lossy().to_string()),
+                    });
+                }
+            }
+        }
+    }
+
+    // 3. Managed install
     if let Some(home) = dirs::home_dir() {
         let managed = home.join(".notesage").join("bin").join("llama-server");
         if managed.exists() {
