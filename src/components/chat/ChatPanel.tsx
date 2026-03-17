@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe, Shield, Terminal, Pencil, FileOutput, FileInput, FolderSearch, TextSearch, Download, Plus, X, type LucideIcon } from 'lucide-react';
+import { Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe, Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentIcon } from '@/components/AgentIcon';
 import { ProviderLogo } from '@/components/ProviderLogo';
@@ -15,8 +15,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useAIOperations } from '@/hooks/useAIOperations';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
-import { usePermissionStore, type PermissionTier } from '@/stores/permission-store';
-import { useMcpStore } from '@/stores/mcp-store';
+import { usePermissionStore } from '@/stores/permission-store';
 import { useSkillStore } from '@/stores/skill-store';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
@@ -39,26 +38,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 
-const PRE_POPULATED_TOOLS = ['bash', 'edit', 'write', 'read', 'glob', 'grep', 'fetch', 'web_search'] as const;
 
-const TOOL_META: Record<string, { label: string; icon: LucideIcon }> = {
-  bash: { label: 'Terminal', icon: Terminal },
-  edit: { label: 'Edit files', icon: Pencil },
-  write: { label: 'Write files', icon: FileOutput },
-  read: { label: 'Read files', icon: FileInput },
-  glob: { label: 'Search files', icon: FolderSearch },
-  grep: { label: 'Search content', icon: TextSearch },
-  fetch: { label: 'Web fetch', icon: Download },
-  web_search: { label: 'Web search', icon: Globe },
-};
-
-function getToolLabel(kind: string): string {
-  return TOOL_META[kind]?.label ?? kind;
-}
-
-function getToolIcon(kind: string): LucideIcon {
-  return TOOL_META[kind]?.icon ?? Shield;
-}
 
 export function ChatPanel() {
   const { isLoading, activeTool, clearMessages, setSelectedProjectPaths, toggleProjectPath, webSearchEnabled, setWebSearchEnabled, conversations, activeConversationId, createConversation, deleteConversation, setActiveConversation, setPendingProjectSwitch, setPendingAgentSwitch } = useChatStore();
@@ -101,12 +81,9 @@ export function ChatPanel() {
   const { sendChatMessage, cancelChat } = useAIOperations();
   const permissionRequests = usePermissionStore((s) => s.requests);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const sessionAllowed = usePermissionStore((s) => s.sessionAllowed);
-  const alwaysAllowed = usePermissionStore((s) => s.alwaysAllowed);
   const [providerOpen, setProviderOpen] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
   const [convListOpen, setConvListOpen] = useState(false);
 
   const [domainRequests, setDomainRequests] = useState<DomainApprovalRequest[]>([]);
@@ -156,40 +133,6 @@ export function ChatPanel() {
     );
   }, [effectiveConnection?.id, messages.length, pendingAgentSwitch, setPendingAgentSwitch, allConnections]);
 
-  // Compute tools list: pre-populated + any dynamic session/always approvals
-  const toolsList = useMemo(() => {
-    const kinds = new Set<string>(PRE_POPULATED_TOOLS);
-    for (const k of sessionAllowed) kinds.add(k);
-    for (const k of alwaysAllowed) kinds.add(k);
-    return Array.from(kinds);
-  }, [sessionAllowed, alwaysAllowed]);
-
-  const mcpServers = useMcpStore((s) => s.servers);
-  const mcpActiveTools = useMemo(
-    () => mcpServers.filter((sv) => sv.enabled && sv.status === 'running').flatMap((sv) => sv.tools),
-    [mcpServers]
-  );
-
-  const approvedCount = useMemo(() => {
-    let count = 0;
-    for (const kind of toolsList) {
-      if (sessionAllowed.has(kind) || alwaysAllowed.includes(kind)) count++;
-    }
-    return count;
-  }, [toolsList, sessionAllowed, alwaysAllowed]);
-
-  const handleToolCycle = (kind: string) => {
-    const store = usePermissionStore.getState();
-    const tier = store.getToolTier(kind);
-    if (tier === 'none') {
-      store.allowSession(kind);
-    } else if (tier === 'session') {
-      store.removeSession(kind);
-      store.allowAlways(kind);
-    } else {
-      store.removeAlways(kind);
-    }
-  };
 
   // Derive display label for the project selector trigger
   const projectLabel = useMemo(() => {
@@ -705,80 +648,7 @@ export function ChatPanel() {
                   )}
                 </PopoverContent>
               </Popover>
-              {isAcpConnection ? (
-                <Popover open={toolsOpen} onOpenChange={setToolsOpen}>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className={`flex items-center gap-1 text-xs transition-colors rounded px-1 py-0.5 hover:bg-accent/50 active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                        approvedCount > 0 ? 'text-foreground' : 'text-muted-foreground'
-                      }`}
-                    >
-                      <Shield className="h-3 w-3" strokeWidth={1.5} />
-                      <span>Tools</span>
-                      {(approvedCount > 0 || mcpActiveTools.length > 0) && (
-                        <span className="text-xs text-muted-foreground">({approvedCount + mcpActiveTools.length})</span>
-                      )}
-                      <ChevronUp className="h-3 w-3 opacity-50" />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent side="top" align="start" className="w-56 p-1">
-                    <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Agent tool permissions
-                    </div>
-                    {toolsList.map((kind) => {
-                      const tier: PermissionTier = alwaysAllowed.includes(kind)
-                        ? 'always'
-                        : sessionAllowed.has(kind)
-                          ? 'session'
-                          : 'none';
-                      const ToolIcon = getToolIcon(kind);
-                      return (
-                        <button
-                          key={kind}
-                          onClick={() => handleToolCycle(kind)}
-                          className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50"
-                        >
-                          <span className="flex items-center gap-2">
-                            <ToolIcon className={`h-3.5 w-3.5 ${tier !== 'none' ? 'text-foreground' : 'text-muted-foreground'}`} strokeWidth={1.5} />
-                            {getToolLabel(kind)}
-                          </span>
-                          <span className="flex items-center gap-1.5 shrink-0">
-                            {tier !== 'none' && (
-                              <span className="text-xs text-muted-foreground">
-                                {tier === 'session' ? 'Session' : 'Always'}
-                              </span>
-                            )}
-                            {tier !== 'none' && (
-                              <Check className="h-3 w-3 text-muted-foreground" />
-                            )}
-                          </span>
-                        </button>
-                      );
-                    })}
-                    {mcpActiveTools.length > 0 && (
-                      <>
-                        <div className="h-px bg-border my-1" />
-                        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          MCP Tools
-                        </div>
-                        {mcpActiveTools.map((tool) => (
-                          <div
-                            key={`${tool.server_id}:${tool.name}`}
-                            className="flex items-center gap-2 px-2 py-1.5 text-xs text-foreground"
-                          >
-                            <div className="h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
-                            <span className="truncate">
-                              <span className="text-muted-foreground">{tool.server_id.split(':').pop()}/</span>
-                              {tool.name}
-                            </span>
-                          </div>
-                        ))}
-                      </>
-                    )}
-                  </PopoverContent>
-                </Popover>
-              ) : (
+              {!isAcpConnection && (
                 <TooltipProvider delayDuration={200}>
                   <Tooltip>
                     <TooltipTrigger asChild>
