@@ -29,6 +29,16 @@ Collapsible right sidebar (Cmd+Shift+C) with streaming AI responses.
 - Custom prompts/templates for AI actions
 - Project-scoped AI context (provider, agent, and context overrides per project)
 - Multi-select project selector in chat footer
+- Chat/History tab view: Chat tab for active conversation, History tab for past conversations sorted by date with metadata (time, message count)
+- Conversation export: export as Markdown or JSON via native save dialog, with Reveal in Finder option
+- Tool call deny messages: when a tool call is denied, a chat message is shown ("Tool call X was denied")
+- Domain deny/timeout messages: blocked or timed-out domain requests shown as chat messages
+- Chat panel resizable up to 50% of the content area
+
+**Provider context isolation:**
+
+- When switching AI provider mid-conversation, an `AgentSwitchCard` prompts the user to start fresh or include previous history
+- Starting fresh clears conversation state; including history carries messages forward to the new provider
 
 ## Addressable Agents
 
@@ -153,6 +163,7 @@ On-device speech-to-text powered by whisper-rs with Metal GPU acceleration — f
 - Models downloaded from Hugging Face in GGML format
 - Concurrent downloads with per-model progress bars and cancel buttons
 - Model management in Settings > Transcription tab
+- Auto-download: Whisper base model downloaded automatically on first dictation if no model is available
 
 ## Key Files
 

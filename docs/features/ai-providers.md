@@ -39,7 +39,11 @@ interface AIProvider {
 - Process cleanup: `AcpState::stop_all_sync()` called from `RunEvent::Exit` hook; frontend `beforeunload` as secondary defense
 - Permission request handling: all tool calls require explicit user approval with tiered options (allow once / allow for session / allow always)
 - Tiered permission UI: PermissionCard with split Allow button + dropdown for session/always; session approvals non-persisted, always approvals persisted via Zustand persist
-- Context-aware chat footer: "Tools" popover for ACP agents, "Search" toggle for direct API connections
+- Thinking effort slider for Codex ACP: Default / Low / Medium / High / Extra High (hidden for free accounts)
+- Dynamic model dedup: strips `/low`, `/medium`, `/high`, `/xhigh` reasoning effort variants from model lists
+- ACP crate version 0.10/0.11 with `usage_update` event support
+- Network sandboxing: agent traffic routed through localhost HTTP proxy with per-agent domain allowlists (see Network Sandboxing section)
+- Context-aware chat footer: "Search" toggle for direct API connections
 
 ### Path 3: Copilot LSP (for `inline_completion` use case)
 
@@ -48,7 +52,7 @@ interface AIProvider {
 - Ghost text rendered as ProseMirror widget decorations via `GhostText` Tiptap extension
 - Separate from ACP — the Copilot CLI (`copilot --acp`) handles chat/agents, the LSP handles completions
 - OAuth device flow authentication — enter code on github.com/login/device
-- Per-document toggle: `copilotDisabled` boolean on Tab interface (session-only, not persisted)
+- Global inline completions toggle (persisted in settings-store, applies to all tabs)
 
 ### Path 4: Local Bundled (for `local_bundled` connections)
 
@@ -111,6 +115,38 @@ Privacy-focused offline AI with zero setup — no API keys, no external software
 - Thinking content displayed in a collapsible section above the assistant response
 - Detection code: `detect_thinking_support()` in `ai_streaming.rs`
 
+## Network Sandboxing
+
+HTTP proxy-based network filtering for agent subprocesses, enforcing per-agent domain allowlists.
+
+**Architecture:**
+
+- Rust HTTP proxy server (`network_proxy.rs`) binds to a random localhost port
+- Agent subprocesses (ACP) have `HTTP_PROXY`/`HTTPS_PROXY` env vars set to the proxy address
+- All outbound requests from agents are intercepted and checked against the connection's domain allowlist
+- Unknown domains trigger a `domain-approval-request` Tauri event to the frontend
+
+**Domain allowlists:**
+
+- Built-in default allowlists per provider (e.g., `api.anthropic.com` for Claude Code, `api.github.com` for Copilot)
+- User-configurable additional domains per connection in the config dialog
+- Telemetry domains (e.g., `sentry.io`) controlled by a separate toggle per connection
+
+**Approval flow:**
+
+- `DomainApprovalCard` in chat shows the requesting domain with allow/deny options
+- Allow once: permits the single request
+- Allow for session: permits for the current app session (non-persisted)
+- Allow always: adds to persisted allowlist in `permission-store`
+- Deny: blocks the request; denial shown as a chat message
+- 30-second auto-deny timeout for unanswered requests
+
+**Security UI:**
+
+- Connection config dialog has a boxed Security section with filesystem sandbox toggle, network restriction toggle, and custom writable paths
+- Connection cards show Sandbox / Network / Managed badges
+- Network restriction toggle enables/disables the proxy for each connection
+
 ## Web Search
 
 When web search is enabled (toggle in chat footer — only visible for direct API connections):
@@ -126,6 +162,7 @@ When web search is enabled (toggle in chat footer — only visible for direct AP
 | --- | --- |
 | `src-tauri/src/commands/ai.rs` | AI provider commands (direct API) |
 | `src-tauri/src/commands/acp.rs` | ACP agent management |
+| `src-tauri/src/commands/network_proxy.rs` | HTTP proxy for agent network sandboxing |
 | `src-tauri/src/commands/copilot_lsp.rs` | Copilot Language Server |
 | `src-tauri/src/commands/local_inference.rs` | Bundled llama-server lifecycle |
 | `src-tauri/src/commands/model_metadata.rs` | Model metadata merge + HF API fetcher |
@@ -139,7 +176,9 @@ When web search is enabled (toggle in chat footer — only visible for direct AP
 | `src/hooks/useModelMetadata.ts` | Batch model metadata fetching |
 | `src/stores/connections-store.ts` | Provider connections |
 | `src/stores/routing-store.ts` | Per-use-case provider routing |
-| `src/stores/permission-store.ts` | ACP tool call permissions |
+| `src/components/chat/DomainApprovalCard.tsx` | Network domain approval UI |
+| `src/components/chat/AgentSwitchCard.tsx` | Provider context isolation prompt |
+| `src/stores/permission-store.ts` | ACP tool call permissions + domain allowlists |
 | `src/stores/local-ai-store.ts` | Local AI server state |
 
 ## Future Enhancements

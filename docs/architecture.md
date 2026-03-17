@@ -48,7 +48,8 @@ note-sage/
 │   │   │   ├── transcription.rs # Voice recording, Whisper transcription, dictation, model management
 │   │   │   ├── local_inference.rs # Bundled llama-server lifecycle, model catalog, download, FIM completions
 │   │   │   ├── model_metadata.rs  # Model metadata merge, HF API fetcher, runtime metadata
-│   │   │   └── gguf_parser.rs     # GGUF binary header parser
+│   │   │   ├── gguf_parser.rs     # GGUF binary header parser
+│   │   │   └── network_proxy.rs   # HTTP proxy for agent network sandboxing, domain allowlists
 │   │   ├── index/          # SQLite document index (tags, mentions, tasks, goals, FTS5)
 │   │   │   ├── mod.rs      # IndexState, Tauri commands, indexing pipeline
 │   │   │   ├── db.rs       # Schema creation, migrations, connection management
@@ -84,7 +85,7 @@ note-sage/
 │   │   ├── sidebar/        # Sidebar.tsx, FileTree.tsx, FileTreeItem.tsx, ExplorerFolderItem.tsx
 │   │   ├── tabs/           # TabBar.tsx, Tab.tsx
 │   │   ├── settings/       # SettingsDialog, ConnectionsSettings, LocalAISettings, TranscriptionSettings, etc.
-│   │   ├── chat/           # ChatPanel, ChatMessage, ChatInput, PermissionCard, etc.
+│   │   ├── chat/           # ChatPanel, ChatMessage, ChatInput, PermissionCard, DomainApprovalCard, AgentSwitchCard, etc.
 │   │   ├── activity/       # ActivityStrip.tsx, ActivityTaskCard.tsx
 │   │   ├── editor/viewers/ # EpubViewer, PdfViewer, DocxViewer, PlainTextViewer
 │   │   └── ui/             # shadcn/ui components (auto-generated)
@@ -154,9 +155,9 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `settings-store` | Theme, UI preferences, `startupReady` flag | Full (except `startupReady`) |
 | `ai-store` | AI provider config (legacy, fallback) | Full |
 | `skill-store` | Skills registry, agents, instructions, active agent | Partial (overrides + active agent) |
-| `connections-store` | Multi-provider connections | Full |
+| `connections-store` | Multi-provider connections, sandbox/network config, writable paths | Full |
 | `routing-store` | Per-use-case provider routing | Full |
-| `permission-store` | ACP tool call permissions | Partial (`alwaysAllowed` only) |
+| `permission-store` | ACP tool call permissions, domain allowlists, session domains | Partial (`alwaysAllowed`, `alwaysAllowedDomains` only) |
 | `chat-store` | Chat conversation messages | Full |
 | `comment-store` | Comments, replies, delegation | JSON sidecar files |
 | `mcp-store` | MCP server registry | Partial (enabled overrides) |
@@ -189,3 +190,13 @@ All state stores use Zustand with the persist middleware for localStorage:
 - All file operations through Tauri IPC commands
 - Rust backend enforces filesystem boundaries
 - No direct frontend filesystem access
+- OS-level filesystem sandboxing (Seatbelt on macOS) with configurable writable paths per connection
+
+**Network Sandboxing:**
+
+- HTTP proxy on localhost (`network_proxy.rs`) filters agent network traffic
+- Per-agent domain allowlists: built-in defaults per provider + user-configurable additions
+- Domain approval cards in chat UI: allow once / allow for session / allow always / deny
+- 30-second auto-deny timeout for unanswered domain requests
+- Telemetry toggle per connection (e.g., sentry.io)
+- Network restriction toggle in connection config dialog

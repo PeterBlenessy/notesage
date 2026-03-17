@@ -14,8 +14,8 @@ Notesage is a rich text markdown editor with AI collaboration capabilities, pack
 | --- | --- | --- |
 | Editor | Tiptap rich text editor with markdown round-tripping, find & replace, inline tag badges | features/editor.md |
 | Document Index | SQLite-backed index with AST-parsed tags, mentions, tasks, goals, and FTS5 content search | prds/2026-03-14-sqlite-document-index.md |
-| AI Providers | Multi-provider architecture (Anthropic, OpenAI, Ollama, Local AI, ACP agents, Copilot LSP) | features/ai-providers.md |
-| AI Workflows | Chat, agents, skills, MCP, comment delegation, research, voice transcription | features/ai-workflows.md |
+| AI Providers | Multi-provider architecture (Anthropic, OpenAI, Ollama, Local AI, ACP agents, Copilot LSP), network sandboxing | features/ai-providers.md |
+| AI Workflows | Chat with history/export, agents, skills, MCP, provider context isolation, comment delegation, research, voice transcription | features/ai-workflows.md |
 | Document Formats | EPUB viewer, PDF export, DOCX/PDF/plain text viewers | features/document-formats.md |
 | Workspace | Projects, file tree, iCloud sync, git integration, external change detection | features/workspace.md |
 
@@ -23,15 +23,18 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 
 ## Roadmap
 
-### Phase 10 — Agent Binary Management & Runtime Sandboxing
+### Phase 10 — Agent Binary Management & Runtime Sandboxing (Completed)
 
 **Goal:** Zero-dependency agent installation, isolated runtime execution, and automatic updates.
 
 - Managed agent binary installation to `~/.notesage/bin/` (download from GitHub Releases)
 - Portable Node.js runtime for Gemini CLI
 - OS-level filesystem sandboxing (Seatbelt on macOS, Bubblewrap/Landlock on Linux)
-- Network sandboxing via proxy with per-agent domain allowlists
+- Network sandboxing via HTTP proxy with per-agent domain allowlists and domain approval cards
 - Automatic update checking with one-click updates
+- Provider context isolation on mid-conversation provider switch
+- Chat history tab view with conversation export (Markdown/JSON)
+- Thinking effort slider for Codex ACP (Default/Low/Medium/High/Extra High)
 - PRD: `docs/prds/2026-02-21-agent-install-wizard.md`
 
 ### Beyond — Ideas
