@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe, Plus, X } from 'lucide-react';
+import { Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe, Plus, MessageSquare, History, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentIcon } from '@/components/AgentIcon';
 import { ProviderLogo } from '@/components/ProviderLogo';
@@ -41,7 +41,7 @@ import {
 
 
 export function ChatPanel() {
-  const { isLoading, activeTool, clearMessages, setSelectedProjectPaths, toggleProjectPath, webSearchEnabled, setWebSearchEnabled, conversations, activeConversationId, createConversation, deleteConversation, setActiveConversation, setPendingProjectSwitch, setPendingAgentSwitch } = useChatStore();
+  const { isLoading, activeTool, setSelectedProjectPaths, toggleProjectPath, webSearchEnabled, setWebSearchEnabled, conversations, activeConversationId, createConversation, deleteConversation, setActiveConversation, setPendingProjectSwitch, setPendingAgentSwitch } = useChatStore();
   const messages = useChatStore(selectMessages);
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const pendingProjectSwitch = useChatStore(selectPendingProjectSwitch);
@@ -84,7 +84,7 @@ export function ChatPanel() {
   const [providerOpen, setProviderOpen] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
-  const [convListOpen, setConvListOpen] = useState(false);
+  const [chatView, setChatView] = useState<'chat' | 'history'>('chat');
 
   const [domainRequests, setDomainRequests] = useState<DomainApprovalRequest[]>([]);
 
@@ -258,19 +258,6 @@ export function ChatPanel() {
     await sendChatMessage(expandedContent, messages, skillName ? { displayContent: content, skillName } : undefined);
   };
 
-  const handleClear = () => {
-    if (!activeConversationId) return;
-    // Deny any pending permission requests before clearing
-    const pending = usePermissionStore.getState().requests;
-    for (const req of pending) {
-      tauriApi.acpPermissionRespond(req.instanceId, req.requestId, null).catch((e) => {
-        console.warn('Failed to deny permission on clear:', e);
-      });
-    }
-    usePermissionStore.getState().clearAll();
-    clearMessages();
-  };
-
   const handleNewChat = () => {
     createConversation();
   };
@@ -334,59 +321,38 @@ export function ChatPanel() {
 
   return (
     <div className="h-full w-full bg-card flex flex-col">
-      <div className="h-9 px-3 flex items-center justify-between shrink-0 bg-card">
-        <Popover open={convListOpen} onOpenChange={setConvListOpen}>
-          <PopoverTrigger asChild>
-            <button className="flex items-center gap-1.5 text-sm font-semibold tracking-tight hover:text-muted-foreground transition-colors rounded px-1 py-0.5 min-w-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-              <span className="truncate max-w-[160px]">{activeConvTitle}</span>
-              <ChevronUp className="h-3 w-3 opacity-50 shrink-0 rotate-180" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent side="bottom" align="start" className="w-60 p-1">
-            <button
-              onClick={() => { handleNewChat(); setConvListOpen(false); }}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
-              New Chat
-            </button>
-            {conversations.length > 0 && (
-              <div className="mx-2 my-1 border-t border-border" />
-            )}
-            <div className="max-h-64 overflow-y-auto thin-scrollbar">
-              {conversations.map((conv) => (
-                <div
-                  role="button"
-                  tabIndex={0}
-                  key={conv.id}
-                  className={`group w-full flex items-center justify-between gap-1 px-2 py-1.5 rounded text-xs transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                    conv.id === activeConversationId
-                      ? 'bg-accent text-accent-foreground'
-                      : 'text-foreground hover:bg-accent/50'
-                  }`}
-                  onClick={() => { setActiveConversation(conv.id); setConvListOpen(false); }}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setActiveConversation(conv.id); setConvListOpen(false); } }}
-                >
-                  <span className="truncate min-w-0 text-left">{conv.title || 'New Chat'}</span>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
-                    className="opacity-0 group-hover:opacity-100 shrink-0 h-5 w-5 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground active:opacity-75 transition-opacity focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  >
-                    <X className="h-3 w-3" strokeWidth={1.5} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
+      <div className="h-9 px-2 flex items-center justify-between shrink-0 bg-card border-b border-border">
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => setChatView('chat')}
+            className={`h-7 px-2 flex items-center gap-1.5 rounded text-xs font-medium transition-colors ${
+              chatView === 'chat'
+                ? 'bg-accent text-accent-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+            }`}
+          >
+            <MessageSquare className="h-3 w-3" strokeWidth={1.5} />
+            <span className="truncate max-w-[120px]">{activeConvTitle}</span>
+          </button>
+          <button
+            onClick={() => setChatView('history')}
+            className={`h-7 px-2 flex items-center gap-1.5 rounded text-xs font-medium transition-colors ${
+              chatView === 'history'
+                ? 'bg-accent text-accent-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+            }`}
+          >
+            <History className="h-3 w-3" strokeWidth={1.5} />
+            History
+          </button>
+        </div>
         <div className="flex items-center gap-0.5">
           <TooltipProvider delayDuration={300}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  onClick={handleNewChat}
+                  onClick={() => { handleNewChat(); setChatView('chat'); }}
                   className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors duration-150 text-muted-foreground hover:text-foreground hover:bg-accent active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
                   <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -394,21 +360,59 @@ export function ChatPanel() {
               </TooltipTrigger>
               <TooltipContent side="bottom" className="text-xs">New Chat</TooltipContent>
             </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={handleClear}
-                  className="h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors duration-150 text-muted-foreground hover:text-foreground hover:bg-accent active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs">Delete conversation</TooltipContent>
-            </Tooltip>
           </TooltipProvider>
         </div>
       </div>
+
+      {chatView === 'history' ? (
+        <div className="flex-1 overflow-y-auto">
+          {conversations.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+              No conversations yet
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {[...conversations].sort((a, b) => b.updatedAt - a.updatedAt).map((conv) => (
+                <div
+                  key={conv.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => { setActiveConversation(conv.id); setChatView('chat'); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setActiveConversation(conv.id); setChatView('chat'); } }}
+                  className={`group flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors hover:bg-accent/50 ${
+                    conv.id === activeConversationId ? 'bg-accent/30' : ''
+                  }`}
+                >
+                  <MessageSquare className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" strokeWidth={1.5} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{conv.title || 'New Chat'}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <Clock className="h-2.5 w-2.5" strokeWidth={1.5} />
+                        {new Date(conv.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        {' '}
+                        {new Date(conv.updatedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {conv.messages.length} message{conv.messages.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
+                    className="opacity-0 group-hover:opacity-100 shrink-0 h-6 w-6 inline-flex items-center justify-center rounded text-muted-foreground hover:text-destructive active:opacity-75 transition-opacity"
+                    title="Delete conversation"
+                  >
+                    <Trash2 className="h-3 w-3" strokeWidth={1.5} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+      <>
 
       {!hasAIProvider && (
         <div className="p-4 bg-muted border-b border-border">
@@ -708,6 +712,8 @@ export function ChatPanel() {
           }
         />
       </div>
+      </>
+      )}
     </div>
   );
 }
