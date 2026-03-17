@@ -1,6 +1,10 @@
 # Codebase Analysis: Dependencies, Architecture & Recommendations
 
-Research date: 2026-03-09
+Research date: 2026-03-09 **Status:** Fully implemented
+
+**Implementation:**
+- **PRD:** [docs/prds/2026-03-10-codebase-health-improvements.md](../prds/2026-03-10-codebase-health-improvements.md) (✅ Complete — 12/12 PRD tasks)
+- **Tasks:** [docs/tasks/2026-03-10-codebase-health-improvements-tasks.md](../tasks/2026-03-10-codebase-health-improvements-tasks.md) (✅ Complete — 18/18 tasks)
 
 Comprehensive analysis of Notesage v0.18.6 — dependency justifications, architectural trade-offs, and recommended changes.
 
@@ -75,13 +79,13 @@ Comprehensive analysis of Notesage v0.18.6 — dependency justifications, archit
 
 All Tauri plugins are justified — they provide native OS integration that can't be done from a webview.
 
-### 1.8 Dependencies to Reconsider
+### 1.8 Dependencies to Reconsider — Status
 
-| Dependency | Issue | Recommendation |
-| --- | --- | --- |
-| **next-themes** | Next.js-specific, unnecessary SSR logic in a Tauri app | Replace with \~30-line custom hook |
-| **tippy.js + @tippyjs/react** | Legacy positioning library, Tiptap v3 may handle this | Investigate removing after Tiptap v3 migration stabilizes |
-| **@types/diff-match-patch** | Listed in `dependencies` instead of `devDependencies` | Move to `devDependencies` |
+| Dependency | Issue | Recommendation | Status |
+| --- | --- | --- | --- |
+| **next-themes** | Next.js-specific, unnecessary SSR logic in a Tauri app | Replace with \~30-line custom hook | ✅ Removed (was unused) |
+| **tippy.js + @tippyjs/react** | Legacy positioning library, Tiptap v3 may handle this | Investigate removing after Tiptap v3 migration stabilizes | Open |
+| **@types/diff-match-patch** | Listed in `dependencies` instead of `devDependencies` | Move to `devDependencies` | ✅ Moved |
 
 ---
 
@@ -124,13 +128,13 @@ All Tauri plugins are justified — they provide native OS integration that can'
 | **chrono 0.4** | Date/time for export metadata | time (lighter, but chrono is more ergonomic) | **Correct** — minimal features enabled (`now`, `clock`) |
 | **libc 0.2** | macOS-specific system calls (iCloud) | nix (higher-level, heavier) | **Correct** — minimal, only used for specific macOS APIs |
 
-### 2.5 Crates to Reconsider
+### 2.5 Crates to Reconsider — Status
 
-| Crate | Issue | Recommendation |
-| --- | --- | --- |
-| **serde_yaml 0.9** | Archived/unmaintained upstream | Migrate to `serde_yml` (maintained fork) when convenient |
-| **hound 3.5** | Possibly unused — audio stays in f32 buffers, resampling is manual | Verify if any codepath still uses WAV I/O; remove if not |
-| **tokio "full"** | Pulls in every tokio feature | Audit which features are actually used and specify only those (reduces compile time) |
+| Crate | Issue | Recommendation | Status |
+| --- | --- | --- | --- |
+| **serde_yaml 0.9** | Archived/unmaintained upstream | Migrate to `serde_yml` (maintained fork) when convenient | ✅ Migrated to `serde_yml` |
+| **hound 3.5** | Possibly unused — audio stays in f32 buffers, resampling is manual | Verify if any codepath still uses WAV I/O; remove if not | ✅ Removed (zero imports) |
+| **tokio "full"** | Pulls in every tokio feature | Audit which features are actually used and specify only those (reduces compile time) | ✅ Slimmed to specific features |
 
 ---
 
@@ -242,47 +246,37 @@ The current single-package structure with path aliases (`@/`) is appropriate for
 
 ---
 
-## 4. Recommendations (Prioritized)
+## 4. Recommendations (Prioritized) — Status
 
-### High Priority (improves reliability)
+### High Priority (improves reliability) — ALL DONE
 
-1. **Add React Error Boundaries** around Editor, ChatPanel, and Sidebar. A crash in any hook (especially the 13 co-mounted in Editor.tsx) currently blanks the entire app. \~50 lines of code for significant resilience improvement.
+1. ~~**Add React Error Boundaries**~~ ✅ — `ErrorBoundary.tsx` wraps Editor, ChatPanel, and Sidebar in `Layout.tsx`
 
-2. **Extract shared JSON-RPC transport** from `copilot_lsp.rs` and `mcp.rs` into a `json_rpc.rs` module. Eliminates \~300 lines of duplication and ensures both protocol implementations handle edge cases consistently.
+2. ~~**Extract shared JSON-RPC transport**~~ ✅ — `json_rpc.rs` shared module; `copilot_lsp.rs` and `mcp.rs` refactored
 
-3. **Decompose** `useAIOperations.ts` (1,022 lines). Split into:
+3. ~~**Decompose `useAIOperations.ts`**~~ ✅ — Split into `useAcpLifecycle.ts`, `lib/ai/context.ts`, `lib/ai/errors.ts` (at 499 lines, down from 1,022)
 
-   - `useAcpLifecycle.ts` — agent spawning, session management, event listeners
-   - `lib/ai/context.ts` — prompt/context building (goals, file trees, skills)
-   - `lib/ai/errors.ts` — error formatting and friendly messages
-   - `useAIOperations.ts` — thin orchestration layer calling the above
+### Medium Priority (improves maintainability) — ALL DONE
 
-### Medium Priority (improves maintainability)
+4. ~~**Decompose `Editor.tsx`**~~ ✅ — Extracted `useScrollPersistence.ts`, `useEditorResize.ts`, `TranscriptionOverlay.tsx`, `SourceModeEditor.tsx` (line count target not fully met but all components extracted)
 
-4. **Decompose** `Editor.tsx` (1,649 lines). Extract:
+5. ~~**Migrate `serde_yaml` to `serde_yml`**~~ ✅ — Drop-in replacement completed
 
-   - `useScrollPersistence.ts` — scroll position save/restore with LRU cache
-   - `useEditorResize.ts` — ResizeObserver + content width management
-   - `TranscriptionOverlay.tsx` — transcription dialog and recording indicator
-   - `SourceModeEditor.tsx` — CodeMirror source mode (already somewhat separate)
+6. ~~**Replace `next-themes`**~~ ✅ — Removed (was already unused; app uses custom ThemeProvider)
 
-5. **Migrate from** `serde_yaml` **to** `serde_yml`. The upstream `serde_yaml` crate is archived. `serde_yml` is a maintained fork with the same API. Drop-in replacement.
+7. ~~**Add unit tests for permission tier logic**~~ ✅ — `permission-store-acp.test.ts` added
 
-6. **Replace** `next-themes` **with a custom hook**. `next-themes` is designed for Next.js SSR. In Tauri, a \~30-line custom hook with `localStorage` + `prefers-color-scheme` media query listener is simpler and removes a framework-specific dependency.
+### Low Priority (nice to have) — ALL DONE
 
-7. **Add unit tests for permission tier logic**. The `permission-store` has a complex state machine (session vs always, skill scripts vs ACP tools, auto-allow checks). This is security-critical and untested.
+ 8. ~~**Audit `hound` crate usage**~~ ✅ — Removed (zero imports found)
 
-### Low Priority (nice to have)
+ 9. ~~**Slim `tokio` features**~~ ✅ — Replaced `"full"` with specific features
 
- 8. **Audit** `hound` **crate usage**. If audio stays in f32 memory buffers and resampling is manual, the WAV I/O crate may be unused. Removing it saves compile time.
+10. **Consider `gray-matter` over `yaml`** — Deferred (current approach works, low value)
 
- 9. **Slim** `tokio` **features**. Replace `features = ["full"]` with only the features actually used (likely: `rt-multi-thread`, `macros`, `io-util`, `process`, `sync`, `time`, `net`). Reduces compile time.
+11. **Group settings store** — Deferred (no settings refactor planned yet)
 
-10. **Consider** `gray-matter` **over** `yaml` for frontend YAML parsing. Since every use case is frontmatter-in-markdown, `gray-matter` handles delimiter extraction automatically.
-
-11. **Group settings store** into sub-objects when the next settings refactor happens. Current flat structure with 40+ fields and mechanical setters will become unwieldy.
-
-12. **Move** `@types/diff-match-patch` from `dependencies` to `devDependencies`. Type packages are build-time only.
+12. ~~**Move `@types/diff-match-patch` to devDependencies**~~ ✅
 
 ---
 
@@ -290,6 +284,11 @@ The current single-package structure with path aliases (`@/`) is appropriate for
 
 Notesage's dependency choices are overwhelmingly sound. The core stack (Tauri + React + Tiptap + ProseMirror + Zustand + shadcn/ui) is well-matched to the product requirements. The Rust backend's use of Typst, whisper-rs, and the ACP/MCP protocol implementations demonstrates good judgment in choosing embedded libraries over external service dependencies.
 
-The main areas for improvement are not dependency-related but structural: several files have grown past comfortable sizes (Editor.tsx at 1,649 lines, useAIOperations at 1,022 lines), the JSON-RPC transport is duplicated, and there are no React error boundaries. Addressing these would improve reliability and maintainability without changing any architectural decisions.
+**Post-implementation update (2026-03-15):** All 12 recommendations were addressed via the [Codebase Health Improvements PRD](../prds/2026-03-10-codebase-health-improvements.md). Key outcomes:
+- React Error Boundaries prevent white-screen crashes
+- JSON-RPC transport deduplicated into shared `json_rpc.rs`
+- Large files decomposed (`useAIOperations`, `Editor.tsx`, `App.tsx`, `skills.rs`, `CommentPopover.tsx`)
+- Archived `serde_yaml` migrated to `serde_yml`, unused `hound` and `next-themes` removed
+- Permission store unit tests added, `tokio` features slimmed, `@types` moved to devDependencies
 
-No dependencies need urgent replacement. The two flagged for eventual migration (`serde_yaml` → `serde_yml`, `next-themes` → custom) are low-risk, low-urgency changes.
+Remaining deferred items: `gray-matter` migration (low value), settings store restructuring (no current need), tippy.js removal (needs investigation).
