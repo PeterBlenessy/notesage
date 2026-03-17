@@ -5,7 +5,7 @@
 **Implementation:**
 - **PRD:** [docs/prds/2026-03-15-hardcoded-values-cleanup.md](../prds/2026-03-15-hardcoded-values-cleanup.md) (all quality gates passed)
 - **Tasks (complete):** [docs/tasks/2026-03-15-hardcoded-values-cleanup-tasks.md](../tasks/2026-03-15-hardcoded-values-cleanup-tasks.md) (7/7 done)
-- **Tasks (remaining):** [docs/tasks/2026-03-17-hardcoded-values-remaining-tasks.md](../tasks/2026-03-17-hardcoded-values-remaining-tasks.md) (4 tasks)
+- **Tasks (follow-up):** [docs/tasks/2026-03-17-hardcoded-values-remaining-tasks.md](../tasks/2026-03-17-hardcoded-values-remaining-tasks.md) (4/4 complete)
 
 ## Overview
 

@@ -1,6 +1,8 @@
 # Tasks: Hardcoded Values Cleanup
 
-**PRD:** [docs/prds/2026-03-15-hardcoded-values-cleanup.md](../prds/2026-03-15-hardcoded-values-cleanup.md)**Total:** 7 tasks (3S, 3M, 1L) **Suggested order:** Sequential #1–#7. Tasks #2–#5 are independent after #1 and can be parallelized.
+**PRD:** [docs/prds/2026-03-15-hardcoded-values-cleanup.md](../prds/2026-03-15-hardcoded-values-cleanup.md) **Status:** ✅ Complete (7/7)
+**Remaining items:** [docs/tasks/2026-03-17-hardcoded-values-remaining-tasks.md](2026-03-17-hardcoded-values-remaining-tasks.md) (4/4 complete)
+**Total:** 7 tasks (3S, 3M, 1L) **Suggested order:** Sequential #1–#7. Tasks #2–#5 are independent after #1 and can be parallelized.
 
 ## Risks
 
@@ -9,7 +11,7 @@
 
 ---
 
-## Task 1: Create `constants.rs` and `constants.ts` modules
+## Task 1: Create `constants.rs` and `constants.ts` modules ✅
 
 **Complexity:** S | **Category:** both | **Dependencies:** none
 
@@ -33,7 +35,7 @@ Create `src/lib/ai/constants.ts` with `DEFAULT_MODELS` object. Add a comment not
 
 ---
 
-## Task 2: Replace default model names across `ai.rs` and `ai_streaming.rs`
+## Task 2: Replace default model names across `ai.rs` and `ai_streaming.rs` ✅
 
 **Complexity:** M | **Category:** backend | **Dependencies:** #1
 
@@ -68,7 +70,7 @@ Update `connections.ts` to import `DEFAULT_MODELS` from `constants.ts` instead o
 
 ---
 
-## Task 3: Replace API versions and web search constants
+## Task 3: Replace API versions and web search constants ✅
 
 **Complexity:** S | **Category:** backend | **Dependencies:** #1
 
@@ -100,7 +102,7 @@ Replace all Anthropic API version headers and web search tool identifiers:
 
 ---
 
-## Task 4: Replace tuning parameters in `local_inference.rs` and `ai.rs`
+## Task 4: Replace tuning parameters in `local_inference.rs` and `ai.rs` ✅
 
 **Complexity:** S | **Category:** backend | **Dependencies:** #1
 
@@ -132,7 +134,7 @@ Replace inline magic numbers with named constants:
 
 ---
 
-## Task 5: Replace macOS fallback paths and deduplicate thinking tags
+## Task 5: Replace macOS fallback paths and deduplicate thinking tags ✅
 
 **Complexity:** M | **Category:** backend | **Dependencies:** #1
 
@@ -158,7 +160,7 @@ The existing code builds `PathBuf` candidates from these paths — refactor to i
 
 ---
 
-## Task 6: Dynamic thinking tag detection from `/props` chat_template
+## Task 6: Dynamic thinking tag detection from `/props` chat_template ✅
 
 **Complexity:** L | **Category:** backend | **Dependencies:** #1, #5
 
@@ -203,7 +205,7 @@ Add dynamic thinking tag detection for custom/unknown models by parsing the `cha
 
 ---
 
-## Task 7: Verification — grep audit and compile check
+## Task 7: Verification — grep audit and compile check ✅
 
 **Complexity:** M | **Category:** both | **Dependencies:** #2, #3, #4, #5, #6
 
