@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState, useMemo, type MutableRefObject } from "react";
+import { useEffect, useCallback, useRef, useState, useMemo, lazy, Suspense, type MutableRefObject } from "react";
 import { useScrollPersistence } from "@/hooks/useScrollPersistence";
 import { useEditorResize } from "@/hooks/useEditorResize";
 import { EditorContent } from "@tiptap/react";
@@ -55,11 +55,14 @@ import { ExportDialog } from "@/components/ExportDialog";
 import { Toolbar } from "./Toolbar";
 import { SourceModeEditor } from "./SourceModeEditor";
 import { ImageInsertDialog } from "./ImageInsertDialog";
-import { ImageViewer } from "./viewers/ImageViewer";
 import { PlainTextViewer } from "./viewers/PlainTextViewer";
-import { PdfViewer } from "./viewers/PdfViewer";
-import { DocxViewer } from "./viewers/DocxViewer";
-import { EpubViewer } from "./viewers/EpubViewer";
+
+// Lazy-load heavy viewers — their libraries (pdfjs-dist, mammoth, foliate-js)
+// are only fetched when the user actually opens that file type.
+const ImageViewer = lazy(() => import("./viewers/ImageViewer").then(m => ({ default: m.ImageViewer })));
+const PdfViewer = lazy(() => import("./viewers/PdfViewer").then(m => ({ default: m.PdfViewer })));
+const DocxViewer = lazy(() => import("./viewers/DocxViewer").then(m => ({ default: m.DocxViewer })));
+const EpubViewer = lazy(() => import("./viewers/EpubViewer").then(m => ({ default: m.EpubViewer })));
 import { BubbleMenu } from "./BubbleMenu";
 
 import { FindBar } from "./FindBar";
@@ -1261,7 +1264,11 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     }
     return (
       <div className="h-full flex flex-col overflow-hidden">
-        <div className="flex-1 min-h-0 overflow-hidden">{viewer}</div>
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <Suspense fallback={<div className="flex items-center justify-center h-full text-muted-foreground text-sm">Loading viewer...</div>}>
+            {viewer}
+          </Suspense>
+        </div>
         {!focusMode && (
           <StatusBar
             editor={null}

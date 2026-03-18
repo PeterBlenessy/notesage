@@ -183,7 +183,7 @@ Delete both files — deferred features with zero imports. Git history preserves
 
 ## Frontend — Performance
 
-### #9 — Lazy-load document viewers
+### #9 — Lazy-load document viewers ✅
 
 | Field | Value |
 | --- | --- |
