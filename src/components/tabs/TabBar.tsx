@@ -43,7 +43,17 @@ export function TabBar() {
       if (!confirmed) return;
     }
 
+    // Hide the editor content instantly via DOM before React's synchronous
+    // unmount of heavy viewers (e.g., PDF with hundreds of canvas elements).
+    const editorContent = document.getElementById("editor-content");
+    if (editorContent) editorContent.style.visibility = "hidden";
+
     closeTab(tabId);
+
+    // Restore visibility after React finishes rendering the new state.
+    requestAnimationFrame(() => {
+      if (editorContent) editorContent.style.visibility = "";
+    });
   };
 
   if (tabs.length === 0) {

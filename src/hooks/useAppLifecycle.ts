@@ -198,6 +198,10 @@ async function reloadTrees() {
     }
   }
 
+  // Kick off tab restoration early — file reads run concurrently with
+  // tree validation, iCloud scanning, and index init below.
+  const tabRestorePromise = restorePersistedTabs();
+
   // Reload explorer folder trees (remove invalid ones)
   const validFolders: string[] = [];
   for (const folder of ws.explorerFolders) {
@@ -320,52 +324,55 @@ async function reloadTrees() {
   // Signal that startup tree validation is complete
   settings.setStartupReady(true);
 
-  // Re-open persisted tabs
+  // Wait for tab restoration (started earlier, runs concurrently with above)
+  await tabRestorePromise;
+}
+
+/**
+ * Restore persisted tabs by reading their files from disk.
+ * Called early in startup so file reads run concurrently with tree validation.
+ */
+async function restorePersistedTabs() {
   const { persistedTabs, persistedActiveFilePath } = useEditorStore.getState();
-  if (persistedTabs.length > 0) {
-    const results = await Promise.allSettled(
-      persistedTabs.map(async (pt) => {
-        const fileType = getFileType(pt.fileName);
+  if (persistedTabs.length === 0) return;
 
-        if (fileType === "image") {
-          return { filePath: pt.filePath, fileName: pt.fileName, content: "", frontmatter: null, fileType };
-        }
+  // Phase 1: Load the active tab fully (content from disk + openTab) so the
+  // editor has content to render immediately. Create other tabs as placeholders
+  // so their titles appear in the tab bar instantly.
+  const activePersistedTab = persistedTabs.find((pt) => pt.filePath === persistedActiveFilePath);
+  const backgroundTabs = persistedTabs.filter((pt) => pt.filePath !== persistedActiveFilePath);
 
-        if (isBinaryFileType(fileType)) {
-          const bytes = await tauriApi.readBinaryFile(pt.filePath);
-          setBinaryData(pt.filePath, new Uint8Array(bytes));
-          return { filePath: pt.filePath, fileName: pt.fileName, content: "", frontmatter: null, fileType };
-        }
+  // Create background tab placeholders first (titles appear in tab bar)
+  const store = useEditorStore.getState();
+  for (const pt of backgroundTabs) {
+    store.openTabPlaceholder(pt.filePath, pt.fileName, getFileType(pt.fileName));
+  }
 
-        const raw = await tauriApi.readFile(pt.filePath);
+  // Load and open the active tab with full content
+  if (activePersistedTab) {
+    try {
+      const { filePath, fileName } = activePersistedTab;
+      const fileType = getFileType(fileName);
+      if (fileType === "image") {
+        useEditorStore.getState().openTab(filePath, fileName, "", null, fileType);
+      } else if (isBinaryFileType(fileType)) {
+        const bytes = await tauriApi.readBinaryFile(filePath);
+        setBinaryData(filePath, new Uint8Array(bytes));
+        useEditorStore.getState().openTab(filePath, fileName, "", null, fileType);
+      } else {
+        const raw = await tauriApi.readFile(filePath);
         if (fileType === "markdown") {
           const { frontmatter, content } = parseFrontmatter(raw);
-          return { filePath: pt.filePath, fileName: pt.fileName, content, frontmatter, fileType };
+          useEditorStore.getState().openTab(filePath, fileName, content, frontmatter, fileType);
+        } else {
+          useEditorStore.getState().openTab(filePath, fileName, raw, null, fileType);
         }
-        return { filePath: pt.filePath, fileName: pt.fileName, content: raw, frontmatter: null, fileType };
-      })
-    );
-    const failedPaths: string[] = [];
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
-      if (result.status === "fulfilled") {
-        const { filePath, fileName, content, frontmatter, fileType } = result.value;
-        useEditorStore.getState().openTab(filePath, fileName, content, frontmatter, fileType);
-      } else {
-        failedPaths.push(persistedTabs[i].filePath);
       }
-    }
-    if (failedPaths.length > 0) {
-      const store = useEditorStore.getState();
-      const cleaned = store.persistedTabs.filter((p) => !failedPaths.includes(p.filePath));
-      useEditorStore.setState({ persistedTabs: cleaned });
-    }
-    if (persistedActiveFilePath) {
-      const { tabs } = useEditorStore.getState();
-      const match = tabs.find((t) => t.filePath === persistedActiveFilePath);
-      if (match) {
-        useEditorStore.getState().setActiveTab(match.id);
-      }
+    } catch {
+      // Active tab failed to load — user will see empty state
     }
   }
+
+  // Phase 2: Background tabs load on demand when the user clicks them.
 }
+

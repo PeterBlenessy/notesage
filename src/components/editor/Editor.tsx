@@ -56,6 +56,10 @@ import { Toolbar } from "./Toolbar";
 import { SourceModeEditor } from "./SourceModeEditor";
 import { ImageInsertDialog } from "./ImageInsertDialog";
 import { PlainTextViewer } from "./viewers/PlainTextViewer";
+import { tauriApi } from "@/lib/tauri";
+import { isBinaryFileType } from "@/lib/file-utils";
+import { parseFrontmatter } from "@/lib/frontmatter";
+import { setBinaryData } from "@/lib/binary-cache";
 
 // Lazy-load heavy viewers — their libraries (pdfjs-dist, mammoth, foliate-js)
 // are only fetched when the user actually opens that file type.
@@ -328,6 +332,35 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  // On-demand content loading: when a placeholder tab becomes active, load its content from disk.
+  useEffect(() => {
+    if (!activeTab || activeTab.contentLoaded !== false) return;
+    const { id, filePath, fileType } = activeTab;
+    (async () => {
+      try {
+        if (fileType === "image") {
+          useEditorStore.getState().loadTabContent(id, "");
+          return;
+        }
+        if (isBinaryFileType(fileType)) {
+          const bytes = await tauriApi.readBinaryFile(filePath);
+          setBinaryData(filePath, new Uint8Array(bytes));
+          useEditorStore.getState().loadTabContent(id, "");
+          return;
+        }
+        const raw = await tauriApi.readFile(filePath);
+        if (fileType === "markdown") {
+          const { frontmatter, content } = parseFrontmatter(raw);
+          useEditorStore.getState().loadTabContent(id, content, frontmatter);
+        } else {
+          useEditorStore.getState().loadTabContent(id, raw);
+        }
+      } catch (err) {
+        console.warn("Failed to load tab content:", filePath, err);
+      }
+    })();
+  }, [activeTab?.id, activeTab?.contentLoaded]);
 
   const {
     isProgrammaticScroll,
@@ -779,9 +812,10 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     return () => { editor.off('transaction', onTransaction); };
   }, [editor, activeTab?.filePath, activeTab?.id, updateTabContent, saveFile]);
 
-  // Update editor content when switching tabs, saving/restoring scroll position
+  // Update editor content when switching tabs or when placeholder content finishes loading.
   useEffect(() => {
-    if (editor && activeTab && activeTab.id !== lastLoadedTabId.current) {
+    if (!editor || !activeTab || activeTab.contentLoaded === false) return;
+    if (activeTab.id === lastLoadedTabId.current) return;
       // Save scroll position of the tab we're LEAVING
       saveOutgoingTabScroll();
 
@@ -843,7 +877,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           }
         });
       }
-    }
   }, [activeTab?.id, editor, activeTab, saveOutgoingTabScroll, restoreScrollRatio, externalChanges, updateTabContent, clearExternalChange, setScrollToTag, setScrollToText]);
 
   // Scroll to tag when scrollToTag is set on the already-active tab (same-tab jump)
@@ -1215,6 +1248,20 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           </div>
         </div>
         </div>
+      </div>
+    );
+  }
+
+  // Show loading state for placeholder tabs (content not yet loaded from disk)
+  if (activeTab && activeTab.contentLoaded === false) {
+    return (
+      <div className="h-full flex flex-col overflow-hidden">
+        <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+          Loading...
+        </div>
+        {!focusMode && (
+          <StatusBar editor={null} onShortcutsOpen={onShortcutsOpen} onOpenActions={onOpenActions} />
+        )}
       </div>
     );
   }

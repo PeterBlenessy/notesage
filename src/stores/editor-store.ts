@@ -27,6 +27,9 @@ export interface Tab {
   copilotDisabled?: boolean;
   /** Session-only: true when the file has been deleted from disk. */
   deleted?: boolean;
+  /** Session-only: true once file content has been loaded from disk. Tabs restored
+   *  on startup are created with contentLoaded=false and loaded on demand. */
+  contentLoaded?: boolean;
   /** Session-only: scroll to a specific tag occurrence after content loads. Cleared after use. */
   scrollToTag?: ScrollToTag;
   /** Session-only: scroll to a text match after content loads. Cleared after use. */
@@ -64,6 +67,10 @@ interface EditorStore {
   persistedActiveFilePath: string | null;
 
   openTab: (filePath: string, fileName: string, content: string, frontmatter?: Frontmatter | null, fileType?: FileType, scrollToTag?: ScrollToTag, scrollToText?: string) => void;
+  /** Create a tab placeholder without loading content (for startup restoration). */
+  openTabPlaceholder: (filePath: string, fileName: string, fileType?: FileType) => void;
+  /** Load content into a placeholder tab. */
+  loadTabContent: (tabId: string, content: string, frontmatter?: Frontmatter | null) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   updateTabContent: (tabId: string, content: string, isDirty: boolean) => void;
@@ -136,6 +143,7 @@ export const useEditorStore = create<EditorStore>()(
             fileName,
             isDirty: false,
             content,
+            contentLoaded: true,
             frontmatter: frontmatter ?? null,
             fileType: fileType ?? "markdown",
             scrollToTag,
@@ -153,6 +161,31 @@ export const useEditorStore = create<EditorStore>()(
             persistedActiveFilePath: filePath,
           };
         });
+      },
+
+      openTabPlaceholder: (filePath, fileName, fileType) => {
+        set((state) => {
+          if (state.tabs.some((t) => t.filePath === filePath)) return state;
+          const newTab: Tab = {
+            id: crypto.randomUUID(),
+            filePath,
+            fileName,
+            isDirty: false,
+            content: "",
+            contentLoaded: false,
+            frontmatter: null,
+            fileType: fileType ?? "markdown",
+          };
+          return { tabs: [...state.tabs, newTab] };
+        });
+      },
+
+      loadTabContent: (tabId, content, frontmatter) => {
+        set((state) => ({
+          tabs: state.tabs.map((t) =>
+            t.id === tabId ? { ...t, content, contentLoaded: true, frontmatter: frontmatter ?? t.frontmatter, lastSavedContent: content } : t
+          ),
+        }));
       },
 
       closeTab: (tabId: string) => {

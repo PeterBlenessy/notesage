@@ -82,6 +82,7 @@ function EditorArea({
   return (
     <div className="flex flex-col h-full overflow-hidden bg-muted">
       {!focusMode && <TabBar />}
+      <div id="editor-content" className="flex-1 min-h-0">
       <Editor
         onNewNote={onNewNote}
         onNewProject={onNewProject}
@@ -99,6 +100,7 @@ function EditorArea({
         onShortcutsOpen={onShortcutsOpen}
         onOpenActions={onOpenActions}
       />
+      </div>
     </div>
   );
 }
