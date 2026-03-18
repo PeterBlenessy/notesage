@@ -700,6 +700,27 @@ mod tests {
     }
 
     #[test]
+    fn test_domain_matches_no_suffix_bypass() {
+        // "example.com" in allowlist must NOT permit "evilexample.com"
+        assert!(!domain_matches("example.com", "evilexample.com"));
+        assert!(!domain_matches("*.example.com", "evilexample.com"));
+        // Exact match only permits exact match, not subdomains
+        assert!(!domain_matches("example.com", "sub.example.com"));
+    }
+
+    #[test]
+    fn test_domain_matches_edge_cases() {
+        // Empty pattern never matches a real domain
+        assert!(!domain_matches("", "example.com"));
+        // Empty domain never matches a real pattern
+        assert!(!domain_matches("example.com", ""));
+        // Trailing dots don't match (DNS canonical form vs display form)
+        assert!(!domain_matches("example.com", "example.com."));
+        // Bare wildcard prefix doesn't match
+        assert!(!domain_matches("*.", "example.com"));
+    }
+
+    #[test]
     fn test_parse_host_port() {
         let (host, port) = parse_host_port("api.anthropic.com:443").unwrap();
         assert_eq!(host, "api.anthropic.com");
