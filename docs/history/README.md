@@ -73,3 +73,4 @@ Chronological log of major implementation milestones and changes.
 | 067 | [Release v0.22.0](067-release-v0.22.0.md) | Network sandboxing proxy, domain filtering, provider context isolation, update checking UI |
 | 068 | [Release v0.22.2](068-release-v0.22.2.md) | Index DB local storage, incremental indexing, sidecar fix |
 | 069 | [Release v0.22.3](069-release-v0.22.3.md) | GGUF FIM detection, Ollama fallback, editor & settings fixes |
+| 070 | [Release v0.22.4](070-release-v0.22.4.md) | Instant tab restore, lazy viewers, dead code removal, file op hardening |
