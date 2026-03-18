@@ -159,6 +159,13 @@ fn reindex_file_in_db(
 ) -> Result<bool, String> {
     let path = Path::new(file_path);
 
+    // Skip transient temp files (e.g., .tmp from atomic writes)
+    if let Some(ext) = path.extension() {
+        if ext == "tmp" {
+            return Ok(false);
+        }
+    }
+
     // Read file content
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
