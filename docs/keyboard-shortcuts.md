@@ -100,7 +100,7 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | Mention search | `Cmd+2` | Search for @mentions across all files (or type `@` in palette) |
 | Tag search | `Cmd+3` | Search for #tags across all files (or type `#` in palette) |
 | Research search | `Cmd+4` | Search research files across all projects (or type `?` in palette) |
-| Open actions | `Cmd+5` | Open actions dashboard |
+| Open actions | `Cmd+1` | Open actions dashboard |
 | Document outline | `Cmd+Shift+O` | Open document outline (requires active file) |
 | Keyboard shortcuts | `Cmd+7` | Show keyboard shortcuts reference |
 | Exit focus mode | `Esc` | Exit focus mode (when active) |

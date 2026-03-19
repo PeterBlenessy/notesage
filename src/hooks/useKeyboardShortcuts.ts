@@ -111,8 +111,8 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         return;
       }
 
-      // Cmd+5 — open actions dashboard
-      if (isMod && !e.shiftKey && e.key === "5") {
+      // Cmd+1 — open actions dashboard
+      if (isMod && !e.shiftKey && e.key === "1") {
         e.preventDefault();
         callbacks.onOpenActions?.();
         return;
