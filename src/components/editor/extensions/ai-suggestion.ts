@@ -107,11 +107,10 @@ function createDiffDecorations(
 
   const decorations: Decoration[] = [];
 
-  // Strikethrough the old text with red background
+  // Highlight the old text with red background
   decorations.push(
     Decoration.inline(suggestion.from, suggestion.to, {
       class: 'ai-suggestion-delete',
-      style: 'background-color: rgba(239, 68, 68, 0.15); text-decoration: line-through; color: rgb(220, 38, 38);',
     })
   );
 
@@ -120,12 +119,10 @@ function createDiffDecorations(
     Decoration.widget(suggestion.to, () => {
       const container = document.createElement('span');
       container.className = 'ai-suggestion-widget';
-      container.style.cssText = 'display: inline; white-space: normal;';
 
       // New text — render parsed markdown HTML so formatting is visible
       const newText = document.createElement('span');
       newText.className = 'ai-suggestion-insert';
-      newText.style.cssText = 'background-color: rgba(34, 197, 94, 0.2); color: rgb(21, 128, 61);';
       const parsedHtml = parseMarkdownToHtmlFull(editor, suggestion.suggestedText);
       if (parsedHtml) {
         newText.innerHTML = parsedHtml;
@@ -136,15 +133,11 @@ function createDiffDecorations(
       // Controls (small inline buttons)
       const controls = document.createElement('span');
       controls.className = 'ai-suggestion-controls';
-      controls.style.cssText = 'display: inline; margin-left: 6px; white-space: nowrap;';
 
       const acceptBtn = document.createElement('button');
       acceptBtn.className = 'ai-suggestion-accept';
       acceptBtn.textContent = '✓ Accept';
       acceptBtn.title = 'Cmd+Enter';
-      acceptBtn.style.cssText = 'background: rgb(34, 197, 94); color: white; border: none; padding: 2px 6px; border-radius: 3px; font-size: 11px; cursor: pointer; margin: 0 2px; line-height: 1; font-weight: 500;';
-      acceptBtn.onmouseover = () => acceptBtn.style.background = 'rgb(22, 163, 74)';
-      acceptBtn.onmouseout = () => acceptBtn.style.background = 'rgb(34, 197, 94)';
       acceptBtn.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -155,9 +148,6 @@ function createDiffDecorations(
       rejectBtn.className = 'ai-suggestion-reject';
       rejectBtn.textContent = '✗ Reject';
       rejectBtn.title = 'Cmd+Backspace';
-      rejectBtn.style.cssText = 'background: rgb(239, 68, 68); color: white; border: none; padding: 2px 6px; border-radius: 3px; font-size: 11px; cursor: pointer; margin: 0 2px; line-height: 1; font-weight: 500;';
-      rejectBtn.onmouseover = () => rejectBtn.style.background = 'rgb(220, 38, 38)';
-      rejectBtn.onmouseout = () => rejectBtn.style.background = 'rgb(239, 68, 68)';
       rejectBtn.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();

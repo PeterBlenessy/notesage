@@ -520,14 +520,11 @@
 
 /* Inline diff decorations */
 .inline-diff-delete {
-  background-color: rgba(239, 68, 68, 0.15);
-  text-decoration: line-through;
-  color: rgb(220, 38, 38);
+  background-color: rgba(239, 68, 68, 0.2);
 }
 
 .dark .inline-diff-delete {
   background-color: rgba(248, 113, 113, 0.15);
-  color: rgb(248, 113, 113);
 }
 
 .inline-diff-widget {
@@ -537,13 +534,11 @@
 }
 
 .inline-diff-insert {
-  background-color: rgba(34, 197, 94, 0.2);
-  color: rgb(21, 128, 61);
+  background-color: rgba(34, 197, 94, 0.25);
 }
 
 .dark .inline-diff-insert {
-  background-color: rgba(74, 222, 128, 0.15);
-  color: rgb(74, 222, 128);
+  background-color: rgba(74, 222, 128, 0.2);
 }
 
 .inline-diff-controls {
@@ -597,6 +592,66 @@
 }
 
 .inline-diff-reject-btn:hover {
+  background: rgb(220, 38, 38);
+}
+
+/* AI suggestion decorations */
+.ai-suggestion-delete {
+  background-color: rgba(239, 68, 68, 0.2);
+}
+
+.dark .ai-suggestion-delete {
+  background-color: rgba(248, 113, 113, 0.25);
+}
+
+.ai-suggestion-widget {
+  display: inline;
+  white-space: normal;
+}
+
+.ai-suggestion-insert,
+.ai-suggestion-insert * {
+  background-color: rgba(34, 197, 94, 0.2);
+}
+
+.dark .ai-suggestion-insert,
+.dark .ai-suggestion-insert * {
+  background-color: rgba(74, 222, 128, 0.2);
+}
+
+.ai-suggestion-controls {
+  display: inline;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
+.ai-suggestion-accept,
+.ai-suggestion-reject {
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  line-height: 1;
+  font-weight: 500;
+  padding: 3px 6px;
+  margin: 0 2px;
+  color: white;
+  transition: background 150ms ease;
+}
+
+.ai-suggestion-accept {
+  background: rgb(34, 197, 94);
+}
+
+.ai-suggestion-accept:hover {
+  background: rgb(22, 163, 74);
+}
+
+.ai-suggestion-reject {
+  background: rgb(239, 68, 68);
+}
+
+.ai-suggestion-reject:hover {
   background: rgb(220, 38, 38);
 }
 

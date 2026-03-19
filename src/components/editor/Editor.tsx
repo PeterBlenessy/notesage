@@ -44,7 +44,10 @@ import {
   getSearchState,
   setSuggestion,
   hasActiveSuggestion,
+  AISuggestionPluginKey,
+  clearSuggestion,
 } from "@/components/editor/extensions";
+import type { AISuggestionType } from "@/components/editor/extensions";
 import { mapExternalChangeToPM } from "@/lib/external-diff";
 import { extractReplacementText, resolveAnchorRange } from "@/lib/pm-replace";
 import { useActiveProject } from "@/hooks/useActiveProject";
@@ -503,6 +506,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   // Track if we generated a UUID for this popover session (to revert on cancel)
   const generatedUUIDRef = useRef(false);
   // Track whether an AI suggestion decoration is active (for Apply collision prevention)
+  const savedSuggestionsRef = useRef<Map<string, AISuggestionType>>(new Map());
   const [suggestionActive, setSuggestionActiveState] = useState(false);
   useEffect(() => {
     if (!editor) return;
@@ -816,6 +820,17 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   useEffect(() => {
     if (!editor || !activeTab || activeTab.contentLoaded === false) return;
     if (activeTab.id === lastLoadedTabId.current) return;
+      // Save AI suggestion state of the tab we're LEAVING
+      const prevTabId = lastLoadedTabId.current;
+      if (prevTabId) {
+        const pluginState = AISuggestionPluginKey.getState(editor.state);
+        if (pluginState?.suggestion) {
+          savedSuggestionsRef.current.set(prevTabId, pluginState.suggestion);
+        } else {
+          savedSuggestionsRef.current.delete(prevTabId);
+        }
+      }
+
       // Save scroll position of the tab we're LEAVING
       saveOutgoingTabScroll();
 
@@ -848,6 +863,18 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       }
 
       editor.commands.blur();
+
+      // Restore AI suggestion for this tab if one was saved
+      const savedSuggestion = savedSuggestionsRef.current.get(activeTab.id);
+      if (savedSuggestion) {
+        requestAnimationFrame(() => {
+          // Verify positions are still valid in the new document
+          if (savedSuggestion.from >= 0 && savedSuggestion.to <= editor.state.doc.content.size) {
+            setSuggestion(editor, savedSuggestion.from, savedSuggestion.to, savedSuggestion.originalText, savedSuggestion.suggestedText);
+          }
+          savedSuggestionsRef.current.delete(activeTab.id);
+        });
+      }
 
       // If scrollToTag is set, scroll to that tag instead of restoring saved position
       if (activeTab.scrollToTag) {
