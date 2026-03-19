@@ -329,7 +329,7 @@
 
 .ProseMirror ul[data-type="taskList"] li > label {
   flex: 0 0 auto;
-  margin-top: 0.25rem;
+  margin-top: 0.15rem;
 }
 
 .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
