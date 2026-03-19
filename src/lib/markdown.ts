@@ -166,46 +166,83 @@ function normalizeEmptyTaskItems(markdown: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Trailing empty task item cleanup
+// Ghost task item cleanup
 // ---------------------------------------------------------------------------
 
 /**
- * Remove empty task items at the end of a task list.
+ * Remove ghost empty task items and fix corrupted bracket escaping.
  *
- * ProseMirror can retain invisible empty task items (Tiptap "Bullet List
- * Limbo" — issue #3128). These persist in the document tree and serialize
- * as blank `- [ ]` or `- [ ] ` lines. Stripping them during serialization
- * prevents ghost items from accumulating.
+ * ProseMirror can create invisible empty task items (Tiptap "Bullet List
+ * Limbo" — issue #3128). These serialize as `- [ ]` or `- [ ] ` lines.
+ * When they appear adjacent to regular bullet items, subsequent round-trips
+ * corrupt the list: `markdown-it-task-lists` marks the parent `<ul>` as a
+ * task list, plain `<li>` children get mis-parsed, and `[ ]` text content
+ * is escaped to `\[ \]` by prosemirror-markdown. Each cycle adds another
+ * ghost item and more escaped brackets.
  *
- * Only removes empty task items that are followed by either another task
- * item or the end of the file / a blank line (i.e. trailing items in a
- * task list block). Empty items in the middle of a list are kept.
+ * This function:
+ * 1. Removes ALL empty task items (no content after checkbox) — these are
+ *    ProseMirror ghosts, not user content.
+ * 2. Converts `- \[ \]` (escaped brackets from previous corruption) back
+ *    to regular bullet items `- ` to prevent further accumulation.
+ * 3. Cleans up blank lines left behind by removed items.
  */
-function stripTrailingEmptyTaskItems(markdown: string): string {
+export function stripGhostTaskItems(markdown: string): string {
   const lines = markdown.split("\n");
-  const taskItemRe = /^[ \t]*[-+*][ \t]+\[[ xX]\]/;
+  const listItemRe = /^[ \t]*(?:[-+*]|\d+\.)[ \t]+/;
   const emptyTaskItemRe = /^[ \t]*[-+*][ \t]+\[[ xX]\][ \t]*$/;
+  const escapedBracketsRe = /^[ \t]*[-+*][ \t]+\\?\[[ \t]?\\?\][ \t]*$/;
 
-  // Walk backwards through the lines. When we find an empty task item
-  // at the tail of a consecutive task-item block, mark it for removal.
+  // Identify consecutive list-item runs, then strip ghost items from
+  // the tail of each run. Ghost items are: empty task items (`- [ ]`)
+  // and corrupted escaped-bracket items (`- \[ \]`).
   const remove = new Set<number>();
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i];
-    // Skip trailing blank lines
-    if (line.trim() === "") continue;
-    // If this line is an empty task item, mark for removal and continue
-    if (emptyTaskItemRe.test(line)) {
-      remove.add(i);
+
+  let i = 0;
+  while (i < lines.length) {
+    // Find the start of a list-item run
+    if (!listItemRe.test(lines[i])) {
+      i++;
       continue;
     }
-    // If this is a non-empty task item, stop — we only strip from the tail
-    if (taskItemRe.test(line)) break;
-    // Non-task-item content — stop
-    break;
+
+    // Walk to the end of this run (consecutive list items + blank lines between)
+    const runStart = i;
+    while (i < lines.length && (listItemRe.test(lines[i]) || lines[i].trim() === "")) {
+      i++;
+    }
+    // runEnd is exclusive; trim trailing blank lines from the run
+    let runEnd = i;
+    while (runEnd > runStart && lines[runEnd - 1].trim() === "") {
+      runEnd--;
+    }
+
+    // Walk backwards within the run to find trailing ghost items
+    for (let j = runEnd - 1; j >= runStart; j--) {
+      const line = lines[j];
+      if (line.trim() === "") continue;
+      if (emptyTaskItemRe.test(line) || escapedBracketsRe.test(line)) {
+        remove.add(j);
+        continue;
+      }
+      // Non-ghost list item — stop stripping
+      break;
+    }
   }
 
   if (remove.size === 0) return markdown;
-  return lines.filter((_, i) => !remove.has(i)).join("\n");
+
+  // Remove ghost lines and collapse double blank lines left behind
+  const result: string[] = [];
+  for (let k = 0; k < lines.length; k++) {
+    if (remove.has(k)) continue;
+    // Avoid double blank lines from removed items
+    if (lines[k].trim() === "" && result.length > 0 && result[result.length - 1].trim() === "") {
+      continue;
+    }
+    result.push(lines[k]);
+  }
+  return result.join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -297,15 +334,15 @@ export function getMarkdownFromEditor(editor: Editor): string {
     return editor.getText();
   }
 
-  // Strip ghost empty trailing task items before injecting annotations
-  markdown = stripTrailingEmptyTaskItems(markdown);
+  // Strip ghost empty task items and fix corrupted bracket escaping
+  markdown = stripGhostTaskItems(markdown);
 
   // Inject {emoji} prefixes from the current ProseMirror document annotations
   return injectAnnotationsIntoMarkdown(markdown, editor);
 }
 
 export function setMarkdownInEditor(editor: Editor, markdown: string): void {
-  setContentWithoutHistory(editor, encodeImagePathSpaces(normalizeEmptyTaskItems(markdown)));
+  setContentWithoutHistory(editor, encodeImagePathSpaces(normalizeEmptyTaskItems(stripGhostTaskItems(markdown))));
 }
 
 /**
@@ -335,7 +372,7 @@ export function loadRawMarkdownIntoEditor(
   rawMarkdown: string
 ): void {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
-  const encoded = encodeImagePathSpaces(normalizeEmptyTaskItems(cleaned));
+  const encoded = encodeImagePathSpaces(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned)));
   editor.chain().setMeta("addToHistory", false).setContent(encoded).run();
 
   if (annotations.size > 0) {
@@ -356,5 +393,5 @@ export function prepareInitialContent(rawMarkdown: string): {
   annotations: Map<number, string>;
 } {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
-  return { content: encodeImagePathSpaces(normalizeEmptyTaskItems(cleaned)), annotations };
+  return { content: encodeImagePathSpaces(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned))), annotations };
 }
