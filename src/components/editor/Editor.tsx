@@ -618,6 +618,30 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     }
   }, [editor, activeTab?.id, activeTab?.isDirty, activeExternalContent, updateTabContent, clearExternalChange]);
 
+  // Listen for content refreshes from non-editor sources (e.g., actions dashboard task toggle).
+  // These writes go through the backend and update Zustand, but ProseMirror needs an explicit push.
+  useEffect(() => {
+    if (!editor || !activeTab) return;
+    const handler = (e: Event) => {
+      const { filePath, content } = (e as CustomEvent).detail;
+      if (!content) return;
+
+      if (filePath === activeTab.filePath) {
+        // Active tab: push content into ProseMirror immediately
+        loadRawMarkdownIntoEditor(editor, content);
+      } else {
+        // Non-active tab: invalidate cached EditorState so the next tab switch
+        // loads the fresh content from the store instead of the stale cached state.
+        const tab = useEditorStore.getState().tabs.find((t) => t.filePath === filePath);
+        if (tab) {
+          cachedEditorStatesRef.current.delete(tab.id);
+        }
+      }
+    };
+    window.addEventListener('notesage:refresh-editor-content', handler);
+    return () => window.removeEventListener('notesage:refresh-editor-content', handler);
+  }, [editor, activeTab?.filePath]);
+
   // --- External change review (clean tabs) ---
   // Select the raw record and derive the array in a memo to avoid new-reference infinite loops
   const externalChangesRecord = useExternalChangeStore((s) => s.changes);

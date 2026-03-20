@@ -186,11 +186,6 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
                         continue;
                     }
 
-                    // Skip events for files Notesage itself wrote
-                    if is_self_write(&mut self_writes, path) {
-                        continue;
-                    }
-
                     // On macOS, FSEvents often reports file deletions as
                     // "modify" on the parent directory or the deleted path.
                     // Reclassify: if notify says "modify" but the path no
@@ -207,18 +202,25 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
                         continue;
                     }
 
+                    // Always reindex — even self-writes need the SQLite index updated
+                    // so the actions dashboard, tag search, etc. stay current.
+                    if let Some(indexer) = app_handle.try_state::<crate::index::IndexState>() {
+                        indexer.queue_reindex(
+                            path.to_string_lossy().to_string(),
+                            effective_kind.to_string(),
+                        );
+                    }
+
+                    // Skip frontend events for files Notesage itself wrote
+                    // (prevents false "external change" detection in the editor).
+                    if is_self_write(&mut self_writes, path) {
+                        continue;
+                    }
+
                     let payload = FileChangedEvent {
                         path: path.to_string_lossy().to_string(),
                         kind: effective_kind.to_string(),
                     };
-
-                    // Queue file for reindexing (Rust-side, no frontend round-trip)
-                    if let Some(indexer) = app_handle.try_state::<crate::index::IndexState>() {
-                        indexer.queue_reindex(
-                            payload.path.clone(),
-                            payload.kind.clone(),
-                        );
-                    }
 
                     // Emit per-event for backward compatibility
                     if let Err(e) = app_handle.emit("file-changed", payload.clone()) {

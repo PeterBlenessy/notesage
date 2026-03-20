@@ -6,6 +6,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useGitStore } from "@/stores/git-store";
 import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
+import { useActionStore } from "@/stores/action-store";
 import { migrateProjectPath } from "@/lib/migrate-project-path";
 import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { setBinaryData } from "@/lib/binary-cache";
@@ -222,8 +223,10 @@ export function useFileOperations() {
         markTabClean(tabId, content);
         useEditorStore.getState().clearExternalChange(filePath);
         refreshGitForPath(filePath);
-        // Incrementally reindex for tags/mentions/FTS
-        tauriApi.indexFile(filePath).catch(() => {});
+        // Incrementally reindex for tags/mentions/FTS, then refresh actions dashboard
+        tauriApi.indexFile(filePath).then(() => {
+          useActionStore.getState().incrementalUpdate(filePath);
+        }).catch(() => {});
         return true;
       } catch (error) {
         await tauriApi.clearSelfWrite(filePath).catch(() => {});

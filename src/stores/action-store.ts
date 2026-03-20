@@ -7,6 +7,7 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useEditorStore } from '@/stores/editor-store';
 import { useActivityStore, type AgentTask } from '@/stores/activity-store';
+import { parseFrontmatter } from '@/lib/frontmatter';
 import { log } from '@/lib/logger';
 
 export type { ActionItem } from '@/lib/tauri';
@@ -343,10 +344,13 @@ export const useActionStore = create<ActionStore>()(
           const openTab = editorStore.tabs.find((t) => t.filePath === action.file_path);
           if (openTab) {
             try {
-              const newContent = await tauriApi.readFile(action.file_path);
-              editorStore.updateTabContent(openTab.id, newContent, false);
+              const raw = await tauriApi.readFile(action.file_path);
+              // Strip frontmatter — tab.content must be body only (frontmatter stored separately).
+              // Passing raw content would cause duplicate frontmatter on next save.
+              const { content: body } = parseFrontmatter(raw);
+              editorStore.updateTabContent(openTab.id, body, false);
               window.dispatchEvent(new CustomEvent('notesage:refresh-editor-content', {
-                detail: { filePath: action.file_path, content: newContent },
+                detail: { filePath: action.file_path, content: body },
               }));
             } catch {
               // File read failed — editor will catch up via watcher
