@@ -23,7 +23,8 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 - ~~Item annotations~~ — deferred, needs unified left-gutter design
 - Slash commands (`/` at start of line) for inserting headings, lists, code blocks, blockquotes, tables, horizontal rules, images
 - Multi-tab editing with dirty indicator, auto-save on blur/tab switch (debounced 1s)
-- Open tabs restored on app restart (persisted file paths, re-opened from disk)
+- Per-tab undo/redo history preserved across tab switches (in-memory EditorState cache)
+- Open tabs restored on app restart (persisted file paths, re-opened from disk; undo history starts fresh)
 
 ## File Management
 

@@ -46,11 +46,31 @@ Each decoration-based extension follows a pattern:
 3. Update decorations via transactions (either document changes or external dispatch)
 4. Read decorations in `props.decorations()` for rendering
 
+## Per-Tab EditorState Cache
+
+A single Tiptap editor instance is shared across all tabs. To preserve undo/redo history, selection, and decoration state across tab switches, the full ProseMirror `EditorState` is cached in memory per tab.
+
+**Save/restore flow:**
+1. On tab switch away: `editor.state` saved to `cachedEditorStatesRef` (keyed by tab ID)
+2. On tab switch back: if cached state exists, `editor.view.updateState(cachedState)` restores it — undo/redo, cursor position, and all plugin states come back intact
+3. On fresh load (no cache): `loadRawMarkdownIntoEditor()` parses markdown and clears history via `EditorState.create()` to prevent stale undo entries
+
+**Cache invalidation:**
+- External file changes (auto-reload or manual reload from disk)
+- Source→WYSIWYG view mode switch
+- After successful restore (one-time use, deleted from cache)
+- App restart (in-memory only, not persisted to localStorage)
+
+**What's preserved:** undo/redo stack, cursor/selection position, comment decorations, search highlights, AI suggestion state, all plugin states.
+
+**What's NOT preserved across app restart:** undo/redo history, selection. Content and tab order are restored from Zustand persist, but the editor starts with fresh plugin state.
+
 ## Plugin State Patterns
 
 ### CommentMark (`CommentMarkPluginKey`)
 - Decorations rebuilt when comments change (dispatched from `useCommentOperations`)
 - Tracks anchor positions through document edits via ProseMirror mapping
+- **Position sync:** On every `docChanged` transaction, remapped positions are synced back to the Zustand store and debounce-saved to disk (2s). This ensures comment positions survive tab switches and app restarts.
 - Status-based CSS classes: `comment-open`, `comment-delegated`, `comment-done`
 - Primary source for `resolveAnchorRange()` when applying agent replies
 
@@ -81,6 +101,7 @@ Each decoration-based extension follows a pattern:
 ## State Stores
 
 - **editor-store**: Open tabs (file path + dirty state + per-tab `copilotDisabled` flag), active tab index, external change tracking per tab
+- **EditorState cache** (in-memory ref, not a store): Per-tab `Map<string, EditorState>` in `Editor.tsx` — preserves undo/redo, selection, and plugin states across tab switches
 - **SQLite document index**: Tags, mentions, tasks, goals, headings, FTS5 content — persisted in `index.db`, updated incrementally by watcher. Replaces the removed `tag-store` and `mention-store` Zustand stores.
 - **external-change-store** (non-persisted): Pending external file changes with hunks, old/new content, status (`pending` → `deferred`)
 - **comment-store**: Comments per document, replies, delegation status, activity log
