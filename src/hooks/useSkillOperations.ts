@@ -182,19 +182,37 @@ export function useSkillDiscovery() {
     if (!startupReady) return;
 
     const run = async () => {
+      log.info('skills', 'Starting skill/agent discovery pipeline');
+
       // Extract bundled skills and agents (always overwrites to stay current)
+      let skillsExtracted = false;
+      let agentsExtracted = false;
       try {
-        await tauriApi.extractBundledSkills();
+        const skillsPath = await tauriApi.extractBundledSkills();
+        skillsExtracted = true;
+        log.info('skills', `Extracted bundled skills to ${skillsPath}`);
       } catch (e) {
-        log.warn('skills', 'Failed to extract bundled skills', e);
+        log.error('skills', 'Failed to extract bundled skills', e);
+        toast.error('Failed to extract bundled skills. Check logs for details.');
       }
       try {
-        await tauriApi.extractBundledAgents();
+        const agentsPath = await tauriApi.extractBundledAgents();
+        agentsExtracted = true;
+        log.info('skills', `Extracted bundled agents to ${agentsPath}`);
       } catch (e) {
-        log.warn('skills', 'Failed to extract bundled agents', e);
+        log.error('skills', 'Failed to extract bundled agents', e);
+        toast.error('Failed to extract bundled agents. Check logs for details.');
       }
 
-      const home = await tauriApi.getHomeDir();
+      let home: string;
+      try {
+        home = await tauriApi.getHomeDir();
+        log.info('skills', `Home directory: ${home}`);
+      } catch (e) {
+        log.error('skills', 'Failed to resolve home directory', e);
+        toast.error('Failed to resolve home directory for skill discovery.');
+        return;
+      }
 
       // One-time migration: custom personas → agent files
       await migratePersonasToAgents(home);
@@ -222,7 +240,10 @@ export function useSkillDiscovery() {
       }
 
       // Scan skills
+      log.info('skills', `Scanning skills in ${baseDirs.length} directories`);
       await useSkillStore.getState().scanSkills(baseDirs);
+      const skillCount = useSkillStore.getState().skills.length;
+      log.info('skills', `Discovered ${skillCount} skills`);
 
       // Build agent base dirs
       const agentBaseDirs: string[] = [];
@@ -250,12 +271,25 @@ export function useSkillDiscovery() {
       }
 
       // Scan agents
+      log.info('skills', `Scanning agents in ${agentBaseDirs.length} directories`);
       await useSkillStore.getState().scanAgents(agentBaseDirs);
+      const agentCount = useSkillStore.getState().agents.length;
+      log.info('skills', `Discovered ${agentCount} agents`);
+
+      // Warn if extraction succeeded but nothing was discovered
+      if (skillsExtracted && skillCount === 0) {
+        log.warn('skills', 'Skills extraction succeeded but no skills were discovered');
+      }
+      if (agentsExtracted && agentCount === 0) {
+        log.warn('skills', 'Agents extraction succeeded but no agents were discovered');
+      }
 
       // Scan agent instructions (use first project as root, or null)
       const projectRoot = projects.length > 0 ? projects[0].path : null;
       const providerTypes = getConnectedProviderTypes();
       await useSkillStore.getState().scanAgentInstructions(projectRoot, providerTypes);
+
+      log.info('skills', 'Skill/agent discovery pipeline complete');
     };
 
     run();

@@ -1,3 +1,4 @@
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -110,12 +111,16 @@ pub async fn discover_skills(
     for base_dir in &base_dirs {
         let base_path = Path::new(base_dir);
         if !base_path.is_dir() {
+            info!("Skill scan: skipping non-existent directory {}", base_dir);
             continue;
         }
 
         let entries = match fs::read_dir(base_path) {
             Ok(e) => e,
-            Err(_) => continue,
+            Err(e) => {
+                warn!("Skill scan: cannot read directory {}: {}", base_dir, e);
+                continue;
+            }
         };
 
         // Determine source label from the base directory path
@@ -393,6 +398,8 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
         },
     ];
 
+    info!("Extracting {} bundled skill files to {}", bundled_files.len(), bundled_dir.display());
+    let mut written = 0;
     for file in &bundled_files {
         let target = bundled_dir.join(file.relative_path);
         if let Some(parent) = target.parent() {
@@ -402,7 +409,9 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
 
         write_bundled_file(&target, file.content, file.executable)
             .map_err(|e| format!("Failed to write {}: {}", file.relative_path, e))?;
+        written += 1;
     }
+    info!("Successfully wrote {}/{} bundled skill files", written, bundled_files.len());
 
     Ok(bundled_dir.to_string_lossy().to_string())
 }

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { tauriApi } from '@/lib/tauri';
 import type { SkillEntry, AgentInstruction, AgentEntry } from '@/lib/tauri';
+import { log } from '@/lib/logger';
 
 
 // Re-export types from tauri.ts for consumers that import from skill-store
@@ -207,7 +208,7 @@ export const useSkillStore = create<SkillStore>()(
           const skills = await tauriApi.discoverSkills(baseDirs);
           set({ skills, lastScanTimestamp: Date.now(), isScanning: false });
         } catch (e) {
-          console.error('Skill discovery failed:', e);
+          log.error('skills', `Skill discovery failed for dirs: ${baseDirs.join(', ')}`, e);
           set({ isScanning: false });
         }
       },
@@ -270,7 +271,7 @@ export const useSkillStore = create<SkillStore>()(
           const agents = await tauriApi.discoverAgents(baseDirs);
           set({ agents });
         } catch (e) {
-          console.error('Agent discovery failed:', e);
+          log.error('skills', `Agent discovery failed for dirs: ${baseDirs.join(', ')}`, e);
         }
       },
 

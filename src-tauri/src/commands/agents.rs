@@ -1,3 +1,4 @@
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -110,12 +111,16 @@ pub async fn discover_agents(
     for base_dir in &base_dirs {
         let base_path = Path::new(base_dir);
         if !base_path.is_dir() {
+            info!("Agent scan: skipping non-existent directory {}", base_dir);
             continue;
         }
 
         let entries = match fs::read_dir(base_path) {
             Ok(e) => e,
-            Err(_) => continue,
+            Err(e) => {
+                warn!("Agent scan: cannot read directory {}: {}", base_dir, e);
+                continue;
+            }
         };
 
         let source = determine_agent_source(base_dir);
@@ -259,6 +264,8 @@ pub async fn extract_bundled_agents() -> Result<String, String> {
         },
     ];
 
+    info!("Extracting {} bundled agent files to {}", bundled_files.len(), bundled_dir.display());
+    let mut written = 0;
     for file in &bundled_files {
         let target = bundled_dir.join(file.relative_path);
         if let Some(parent) = target.parent() {
@@ -268,7 +275,9 @@ pub async fn extract_bundled_agents() -> Result<String, String> {
 
         write_bundled_file(&target, file.content, file.executable)
             .map_err(|e| format!("Failed to write {}: {}", file.relative_path, e))?;
+        written += 1;
     }
+    info!("Successfully wrote {}/{} bundled agent files", written, bundled_files.len());
 
     // Extract bundled agent instructions to ~/.notesage/agents.md
     // Always overwrite to keep in sync with app version (same as bundled agents/skills)

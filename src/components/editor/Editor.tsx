@@ -45,7 +45,6 @@ import {
   setSuggestion,
   hasActiveSuggestion,
   AISuggestionPluginKey,
-  clearSuggestion,
 } from "@/components/editor/extensions";
 import type { AISuggestionType } from "@/components/editor/extensions";
 import { mapExternalChangeToPM } from "@/lib/external-diff";
