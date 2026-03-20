@@ -336,40 +336,41 @@ async function restorePersistedTabs() {
   const { persistedTabs, persistedActiveFilePath } = useEditorStore.getState();
   if (persistedTabs.length === 0) return;
 
-  // Phase 1: Load the active tab fully (content from disk + openTab) so the
-  // editor has content to render immediately. Create other tabs as placeholders
-  // so their titles appear in the tab bar instantly.
-  const activePersistedTab = persistedTabs.find((pt) => pt.filePath === persistedActiveFilePath);
-  const backgroundTabs = persistedTabs.filter((pt) => pt.filePath !== persistedActiveFilePath);
-
-  // Create background tab placeholders first (titles appear in tab bar)
+  // Phase 1: Create ALL tabs as placeholders in their persisted order so the
+  // tab bar renders with correct ordering immediately. Then load the active
+  // tab's content so the editor has something to render.
   const store = useEditorStore.getState();
-  for (const pt of backgroundTabs) {
+  for (const pt of persistedTabs) {
     store.openTabPlaceholder(pt.filePath, pt.fileName, getFileType(pt.fileName));
   }
 
-  // Load and open the active tab with full content
+  // Find and activate the previously active tab, loading its content from disk
+  const activePersistedTab = persistedTabs.find((pt) => pt.filePath === persistedActiveFilePath);
   if (activePersistedTab) {
-    try {
-      const { filePath, fileName } = activePersistedTab;
-      const fileType = getFileType(fileName);
-      if (fileType === "image") {
-        useEditorStore.getState().openTab(filePath, fileName, "", null, fileType);
-      } else if (isBinaryFileType(fileType)) {
-        const bytes = await tauriApi.readBinaryFile(filePath);
-        setBinaryData(filePath, new Uint8Array(bytes));
-        useEditorStore.getState().openTab(filePath, fileName, "", null, fileType);
-      } else {
-        const raw = await tauriApi.readFile(filePath);
-        if (fileType === "markdown") {
-          const { frontmatter, content } = parseFrontmatter(raw);
-          useEditorStore.getState().openTab(filePath, fileName, content, frontmatter, fileType);
+    const { filePath, fileName } = activePersistedTab;
+    const activeTab = useEditorStore.getState().tabs.find((t) => t.filePath === filePath);
+    if (activeTab) {
+      useEditorStore.getState().setActiveTab(activeTab.id);
+      try {
+        const fileType = getFileType(fileName);
+        if (fileType === "image") {
+          useEditorStore.getState().loadTabContent(activeTab.id, "");
+        } else if (isBinaryFileType(fileType)) {
+          const bytes = await tauriApi.readBinaryFile(filePath);
+          setBinaryData(filePath, new Uint8Array(bytes));
+          useEditorStore.getState().loadTabContent(activeTab.id, "");
         } else {
-          useEditorStore.getState().openTab(filePath, fileName, raw, null, fileType);
+          const raw = await tauriApi.readFile(filePath);
+          if (fileType === "markdown") {
+            const { frontmatter, content } = parseFrontmatter(raw);
+            useEditorStore.getState().loadTabContent(activeTab.id, content, frontmatter);
+          } else {
+            useEditorStore.getState().loadTabContent(activeTab.id, raw);
+          }
         }
+      } catch {
+        // Active tab failed to load — user will see empty state
       }
-    } catch {
-      // Active tab failed to load — user will see empty state
     }
   }
 
