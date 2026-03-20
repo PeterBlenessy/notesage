@@ -4,7 +4,7 @@ import { useEditorResize } from "@/hooks/useEditorResize";
 import { EditorContent } from "@tiptap/react";
 import type { Editor as TiptapEditor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
-import { TextSelection } from "@tiptap/pm/state";
+import { type EditorState, TextSelection } from "@tiptap/pm/state";
 import { Command, File, FolderDot, Folder, Clock } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
 import { useRoutingStore } from "@/stores/routing-store";
@@ -506,6 +506,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const generatedUUIDRef = useRef(false);
   // Track whether an AI suggestion decoration is active (for Apply collision prevention)
   const savedSuggestionsRef = useRef<Map<string, AISuggestionType>>(new Map());
+  /** Per-tab ProseMirror EditorState cache — preserves undo/redo, selection, and plugin state across tab switches. */
+  const cachedEditorStatesRef = useRef<Map<string, EditorState>>(new Map());
   const [suggestionActive, setSuggestionActiveState] = useState(false);
   useEffect(() => {
     if (!editor) return;
@@ -584,6 +586,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
     if (!activeTab.isDirty) {
       // Clean tab: auto-reload silently + toast
+      cachedEditorStatesRef.current.delete(activeTab.id);
       loadRawMarkdownIntoEditor(editor, activeExternalContent);
       updateTabContent(activeTab.id, activeExternalContent, false);
       clearExternalChange(activeTab.filePath);
@@ -602,6 +605,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           onClick: () => {
             const currentEditor = editor;
             if (!currentEditor) return;
+            cachedEditorStatesRef.current.delete(tabId);
             loadRawMarkdownIntoEditor(currentEditor, content);
             useEditorStore.getState().updateTabContent(tabId, content, false);
             useEditorStore.getState().clearExternalChange(filePath);
@@ -819,9 +823,11 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   useEffect(() => {
     if (!editor || !activeTab || activeTab.contentLoaded === false) return;
     if (activeTab.id === lastLoadedTabId.current) return;
-      // Save AI suggestion state of the tab we're LEAVING
+      // Save full editor state of the tab we're LEAVING (preserves undo/redo, selection, decorations)
       const prevTabId = lastLoadedTabId.current;
       if (prevTabId) {
+        cachedEditorStatesRef.current.set(prevTabId, editor.state);
+        // Also save AI suggestion separately (for explicit position validation on restore)
         const pluginState = AISuggestionPluginKey.getState(editor.state);
         if (pluginState?.suggestion) {
           savedSuggestionsRef.current.set(prevTabId, pluginState.suggestion);
@@ -851,28 +857,40 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
       // If the tab has a pending external change in the old store (dirty tab / git auto-accept),
       // load that content instead of the stale tab.content.
+      let restoredFromCache = false;
       const pendingExternal = externalChanges[activeTab.filePath];
       if (pendingExternal !== undefined && !activeTab.isDirty) {
+        cachedEditorStatesRef.current.delete(activeTab.id);
         loadRawMarkdownIntoEditor(editor, pendingExternal);
         updateTabContent(activeTab.id, pendingExternal, false);
         clearExternalChange(activeTab.filePath);
         toast("File updated from disk", { id: "external-change", description: activeTab.fileName });
       } else {
-        loadRawMarkdownIntoEditor(editor, activeTab.content);
+        // Restore cached EditorState if available — preserves undo/redo, selection, decorations
+        const cachedState = cachedEditorStatesRef.current.get(activeTab.id);
+        if (cachedState) {
+          editor.view.updateState(cachedState);
+          cachedEditorStatesRef.current.delete(activeTab.id);
+          restoredFromCache = true;
+        } else {
+          loadRawMarkdownIntoEditor(editor, activeTab.content);
+        }
       }
 
       editor.commands.blur();
 
-      // Restore AI suggestion for this tab if one was saved
-      const savedSuggestion = savedSuggestionsRef.current.get(activeTab.id);
-      if (savedSuggestion) {
-        requestAnimationFrame(() => {
-          // Verify positions are still valid in the new document
-          if (savedSuggestion.from >= 0 && savedSuggestion.to <= editor.state.doc.content.size) {
-            setSuggestion(editor, savedSuggestion.from, savedSuggestion.to, savedSuggestion.originalText, savedSuggestion.suggestedText);
-          }
-          savedSuggestionsRef.current.delete(activeTab.id);
-        });
+      // Restore AI suggestion only for fresh loads — cached state already includes plugin state
+      if (!restoredFromCache) {
+        const savedSuggestion = savedSuggestionsRef.current.get(activeTab.id);
+        if (savedSuggestion) {
+          requestAnimationFrame(() => {
+            // Verify positions are still valid in the new document
+            if (savedSuggestion.from >= 0 && savedSuggestion.to <= editor.state.doc.content.size) {
+              setSuggestion(editor, savedSuggestion.from, savedSuggestion.to, savedSuggestion.originalText, savedSuggestion.suggestedText);
+            }
+            savedSuggestionsRef.current.delete(activeTab.id);
+          });
+        }
       }
 
       // If scrollToTag is set, scroll to that tag instead of restoring saved position
@@ -942,6 +960,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     prevViewMode.current = activeTab.viewMode;
 
     if (wasSource && isNowWysiwyg) {
+      cachedEditorStatesRef.current.delete(activeTab.id);
       loadRawMarkdownIntoEditor(editor, activeTab.content);
       // Re-set image storage in case it was lost
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

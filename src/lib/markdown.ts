@@ -1,4 +1,5 @@
 import type { Editor } from "@tiptap/core";
+import { EditorState } from "@tiptap/pm/state";
 
 // ---------------------------------------------------------------------------
 // Annotation serialization helpers (Task #12)
@@ -374,6 +375,15 @@ export function loadRawMarkdownIntoEditor(
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
   const encoded = encodeImagePathSpaces(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned)));
   editor.chain().setMeta("addToHistory", false).setContent(encoded).run();
+
+  // Clear undo/redo history — the loaded content is a fresh baseline.
+  // Without this, stale history entries from the previous document cause
+  // silent no-op undos and unexpected cursor jumps after tab switches.
+  const freshState = EditorState.create({
+    doc: editor.state.doc,
+    plugins: editor.state.plugins,
+  });
+  editor.view.updateState(freshState);
 
   if (annotations.size > 0) {
     requestAnimationFrame(() => {
