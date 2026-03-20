@@ -133,17 +133,18 @@ export const useLocalAIStore = create<LocalAIStore>()(
           });
 
           (async () => {
-            const unlisten = await listen<{ model: string; downloaded: number; total: number }>(
-              'local-model-download-progress',
-              (event) => {
-                if (event.payload.model === modelId && event.payload.total > 0) {
-                  pendingProgress[modelId] = (event.payload.downloaded / event.payload.total) * 100;
-                  scheduleProgressFlush();
-                }
-              },
-            );
-
+            let unlisten: (() => void) | undefined;
             try {
+              unlisten = await listen<{ model: string; downloaded: number; total: number }>(
+                'local-model-download-progress',
+                (event) => {
+                  if (event.payload.model === modelId && event.payload.total > 0) {
+                    pendingProgress[modelId] = (event.payload.downloaded / event.payload.total) * 100;
+                    scheduleProgressFlush();
+                  }
+                },
+              );
+
               await tauriApi.downloadLocalModel(modelId);
               toast.success(`Model downloaded`);
               await get().refreshModels();
@@ -153,7 +154,7 @@ export const useLocalAIStore = create<LocalAIStore>()(
                 toast.error(`Download failed: ${err}`);
               }
             } finally {
-              unlisten();
+              unlisten?.();
               delete pendingProgress[modelId];
               const { [modelId]: _, ...rest } = get().downloads;
               set({ downloads: rest });
@@ -162,7 +163,7 @@ export const useLocalAIStore = create<LocalAIStore>()(
         },
 
         cancelDownload: (modelId: string) => {
-          tauriApi.cancelLocalModelDownload(modelId).catch(() => {});
+          tauriApi.cancelLocalModelDownload(modelId).catch((e) => console.warn('Failed to cancel model download:', e));
         },
 
         deleteModel: async (modelId: string) => {
@@ -229,7 +230,7 @@ export const useLocalAIStore = create<LocalAIStore>()(
         },
 
         cancelBinaryDownload: () => {
-          tauriApi.cancelLlamaServerDownload().catch(() => {});
+          tauriApi.cancelLlamaServerDownload().catch((e) => console.warn('Failed to cancel binary download:', e));
         },
       };
     },

@@ -26,6 +26,29 @@
   --color-border: oklch(90% 0 0);
   --color-input: oklch(90% 0 0);
   --color-ring: oklch(50% 0 0);
+
+  /* Editor content colors — chromatic colors for document content (diffs, comments, highlights).
+     These are exempt from the neutral-only UI palette since they convey semantic meaning. */
+  --color-diff-delete-bg: rgba(180, 30, 30, 0.25);
+  --color-diff-insert-bg: rgba(30, 130, 30, 0.25);
+  --color-comment-bg: oklch(92% 0 0 / 0.5);
+  --color-comment-border: oklch(75% 0 0);
+  --color-comment-bg-hover: oklch(92% 0 0 / 0.7);
+  --color-comment-bg-active: oklch(92% 0 0 / 0.75);
+  --color-date-badge-bg: oklch(93% 0 0);
+  --color-date-badge-border: oklch(85% 0 0);
+  --color-date-badge-bg-hover: oklch(88% 0 0);
+  --color-find-match: oklch(85% 0 0);
+  --color-find-match-active: oklch(72% 0 0);
+  --color-shadow: rgb(0 0 0 / 0.1);
+
+  /* Highlight mark colors (document content — chromatic by design) */
+  --color-highlight-yellow: #fef08a;
+  --color-highlight-green: #bbf7d0;
+  --color-highlight-blue: #bfdbfe;
+  --color-highlight-pink: #fbcfe8;
+  --color-highlight-orange: #fed7aa;
+  --color-highlight-grey: #e5e7eb;
 }
 
 /* Dark mode colors — neutral palette */
@@ -50,6 +73,26 @@
   --color-border: oklch(32% 0 0);
   --color-input: oklch(28% 0 0);
   --color-ring: oklch(60% 0 0);
+
+  --color-diff-delete-bg: rgba(180, 30, 30, 0.4);
+  --color-diff-insert-bg: rgba(30, 140, 30, 0.4);
+  --color-comment-bg: oklch(55% 0 0 / 0.2);
+  --color-comment-border: oklch(55% 0 0 / 0.6);
+  --color-comment-bg-hover: oklch(55% 0 0 / 0.3);
+  --color-comment-bg-active: oklch(55% 0 0 / 0.35);
+  --color-date-badge-bg: oklch(30% 0 0);
+  --color-date-badge-border: oklch(38% 0 0);
+  --color-date-badge-bg-hover: oklch(35% 0 0);
+  --color-find-match: oklch(35% 0 0);
+  --color-find-match-active: oklch(50% 0 0);
+  --color-shadow: rgb(0 0 0 / 0.25);
+
+  --color-highlight-yellow: #854d0e;
+  --color-highlight-green: #166534;
+  --color-highlight-blue: #1e40af;
+  --color-highlight-pink: #9d174d;
+  --color-highlight-orange: #9a3412;
+  --color-highlight-grey: #374151;
 }
 
 * {

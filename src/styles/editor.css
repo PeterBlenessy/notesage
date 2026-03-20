@@ -289,7 +289,7 @@
   max-width: 100%;
   height: auto;
   border-radius: 8px;
-  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.05), 0 1px 2px -1px rgb(0 0 0 / 0.05);
+  box-shadow: 0 1px 3px 0 var(--color-shadow), 0 1px 2px -1px var(--color-shadow);
 }
 
 /* Tables */
@@ -494,34 +494,20 @@
 
 /* Comment highlight decorations */
 .comment-highlight {
-  background-color: oklch(88% 0.11 80 / 0.5);
-  border-bottom: 2px solid oklch(79% 0.15 68);
+  background-color: var(--color-comment-bg);
+  border-bottom: 2px solid var(--color-comment-border);
   border-radius: 2px;
   cursor: pointer;
   transition: background-color 150ms ease;
 }
 
 .comment-highlight:hover {
-  background-color: oklch(88% 0.11 80 / 0.7);
+  background-color: var(--color-comment-bg-hover);
 }
 
 .comment-highlight-active {
-  background-color: oklch(88% 0.11 80 / 0.75);
-  border-bottom-color: oklch(79% 0.15 68);
-}
-
-:root.dark .comment-highlight {
-  background-color: oklch(79% 0.15 68 / 0.2);
-  border-bottom-color: oklch(79% 0.15 68 / 0.6);
-}
-
-:root.dark .comment-highlight:hover {
-  background-color: oklch(79% 0.15 68 / 0.3);
-}
-
-:root.dark .comment-highlight-active {
-  background-color: oklch(79% 0.15 68 / 0.35);
-  border-bottom-color: oklch(79% 0.15 68 / 0.8);
+  background-color: var(--color-comment-bg-active);
+  border-bottom-color: var(--color-comment-border);
 }
 
 /* Delegated comment highlight — subtle pulse */
@@ -536,11 +522,7 @@
 
 /* Inline diff decorations */
 .inline-diff-delete {
-  background-color: rgba(180, 30, 30, 0.25);
-}
-
-.dark .inline-diff-delete {
-  background-color: rgba(180, 30, 30, 0.4);
+  background-color: var(--color-diff-delete-bg);
 }
 
 .inline-diff-widget {
@@ -550,11 +532,7 @@
 }
 
 .inline-diff-insert {
-  background-color: rgba(30, 130, 30, 0.25);
-}
-
-.dark .inline-diff-insert {
-  background-color: rgba(30, 140, 30, 0.4);
+  background-color: var(--color-diff-insert-bg);
 }
 
 .inline-diff-controls {
@@ -572,7 +550,7 @@
   border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 2px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 8px var(--color-shadow);
 }
 
 /* Show controls via JS-managed .visible class (handles both delete + insert hover) */
@@ -614,11 +592,7 @@
 
 /* AI suggestion decorations */
 .ai-suggestion-delete {
-  background-color: rgba(180, 30, 30, 0.25);
-}
-
-.dark .ai-suggestion-delete {
-  background-color: rgba(180, 30, 30, 0.4);
+  background-color: var(--color-diff-delete-bg);
 }
 
 .ai-suggestion-widget {
@@ -629,12 +603,7 @@
 
 .ai-suggestion-insert,
 .ai-suggestion-insert * {
-  background-color: rgba(30, 130, 30, 0.25);
-}
-
-.dark .ai-suggestion-insert,
-.dark .ai-suggestion-insert * {
-  background-color: rgba(30, 140, 30, 0.4);
+  background-color: var(--color-diff-insert-bg);
 }
 
 .ai-suggestion-controls {
@@ -652,7 +621,7 @@
   border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 2px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 8px var(--color-shadow);
 }
 
 .ai-suggestion-controls.visible {
@@ -811,8 +780,8 @@
 }
 
 .date-badge {
-  background-color: oklch(93% 0.03 85);
-  border: 1px solid oklch(85% 0.05 85);
+  background-color: var(--color-date-badge-bg);
+  border: 1px solid var(--color-date-badge-border);
   border-radius: 6px;
   padding: 0.05em 0.45em 0.05em 0.45em;
   font-size: 0.88em;
@@ -822,16 +791,7 @@
 }
 
 .date-badge:hover {
-  background-color: oklch(88% 0.05 85);
-}
-
-.dark .date-badge {
-  background-color: oklch(30% 0.03 85);
-  border-color: oklch(38% 0.05 85);
-}
-
-.dark .date-badge:hover {
-  background-color: oklch(35% 0.05 85);
+  background-color: var(--color-date-badge-bg-hover);
 }
 
 /* When cursor is inside a date, ProseMirror splits the decoration into
@@ -852,21 +812,13 @@
 
 /* Find in document */
 .find-match {
-  background: oklch(85% 0 0);
+  background: var(--color-find-match);
   border-radius: 2px;
-}
-
-.dark .find-match {
-  background: oklch(35% 0 0);
 }
 
 .find-match-active {
-  background: oklch(72% 0 0);
+  background: var(--color-find-match-active);
   border-radius: 2px;
-}
-
-.dark .find-match-active {
-  background: oklch(50% 0 0);
 }
 
 /* CodeMirror search panel — match app design system */
@@ -978,22 +930,16 @@ mark.pdf-find-highlight-active {
 /* DOM-based search highlights (DOCX, plain text viewers) — matches .find-match.
    Uses !important to override Tailwind prose mark styles and UA defaults. */
 mark.dom-find-highlight {
-  background: oklch(85% 0 0) !important;
+  background: var(--color-find-match) !important;
   border-radius: 2px !important;
   color: inherit !important;
   padding: 0 !important;
-}
-.dark mark.dom-find-highlight {
-  background: oklch(35% 0 0) !important;
 }
 mark.dom-find-highlight-active {
-  background: oklch(72% 0 0) !important;
+  background: var(--color-find-match-active) !important;
   border-radius: 2px !important;
   color: inherit !important;
   padding: 0 !important;
-}
-.dark mark.dom-find-highlight-active {
-  background: oklch(50% 0 0) !important;
 }
 
 /* Highlight marks — themed via data-color attribute */
@@ -1002,34 +948,20 @@ mark.dom-find-highlight-active {
   padding: 0.05em 0;
   transition: background-color 200ms ease;
 }
-.ProseMirror mark[data-color="yellow"] { background-color: #fef08a; }
-.ProseMirror mark[data-color="green"]  { background-color: #bbf7d0; }
-.ProseMirror mark[data-color="blue"]   { background-color: #bfdbfe; }
-.ProseMirror mark[data-color="pink"]   { background-color: #fbcfe8; }
-.ProseMirror mark[data-color="orange"] { background-color: #fed7aa; }
-.ProseMirror mark[data-color="grey"]   { background-color: #e5e7eb; }
-
-.dark .ProseMirror mark[data-color="yellow"] { background-color: #854d0e; }
-.dark .ProseMirror mark[data-color="green"]  { background-color: #166534; }
-.dark .ProseMirror mark[data-color="blue"]   { background-color: #1e40af; }
-.dark .ProseMirror mark[data-color="pink"]   { background-color: #9d174d; }
-.dark .ProseMirror mark[data-color="orange"] { background-color: #9a3412; }
-.dark .ProseMirror mark[data-color="grey"]   { background-color: #374151; }
+.ProseMirror mark[data-color="yellow"] { background-color: var(--color-highlight-yellow); }
+.ProseMirror mark[data-color="green"]  { background-color: var(--color-highlight-green); }
+.ProseMirror mark[data-color="blue"]   { background-color: var(--color-highlight-blue); }
+.ProseMirror mark[data-color="pink"]   { background-color: var(--color-highlight-pink); }
+.ProseMirror mark[data-color="orange"] { background-color: var(--color-highlight-orange); }
+.ProseMirror mark[data-color="grey"]   { background-color: var(--color-highlight-grey); }
 
 /* Toolbar highlight indicator dot */
-.highlight-swatch-indicator[data-color="yellow"] { background-color: #fef08a; }
-.highlight-swatch-indicator[data-color="green"]  { background-color: #bbf7d0; }
-.highlight-swatch-indicator[data-color="blue"]   { background-color: #bfdbfe; }
-.highlight-swatch-indicator[data-color="pink"]   { background-color: #fbcfe8; }
-.highlight-swatch-indicator[data-color="orange"] { background-color: #fed7aa; }
-.highlight-swatch-indicator[data-color="grey"]   { background-color: #e5e7eb; }
-
-.dark .highlight-swatch-indicator[data-color="yellow"] { background-color: #854d0e; }
-.dark .highlight-swatch-indicator[data-color="green"]  { background-color: #166534; }
-.dark .highlight-swatch-indicator[data-color="blue"]   { background-color: #1e40af; }
-.dark .highlight-swatch-indicator[data-color="pink"]   { background-color: #9d174d; }
-.dark .highlight-swatch-indicator[data-color="orange"] { background-color: #9a3412; }
-.dark .highlight-swatch-indicator[data-color="grey"]   { background-color: #374151; }
+.highlight-swatch-indicator[data-color="yellow"] { background-color: var(--color-highlight-yellow); }
+.highlight-swatch-indicator[data-color="green"]  { background-color: var(--color-highlight-green); }
+.highlight-swatch-indicator[data-color="blue"]   { background-color: var(--color-highlight-blue); }
+.highlight-swatch-indicator[data-color="pink"]   { background-color: var(--color-highlight-pink); }
+.highlight-swatch-indicator[data-color="orange"] { background-color: var(--color-highlight-orange); }
+.highlight-swatch-indicator[data-color="grey"]   { background-color: var(--color-highlight-grey); }
 
 /* Text color: ensure colored text is readable in dark mode too */
 .ProseMirror span[style*="color"] {

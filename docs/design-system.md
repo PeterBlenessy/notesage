@@ -71,7 +71,9 @@ Notesage should feel like a premium native macOS application. Think: Linear, Ray
 
 The entire palette is black, white, and greys. No blue, indigo, teal, or any hue. All CSS variables in globals.css use `oklch(L% 0 0)` — zero chroma, zero hue. This gives a polished, monochrome aesthetic similar to Linear or Things 3.
 
-Define the palette using CSS variables in globals.css. All colors must come from this palette — no hardcoded hex values in components. **No color with chroma &gt; 0 except destructive (red).**
+Define the palette using CSS variables in globals.css. All colors must come from this palette — no hardcoded hex values in components. **No color with chroma &gt; 0 except destructive (red) and editor content colors (see below).**
+
+**Editor content color exception:** Text colors, highlight marks, and diff decorations use chromatic colors because they convey semantic meaning in document content (e.g., red/green for diffs, colored highlights for user annotation). These are defined as CSS variables in `globals.css` (e.g., `--color-diff-delete-bg`, `--color-highlight-yellow`) with light/dark variants, and are NOT part of the UI chrome palette. Comment highlights and date badges use neutral greys.
 
 **Light mode:**
 

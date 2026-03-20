@@ -106,25 +106,29 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
   // Git status — paths from the backend are absolute, so we match directly.
   const gitEnabled = useSettingsStore((s) => s.gitEnabled);
   const repo = useGitStore((s) => gitRepoRoot ? s.repos[gitRepoRoot] : undefined);
-  const fileStatuses = repo?.fileStatuses ?? [];
+  const fileStatusMap = repo?.fileStatusMap;
+  const fileStatuses = repo?.fileStatuses;
   const gitInfo = useMemo(() => {
-    if (!gitEnabled || !gitRepoRoot || fileStatuses.length === 0) return null;
+    if (!gitEnabled || !gitRepoRoot || !fileStatusMap || fileStatusMap.size === 0) return null;
 
     if (!entry.is_directory) {
-      // Direct lookup by absolute path (prefer unstaged over staged for display)
-      const unstaged = fileStatuses.find((s) => s.path === entry.path && !s.staged);
-      const staged = fileStatuses.find((s) => s.path === entry.path && s.staged);
+      // O(1) Map lookup by absolute path (prefer unstaged over staged for display)
+      const statuses = fileStatusMap.get(entry.path);
+      if (!statuses) return null;
+      const unstaged = statuses.find((s) => !s.staged);
+      const staged = statuses.find((s) => s.staged);
       if (unstaged) return GIT_STATUS_CONFIG[unstaged.status];
       if (staged) return GIT_STATUS_CONFIG[staged.status];
       return null;
     }
 
     // For directories: check if any status path is inside this directory
+    // This still iterates, but only for directories (far fewer than files)
     const dirPrefix = entry.path + "/";
-    const hasChanges = fileStatuses.some((s) => s.path.startsWith(dirPrefix));
+    const hasChanges = fileStatuses?.some((s) => s.path.startsWith(dirPrefix));
     if (hasChanges) return { label: "●", color: "text-muted-foreground/50", tooltip: "Contains changes" };
     return null;
-  }, [gitEnabled, gitRepoRoot, entry.path, entry.is_directory, fileStatuses]);
+  }, [gitEnabled, gitRepoRoot, entry.path, entry.is_directory, fileStatusMap, fileStatuses]);
 
   useEffect(() => {
     if (isRenaming && renameInputRef.current) {

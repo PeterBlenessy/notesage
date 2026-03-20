@@ -11,23 +11,7 @@ import {
   ghostTextAcceptCallbackCM,
   type CMGhostTextCompletion,
 } from "@/components/editor/codemirror-ghost-text";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface InlineCompletionItem {
-  insert_text: string;
-  range?: {
-    start: { line: number; character: number };
-    end: { line: number; character: number };
-  };
-  command?: { command: string; arguments?: unknown[] };
-}
-
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
+import { requestCopilotCompletion, notifyCompletionAccepted } from "@/lib/copilot-shared";
 
 /**
  * Manages Copilot completions for the CodeMirror source editor.
@@ -124,52 +108,18 @@ export function useCopilotCompletionCM(cmView: EditorView | null) {
       lastRequestedPos.current = posKey;
 
       try {
-        const items = await invoke<InlineCompletionItem[]>(
-          "copilot_lsp_request_completion",
-          { uri: filePath, line: lineNumber, character, version },
-        );
+        const result = await requestCopilotCompletion(filePath, lineNumber, character, version);
 
         // Editor may have changed while awaiting
         if (!cmView.hasFocus) return;
 
-        if (items && items.length > 0) {
-          const item = items[0];
-
-          // Strip already-typed prefix
-          let ghostText = item.insert_text;
-          if (item.range) {
-            const alreadyTypedLen = character - item.range.start.character;
-            if (alreadyTypedLen > 0 && alreadyTypedLen < ghostText.length) {
-              ghostText = ghostText.slice(alreadyTypedLen);
-            }
-          }
-
-          if (!ghostText) {
-            if (hasActiveGhostTextCM(cmView)) clearGhostTextCM(cmView);
-            return;
-          }
-
-          // Use current cursor position (may have changed during await)
+        if (result) {
           const currentPos = cmView.state.selection.main.head;
           setGhostTextCM(cmView, {
-            text: ghostText,
+            text: result.text,
             pos: currentPos,
-            command: item.command
-              ? {
-                  command: item.command.command,
-                  arguments: item.command.arguments ?? undefined,
-                }
-              : undefined,
+            command: result.command,
           });
-
-          // Notify LSP the completion was shown
-          invoke("copilot_lsp_did_show_completion", {
-            item: {
-              insertText: item.insert_text,
-              range: item.range,
-              command: item.command,
-            },
-          }).catch(() => {});
         } else {
           if (hasActiveGhostTextCM(cmView)) {
             clearGhostTextCM(cmView);
@@ -230,10 +180,7 @@ export function useCopilotCompletionCM(cmView: EditorView | null) {
       completion: CMGhostTextCompletion,
     ) => {
       if (completion.command) {
-        invoke("copilot_lsp_accept_completion", {
-          command: completion.command.command,
-          arguments: completion.command.arguments ?? [],
-        }).catch(() => {});
+        notifyCompletionAccepted(completion.command);
       }
     };
 

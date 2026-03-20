@@ -1,14 +1,17 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { CommandPalette } from "@/components/CommandPalette";
-import { SettingsDialog, type SettingsTab } from "@/components/settings/SettingsDialog";
-import { ProjectSettingsDialog } from "@/components/settings/ProjectSettingsDialog";
+import type { SettingsTab } from "@/components/settings/SettingsDialog";
 import { NewNoteDialog } from "@/components/NewNoteDialog";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
 import { UpdateDialog } from "@/components/UpdateDialog";
-import { KeyboardShortcutsDialog } from "@/components/KeyboardShortcutsDialog";
-import { ActionsDialog } from "@/components/actions/ActionsDialog";
 import { Layout } from "@/components/Layout";
+
+// Lazy-load dialogs — these are hidden by default and only shown on demand.
+const SettingsDialog = lazy(() => import("@/components/settings/SettingsDialog").then(m => ({ default: m.SettingsDialog })));
+const ProjectSettingsDialog = lazy(() => import("@/components/settings/ProjectSettingsDialog").then(m => ({ default: m.ProjectSettingsDialog })));
+const KeyboardShortcutsDialog = lazy(() => import("@/components/KeyboardShortcutsDialog").then(m => ({ default: m.KeyboardShortcutsDialog })));
+const ActionsDialog = lazy(() => import("@/components/actions/ActionsDialog").then(m => ({ default: m.ActionsDialog })));
 import { useActionScanner } from "@/hooks/useActionScanner";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -145,7 +148,7 @@ function App() {
           }
         }
       }).then((fn) => { unlisten = fn; });
-    });
+    }).catch((e) => log.warn("lifecycle", "Failed to set up file-open listener", e));
     return () => { unlisten?.(); };
   }, [openFile, addExplorerFolder]);
 
@@ -409,30 +412,32 @@ function App() {
           </div>
         )}
 
-        <SettingsDialog
-          open={settingsOpen}
-          onOpenChange={(open) => {
-            setSettingsOpen(open);
-            if (!open) setSettingsInitialTab(undefined);
-          }}
-          initialTab={settingsInitialTab}
-          updateState={updateState}
-          onCheckForUpdate={checkForUpdate}
-          onOpenUpdateDialog={() => setUpdateDialogOpen(true)}
-        />
-        {projectSettingsPath && (
-          <ProjectSettingsDialog
-            open={projectSettingsOpen}
-            onOpenChange={setProjectSettingsOpen}
-            projectPath={projectSettingsPath}
-            onPathChanged={setProjectSettingsPath}
-            onOpenAISettings={() => {
-              setProjectSettingsOpen(false);
-              setSettingsInitialTab("ai");
-              setSettingsOpen(true);
+        <Suspense fallback={null}>
+          <SettingsDialog
+            open={settingsOpen}
+            onOpenChange={(open) => {
+              setSettingsOpen(open);
+              if (!open) setSettingsInitialTab(undefined);
             }}
+            initialTab={settingsInitialTab}
+            updateState={updateState}
+            onCheckForUpdate={checkForUpdate}
+            onOpenUpdateDialog={() => setUpdateDialogOpen(true)}
           />
-        )}
+          {projectSettingsPath && (
+            <ProjectSettingsDialog
+              open={projectSettingsOpen}
+              onOpenChange={setProjectSettingsOpen}
+              projectPath={projectSettingsPath}
+              onPathChanged={setProjectSettingsPath}
+              onOpenAISettings={() => {
+                setProjectSettingsOpen(false);
+                setSettingsInitialTab("ai");
+                setSettingsOpen(true);
+              }}
+            />
+          )}
+        </Suspense>
         <CommandPalette
           open={commandPaletteOpen}
           onOpenChange={(open) => {
@@ -474,10 +479,13 @@ function App() {
           onRestartNow={restartNow}
           onDismiss={dismissUpdate}
         />
-        <KeyboardShortcutsDialog
-          open={shortcutsOpen}
-          onOpenChange={setShortcutsOpen}
-        />
+        <Suspense fallback={null}>
+          <KeyboardShortcutsDialog
+            open={shortcutsOpen}
+            onOpenChange={setShortcutsOpen}
+          />
+        </Suspense>
+        <Suspense fallback={null}>
         <ActionsDialog
           open={actionsDialogOpen}
           onOpenChange={setActionsDialogOpen}
@@ -495,6 +503,7 @@ function App() {
             }
           }}
         />
+        </Suspense>
       </div>
       <Toaster position="bottom-right" />
     </ThemeProvider>

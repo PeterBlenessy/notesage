@@ -1,6 +1,6 @@
 # Tasks: Codebase Audit Improvements
 
-**Source:** [docs/research/codebase-audit-2026-03-17.md](../research/codebase-audit-2026-03-17.md)**Total:** 15 tasks (8S, 5M, 2L) **No task depends on another** — all independently shippable.
+**Source:** [docs/research/codebase-audit-2026-03-17.md](../research/codebase-audit-2026-03-17.md)**Total:** 15 tasks (8S, 5M, 2L) — **All complete** **No task depends on another** — all independently shippable.
 
 ## Suggested Implementation Order
 
@@ -213,7 +213,7 @@ Ensure each viewer file uses a default export (or named export compatible with `
 
 ---
 
-### #10 — Lazy-load settings and export dialogs
+### #10 — Lazy-load settings and export dialogs ✅
 
 | Field | Value |
 | --- | --- |
@@ -232,7 +232,7 @@ Replace eager imports of `SettingsDialog`, `ExportDialog`, `ActionsDialog`, `Key
 
 ---
 
-### #11 — FileTreeItem git status Map lookup
+### #11 — FileTreeItem git status Map lookup ✅
 
 | Field | Value |
 | --- | --- |
@@ -253,7 +253,7 @@ Convert `fileStatuses` array to a `Map<string, GitFileStatus>` before passing to
 
 ## Frontend — Cleanup
 
-### #12 — Fix uncaught promise rejections and event listener cleanup
+### #12 — Fix uncaught promise rejections and event listener cleanup ✅
 
 | Field | Value |
 | --- | --- |
@@ -276,7 +276,7 @@ Convert `fileStatuses` array to a `Map<string, GitFileStatus>` before passing to
 
 ---
 
-### #13 — Clean up debounce map growth in useFileWatcher
+### #13 — Clean up debounce map growth in useFileWatcher ✅
 
 | Field | Value |
 | --- | --- |
@@ -297,7 +297,7 @@ Delete debounce map entries after the debounce timer fires (in the `setTimeout` 
 
 ## Frontend — Simplification
 
-### #14 — Consolidate Copilot completion hooks
+### #14 — Consolidate Copilot completion hooks ✅
 
 | Field | Value |
 | --- | --- |
@@ -321,7 +321,7 @@ Extract shared LSP lifecycle logic (\~60% overlap) into a shared module:
 
 ---
 
-### #15 — Centralize editor colors as CSS variables
+### #15 — Centralize editor colors as CSS variables ✅
 
 | Field | Value |
 | --- | --- |

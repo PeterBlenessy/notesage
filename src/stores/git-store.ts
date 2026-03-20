@@ -5,13 +5,31 @@ interface RepoState {
   isGitRepo: boolean;
   currentBranch: string;
   fileStatuses: GitFileStatus[];
+  /** Pre-computed Map<path, statuses[]> for O(1) lookups in FileTreeItem */
+  fileStatusMap: Map<string, GitFileStatus[]>;
   isLoading: boolean;
 }
+
+function buildStatusMap(statuses: GitFileStatus[]): Map<string, GitFileStatus[]> {
+  const map = new Map<string, GitFileStatus[]>();
+  for (const s of statuses) {
+    const existing = map.get(s.path);
+    if (existing) {
+      existing.push(s);
+    } else {
+      map.set(s.path, [s]);
+    }
+  }
+  return map;
+}
+
+const EMPTY_STATUS_MAP = new Map<string, GitFileStatus[]>();
 
 const DEFAULT_REPO_STATE: RepoState = {
   isGitRepo: false,
   currentBranch: "",
   fileStatuses: [],
+  fileStatusMap: EMPTY_STATUS_MAP,
   isLoading: false,
 };
 
@@ -51,7 +69,11 @@ export const useGitStore = create<GitStore>()((set, get) => ({
     set((state) => ({
       repos: {
         ...state.repos,
-        [path]: { ...(state.repos[path] ?? DEFAULT_REPO_STATE), fileStatuses: statuses },
+        [path]: {
+          ...(state.repos[path] ?? DEFAULT_REPO_STATE),
+          fileStatuses: statuses,
+          fileStatusMap: buildStatusMap(statuses),
+        },
       },
     })),
 

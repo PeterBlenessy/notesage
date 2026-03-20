@@ -76,7 +76,7 @@ export function useFileWatcher() {
         }, 300);
         // Index new files for tags/mentions/FTS; remove deleted files
         if (kind === "create") {
-          tauriApi.indexFile(normalizePath(path)).catch(() => {});
+          tauriApi.indexFile(normalizePath(path)).catch((e) => log.warn('watcher', 'Failed to index new file', e));
         }
       }
 
@@ -189,7 +189,7 @@ export function useFileWatcher() {
           delete modifyDebounce.current[normalizedPath];
           await handleModifyEvent(path, normalizedPath);
           // Incrementally reindex the changed file for tags/mentions/FTS
-          tauriApi.indexFile(normalizedPath).catch(() => {});
+          tauriApi.indexFile(normalizedPath).catch((e) => log.warn('watcher', 'Failed to index modified file', e));
         }, 200);
       }
     }

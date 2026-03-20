@@ -196,13 +196,13 @@ const TEXT_COLORS = [
 ] as const;
 
 const HIGHLIGHT_COLORS = [
-  { label: "None", name: null, swatchLight: "#ffffff", swatchDark: "#2d2d2d" },
-  { label: "Yellow", name: "yellow", swatchLight: "#fef08a", swatchDark: "#854d0e" },
-  { label: "Green", name: "green", swatchLight: "#bbf7d0", swatchDark: "#166534" },
-  { label: "Blue", name: "blue", swatchLight: "#bfdbfe", swatchDark: "#1e40af" },
-  { label: "Pink", name: "pink", swatchLight: "#fbcfe8", swatchDark: "#9d174d" },
-  { label: "Orange", name: "orange", swatchLight: "#fed7aa", swatchDark: "#9a3412" },
-  { label: "Grey", name: "grey", swatchLight: "#e5e7eb", swatchDark: "#374151" },
+  { label: "None", name: null, swatch: "var(--color-background)" },
+  { label: "Yellow", name: "yellow", swatch: "var(--color-highlight-yellow)" },
+  { label: "Green", name: "green", swatch: "var(--color-highlight-green)" },
+  { label: "Blue", name: "blue", swatch: "var(--color-highlight-blue)" },
+  { label: "Pink", name: "pink", swatch: "var(--color-highlight-pink)" },
+  { label: "Orange", name: "orange", swatch: "var(--color-highlight-orange)" },
+  { label: "Grey", name: "grey", swatch: "var(--color-highlight-grey)" },
 ] as const;
 
 function TextColorPopover({ editor }: { editor: Editor }) {
@@ -273,7 +273,6 @@ function TextColorPopover({ editor }: { editor: Editor }) {
 
 function HighlightPopover({ editor }: { editor: Editor }) {
   const [open, setOpen] = useState(false);
-  const isDark = document.documentElement.classList.contains("dark");
 
   const currentHighlight = editor.getAttributes("highlight")?.color as string | undefined;
 
@@ -309,9 +308,7 @@ function HighlightPopover({ editor }: { editor: Editor }) {
           Highlight
         </p>
         <div className="grid grid-cols-7 gap-1">
-          {HIGHLIGHT_COLORS.map(({ label, name, swatchLight, swatchDark }) => {
-            const swatchColor = isDark ? swatchDark : swatchLight;
-            return (
+          {HIGHLIGHT_COLORS.map(({ label, name, swatch }) => (
               <Tooltip key={label}>
                 <TooltipTrigger asChild>
                   <button
@@ -320,7 +317,7 @@ function HighlightPopover({ editor }: { editor: Editor }) {
                       !name && "flex items-center justify-center",
                       currentHighlight === name && "ring-1 ring-foreground ring-offset-1 ring-offset-background"
                     )}
-                    style={{ backgroundColor: swatchColor }}
+                    style={{ backgroundColor: swatch }}
                     onClick={() => {
                       if (name) {
                         editor.chain().focus().toggleHighlight({ color: name }).run();
@@ -337,8 +334,7 @@ function HighlightPopover({ editor }: { editor: Editor }) {
                   {label}
                 </TooltipContent>
               </Tooltip>
-            );
-          })}
+          ))}
         </div>
       </PopoverContent>
     </Popover>

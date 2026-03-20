@@ -53,7 +53,7 @@ import { useActiveProject } from "@/hooks/useActiveProject";
 import { useGitStore } from "@/stores/git-store";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { ExportDialog } from "@/components/ExportDialog";
+const ExportDialog = lazy(() => import("@/components/ExportDialog").then(m => ({ default: m.ExportDialog })));
 import { Toolbar } from "./Toolbar";
 import { SourceModeEditor } from "./SourceModeEditor";
 import { ImageInsertDialog } from "./ImageInsertDialog";
@@ -1611,15 +1611,17 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         } : undefined}
       />
       <DocumentOutline open={outlineOpen ?? false} onOpenChange={(open) => onOutlineOpenChange?.(open)} editor={editor} />
-      <ExportDialog
-        open={exportOpen ?? false}
-        onOpenChange={(open) => onExportOpenChange?.(open)}
-        onExport={async (options) => {
-          await exportPdf(options);
-          onExportOpenChange?.(false);
-        }}
-        isExporting={isExporting}
-      />
+      <Suspense fallback={null}>
+        <ExportDialog
+          open={exportOpen ?? false}
+          onOpenChange={(open) => onExportOpenChange?.(open)}
+          onExport={async (options) => {
+            await exportPdf(options);
+            onExportOpenChange?.(false);
+          }}
+          isExporting={isExporting}
+        />
+      </Suspense>
       <CommentPopover
         comment={commentOps.activeComment}
         open={commentPopoverOpen}

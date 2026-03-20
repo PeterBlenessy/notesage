@@ -14,23 +14,7 @@ import {
   hasActiveInlineDiff,
   GhostTextPluginKey,
 } from '@/components/editor/extensions';
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface InlineCompletionItem {
-  insert_text: string;
-  range?: {
-    start: { line: number; character: number };
-    end: { line: number; character: number };
-  };
-  command?: { command: string; arguments?: unknown[] };
-}
-
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
+import { requestCopilotCompletion, notifyCompletionAccepted } from '@/lib/copilot-shared';
 
 /**
  * Manages the Copilot Language Server lifecycle and ghost text completions.
@@ -194,57 +178,20 @@ export function useCopilotCompletion(editor: Editor | null) {
       lastRequestedPos.current = posKey;
 
       try {
-        const items = await invoke<InlineCompletionItem[]>('copilot_lsp_request_completion', {
-          uri: filePath,
-          line,
-          character,
-          version,
-        });
+        const result = await requestCopilotCompletion(filePath, line, character, version);
 
         // The editor state may have changed while we were waiting
         if (!editor.isFocused || editor.isDestroyed) return;
 
-        if (items && items.length > 0) {
-          const item = items[0];
+        if (result) {
           const currentPos = editor.state.selection.$from.pos;
-
-          // The LSP returns a range + full replacement text. Strip the prefix
-          // that's already typed so we only show the NEW text as ghost text.
-          let ghostText = item.insert_text;
-          if (item.range) {
-            // Characters from range.start to cursor are already in the document
-            const alreadyTypedLen = character - item.range.start.character;
-            if (alreadyTypedLen > 0 && alreadyTypedLen < ghostText.length) {
-              ghostText = ghostText.slice(alreadyTypedLen);
-            }
-          }
-
-          // Skip if nothing new to show
-          if (!ghostText) {
-            if (hasActiveGhostText(editor)) clearGhostText(editor);
-            return;
-          }
-
           setGhostText(editor, {
-            text: ghostText,
+            text: result.text,
             from: currentPos,
             to: currentPos,
-            command: item.command ? {
-              command: item.command.command,
-              arguments: item.command.arguments ?? undefined,
-            } : undefined,
+            command: result.command,
           });
-
-          // Notify LSP the completion was shown
-          invoke('copilot_lsp_did_show_completion', {
-            item: {
-              insertText: item.insert_text,
-              range: item.range,
-              command: item.command,
-            },
-          }).catch(() => {});
         } else {
-          // No completions — clear any stale ghost text
           if (hasActiveGhostText(editor)) {
             clearGhostText(editor);
           }
@@ -317,14 +264,10 @@ export function useCopilotCompletion(editor: Editor | null) {
       const tr = transaction as { getMeta: (key: unknown) => unknown };
       const meta = tr.getMeta(GhostTextPluginKey) as { ghostTextAccept?: boolean } | undefined;
       if (meta?.ghostTextAccept) {
-        // The ghost text was accepted — find the command to track acceptance
         const state = GhostTextPluginKey.getState(editor.state);
         const command = state?.completion?.command;
         if (command) {
-          invoke('copilot_lsp_accept_completion', {
-            command: command.command,
-            arguments: command.arguments ?? [],
-          }).catch(() => {});
+          notifyCompletionAccepted(command);
         }
       }
     };
