@@ -606,8 +606,9 @@
 }
 
 .ai-suggestion-widget {
-  display: inline;
+  display: block;
   white-space: normal;
+  position: relative;
 }
 
 .ai-suggestion-insert,
@@ -621,9 +622,26 @@
 }
 
 .ai-suggestion-controls {
-  display: inline;
-  margin-left: 6px;
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  gap: 2px;
   white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+  z-index: 10;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.ai-suggestion-controls.visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .ai-suggestion-accept,
@@ -635,7 +653,6 @@
   line-height: 1;
   font-weight: 500;
   padding: 3px 6px;
-  margin: 0 2px;
   transition: background 150ms ease, border-color 150ms ease;
 }
 

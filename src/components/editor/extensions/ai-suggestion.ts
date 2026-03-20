@@ -159,6 +159,56 @@ function createDiffDecorations(
       container.appendChild(newText);
       container.appendChild(controls);
 
+      // Show/hide controls on hover over either the green (insert) or red (delete) area
+      const showControls = () => controls.classList.add('visible');
+      const hideControls = (e: MouseEvent) => {
+        const related = e.relatedTarget as HTMLElement | null;
+        if (
+          related?.closest('.ai-suggestion-delete') ||
+          related?.closest('.ai-suggestion-widget')
+        ) {
+          return; // Moving between red/green — keep visible
+        }
+        controls.classList.remove('visible');
+      };
+
+      container.addEventListener('mouseenter', showControls);
+      container.addEventListener('mouseleave', hideControls as EventListener);
+
+      // Delegate hover on the red (delete) decoration via the editor DOM
+      const editorDom = editor.view.dom;
+      const onOver = (e: Event) => {
+        const target = (e as MouseEvent).target as HTMLElement;
+        if (target.closest('.ai-suggestion-delete')) {
+          showControls();
+        }
+      };
+      const onOut = (e: Event) => {
+        const me = e as MouseEvent;
+        const target = me.target as HTMLElement;
+        if (!target.closest('.ai-suggestion-delete')) return;
+        const related = me.relatedTarget as HTMLElement | null;
+        if (
+          related?.closest('.ai-suggestion-delete') ||
+          related?.closest('.ai-suggestion-widget')
+        ) {
+          return;
+        }
+        controls.classList.remove('visible');
+      };
+      editorDom.addEventListener('mouseover', onOver);
+      editorDom.addEventListener('mouseout', onOut);
+
+      // Clean up when the widget is removed from the DOM
+      const observer = new MutationObserver(() => {
+        if (!container.isConnected) {
+          editorDom.removeEventListener('mouseover', onOver);
+          editorDom.removeEventListener('mouseout', onOut);
+          observer.disconnect();
+        }
+      });
+      observer.observe(editorDom, { childList: true, subtree: true });
+
       return container;
     })
   );
@@ -209,10 +259,29 @@ export function setSuggestion(
 ) {
   console.log('Setting AI suggestion:', { from, to, originalText, suggestedText });
 
+  // Absorb trailing punctuation: if the suggested text ends with the same
+  // characters that immediately follow the selection in the document, extend
+  // the selection range to include them. This prevents orphaned punctuation
+  // (e.g. a "." appearing after the Accept/Reject controls).
+  const doc = editor.state.doc;
+  const docSize = doc.content.size;
+  let adjustedTo = to;
+  const trailingChars = '.!?;:,)]\'"';
+  while (adjustedTo < docSize) {
+    const nextChar = doc.textBetween(adjustedTo, adjustedTo + 1, '', '');
+    if (!nextChar || !trailingChars.includes(nextChar)) break;
+    if (!suggestedText.endsWith(nextChar)) break;
+    // The suggested text already ends with this char — absorb it into the range
+    adjustedTo++;
+  }
+  if (adjustedTo > to) {
+    originalText = doc.textBetween(from, adjustedTo, '\n');
+  }
+
   editor.view.dispatch(
     editor.state.tr.setMeta(AISuggestionPluginKey, {
       setSuggestion: true,
-      suggestion: { from, to, originalText, suggestedText },
+      suggestion: { from, to: adjustedTo, originalText, suggestedText },
     })
   );
 
