@@ -53,6 +53,7 @@ export function useCommentOperations(editor: Editor | null) {
     setActiveComment,
     saveComments,
     clearDocument,
+    updateCommentPositions,
   } = useCommentStore();
 
   const lastLoadedKeyRef = useRef<string | null>(null);
@@ -80,13 +81,72 @@ export function useCommentOperations(editor: Editor | null) {
     loadComments(commentKey, storageRoot);
   }, [commentKey, storageRoot, editor, loadComments]);
 
-  // Sync decorations when comments change — filter out resolved comments
+  // Sync remapped positions from plugin → store on every document change,
+  // and debounce-save to disk so tab switches see current positions.
+  const positionSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!editor || !commentKey || !storageRoot) return;
+
+    const handleDocChanged = ({ transaction }: { transaction: Transaction }) => {
+      if (!transaction.docChanged) return;
+      const pluginState = CommentMarkPluginKey.getState(editor.state);
+      if (!pluginState?.comments?.length) return;
+
+      const doc = editor.state.doc;
+      const positions = (pluginState.comments as Array<{ commentId: string; from: number; to: number }>)
+        .filter((c) => c.from < c.to && c.to <= doc.content.size)
+        .map((c) => ({
+          id: c.commentId,
+          from: c.from,
+          to: c.to,
+          anchorText: doc.textBetween(c.from, c.to, '\n'),
+        }));
+
+      updateCommentPositions(commentKey, positions);
+
+      // Debounce save to disk (2s after last edit)
+      if (positionSaveTimeoutRef.current) clearTimeout(positionSaveTimeoutRef.current);
+      positionSaveTimeoutRef.current = setTimeout(() => {
+        saveComments(commentKey, storageRoot);
+      }, 2000);
+    };
+
+    editor.on('transaction', handleDocChanged);
+    return () => {
+      editor.off('transaction', handleDocChanged);
+      // Save immediately on cleanup (e.g., tab switch)
+      if (positionSaveTimeoutRef.current) {
+        clearTimeout(positionSaveTimeoutRef.current);
+        positionSaveTimeoutRef.current = null;
+        saveComments(commentKey, storageRoot);
+      }
+    };
+  }, [editor, commentKey, storageRoot, updateCommentPositions, saveComments]);
+
+  // Sync decorations when comments change — filter out resolved comments.
+  // Merge with plugin's authoritative remapped positions to prevent overwriting.
   useEffect(() => {
     if (!editor || !commentKey) return;
-    const comments = (commentsByDocument[commentKey] ?? []).filter(
+    const storeComments = (commentsByDocument[commentKey] ?? []).filter(
       (c) => c.status !== 'resolved'
     );
-    setCommentDecorations(editor, comments, activeCommentId);
+
+    // Use plugin's remapped positions as authoritative when available
+    const pluginState = CommentMarkPluginKey.getState(editor.state);
+    const pluginPosMap = new Map<string, { from: number; to: number }>();
+    if (pluginState) {
+      for (const c of pluginState.comments as Array<{ commentId: string; from: number; to: number }>) {
+        pluginPosMap.set(c.commentId, { from: c.from, to: c.to });
+      }
+    }
+
+    const mergedComments = storeComments.map((c) => {
+      const pluginPos = pluginPosMap.get(c.id);
+      return pluginPos ? { ...c, from: pluginPos.from, to: pluginPos.to } : c;
+    });
+
+    setCommentDecorations(editor, mergedComments, activeCommentId);
   }, [editor, commentKey, commentsByDocument, activeCommentId]);
 
   // Listen for comment creation requests and click-to-select from the ProseMirror plugin

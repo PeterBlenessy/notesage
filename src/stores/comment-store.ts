@@ -69,6 +69,7 @@ interface CommentStore {
   /** Scroll to a comment's position and then activate it (used by external navigation) */
   requestScrollToComment: (id: string) => void;
   clearScrollToComment: () => void;
+  updateCommentPositions: (documentId: string, positions: Array<{id: string; from: number; to: number; anchorText: string}>) => void;
   saveComments: (documentId: string, projectRoot: string) => Promise<void>;
   clearDocument: (documentId: string) => void;
 }
@@ -298,6 +299,26 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
 
   clearScrollToComment: () => {
     set({ scrollToCommentId: null });
+  },
+
+  updateCommentPositions: (documentId, positions) => {
+    set((state) => {
+      const comments = state.commentsByDocument[documentId];
+      if (!comments || comments.length === 0) return state;
+      const posMap = new Map(positions.map((p) => [p.id, p]));
+      let changed = false;
+      const updated = comments.map((c) => {
+        const pos = posMap.get(c.id);
+        if (!pos) return c;
+        if (pos.from === c.from && pos.to === c.to && pos.anchorText === c.anchorText) return c;
+        changed = true;
+        return { ...c, from: pos.from, to: pos.to, anchorText: pos.anchorText };
+      });
+      if (!changed) return state;
+      return {
+        commentsByDocument: { ...state.commentsByDocument, [documentId]: updated },
+      };
+    });
   },
 
   saveComments: async (documentId: string, projectRoot: string) => {
