@@ -95,6 +95,22 @@
   background-color: oklch(from var(--color-primary) l c h / 0.15);
 }
 
+/* Suppress selection on container/wrapper elements to prevent opacity stacking.
+   Without this, nested blocks (ul > li > div > p) each render ::selection at 15%,
+   compounding to ~60% in gaps — creating prominent full-width bars between lines.
+   Text content (inside <p>, headings, <code>, inline elements) retains selection. */
+.ProseMirror > ul::selection,
+.ProseMirror > ol::selection,
+.ProseMirror li::selection,
+.ProseMirror li > div::selection,
+.ProseMirror li > label::selection,
+.ProseMirror blockquote::selection,
+.ProseMirror > div::selection,
+.ProseMirror table::selection,
+.ProseMirror tr::selection {
+  background-color: transparent;
+}
+
 /* Headings */
 .ProseMirror h1,
 .ProseMirror h2,
