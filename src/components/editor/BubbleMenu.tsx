@@ -1,5 +1,6 @@
 import { BubbleMenu as TiptapBubbleMenu } from "@tiptap/react/menus";
 import type { Editor } from "@tiptap/core";
+import { NodeSelection } from "@tiptap/pm/state";
 import {
   Sparkles,
   Loader2,
@@ -123,6 +124,16 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
   return (
     <TiptapBubbleMenu
       editor={editor}
+      shouldShow={({ editor: e, state }) => {
+        // Only show for text selections, not node selections (e.g. horizontal rule)
+        if (state.selection instanceof NodeSelection) return false;
+        // Must have a non-empty selection with actual text
+        const { from, to } = state.selection;
+        if (from === to) return false;
+        // Don't show inside code blocks
+        if (e.isActive("codeBlock")) return false;
+        return true;
+      }}
       className="z-50 flex items-center rounded-lg border border-border bg-popover p-1 shadow-lg backdrop-blur-sm overflow-hidden animate-in fade-in-0 zoom-in-95 duration-150"
     >
       {!hasSuggestion && (
