@@ -520,11 +520,11 @@
 
 /* Inline diff decorations */
 .inline-diff-delete {
-  background-color: rgba(239, 68, 68, 0.2);
+  background-color: rgba(180, 30, 30, 0.25);
 }
 
 .dark .inline-diff-delete {
-  background-color: rgba(248, 113, 113, 0.15);
+  background-color: rgba(180, 30, 30, 0.4);
 }
 
 .inline-diff-widget {
@@ -534,11 +534,11 @@
 }
 
 .inline-diff-insert {
-  background-color: rgba(34, 197, 94, 0.25);
+  background-color: rgba(30, 130, 30, 0.25);
 }
 
 .dark .inline-diff-insert {
-  background-color: rgba(74, 222, 128, 0.2);
+  background-color: rgba(30, 140, 30, 0.4);
 }
 
 .inline-diff-controls {
@@ -597,11 +597,11 @@
 
 /* AI suggestion decorations */
 .ai-suggestion-delete {
-  background-color: rgba(239, 68, 68, 0.2);
+  background-color: rgba(180, 30, 30, 0.25);
 }
 
 .dark .ai-suggestion-delete {
-  background-color: rgba(248, 113, 113, 0.25);
+  background-color: rgba(180, 30, 30, 0.4);
 }
 
 .ai-suggestion-widget {
@@ -611,12 +611,12 @@
 
 .ai-suggestion-insert,
 .ai-suggestion-insert * {
-  background-color: rgba(34, 197, 94, 0.2);
+  background-color: rgba(30, 130, 30, 0.25);
 }
 
 .dark .ai-suggestion-insert,
 .dark .ai-suggestion-insert * {
-  background-color: rgba(74, 222, 128, 0.2);
+  background-color: rgba(30, 140, 30, 0.4);
 }
 
 .ai-suggestion-controls {
