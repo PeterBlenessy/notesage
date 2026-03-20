@@ -761,9 +761,15 @@
   border-bottom-left-radius: 0;
 }
 
-/* Date badges — hide the "//" prefix visually */
+/* Date badges — hide the "//" prefix visually.
+   font-size:0 collapses the element to zero height, which causes
+   ProseMirror's scrollIntoView to jump when the cursor passes through.
+   Use font-size:1px + color:transparent instead: the element is
+   invisible and nearly zero-width but retains enough height for
+   correct caret positioning without stretching the line box. */
 .date-badge-prefix {
-  font-size: 0;
+  font-size: 1px;
+  color: transparent;
   letter-spacing: -1px;
   overflow: hidden;
 }

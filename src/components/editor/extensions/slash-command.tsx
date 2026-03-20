@@ -1,4 +1,5 @@
 import { Extension, type Editor, type Range } from "@tiptap/core";
+import { Plugin, PluginKey as PMPluginKey } from "@tiptap/pm/state";
 import type { EditorState } from "@tiptap/pm/state";
 import type { DecorationSet } from "@tiptap/pm/view";
 import { ReactRenderer } from "@tiptap/react";
@@ -259,10 +260,42 @@ export const SlashCommand = Extension.create({
   },
 
   addProseMirrorPlugins() {
+    let lastTxChangedDoc = false;
+
+    const docChangeTracker = new Plugin({
+      key: new PMPluginKey("slashCommandDocTracker"),
+      state: {
+        init() {
+          return false;
+        },
+        apply(tr) {
+          lastTxChangedDoc = tr.docChanged;
+          return tr.docChanged;
+        },
+      },
+    });
+
     return [
+      docChangeTracker,
       Suggestion({
         editor: this.editor,
         ...this.options.suggestion,
+        allow: ({ state, range }: { state: EditorState; range: Range }) => {
+          if (!lastTxChangedDoc) return false;
+
+          const editorState = state;
+          const $from = editorState.doc.resolve(range.from);
+          if ($from.parent.type.name === "codeBlock") return false;
+
+          const dateDecos = DateHighlightPluginKey.getState(
+            editorState
+          ) as DecorationSet | undefined;
+          if (dateDecos) {
+            const found = dateDecos.find(range.from, range.to);
+            if (found.length > 0) return false;
+          }
+          return true;
+        },
         items: ({ query }: { query: string }) => {
           return commands.filter((item) =>
             item.title.toLowerCase().startsWith(query.toLowerCase())

@@ -1,5 +1,5 @@
 import { Extension, type Editor, type Range } from "@tiptap/core";
-import { PluginKey } from "@tiptap/pm/state";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { EditorState } from "@tiptap/pm/state";
 import type { DecorationSet } from "@tiptap/pm/view";
 import { ReactRenderer } from "@tiptap/react";
@@ -246,10 +246,41 @@ export const DateSuggestion = Extension.create({
   },
 
   addProseMirrorPlugins() {
+    let lastTxChangedDoc = false;
+
+    const docChangeTracker = new Plugin({
+      key: new PluginKey("dateSuggestionDocTracker"),
+      state: {
+        init() {
+          return false;
+        },
+        apply(tr) {
+          lastTxChangedDoc = tr.docChanged;
+          return tr.docChanged;
+        },
+      },
+    });
+
     return [
+      docChangeTracker,
       Suggestion({
         editor: this.editor,
         ...this.options.suggestion,
+        allow: ({ state, range }: { state: EditorState; range: Range }) => {
+          if (!lastTxChangedDoc) return false;
+
+          const $from = state.doc.resolve(range.from);
+          if ($from.parent.type.name === "codeBlock") return false;
+
+          const dateDecos = DateHighlightPluginKey.getState(state) as
+            | DecorationSet
+            | undefined;
+          if (dateDecos) {
+            const found = dateDecos.find(range.from, range.to);
+            if (found.length > 0) return false;
+          }
+          return true;
+        },
         items: ({ query }: { query: string }) => {
           return getDateItems(query);
         },

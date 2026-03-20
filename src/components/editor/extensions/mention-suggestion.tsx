@@ -1,5 +1,5 @@
 import { Extension, type Editor, type Range } from "@tiptap/core";
-import { PluginKey } from "@tiptap/pm/state";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { EditorState } from "@tiptap/pm/state";
 import { ReactRenderer } from "@tiptap/react";
 import { MentionHighlightPluginKey } from "./mention-highlight";
@@ -150,10 +150,42 @@ export const MentionSuggestion = Extension.create({
   },
 
   addProseMirrorPlugins() {
+    let lastTxChangedDoc = false;
+
+    const docChangeTracker = new Plugin({
+      key: new PluginKey("mentionSuggestionDocTracker"),
+      state: {
+        init() {
+          return false;
+        },
+        apply(tr) {
+          lastTxChangedDoc = tr.docChanged;
+          return tr.docChanged;
+        },
+      },
+    });
+
     return [
+      docChangeTracker,
       Suggestion({
         editor: this.editor,
         ...this.options.suggestion,
+        allow: ({ state, range }: { state: unknown; range: Range }) => {
+          if (!lastTxChangedDoc) return false;
+
+          const editorState = state as EditorState;
+          const $from = editorState.doc.resolve(range.from);
+          if ($from.parent.type.name === "codeBlock") return false;
+
+          const mentionDecos = MentionHighlightPluginKey.getState(editorState);
+          if (mentionDecos) {
+            const found = mentionDecos.find(range.from, range.to);
+            for (const deco of found) {
+              if (deco.to > range.to) return false;
+            }
+          }
+          return true;
+        },
         items: async ({ query }: { query: string }): Promise<MentionItem[]> => {
           try {
             const paths = getSearchPaths();

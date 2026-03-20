@@ -1,5 +1,5 @@
 import { Extension, type Editor, type Range } from "@tiptap/core";
-import { PluginKey } from "@tiptap/pm/state";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { EditorState } from "@tiptap/pm/state";
 import { ReactRenderer } from "@tiptap/react";
 import { TagHighlightPluginKey } from "./tag-highlight";
@@ -154,10 +154,47 @@ export const TagSuggestion = Extension.create({
   },
 
   addProseMirrorPlugins() {
+    // Track whether the last transaction changed the document (typing)
+    // vs only changed the selection (arrow-key navigation).
+    // Suggestion plugins must only activate on text input, not cursor movement.
+    let lastTxChangedDoc = false;
+
+    const docChangeTracker = new Plugin({
+      key: new PluginKey("tagSuggestionDocTracker"),
+      state: {
+        init() {
+          return false;
+        },
+        apply(tr) {
+          lastTxChangedDoc = tr.docChanged;
+          return tr.docChanged;
+        },
+      },
+    });
+
     return [
+      docChangeTracker,
       Suggestion({
         editor: this.editor,
         ...this.options.suggestion,
+        allow: ({ state, range }: { state: unknown; range: Range }) => {
+          // Only activate suggestions when the user is typing, not navigating
+          if (!lastTxChangedDoc) return false;
+
+          const editorState = state as EditorState;
+          const $from = editorState.doc.resolve(range.from);
+          if ($from.parent.type.name === "codeBlock") return false;
+
+          // Block if cursor is in the middle of an existing tag decoration
+          const tagDecos = TagHighlightPluginKey.getState(editorState);
+          if (tagDecos) {
+            const found = tagDecos.find(range.from, range.to);
+            for (const deco of found) {
+              if (deco.to > range.to) return false;
+            }
+          }
+          return true;
+        },
         items: async ({ query }: { query: string }): Promise<TagItem[]> => {
           try {
             const paths = getSearchPaths();
