@@ -567,32 +567,33 @@
 
 .inline-diff-accept-btn,
 .inline-diff-reject-btn {
-  border: none;
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 11px;
   cursor: pointer;
   line-height: 1;
   font-weight: 500;
   padding: 3px 6px;
-  transition: background 150ms ease;
+  transition: background 150ms ease, border-color 150ms ease;
 }
 
 .inline-diff-accept-btn {
-  background: rgb(34, 197, 94);
-  color: white;
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  border-color: var(--color-primary);
 }
 
 .inline-diff-accept-btn:hover {
-  background: rgb(22, 163, 74);
+  opacity: 0.85;
 }
 
 .inline-diff-reject-btn {
-  background: rgb(239, 68, 68);
-  color: white;
+  background: var(--color-muted);
+  color: var(--color-muted-foreground);
 }
 
 .inline-diff-reject-btn:hover {
-  background: rgb(220, 38, 38);
+  background: var(--color-accent);
 }
 
 /* AI suggestion decorations */
@@ -627,7 +628,7 @@
 
 .ai-suggestion-accept,
 .ai-suggestion-reject {
-  border: none;
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 11px;
   cursor: pointer;
@@ -635,24 +636,26 @@
   font-weight: 500;
   padding: 3px 6px;
   margin: 0 2px;
-  color: white;
-  transition: background 150ms ease;
+  transition: background 150ms ease, border-color 150ms ease;
 }
 
 .ai-suggestion-accept {
-  background: rgb(34, 197, 94);
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  border-color: var(--color-primary);
 }
 
 .ai-suggestion-accept:hover {
-  background: rgb(22, 163, 74);
+  opacity: 0.85;
 }
 
 .ai-suggestion-reject {
-  background: rgb(239, 68, 68);
+  background: var(--color-muted);
+  color: var(--color-muted-foreground);
 }
 
 .ai-suggestion-reject:hover {
-  background: rgb(220, 38, 38);
+  background: var(--color-accent);
 }
 
 /* Thin scrollbar for compact UI areas (popovers, panels) */
