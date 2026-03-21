@@ -77,3 +77,4 @@ Chronological log of major implementation milestones and changes.
 | 071 | [Release v0.22.5](071-release-v0.22.5.md) | Ghost task item fix, AI suggestion restyle, suggestion tab persistence |
 | 072 | [Release v0.22.6](072-release-v0.22.6.md) | Arrow-key navigation fixes, diff color/button restyle, hover controls |
 | 073 | [Release v0.22.7](073-release-v0.22.7.md) | Kernel-enforced Seatbelt network deny, violation monitoring, sandbox and indexer fixes |
+| 074 | [Release v0.22.8](074-release-v0.22.8.md) | Copilot LSP device code fix, Gemini API key auth, agent auth UX improvements |
