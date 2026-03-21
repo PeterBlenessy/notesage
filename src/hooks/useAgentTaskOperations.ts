@@ -122,6 +122,7 @@ async function ensureTaskAgent(connection: Connection, cwd: string, sandboxPaths
     args.length > 0 ? args : null,
     'task',
     cwd,
+    connection.sandboxEnabled ?? null,
     [...(sandboxPaths ?? (cwd !== '/tmp' ? [cwd] : [])), ...(connection.extraWritablePaths ?? [])],
     networkSandboxEnabled || null,
     networkAllowedDomains,

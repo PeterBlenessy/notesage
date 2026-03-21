@@ -194,6 +194,7 @@ async function ensureAcpAgent(connection: Connection, cwd: string, sandboxPaths?
     agentArgs: args.length > 0 ? args : null,
     role: 'interactive',
     workingDirectory: cwd,
+    sandboxEnabled: connection.sandboxEnabled ?? null,
     sandboxPaths: [
       ...(sandboxPaths ?? []),
       ...(connection.extraWritablePaths ?? []),
