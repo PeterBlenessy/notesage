@@ -94,6 +94,13 @@ Define the palette using CSS variables in globals.css. All colors must come from
 - Borders: `oklch(32% 0 0)`
 - Focus ring: `oklch(60% 0 0)` — never blue
 
+**Soft contrast mode:**
+
+A "Soft contrast" toggle (Settings > Appearance) applies reduced-contrast overrides to both light and dark themes via `.soft` and `.dark.soft` CSS classes in `globals.css`. This pulls the extreme lightness values inward for a gentler look:
+
+- Light soft: background `oklch(96% 0 0)`, foreground `oklch(20% 0 0)`, cards `oklch(94% 0 0)`
+- Dark soft: background `oklch(25% 0 0)`, foreground `oklch(90% 0 0)`, cards `oklch(28% 0 0)`
+
 **Forbidden colors:**
 
 - No blue, indigo, teal, violet, or any chromatic accent anywhere in the UI
@@ -216,14 +223,15 @@ Define the palette using CSS variables in globals.css. All colors must come from
 
 ## Implementation Notes
 
-### Dark Mode Support
+### Dark Mode & Soft Contrast Support
 
-All components must work in both light and dark modes:
+All components must work in both light and dark modes, and with soft contrast enabled:
 
 - Use CSS variables from `globals.css` for all colors
-- Test every component in both themes
+- Test every component in both themes (and with soft contrast toggled)
 - Use `dark:` prefix for dark mode-specific styles
 - Logos and images should be visible in both modes (add white background if needed: `bg-white p-0.5`)
+- Soft contrast is applied via `.soft` / `.dark.soft` CSS classes on `<html>` — no component-level changes needed if CSS variables are used correctly
 
 ### Accessibility
 
