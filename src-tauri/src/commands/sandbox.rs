@@ -4,40 +4,32 @@ use super::network_proxy::NetworkSandboxConfig;
 
 /// Generate a macOS Seatbelt (.sb) sandbox profile for an agent process.
 ///
+/// The profile is written to a temp file tied to the agent's instance ID.
+/// It is ephemeral — deleted when the agent exits (see `cleanup_profile`).
+///
 /// The profile:
 /// - Allows reading all files (agents need system libraries, binaries, configs)
-/// - Allows writing only to the specified paths and /tmp
+/// - Allows writing only to the specified paths, /tmp, and /dev device nodes
 /// - Denies reading sensitive directories (~/.ssh, ~/.aws, ~/.gnupg, .env files)
 /// - Denies writing to .git/ directories (read-only access)
-/// - Network: unrestricted if `network_config` is None, proxy-only if Some
+/// - Network: when `kernel_network_deny` is true and a proxy is configured,
+///   (deny default) blocks all network and only the proxy port is allowed.
+///   When false, (allow network*) permits all network (proxy env vars are the only enforcement).
 /// - Allows process execution (agents spawn git, grep, etc.)
 #[cfg(target_os = "macos")]
 pub fn generate_seatbelt_profile(
+    instance_id: &str,
     writable_paths: &[String],
     network_config: Option<&NetworkSandboxConfig>,
+    kernel_network_deny: bool,
 ) -> Result<PathBuf, String> {
     let home = dirs::home_dir()
         .ok_or_else(|| "Cannot determine home directory".to_string())?;
 
-    let profiles_dir = home.join(".notesage/sandbox/profiles");
-    std::fs::create_dir_all(&profiles_dir)
-        .map_err(|e| format!("Failed to create sandbox profiles dir: {}", e))?;
-
-    // Hash all paths + network config for the profile filename
-    let path_hash = {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        for p in writable_paths {
-            p.hash(&mut hasher);
-        }
-        if let Some(nc) = network_config {
-            nc.proxy_port.hash(&mut hasher);
-        }
-        format!("{:x}", hasher.finish())
-    };
-    let profile_path = profiles_dir.join(format!("agent-{}.sb", &path_hash[..8]));
-
     let home_str = home.to_string_lossy();
+
+    // Write to temp dir — profile lives only as long as the agent process.
+    let profile_path = std::env::temp_dir().join(format!("notesage-sandbox-{}.sb", instance_id));
 
     // Build writable subpath entries
     let writable_entries: Vec<String> = writable_paths
@@ -50,15 +42,53 @@ pub fn generate_seatbelt_profile(
         writable_entries.join("\n")
     };
 
-    // Network sandbox enforcement:
-    // - Primary: HTTP_PROXY/HTTPS_PROXY env vars route agent traffic through our proxy
-    // - Seatbelt keeps (allow network*) — attempts to use (deny network-outbound) with
-    //   selective allows for localhost broke agent startup in practice, despite being the
-    //   documented pattern from Anthropic/OpenAI sandbox-runtime. Seatbelt's rule precedence
-    //   appears to favor deny over more specific allows in some configurations.
-    // - The proxy is the real enforcement: filters by domain, prompts for unknown domains.
-    let _network_config = network_config;
-    let network_block = ";; Allow network (proxy env vars provide domain filtering)\n(allow network*)".to_string();
+    // Network block: kernel-enforced deny or legacy allow-all.
+    //
+    // When kernel_network_deny is true and a proxy is configured:
+    //   (deny default) at the top already blocks all network. We add targeted allows
+    //   for the proxy port only. This is the Anthropic sandbox-runtime pattern —
+    //   NO explicit (deny network*) rule, which would create precedence conflicts.
+    //   DNS is intentionally blocked; resolution happens through the proxy.
+    //
+    // When kernel_network_deny is false or no proxy configured:
+    //   (allow network*) permits all network. Proxy env vars are the only enforcement.
+    let network_block = if kernel_network_deny {
+        if let Some(nc) = network_config {
+            format!(
+                r#";; Network: kernel-enforced deny (deny default blocks all network)
+;; Only the proxy port on localhost is reachable from within the sandbox.
+;; DNS is blocked — resolution happens through the proxy outside the sandbox.
+
+;; Allow connecting to the proxy port
+(allow network-outbound (remote ip "localhost:{port}"))
+
+;; Allow localhost bind + inbound for agent subprocess IPC
+;; Uses "*:*" for IPv6 dual-stack compat (::ffff:127.0.0.1 vs 127.0.0.1)
+(allow network-bind (local ip "*:*"))
+(allow network-inbound (local ip "*:*"))
+
+;; Unix domain sockets for system IPC (mDNSResponder, etc.)
+(allow system-socket (socket-domain AF_UNIX))
+(allow network-outbound (remote unix-socket (subpath "/var/run")))
+(allow network-outbound (remote unix-socket (subpath "/private/var/run")))
+(allow network-bind (local unix-socket (subpath "/tmp")))
+(allow network-bind (local unix-socket (subpath "/private/tmp")))
+
+;; Go TLS cert verification (needed by Go-based agents like Codex)
+(allow mach-lookup (global-name "com.apple.trustd.agent"))
+
+;; Kernel event socket (safe, non-network)
+(allow system-socket (require-all (socket-domain AF_SYSTEM) (socket-protocol 2)))"#,
+                port = nc.proxy_port
+            )
+        } else {
+            // kernel_network_deny is true but no proxy configured — fall back to allow-all
+            // (can't enforce deny without a proxy to route through)
+            ";; Network: no proxy configured, allowing all network\n(allow network*)".to_string()
+        }
+    } else {
+        ";; Network: legacy mode (proxy env vars provide domain filtering)\n(allow network*)".to_string()
+    };
 
     let profile = format!(
         r#"(version 1)
@@ -67,7 +97,7 @@ pub fn generate_seatbelt_profile(
 ;; Allow reading system files (agents need binaries, libraries, configs)
 (allow file-read*)
 
-;; Allow writing to specified directories, temp, and agent config dirs
+;; Allow writing to specified directories, temp, device nodes, and agent config dirs
 (allow file-write*
 {writable_block}
   (subpath "/tmp")
@@ -78,7 +108,12 @@ pub fn generate_seatbelt_profile(
   (subpath "{home}/.codex")
   (subpath "{home}/.copilot")
   (subpath "{home}/.notesage")
-  (subpath "{home}/.config"))
+  (subpath "{home}/.config")
+  (literal "/dev/null")
+  (literal "/dev/tty")
+  (literal "/dev/zero")
+  (literal "/dev/random")
+  (literal "/dev/urandom"))
 
 ;; DENY reading sensitive directories (non-configurable)
 (deny file-read*
@@ -113,6 +148,11 @@ pub fn generate_seatbelt_profile(
     std::fs::write(&profile_path, &profile)
         .map_err(|e| format!("Failed to write sandbox profile: {}", e))?;
 
+    log::info!(target: "notesage::sandbox",
+        "Generated Seatbelt profile for {} at {} (kernel_deny={})",
+        instance_id, profile_path.display(), kernel_network_deny
+    );
+
     Ok(profile_path)
 }
 
@@ -120,10 +160,12 @@ pub fn generate_seatbelt_profile(
 /// Returns (program, prefix_args) that should be prepended to the actual agent command.
 #[cfg(target_os = "macos")]
 pub fn sandboxed_command(
+    instance_id: &str,
     writable_paths: &[String],
     network_config: Option<&NetworkSandboxConfig>,
+    kernel_network_deny: bool,
 ) -> Result<(String, Vec<String>), String> {
-    let profile_path = generate_seatbelt_profile(writable_paths, network_config)?;
+    let profile_path = generate_seatbelt_profile(instance_id, writable_paths, network_config, kernel_network_deny)?;
     Ok((
         "sandbox-exec".to_string(),
         vec![
@@ -131,6 +173,33 @@ pub fn sandboxed_command(
             profile_path.to_string_lossy().to_string(),
         ],
     ))
+}
+
+/// Delete a sandbox profile temp file after the agent exits.
+pub fn cleanup_profile(instance_id: &str) {
+    let profile_path = std::env::temp_dir().join(format!("notesage-sandbox-{}.sb", instance_id));
+    if profile_path.exists() {
+        if let Err(e) = std::fs::remove_file(&profile_path) {
+            log::warn!(target: "notesage::sandbox", "Failed to clean up profile {}: {}", profile_path.display(), e);
+        }
+    }
+}
+
+/// Remove the legacy ~/.notesage/sandbox/profiles/ directory (one-time startup cleanup).
+/// Profiles are now written to temp files and cleaned up on agent exit.
+pub fn cleanup_legacy_profiles() {
+    if let Some(home) = dirs::home_dir() {
+        let legacy_dir = home.join(".notesage/sandbox/profiles");
+        if legacy_dir.is_dir() {
+            match std::fs::remove_dir_all(&legacy_dir) {
+                Ok(()) => log::info!(target: "notesage::sandbox", "Removed legacy profiles dir: {}", legacy_dir.display()),
+                Err(e) => log::warn!(target: "notesage::sandbox", "Failed to remove legacy profiles dir: {}", e),
+            }
+            // Also remove the parent sandbox/ dir (may contain .DS_Store)
+            let sandbox_dir = home.join(".notesage/sandbox");
+            let _ = std::fs::remove_dir_all(&sandbox_dir);
+        }
+    }
 }
 
 /// Determine if sandbox should be enabled by default based on binary source.
@@ -146,8 +215,10 @@ pub fn should_sandbox_by_default(binary_path: &str) -> bool {
 /// Linux sandbox support via bubblewrap
 #[cfg(target_os = "linux")]
 pub fn sandboxed_command(
+    _instance_id: &str,
     writable_paths: &[String],
     network_config: Option<&NetworkSandboxConfig>,
+    _kernel_network_deny: bool, // Not implemented on Linux — ignored
 ) -> Result<(String, Vec<String>), String> {
     let bwrap = std::process::Command::new("which")
         .arg("bwrap")

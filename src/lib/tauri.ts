@@ -499,6 +499,7 @@ export const tauriApi = {
     sandboxPaths?: string[] | null,
     networkSandboxEnabled?: boolean | null,
     networkAllowedDomains?: string[] | null,
+    kernelNetworkDeny?: boolean | null,
   ): Promise<AcpSpawnResult> {
     return await invoke<AcpSpawnResult>("acp_agent_spawn", {
       agentBinary,
@@ -508,6 +509,7 @@ export const tauriApi = {
       sandboxPaths: sandboxPaths ?? null,
       networkSandboxEnabled: networkSandboxEnabled ?? null,
       networkAllowedDomains: networkAllowedDomains ?? null,
+      kernelNetworkDeny: kernelNetworkDeny ?? null,
     });
   },
 

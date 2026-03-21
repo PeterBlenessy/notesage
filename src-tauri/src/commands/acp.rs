@@ -388,6 +388,7 @@ fn run_agent_thread(
     sandbox_enabled: bool,
     sandbox_writable_paths: Vec<String>,
     network_config: Option<super::network_proxy::NetworkSandboxConfig>,
+    kernel_network_deny: bool,
     mut cmd_rx: mpsc::Receiver<AgentCmd>,
     init_tx: oneshot::Sender<Result<InitInfo, String>>,
 ) {
@@ -411,6 +412,7 @@ fn run_agent_thread(
         let permission_waiters: Rc<RefCell<HashMap<String, oneshot::Sender<PermissionReply>>>> =
             Rc::new(RefCell::new(HashMap::new()));
 
+        let sandbox_instance_id = instance_id.clone();
         let client = NotesageClient {
             app,
             instance_id,
@@ -421,7 +423,7 @@ fn run_agent_thread(
         // Spawn agent process — optionally wrapped in OS-level sandbox
         // Inject login shell PATH so the agent (and child processes) can find tools
         let mut spawn_cmd = if sandbox_enabled {
-            match super::sandbox::sandboxed_command(&sandbox_writable_paths, network_config.as_ref()) {
+            match super::sandbox::sandboxed_command(&sandbox_instance_id, &sandbox_writable_paths, network_config.as_ref(), kernel_network_deny) {
                 Ok((program, prefix_args)) => {
                     log::info!(target: "notesage::acp", "Spawning {} in sandbox ({})", agent_binary, program);
                     let mut cmd = tokio::process::Command::new(&program);
@@ -750,13 +752,18 @@ fn run_agent_thread(
                 .enable_all()
                 .build()
             {
-                let iid = proxy_instance_id;
+                let iid = proxy_instance_id.clone();
                 rt.block_on(async {
                     proxy_state.stop_proxy(&iid).await;
                     log::info!(target: "notesage::acp", "Cleaned up network proxy for {}", iid);
                 });
             }
         }
+    }
+
+    // Clean up sandbox profile temp file
+    if sandbox_enabled {
+        super::sandbox::cleanup_profile(&proxy_instance_id);
     }
 }
 
@@ -1028,6 +1035,7 @@ pub async fn acp_agent_spawn(
     sandbox_paths: Option<Vec<String>>,
     network_sandbox_enabled: Option<bool>,
     network_allowed_domains: Option<Vec<String>>,
+    kernel_network_deny: Option<bool>,
 ) -> Result<SpawnResult, String> {
     let mut env = env_vars.unwrap_or_default();
     let args = agent_args.unwrap_or_default();
@@ -1104,7 +1112,8 @@ pub async fn acp_agent_spawn(
     let thread_handle = std::thread::Builder::new()
         .name(format!("acp-{}", &binary))
         .spawn(move || {
-            run_agent_thread(app, iid, binary, spawn_args, cwd, env, sandbox, writable_paths, network_config, cmd_rx, init_tx);
+            let knd = kernel_network_deny.unwrap_or(false);
+            run_agent_thread(app, iid, binary, spawn_args, cwd, env, sandbox, writable_paths, network_config, knd, cmd_rx, init_tx);
         })
         .map_err(|e| format!("Failed to spawn agent thread: {}", e))?;
 

@@ -7,7 +7,7 @@
 | PRD | [network-sandboxing](../prds/2026-03-16-network-sandboxing.md) | Complete |
 | Tasks | [network-sandboxing-tasks](../tasks/2026-03-16-network-sandboxing-tasks.md) | Complete |
 | PRD | [sandbox-hardening-macos](../prds/2026-03-21-sandbox-hardening-macos.md) | Draft |
-| Tasks | — | Not planned |
+| Tasks | [sandbox-hardening-macos-tasks](../tasks/2026-03-21-sandbox-hardening-macos-tasks.md) | Not started |
 
 **Context:** Comparison of Notesage's network sandboxing implementation against Anthropic's open-source `@anthropic-ai/sandbox-runtime` (v0.0.42), used by Claude Code.
 

@@ -200,6 +200,7 @@ async function ensureAcpAgent(connection: Connection, cwd: string, sandboxPaths?
     ].length > 0 ? [...(sandboxPaths ?? []), ...(connection.extraWritablePaths ?? [])] : null,
     networkSandboxEnabled: networkSandboxEnabled || null,
     networkAllowedDomains,
+    kernelNetworkDeny: connection.kernelNetworkDeny ?? null,
   });
   // Try to authenticate — some agents handle auth internally
   // (e.g. claude-agent-acp uses Claude CLI's stored credentials)

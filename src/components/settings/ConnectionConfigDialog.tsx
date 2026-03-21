@@ -176,6 +176,7 @@ export function ConnectionConfigDialog({
 
   // Network sandbox state
   const [networkSandbox, setNetworkSandbox] = useState(false);
+  const [kernelNetworkDeny, setKernelNetworkDeny] = useState(true);
   const [newDomain, setNewDomain] = useState('');
   const domainAlwaysAllowed = usePermissionStore((s) => s.domainAlwaysAllowed);
 
@@ -209,6 +210,7 @@ export function ConnectionConfigDialog({
       setNewWritablePath('');
       setReasoningEffort(connection.config?.reasoningEffort ?? undefined);
       setNetworkSandbox(connection.networkSandboxEnabled ?? false);
+      setKernelNetworkDeny(connection.kernelNetworkDeny ?? false); // false for existing connections without the field
       setNewDomain('');
 
       // Local AI server settings
@@ -278,6 +280,7 @@ export function ConnectionConfigDialog({
       config: Object.keys(config).length > 0 ? config : undefined,
       sandboxEnabled: isAgentManaged ? sandboxEnabled : undefined,
       networkSandboxEnabled: isAgentManaged ? (sandboxEnabled && networkSandbox) : undefined,
+      kernelNetworkDeny: isAgentManaged ? (sandboxEnabled && networkSandbox && kernelNetworkDeny) : undefined,
       extraWritablePaths: isAgentManaged && sandboxEnabled && extraWritablePaths.length > 0
         ? extraWritablePaths : undefined,
     };
@@ -746,6 +749,20 @@ export function ConnectionConfigDialog({
                     <p className="text-[11px] text-muted-foreground leading-relaxed">
                       Routes all agent network traffic through a local proxy that filters by domain. Only approved domains can be reached. Requests to unknown domains require your explicit approval before they go through.
                     </p>
+                    {networkSandbox && (
+                      <div className="flex items-center justify-between pt-1">
+                        <div>
+                          <Label className="text-xs font-medium">Kernel enforcement</Label>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            Blocks direct network at the OS level. Disable if agents fail to start.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={kernelNetworkDeny}
+                          onCheckedChange={setKernelNetworkDeny}
+                        />
+                      </div>
+                    )}
                     {networkSandbox && (() => {
                       const ab = connection.credentials.type === 'agent_managed'
                         ? (connection.credentials as { agentBinary: string }).agentBinary

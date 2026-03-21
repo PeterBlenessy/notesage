@@ -125,6 +125,7 @@ async function ensureTaskAgent(connection: Connection, cwd: string, sandboxPaths
     [...(sandboxPaths ?? (cwd !== '/tmp' ? [cwd] : [])), ...(connection.extraWritablePaths ?? [])],
     networkSandboxEnabled || null,
     networkAllowedDomains,
+    connection.kernelNetworkDeny ?? null,
   );
 
   // Try to authenticate — some agents handle auth internally

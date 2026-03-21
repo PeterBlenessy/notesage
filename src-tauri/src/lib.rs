@@ -230,6 +230,7 @@ pub fn run() {
                     .output();
             }
             local_inference::kill_orphaned_servers();
+            sandbox::cleanup_legacy_profiles();
             log::debug!(target: "notesage::lifecycle", "Cleaned up orphaned agent processes");
 
             Ok(())
