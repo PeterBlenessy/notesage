@@ -168,9 +168,11 @@ async function migratePersonasToAgents(home: string) {
   setPersonasMigrated(true);
 }
 
-// Module-level guard: prevents re-entrant discovery runs caused by the file watcher
-// detecting our own extraction writes to ~/.notesage/skills/ and ~/.notesage/agents/.
-let discoveryRunning = false;
+// Cooldown: after a discovery pipeline completes, suppress watcher-triggered rescans
+// for 2 seconds. This prevents the extraction → watcher → rescan → extraction loop.
+// The watcher's 500ms debounce fires after extraction, but within this cooldown window.
+export let discoveryCompletedAt = 0;
+export const DISCOVERY_COOLDOWN_MS = 2000;
 
 /**
  * Hook that manages skill discovery lifecycle.
@@ -198,12 +200,6 @@ export function useSkillDiscovery() {
     // Read full state inside the effect (not as a dependency)
     const connections = useConnectionsStore.getState().connections;
     const projects = useWorkspaceStore.getState().projects;
-
-    // Prevent re-entrant runs: extraction writes to ~/.notesage/skills/ and agents/,
-    // which triggers the file watcher → requestRescan() → rescanCounter bumps → this
-    // effect re-fires. Guard with a module-level flag since isScanning only covers scanSkills.
-    if (discoveryRunning) return;
-    discoveryRunning = true;
 
     const run = async () => {
       log.info('skills', 'Starting skill/agent discovery pipeline');
@@ -316,7 +312,7 @@ export function useSkillDiscovery() {
       log.info('skills', 'Skill/agent discovery pipeline complete');
     };
 
-    run().finally(() => { discoveryRunning = false; });
+    run().finally(() => { discoveryCompletedAt = Date.now(); });
   }, [startupReady, connectionKey, projectPaths, rescanCounter]);
 }
 

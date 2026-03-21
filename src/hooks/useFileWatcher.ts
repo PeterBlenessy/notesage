@@ -8,6 +8,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSyncStore } from "@/stores/sync-store";
 import { useSkillStore } from "@/stores/skill-store";
+import { discoveryCompletedAt, DISCOVERY_COOLDOWN_MS } from "@/hooks/useSkillOperations";
 import { useMcpStore } from "@/stores/mcp-store";
 import { useFileOperations, refreshGitForPath } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
@@ -153,6 +154,9 @@ export function useFileWatcher() {
           if (isSkillOrAgent) {
             clearTimeout(skillRescanDebounce.current);
             skillRescanDebounce.current = setTimeout(() => {
+              // Skip if the discovery pipeline just completed — extraction writes
+              // trigger the watcher, which would re-trigger discovery in a loop.
+              if (Date.now() - discoveryCompletedAt < DISCOVERY_COOLDOWN_MS) return;
               useSkillStore.getState().requestRescan();
             }, 500);
           }
