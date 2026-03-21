@@ -1034,7 +1034,10 @@ function ConnectCopilotLsp({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {
+              onClick={async () => {
+                // Trigger finishDeviceFlow (starts OAuth polling + opens browser)
+                invoke('copilot_lsp_finish_auth').catch(() => {});
+                // Also open the page ourselves in case the LSP's open fails
                 window.open('https://github.com/login/device', '_blank');
               }}
               className="flex-1"

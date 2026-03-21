@@ -546,6 +546,10 @@ pub struct CopilotLspProcess {
     pub transport: JsonRpcTransport,
     pub child: Child,
     pub status: tokio::sync::Mutex<CopilotStatus>,
+    /// Stashed embedded command from signIn response (e.g. finishDeviceFlow).
+    /// The frontend calls `copilot_lsp_finish_auth` to trigger it when the user
+    /// clicks "Open GitHub", so the browser doesn't open before the code is shown.
+    pub pending_auth_command: tokio::sync::Mutex<Option<(String, Value)>>,
 }
 
 impl CopilotLspState {
@@ -831,6 +835,7 @@ pub async fn copilot_lsp_start(
         transport,
         child,
         status: tokio::sync::Mutex::new(status),
+        pending_auth_command: tokio::sync::Mutex::new(None),
     });
 
     Ok(())
@@ -1001,9 +1006,9 @@ pub async fn copilot_lsp_sign_in(
                     user_code, verification_uri
                 );
 
-                // Emit device code to frontend BEFORE executing the embedded
-                // command — finishDeviceFlow polls GitHub and may block until
-                // the user authenticates, so the event must fire first.
+                // Emit device code to frontend. Do NOT execute finishDeviceFlow
+                // yet — it opens the browser immediately. The frontend will call
+                // copilot_lsp_finish_auth when the user clicks "Open GitHub".
                 let _ = app.emit(
                     "copilot-auth-device-code",
                     serde_json::json!({
@@ -1012,10 +1017,14 @@ pub async fn copilot_lsp_sign_in(
                     }),
                 );
 
-                // Fire-and-forget: execute the embedded command (e.g.
-                // finishDeviceFlow) without blocking the sign-in return.
-                // Auth completion will arrive via didChangeStatus notification.
-                spawn_embedded_command(process, &result).await;
+                // Stash the embedded command so the frontend can trigger it later
+                if let Some(command) = result.get("command") {
+                    let cmd_name = command.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let cmd_args = command.get("arguments").cloned().unwrap_or(Value::Array(vec![]));
+                    if !cmd_name.is_empty() {
+                        *process.pending_auth_command.lock().await = Some((cmd_name, cmd_args));
+                    }
+                }
 
                 return Ok(SignInResponse {
                     user_code,
@@ -1153,8 +1162,14 @@ pub async fn copilot_lsp_sign_in(
                     }),
                 );
 
-                // Fire-and-forget the embedded command (finishDeviceFlow).
-                spawn_embedded_command(process, &result).await;
+                // Stash the embedded command for frontend-triggered execution
+                if let Some(command) = result.get("command") {
+                    let cmd_name = command.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let cmd_args = command.get("arguments").cloned().unwrap_or(Value::Array(vec![]));
+                    if !cmd_name.is_empty() {
+                        *process.pending_auth_command.lock().await = Some((cmd_name, cmd_args));
+                    }
+                }
 
                 return Ok(SignInResponse {
                     user_code,
@@ -1185,6 +1200,67 @@ pub async fn copilot_lsp_sign_in(
         user_code: String::new(),
         verification_uri: "https://github.com/login/device".to_string(),
     })
+}
+
+/// Execute the stashed finishDeviceFlow command. Called by the frontend when
+/// the user clicks "Open GitHub" — this starts the OAuth polling and opens
+/// the browser via the LSP's internal `open` call.
+#[tauri::command]
+pub async fn copilot_lsp_finish_auth(
+    state: State<'_, CopilotLspState>,
+) -> Result<(), String> {
+    let guard = state.process.lock().await;
+    let process = guard
+        .as_ref()
+        .ok_or("Copilot LSP not running.")?;
+
+    let cmd = process.pending_auth_command.lock().await.take();
+    if let Some((cmd_name, cmd_args)) = cmd {
+        log::info!(
+            target: "notesage::copilot",
+            "Frontend triggered finishDeviceFlow: {} with args: {}",
+            cmd_name, cmd_args
+        );
+
+        // Fire-and-forget — this polls GitHub until auth completes
+        let writer = process.transport.writer.clone();
+        let pending = process.transport.pending.clone();
+        tokio::spawn(async move {
+            let id = json_rpc::next_request_id();
+            let msg = JsonRpcRequest::new(
+                id,
+                "workspace/executeCommand",
+                Some(serde_json::json!({
+                    "command": cmd_name,
+                    "arguments": cmd_args,
+                })),
+            );
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            pending.lock().await.insert(id, tx);
+            let json = match serde_json::to_string(&msg) {
+                Ok(j) => j,
+                Err(e) => {
+                    log::error!(target: "notesage::copilot", "Failed to serialize finishDeviceFlow: {}", e);
+                    return;
+                }
+            };
+            let mut w = writer.lock().await;
+            if let Err(e) = json_rpc::write_message(&mut *w, &json).await {
+                log::error!(target: "notesage::copilot", "Failed to send finishDeviceFlow: {}", e);
+                return;
+            }
+            drop(w);
+            match rx.await {
+                Ok(Ok(val)) => log::info!(target: "notesage::copilot", "finishDeviceFlow completed: {}", val),
+                Ok(Err(e)) => log::error!(target: "notesage::copilot", "finishDeviceFlow failed: {}", e),
+                Err(_) => log::warn!(target: "notesage::copilot", "finishDeviceFlow channel closed"),
+            }
+        });
+    } else {
+        log::info!(target: "notesage::copilot", "No pending auth command to execute");
+    }
+
+    Ok(())
 }
 
 /// Sign out of GitHub Copilot.

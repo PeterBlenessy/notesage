@@ -130,6 +130,7 @@ pub fn run() {
             copilot_lsp_stop,
             copilot_lsp_status,
             copilot_lsp_sign_in,
+            copilot_lsp_finish_auth,
             copilot_lsp_sign_out,
             copilot_lsp_did_open,
             copilot_lsp_did_change,
