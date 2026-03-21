@@ -288,8 +288,11 @@ async fn handle_connect(
 ) -> Result<(), String> {
     let (domain, port) = parse_host_port(target)?;
 
+    log::debug!(target: "notesage::network_proxy", "CONNECT {}:{} (agent: {})", domain, port, shared.agent_id);
+
     // Check domain allowlist
     if !check_domain_allowed(&domain, port, shared).await? {
+        log::info!(target: "notesage::network_proxy", "CONNECT {}:{} — DENIED (agent: {})", domain, port, shared.agent_id);
         send_response(&mut client, 403, "Proxy Denied — domain not in allowlist").await;
         return Ok(());
     }
@@ -298,6 +301,8 @@ async fn handle_connect(
     let upstream = TcpStream::connect(target)
         .await
         .map_err(|e| format!("Upstream connect to {} failed: {}", target, e))?;
+
+    log::debug!(target: "notesage::network_proxy", "CONNECT {}:{} — tunneling (agent: {})", domain, port, shared.agent_id);
 
     // Send 200 Connection Established
     client
@@ -322,7 +327,10 @@ async fn handle_plain_http(
     let domain = extract_host_from_request(&request_str, target_url)?;
     let port = 80u16;
 
+    log::debug!(target: "notesage::network_proxy", "HTTP {}:{} (agent: {})", domain, port, shared.agent_id);
+
     if !check_domain_allowed(&domain, port, shared).await? {
+        log::info!(target: "notesage::network_proxy", "HTTP {}:{} — DENIED (agent: {})", domain, port, shared.agent_id);
         send_response(&mut client, 403, "Proxy Denied — domain not in allowlist").await;
         return Ok(());
     }
@@ -368,6 +376,7 @@ async fn check_domain_allowed(
     {
         let session = shared.session_domains.lock().await;
         if shared.is_domain_allowed(domain, &session) {
+            log::debug!(target: "notesage::network_proxy", "{}:{} — allowed (built-in/session)", domain, port);
             return Ok(true);
         }
     }
