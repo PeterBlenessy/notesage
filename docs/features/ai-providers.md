@@ -33,7 +33,9 @@ interface AIProvider {
 
 - Uses the `agent-client-protocol` Rust crate to communicate with agent subprocesses over stdio
 - Agent processes spawned with `kill_on_drop(true)` — SIGKILL sent when `Child` is dropped
-- Agents handle their own auth (subscription login via browser popup)
+- Agent auth: ACP `authenticate` method delegates to the agent subprocess. Most agents open a browser for OAuth. Agents that can't open a browser from a subprocess (e.g., Gemini CLI — same limitation as Zed editor #43288) fall back to API key input or terminal-based auth.
+- Gemini CLI auth: in-app API key input (from Google AI Studio, free) stored as `envVars` in connection credentials and passed at spawn time. Terminal-based Google OAuth as secondary option via `run_in_terminal` command.
+- Agent subprocess stderr is logged at info level for auth debugging
 - Prompts sent via `acp_session_prompt`, responses streamed as `acp-session-update` Tauri events
 - Four supported agents: Claude Code (`claude-agent-acp`), Codex (`codex-acp`), Copilot (`copilot --acp`), Gemini CLI (`gemini --acp`)
 - Process cleanup: `AcpState::stop_all_sync()` called from `RunEvent::Exit` hook; frontend `beforeunload` as secondary defense
@@ -45,14 +47,19 @@ interface AIProvider {
 - Network sandboxing: agent traffic routed through localhost HTTP proxy with per-agent domain allowlists (see Network Sandboxing section)
 - Context-aware chat footer: "Search" toggle for direct API connections
 
-### Path 3: Copilot LSP (for `inline_completion` use case)
+### Path 3: Copilot LSP (for `inline_completion` use case only)
 
 - Spawns `copilot-language-server --stdio` subprocess managed by `CopilotLspState`
 - JSON-RPC 2.0 transport for LSP document sync and `textDocument/inlineCompletion` requests
 - Ghost text rendered as ProseMirror widget decorations via `GhostText` Tiptap extension
-- Separate from ACP — the Copilot CLI (`copilot --acp`) handles chat/agents, the LSP handles completions
-- OAuth device flow authentication — enter code on github.com/login/device
+- Separate from ACP — the Copilot CLI (`copilot --acp`) handles chat/agents, the LSP handles completions only
+- **Capabilities restricted to `['inline_completion']`** — never assigned to interactive or agent_tasks routing slots (LSP does not speak ACP)
 - Global inline completions toggle (persisted in settings-store, applies to all tabs)
+- OAuth device flow authentication with two protocol variants:
+  - **Protocol A** (copilot.lua-era): `signInInitiate` → returns `{ userCode, verificationUri }` → `signInConfirm` (blocks until auth completes)
+  - **Protocol B** (newer LSP): `signIn` → returns `{ userCode, verificationUri, command }` → `finishDeviceFlow` (deferred to user click)
+- Device code UX: code shown in modal, auto-copied to clipboard, browser opens only when user clicks "Open GitHub". The `finishDeviceFlow` command is stashed in `pending_auth_command` and triggered by `copilot_lsp_finish_auth` to prevent the LSP from opening the browser before the user sees the code.
+- All JSON-RPC messages logged at info level and emitted as `copilot-lsp-message` Tauri events for debugging
 
 ### Path 4: Local Bundled (for `local_bundled` connections)
 
@@ -173,7 +180,8 @@ When web search is enabled (toggle in chat footer — only visible for direct AP
 | `src-tauri/src/commands/network_proxy.rs` | HTTP proxy for agent network sandboxing |
 | `src-tauri/src/commands/sandbox_monitor.rs` | Seatbelt violation monitoring (macOS log stream) |
 | `src-tauri/src/commands/sandbox.rs` | Seatbelt profile generation (kernel network deny) |
-| `src-tauri/src/commands/copilot_lsp.rs` | Copilot Language Server |
+| `src-tauri/src/commands/copilot_lsp.rs` | Copilot Language Server (auth, completions, message logging) |
+| `src-tauri/src/commands/dialog.rs` | Native dialogs + `run_in_terminal` for agent auth |
 | `src-tauri/src/commands/local_inference.rs` | Bundled llama-server lifecycle |
 | `src-tauri/src/commands/model_metadata.rs` | Model metadata merge + HF API fetcher |
 | `src-tauri/src/commands/gguf_parser.rs` | GGUF binary header parser |

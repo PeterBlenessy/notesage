@@ -264,6 +264,54 @@ if (folderPath) {
 }
 ```
 
+### run_in_terminal
+
+Opens Terminal.app (macOS) and runs a command. Used for agent authentication flows where the CLI needs interactive terminal access (e.g., Gemini CLI Google OAuth).
+
+```rust
+#[tauri::command]
+async fn run_in_terminal(command: String) -> Result<(), String>
+```
+
+**Parameters:**
+
+- `command`: Shell command to execute in Terminal.app
+
+**Returns:**
+
+- `Ok(())`: Terminal opened successfully
+- `Err(String)`: Error message (only supported on macOS)
+
+**Frontend usage:**
+
+```typescript
+await invoke('run_in_terminal', { command: 'cd /tmp && gemini' });
+```
+
+### copilot_lsp_finish_auth
+
+Executes the stashed `finishDeviceFlow` command from the Copilot LSP sign-in response. Called by the frontend when the user clicks "Open GitHub" — this starts OAuth polling and the LSP opens the browser internally.
+
+```rust
+#[tauri::command]
+async fn copilot_lsp_finish_auth(
+    state: State<'_, CopilotLspState>,
+) -> Result<(), String>
+```
+
+**Returns:**
+
+- `Ok(())`: Command dispatched (fire-and-forget, polls GitHub in background)
+- `Err(String)`: LSP not running
+
+**Frontend usage:**
+
+```typescript
+// User clicks "Open GitHub" after seeing the device code
+await invoke('copilot_lsp_finish_auth');
+window.open('https://github.com/login/device', '_blank');
+```
+
 ## AI Operations
 
 Located in `src-tauri/src/commands/ai.rs`
