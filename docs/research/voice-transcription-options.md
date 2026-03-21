@@ -1,6 +1,11 @@
 # Voice Transcription Integration Research
 
-Research date: 2026-03-08
+**Date:** 2026-03-08 **Status:** Research complete
+
+| Stage | Link | Status |
+| --- | --- | --- |
+| PRD | [voice-transcription](../prds/2026-03-08-voice-transcription.md) | Complete |
+| Tasks | [voice-transcription-tasks](../tasks/2026-03-08-voice-transcription-tasks.md) | Complete |
 
 **Constraint: Solution must work fully local/offline — no cloud API dependencies.**
 

@@ -1,5 +1,11 @@
 # CLI (ACP) vs Agent SDK: Analysis for Notesage
 
+**Date:** 2026-03-15 **Status:** Research complete
+
+| Stage | Link | Status |
+| --- | --- | --- |
+| PRD | — | Not planned (concluded ACP is the right approach for now) |
+
 ## Executive Summary
 
 Notesage currently integrates AI agents by spawning locally-installed CLI binaries (Claude Code, Codex, Copilot, Gemini) as subprocesses and communicating via the **Agent Client Protocol (ACP)** over stdio. An alternative approach is to use the **Claude Agent SDK** (`@anthropic-ai/claude-agent-sdk`), which provides the same Claude Code capabilities as a programmable TypeScript/Python library.
@@ -12,7 +18,7 @@ This document compares both approaches across programmatic control, transparency
 
 ### How It Works
 
-1. Rust backend (`acp.rs`, ~1050 lines) resolves and spawns agent binaries as child processes
+1. Rust backend (`acp.rs`, \~1050 lines) resolves and spawns agent binaries as child processes
 2. Communication via ACP protocol over stdio (JSON messages)
 3. A dedicated OS thread per agent runs a single-threaded tokio runtime with `LocalSet` (required for `!Send` ACP types)
 4. Events stream to the frontend via Tauri events (`acp-session-update`, `acp-permission-request`)
@@ -21,7 +27,7 @@ This document compares both approaches across programmatic control, transparency
 ### Agents Supported
 
 | Agent | Binary | Auth |
-|-------|--------|------|
+| --- | --- | --- |
 | Claude Code | `claude-agent-acp` | Subscription (browser popup) |
 | OpenAI Codex | `codex-acp` | Subscription |
 | GitHub Copilot CLI | `copilot --acp` | Subscription |
@@ -30,7 +36,7 @@ This document compares both approaches across programmatic control, transparency
 ### Control Surface
 
 | Capability | Mechanism | Granularity |
-|-----------|-----------|-------------|
+| --- | --- | --- |
 | Spawn/stop agents | `acp_agent_spawn`, `acp_agent_stop` | Full — per-agent lifecycle |
 | Create sessions | `acp_session_new` | Full — fresh session per task or reuse |
 | Send prompts | `acp_session_prompt` | Prompt string only — no options per-prompt |
@@ -43,7 +49,7 @@ This document compares both approaches across programmatic control, transparency
 ### Observable Events
 
 | Event | Data Available | Resolution |
-|-------|---------------|------------|
+| --- | --- | --- |
 | `agent_message_chunk` | `{ type: 'text', text: string }` | Real-time streaming |
 | `tool_call` | `kind`, `title`, `rawInput` | Before execution |
 | `tool_result` | (empty — just "done" marker) | After execution |
@@ -69,7 +75,7 @@ This document compares both approaches across programmatic control, transparency
 
 ### How It Works
 
-1. Install `@anthropic-ai/claude-agent-sdk` (npm package, ~1.85M weekly downloads)
+1. Install `@anthropic-ai/claude-agent-sdk` (npm package, \~1.85M weekly downloads)
 2. SDK bundles the Claude Code CLI internally — no separate install required
 3. Call `query({ prompt, options })` which returns an `AsyncGenerator<SDKMessage>`
 4. The SDK manages the agentic loop: send prompt → Claude responds → tools execute → repeat
@@ -78,7 +84,7 @@ This document compares both approaches across programmatic control, transparency
 ### Control Surface
 
 | Capability | Mechanism | Granularity |
-|-----------|-----------|-------------|
+| --- | --- | --- |
 | Start agent | `query({ prompt, options })` | Full configuration per query |
 | Stop/cancel | `AbortController` or `query.close()` | Immediate termination |
 | System prompt | `systemPrompt` option (string or preset) | Full custom or Claude Code preset with `append` |
@@ -94,7 +100,7 @@ This document compares both approaches across programmatic control, transparency
 | Structured output | `outputFormat: { type: 'json_schema', schema }` | JSON schema-constrained |
 | Subagents | `agents` option with `AgentDefinition` | Inline definition with tools, model, prompt |
 | Environment variables | `env` option | Per-query |
-| Effort level | `effort: 'low' | 'medium' | 'high' | 'max'` | Per-query |
+| Effort level | \`effort: 'low' | 'medium' |
 | Hooks | 17+ hook events with callbacks | Pre/post tool use, session lifecycle, permissions |
 | Streaming granularity | `includePartialMessages` option | Token-by-token Anthropic SDK events |
 | File checkpointing | `enableFileCheckpointing` + `rewindFiles()` | Rewind to any user message |
@@ -104,7 +110,7 @@ This document compares both approaches across programmatic control, transparency
 ### Observable Messages (SDKMessage types)
 
 | Message Type | Data Available |
-|-------------|---------------|
+| --- | --- |
 | `SDKAssistantMessage` | Full `BetaMessage` from Anthropic API: content blocks (text, tool_use, thinking), model, stop_reason, usage (input/output/cache tokens), `parent_tool_use_id` for subagent tracking |
 | `SDKPartialAssistantMessage` | Raw stream events (`BetaRawMessageStreamEvent`) — token-by-token content deltas, thinking deltas |
 | `SDKUserMessage` | User and synthetic messages (tool results), `tool_use_result` |
@@ -132,7 +138,7 @@ This document compares both approaches across programmatic control, transparency
 ### 1. Programmatic Control
 
 | Dimension | CLI/ACP | Agent SDK | Winner |
-|-----------|---------|-----------|--------|
+| --- | --- | --- | --- |
 | System prompt | Prepended to first message (workaround) | `systemPrompt` option — full custom or preset with `append` | **SDK** |
 | Model selection | Fixed by agent binary | `model` option, any Claude model, changeable mid-session | **SDK** |
 | Tool allowlist | No control — agent decides | `allowedTools` / `disallowedTools` — exact names | **SDK** |
@@ -149,7 +155,7 @@ This document compares both approaches across programmatic control, transparency
 ### 2. Transparency / Observability
 
 | Dimension | CLI/ACP | Agent SDK | Winner |
-|-----------|---------|-----------|--------|
+| --- | --- | --- | --- |
 | Text output | Streamed chunks | Streamed chunks + full `BetaMessage` with content blocks | **SDK** |
 | Thinking/reasoning | `agent_thought_chunk` — text only | Full thinking content blocks in `BetaMessage`, streaming deltas via `SDKPartialAssistantMessage` | **SDK** |
 | Tool call details | `kind`, `title`, `rawInput` | Full typed tool input schemas, `tool_use_id`, `parent_tool_use_id` for subagent tracking | **SDK** |
@@ -167,7 +173,7 @@ This document compares both approaches across programmatic control, transparency
 ### 3. Multi-Provider Support
 
 | Dimension | CLI/ACP | Agent SDK | Winner |
-|-----------|---------|-----------|--------|
+| --- | --- | --- | --- |
 | Claude | Yes (via claude-agent-acp) | Yes (native) | Tie |
 | OpenAI / Codex | Yes (via codex-acp) | No | **ACP** |
 | GitHub Copilot | Yes (via copilot --acp) | No | **ACP** |
@@ -178,7 +184,7 @@ This document compares both approaches across programmatic control, transparency
 ### 4. Architecture & Operations
 
 | Dimension | CLI/ACP | Agent SDK | Winner |
-|-----------|---------|-----------|--------|
+| --- | --- | --- | --- |
 | Installation | User must install each CLI globally | SDK bundles CLI; `npm install` is sufficient | **SDK** |
 | Binary resolution | Complex 4-step PATH search with macOS workarounds | Handled internally by SDK | **SDK** |
 | Process management | Manual: spawn, SIGKILL cleanup, thread management | SDK manages internally; `AbortController` / `close()` | **SDK** |
@@ -206,6 +212,7 @@ This document compares both approaches across programmatic control, transparency
 ### Agent SDK
 
 - `thinking` option controls behavior:
+
   ```typescript
   thinking: { type: 'enabled', budgetTokens: 10000 }  // Fixed budget
   thinking: { type: 'adaptive' }                        // Model decides (default)
@@ -369,7 +376,7 @@ Claude API
 
 - Requires bundling Node.js with the app or assuming it's installed
 - Communication via stdio or WebSocket between Rust and Node.js
-- Adds ~70-100MB to app size for bundled Node.js
+- Adds \~70-100MB to app size for bundled Node.js
 - Full SDK capabilities available
 
 **Option B: Direct API from Rust (no SDK)**
@@ -429,32 +436,32 @@ Rust Backend
 4. **Process isolation**: Agent crashes don't affect the host app
 5. **Simpler auth for users**: "Log in with your existing Claude/Copilot subscription" is zero-friction
 6. **No API key management**: Users don't need to create or manage API keys
-7. **Proven implementation**: ~1050 lines of production Rust code already working
+7. **Proven implementation**: \~1050 lines of production Rust code already working
 
 ### CLI/ACP — Cons
 
-1. **Opaque agent**: No control over system prompt, model, tools, thinking, or output format
-2. **Coarse permissions**: Approve/deny only — no input mutation, no pre-filtering, no audit hooks
-3. **Limited observability**: No token usage, cost, stop reason, turn count, tool results
-4. **No subagents**: Flat execution — cannot decompose tasks into specialized sub-tasks
-5. **Binary dependency**: Users must install each agent CLI separately (complex for non-developers)
-6. **Complex binary resolution**: 4-step PATH search with macOS workarounds (~80 lines just for finding the binary)
-7. **Thinking is text-only**: No budget control, no usage metrics, no on/off toggle
-8. **No structured output**: Cannot request JSON schema-constrained responses
-9. **No budget limits**: Cannot cap spending per task
+ 1. **Opaque agent**: No control over system prompt, model, tools, thinking, or output format
+ 2. **Coarse permissions**: Approve/deny only — no input mutation, no pre-filtering, no audit hooks
+ 3. **Limited observability**: No token usage, cost, stop reason, turn count, tool results
+ 4. **No subagents**: Flat execution — cannot decompose tasks into specialized sub-tasks
+ 5. **Binary dependency**: Users must install each agent CLI separately (complex for non-developers)
+ 6. **Complex binary resolution**: 4-step PATH search with macOS workarounds (\~80 lines just for finding the binary)
+ 7. **Thinking is text-only**: No budget control, no usage metrics, no on/off toggle
+ 8. **No structured output**: Cannot request JSON schema-constrained responses
+ 9. **No budget limits**: Cannot cap spending per task
 10. **Workaround-heavy**: System prompt via prepending, no per-prompt options
 
 ### Agent SDK — Pros
 
-1. **Full programmatic control**: System prompt, model, tools, thinking, effort, budget, output format — all configurable per-query
-2. **Deep observability**: Token usage, cost, timing, stop reason, tool results, permission denials, rate limits — all exposed
-3. **Fine-grained permissions**: Allowlist + `canUseTool` callback with input mutation + pre/post hooks
-4. **Subagent orchestration**: Define specialized agents with custom prompts, tools, and models
-5. **Thinking control**: Set budgets, enable/disable, stream thinking tokens, get usage metrics
-6. **Structured output**: JSON schema-constrained responses for reliable data extraction
-7. **Budget enforcement**: `maxBudgetUsd` and `maxTurns` prevent runaway costs
-8. **Self-contained**: SDK bundles the CLI — `npm install` is the only setup
-9. **Session management**: Resume, fork, list sessions, file checkpointing with rewind
+ 1. **Full programmatic control**: System prompt, model, tools, thinking, effort, budget, output format — all configurable per-query
+ 2. **Deep observability**: Token usage, cost, timing, stop reason, tool results, permission denials, rate limits — all exposed
+ 3. **Fine-grained permissions**: Allowlist + `canUseTool` callback with input mutation + pre/post hooks
+ 4. **Subagent orchestration**: Define specialized agents with custom prompts, tools, and models
+ 5. **Thinking control**: Set budgets, enable/disable, stream thinking tokens, get usage metrics
+ 6. **Structured output**: JSON schema-constrained responses for reliable data extraction
+ 7. **Budget enforcement**: `maxBudgetUsd` and `maxTurns` prevent runaway costs
+ 8. **Self-contained**: SDK bundles the CLI — `npm install` is the only setup
+ 9. **Session management**: Resume, fork, list sessions, file checkpointing with rewind
 10. **17+ hook events**: Full lifecycle observability and intervention points
 11. **MCP integration**: Connect to databases, browsers, APIs via standard protocol
 12. **Context compaction visibility**: Know when and why context was compacted
@@ -462,7 +469,7 @@ Rust Backend
 ### Agent SDK — Cons
 
 1. **Claude-only**: Only works with Anthropic's Claude — no Codex, Copilot, or Gemini
-2. **Requires Node.js**: TypeScript SDK needs a Node.js runtime — adds ~70-100MB to app bundle
+2. **Requires Node.js**: TypeScript SDK needs a Node.js runtime — adds \~70-100MB to app bundle
 3. **API key required**: Users must have an Anthropic API key (or Bedrock/Vertex/Azure credentials)
 4. **API cost model**: Per-token billing — users pay directly for API usage, or app developer absorbs cost
 5. **No Rust SDK**: No native Rust implementation — must bridge via sidecar process
@@ -478,12 +485,14 @@ Rust Backend
 The choice depends on Notesage's strategic direction:
 
 ### Keep ACP if:
+
 - Multi-provider support remains a priority (users choose between Claude, Codex, Copilot, Gemini)
 - Users prefer authenticating with existing subscriptions rather than managing API keys
 - Minimizing app bundle size and runtime dependencies matters
 - The current level of control and observability is sufficient
 
 ### Move to SDK if:
+
 - Deep programmatic control over agent behavior is essential (system prompts, tool policies, thinking budgets)
 - Observability is critical (cost tracking, token usage, tool result auditing)
 - Subagent orchestration would unlock meaningful product features
@@ -491,6 +500,7 @@ The choice depends on Notesage's strategic direction:
 - You want to eliminate the "install the CLI binary" user friction
 
 ### Hybrid approach (recommended):
+
 - Use the **Agent SDK** for Claude-specific features where deep control matters (comment delegation, structured agent tasks, research workflows)
 - Keep **ACP** for multi-provider interactive chat where the user's choice of agent matters most
 - Route via the existing `routing-store` — the `agent_tasks` slot uses SDK, the `interactive` slot uses ACP or direct API

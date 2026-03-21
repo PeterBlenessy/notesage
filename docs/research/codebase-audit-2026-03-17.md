@@ -1,6 +1,12 @@
 # Codebase Audit: Simplifications, Performance, Security & Design Alignment
 
-**Date:** 2026-03-17 **Status:** Research complete, pending implementation decisions
+**Date:** 2026-03-17 **Status:** Research complete
+
+| Stage | Link | Status |
+| --- | --- | --- |
+| PRD | — | Pending implementation decisions |
+| Tasks | [codebase-audit-tasks](../tasks/2026-03-17-codebase-audit-tasks.md) | Partial |
+
 **Codebase version:** v0.22.3
 
 ---

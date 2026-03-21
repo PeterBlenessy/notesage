@@ -45,7 +45,21 @@ Break a PRD or feature description into concrete, ordered implementation tasks.
    - Slug matches the PRD slug (e.g., PRD `docs/prds/2026-03-11-model-metadata-enrichment.md` → tasks file `docs/tasks/2026-03-11-model-metadata-enrichment-tasks.md`)
    - If no PRD exists, derive the slug from the feature name in lowercase-kebab-case
 
-7. **Present a brief summary** to the user with the file path and task count.
+7. **Update the source research doc** if this task breakdown traces back to a research file in `docs/research/`:
+   - Find the research file (check the PRD's header for a research reference, or match by topic)
+   - Add or update a Tasks row in the research doc's pipeline table:
+
+     ```markdown
+     | Stage | Link | Status |
+     | --- | --- | --- |
+     | PRD | [slug](../prds/YYYY-MM-DD-slug.md) | Complete |
+     | Tasks | [slug-tasks](../tasks/YYYY-MM-DD-slug-tasks.md) | Not started |
+     ```
+
+   - Valid statuses: `Not started`, `In Progress`, `Complete`, `Partial`, `Abandoned`, `Not planned`
+   - If no research doc exists for this feature, skip this step
+
+8. **Present a brief summary** to the user with the file path and task count.
 
 ## Guidelines
 

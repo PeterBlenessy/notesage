@@ -1,10 +1,11 @@
 # Codebase Analysis: Dependencies, Architecture & Recommendations
 
-Research date: 2026-03-09 **Status:** Fully implemented
+**Date:** 2026-03-09 **Status:** Research complete
 
-**Implementation:**
-- **PRD:** [docs/prds/2026-03-10-codebase-health-improvements.md](../prds/2026-03-10-codebase-health-improvements.md) (✅ Complete — 12/12 PRD tasks)
-- **Tasks:** [docs/tasks/2026-03-10-codebase-health-improvements-tasks.md](../tasks/2026-03-10-codebase-health-improvements-tasks.md) (✅ Complete — 18/18 tasks)
+| Stage | Link | Status |
+| --- | --- | --- |
+| PRD | [codebase-health-improvements](../prds/2026-03-10-codebase-health-improvements.md) | Complete (12/12) |
+| Tasks | [codebase-health-improvements-tasks](../tasks/2026-03-10-codebase-health-improvements-tasks.md) | Complete (18/18) |
 
 Comprehensive analysis of Notesage v0.18.6 — dependency justifications, architectural trade-offs, and recommended changes.
 

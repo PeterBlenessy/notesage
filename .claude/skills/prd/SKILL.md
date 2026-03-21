@@ -55,7 +55,25 @@ Write a Product Requirements Document for the given feature or initiative and sa
    - Date is today's date
    - Slug is a lowercase-kebab-case summary (e.g., `git-integration`, `pdf-export`)
 
-5. **Present a summary** to the user with the file path and key decisions made.
+5. **Update the source research doc** if this PRD was informed by a research file in `docs/research/`:
+   - Find the research file that motivated this PRD
+   - Add or update the pipeline table in the research doc's header to include the new PRD link
+   - Research docs use this standardized format after the title:
+
+     ```markdown
+     **Date:** YYYY-MM-DD **Status:** Research complete
+
+     | Stage | Link | Status |
+     | --- | --- | --- |
+     | PRD | [slug](../prds/YYYY-MM-DD-slug.md) | Draft |
+     | Tasks | — | Not planned |
+     ```
+
+   - Valid statuses: `Draft`, `In Progress`, `Complete`, `Abandoned`, `Not planned`
+   - A research doc can have multiple PRD and Tasks rows
+   - If no research doc exists for this PRD, skip this step
+
+6. **Present a summary** to the user with the file path and key decisions made.
 
 ## Output Format
 

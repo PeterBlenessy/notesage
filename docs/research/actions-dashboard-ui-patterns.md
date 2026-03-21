@@ -1,6 +1,13 @@
 # Actions Dashboard UI Patterns Research
 
-**Date:** 2026-03-13 **Context:** Evaluating UI patterns for the Open Actions Dashboard (PRD: `docs/prds/2026-03-11-open-actions-dashboard.md`). The current PRD proposes a right sidebar panel. Alternatives under consideration: editor tab, landing page, separate window.
+**Date:** 2026-03-13 **Status:** Research complete
+
+| Stage | Link | Status |
+| --- | --- | --- |
+| PRD | [open-actions-dashboard](../prds/2026-03-11-open-actions-dashboard.md) | Complete |
+| Tasks | [open-actions-dashboard-tasks](../tasks/2026-03-11-open-actions-dashboard-tasks.md) | Complete |
+
+**Context:** Evaluating UI patterns for the Open Actions Dashboard. The current PRD proposes a right sidebar panel. Alternatives under consideration: editor tab, landing page, separate window.
 
 ---
 

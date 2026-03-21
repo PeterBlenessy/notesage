@@ -1,7 +1,15 @@
 # App Store Launch Readiness: Security Hardening & Submission Requirements
 
-Research date: 2026-03-12
-Notesage version: 0.19.0
+**Date:** 2026-03-12 **Status:** Research complete
+
+| Stage | Link | Status |
+| --- | --- | --- |
+| PRD | [secure-credential-storage](../prds/2026-03-14-secure-credential-storage.md) | Draft |
+| PRD | [agent-data-safety](../prds/2026-03-15-agent-data-safety.md) | In Progress |
+| Tasks | [agent-data-safety-tasks](../tasks/2026-03-15-agent-data-safety-tasks.md) | In Progress |
+| PRD | [sandbox-hardening-macos](../prds/2026-03-21-sandbox-hardening-macos.md) | Draft |
+
+**Notesage version at time of research:** 0.19.0
 
 Comprehensive audit of what Notesage needs to ship on the Mac App Store — covering security hardening, sandboxing, entitlements, credential storage, and submission requirements.
 

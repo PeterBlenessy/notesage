@@ -1,6 +1,10 @@
 # Notesage Competitive Analysis
 
-*Last updated: 2026-03-13*
+**Date:** 2026-03-13 **Status:** Research complete
+
+| Stage | Link | Status |
+| --- | --- | --- |
+| PRD | — | Reference material (no direct PRD — informs product direction) |
 
 ## Executive Summary
 
@@ -23,6 +27,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Platform Support:** macOS, Windows, Linux
 
 **Editor:**
+
 - BlockNote-based editor (built on Tiptap/ProseMirror, migrated from raw Tiptap in final release)
 - Block-based editing with image and video support
 - Wikilinks (`[[note]]`) for internal linking (Obsidian-compatible)
@@ -30,6 +35,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Light and dark themes
 
 **AI Capabilities:**
+
 - Local LLM support via Ollama integration
 - Cloud AI via OpenAI API or any OpenAI-compatible endpoint
 - Semantic search using local vector embeddings (Transformers.js, runs in-process)
@@ -39,12 +45,14 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - AI flashcard generation — extracts key points and generates Q&A cards
 
 **Unique Differentiators:**
+
 - "Two generators" RAG model — both human (sidebar showing related notes) and LLM (Q&A) share the same vector retrieval infrastructure
 - Zero-cloud architecture — both LLM and embeddings run locally, no API key required with Ollama
 - Automatic knowledge graph — notes linked without manual effort
 - Single-directory simplicity — just a folder of markdown files, no proprietary database
 
 **Limitations:**
+
 - **Project archived** — no further development or maintenance
 - Electron-based (heavier than Tauri)
 - Single directory only (no multi-project support)
@@ -57,7 +65,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Comparison with Notesage:**
 
 | Dimension | Reor | Notesage |
-|---|---|---|
+| --- | --- | --- |
 | AI depth | RAG + semantic search + local LLM | Multi-provider + agents + skills + MCP + voice |
 | AI architecture | Embedding-centric (RAG) | Action-centric (generation, delegation, completions) |
 | Local AI | Ollama only | Ollama + bundled llama-server + Whisper |
@@ -79,6 +87,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Platform Support:** macOS, Windows, Linux, iOS, Android; browser version at test.logseq.com
 
 **Editor:**
+
 - Outliner-based (every line is a collapsible, referenceable block — blocks are the primary unit, not pages)
 - Markdown and Org-mode dual format support
 - Block references and embeds (`((block-id))`)
@@ -89,6 +98,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Indentation-driven hierarchy (Tab/Shift+Tab)
 
 **Key Features:**
+
 - Daily journal as default entry point (auto-created)
 - Bi-directional linking with linked and unlinked references
 - Knowledge graph visualization (interactive force-directed graph)
@@ -103,6 +113,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - **DB version (beta):** Classes (typed block schemas), real-time collaboration (alpha), page publishing via Cloudflare Workers
 
 **AI Capabilities:**
+
 - No built-in AI features in the core app
 - **logseq-plugin-gpt3-openai** (most popular) — GPT-3.5/4 via OpenAI, Whisper transcription (`/whisper`), DALL-E image generation
 - **AssistSeq** — multi-provider (OpenAI, Gemini, Ollama, Groq) with automatic web scraping
@@ -110,6 +121,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - All require user-provided API keys; no native AI announced
 
 **Unique Differentiators:**
+
 - Outliner-first paradigm — blocks, not pages, are the fundamental unit of thought
 - Daily journals as the primary workflow
 - Datalog query engine — most powerful query system among note apps
@@ -121,6 +133,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - 41,500+ GitHub stars, $665,000+ community funding via Open Collective
 
 **Limitations:**
+
 - Performance issues with large graphs (being addressed by DB version)
 - Outliner paradigm has a learning curve
 - Not a traditional document editor — poor for long-form prose
@@ -133,7 +146,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Comparison with Notesage:**
 
 | Dimension | Logseq | Notesage |
-|---|---|---|
+| --- | --- | --- |
 | Editing paradigm | Outliner (block-first) | Document (prose-first) |
 | Knowledge management | Graph, backlinks, Datalog queries | File tree, tags, projects |
 | AI | Community plugins only | First-party, multi-provider |
@@ -158,6 +171,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Platform Support:** macOS, Windows, Linux, iOS, Android (near-full feature parity on mobile as of 2026)
 
 **Editor:**
+
 - CodeMirror 6-based with three modes: Live Preview, Source, and Reading
 - Vim keybindings (optional core plugin)
 - Callouts/admonitions (styled blockquotes with types)
@@ -168,6 +182,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Canvas (infinite spatial board for visual thinking)
 
 **Key Features:**
+
 - Internal links (`[[wikilinks]]`) with backlinks panel and unlinked mentions
 - Block references and heading references
 - Knowledge graph visualization (global and local, D3.js + WebGL)
@@ -185,6 +200,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Siri/Shortcuts integration on iOS (v1.12)
 
 **AI Capabilities (via plugins):**
+
 - No first-party AI features
 - **Smart Connections** — semantic similarity search across notes using vector embeddings; supports offline/local models
 - **Obsidian Copilot** — chat sidebar for conversing with notes (RAG-style Q&A)
@@ -194,7 +210,8 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Multiple plugins support Ollama and LM Studio for fully offline AI
 
 **Unique Differentiators:**
-- Largest plugin ecosystem in the space (2,700+, ~75 updates/week, ~6 new plugins/week)
+
+- Largest plugin ecosystem in the space (2,700+, \~75 updates/week, \~6 new plugins/week)
 - Plain markdown files — ultimate data portability
 - Bases bridges the gap to Notion-style databases while staying Markdown-native
 - Canvas for visual/spatial thinking (embeddable Bases and queries)
@@ -205,6 +222,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Strong mobile apps with near-full feature parity and plugin support
 
 **Limitations:**
+
 - Electron-based (heavier resource footprint than Tauri)
 - No real-time collaboration (shared vaults via Sync, but no simultaneous editing)
 - No first-party AI (entirely dependent on community plugin quality)
@@ -216,7 +234,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Comparison with Notesage:**
 
 | Dimension | Obsidian | Notesage |
-|---|---|---|
+| --- | --- | --- |
 | Plugin ecosystem | 2,700+ plugins | Skills + MCP (extensible but smaller) |
 | AI integration | Community plugins (fragmented) | First-party, deep, multi-provider |
 | Editor engine | CodeMirror 6 | Tiptap/ProseMirror |
@@ -244,6 +262,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Platform Support:** macOS, iOS, iPadOS only (Apple ecosystem exclusive)
 
 **Editor:**
+
 - Custom markdown editor with inline preview
 - Rich text rendering while typing (headings, bold, etc. render inline)
 - Inline images, files, and sketches
@@ -254,6 +273,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Multiple themes (14+ built-in)
 
 **Key Features:**
+
 - Tag-based organization (nested tags: `#work/project-a`)
 - No folders — tags are the sole organizational primitive
 - Sidebar with tag tree, smart filters (untagged, todo, today, archive, trash)
@@ -266,11 +286,13 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Apple Pencil support (iPad)
 
 **AI Capabilities:**
+
 - No AI features whatsoever
 - No plans for AI integration announced
 - Philosophy: focused, distraction-free writing tool
 
 **Unique Differentiators:**
+
 - Gold standard for design polish — Notesage's design-system.md explicitly cites Bear as inspiration
 - Tag-based organization (no folders) is opinionated but beloved
 - Native Apple performance (not Electron/Tauri — truly native)
@@ -279,6 +301,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - 14+ beautiful themes
 
 **Limitations:**
+
 - Apple-only (no Windows, Linux, Android, Web)
 - No AI features
 - No plugin/extension system
@@ -290,7 +313,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Comparison with Notesage:**
 
 | Dimension | Bear | Notesage |
-|---|---|---|
+| --- | --- | --- |
 | Design polish | Gold standard (native) | Aspires to Bear's level (Tauri) |
 | AI | None | Comprehensive multi-provider |
 | Tags | First-class, nested, organizational | Inline badges, search |
@@ -315,6 +338,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Platform Support:** macOS, Windows, Linux, iOS (native Swift), Android (native Kotlin) — no web app
 
 **Editor:**
+
 - Block-based editor with slash commands (20+ block types)
 - Rich text: headings, bold, italic, strikethrough, underline, code, highlight
 - Toggle blocks and toggled headings (collapsible sections)
@@ -328,6 +352,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Tabs (multiple objects in same window, 2026 addition)
 
 **Key Features:**
+
 - Object-and-relation data model (types: Note, Task, Book, Person, etc.)
 - Sets (live filtered views) and Collections (manually curated groups) with 6 view modes: Grid, Gallery, List, Kanban, Calendar, Graph
 - Graph view and Flow view visualizing object relationships
@@ -341,6 +366,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Native mobile apps (not webview wrappers)
 
 **AI Capabilities:**
+
 - **MCP Server** (`anytype-mcp`) — official MCP server bridging AI assistants (Claude, etc.) to Anytype data
 - **Local API** — high-performance local API for integration with local LLMs and automation
 - **Local AI Agents** (in development) — spin up local agents using any API key, with Anytype objects as memory
@@ -348,6 +374,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - No built-in AI writing features baked into the editor (AI accessed through open protocols)
 
 **Unique Differentiators:**
+
 - True local-first with E2E encryption — Anytype cannot access user data
 - Object-graph architecture — more structured than files, more flexible than databases
 - P2P sync via CRDTs — automatic conflict resolution, no central server needed
@@ -357,6 +384,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - ANY Experience Gallery for community templates
 
 **Limitations:**
+
 - Not markdown-native (Protobuf-based internal format)
 - Steep learning curve (object/type/relation concepts)
 - No web app (local-first architecture)
@@ -368,7 +396,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Comparison with Notesage:**
 
 | Dimension | Anytype | Notesage |
-|---|---|---|
+| --- | --- | --- |
 | Data model | Objects + relations + graph | Markdown files |
 | Sync | P2P encrypted (CRDTs) | iCloud |
 | AI depth | MCP + local API (protocol-based) | Deep (multi-provider, agents, MCP, voice) |
@@ -386,7 +414,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 
 ### 6. Craft
 
-**Website:** craft.do | **License:** Proprietary | **Pricing:** Free tier; ~$5/user/mo (Plus); team plans available
+**Website:** craft.do | **License:** Proprietary | **Pricing:** Free tier; \~$5/user/mo (Plus); team plans available
 
 **Overview:** Craft is a premium, Apple-native document editor focused on beautiful documents, team collaboration, and integrated AI. It's Notesage's closest design inspiration.
 
@@ -395,6 +423,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Platform Support:** macOS, iOS, iPadOS, Web (no Windows, Linux, Android)
 
 **Editor:**
+
 - Block-based rich text editor (proprietary, not markdown-native)
 - Nested pages and cards
 - Inline styling, toggles, callouts
@@ -402,6 +431,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Markdown export/import (but not native markdown storage)
 
 **Key Features:**
+
 - Real-time collaboration
 - Cross-platform sync (native Apple apps)
 - Version history with labeled milestones
@@ -412,6 +442,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Deep links and backlinks
 
 **AI Capabilities:**
+
 - **Craft Assistant** with tiered AI models:
   - On-device: Llama 3.2 1B (free, no credits)
   - Core: ChatGPT Nano 5.1
@@ -423,6 +454,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Privacy-first: chat history stays on device
 
 **Unique Differentiators:**
+
 - Truly native Apple apps (not Electron/Tauri) — exceptional performance
 - On-device AI at no extra cost
 - MCP support for AI tool interop
@@ -432,7 +464,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Comparison with Notesage:**
 
 | Dimension | Craft | Notesage |
-|---|---|---|
+| --- | --- | --- |
 | Native feel | Native Swift (superior) | Tauri (good, not native) |
 | AI models | Tiered (on-device to Sonnet) | Multi-provider (broader choice) |
 | AI agents | No | Yes (ACP, skills, delegation) |
@@ -456,12 +488,14 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Platform Support:** macOS, Windows, iOS, Android, Web (no native Linux app)
 
 **Editor:**
+
 - Block-based with 50+ block types
 - Databases with 6 view types (table, board, timeline, calendar, list, gallery)
 - Templates, synced blocks, embeds
 - Real-time collaboration with comments and mentions
 
 **Key Features:**
+
 - Databases as first-class citizens
 - Wikis and team knowledge bases
 - Project management (timelines, sprints, Kanban)
@@ -471,6 +505,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Templates marketplace
 
 **AI Capabilities:**
+
 - **Notion AI** (bundled in Business/Enterprise, add-on for others)
 - Multi-model: GPT-5, Claude Opus 4.1, o3
 - Autonomous AI Agents (Notion 3.0) — multi-step workflows running up to 20 minutes
@@ -480,6 +515,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - AI writing assistance (summarize, translate, improve, brainstorm)
 
 **Unique Differentiators:**
+
 - Most feature-rich workspace overall
 - Database-centric approach enables project management
 - Autonomous AI agents that work across pages and integrations
@@ -489,7 +525,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Comparison with Notesage:**
 
 | Dimension | Notion | Notesage |
-|---|---|---|
+| --- | --- | --- |
 | Scope | All-in-one workspace | Focused writing + AI |
 | Data storage | Cloud-first | Local-first |
 | AI agents | Autonomous workflows | Interactive delegation |
@@ -504,7 +540,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 
 ### 8. Joplin
 
-**Website:** joplinapp.org | **License:** AGPL-3.0 (open source) | **Pricing:** Free; Joplin Cloud ~EUR 2-8/mo
+**Website:** joplinapp.org | **License:** AGPL-3.0 (open source) | **Pricing:** Free; Joplin Cloud \~EUR 2-8/mo
 
 **Overview:** Joplin is an open-source note-taking app focused on privacy and sync flexibility. It supports end-to-end encryption and can sync via multiple backends.
 
@@ -513,11 +549,13 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Platform Support:** macOS, Windows, Linux, iOS, Android, CLI
 
 **Editor:**
+
 - Dual-mode: rich text and raw markdown (side-by-side or toggle)
 - Basic formatting, code blocks, math (KaTeX)
 - Multimedia attachments (images, video, PDF, audio)
 
 **Key Features:**
+
 - End-to-end encryption (E2EE)
 - Flexible sync: Joplin Cloud, Nextcloud, Dropbox, OneDrive, S3, WebDAV
 - Web clipper browser extension
@@ -526,13 +564,14 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Terminal CLI app
 
 **AI Capabilities:**
+
 - No built-in AI features
 - Limited community plugin options for AI
 
 **Comparison with Notesage:**
 
 | Dimension | Joplin | Notesage |
-|---|---|---|
+| --- | --- | --- |
 | Privacy | E2EE | Local-first |
 | AI | None | Comprehensive |
 | Sync flexibility | 7+ backends | iCloud |
@@ -554,6 +593,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Platform Support:** macOS, Windows, Linux (x86 and ARM)
 
 **Editor:**
+
 - True live WYSIWYG — markdown renders inline instantly
 - Focus mode (dim non-active paragraphs)
 - Typewriter mode (center active line)
@@ -562,6 +602,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Outline panel
 
 **Key Features:**
+
 - Seamless markdown editing experience
 - Export: PDF, DOCX, HTML, LaTeX, EPUB, MediaWiki, and more
 - File tree and file list panels
@@ -573,7 +614,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Comparison with Notesage:**
 
 | Dimension | Typora | Notesage |
-|---|---|---|
+| --- | --- | --- |
 | Markdown rendering | Best-in-class inline | Rich text with toolbar |
 | AI | None | Comprehensive |
 | Export formats | 8+ formats | PDF |
@@ -594,6 +635,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Platform Support:** macOS, Windows, iOS, iPadOS, Android
 
 **Editor:**
+
 - Plain text markdown with preview mode
 - Focus mode (sentence/paragraph dimming)
 - Syntax highlighting for parts of speech
@@ -601,6 +643,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Content blocks (embed files inline)
 
 **Key Features:**
+
 - **Authorship tracking** — visually distinguishes human, AI, and pasted text
 - Writing craft tools (syntax analysis, style checking)
 - Library with favorites, hashtags, smart folders
@@ -608,11 +651,13 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - iCloud and Dropbox sync
 
 **AI Capabilities:**
+
 - OpenAI and Anthropic integration via user API keys
 - Focus on authorship transparency rather than AI generation
 - AI text visually marked differently from human text
 
 **Unique Differentiators:**
+
 - Authorship tracking is unique in the market
 - Anti-AI-generation philosophy — uses AI to enhance transparency
 - One-time purchase (anti-subscription)
@@ -621,7 +666,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Comparison with Notesage:**
 
 | Dimension | iA Writer | Notesage |
-|---|---|---|
+| --- | --- | --- |
 | AI philosophy | Transparency-first | Generation-first |
 | Writing tools | Parts of speech, style check | AI improve/expand/summarize |
 | Authorship tracking | Yes (unique) | No |
@@ -642,12 +687,14 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Platform Support:** macOS, Windows, Linux
 
 **Editor:**
+
 - CodeMirror 6-based source editor with preview
 - Split view (two notes side-by-side)
 - Code syntax highlighting
 - LaTeX math support
 
 **Key Features:**
+
 - **Citation management** — Zotero/JabRef integration (CSL-JSON, BibTeX)
 - Zettelkasten support (internal links, backlinks, IDs)
 - Pandoc export (virtually any format)
@@ -661,7 +708,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Comparison with Notesage:**
 
 | Dimension | Zettlr | Notesage |
-|---|---|---|
+| --- | --- | --- |
 | Academic focus | Best-in-class (citations, Zettelkasten) | Limited |
 | AI | None | Comprehensive |
 | Export | Pandoc (any format) | PDF (Typst) |
@@ -681,11 +728,13 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Platform Support:** macOS, Windows, Linux, iOS, Android, Web
 
 **Editor:**
+
 - Block-based (Notion-style) with 20+ content types
 - To-dos, images, code blocks, math equations
 - Database views (table, Kanban, calendar)
 
 **Key Features:**
+
 - Self-hosting option
 - Offline-first with sync
 - Customizable themes
@@ -693,6 +742,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Database views
 
 **AI Capabilities:**
+
 - **Local AI via Ollama** — fully on-device (Llama 3, Mistral 7B)
 - Cloud AI: GPT-5, Gemini 2.5, Claude 3.7
 - AI writing: brainstorm, improve, summarize, extract actions
@@ -701,6 +751,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 - Chat with uploaded PDFs (all local processing)
 
 **Unique Differentiators:**
+
 - Strongest open-source Notion alternative
 - Vault Workspace for fully offline private AI
 - Flutter+Rust for true cross-platform native performance
@@ -710,7 +761,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 **Comparison with Notesage:**
 
 | Dimension | AppFlowy | Notesage |
-|---|---|---|
+| --- | --- | --- |
 | App type | Notion-like workspace | Writing-focused editor |
 | Local AI | Ollama integration | Ollama + bundled llama-server |
 | Databases | Yes (table, Kanban, calendar) | No |
@@ -728,7 +779,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 ### Core Editing
 
 | Feature | Notesage | Reor | Logseq | Obsidian | Bear | Anytype | Craft | Notion | Joplin | Typora | iA Writer | Zettlr | AppFlowy |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Rich text editing | Tiptap | Basic MD | Outliner | CodeMirror | Custom | Block | Block | Block | Dual-mode | Live WYSIWYG | Plain MD | CodeMirror | Block |
 | Markdown native | Yes | Yes | Yes | Yes | Yes | No | No | No | Yes | Yes | Yes | Yes | No |
 | WYSIWYG | Yes | Partial | No | Live preview | Inline | Yes | Yes | Yes | Toggle | Yes | Preview | Preview | Yes |
@@ -744,7 +795,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 ### AI & Intelligence
 
 | Feature | Notesage | Reor | Logseq | Obsidian | Bear | Anytype | Craft | Notion | Joplin | Typora | iA Writer | Zettlr | AppFlowy |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | AI writing assist | Yes | Yes | Plugin | Plugin | No | Yes | Yes | Yes | No | No | Yes | No | Yes |
 | Multi-provider | Yes | Yes | No | Plugin | No | No | Tiered | Yes | No | No | Yes | No | Yes |
 | Local/offline AI | Yes | Yes | No | Plugin | No | No | On-device | No | No | No | No | No | Yes |
@@ -763,7 +814,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 ### Organization & Knowledge Management
 
 | Feature | Notesage | Reor | Logseq | Obsidian | Bear | Anytype | Craft | Notion | Joplin | Typora | iA Writer | Zettlr | AppFlowy |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Folder/file tree | Yes | Yes | No | Yes | No | No | Nested pages | Yes | Notebooks | Yes | Library | Yes | Yes |
 | Tags | Yes | No | Yes | Yes | Yes | Yes | No | Yes | Yes | No | Yes | No | No |
 | Wikilinks | No | Yes | Yes | Yes | No | Yes | Yes | Yes | Yes | No | No | Yes | No |
@@ -779,7 +830,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 ### Document Formats & Export
 
 | Feature | Notesage | Reor | Logseq | Obsidian | Bear | Anytype | Craft | Notion | Joplin | Typora | iA Writer | Zettlr | AppFlowy |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | PDF export | Yes (Typst) | No | Yes | Plugin | Yes | No | Yes | Yes | Yes | Yes | Yes | Pandoc | Yes |
 | DOCX export | No | No | No | Plugin | Yes | No | No | No | No | Yes | Yes | Pandoc | No |
 | EPUB export | No | No | No | No | Yes | No | No | No | No | Yes | No | No | No |
@@ -791,7 +842,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 ### Platform, Privacy & Pricing
 
 | Feature | Notesage | Reor | Logseq | Obsidian | Bear | Anytype | Craft | Notion | Joplin | Typora | iA Writer | Zettlr | AppFlowy |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | macOS | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
 | Windows | Future | Yes | Yes | Yes | No | Yes | No | Yes | Yes | Yes | Yes | Yes | Yes |
 | Linux | Future | Yes | Yes | Yes | No | Yes | No | No | Yes | Yes | No | Yes | Yes |
@@ -858,6 +909,7 @@ Notesage occupies a unique position in the note-taking and writing app landscape
 ### Competitive Positioning
 
 Notesage's sweet spot is users who want:
+
 - **Local-first markdown** (rules out Notion, Craft, Anytype)
 - **First-party AI integration** (rules out Obsidian, Bear, Typora, Zettlr, Joplin)
 - **Writing-focused** (rules out Logseq's outliner, AppFlowy's databases)
@@ -871,7 +923,7 @@ The closest competitors for this specific user are **Reor** (AI + local + markdo
 ## Appendix: Competitor Summary Table
 
 | App | Category | Best For | Biggest Weakness vs. Notesage |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Reor | AI-first notes (ARCHIVED) | RAG / chat with notes | Archived, narrower AI, less polished editor |
 | Logseq | Outliner PKM | Networked thinking, daily journals | Not a prose editor, no first-party AI |
 | Obsidian | Extensible PKM | Plugin power users | Fragmented AI via plugins, Electron |

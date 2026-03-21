@@ -1,6 +1,11 @@
 # Local AI Inference Options for Desktop App Integration
 
-Research date: 2026-03-09
+**Date:** 2026-03-09 **Status:** Research complete
+
+| Stage | Link | Status |
+| --- | --- | --- |
+| PRD | [local-ai](../prds/2026-03-09-local-ai.md) | Complete |
+| Tasks | [local-ai](../tasks/2026-03-09-local-ai.md) | Complete |
 
 **Context:** Notesage is a Tauri v2 desktop app (Rust backend, TypeScript frontend) that currently uses Ollama for local AI. This research evaluates options for Phase 9 (Local AI) — embedding local inference directly into the app so users don't need to install separate software.
 

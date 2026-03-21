@@ -1,7 +1,14 @@
 # Sandbox Runtime Comparison: Notesage vs Anthropic `sandbox-runtime` (srt)
 
-**Date:** 2026-03-21
-**Status:** Research complete
+**Date:** 2026-03-21 **Status:** Research complete
+
+| Stage | Link | Status |
+| --- | --- | --- |
+| PRD | [network-sandboxing](../prds/2026-03-16-network-sandboxing.md) | Complete |
+| Tasks | [network-sandboxing-tasks](../tasks/2026-03-16-network-sandboxing-tasks.md) | Complete |
+| PRD | [sandbox-hardening-macos](../prds/2026-03-21-sandbox-hardening-macos.md) | Draft |
+| Tasks | — | Not planned |
+
 **Context:** Comparison of Notesage's network sandboxing implementation against Anthropic's open-source `@anthropic-ai/sandbox-runtime` (v0.0.42), used by Claude Code.
 
 ## Background
@@ -31,7 +38,7 @@ Notesage's network sandboxing is **implemented and shipping** (v0.22.0+):
 
 **Risk:** An agent binary that ignores proxy env vars can connect directly to any domain, bypassing all filtering. All current ACP agents are cooperative Node.js processes that respect proxy vars, but a malicious binary would not.
 
-**What `srt` does:** Uses `(deny network*)` with selective `(allow network-outbound ...)` rules for localhost proxy ports. Seatbelt enforces at the kernel level — even a binary that ignores env vars cannot reach the network directly.
+**What** `srt` **does:** Uses `(deny network*)` with selective `(allow network-outbound ...)` rules for localhost proxy ports. Seatbelt enforces at the kernel level — even a binary that ignores env vars cannot reach the network directly.
 
 **Why Notesage diverged:** The PRD describes `(deny network*)` as the intended approach (lines 44-57, 76-94), but implementation found that Seatbelt's rule precedence broke agent startup in practice. From `sandbox.rs` comment:
 
@@ -45,11 +52,11 @@ Notesage's network sandboxing is **implemented and shipping** (v0.22.0+):
 
 **Current:** The bwrap command does **not** use `--unshare-net`. From `sandbox.rs` (lines 174-180):
 
-> "Note: --unshare-net blocks all network including localhost. We skip it for now since the proxy runs on localhost TCP. [...] Full Linux network isolation requires iptables rules or socat bridging (future work)."
+> "Note: --unshare-net blocks all network including localhost. We skip it for now since the proxy runs on localhost TCP. \[...\] Full Linux network isolation requires iptables rules or socat bridging (future work)."
 
 **Risk:** On Linux, agents can bypass the proxy entirely — there is no OS-level network restriction at all, only env vars.
 
-**What `srt` does:** Uses `--unshare-net` to create a fully isolated network namespace, then bridges the proxy into the sandbox via socat Unix socket forwarding. This provides true network isolation.
+**What** `srt` **does:** Uses `--unshare-net` to create a fully isolated network namespace, then bridges the proxy into the sandbox via socat Unix socket forwarding. This provides true network isolation.
 
 **Status in PRD:** The PRD describes `--unshare-net` as the approach (lines 98-106) but the implementation silently skips it. Not documented as a known gap.
 
@@ -61,7 +68,7 @@ Notesage's network sandboxing is **implemented and shipping** (v0.22.0+):
 
 **Risk:** An agent could communicate with other local services via Unix sockets, bypassing network proxy filtering. On Linux, this is especially relevant since `AF_UNIX` sockets are a common IPC mechanism.
 
-**What `srt` does:** Uses seccomp-BPF to block `socket(AF_UNIX)` syscall, preventing sandbox escapes via local sockets. Has a dedicated `generate-seccomp-filter.ts` module.
+**What** `srt` **does:** Uses seccomp-BPF to block `socket(AF_UNIX)` syscall, preventing sandbox escapes via local sockets. Has a dedicated `generate-seccomp-filter.ts` module.
 
 **Status in PRD:** Not mentioned anywhere.
 
@@ -71,7 +78,7 @@ Notesage's network sandboxing is **implemented and shipping** (v0.22.0+):
 
 **Current:** When the proxy denies a domain, it logs to `notesage::network_proxy` and sends a chat message. But there is no monitoring of **OS-level** sandbox violations (Seatbelt denials, bwrap namespace violations).
 
-**What `srt` does:** Streams macOS kernel sandbox violation logs in real-time via `sandbox-violation-store.ts`. Every `Sandbox: deny` event from the kernel is captured, categorized, and surfaced. This reveals when agents attempt operations the sandbox blocks — even operations the agent doesn't report.
+**What** `srt` **does:** Streams macOS kernel sandbox violation logs in real-time via `sandbox-violation-store.ts`. Every `Sandbox: deny` event from the kernel is captured, categorized, and surfaced. This reveals when agents attempt operations the sandbox blocks — even operations the agent doesn't report.
 
 **Status in PRD:** Listed as a non-goal ("Monitoring or logging network traffic for analytics", line 29). However, violation monitoring is different from traffic analytics — it's about security visibility.
 
@@ -81,7 +88,7 @@ Notesage's network sandboxing is **implemented and shipping** (v0.22.0+):
 
 **Current:** Sandbox profiles are generated at agent spawn time. Changing sandbox configuration requires restarting the agent.
 
-**What `srt` does:** Supports `--control-fd` — a JSON lines protocol over a file descriptor that allows the parent process to update sandbox config (add domains, modify paths) mid-session without restarting the agent.
+**What** `srt` **does:** Supports `--control-fd` — a JSON lines protocol over a file descriptor that allows the parent process to update sandbox config (add domains, modify paths) mid-session without restarting the agent.
 
 **Status in PRD:** Not mentioned.
 
@@ -91,7 +98,7 @@ Notesage's network sandboxing is **implemented and shipping** (v0.22.0+):
 
 **Current:** Only HTTP proxy (CONNECT for HTTPS, forwarding for plain HTTP). Raw TCP connections bypass the proxy.
 
-**What `srt` does:** Runs both HTTP and SOCKS5 proxies (`@pondwader/socks5-server`). SOCKS5 handles non-HTTP TCP traffic.
+**What** `srt` **does:** Runs both HTTP and SOCKS5 proxies (`@pondwader/socks5-server`). SOCKS5 handles non-HTTP TCP traffic.
 
 **Status in PRD:** Intentionally out of scope (lines 433, 445). All tested ACP agents use HTTP/HTTPS exclusively.
 
@@ -114,13 +121,13 @@ These are areas where Notesage's implementation is stronger:
 ## Priority Summary
 
 | Gap | Severity | Effort | Recommendation |
-|---|---|---|---|
-| 1. No kernel network deny | High | Medium | Re-investigate Seatbelt deny rules using `srt`'s exact profile pattern |
-| 2. No Linux network namespace | High | Medium | Implement socat bridge + `--unshare-net` |
-| 3. No seccomp-BPF | Medium | Small | Add `AF_UNIX` socket blocking on Linux |
-| 4. No violation monitoring | Medium | Medium | Stream Seatbelt violation logs to Activity panel |
-| 5. No dynamic reconfig | Low | Large | Defer — per-spawn model is sufficient |
-| 6. No SOCKS5 | Low | Medium | Defer — HTTP CONNECT covers all agents |
+| --- | --- | --- | --- |
+| 1\. No kernel network deny | High | Medium | Re-investigate Seatbelt deny rules using `srt`'s exact profile pattern |
+| 2\. No Linux network namespace | High | Medium | Implement socat bridge + `--unshare-net` |
+| 3\. No seccomp-BPF | Medium | Small | Add `AF_UNIX` socket blocking on Linux |
+| 4\. No violation monitoring | Medium | Medium | Stream Seatbelt violation logs to Activity panel |
+| 5\. No dynamic reconfig | Low | Large | Defer — per-spawn model is sufficient |
+| 6\. No SOCKS5 | Low | Medium | Defer — HTTP CONNECT covers all agents |
 
 ## References
 

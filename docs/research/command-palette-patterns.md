@@ -1,13 +1,20 @@
 # Command Palette & Search Patterns in Desktop Apps
 
-Research into how premium desktop apps handle command palettes, search modes, and discoverability — conducted to inform the unified command palette refactor (PRD: `docs/prds/2026-03-12-unified-command-palette.md`).
+**Date:** 2026-03-12 **Status:** Research complete
+
+| Stage | Link | Status |
+| --- | --- | --- |
+| PRD | [unified-command-palette](../prds/2026-03-12-unified-command-palette.md) | Complete |
+| Tasks | [unified-command-palette-tasks](../tasks/2026-03-12-unified-command-palette-tasks.md) | Complete |
+
+Research into how premium desktop apps handle command palettes, search modes, and discoverability.
 
 ## Current Notesage Architecture
 
 The `CommandPalette` component (760 lines) serves 5 search modes through a single component controlled by 7 boolean state variables in `App.tsx`:
 
 | Mode | Shortcut | State flags set |
-|------|----------|----------------|
+| --- | --- | --- |
 | General (files + actions) | Cmd+K | `open` |
 | File content search | Cmd+Shift+F | `open`, `filesOnly` |
 | Tag search | Cmd+3 | `open`, `filesOnly`, `tagSearchMode` |
@@ -15,14 +22,16 @@ The `CommandPalette` component (760 lines) serves 5 search modes through a singl
 | Research search | Cmd+4 | `open`, `filesOnly`, `researchSearchMode` |
 
 **Strengths:**
+
 - Single component, no duplicate UI code
 - Tags and mentions follow an identical two-level pattern (list → occurrences)
 - Background tag/mention scanning for instant filtering
 - Dedicated shortcuts that feel natural
 
 **Weaknesses:**
+
 - 7 boolean states that must be coordinated (fragile)
-- Tags and mentions are copy-paste twins (~200 lines duplicated)
+- Tags and mentions are copy-paste twins (\~200 lines duplicated)
 - No discoverability — users must memorize 5 shortcuts
 - 760-line component with growing conditional complexity
 
@@ -33,7 +42,7 @@ The `CommandPalette` component (760 lines) serves 5 search modes through a singl
 VS Code uses a **single unified input** (`Cmd+P`) with prefix characters that switch modes:
 
 | Prefix | Mode | Shortcut |
-|--------|------|----------|
+| --- | --- | --- |
 | *(none)* | File search (Quick Open) | `Cmd+P` |
 | `>` | Command search | `Cmd+Shift+P` |
 | `@` | Symbol search (current file) | `Cmd+Shift+O` |
@@ -49,25 +58,27 @@ Each mode also has a dedicated keyboard shortcut that opens the palette pre-fill
 Linear's `Cmd+K` opens a **context-aware command menu** that combines search and actions. Its prefix system uses **single letters followed by a space**:
 
 | Prefix | Filters to |
-|--------|-----------|
-| `i ` | Issues |
-| `p ` | Projects |
-| `u ` | Users |
-| `t ` | Teams |
-| `l ` | Labels |
-| `f ` | Favorites |
-| `d ` | Documents |
+| --- | --- |
+| `i` | Issues |
+| `p` | Projects |
+| `u` | Users |
+| `t` | Teams |
+| `l` | Labels |
+| `f` | Favorites |
+| `d` | Documents |
 
 The menu adapts to context — if you're viewing Cycles, cycle-related commands appear first. This is a **lighter-weight prefix system** than VS Code's, using natural letter abbreviations rather than special characters.
 
 ### Obsidian — Separate Palettes, Unified by Plugins
 
 Obsidian ships with **two separate built-in interfaces**:
+
 - **Command Palette** (`Cmd+P`): runs commands/actions
 - **Quick Switcher** (`Cmd+O`): opens files by name
 - **Global Search** (`Cmd+Shift+F`): full-text search with operators (`tag:`, `path:`, `file:`, `line:`, `section:`)
 
 The built-in separation has been a pain point. The community **Better Command Palette** plugin unifies them with VS Code-style prefixes:
+
 - Default: file search
 - `>`: commands
 - `#`: tag search (then drill down into files containing that tag)
@@ -77,6 +88,7 @@ The built-in separation has been a pain point. The community **Better Command Pa
 ### Notion — Quick Search + Full Search (Two-Tier)
 
 Notion uses a **two-tier search architecture**:
+
 - **Quick Search** (`Cmd+K` or `Cmd+P`): lightweight popup showing recent pages, inline results as you type
 - **Full Search** (click through from quick search): full-page experience with filters by source, title, author, date
 
@@ -87,9 +99,11 @@ The quick search is the primary interaction — it shows recent pages immediatel
 ### Raycast — Extension-Based Search with Implicit Ranking
 
 Raycast replaces macOS Spotlight with a **single search bar** that unifies:
+
 - App launching, file search, extension commands, calculator, clipboard history, snippets, etc.
 
 Key patterns:
+
 - **No explicit prefix modes** — instead, search results are ranked across all categories simultaneously
 - **Fallback commands**: when no results match, customizable fallback actions appear
 - **Action Panel** (`Cmd+K` within results): context-sensitive actions on any search result
@@ -99,6 +113,7 @@ Key patterns:
 ### Bear — Quick Open with `#` and `@` Prefixes
 
 Bear's **Quick Open** (`Cmd+O`) is a lightweight palette with prefix-based filtering:
+
 - Default: search notes by title/content
 - `#`: search tags (with nested tag support like `#journal/2025`)
 - `@`: jump to sidebar sections (`@today`, `@untagged`, `@archive`)
@@ -112,17 +127,21 @@ Craft uses a straightforward **search bar** in the sidebar for finding documents
 ## Key Patterns
 
 ### Pattern 1: Single Unified Input with Prefix Modes
+
 **Used by:** VS Code, Bear, Linear, Obsidian (via plugin)
 
 The strongest pattern across premium apps. One input field, mode determined by prefix character. Benefits:
+
 - Discoverable (users can see the prefix hint)
 - Muscle memory friendly (dedicated shortcuts open with prefix pre-filled)
 - Reduces cognitive load (one place to go for everything)
 
 ### Pattern 2: Zero-Query State Matters
+
 **Used by:** Notion, Raycast, Linear
 
 What appears **before the user types anything** is critical:
+
 - Notion shows recent pages
 - Raycast shows pinned/frequent items
 - Linear shows contextual commands
@@ -130,16 +149,19 @@ What appears **before the user types anything** is critical:
 This makes the palette feel useful immediately, not just after typing.
 
 ### Pattern 3: Drill-Down from List to Occurrences
+
 **Used by:** Bear, Obsidian, Notesage (current)
 
 For tags and symbols, the best pattern is **two-level**: first show matching tags/symbols, then drill into occurrences within files. Notesage already implements this well.
 
 ### Pattern 4: Context-Sensitive Results
+
 **Used by:** Linear, Raycast
 
 The palette adapts based on where you are in the app. Linear shows cycle commands when viewing cycles. Lower priority for Notesage's simpler context model.
 
 ### Pattern 5: Dedicated Shortcuts as Aliases
+
 **Used by:** VS Code, Notesage (current)
 
 Each mode has both a prefix **and** a dedicated shortcut. `Cmd+Shift+P` is just `Cmd+P` with `>` pre-filled. Both should work — prefixes for discovery, shortcuts for speed.
@@ -154,7 +176,7 @@ These recommendations were incorporated into the PRD:
 
 3. **Unify tag and mention internals** — Same store shape, same UI pattern, same occurrence format. One parameterized component instead of two copy-pasted implementations.
 
-4. **Add zero-query mode hints** in the footer — `# tags  @ mentions  > commands  ? research`. Makes modes discoverable without documentation.
+4. **Add zero-query mode hints** in the footer — `# tags @ mentions > commands ? research`. Makes modes discoverable without documentation.
 
 5. **Replace boolean states with mode enum** — Derived from input prefix. Scales to new modes without adding more booleans.
 

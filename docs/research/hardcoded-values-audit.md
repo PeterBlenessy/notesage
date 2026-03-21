@@ -1,11 +1,12 @@
 # Hardcoded Values Audit
 
-**Date:** 2026-03-10 **Status:** Fully implemented
+**Date:** 2026-03-10 **Status:** Research complete
 
-**Implementation:**
-- **PRD:** [docs/prds/2026-03-15-hardcoded-values-cleanup.md](../prds/2026-03-15-hardcoded-values-cleanup.md) (all quality gates passed)
-- **Tasks (complete):** [docs/tasks/2026-03-15-hardcoded-values-cleanup-tasks.md](../tasks/2026-03-15-hardcoded-values-cleanup-tasks.md) (7/7 done)
-- **Tasks (follow-up):** [docs/tasks/2026-03-17-hardcoded-values-remaining-tasks.md](../tasks/2026-03-17-hardcoded-values-remaining-tasks.md) (4/4 complete)
+| Stage | Link | Status |
+| --- | --- | --- |
+| PRD | [hardcoded-values-cleanup](../prds/2026-03-15-hardcoded-values-cleanup.md) | Complete |
+| Tasks | [hardcoded-values-cleanup-tasks](../tasks/2026-03-15-hardcoded-values-cleanup-tasks.md) | Complete (7/7) |
+| Tasks | [hardcoded-values-remaining-tasks](../tasks/2026-03-17-hardcoded-values-remaining-tasks.md) | Complete (4/4) |
 
 ## Overview
 
