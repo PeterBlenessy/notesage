@@ -168,18 +168,42 @@ async function migratePersonasToAgents(home: string) {
   setPersonasMigrated(true);
 }
 
+// Module-level guard: prevents re-entrant discovery runs caused by the file watcher
+// detecting our own extraction writes to ~/.notesage/skills/ and ~/.notesage/agents/.
+let discoveryRunning = false;
+
 /**
  * Hook that manages skill discovery lifecycle.
  * Runs initial scan after startupReady, rescans on connection or project changes.
  */
 export function useSkillDiscovery() {
   const startupReady = useSettingsStore((s) => s.startupReady);
-  const connections = useConnectionsStore((s) => s.connections);
-  const projects = useWorkspaceStore((s) => s.projects);
+  // Derive a stable key from connections: only rescan when the set of
+  // connected providers changes, not on every config/status update.
+  const connectionKey = useConnectionsStore((s) =>
+    s.connections
+      .filter((c) => c.status === 'connected' || c.status === 'expired')
+      .map((c) => `${c.provider}:${c.authMethod}`)
+      .sort()
+      .join(',')
+  );
+  const projectPaths = useWorkspaceStore((s) =>
+    s.projects.map((p) => p.path).sort().join(',')
+  );
   const rescanCounter = useSkillStore((s) => s.rescanCounter);
 
   useEffect(() => {
     if (!startupReady) return;
+
+    // Read full state inside the effect (not as a dependency)
+    const connections = useConnectionsStore.getState().connections;
+    const projects = useWorkspaceStore.getState().projects;
+
+    // Prevent re-entrant runs: extraction writes to ~/.notesage/skills/ and agents/,
+    // which triggers the file watcher → requestRescan() → rescanCounter bumps → this
+    // effect re-fires. Guard with a module-level flag since isScanning only covers scanSkills.
+    if (discoveryRunning) return;
+    discoveryRunning = true;
 
     const run = async () => {
       log.info('skills', 'Starting skill/agent discovery pipeline');
@@ -292,8 +316,8 @@ export function useSkillDiscovery() {
       log.info('skills', 'Skill/agent discovery pipeline complete');
     };
 
-    run();
-  }, [startupReady, connections, projects, rescanCounter]);
+    run().finally(() => { discoveryRunning = false; });
+  }, [startupReady, connectionKey, projectPaths, rescanCounter]);
 }
 
 /**
