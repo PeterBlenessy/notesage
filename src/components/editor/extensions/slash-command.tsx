@@ -236,6 +236,7 @@ export const SlashCommand = Extension.create({
     return {
       suggestion: {
         char: "/",
+        pluginKey: new PMPluginKey("slashCommandSuggestion"),
         allow: ({ state, range }: { state: EditorState; range: Range }) => {
           const editorState = state;
           const $from = editorState.doc.resolve(range.from);
@@ -280,12 +281,17 @@ export const SlashCommand = Extension.create({
       Suggestion({
         editor: this.editor,
         ...this.options.suggestion,
-        allow: ({ state, range }: { state: EditorState; range: Range }) => {
-          if (!lastTxChangedDoc) return false;
+        allow: ({ state, range, isActive }: { state: EditorState; range: Range; isActive: boolean }) => {
+          // Only require doc change for initial activation, not while already active
+          if (!isActive && !lastTxChangedDoc) return false;
 
           const editorState = state;
           const $from = editorState.doc.resolve(range.from);
           if ($from.parent.type.name === "codeBlock") return false;
+
+          // Dismiss when text becomes "//" — date suggestion takes over
+          const text = editorState.doc.textBetween(range.from, range.to, "\0");
+          if (text.startsWith("//")) return false;
 
           const dateDecos = DateHighlightPluginKey.getState(
             editorState
@@ -312,12 +318,24 @@ export const SlashCommand = Extension.create({
                 editor: props.editor,
               });
 
-              if (!props.clientRect) {
-                return;
-              }
+              const getReferenceClientRect = () => {
+                // Try decoration node first
+                if (props.decorationNode) {
+                  const r = props.decorationNode.getBoundingClientRect();
+                  if (r.width > 0 || r.height > 0) return r;
+                }
+                // Try clientRect from Suggestion plugin
+                if (props.clientRect) {
+                  const r = props.clientRect();
+                  if (r && (r.x > 0 || r.y > 0)) return r;
+                }
+                // Fallback: compute from ProseMirror coordsAtPos
+                const coords = props.editor.view.coordsAtPos(props.range.from);
+                return new DOMRect(coords.left, coords.top, 0, coords.bottom - coords.top);
+              };
 
               popup = tippy("body", {
-                getReferenceClientRect: props.clientRect as () => DOMRect,
+                getReferenceClientRect,
                 appendTo: () => document.body,
                 content: component.element,
                 showOnCreate: true,
@@ -330,27 +348,35 @@ export const SlashCommand = Extension.create({
             onUpdate(props: SuggestionProps<CommandItem>) {
               component.updateProps(props);
 
-              if (!props.clientRect) {
-                return;
-              }
+              const getReferenceClientRect = () => {
+                if (props.decorationNode) {
+                  const r = props.decorationNode.getBoundingClientRect();
+                  if (r.width > 0 || r.height > 0) return r;
+                }
+                if (props.clientRect) {
+                  const r = props.clientRect();
+                  if (r && (r.x > 0 || r.y > 0)) return r;
+                }
+                const coords = props.editor.view.coordsAtPos(props.range.from);
+                return new DOMRect(coords.left, coords.top, 0, coords.bottom - coords.top);
+              };
 
-              popup[0].setProps({
-                getReferenceClientRect: props.clientRect as () => DOMRect,
-              });
+              popup?.[0]?.setProps({ getReferenceClientRect });
             },
 
             onKeyDown(props: SuggestionKeyDownProps) {
               if (props.event.key === "Escape") {
-                popup[0].hide();
-                return true;
+                // Return false so the Suggestion plugin handles exit
+                // (dispatches exit transaction + calls onExit to destroy popup)
+                return false;
               }
 
               return component.ref?.onKeyDown(props) ?? false;
             },
 
             onExit() {
-              popup[0].destroy();
-              component.destroy();
+              popup?.[0]?.destroy();
+              component?.destroy();
             },
           };
         },

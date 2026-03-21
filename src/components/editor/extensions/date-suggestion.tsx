@@ -266,8 +266,8 @@ export const DateSuggestion = Extension.create({
       Suggestion({
         editor: this.editor,
         ...this.options.suggestion,
-        allow: ({ state, range }: { state: EditorState; range: Range }) => {
-          if (!lastTxChangedDoc) return false;
+        allow: ({ state, range, isActive }: { state: EditorState; range: Range; isActive: boolean }) => {
+          if (!isActive && !lastTxChangedDoc) return false;
 
           const $from = state.doc.resolve(range.from);
           if ($from.parent.type.name === "codeBlock") return false;
@@ -295,12 +295,21 @@ export const DateSuggestion = Extension.create({
                 editor: props.editor,
               });
 
-              if (!props.clientRect) {
-                return;
-              }
+              const getReferenceClientRect = () => {
+                if (props.decorationNode) {
+                  const r = props.decorationNode.getBoundingClientRect();
+                  if (r.width > 0 || r.height > 0) return r;
+                }
+                if (props.clientRect) {
+                  const r = props.clientRect();
+                  if (r && (r.x > 0 || r.y > 0)) return r;
+                }
+                const coords = props.editor.view.coordsAtPos(props.range.from);
+                return new DOMRect(coords.left, coords.top, 0, coords.bottom - coords.top);
+              };
 
               popup = tippy("body", {
-                getReferenceClientRect: props.clientRect as () => DOMRect,
+                getReferenceClientRect,
                 appendTo: () => document.body,
                 content: component.element,
                 showOnCreate: true,
@@ -313,27 +322,33 @@ export const DateSuggestion = Extension.create({
             onUpdate(props: SuggestionProps<DateItem>) {
               component.updateProps(props);
 
-              if (!props.clientRect) {
-                return;
-              }
+              const getReferenceClientRect = () => {
+                if (props.decorationNode) {
+                  const r = props.decorationNode.getBoundingClientRect();
+                  if (r.width > 0 || r.height > 0) return r;
+                }
+                if (props.clientRect) {
+                  const r = props.clientRect();
+                  if (r && (r.x > 0 || r.y > 0)) return r;
+                }
+                const coords = props.editor.view.coordsAtPos(props.range.from);
+                return new DOMRect(coords.left, coords.top, 0, coords.bottom - coords.top);
+              };
 
-              popup[0].setProps({
-                getReferenceClientRect: props.clientRect as () => DOMRect,
-              });
+              popup?.[0]?.setProps({ getReferenceClientRect });
             },
 
             onKeyDown(props: SuggestionKeyDownProps) {
               if (props.event.key === "Escape") {
-                popup[0].hide();
-                return true;
+                return false;
               }
 
               return component.ref?.onKeyDown(props) ?? false;
             },
 
             onExit() {
-              popup[0].destroy();
-              component.destroy();
+              popup?.[0]?.destroy();
+              component?.destroy();
             },
           };
         },

@@ -177,9 +177,9 @@ export const TagSuggestion = Extension.create({
       Suggestion({
         editor: this.editor,
         ...this.options.suggestion,
-        allow: ({ state, range }: { state: unknown; range: Range }) => {
-          // Only activate suggestions when the user is typing, not navigating
-          if (!lastTxChangedDoc) return false;
+        allow: ({ state, range, isActive }: { state: unknown; range: Range; isActive: boolean }) => {
+          // Only require doc change for initial activation, not while already active
+          if (!isActive && !lastTxChangedDoc) return false;
 
           const editorState = state as EditorState;
           const $from = editorState.doc.resolve(range.from);
@@ -244,8 +244,7 @@ export const TagSuggestion = Extension.create({
 
             onKeyDown(props: SuggestionKeyDownProps) {
               if (props.event.key === "Escape") {
-                popup?.[0]?.hide();
-                return true;
+                return false;
               }
 
               return component.ref?.onKeyDown(props) ?? false;

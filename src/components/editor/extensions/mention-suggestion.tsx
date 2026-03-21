@@ -170,8 +170,8 @@ export const MentionSuggestion = Extension.create({
       Suggestion({
         editor: this.editor,
         ...this.options.suggestion,
-        allow: ({ state, range }: { state: unknown; range: Range }) => {
-          if (!lastTxChangedDoc) return false;
+        allow: ({ state, range, isActive }: { state: unknown; range: Range; isActive: boolean }) => {
+          if (!isActive && !lastTxChangedDoc) return false;
 
           const editorState = state as EditorState;
           const $from = editorState.doc.resolve(range.from);
@@ -235,8 +235,7 @@ export const MentionSuggestion = Extension.create({
 
             onKeyDown(props: SuggestionKeyDownProps) {
               if (props.event.key === "Escape") {
-                popup?.[0]?.hide();
-                return true;
+                return false;
               }
 
               return component.ref?.onKeyDown(props) ?? false;
