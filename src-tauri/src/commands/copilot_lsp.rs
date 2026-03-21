@@ -70,8 +70,8 @@ pub struct SignInResponse {
 /// pending request channels and server-initiated notifications/requests
 /// to Tauri events.
 pub struct JsonRpcTransport {
-    writer: Arc<Mutex<BufWriter<ChildStdin>>>,
-    pending: PendingRequests,
+    pub(super) writer: Arc<Mutex<BufWriter<ChildStdin>>>,
+    pub(super) pending: PendingRequests,
 }
 
 impl JsonRpcTransport {
@@ -116,7 +116,14 @@ impl JsonRpcTransport {
         params: Option<Value>,
     ) -> Result<Value, String> {
         let id = json_rpc::next_request_id();
-        let msg = JsonRpcRequest::new(id, method, params);
+        let msg = JsonRpcRequest::new(id, method, params.clone());
+
+        log::info!(
+            target: "notesage::copilot",
+            "LSP → request: method={}, id={}, params={}",
+            method, id,
+            params.as_ref().map(|v| v.to_string()).unwrap_or_else(|| "null".to_string()),
+        );
 
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.pending.lock().await.insert(id, tx);
@@ -127,8 +134,22 @@ impl JsonRpcTransport {
         drop(writer);
 
         match rx.await {
-            Ok(Ok(value)) => Ok(value),
-            Ok(Err(rpc_err)) => Err(rpc_err.to_string()),
+            Ok(Ok(value)) => {
+                log::info!(
+                    target: "notesage::copilot",
+                    "LSP → request response: method={}, id={}, result={}",
+                    method, id, value,
+                );
+                Ok(value)
+            }
+            Ok(Err(rpc_err)) => {
+                log::info!(
+                    target: "notesage::copilot",
+                    "LSP → request error: method={}, id={}, error={}",
+                    method, id, rpc_err,
+                );
+                Err(rpc_err.to_string())
+            }
             Err(_) => Err("Response channel closed (LSP process may have exited)".to_string()),
         }
     }
@@ -139,6 +160,12 @@ impl JsonRpcTransport {
         method: &str,
         params: Option<Value>,
     ) -> Result<(), String> {
+        log::info!(
+            target: "notesage::copilot",
+            "LSP → notification: method={}, params={}",
+            method,
+            params.as_ref().map(|v| v.to_string()).unwrap_or_else(|| "null".to_string()),
+        );
         let msg = JsonRpcNotification::new(method, params);
         let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
         let mut writer = self.writer.lock().await;
@@ -219,6 +246,56 @@ async fn reader_loop(
             }
         };
 
+        // --- Comprehensive message logging ---
+        // Log every incoming LSP message at info level for auth debugging.
+        // Also emit to frontend as `copilot-lsp-message` event for browser console.
+        if let Some(method) = &msg.method {
+            if msg.id.is_some() {
+                let log_msg = format!(
+                    "LSP ← server request: method={}, id={}, params={}",
+                    method,
+                    msg.id.as_ref().map(|v| v.to_string()).unwrap_or_default(),
+                    msg.params.as_ref().map(|v| v.to_string()).unwrap_or_else(|| "null".to_string()),
+                );
+                log::info!(target: "notesage::copilot", "{}", log_msg);
+                let _ = app.emit("copilot-lsp-message", serde_json::json!({
+                    "direction": "incoming",
+                    "type": "server_request",
+                    "method": method,
+                    "id": msg.id,
+                    "params": msg.params,
+                }));
+            } else {
+                let log_msg = format!(
+                    "LSP ← notification: method={}, params={}",
+                    method,
+                    msg.params.as_ref().map(|v| v.to_string()).unwrap_or_else(|| "null".to_string()),
+                );
+                log::info!(target: "notesage::copilot", "{}", log_msg);
+                let _ = app.emit("copilot-lsp-message", serde_json::json!({
+                    "direction": "incoming",
+                    "type": "notification",
+                    "method": method,
+                    "params": msg.params,
+                }));
+            }
+        } else if msg.id.is_some() {
+            let log_msg = format!(
+                "LSP ← response: id={}, result={}, error={}",
+                msg.id.as_ref().map(|v| v.to_string()).unwrap_or_default(),
+                msg.result.as_ref().map(|v| v.to_string()).unwrap_or_else(|| "null".to_string()),
+                msg.error.as_ref().map(|e| format!("{}", e)).unwrap_or_else(|| "null".to_string()),
+            );
+            log::info!(target: "notesage::copilot", "{}", log_msg);
+            let _ = app.emit("copilot-lsp-message", serde_json::json!({
+                "direction": "incoming",
+                "type": "response",
+                "id": msg.id,
+                "result": msg.result,
+                "error": msg.error.as_ref().map(|e| format!("{}", e)),
+            }));
+        }
+
         // 4. Dispatch based on message type
         if let Some(method) = &msg.method {
             if msg.id.is_some() {
@@ -260,7 +337,7 @@ async fn handle_server_request(
             // The Copilot LSP sends this after sign-in is initiated, containing
             // the device code the user must enter on GitHub.
             if let Some(params) = params {
-                log::debug!(
+                log::info!(
                     target: "notesage::copilot",
                     "signIn server→client request received, raw params: {}",
                     params
@@ -279,7 +356,7 @@ async fn handle_server_request(
                     .unwrap_or("https://github.com/login/device")
                     .to_string();
 
-                log::debug!(
+                log::info!(
                     target: "notesage::copilot",
                     "signIn server request: userCode={}, verificationUri={}",
                     user_code, verification_uri
@@ -866,21 +943,20 @@ pub async fn copilot_lsp_status(
 
 /// Sign in to GitHub Copilot via OAuth device flow.
 ///
-/// Three-phase approach:
-/// 1. Try the direct `signIn` JSON-RPC method — works with older LSP versions
-///    that return `{ userCode, verificationUri, command }` directly.
-/// 2. If step 1 fails or returns an empty device code, fall back to executing
-///    the `github.copilot.signInInitiate` workspace command. Per the official
-///    Copilot LSP docs, this returns `{ userCode, command }` in the response.
-///    The embedded command (`github.copilot.finishDeviceFlow`) is executed to
-///    start the OAuth device flow polling.
-/// 3. As a last resort, if neither phase returns a device code in the response,
-///    wait for the LSP to send the code asynchronously via a server→client
-///    `signIn` request (handled in `handle_server_request`, emitted as the
-///    `copilot-auth-device-code` Tauri event).
+/// The Copilot LSP supports two authentication protocols:
 ///
-/// Auth completion is signalled asynchronously via
-/// `didChangeStatus` → `copilot-status-changed` Tauri event.
+/// **Protocol A** (copilot.lua-era, direct methods):
+///   1. `signInInitiate` → returns `{ status, userCode, verificationUri }`
+///   2. Display code to user, open browser
+///   3. `signInConfirm` with `{ userCode }` → blocks until auth completes
+///
+/// **Protocol B** (newer @github/copilot-language-server):
+///   1. `signIn` → may return device code directly, or via server→client request
+///   2. Execute embedded `finishDeviceFlow` command (fire-and-forget)
+///   3. Auth completion arrives via `didChangeStatus` notification
+///
+/// This function tries Protocol B first, then Protocol A, then waits for
+/// asynchronous device code delivery via server→client request.
 #[tauri::command]
 pub async fn copilot_lsp_sign_in(
     app: AppHandle,
@@ -891,38 +967,54 @@ pub async fn copilot_lsp_sign_in(
         .as_ref()
         .ok_or("Copilot LSP not running. Call copilot_lsp_start first.")?;
 
-    // --- Phase 1: Try direct signIn RPC ---
-    // Some older LSP versions support `signIn` as a client→server method.
-    // Use `match` instead of `?` so we can fall through to Phase 2 on error.
-    log::debug!(target: "notesage::copilot", "Phase 1: Sending signIn RPC...");
+    // --- Phase 1: Protocol B — Try direct `signIn` RPC ---
+    // Newer LSP versions support `signIn` as a client→server method that returns
+    // `{ userCode, verificationUri, command }` directly, or delivers the code
+    // via a server→client `signIn` request.
+    log::info!(target: "notesage::copilot", "Phase 1: Sending signIn RPC (Protocol B)...");
     match process
         .transport
         .send_request("signIn", Some(serde_json::json!({})))
         .await
     {
         Ok(result) => {
-            log::debug!(target: "notesage::copilot", "Phase 1 signIn response: {}", result);
+            log::info!(target: "notesage::copilot", "Phase 1 signIn response: {}", result);
+
+            // Check if the response indicates already signed in
+            let status = result.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            if status == "AlreadySignedIn" || status == "OK" || status == "MaybeOk" {
+                log::info!(target: "notesage::copilot", "Phase 1: Already signed in (status={})", status);
+                return Ok(SignInResponse {
+                    user_code: String::new(),
+                    verification_uri: String::new(),
+                });
+            }
 
             let user_code = extract_user_code_from_result(&result);
             let verification_uri = extract_verification_uri(&result);
 
             if !user_code.is_empty() {
-                log::debug!(
+                log::info!(
                     target: "notesage::copilot",
                     "Phase 1 succeeded — userCode={}, verificationUri={}",
                     user_code, verification_uri
                 );
 
-                // Execute the embedded command to trigger the device flow.
-                execute_embedded_command(process, &result).await;
-
+                // Emit device code to frontend BEFORE executing the embedded
+                // command — finishDeviceFlow polls GitHub and may block until
+                // the user authenticates, so the event must fire first.
                 let _ = app.emit(
                     "copilot-auth-device-code",
                     serde_json::json!({
-                        "userCode": user_code,
-                        "verificationUri": verification_uri,
+                        "userCode": user_code.clone(),
+                        "verificationUri": verification_uri.clone(),
                     }),
                 );
+
+                // Fire-and-forget: execute the embedded command (e.g.
+                // finishDeviceFlow) without blocking the sign-in return.
+                // Auth completion will arrive via didChangeStatus notification.
+                spawn_embedded_command(process, &result).await;
 
                 return Ok(SignInResponse {
                     user_code,
@@ -930,11 +1022,10 @@ pub async fn copilot_lsp_sign_in(
                 });
             }
 
-            log::debug!(target: "notesage::copilot", "Phase 1: signIn returned no device code, falling to Phase 2");
+            log::info!(target: "notesage::copilot", "Phase 1: signIn returned no device code, falling to Phase 2");
         }
         Err(e) => {
-            // signIn might not be supported — fall through to Phase 2
-            log::debug!(
+            log::info!(
                 target: "notesage::copilot",
                 "Phase 1: signIn RPC failed (non-fatal, falling to Phase 2): {}",
                 e
@@ -942,11 +1033,93 @@ pub async fn copilot_lsp_sign_in(
         }
     }
 
-    // --- Phase 2: signInInitiate workspace command (official flow) ---
-    // Per the Copilot LSP docs, `signInInitiate` returns `{ userCode, command }`
-    // in the response. We must extract it and execute the embedded command.
-    log::debug!(target: "notesage::copilot", "Phase 2: Sending workspace/executeCommand(signInInitiate)...");
+    // --- Phase 2: Protocol A — `signInInitiate` direct method ---
+    // copilot.lua/copilot.el-era protocol: `signInInitiate` as a direct JSON-RPC
+    // method returns `{ status: "PromptUserDeviceFlow", userCode, verificationUri }`.
+    // Auth is confirmed by a separate `signInConfirm` call (fire-and-forget).
+    log::info!(target: "notesage::copilot", "Phase 2: Sending signInInitiate direct method (Protocol A)...");
+    match process
+        .transport
+        .send_request("signInInitiate", Some(serde_json::json!({})))
+        .await
+    {
+        Ok(result) => {
+            log::info!(target: "notesage::copilot", "Phase 2 signInInitiate response: {}", result);
 
+            let user_code = extract_user_code_from_result(&result);
+            let verification_uri = extract_verification_uri(&result);
+
+            if !user_code.is_empty() {
+                log::info!(
+                    target: "notesage::copilot",
+                    "Phase 2 succeeded — userCode={}, verificationUri={}",
+                    user_code, verification_uri
+                );
+
+                // Emit device code to frontend
+                let _ = app.emit(
+                    "copilot-auth-device-code",
+                    serde_json::json!({
+                        "userCode": user_code.clone(),
+                        "verificationUri": verification_uri.clone(),
+                    }),
+                );
+
+                // Fire-and-forget: `signInConfirm` blocks server-side while
+                // polling GitHub until the user authenticates or the code expires.
+                let confirm_code = user_code.clone();
+                let confirm_writer = process.transport.writer.clone();
+                let confirm_pending = process.transport.pending.clone();
+                tokio::spawn(async move {
+                    let id = json_rpc::next_request_id();
+                    let msg = JsonRpcRequest::new(
+                        id,
+                        "signInConfirm",
+                        Some(serde_json::json!({ "userCode": confirm_code })),
+                    );
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    confirm_pending.lock().await.insert(id, tx);
+                    let json = match serde_json::to_string(&msg) {
+                        Ok(j) => j,
+                        Err(e) => {
+                            log::error!(target: "notesage::copilot", "Failed to serialize signInConfirm: {}", e);
+                            return;
+                        }
+                    };
+                    let mut writer = confirm_writer.lock().await;
+                    if let Err(e) = json_rpc::write_message(&mut *writer, &json).await {
+                        log::error!(target: "notesage::copilot", "Failed to send signInConfirm: {}", e);
+                        return;
+                    }
+                    drop(writer);
+                    log::info!(target: "notesage::copilot", "signInConfirm sent, waiting for auth completion...");
+                    match rx.await {
+                        Ok(Ok(val)) => log::info!(target: "notesage::copilot", "signInConfirm completed: {}", val),
+                        Ok(Err(e)) => log::error!(target: "notesage::copilot", "signInConfirm failed: {}", e),
+                        Err(_) => log::warn!(target: "notesage::copilot", "signInConfirm channel closed"),
+                    }
+                });
+
+                return Ok(SignInResponse {
+                    user_code,
+                    verification_uri,
+                });
+            }
+
+            log::info!(
+                target: "notesage::copilot",
+                "Phase 2: signInInitiate returned no device code"
+            );
+        }
+        Err(e) => {
+            log::info!(target: "notesage::copilot", "Phase 2: signInInitiate direct method failed: {}", e);
+        }
+    }
+
+    // --- Phase 3: Protocol B — `signInInitiate` as workspace command ---
+    // Some LSP versions expose signInInitiate as a workspace command rather than
+    // a direct method.
+    log::info!(target: "notesage::copilot", "Phase 3: Sending workspace/executeCommand(signInInitiate)...");
     match process
         .transport
         .send_request(
@@ -959,29 +1132,28 @@ pub async fn copilot_lsp_sign_in(
         .await
     {
         Ok(result) => {
-            log::debug!(target: "notesage::copilot", "Phase 2 signInInitiate response: {}", result);
+            log::info!(target: "notesage::copilot", "Phase 3 signInInitiate response: {}", result);
 
             let user_code = extract_user_code_from_result(&result);
             let verification_uri = extract_verification_uri(&result);
 
             if !user_code.is_empty() {
-                log::debug!(
+                log::info!(
                     target: "notesage::copilot",
-                    "Phase 2 succeeded — userCode={}, verificationUri={}",
+                    "Phase 3 succeeded — userCode={}, verificationUri={}",
                     user_code, verification_uri
                 );
-
-                // Execute the embedded command (e.g. github.copilot.finishDeviceFlow)
-                // to start OAuth polling and open the browser.
-                execute_embedded_command(process, &result).await;
 
                 let _ = app.emit(
                     "copilot-auth-device-code",
                     serde_json::json!({
-                        "userCode": user_code,
-                        "verificationUri": verification_uri,
+                        "userCode": user_code.clone(),
+                        "verificationUri": verification_uri.clone(),
                     }),
                 );
+
+                // Fire-and-forget the embedded command (finishDeviceFlow).
+                spawn_embedded_command(process, &result).await;
 
                 return Ok(SignInResponse {
                     user_code,
@@ -989,23 +1161,23 @@ pub async fn copilot_lsp_sign_in(
                 });
             }
 
-            log::debug!(
+            log::info!(
                 target: "notesage::copilot",
-                "Phase 2: signInInitiate returned no device code in response"
+                "Phase 3: signInInitiate workspace command returned no device code"
             );
         }
         Err(e) => {
-            log::debug!(target: "notesage::copilot", "Phase 2: signInInitiate command failed: {}", e);
+            log::info!(target: "notesage::copilot", "Phase 3: signInInitiate workspace command failed: {}", e);
         }
     }
 
-    // --- Phase 3: Wait for asynchronous device code ---
-    // Neither phase returned a device code in the response. The LSP may send
+    // --- Phase 4: Wait for asynchronous device code ---
+    // No phase returned a device code in the response. The LSP may send
     // the code asynchronously via a server→client `signIn` request, which is
     // handled in `handle_server_request` and emitted as `copilot-auth-device-code`.
-    log::debug!(
+    log::info!(
         target: "notesage::copilot",
-        "Both phases returned no device code — waiting for server→client signIn request"
+        "All phases returned no device code — waiting for server→client signIn request"
     );
 
     Ok(SignInResponse {
@@ -1081,39 +1253,79 @@ fn extract_verification_uri(result: &Value) -> String {
         .to_string()
 }
 
-/// Execute the embedded command from a signIn/signInInitiate response.
-/// The response typically contains a `command` object like:
-/// `{ "command": "github.copilot.finishDeviceFlow", "arguments": [...] }`
-async fn execute_embedded_command(process: &CopilotLspProcess, result: &Value) {
+/// Execute the embedded command from a signIn/signInInitiate response,
+/// without blocking the caller. The response typically contains a `command`
+/// object like: `{ "command": "github.copilot.finishDeviceFlow", "arguments": [...] }`
+///
+/// This fires-and-forgets: the command is sent to the LSP and its response is
+/// awaited in a background task. This is critical because `finishDeviceFlow`
+/// polls GitHub until the user authenticates — blocking on it would prevent the
+/// device code from being returned to the frontend.
+async fn spawn_embedded_command(process: &CopilotLspProcess, result: &Value) {
     if let Some(command) = result.get("command") {
         let cmd_name = command
             .get("command")
             .and_then(|v| v.as_str())
-            .unwrap_or("");
+            .unwrap_or("")
+            .to_string();
         let cmd_args = command
             .get("arguments")
             .cloned()
             .unwrap_or(Value::Array(vec![]));
 
         if !cmd_name.is_empty() {
-            log::debug!(
+            log::info!(
                 target: "notesage::copilot",
-                "Executing embedded command: {} with args: {}",
+                "Spawning embedded command (fire-and-forget): {} with args: {}",
                 cmd_name, cmd_args
             );
-            if let Err(e) = process
-                .transport
-                .send_request(
+
+            // Clone the writer and pending refs so we can send in a background task
+            let transport_writer = process.transport.writer.clone();
+            let transport_pending = process.transport.pending.clone();
+
+            tokio::spawn(async move {
+                // Build a temporary transport-like sender
+                let id = json_rpc::next_request_id();
+                let msg = JsonRpcRequest::new(
+                    id,
                     "workspace/executeCommand",
                     Some(serde_json::json!({
                         "command": cmd_name,
                         "arguments": cmd_args,
                     })),
-                )
-                .await
-            {
-                log::error!(target: "notesage::copilot", "Failed to execute embedded command '{}': {}", cmd_name, e);
-            }
+                );
+
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                transport_pending.lock().await.insert(id, tx);
+
+                let json = match serde_json::to_string(&msg) {
+                    Ok(j) => j,
+                    Err(e) => {
+                        log::error!(target: "notesage::copilot", "Failed to serialize embedded command: {}", e);
+                        return;
+                    }
+                };
+                let mut writer = transport_writer.lock().await;
+                if let Err(e) = json_rpc::write_message(&mut *writer, &json).await {
+                    log::error!(target: "notesage::copilot", "Failed to send embedded command '{}': {}", cmd_name, e);
+                    return;
+                }
+                drop(writer);
+
+                // Wait for the response (may take minutes while polling GitHub)
+                match rx.await {
+                    Ok(Ok(val)) => {
+                        log::info!(target: "notesage::copilot", "Embedded command '{}' completed: {}", cmd_name, val);
+                    }
+                    Ok(Err(e)) => {
+                        log::error!(target: "notesage::copilot", "Embedded command '{}' failed: {}", cmd_name, e);
+                    }
+                    Err(_) => {
+                        log::warn!(target: "notesage::copilot", "Embedded command '{}' channel closed", cmd_name);
+                    }
+                }
+            });
         }
     }
 }

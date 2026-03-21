@@ -252,13 +252,14 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
   }, [flow, inputValue, oaiBaseUrl, oaiModel, addConnection, autoAssign, resetFlow]);
 
   const handleAgentConnected = useCallback(
-    (option: ProviderOption) => {
+    (option: ProviderOption, envVars?: Record<string, string>) => {
       const credentials = option.lspBinary
         ? { type: 'agent_managed' as const, agentBinary: option.lspBinary }
         : {
             type: 'agent_managed' as const,
             agentBinary: option.agentBinary!,
             ...(option.agentArgs ? { agentArgs: option.agentArgs } : {}),
+            ...(envVars && Object.keys(envVars).length > 0 ? { envVars } : {}),
           };
 
       const connectionId = addConnection({
@@ -772,19 +773,33 @@ function ConnectCopilotLsp({
     const unlistenDeviceCode = listen<{ userCode: string; verificationUri: string }>(
       'copilot-auth-device-code',
       (event) => {
-        const { userCode } = event.payload;
-        log.debug('settings', 'Device code received via event', { userCode });
+        const { userCode, verificationUri } = event.payload;
+        log.debug('settings', 'Device code received via event', { userCode, verificationUri });
         if (userCode && !authCompleted.current) {
           deviceCodeReceivedRef.current = true;
           setDeviceCode(userCode);
           setPhase('device_code');
+          // Auto-copy code to clipboard and open GitHub device page
+          navigator.clipboard.writeText(userCode).catch(() => {});
+          const uri = verificationUri || 'https://github.com/login/device';
+          window.open(uri, '_blank');
         }
+      }
+    );
+
+    // Log ALL LSP messages during auth for debugging
+    const unlistenLspMsg = listen<Record<string, unknown>>(
+      'copilot-lsp-message',
+      (event) => {
+        log.debug('copilot-lsp', 'LSP message', event.payload);
+        console.log('[Copilot LSP]', event.payload);
       }
     );
 
     return () => {
       unlistenStatus.then((fn) => fn());
       unlistenDeviceCode.then((fn) => fn());
+      unlistenLspMsg.then((fn) => fn());
     };
   }, [completeAuth, retryCount]);
 
@@ -903,6 +918,10 @@ function ConnectCopilotLsp({
         log.debug('settings', 'Got device code from signIn result', { userCode: result.user_code });
         setDeviceCode(result.user_code);
         setPhase('device_code');
+        // Auto-copy code to clipboard and open GitHub device page
+        navigator.clipboard.writeText(result.user_code).catch(() => {});
+        const uri = result.verification_uri || 'https://github.com/login/device';
+        window.open(uri, '_blank');
       } catch (err) {
         if (!active) return;
         await endRetry();
@@ -1094,7 +1113,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 
 // --- Agent connection flow ---
 
-type AgentPhase = 'checking' | 'not_installed' | 'installing' | 'not_authenticated' | 'connecting' | 'connected' | 'error';
+type AgentPhase = 'checking' | 'not_installed' | 'installing' | 'not_authenticated' | 'connecting' | 'authenticating' | 'connected' | 'error';
 
 function ConnectAgent({
   option,
@@ -1103,7 +1122,7 @@ function ConnectAgent({
 }: {
   option: ProviderOption;
   onBack: () => void;
-  onConnected: (option: ProviderOption) => void;
+  onConnected: (option: ProviderOption, envVars?: Record<string, string>) => void;
 }) {
   const [phase, setPhase] = useState<AgentPhase>('checking');
   const [error, setError] = useState<string | null>(null);
@@ -1112,6 +1131,7 @@ function ConnectAgent({
   const [installProgress, setInstallProgress] = useState<{ phase: string; progress: number; total: number; message: string } | null>(null);
   const [showManualGuide, setShowManualGuide] = useState(false);
   const [binarySource, setBinarySource] = useState<'managed' | 'system' | null>(null);
+  const [apiKeyInput, setApiKeyInput] = useState('');
   const isRetryRef = useRef(false);
   const onConnectedRef = useRef(onConnected);
   onConnectedRef.current = onConnected;
@@ -1161,9 +1181,17 @@ function ConnectAgent({
           setPhase('not_installed');
           return;
         }
+        // If not authenticated, check if this agent can handle in-app auth.
+        // Some agents (e.g., Gemini) try to open a browser from the subprocess
+        // which fails silently. For those, show the manual guide immediately.
         if (avail.authenticated === false) {
-          setPhase('not_authenticated');
-          return;
+          // Agents whose OAuth flow requires browser access from the subprocess
+          // can't authenticate via ACP — show manual guide directly
+          const needsManualAuth = ['gemini'];
+          if (needsManualAuth.includes(binary)) {
+            setPhase('not_authenticated');
+            return;
+          }
         }
       } catch (err) {
         if (!active) return;
@@ -1200,11 +1228,16 @@ function ConnectAgent({
         }
         instanceId = result.instance_id;
 
-        // Try to authenticate — some agents handle auth internally
+        // Switch to authenticating phase — the agent may open a browser
+        setPhase('authenticating');
+
+        // Try to authenticate — some agents handle auth internally.
+        // Use a shorter timeout (30s) since if the agent can't open a browser,
+        // waiting longer won't help.
         try {
           await withTimeout(
             invoke('acp_agent_authenticate', { instanceId }),
-            CONNECTION_TIMEOUT_MS,
+            30_000,
             'Authentication',
           );
         } catch (authErr) {
@@ -1227,8 +1260,10 @@ function ConnectAgent({
           invoke('acp_agent_stop', { instanceId }).catch(() => {});
         }
         if (!active) return;
+        // If spawn/auth failed, show the manual auth guide instead of a generic error
+        // so users know exactly what to run
         setError(err instanceof Error ? err.message : String(err));
-        setPhase('error');
+        setPhase('not_authenticated');
       }
     })();
 
@@ -1377,9 +1412,97 @@ function ConnectAgent({
       {phase === 'not_authenticated' && (
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            {option.label} is installed but not signed in. Follow the steps below to authenticate.
+            {option.label} is installed but needs sign-in.
           </p>
-          <SetupGuideView guide={getAuthGuide(binary)} />
+          {error && (
+            <div className="p-2 rounded-lg bg-destructive/10 border border-destructive/20">
+              <p className="text-xs text-destructive/80 break-words">{error}</p>
+            </div>
+          )}
+
+          {/* Gemini: show API key input (best in-app UX) + terminal fallback */}
+          {binary === 'gemini' ? (
+            <>
+              <div className="space-y-2">
+                <Input
+                  type="password"
+                  placeholder="Paste your Gemini API key"
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  className="text-sm h-8"
+                />
+                <Button
+                  size="sm"
+                  className="w-full"
+                  disabled={!apiKeyInput.trim()}
+                  onClick={() => {
+                    onConnectedRef.current(option, { GEMINI_API_KEY: apiKeyInput.trim() });
+                  }}
+                >
+                  Connect with API key
+                </Button>
+                <p className="text-[11px] text-muted-foreground text-center">
+                  Free API key from{' '}
+                  <button
+                    className="underline hover:text-foreground transition-colors cursor-pointer"
+                    onClick={() => window.open('https://aistudio.google.com/apikey', '_blank')}
+                  >
+                    Google AI Studio
+                  </button>
+                </p>
+              </div>
+              <div className="relative py-1">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-border" />
+                </div>
+                <div className="relative flex justify-center text-[10px]">
+                  <span className="bg-background px-2 text-muted-foreground">or</span>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={async () => {
+                  try {
+                    await invoke('run_in_terminal', { command: 'cd /tmp && gemini' });
+                  } catch {
+                    navigator.clipboard.writeText('cd /tmp && gemini').catch(() => {});
+                  }
+                }}
+              >
+                Sign in with Google via Terminal
+              </Button>
+              <p className="text-[11px] text-muted-foreground text-center">
+                Opens Terminal for Google OAuth sign-in. Click Retry when done.
+              </p>
+            </>
+          ) : (
+            /* Other agents: terminal sign-in button */
+            <>
+              <Button
+                size="sm"
+                className="w-full"
+                onClick={async () => {
+                  const guide = getAuthGuide(binary);
+                  const cmd = guide.steps.find((s) => s.command)?.command;
+                  if (cmd) {
+                    try {
+                      await invoke('run_in_terminal', { command: cmd });
+                    } catch {
+                      if (cmd) navigator.clipboard.writeText(cmd).catch(() => {});
+                    }
+                  }
+                }}
+              >
+                Sign in to {option.label}
+              </Button>
+              <p className="text-[11px] text-muted-foreground text-center">
+                Opens a terminal window to complete sign-in. Click Retry when done.
+              </p>
+            </>
+          )}
+
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
               Back
@@ -1393,10 +1516,19 @@ function ConnectAgent({
         <div className="space-y-2 py-2">
           <div className="flex items-center gap-2.5">
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" strokeWidth={1.5} />
-            <span className="text-sm text-muted-foreground">Connecting...</span>
+            <span className="text-sm text-muted-foreground">Starting agent...</span>
+          </div>
+        </div>
+      )}
+
+      {phase === 'authenticating' && (
+        <div className="space-y-2 py-2">
+          <div className="flex items-center gap-2.5">
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" strokeWidth={1.5} />
+            <span className="text-sm text-muted-foreground">Waiting for sign-in...</span>
           </div>
           <p className="text-xs text-muted-foreground pl-6.5">
-            A browser window may open for sign-in.
+            A browser window should open. Complete sign-in there, then return here.
           </p>
         </div>
       )}
@@ -1540,9 +1672,10 @@ function getAuthGuide(binary: string): SetupGuide {
       return {
         title: 'Sign in to Google',
         steps: [
-          { label: 'Run in your terminal:', command: 'gemini' },
-          { note: 'Complete the Google sign-in in your browser when prompted, then close the terminal session' },
-          { note: 'Free with any Google account' },
+          { label: 'Option 1 — Run Gemini CLI to sign in via browser:', command: 'cd /tmp && gemini' },
+          { note: 'Choose "Sign in with Google" when prompted, complete sign-in in browser, then close the terminal session' },
+          { label: 'Option 2 — Use an API key:', command: 'export GEMINI_API_KEY=your-key-here' },
+          { note: 'Get a free API key from', url: 'https://aistudio.google.com/apikey' },
         ],
       };
     default:

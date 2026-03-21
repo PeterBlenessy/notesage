@@ -158,7 +158,7 @@ async function ensureAcpAgent(connection: Connection, cwd: string, sandboxPaths?
     return acpAgent.instanceId;
   }
 
-  const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[] };
+  const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[]; envVars?: Record<string, string> };
   // Inject model flag if the connection has a model configured
   // Different agents use different flag formats:
   //   codex-acp: -c model="<model>"
@@ -194,6 +194,7 @@ async function ensureAcpAgent(connection: Connection, cwd: string, sandboxPaths?
     agentArgs: args.length > 0 ? args : null,
     role: 'interactive',
     workingDirectory: cwd,
+    envVars: creds.envVars ?? null,
     sandboxEnabled: connection.sandboxEnabled ?? null,
     sandboxPaths: [
       ...(sandboxPaths ?? []),

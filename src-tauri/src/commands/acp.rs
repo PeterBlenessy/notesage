@@ -351,10 +351,10 @@ impl<R: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for JsonLineFilter<R>
                     }
                 }
 
-                // Non-JSON line — skip it silently
+                // Non-JSON line — skip it but log at info level for debugging
                 let skip_text = String::from_utf8_lossy(&internal_buf[..newline_pos]).to_string();
                 if !skip_text.trim().is_empty() {
-                    log::debug!(target: "notesage::acp", "Filtered non-JSON stdout: {}", skip_text.trim());
+                    log::info!(target: "notesage::acp", "[agent:stdout] {}", skip_text.trim());
                 }
                 let consume_len = newline_pos + 1;
                 std::pin::Pin::new(&mut this.inner).consume(consume_len);
@@ -499,6 +499,18 @@ fn run_agent_thread(
             }
         }
 
+        // Spawn a task to read and log stderr from the agent process
+        if let Some(stderr) = child.stderr.take() {
+            let stderr_binary = agent_binary.clone();
+            tokio::task::spawn_local(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    log::info!(target: "notesage::acp", "[{}:stderr] {}", stderr_binary, line);
+                }
+            });
+        }
+
         // Bridge tokio IO → futures IO for ACP
         // Wrap stdout in a filter that strips non-JSON lines — some agents
         // (e.g., Gemini CLI) write interactive prompts to stdout in ACP mode
@@ -539,6 +551,7 @@ fn run_agent_thread(
         });
 
         // Initialize handshake
+        log::info!(target: "notesage::acp", "Sending ACP initialize for {}", agent_binary);
         let init_req = InitializeRequest::new(ProtocolVersion::V1).client_info(
             Implementation::new("Notesage", env!("CARGO_PKG_VERSION")),
         );
@@ -548,6 +561,13 @@ fn run_agent_thread(
 
         match conn.initialize(init_req).await {
             Ok(resp) => {
+                log::info!(
+                    target: "notesage::acp",
+                    "ACP initialize succeeded for {}: agent={:?}, auth_methods={:?}",
+                    agent_binary,
+                    resp.agent_info.as_ref().map(|i| format!("{} {}", i.name, i.version)),
+                    resp.auth_methods.iter().map(|m| format!("{}({})", m.id(), m.name())).collect::<Vec<_>>(),
+                );
                 auth_method_ids = resp
                     .auth_methods
                     .iter()
@@ -611,17 +631,32 @@ fn run_agent_thread(
                         }
                     };
 
+                    log::info!(
+                        target: "notesage::acp",
+                        "Calling conn.authenticate(method={}) for agent...",
+                        selected_id,
+                    );
                     let auth_req = AuthenticateRequest::new(AuthMethodId::new(
                         selected_id.clone(),
                     ));
                     match conn.authenticate(auth_req).await {
-                        Ok(_) => {
+                        Ok(resp) => {
+                            log::info!(
+                                target: "notesage::acp",
+                                "Authentication succeeded for method={}: {:?}",
+                                selected_id, resp,
+                            );
                             let _ = reply.send(Ok(AuthStatus {
                                 authenticated: true,
                                 method_id: Some(selected_id),
                             }));
                         }
                         Err(e) => {
+                            log::error!(
+                                target: "notesage::acp",
+                                "Authentication failed for method={}: {}",
+                                selected_id, e,
+                            );
                             let _ = reply.send(Err(format!(
                                 "Authentication failed: {}",
                                 e
@@ -994,21 +1029,44 @@ fn check_agent_auth(agent_id: &str) -> Option<bool> {
             }
         }
         "gemini" => {
-            // Gemini stores auth in ~/.gemini/settings.json
-            let settings = dirs::home_dir()
-                .unwrap_or_default()
-                .join(".gemini/settings.json");
-            if !settings.exists() {
-                return Some(false);
+            // Check GEMINI_API_KEY env var first
+            if std::env::var("GEMINI_API_KEY").map(|v| !v.is_empty()).unwrap_or(false) {
+                return Some(true);
             }
-            // If settings.json exists, check if it has auth configured
-            match std::fs::read_to_string(&settings) {
-                Ok(content) => {
-                    Some(content.contains("\"authMethod\"") || content.contains("\"oauth\"")
-                        || content.contains("GEMINI_API_KEY"))
+
+            let home = dirs::home_dir().unwrap_or_default();
+
+            // Gemini CLI stores the selected auth type in ~/.gemini/settings.json
+            // at the path: security.auth.selectedType
+            // Valid values: "login_with_google", "use_gemini", "use_vertex_ai", "gateway"
+            let settings = home.join(".gemini/settings.json");
+            if settings.exists() {
+                if let Ok(content) = std::fs::read_to_string(&settings) {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                        let selected_type = json
+                            .get("security")
+                            .and_then(|s| s.get("auth"))
+                            .and_then(|a| a.get("selectedType"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        if !selected_type.is_empty() {
+                            // For OAuth ("login_with_google"), also verify cached credentials exist
+                            if selected_type == "login_with_google" {
+                                // Check for cached OAuth credentials file in ~/.gemini/
+                                let creds_exist = home.join(".gemini/google_oauth_credentials.json").exists()
+                                    || home.join(".gemini/oauth_credentials.json").exists()
+                                    || home.join(".gemini/credentials.json").exists();
+                                return Some(creds_exist);
+                            }
+                            // For API key or Vertex AI, selectedType being set means configured
+                            return Some(true);
+                        }
+                    }
                 }
-                Err(_) => Some(false),
             }
+
+            // No settings file or no selectedType → not authenticated
+            Some(false)
         }
         _ => None,
     }

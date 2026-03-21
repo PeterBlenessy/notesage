@@ -24,7 +24,7 @@ export type ConnectionProvider =
 
 export type ConnectionCredentials =
   | { type: 'api_key'; key: string }
-  | { type: 'agent_managed'; agentBinary: string; agentArgs?: string[] }  // e.g., "claude-agent-acp"
+  | { type: 'agent_managed'; agentBinary: string; agentArgs?: string[]; envVars?: Record<string, string> }  // e.g., "claude-agent-acp"
   | { type: 'local'; url: string }
   | { type: 'local_bundled' };    // No credentials — bundled llama-server
 
