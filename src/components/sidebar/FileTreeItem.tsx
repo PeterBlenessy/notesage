@@ -77,6 +77,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
   const [isDragOver, setIsDragOver] = useState(false);
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const renameFocusingRef = useRef(false);
   const dragCounter = useRef(0);
   const dragExpandTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -131,15 +132,23 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
   }, [gitEnabled, gitRepoRoot, entry.path, entry.is_directory, fileStatusMap, fileStatuses]);
 
   useEffect(() => {
-    if (isRenaming && renameInputRef.current) {
-      renameInputRef.current.focus();
-      // Select the name part without extension for files
-      const dotIndex = entry.name.lastIndexOf(".");
-      if (!entry.is_directory && dotIndex > 0) {
-        renameInputRef.current.setSelectionRange(0, dotIndex);
-      } else {
-        renameInputRef.current.select();
-      }
+    if (isRenaming) {
+      // Guard against onBlur firing before focus is established
+      renameFocusingRef.current = true;
+      // Delay focus to ensure context menu has fully closed and released focus
+      const timer = setTimeout(() => {
+        if (renameInputRef.current) {
+          renameInputRef.current.focus();
+          const dotIndex = entry.name.lastIndexOf(".");
+          if (!entry.is_directory && dotIndex > 0) {
+            renameInputRef.current.setSelectionRange(0, dotIndex);
+          } else {
+            renameInputRef.current.select();
+          }
+        }
+        renameFocusingRef.current = false;
+      }, 50);
+      return () => { clearTimeout(timer); renameFocusingRef.current = false; };
     }
   }, [isRenaming, entry.name, entry.is_directory]);
 
@@ -187,6 +196,8 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
   const cancelRename = () => {
     setIsRenaming(false);
     setRenameValue(entry.name);
+    // Blur focus so the parent div doesn't show a focus outline
+    (document.activeElement as HTMLElement)?.blur();
   };
 
   const handleDeleteConfirm = async () => {
@@ -329,7 +340,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
             className={cn(
               "group flex items-center gap-1.5 h-7 px-1.5 rounded-md cursor-pointer transition-colors duration-150",
               "text-sm",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+              "focus-visible:outline-none",
               isActive
                 ? "bg-accent text-foreground font-medium"
                 : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -373,7 +384,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
                   }
                   e.stopPropagation();
                 }}
-                onBlur={commitRename}
+                onBlur={() => { if (!renameFocusingRef.current) commitRename(); }}
                 onClick={(e) => e.stopPropagation()}
                 className="flex-1 min-w-0 h-5 px-1 text-sm rounded border border-primary bg-background text-foreground outline-none transition-colors duration-150"
               />
