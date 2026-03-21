@@ -49,7 +49,8 @@ note-sage/
 │   │   │   ├── local_inference.rs # Bundled llama-server lifecycle, model catalog, download, FIM completions
 │   │   │   ├── model_metadata.rs  # Model metadata merge, HF API fetcher, runtime metadata
 │   │   │   ├── gguf_parser.rs     # GGUF binary header parser
-│   │   │   └── network_proxy.rs   # HTTP proxy for agent network sandboxing, domain allowlists
+│   │   │   ├── network_proxy.rs   # HTTP proxy for agent network sandboxing, domain allowlists
+│   │   │   └── sandbox_monitor.rs # Seatbelt violation monitoring (macOS log stream)
 │   │   ├── index/          # SQLite document index (tags, mentions, tasks, goals, FTS5)
 │   │   │   ├── mod.rs      # IndexState, Tauri commands, indexing pipeline
 │   │   │   ├── db.rs       # Schema creation, migrations, connection management
@@ -155,7 +156,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `settings-store` | Theme, soft contrast mode, UI preferences, `startupReady` flag | Full (except `startupReady`) |
 | `ai-store` | AI provider config (legacy, fallback) | Full |
 | `skill-store` | Skills registry, agents, instructions, active agent | Partial (overrides + active agent) |
-| `connections-store` | Multi-provider connections, sandbox/network config, writable paths | Full |
+| `connections-store` | Multi-provider connections, sandbox/network config, kernel enforcement, writable paths | Full |
 | `routing-store` | Per-use-case provider routing | Full |
 | `permission-store` | ACP tool call permissions, domain allowlists, session domains | Partial (`alwaysAllowed`, `alwaysAllowedDomains` only) |
 | `chat-store` | Chat conversation messages | Full |
@@ -194,9 +195,18 @@ All state stores use Zustand with the persist middleware for localStorage:
 
 **Network Sandboxing:**
 
-- HTTP proxy on localhost (`network_proxy.rs`) filters agent network traffic
+- **Two layers of enforcement:**
+  - **Kernel-level (Seatbelt):** `(deny default)` blocks all network; only the proxy port on localhost is allowed. Agents physically cannot bypass the proxy. Enabled via `kernelNetworkDeny` toggle per connection (default: on for new connections).
+  - **Proxy-level:** HTTP proxy on localhost (`network_proxy.rs`) filters by domain, prompts for unknown domains. This is the domain-aware filtering layer.
 - Per-agent domain allowlists: built-in defaults per provider + user-configurable additions
 - Domain approval cards in chat UI: allow once / allow for session / allow always / deny
 - 30-second auto-deny timeout for unanswered domain requests
 - Telemetry toggle per connection (e.g., sentry.io)
-- Network restriction toggle in connection config dialog
+- Network restriction toggle + kernel enforcement toggle in connection config dialog
+- Sandbox profiles written to temp files (ephemeral, cleaned up on agent exit)
+
+**Violation Monitoring:**
+
+- `sandbox_monitor.rs` streams macOS unified log for Seatbelt deny entries
+- Filters by registered agent PIDs, deduplicates within 5s windows
+- Violations surface as error entries in the Activity panel alongside tool calls

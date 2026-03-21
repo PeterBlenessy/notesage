@@ -31,6 +31,8 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 - Portable Node.js runtime for Gemini CLI
 - OS-level filesystem sandboxing (Seatbelt on macOS, Bubblewrap/Landlock on Linux)
 - Network sandboxing via HTTP proxy with per-agent domain allowlists and domain approval cards
+- Kernel-enforced network deny (Seatbelt `(deny default)` with proxy-only localhost allow) — agents cannot bypass the proxy
+- Seatbelt violation monitoring streamed to Activity panel via macOS unified log
 - Automatic update checking with one-click updates
 - Provider context isolation on mid-conversation provider switch
 - Chat history tab view with conversation export (Markdown/JSON)

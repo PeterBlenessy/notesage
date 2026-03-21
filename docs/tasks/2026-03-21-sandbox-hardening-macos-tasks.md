@@ -185,21 +185,19 @@ Test each ACP agent with `kernelNetworkDeny: true`:
 
 For each agent:
 
-- [ ] Agent starts without errors
-
-- [ ] Agent can make API calls (routed through proxy)
-
-- [ ] Agent cannot bypass proxy (direct network blocked by Seatbelt)
-
-- [ ] Fallback: disabling kernel enforcement restores current behavior
+- [x] Agent starts without errors (Claude Code, Codex, Copilot all verified)
+- [x] Agent can make API calls (routed through proxy — confirmed via debug logs)
+- [x] Agent cannot bypass proxy (direct network blocked by Seatbelt — verified via test script)
+- [ ] Fallback: disabling kernel enforcement restores current behavior (not tested yet)
 
 Also test:
+- [ ] Toggling kernel enforcement off and re-spawning agent works (not tested yet)
+- [x] New connections default to kernel enforcement on
+- [x] Existing connections remain unchanged (kernel enforcement off)
 
-- [ ] Toggling kernel enforcement off and re-spawning agent works
-
-- [ ] New connections default to kernel enforcement on
-
-- [ ] Existing connections remain unchanged (kernel enforcement off)
+Also found and fixed during testing:
+- Pre-existing bug: `sandboxEnabled` was never passed to backend for system-installed agents
+- Codex needed `chatgpt.com` in built-in domain allowlist
 
 ---
 

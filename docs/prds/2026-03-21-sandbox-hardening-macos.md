@@ -1,6 +1,6 @@
 # Sandbox Hardening (macOS)
 
-**Date:** 2026-03-21 **Status:** Draft **Parent:** Agent Binary Management & Runtime Sandboxing
+**Date:** 2026-03-21 **Status:** Complete **Parent:** Agent Binary Management & Runtime Sandboxing
 
 ## Problem
 

@@ -117,18 +117,17 @@ Privacy-focused offline AI with zero setup — no API keys, no external software
 
 ## Network Sandboxing
 
-HTTP proxy-based network filtering for agent subprocesses, enforcing per-agent domain allowlists.
+Two-layer network filtering for agent subprocesses: kernel-level enforcement via Seatbelt + application-level domain filtering via HTTP proxy.
 
 **Architecture:**
 
-- Rust HTTP proxy server (`network_proxy.rs`) binds to a random localhost port
-- Agent subprocesses (ACP) have `HTTP_PROXY`/`HTTPS_PROXY` env vars set to the proxy address
-- All outbound requests from agents are intercepted and checked against the connection's domain allowlist
-- Unknown domains trigger a `domain-approval-request` Tauri event to the frontend
+- **Layer 1 — Kernel enforcement (Seatbelt):** The sandbox profile uses `(deny default)` which blocks all network. Only `(allow network-outbound (remote ip "localhost:<proxy_port>"))` is permitted. Agents physically cannot bypass the proxy, even if they ignore `HTTP_PROXY` env vars. Uses `"*:*"` for bind/inbound (IPv6 dual-stack compatibility). DNS is intentionally blocked — resolution happens through the proxy.
+- **Layer 2 — Proxy enforcement:** Rust HTTP proxy server (`network_proxy.rs`) binds to a random localhost port. Agent subprocesses have `HTTP_PROXY`/`HTTPS_PROXY` env vars set. All outbound requests are checked against the connection's domain allowlist. Unknown domains trigger a `domain-approval-request` Tauri event.
+- Sandbox profiles are ephemeral temp files (`$TMPDIR/notesage-sandbox-<instanceId>.sb`), cleaned up on agent exit
 
 **Domain allowlists:**
 
-- Built-in default allowlists per provider (e.g., `api.anthropic.com` for Claude Code, `api.github.com` for Copilot)
+- Built-in default allowlists per provider (e.g., `api.anthropic.com` for Claude Code, `chatgpt.com` for Codex, `api.github.com` for Copilot)
 - User-configurable additional domains per connection in the config dialog
 - Telemetry domains (e.g., `sentry.io`) controlled by a separate toggle per connection
 
@@ -141,9 +140,18 @@ HTTP proxy-based network filtering for agent subprocesses, enforcing per-agent d
 - Deny: blocks the request; denial shown as a chat message
 - 30-second auto-deny timeout for unanswered requests
 
+**Violation monitoring:**
+
+- `sandbox_monitor.rs` spawns `log stream` to read macOS unified log for Seatbelt deny entries
+- Filters by registered agent PIDs (registered on spawn, unregistered on exit)
+- Deduplication: same (PID, operation, resource) within 5s coalesced into single event
+- Rate limiting: max 10 violation events per second per agent
+- Violations surface as error entries in the Activity panel alongside tool calls and domain approvals
+
 **Security UI:**
 
-- Connection config dialog has a boxed Security section with filesystem sandbox toggle, network restriction toggle, and custom writable paths
+- Connection config dialog has a boxed Security section with filesystem sandbox toggle, network restriction toggle, kernel enforcement toggle, and custom writable paths
+- Kernel enforcement toggle: visible when network restriction is on; default on for new connections, off for existing (safe migration)
 - Connection cards show Sandbox / Network / Managed badges
 - Network restriction toggle enables/disables the proxy for each connection
 
@@ -163,6 +171,8 @@ When web search is enabled (toggle in chat footer — only visible for direct AP
 | `src-tauri/src/commands/ai.rs` | AI provider commands (direct API) |
 | `src-tauri/src/commands/acp.rs` | ACP agent management |
 | `src-tauri/src/commands/network_proxy.rs` | HTTP proxy for agent network sandboxing |
+| `src-tauri/src/commands/sandbox_monitor.rs` | Seatbelt violation monitoring (macOS log stream) |
+| `src-tauri/src/commands/sandbox.rs` | Seatbelt profile generation (kernel network deny) |
 | `src-tauri/src/commands/copilot_lsp.rs` | Copilot Language Server |
 | `src-tauri/src/commands/local_inference.rs` | Bundled llama-server lifecycle |
 | `src-tauri/src/commands/model_metadata.rs` | Model metadata merge + HF API fetcher |
