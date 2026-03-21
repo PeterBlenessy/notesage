@@ -405,11 +405,12 @@ async fn handle_server_request(
         }
 
         "window/showDocument" => {
-            // LSP wants to open a URL (e.g., GitHub login page during auth)
+            // LSP wants to open a URL (e.g., GitHub login page during auth).
+            // Don't auto-open — let the frontend control when the browser opens
+            // so the user sees the device code first.
             if let Some(params) = params {
                 if let Some(uri) = params.get("uri").and_then(|v| v.as_str()) {
-                    // Open in default browser via Tauri opener plugin
-                    let _ = app.opener().open_url(uri, None::<&str>);
+                    log::info!(target: "notesage::copilot", "window/showDocument: {} (suppressed auto-open)", uri);
                     let _ = app.emit(
                         "copilot-auth-browser-open",
                         serde_json::json!({ "uri": uri }),

@@ -779,10 +779,8 @@ function ConnectCopilotLsp({
           deviceCodeReceivedRef.current = true;
           setDeviceCode(userCode);
           setPhase('device_code');
-          // Auto-copy code to clipboard and open GitHub device page
+          // Auto-copy code to clipboard so it's ready when user opens GitHub
           navigator.clipboard.writeText(userCode).catch(() => {});
-          const uri = verificationUri || 'https://github.com/login/device';
-          window.open(uri, '_blank');
         }
       }
     );
@@ -918,10 +916,8 @@ function ConnectCopilotLsp({
         log.debug('settings', 'Got device code from signIn result', { userCode: result.user_code });
         setDeviceCode(result.user_code);
         setPhase('device_code');
-        // Auto-copy code to clipboard and open GitHub device page
+        // Auto-copy code to clipboard so it's ready when user opens GitHub
         navigator.clipboard.writeText(result.user_code).catch(() => {});
-        const uri = result.verification_uri || 'https://github.com/login/device';
-        window.open(uri, '_blank');
       } catch (err) {
         if (!active) return;
         await endRetry();
@@ -1028,7 +1024,7 @@ function ConnectCopilotLsp({
               </button>
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              {copied ? 'Copied!' : 'Click icon to copy'}
+              {copied ? 'Copied!' : 'Copied to clipboard — click icon to copy again'}
             </p>
           </div>
           <div className="flex gap-2">
