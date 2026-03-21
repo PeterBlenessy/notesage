@@ -22,6 +22,7 @@ import { useStartWatchers } from "@/hooks/useStartWatchers";
 import { useSkillDiscovery } from "@/hooks/useSkillOperations";
 import { useMcpDiscovery } from "@/hooks/useMcpOperations";
 import { useLocalAI } from "@/hooks/useLocalAI";
+import { useSandboxViolations } from "@/hooks/useSandboxViolations";
 import { useAgentTaskOperations } from "@/hooks/useAgentTaskOperations";
 import { useActivityNavigation } from "@/hooks/useActivityNavigation";
 import { useAppLifecycle } from "@/hooks/useAppLifecycle";
@@ -70,6 +71,7 @@ function App() {
   useSkillDiscovery();
   useMcpDiscovery();
   useLocalAI();
+  useSandboxViolations();
   useActionScanner();
 
   // Consolidated startup effects and event listeners

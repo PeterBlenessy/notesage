@@ -55,6 +55,7 @@ pub fn run() {
         .manage(LocalInferenceState::new())
         .manage(AgentManagerState::new())
         .manage(NetworkProxyState::new())
+        .manage(SandboxMonitorState::new())
         .manage(IndexState::new())
         .invoke_handler(tauri::generate_handler![
             open_devtools,
@@ -216,6 +217,9 @@ pub fn run() {
             network_domain_respond,
             network_proxy_status,
             network_default_domains,
+            // Sandbox violation monitoring
+            sandbox_monitor_register_pid,
+            sandbox_monitor_unregister_pid,
         ])
         .setup(|app| {
             log::info!(target: "notesage::lifecycle", "Notesage starting up (version {})", app.package_info().version);
@@ -249,6 +253,8 @@ pub fn run() {
                     app_handle.state::<McpState>().stop_all_sync();
                     // Stop local inference server
                     app_handle.state::<LocalInferenceState>().stop_sync();
+                    // Stop sandbox violation monitor
+                    app_handle.state::<SandboxMonitorState>().stop_sync();
                 }
                 RunEvent::Opened { urls } => {
                     // Handle file associations — macOS sends file:// URLs when opening .md files

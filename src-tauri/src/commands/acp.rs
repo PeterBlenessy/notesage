@@ -395,10 +395,15 @@ fn run_agent_thread(
     use agent_client_protocol::*;
     use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-    // Clone for proxy cleanup after the command loop exits
+    // Clone for cleanup after the command loop exits
     let proxy_instance_id = instance_id.clone();
     let has_network_proxy = network_config.is_some();
     let proxy_cleanup_app = if has_network_proxy { Some(app.clone()) } else { None };
+    let monitor_cleanup_app = if sandbox_enabled { Some(app.clone()) } else { None };
+    // Shared cell to capture the agent PID from inside the async block for cleanup outside
+    let captured_pid: std::sync::Arc<std::sync::atomic::AtomicU32> =
+        std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let captured_pid_inner = std::sync::Arc::clone(&captured_pid);
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -465,6 +470,24 @@ fn run_agent_thread(
                 return;
             }
         };
+
+        // Register PID for sandbox violation monitoring (if sandboxed)
+        if sandbox_enabled {
+            if let Some(pid) = child.id() {
+                captured_pid_inner.store(pid, std::sync::atomic::Ordering::Relaxed);
+                #[cfg(target_os = "macos")]
+                {
+                    let monitor_state = client.app.state::<super::sandbox_monitor::SandboxMonitorState>();
+                    monitor_state.register_and_start(
+                        &client.app,
+                        sandbox_instance_id.clone(),
+                        agent_binary.clone(),
+                        pid,
+                    ).await;
+                    log::info!(target: "notesage::acp", "Registered PID {} for sandbox monitoring", pid);
+                }
+            }
+        }
 
         // Pre-send "Y\n" for agents that prompt for confirmation before ACP starts
         // (e.g., Gemini CLI asks "Do you want to continue? [Y/n]:" during auth)
@@ -758,6 +781,19 @@ fn run_agent_thread(
                     log::info!(target: "notesage::acp", "Cleaned up network proxy for {}", iid);
                 });
             }
+        }
+    }
+
+    // Unregister PID from sandbox violation monitor
+    let pid = captured_pid.load(std::sync::atomic::Ordering::Relaxed);
+    if sandbox_enabled && pid != 0 {
+        if let Some(ref cleanup_app) = monitor_cleanup_app {
+            let monitor_state = cleanup_app.state::<super::sandbox_monitor::SandboxMonitorState>();
+            // Use try_lock since we're outside the tokio runtime
+            if let Ok(mut pids) = monitor_state.agent_pids.try_lock() {
+                pids.remove(&pid);
+                log::info!(target: "notesage::acp", "Unregistered PID {} from sandbox monitoring", pid);
+            };
         }
     }
 

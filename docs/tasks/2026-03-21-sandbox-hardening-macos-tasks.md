@@ -234,15 +234,11 @@ New Rust module that streams macOS unified log entries for sandbox violations.
 
 - [ ] Monitor starts on first PID registration
 
-- [ ] Violations from registered PIDs emit Tauri events
-
-- [ ] Violations from unregistered PIDs are filtered out
-
-- [ ] Deduplication works (same violation within 5s → single event with count)
-
-- [ ] Monitor cleaned up on app exit
-
-- [ ] `cargo check` passes
+- [x] Violations from registered PIDs emit Tauri events
+- [x] Violations from unregistered PIDs are filtered out
+- [x] Deduplication works (same violation within 5s → single event with count)
+- [x] Monitor cleaned up on app exit (`stop_sync` in `RunEvent::Exit`)
+- [x] `cargo check` passes
 
 ---
 
@@ -265,11 +261,9 @@ After spawning a sandboxed agent, register its PID with the sandbox monitor. On 
 
 **Acceptance criteria:**
 
-- [ ] Sandboxed agent PIDs are registered on spawn
-
-- [ ] PIDs are unregistered on agent exit
-
-- [ ] Non-sandboxed agents are not registered
+- [x] Sandboxed agent PIDs are registered on spawn (via `register_and_start`)
+- [x] PIDs are unregistered on agent exit (via `try_lock` in cleanup path)
+- [x] Non-sandboxed agents are not registered (gated on `sandbox_enabled`)
 
 ---
 
@@ -291,11 +285,11 @@ After spawning a sandboxed agent, register its PID with the sandbox monitor. On 
 
 **Acceptance criteria:**
 
-- [ ] Violations from Tauri events are stored in activity store
-
-- [ ] Violations are associated with the correct agent task
-
-- [ ] Violations are cleared when the agent task is removed
+- [x] Violations from Tauri events are stored in activity store
+  - Implemented as `DelegationActivity` entries with `status: 'error'` — no new type needed
+  - `useSandboxViolations` hook listens globally, mounted in `App.tsx`
+- [x] Violations are associated with the correct agent task (matched by instanceId)
+- [x] Violations are cleared when the agent task is removed (part of task's activities array)
 
 ---
 
@@ -319,12 +313,12 @@ Display violation entries inline in the per-task activity log.
 
 **Acceptance criteria:**
 
-- [ ] Violations appear in the activity log alongside tool calls
+- [x] Violations appear in the activity log alongside tool calls
 
-- [ ] Destructive color for warning icon
+- [x] Destructive color for warning icon
 
-- [ ] Collapsible details with smooth animation
-
-- [ ] Works in light/dark mode + soft contrast
-
-- [ ] No violations = nothing shown (no empty state)
+- [x] Collapsible details with smooth animation (uses existing activity expand/collapse)
+- [x] Works in light/dark mode + soft contrast (uses existing `text-destructive/70` theming)
+- [x] No violations = nothing shown (no empty state)
+- Note: no new UI components needed — violations render as `DelegationActivity` entries
+  with `status: 'error'` using existing `AlertCircle` icon and destructive color
