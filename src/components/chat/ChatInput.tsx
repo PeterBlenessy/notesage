@@ -4,7 +4,9 @@ import { Button } from '@/components/ui/button';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { SkillCommandMenu, type SkillCommandMenuHandle } from './SkillCommandMenu';
 import { AgentCommandMenu, type AgentCommandMenuHandle } from './AgentCommandMenu';
+import { ContextPill } from './ContextPill';
 import type { SkillEntry, AgentEntry } from '@/stores/skill-store';
+import type { ContextItem } from '@/hooks/useChatContext';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -13,9 +15,11 @@ interface ChatInputProps {
   disabled?: boolean;
   placeholder?: string;
   footer?: React.ReactNode;
+  contextItems?: ContextItem[];
+  onDismissContext?: (id: string) => void;
 }
 
-export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = 'Ask anything...', footer }: ChatInputProps) {
+export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = 'Ask anything...', footer, contextItems, onDismissContext }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [showSkillMenu, setShowSkillMenu] = useState(false);
   const [skillQuery, setSkillQuery] = useState('');
@@ -174,6 +178,13 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
           onSelect={handleAgentSelect}
           onClose={() => setShowAgentMenu(false)}
         />
+      )}
+      {contextItems && contextItems.length > 0 && onDismissContext && (
+        <div className="flex flex-wrap gap-1.5 px-3 pt-2 pb-1">
+          {contextItems.map((item) => (
+            <ContextPill key={item.id} item={item} onDismiss={onDismissContext} />
+          ))}
+        </div>
       )}
       <div className="flex items-end gap-2 px-3 py-2">
         <textarea

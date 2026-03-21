@@ -231,8 +231,8 @@ export function useAIOperations() {
   const agentInstructions = useSkillStore((s) => s.getMergedAgentInstructions());
   const notesageAgentInstructions = useSkillStore((s) => s.getNotesageAgentInstructions());
 
-  // Shared project/goals/file-tree/active-file context builder
-  const buildProjectContext = useCallback((): string[] => {
+  // Shared project/goals/file-tree context builder
+  const buildProjectContext = useCallback((attachedFilePaths?: string[]): string[] => {
     const parts: string[] = [];
 
     if (selectedProjectPaths.length === 1) {
@@ -261,27 +261,29 @@ export function useAIOperations() {
       parts.push(`The user has the following projects selected:\n\n${summaries.join('\n\n')}`);
     }
 
-    if (activeTab) {
-      let fileContext = `Currently editing: ${activeTab.filePath}`;
-      if (activeTab.fileType === 'markdown' && activeTab.content) {
-        const snippet = activeTab.content.slice(0, 500);
-        const truncated = activeTab.content.length > 500 ? '...' : '';
-        fileContext += `\n\nFile content preview:\n${snippet}${truncated}`;
+    // Attach file paths from context pills (or fall back to active tab for non-chat callers)
+    if (attachedFilePaths && attachedFilePaths.length > 0) {
+      for (const filePath of attachedFilePaths) {
+        parts.push(`File in context: ${filePath}`);
       }
-      parts.push(fileContext);
+    } else if (!attachedFilePaths && activeTab) {
+      parts.push(`Currently editing: ${activeTab.filePath}`);
     }
 
     return parts;
   }, [selectedProjectPaths, singleProjectPath, singleMetadata, goalsContext, singleProject, activeTab, metadataMap]);
 
   // Compose system message based on selected projects
-  const composedSystemMessage = useMemo(() => {
-    const parts = buildProjectContext();
+  const buildComposedSystemMessage = useCallback((attachedFilePaths?: string[]) => {
+    const parts = buildProjectContext(attachedFilePaths);
     if (agentInstructions) parts.push(agentInstructions);
     if (agentSystemMessage) parts.unshift(agentSystemMessage);
     if (skillDescriptions) parts.push(skillDescriptions);
     return parts.join('\n\n') || 'You are a helpful writing assistant.';
   }, [buildProjectContext, agentSystemMessage, agentInstructions, skillDescriptions]);
+
+  // Memoized version for non-chat callers (generateText, bubble menu actions)
+  const composedSystemMessage = useMemo(() => buildComposedSystemMessage(), [buildComposedSystemMessage]);
 
   // Lightweight system message for local models
   const localSystemMessage = useMemo(() => {
@@ -289,9 +291,9 @@ export function useAIOperations() {
     return 'You are a helpful writing assistant. Be concise and focused.';
   }, [agentSystemMessage]);
 
-  // ACP-specific system message: only Notesage-specific skills and instructions
-  const acpSystemMessage = useMemo(() => {
-    const parts = buildProjectContext();
+  // ACP-specific system message builder
+  const buildAcpSystemMessage = useCallback((attachedFilePaths?: string[]) => {
+    const parts = buildProjectContext(attachedFilePaths);
     if (notesageAgentInstructions) parts.push(notesageAgentInstructions);
     if (agentSystemMessage) {
       parts.push(`<role-instructions>\nYou MUST adopt the following role for all responses in this conversation. This is your primary identity and overrides your default behavior:\n\n${agentSystemMessage}\n</role-instructions>`);
@@ -300,10 +302,14 @@ export function useAIOperations() {
     return parts.join('\n\n') || 'You are a helpful writing assistant.';
   }, [buildProjectContext, agentSystemMessage, notesageAgentInstructions, notesageSkillDescriptions]);
 
+  // Memoized version for ACP lifecycle hook
+  const acpSystemMessage = useMemo(() => buildAcpSystemMessage(), [buildAcpSystemMessage]);
+
   // Delegate ACP interactions to the dedicated hook
   const { acpGenerateText, acpSendChatMessage, acpCancelChat } = useAcpLifecycle({
     effectiveConnection,
     acpSystemMessage,
+    buildAcpSystemMessage,
   });
 
   const generateText = useCallback(
@@ -338,7 +344,7 @@ export function useAIOperations() {
   );
 
   const sendChatMessage = useCallback(
-    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string }) => {
+    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[] }) => {
       // Clean up any stale listeners from a previous streaming call
       if (cleanupRef.current) {
         cleanupRef.current();
@@ -448,7 +454,7 @@ export function useAIOperations() {
 
         const systemMessage: ChatMessage = {
           role: 'system',
-          content: resolved.provider === 'local_bundled' ? localSystemMessage : composedSystemMessage,
+          content: resolved.provider === 'local_bundled' ? localSystemMessage : buildComposedSystemMessage(opts?.attachedFilePaths),
         };
 
         const historyLimit = useSettingsStore.getState().chatHistoryLimit;
@@ -476,7 +482,7 @@ export function useAIOperations() {
         setActiveTool(null);
       }
     },
-    [resolved, composedSystemMessage, localSystemMessage, webSearchEnabled, addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, effectiveConnection, acpSendChatMessage]
+    [resolved, buildComposedSystemMessage, localSystemMessage, webSearchEnabled, addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, effectiveConnection, acpSendChatMessage]
   );
 
   const cancelChat = useCallback(() => {

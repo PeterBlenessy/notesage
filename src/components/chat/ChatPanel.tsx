@@ -21,6 +21,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useAIOperations } from '@/hooks/useAIOperations';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
+import { useChatContext } from '@/hooks/useChatContext';
 import { usePermissionStore } from '@/stores/permission-store';
 import { useSkillStore } from '@/stores/skill-store';
 import { ChatMessage } from './ChatMessage';
@@ -85,6 +86,7 @@ export function ChatPanel() {
   // Goals discovery for single-project selection only
   const { goalFiles } = useGoalsDiscovery(singleProjectPath);
   const { sendChatMessage, cancelChat } = useAIOperations();
+  const { contextItems, attachedFilePaths, dismissItem } = useChatContext();
   const permissionRequests = usePermissionStore((s) => s.requests);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [providerOpen, setProviderOpen] = useState(false);
@@ -261,7 +263,7 @@ export function ChatPanel() {
       }
     }
 
-    await sendChatMessage(expandedContent, messages, skillName ? { displayContent: content, skillName } : undefined);
+    await sendChatMessage(expandedContent, messages, { ...(skillName ? { displayContent: content, skillName } : {}), attachedFilePaths });
   };
 
   const handleNewChat = () => {
@@ -602,6 +604,8 @@ export function ChatPanel() {
           isLoading={isLoading}
           disabled={!hasAIProvider || !!pendingProjectSwitch || !!pendingAgentSwitch}
           placeholder={pendingProjectSwitch ? 'Resolve project context change first...' : pendingAgentSwitch ? 'Resolve provider change first...' : chatPlaceholder}
+          contextItems={contextItems}
+          onDismissContext={dismissItem}
           footer={
             <>
               {(interactiveConnections.length > 0 || hasProjectOverride) && (

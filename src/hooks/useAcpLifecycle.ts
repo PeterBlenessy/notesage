@@ -232,9 +232,10 @@ async function ensureAcpAgent(connection: Connection, cwd: string, sandboxPaths?
 interface AcpLifecycleParams {
   effectiveConnection: Connection | null;
   acpSystemMessage: string;
+  buildAcpSystemMessage?: (attachedFilePaths?: string[]) => string;
 }
 
-export function useAcpLifecycle({ effectiveConnection, acpSystemMessage }: AcpLifecycleParams) {
+export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAcpSystemMessage }: AcpLifecycleParams) {
   const { addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities } = useChatStore();
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const cleanupRef = useRef<(() => void) | null>(null);
@@ -333,7 +334,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage }: AcpLi
    * Send a chat message via ACP agent (multi-turn with permission handling).
    */
   const acpSendChatMessage = useCallback(
-    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string }) => {
+    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[] }) => {
       // Clean up any stale listeners from a previous streaming call
       if (cleanupRef.current) {
         cleanupRef.current();
@@ -523,8 +524,11 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage }: AcpLi
 
         try {
           // Prepend system prompt on the first message of a new session
+          const effectiveSystemMessage = buildAcpSystemMessage
+            ? buildAcpSystemMessage(opts?.attachedFilePaths)
+            : acpSystemMessage;
           const promptContent = isNewSession
-            ? `${acpSystemMessage}\n\n${content}`
+            ? `${effectiveSystemMessage}\n\n${content}`
             : content;
           await invoke('acp_session_prompt', {
             instanceId,
@@ -547,7 +551,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage }: AcpLi
         setActiveTool(null);
       }
     },
-    [effectiveConnection, acpSystemMessage, selectedProjectPaths, addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities]
+    [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities]
   );
 
   /**
