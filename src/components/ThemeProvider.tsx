@@ -6,11 +6,11 @@ interface ThemeProviderProps {
 }
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
-  const { theme } = useSettingsStore();
+  const { theme, softMode } = useSettingsStore();
 
   useEffect(() => {
     const root = window.document.documentElement;
-    root.classList.remove("light", "dark");
+    root.classList.remove("light", "dark", "soft");
 
     if (theme === "system") {
       const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
@@ -21,7 +21,11 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     } else {
       root.classList.add(theme);
     }
-  }, [theme]);
+
+    if (softMode) {
+      root.classList.add("soft");
+    }
+  }, [theme, softMode]);
 
   return <>{children}</>;
 }

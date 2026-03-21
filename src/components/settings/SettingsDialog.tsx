@@ -126,6 +126,7 @@ function formatRelativeTime(isoString: string | null): string {
 export function SettingsDialog({ open, onOpenChange, initialTab, updateState, onCheckForUpdate, onOpenUpdateDialog }: SettingsDialogProps) {
   const {
     theme, setTheme,
+    softMode, setSoftMode,
     showFloatingToolbar, setShowFloatingToolbar,
     toolbarVisible, setToolbarVisible,
     externalChangeDiffReview, setExternalChangeDiffReview,
@@ -357,6 +358,14 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                         <span className="text-xs">{label}</span>
                       </button>
                     ))}
+                  </div>
+
+                  <div className="flex items-center justify-between mt-3">
+                    <div>
+                      <span className="text-sm">Soft contrast</span>
+                      <p className="text-xs text-muted-foreground">Reduce contrast for a gentler look</p>
+                    </div>
+                    <Switch checked={softMode} onCheckedChange={setSoftMode} />
                   </div>
                 </div>
 

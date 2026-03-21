@@ -51,6 +51,37 @@
   --color-highlight-grey: #e5e7eb;
 }
 
+/* Soft mode — easy on the eyes (light) */
+.soft {
+  --color-background: oklch(96% 0 0);
+  --color-foreground: oklch(20% 0 0);
+  --color-card: oklch(94% 0 0);
+  --color-card-foreground: oklch(20% 0 0);
+  --color-popover: oklch(94% 0 0);
+  --color-popover-foreground: oklch(20% 0 0);
+  --color-primary: oklch(25% 0 0);
+  --color-primary-foreground: oklch(96% 0 0);
+  --color-secondary: oklch(91% 0 0);
+  --color-secondary-foreground: oklch(28% 0 0);
+  --color-muted: oklch(91% 0 0);
+  --color-muted-foreground: oklch(48% 0 0);
+  --color-accent: oklch(91% 0 0);
+  --color-accent-foreground: oklch(28% 0 0);
+  --color-border: oklch(86% 0 0);
+  --color-input: oklch(86% 0 0);
+  --color-ring: oklch(52% 0 0);
+  --color-comment-bg: oklch(88% 0 0 / 0.5);
+  --color-comment-border: oklch(72% 0 0);
+  --color-comment-bg-hover: oklch(88% 0 0 / 0.7);
+  --color-comment-bg-active: oklch(88% 0 0 / 0.75);
+  --color-date-badge-bg: oklch(89% 0 0);
+  --color-date-badge-border: oklch(80% 0 0);
+  --color-date-badge-bg-hover: oklch(84% 0 0);
+  --color-find-match: oklch(82% 0 0);
+  --color-find-match-active: oklch(70% 0 0);
+  --color-shadow: rgb(0 0 0 / 0.07);
+}
+
 /* Dark mode colors — neutral palette */
 .dark {
   color-scheme: dark;
@@ -93,6 +124,37 @@
   --color-highlight-pink: #9d174d;
   --color-highlight-orange: #9a3412;
   --color-highlight-grey: #374151;
+}
+
+/* Soft mode — easy on the eyes (dark) */
+.dark.soft {
+  --color-background: oklch(25% 0 0);
+  --color-foreground: oklch(90% 0 0);
+  --color-card: oklch(28% 0 0);
+  --color-card-foreground: oklch(90% 0 0);
+  --color-popover: oklch(28% 0 0);
+  --color-popover-foreground: oklch(90% 0 0);
+  --color-primary: oklch(85% 0 0);
+  --color-primary-foreground: oklch(20% 0 0);
+  --color-secondary: oklch(32% 0 0);
+  --color-secondary-foreground: oklch(90% 0 0);
+  --color-muted: oklch(32% 0 0);
+  --color-muted-foreground: oklch(65% 0 0);
+  --color-accent: oklch(35% 0 0);
+  --color-accent-foreground: oklch(90% 0 0);
+  --color-border: oklch(36% 0 0);
+  --color-input: oklch(32% 0 0);
+  --color-ring: oklch(55% 0 0);
+  --color-comment-bg: oklch(50% 0 0 / 0.2);
+  --color-comment-border: oklch(50% 0 0 / 0.5);
+  --color-comment-bg-hover: oklch(50% 0 0 / 0.3);
+  --color-comment-bg-active: oklch(50% 0 0 / 0.35);
+  --color-date-badge-bg: oklch(33% 0 0);
+  --color-date-badge-border: oklch(40% 0 0);
+  --color-date-badge-bg-hover: oklch(38% 0 0);
+  --color-find-match: oklch(38% 0 0);
+  --color-find-match-active: oklch(48% 0 0);
+  --color-shadow: rgb(0 0 0 / 0.2);
 }
 
 * {

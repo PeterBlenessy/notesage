@@ -11,6 +11,7 @@ export type PageBreaks = "continuous" | "visible";
 
 interface SettingsStore {
   theme: Theme;
+  softMode: boolean;
   showFloatingToolbar: boolean;
   toolbarVisible: boolean;
   contentWidth: ContentWidth;
@@ -50,6 +51,7 @@ interface SettingsStore {
   icloudAvailable: boolean;
   icloudNotesagePath: string | null;
   setTheme: (theme: Theme) => void;
+  setSoftMode: (soft: boolean) => void;
   setShowFloatingToolbar: (show: boolean) => void;
   setToolbarVisible: (visible: boolean) => void;
   setContentWidth: (width: ContentWidth) => void;
@@ -91,6 +93,7 @@ export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set) => ({
       theme: "system",
+      softMode: false,
       showFloatingToolbar: true,
       toolbarVisible: true,
       contentWidth: "auto",
@@ -129,6 +132,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setTheme: (theme: Theme) => {
         set({ theme });
+      },
+
+      setSoftMode: (soft: boolean) => {
+        set({ softMode: soft });
       },
 
       setShowFloatingToolbar: (show: boolean) => {
