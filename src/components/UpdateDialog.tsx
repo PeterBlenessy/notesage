@@ -1,4 +1,5 @@
 import { ArrowUpCircle, Sparkles, Bug, Zap, ChevronDown } from "lucide-react";
+import { renderInlineMarkdown } from "@/lib/render-inline-markdown";
 import {
   Dialog,
   DialogContent,
@@ -96,7 +97,7 @@ function SectionItems({
           className="flex gap-1.5 text-xs text-muted-foreground leading-relaxed"
         >
           <Icon className="h-3 w-3 shrink-0 mt-0.5" strokeWidth={1.5} />
-          <span>{item}</span>
+          <span>{renderInlineMarkdown(item)}</span>
         </li>
       ))}
     </ul>
@@ -126,7 +127,7 @@ export function UpdateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-xl">
         <DialogHeader>
           <div className="flex items-center gap-3">
             <ArrowUpCircle
@@ -144,7 +145,7 @@ export function UpdateDialog({
           </div>
         </DialogHeader>
 
-        <ScrollArea className="max-h-48 rounded-md border border-border p-3">
+        <ScrollArea className="max-h-96 rounded-md border border-border p-3">
           {releases.length > 0 ? (
             <div className="space-y-3">
               {releases.map((release) => (

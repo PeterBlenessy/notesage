@@ -1,4 +1,5 @@
 import { Sparkles, Bug, Zap, ChevronDown } from 'lucide-react';
+import { renderInlineMarkdown } from '@/lib/render-inline-markdown';
 import {
   Dialog,
   DialogContent,
@@ -37,7 +38,7 @@ function ReleaseSection({
         {items.map((item, i) => (
           <li key={i} className="flex gap-2 leading-relaxed">
             <span className="text-muted-foreground shrink-0 leading-relaxed">•</span>
-            <span>{item}</span>
+            <span>{renderInlineMarkdown(item)}</span>
           </li>
         ))}
       </ul>
@@ -107,7 +108,7 @@ export function ChangelogDialog({ open, onOpenChange }: ChangelogDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[80vh] p-0 gap-0 overflow-hidden flex flex-col">
+      <DialogContent className="max-w-xl max-h-[80vh] p-0 gap-0 overflow-hidden flex flex-col">
         <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle className="text-base">Changelog</DialogTitle>
           <DialogDescription className="sr-only">Version history and release notes</DialogDescription>
