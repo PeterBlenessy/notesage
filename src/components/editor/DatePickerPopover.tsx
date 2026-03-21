@@ -57,9 +57,13 @@ export function DatePickerPopover({ onDateChange }: DatePickerPopoverProps) {
   const [year, month, day] = state.date.split("-").map(Number);
   const selectedDate = new Date(year, month - 1, day);
 
-  // Position below the badge
-  const top = state.rect.bottom + 4;
-  const left = state.rect.left;
+  // Position below the badge, or above if not enough room below
+  const popoverHeight = 310; // approximate calendar height
+  const spaceBelow = window.innerHeight - state.rect.bottom;
+  const top = spaceBelow >= popoverHeight + 8
+    ? state.rect.bottom + 4
+    : state.rect.top - popoverHeight - 4;
+  const left = Math.min(state.rect.left, window.innerWidth - 300);
 
   return (
     <div
