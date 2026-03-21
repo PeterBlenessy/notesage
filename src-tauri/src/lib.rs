@@ -44,7 +44,7 @@ pub fn run() {
                 .rotation_strategy(RotationStrategy::KeepOne)
                 .max_file_size(5_000_000) // 5MB per file
                 .timezone_strategy(TimezoneStrategy::UseLocal)
-                .level(log::LevelFilter::Info)
+                .level(log::LevelFilter::Debug)
                 .build(),
         )
         .manage(WatcherState::new())
@@ -222,6 +222,9 @@ pub fn run() {
             sandbox_monitor_unregister_pid,
         ])
         .setup(|app| {
+            // Plugin accepts Debug level, but default to Info until user enables debug logging.
+            // set_debug_logging(true) raises this to Debug at runtime.
+            log::set_max_level(log::LevelFilter::Info);
             log::info!(target: "notesage::lifecycle", "Notesage starting up (version {})", app.package_info().version);
 
             // Kill orphaned agent processes from previous sessions that weren't cleaned up
