@@ -166,6 +166,18 @@ fn reindex_file_in_db(
         }
     }
 
+    // Skip non-indexable files (binary, non-text extensions)
+    if !is_indexable(file_path) {
+        return Ok(false);
+    }
+
+    // Skip .notesage metadata files (state/, index.db, etc.) — only research/ is indexable
+    // scan_files() already filters this for bulk indexing, but watcher-triggered single-file
+    // indexing bypasses scan_files and lands here directly.
+    if file_path.contains("/.notesage/") && !file_path.contains("/.notesage/research/") {
+        return Ok(false);
+    }
+
     // Read file content
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
