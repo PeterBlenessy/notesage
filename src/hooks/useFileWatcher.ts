@@ -7,8 +7,6 @@ import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSyncStore } from "@/stores/sync-store";
-import { useSkillStore } from "@/stores/skill-store";
-import { discoveryCompletedAt, DISCOVERY_COOLDOWN_MS } from "@/hooks/useSkillOperations";
 import { useMcpStore } from "@/stores/mcp-store";
 import { useFileOperations, refreshGitForPath } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
@@ -57,7 +55,6 @@ export function useFileWatcher() {
   const { refreshFileTree } = useFileOperations();
   const refreshDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
   const gitDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const skillRescanDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
   const mcpRescanDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Per-file debounce for modify events — macOS FSEvents often fires duplicates
   const modifyDebounce = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -139,29 +136,9 @@ export function useFileWatcher() {
         refreshGitForPath(path);
       }, 500);
 
-      // Detect changes inside skills/ or agents/ directories → rescan
+      // Detect mcp.json changes → rescan MCP configs
       if (kind === "create" || kind === "delete" || kind === "modify") {
         getHomeDir().then((home) => {
-          const isSkillOrAgent =
-            path.includes("/skills/") ||
-            path.includes("/agents/") ||
-            path.endsWith("/agents.md") ||
-            // Global paths
-            path.startsWith(`${home}/.notesage/skills/`) ||
-            path.startsWith(`${home}/.notesage/agents/`) ||
-            path === `${home}/.notesage/agents.md`;
-
-          if (isSkillOrAgent) {
-            clearTimeout(skillRescanDebounce.current);
-            skillRescanDebounce.current = setTimeout(() => {
-              // Skip if the discovery pipeline just completed — extraction writes
-              // trigger the watcher, which would re-trigger discovery in a loop.
-              if (Date.now() - discoveryCompletedAt < DISCOVERY_COOLDOWN_MS) return;
-              useSkillStore.getState().requestRescan();
-            }, 500);
-          }
-
-          // Detect mcp.json changes → rescan MCP configs
           const isMcpConfig =
             path.endsWith("/mcp.json") &&
             (path.includes("/.notesage/") ||
@@ -229,7 +206,6 @@ export function useFileWatcher() {
       unlisten.then((fn) => fn());
       clearTimeout(refreshDebounce.current);
       clearTimeout(gitDebounce.current);
-      clearTimeout(skillRescanDebounce.current);
       clearTimeout(mcpRescanDebounce.current);
       for (const t of Object.values(modifyDebounce.current)) clearTimeout(t);
       for (const t of Object.values(icloudDiscoveryDebounce.current)) clearTimeout(t);

@@ -168,11 +168,10 @@ async function migratePersonasToAgents(home: string) {
   setPersonasMigrated(true);
 }
 
-// Cooldown: after a discovery pipeline completes, suppress watcher-triggered rescans
-// for 2 seconds. This prevents the extraction → watcher → rescan → extraction loop.
-// The watcher's 500ms debounce fires after extraction, but within this cooldown window.
-export let discoveryCompletedAt = 0;
-export const DISCOVERY_COOLDOWN_MS = 2000;
+// Track whether bundled extraction has already run this session.
+// Extraction only needs to happen once on startup — rescans triggered by
+// connection/project changes only re-scan directories (no extraction).
+let bundledExtracted = false;
 
 /**
  * Hook that manages skill discovery lifecycle.
@@ -204,24 +203,29 @@ export function useSkillDiscovery() {
     const run = async () => {
       log.info('skills', 'Starting skill/agent discovery pipeline');
 
-      // Extract bundled skills and agents (always overwrites to stay current)
+      // Extract bundled skills and agents once per session (on startup).
+      // Rescans triggered by connection/project changes skip extraction to
+      // avoid the extraction → watcher → rescan → extraction loop.
       let skillsExtracted = false;
       let agentsExtracted = false;
-      try {
-        const skillsPath = await tauriApi.extractBundledSkills();
-        skillsExtracted = true;
-        log.info('skills', `Extracted bundled skills to ${skillsPath}`);
-      } catch (e) {
-        log.error('skills', 'Failed to extract bundled skills', e);
-        toast.error('Failed to extract bundled skills. Check logs for details.');
-      }
-      try {
-        const agentsPath = await tauriApi.extractBundledAgents();
-        agentsExtracted = true;
-        log.info('skills', `Extracted bundled agents to ${agentsPath}`);
-      } catch (e) {
-        log.error('skills', 'Failed to extract bundled agents', e);
-        toast.error('Failed to extract bundled agents. Check logs for details.');
+      if (!bundledExtracted) {
+        try {
+          const skillsPath = await tauriApi.extractBundledSkills();
+          skillsExtracted = true;
+          log.info('skills', `Extracted bundled skills to ${skillsPath}`);
+        } catch (e) {
+          log.error('skills', 'Failed to extract bundled skills', e);
+          toast.error('Failed to extract bundled skills. Check logs for details.');
+        }
+        try {
+          const agentsPath = await tauriApi.extractBundledAgents();
+          agentsExtracted = true;
+          log.info('skills', `Extracted bundled agents to ${agentsPath}`);
+        } catch (e) {
+          log.error('skills', 'Failed to extract bundled agents', e);
+          toast.error('Failed to extract bundled agents. Check logs for details.');
+        }
+        bundledExtracted = true;
       }
 
       let home: string;
@@ -312,7 +316,7 @@ export function useSkillDiscovery() {
       log.info('skills', 'Skill/agent discovery pipeline complete');
     };
 
-    run().finally(() => { discoveryCompletedAt = Date.now(); });
+    run();
   }, [startupReady, connectionKey, projectPaths, rescanCounter]);
 }
 

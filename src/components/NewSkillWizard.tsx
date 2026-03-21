@@ -150,15 +150,16 @@ export function NewSkillWizard({ open, onOpenChange }: NewSkillWizardProps) {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="max-w-xl max-h-[80vh] p-0 gap-0 overflow-hidden flex flex-col">
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle>Create Skill</DialogTitle>
           <DialogDescription>
             Create an Agent Skill with instructions, optional scripts, and tool access.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2 overflow-y-auto max-h-[60vh]">
+        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="space-y-4 px-6 py-4">
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Description</Label>
             <Textarea
@@ -283,8 +284,9 @@ export function NewSkillWizard({ open, onOpenChange }: NewSkillWizardProps) {
             </CollapsibleContent>
           </Collapsible>
         </div>
+        </div>
 
-        <DialogFooter>
+        <DialogFooter className="px-6 py-4 border-t shrink-0">
           <Button variant="outline" onClick={handleClose}>Cancel</Button>
           <Button disabled={!canCreate || isCreating} onClick={handleCreate}>
             {isCreating ? 'Creating...' : 'Create'}
