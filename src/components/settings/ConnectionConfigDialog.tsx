@@ -772,56 +772,37 @@ export function ConnectionConfigDialog({
                       );
                       const builtInDomains = provOpt?.installMeta?.allowedDomains ?? [];
                       const userDomains = domainAlwaysAllowed[connection.id] ?? [];
-                      const hasTelemetryOption = ab === 'claude-agent-acp';
-                      const telemetryEnabled = TELEMETRY_DOMAINS.some((d) =>
-                        userDomains.includes(d)
-                      );
-                      const toggleTelemetry = (enabled: boolean) => {
-                        const store = usePermissionStore.getState();
-                        if (enabled) {
-                          for (const d of TELEMETRY_DOMAINS) {
-                            store.allowDomain(connection.id, d, 'always');
-                          }
-                        } else {
-                          for (const d of TELEMETRY_DOMAINS) {
-                            store.removeDomain(connection.id, d);
-                          }
-                        }
-                      };
-                      // Filter telemetry domains out of the visible domain list
-                      const visibleUserDomains = userDomains.filter(
-                        (d) => !TELEMETRY_DOMAINS.includes(d)
-                      );
+                      // Separate user domains into telemetry vs custom
+                      const telemetryDomains = userDomains.filter((d) => TELEMETRY_DOMAINS.includes(d));
+                      const customDomains = userDomains.filter((d) => !TELEMETRY_DOMAINS.includes(d));
 
                       return (
                         <div className="space-y-2.5 pt-1">
-                          {hasTelemetryOption && (
-                            <>
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="text-[11px] font-medium text-foreground">Allow telemetry</p>
-                                  <p className="text-[10px] text-muted-foreground">Let the agent send crash reports and usage data to its provider</p>
-                                </div>
-                                <Switch
-                                  checked={telemetryEnabled}
-                                  onCheckedChange={toggleTelemetry}
-                                />
-                              </div>
-                              <Separator />
-                            </>
-                          )}
                           <p className="text-[11px] font-medium text-muted-foreground">Allowed domains</p>
                           <div className="space-y-1">
                             {builtInDomains.map((d) => (
                               <div key={d} className="flex items-center gap-2 text-xs">
                                 <span className="font-mono text-muted-foreground flex-1 truncate">{d}</span>
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">built-in</span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">API</span>
                               </div>
                             ))}
-                            {visibleUserDomains.map((d) => (
+                            {telemetryDomains.map((d) => (
                               <div key={d} className="flex items-center gap-2 text-xs">
                                 <span className="font-mono text-muted-foreground flex-1 truncate">{d}</span>
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">always</span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">Telemetry</span>
+                                <button
+                                  className="text-muted-foreground hover:text-destructive transition-colors"
+                                  onClick={() => usePermissionStore.getState().removeDomain(connection.id, d)}
+                                  title="Remove"
+                                >
+                                  <XIcon className="h-3 w-3" strokeWidth={1.5} />
+                                </button>
+                              </div>
+                            ))}
+                            {customDomains.map((d) => (
+                              <div key={d} className="flex items-center gap-2 text-xs">
+                                <span className="font-mono text-muted-foreground flex-1 truncate">{d}</span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">User</span>
                                 <button
                                   className="text-muted-foreground hover:text-destructive transition-colors"
                                   onClick={() => usePermissionStore.getState().removeDomain(connection.id, d)}
@@ -858,6 +839,9 @@ export function ConnectionConfigDialog({
                               <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
                             </Button>
                           </div>
+                          <p className="text-[10px] text-muted-foreground leading-relaxed">
+                            Telemetry domains are based on known endpoints. Providers may use additional domains — unknown domains will prompt for approval.
+                          </p>
                         </div>
                       );
                     })()}
