@@ -86,10 +86,12 @@ export function useCommentDelegation() {
               s.setCommentStatus(documentId, comment.id, 'done');
               s.clearDelegationMode(comment.id);
               s.saveComments(documentId, projectRoot);
-              toast.success('Agent finished working on your comment. Click it to review.', {
-                id: `delegation-done-${comment.id}`,
-                duration: 5000,
-              });
+              if (mode === 'delegate') {
+                toast.success('Agent finished working on your comment. Click it to review.', {
+                  id: `delegation-done-${comment.id}`,
+                  duration: 5000,
+                });
+              }
             },
             onActivity: (activity) => {
               const s = useCommentStore.getState();
@@ -253,10 +255,12 @@ export function useCommentDelegation() {
               s.setCommentStatus(documentId, comment.id, 'done');
               s.clearDelegationMode(comment.id);
               s.saveComments(documentId, projectRoot);
-              toast.success('Agent finished working on your comment. Click it to review.', {
-                id: `delegation-done-${comment.id}`,
-                duration: 5000,
-              });
+              if (mode === 'delegate') {
+                toast.success('Agent finished working on your comment. Click it to review.', {
+                  id: `delegation-done-${comment.id}`,
+                  duration: 5000,
+                });
+              }
             },
             onActivity: (activity) => {
               const s = useCommentStore.getState();
