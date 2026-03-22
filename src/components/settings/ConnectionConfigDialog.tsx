@@ -62,7 +62,7 @@ function getTemperatureLabel(value: number): string {
 const MAX_TOKEN_PRESETS = [256, 512, 1024, 2048, 4096, 8192, 16384, 32768] as const;
 
 /** Telemetry domains managed by the toggle (not shown in the domain list) */
-const TELEMETRY_DOMAINS: readonly string[] = ['sentry.io', '*.sentry.io'];
+const TELEMETRY_DOMAINS: readonly string[] = ['sentry.io', '*.sentry.io', '*.datadoghq.com'];
 
 function nearestPresetIndex(tokens: number): number {
   let bestIdx = 0;
