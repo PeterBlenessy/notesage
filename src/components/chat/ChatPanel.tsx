@@ -178,6 +178,20 @@ export function ChatPanel() {
     autoScrollRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   }, []);
 
+  // MutationObserver: scroll when DOM content actually changes (covers async
+  // markdown rendering that happens after React state updates)
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const observer = new MutationObserver(() => {
+      if (autoScrollRef.current) {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
+    observer.observe(el, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, []);
+
   // Scroll to bottom when conversation changes (open from history, app refresh)
   useEffect(() => {
     autoScrollRef.current = true;
@@ -193,11 +207,6 @@ export function ChatPanel() {
     }
     wasLoadingRef.current = isLoading;
   }, [isLoading, scrollToEnd]);
-
-  // Auto-scroll on new content (streaming, new messages)
-  useEffect(() => {
-    if (autoScrollRef.current) requestAnimationFrame(scrollToEnd);
-  }, [messages, permissionRequests.length, domainRequests.length, scrollToEnd]);
 
   // Listen for network domain approval requests from the proxy
   useEffect(() => {
