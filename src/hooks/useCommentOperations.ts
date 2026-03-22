@@ -54,6 +54,7 @@ export function useCommentOperations(editor: Editor | null) {
     saveComments,
     clearDocument,
     updateCommentPositions,
+    delegationModeByComment,
   } = useCommentStore();
 
   const lastLoadedKeyRef = useRef<string | null>(null);
@@ -146,8 +147,8 @@ export function useCommentOperations(editor: Editor | null) {
       return pluginPos ? { ...c, from: pluginPos.from, to: pluginPos.to } : c;
     });
 
-    setCommentDecorations(editor, mergedComments, activeCommentId);
-  }, [editor, commentKey, commentsByDocument, activeCommentId]);
+    setCommentDecorations(editor, mergedComments, activeCommentId, delegationModeByComment);
+  }, [editor, commentKey, commentsByDocument, activeCommentId, delegationModeByComment]);
 
   // Listen for comment creation requests and click-to-select from the ProseMirror plugin
   useEffect(() => {

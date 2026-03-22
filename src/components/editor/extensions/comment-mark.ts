@@ -9,6 +9,7 @@ interface CommentDecoration {
   from: number;
   to: number;
   status?: string;
+  delegationMode?: string;
 }
 
 interface CommentMarkState {
@@ -103,8 +104,8 @@ export const CommentMark = Extension.create({
 
             const clicked = (state.comments as CommentDecoration[]).find((c) => pos >= c.from && pos <= c.to);
             if (clicked) {
-              if (clicked.status === 'delegated') {
-                // Comment is being worked on by an agent — notify instead of opening
+              if (clicked.status === 'delegated' && clicked.delegationMode !== 'chat') {
+                // Comment is being worked on by an agent in background — notify instead of opening
                 view.dispatch(
                   view.state.tr.setMeta(CommentMarkPluginKey, {
                     delegatedClick: clicked.commentId,
@@ -193,7 +194,8 @@ function buildDecorations(
 export function setCommentDecorations(
   editor: Editor,
   comments: Comment[],
-  activeCommentId?: string | null
+  activeCommentId?: string | null,
+  delegationModes?: Record<string, string>
 ) {
   const mapped: CommentDecoration[] = comments
     .filter((c) => c.from < c.to)
@@ -202,6 +204,7 @@ export function setCommentDecorations(
       from: c.from,
       to: c.to,
       status: c.status,
+      delegationMode: delegationModes?.[c.id],
     }));
 
   editor.view.dispatch(

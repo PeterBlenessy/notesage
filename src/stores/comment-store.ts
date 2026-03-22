@@ -93,7 +93,13 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
         return;
       }
       const raw = await tauriApi.readFile(filePath);
-      const comments: Comment[] = JSON.parse(raw);
+      const comments: Comment[] = JSON.parse(raw).map((c: Comment) => {
+        // Reset 'delegated' status on load — agent sessions don't survive restart
+        if (c.status === 'delegated') {
+          return { ...c, status: (c.replies && c.replies.length > 0) ? 'done' : 'open' };
+        }
+        return c;
+      });
       set((state) => ({
         commentsByDocument: { ...state.commentsByDocument, [documentId]: comments },
       }));
