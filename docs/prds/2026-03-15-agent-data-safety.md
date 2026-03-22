@@ -1,6 +1,6 @@
 # Agent Data Safety — Sandboxing & Context Isolation
 
-**Date:** 2026-03-15 **Status:** 🚧 In Progress **Parent:** Agent Binary Management & Runtime Sandboxing
+**Date:** 2026-03-15 **Status:** Complete (read isolation gate moved to [delegation-sandbox-enforcement](2026-03-22-delegation-sandbox-enforcement.md)) **Parent:** Agent Binary Management & Runtime Sandboxing
 
 ## Problem
 
@@ -293,7 +293,7 @@ pub async fn acp_agent_spawn(
 
 ## Out of Scope
 
-- Network-level sandboxing (proxy-based domain filtering) — Phase 2 of parent PRD
+- ~~Network-level sandboxing (proxy-based domain filtering)~~ — completed in [network-sandboxing](2026-03-16-network-sandboxing.md)
 - Per-file access control (sandbox is per-directory)
 - Sandboxing system-installed binaries by default
 - Batch delegation grouping in activity panel (noted for future UX improvement)
