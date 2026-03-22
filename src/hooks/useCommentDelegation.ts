@@ -5,6 +5,20 @@ import { useCommentStore, appendPartialReply, clearPartialReply, type Comment, t
 import { useChatStore } from '@/stores/chat-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useEditorStore } from '@/stores/editor-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
+
+/** Resolve the sandbox scope for a file — its containing project or explorer folder. */
+function resolveSandboxRoot(filePath: string | undefined): string | undefined {
+  if (!filePath) return undefined;
+  const ws = useWorkspaceStore.getState();
+  // Check projects first (more specific)
+  const project = ws.projects.find((p) => filePath.startsWith(p.path + '/'));
+  if (project) return project.path;
+  // Fall back to explorer folders
+  const folder = ws.explorerFolders.find((f) => filePath.startsWith(f.path + '/'));
+  if (folder) return folder.path;
+  return undefined;
+}
 
 /**
  * Encapsulates the comment -> agent delegation flow.
@@ -51,9 +65,10 @@ export function useCommentDelegation() {
         timestamp: Date.now(),
       });
 
-      // Resolve source file path for the activity strip
+      // Resolve source file path for the activity strip and sandbox scope
       const editorState = useEditorStore.getState();
       const activeTab = editorState.tabs.find((t) => t.id === editorState.activeTabId);
+      const sandboxRoot = resolveSandboxRoot(activeTab?.filePath) ?? projectRoot;
 
       try {
         const taskId = await startTask(
@@ -132,6 +147,7 @@ export function useCommentDelegation() {
             sourceFile: activeTab?.filePath,
             commentId: comment.id,
             documentId,
+            projectRoot: sandboxRoot,
             trackInActivityStore: mode === 'delegate',
           },
         );
@@ -219,6 +235,7 @@ export function useCommentDelegation() {
 
       const editorState = useEditorStore.getState();
       const activeTab = editorState.tabs.find((t) => t.id === editorState.activeTabId);
+      const sandboxRoot = resolveSandboxRoot(activeTab?.filePath) ?? projectRoot;
 
       try {
         const taskId = await startTask(
@@ -298,6 +315,7 @@ export function useCommentDelegation() {
             sourceFile: activeTab?.filePath,
             commentId: comment.id,
             documentId,
+            projectRoot: sandboxRoot,
             existingTaskId: comment.taskId,
             trackInActivityStore: mode === 'delegate',
           },

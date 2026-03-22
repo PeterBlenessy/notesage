@@ -452,6 +452,8 @@ fn run_agent_thread(
         spawn_cmd
             .current_dir(&working_directory)
             .envs(&env_vars)
+            // Prevent "nested session" detection when Notesage is launched from Claude Code
+            .env_remove("CLAUDECODE")
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())

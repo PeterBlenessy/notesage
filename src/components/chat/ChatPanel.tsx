@@ -299,7 +299,13 @@ export function ChatPanel() {
       }
     }
 
-    await sendChatMessage(expandedContent, messages, { ...(skillName ? { displayContent: content, skillName } : {}), attachedFilePaths });
+    // Comment-sourced conversations: restrict sandbox to the source project only
+    const activeConv = conversations.find((c) => c.id === activeConversationId);
+    const sandboxPaths = activeConv?.sourceCommentId && activeConv.projectPaths.length > 0
+      ? activeConv.projectPaths
+      : undefined; // undefined = all workspace folders (default)
+
+    await sendChatMessage(expandedContent, messages, { ...(skillName ? { displayContent: content, skillName } : {}), attachedFilePaths, sandboxPaths });
   };
 
   const handleNewChat = () => {

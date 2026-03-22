@@ -344,7 +344,7 @@ export function useAIOperations() {
   );
 
   const sendChatMessage = useCallback(
-    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[] }) => {
+    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[] }) => {
       // Clean up any stale listeners from a previous streaming call
       if (cleanupRef.current) {
         cleanupRef.current();

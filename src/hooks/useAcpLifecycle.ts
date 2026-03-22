@@ -125,6 +125,8 @@ export function formatAcpToolName(kind?: string, title?: string): string {
 interface AcpAgentState {
   instanceId: string;
   connectionId: string;
+  /** Serialized sandbox scope key — used to detect when agent needs respawning. */
+  sandboxScopeKey: string;
   chatSessionId: string | null;
 }
 
@@ -145,7 +147,13 @@ export function stopAcpAgent(): void {
  * if the connection changed.
  */
 async function ensureAcpAgent(connection: Connection, cwd: string, sandboxPaths?: string[]): Promise<string> {
-  if (acpAgent && acpAgent.connectionId !== connection.id) {
+  const scopeKey = (sandboxPaths ?? []).sort().join('|');
+
+  // Respawn if connection changed OR sandbox scope changed
+  if (acpAgent && (acpAgent.connectionId !== connection.id || acpAgent.sandboxScopeKey !== scopeKey)) {
+    if (acpAgent.sandboxScopeKey !== scopeKey) {
+      log.info('ai', 'Chat agent sandbox scope changed, respawning');
+    }
     try {
       await invoke('acp_agent_stop', { instanceId: acpAgent.instanceId });
     } catch {
@@ -229,6 +237,7 @@ async function ensureAcpAgent(connection: Connection, cwd: string, sandboxPaths?
   acpAgent = {
     instanceId: result.instance_id,
     connectionId: connection.id,
+    sandboxScopeKey: scopeKey,
     chatSessionId: null,
   };
   return result.instance_id;
@@ -352,7 +361,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
    * Send a chat message via ACP agent (multi-turn with permission handling).
    */
   const acpSendChatMessage = useCallback(
-    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[] }) => {
+    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[] }) => {
       // Clean up any stale listeners from a previous streaming call
       if (cleanupRef.current) {
         cleanupRef.current();
@@ -379,8 +388,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
       try {
         const cwd = selectedProjectPaths[0] || '/tmp';
-        // Chat: sandbox covers all workspace folders for instant project switching
-        const instanceId = await ensureAcpAgent(effectiveConnection, cwd, getAllWorkspacePaths());
+        // Comment-sourced chats: scope to source project only. Regular chats: all workspace folders.
+        const sandboxScope = opts?.sandboxPaths ?? getAllWorkspacePaths();
+        const instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
 
         // Block sending if a project switch is pending user decision
         const pendingSwitch = selectPendingProjectSwitch(useChatStore.getState());
@@ -573,7 +583,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
           try {
             const cwd = selectedProjectPaths[0] || '/tmp';
-            const instanceId = await ensureAcpAgent(effectiveConnection, cwd, getAllWorkspacePaths());
+            const retrySandboxScope = opts?.sandboxPaths ?? getAllWorkspacePaths();
+            const instanceId = await ensureAcpAgent(effectiveConnection, cwd, retrySandboxScope);
 
             // Need a fresh session after reconnect
             const session = await invoke<AcpSessionResult>('acp_session_new', {

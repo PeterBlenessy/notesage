@@ -9,6 +9,7 @@ import { tauriApi } from '@/lib/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { formatAcpToolName, truncateDetail } from '@/hooks/useAIOperations';
+import { log } from '@/lib/logger';
 
 // ---------------------------------------------------------------------------
 // ACP event payload types
@@ -63,6 +64,8 @@ interface AcpPermissionRequestPayload {
 interface TaskAgentState {
   instanceId: string;
   connectionId: string;
+  /** Project root the agent was spawned for (sandbox scope). */
+  projectRoot: string;
   sessionId: string | null;
 }
 
@@ -76,13 +79,26 @@ export function stopTaskAgent(): void {
 }
 
 async function ensureTaskAgent(connection: Connection, cwd: string, sandboxPaths?: string[]): Promise<string> {
-  if (taskAgent && taskAgent.connectionId !== connection.id) {
+  // Respawn if connection changed OR project changed (different sandbox scope)
+  if (taskAgent && (taskAgent.connectionId !== connection.id || taskAgent.projectRoot !== cwd)) {
+    if (taskAgent.projectRoot !== cwd) {
+      log.info('ai', `Task agent project changed (${taskAgent.projectRoot} → ${cwd}), respawning for sandbox`);
+    }
     try {
       await tauriApi.acpAgentStop(taskAgent.instanceId);
     } catch {
       // Agent may already be stopped
     }
     taskAgent = null;
+  }
+
+  // Verify the backend still has this agent (may be gone after app restart or crash)
+  if (taskAgent) {
+    const alive = await invoke<boolean>('acp_agent_exists', { instanceId: taskAgent.instanceId });
+    if (!alive) {
+      log.info('ai', `Task agent ${taskAgent.instanceId} no longer exists in backend, respawning`);
+      taskAgent = null;
+    }
   }
 
   if (taskAgent) {
@@ -140,6 +156,7 @@ async function ensureTaskAgent(connection: Connection, cwd: string, sandboxPaths
   taskAgent = {
     instanceId: result.instance_id,
     connectionId: connection.id,
+    projectRoot: cwd,
     sessionId: null,
   };
 
@@ -190,6 +207,8 @@ export interface TaskMeta {
   sourceFile?: string;
   commentId?: string;
   documentId?: string;
+  /** Project root for sandbox scope — overrides selectedProjectPaths when set. */
+  projectRoot?: string;
   /** If provided, reuse this existing activity store task instead of creating a new one. */
   existingTaskId?: string;
   /** When false, skips activity-store tracking (chat mode stays invisible to the agent panel). Default: true. */
@@ -256,7 +275,8 @@ async function startAcpTask(
 ): Promise<string> {
   const { onComplete, onActivity, onError, onChunk } = callbacks ?? {};
 
-  const cwd = selectedProjectPaths[0] || '/tmp';
+  // Use explicit projectRoot from taskMeta (delegation), fall back to chat selection
+  const cwd = taskMeta?.projectRoot ?? (selectedProjectPaths[0] || '/tmp');
   const instanceId = await ensureTaskAgent(connection, cwd);
   const session = await tauriApi.acpSessionNew(instanceId, cwd);
 
@@ -341,29 +361,15 @@ async function startAcpTask(
 
     const tc = payload.toolCall;
     const toolKind = String(tc?.kind ?? tc?.type ?? 'unknown');
-    const readOnly = ['read', 'read_file', 'glob', 'list', 'grep', 'fetch', 'web_search'];
-    if (!readOnly.includes(toolKind)) {
-      const options = Array.isArray(rawOptions)
-        ? rawOptions.map((o) => ({
-            optionId: String(o?.optionId ?? o?.id ?? ''),
-            kind: String(o?.kind ?? ''),
-            name: String(o?.name ?? ''),
-          }))
-        : [];
-      usePermissionStore.getState().addRequest({
-        id: `${payload.requestId}-${Date.now()}`,
-        instanceId,
-        sessionId: payload.sessionId,
-        requestId: payload.requestId,
-        toolKind,
-        toolTitle: String(tc?.title ?? tc?.name ?? ''),
-        toolInput: String(tc?.rawInput ?? '').slice(0, 200),
-        options,
-        timestamp: Date.now(),
-      });
-    }
-
     const toolLabel = String(tc?.title ?? tc?.name ?? toolKind);
+    const readOnly = ['read', 'read_file', 'glob', 'list', 'grep', 'fetch', 'web_search'];
+
+    // Delegation: auto-approve all tools. The OS-level sandbox is the real
+    // enforcement layer — the agent can't access files outside its scoped project.
+    // Write tools are logged in the activity panel for transparency.
+    if (!readOnly.includes(toolKind)) {
+      log.info('ai', `Delegation auto-approved write tool: ${toolLabel} (${toolKind})`);
+    }
     onActivity?.({ kind: 'permission', label: `Auto-approved: ${toolLabel}`, event: 'permission_auto_approved' });
     tauriApi.acpPermissionRespond(instanceId, payload.requestId, firstOptionId).catch(() => {});
   });
@@ -371,7 +377,13 @@ async function startAcpTask(
   const cleanup = () => { unlisten(); unlistenPermission(); };
   cleanupMap.set(taskId, cleanup);
 
-  tauriApi.acpSessionPrompt(instanceId, session.session_id, prompt)
+  // Prepend project scope instruction so the agent respects folder boundaries
+  const scopeInstruction = cwd !== '/tmp'
+    ? `<project-scope>\nYou are working in the project folder: ${cwd}\nYou MUST only read and write files within this folder. Do NOT access files outside this project. If the user asks you to access files in a different folder, explain that you are scoped to this project and suggest they move the conversation to the chat panel for broader access.\n</project-scope>\n\n`
+    : '';
+  const scopedPrompt = scopeInstruction + prompt;
+
+  tauriApi.acpSessionPrompt(instanceId, session.session_id, scopedPrompt)
     .then(() => {
       const t = tasksMap.get(taskId);
       if (t && t.status === 'running') {
