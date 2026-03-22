@@ -4,33 +4,13 @@
 
 ## Summary
 
-**7 tasks: 3 done, 1 abandoned, 3 remaining (1S, 1M, 1M)**
+**8 tasks: 2 done, 1 abandoned, 5 remaining**
 
-**Implementation order:** #1 ✅ → #2 ✅ → #3 ~~abandoned~~ → #4 ✅ → #5 ✅ → #6 (new) → #7 (new) → #8 (verification)
+**Implementation order:** #1 → #2 → #3 ~~abandoned~~ → #4 → #5 → #6 ✅ → #7 → #8 (verification)
 
 ---
 
 ## Completed Tasks
-
-### 1. Add `projectRoot` to `TaskAgentState` and respawn on project change ✅
-
-**Complexity:** S | **Category:** frontend
-
-Task agent tracks `projectRoot`, respawns when project changes. Added `acp_agent_exists` health check.
-
-**Files:** `src/hooks/useAgentTaskOperations.ts`
-
----
-
-### 2. Thread `projectRoot` from delegation to task agent ✅
-
-**Complexity:** M | **Category:** frontend
-
-Added `projectRoot` to `TaskMeta`. Delegation uses document's actual project root via `resolveSandboxRoot()`. Explorer folder files resolved by checking projects then explorer folders.
-
-**Files:** `src/hooks/useAgentTaskOperations.ts`, `src/hooks/useCommentDelegation.ts`
-
----
 
 ### ~~3. Fix auto-approve bypassing write permission check~~ — ABANDONED
 
@@ -38,19 +18,53 @@ Added `projectRoot` to `TaskMeta`. Delegation uses document's actual project roo
 
 ---
 
-### 4. Explorer folder sandbox scope ✅
+### 6. Create path filter utility ✅
 
-**Complexity:** S | **Category:** frontend
+**Complexity:** S | **Category:** frontend | **Dependencies:** None
 
-Resolved via `resolveSandboxRoot()` in task #2. Checks projects first, then explorer folders.
+Created `src/lib/ai/path-filter.ts` with 4 exported functions. 52 unit tests in `src/lib/ai/__tests__/path-filter.test.ts`.
+
+**Files:** `src/lib/ai/path-filter.ts`, `src/lib/ai/__tests__/path-filter.test.ts`
 
 ---
 
-### 5. Comment-to-chat inherits project scope ✅
+## Reverted Tasks (were implemented, then reverted in `0a11c2e` — caused agent hang)
+
+These were implemented and marked done, but reverted because they caused the comment chat/delegation to hang. Root cause was initially thought to be the scope instruction (removed in `b21a813`), but the hang persists even without it. **Root cause still TBD.**
+
+### 1. Add `projectRoot` to `TaskAgentState` and respawn on project change — REVERTED
+
+**Complexity:** S | **Category:** frontend
+
+Added `projectRoot` to `TaskAgentState`, respawn when project changes. Reverted because delegation hangs when these changes are applied.
+
+**Files:** `src/hooks/useAgentTaskOperations.ts`
+
+---
+
+### 2. Thread `projectRoot` from delegation to task agent — REVERTED
+
+**Complexity:** M | **Category:** frontend
+
+Added `projectRoot` to `TaskMeta`, `resolveSandboxRoot()` in `useCommentDelegation.ts`. Reverted alongside #1.
+
+**Files:** `src/hooks/useAgentTaskOperations.ts`, `src/hooks/useCommentDelegation.ts`
+
+---
+
+### 4. Explorer folder sandbox scope — REVERTED
+
+**Complexity:** S | **Category:** frontend
+
+Was resolved via `resolveSandboxRoot()` in task #2. Reverted alongside #1/#2.
+
+---
+
+### 5. Comment-to-chat inherits project scope — UNVERIFIED
 
 **Complexity:** L | **Category:** frontend
 
-Chat agent tracks `sandboxScopeKey`, respawns when scope changes. `ChatPanel` detects `sourceCommentId` and passes restricted `projectPaths`.
+Chat agent tracks `sandboxScopeKey`, respawns when scope changes. `ChatPanel` detects `sourceCommentId` and passes restricted `projectPaths`. This code is still in the codebase (was NOT reverted) but has never been verified to work because the delegation side (#1/#2) isn't wired.
 
 **Files:** `src/hooks/useAcpLifecycle.ts`, `src/components/chat/ChatPanel.tsx`
 
@@ -58,81 +72,31 @@ Chat agent tracks `sandboxScopeKey`, respawns when scope changes. `ChatPanel` de
 
 ## Remaining Tasks
 
-### 6. Create path filter utility
-
-**Complexity:** S | **Category:** frontend | **Dependencies:** None
-
-Create `src/lib/ai/path-filter.ts` with:
-
-- `extractPathsFromStructuredInput(rawInput: string): string[]` — parse JSON tool input for `file_path`, `path`, `directory`, `cwd`, `paths` fields
-- `extractAbsolutePathsFromCommand(command: string): string[]` — regex scan for absolute paths in shell commands
-- `isPathAllowed(path: string, projectRoot: string, homeDir: string): boolean` — check against project root, system prefixes, agent config dirs
-- `isToolCallAllowed(toolKind: string, rawInput: string, projectRoot: string): { allowed: boolean; deniedPath?: string }` — combines extraction + validation based on tool kind
-
-**Acceptance criteria:**
-
-- Structured input: extracts paths from JSON fields
-- Terminal commands: finds `/absolute/paths` in command strings
-- System paths (`/usr`, `/tmp`, `/opt`, etc.) always allowed
-- Agent config paths (`~/.claude`, `~/.config`, etc.) always allowed
-- Project root and children always allowed
-- Other user paths denied, with the denied path returned for logging
-
-**Files:**
-
-- Create: `src/lib/ai/path-filter.ts`
-
----
-
 ### 7. Wire path filter into permission handlers
 
-**Complexity:** M | **Category:** frontend | **Dependencies:** #6
+**Complexity:** M | **Category:** frontend | **Dependencies:** #1, #2, #6
 
-**In** `useAgentTaskOperations.ts`**:**
+**Blocked by:** Tasks #1/#2 must be re-applied first. The path filter checks `cwd` which currently comes from the chat footer selection (wrong). When #1/#2 are applied, `cwd` comes from the document's actual project root (correct), and the path filter can enforce boundaries.
 
-Replace the unconditional auto-approve in the permission handler with path-filtered logic:
+The path filter code (`src/lib/ai/path-filter.ts`) is ready. The wiring was written but reverted along with #1/#2 because they share the same files and the hang makes them untestable.
 
-```typescript
-const cwd = ...; // already available from startAcpTask
-const rawInput = String(tc?.rawInput ?? '');
+**What needs to happen:**
 
-if (cwd && cwd !== '/tmp') {
-  const result = isToolCallAllowed(toolKind, rawInput, cwd);
-  if (!result.allowed) {
-    log.info('ai', `Tool call denied: ${toolLabel} targets ${result.deniedPath} outside project ${cwd}`);
-    onActivity?.({ kind: 'denied', label: `Denied: ${toolLabel} — outside project scope`, event: 'tool_call' });
-    tauriApi.acpPermissionRespond(instanceId, payload.requestId, null).catch(() => {});
-    return;
-  }
-}
-// Auto-approve
-onActivity?.({ kind: 'permission', label: `Auto-approved: ${toolLabel}`, event: 'permission_auto_approved' });
-tauriApi.acpPermissionRespond(instanceId, payload.requestId, firstOptionId).catch(() => {});
-```
-
-**In** `useAcpLifecycle.ts`**:**
-
-For comment-to-chat conversations (where `sandboxPaths` is set), apply the same path filtering in the chat panel's permission handler. Need to thread the project root to the permission handler scope.
-
-**Acceptance criteria:**
-
-- Delegation: tool call to other project → denied with activity entry
-- Delegation: tool call within project → auto-approved
-- Delegation: system path tool call → auto-approved
-- Comment-to-chat: same filtering applied
-- Regular chat: no filtering (no project root restriction)
-- Denied tool calls logged at info level
+1. Investigate and fix the root cause of the agent hang when #1/#2 are applied
+2. Re-apply #1/#2 with the fix
+3. Re-apply the path filter wiring (import `isToolCallAllowed`, add to permission handlers)
 
 **Files:**
 
 - Modify: `src/hooks/useAgentTaskOperations.ts`
 - Modify: `src/hooks/useAcpLifecycle.ts`
+- Modify: `src/hooks/useCommentDelegation.ts`
 
 ---
 
 ### 8. Manual verification
 
-**Complexity:** M | **Category:** frontend | **Dependencies:** #6, #7
+**Complexity:** M | **Category:** frontend | **Dependencies:** #1, #2, #7
 
 Test each quality gate from the PRD:
 

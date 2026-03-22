@@ -356,7 +356,11 @@ export function useCommentDelegation() {
       }
 
       const mode = s.delegationModeByComment[comment.id];
-      s.setCommentStatus(documentId, comment.id, 'open');
+      // If comment already has replies, set to 'done' so the reply input reappears.
+      // Setting to 'open' hides the reply input (it requires status === 'done').
+      const freshComment = s.commentsByDocument[documentId]?.find((c) => c.id === comment.id);
+      const hasReplies = (freshComment?.replies?.length ?? comment.replies?.length ?? 0) > 0;
+      s.setCommentStatus(documentId, comment.id, hasReplies ? 'done' : 'open');
       s.clearDelegationMode(comment.id);
       await s.saveComments(documentId, projectRoot);
       if (mode === 'chat') {

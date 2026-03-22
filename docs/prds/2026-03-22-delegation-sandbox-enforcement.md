@@ -1,6 +1,6 @@
 # Delegation Sandbox Enforcement
 
-**Date:** 2026-03-22 **Status:** In Progress — soft enforcement done, tool call path filtering next
+**Date:** 2026-03-22 **Status:** In Progress — path filter utility done, projectRoot threading causes agent hang (root cause TBD)
 
 ## Prior work
 
