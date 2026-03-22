@@ -88,7 +88,6 @@ export function ChatPanel() {
   const { sendChatMessage, cancelChat } = useAIOperations();
   const { contextItems, attachedFilePaths, dismissItem } = useChatContext();
   const permissionRequests = usePermissionStore((s) => s.requests);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const [providerOpen, setProviderOpen] = useState(false);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
@@ -165,45 +164,40 @@ export function ChatPanel() {
   }, [goalFiles.length, selectedProjectPaths.length]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  // Track whether auto-scroll is active (user hasn't scrolled up)
   const autoScrollRef = useRef(true);
 
-  // Detect manual scroll: if user scrolls away from bottom, disable auto-scroll.
-  // Re-enable when they scroll back near the bottom.
-  const handleScroll = useCallback(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    autoScrollRef.current = distanceFromBottom < 80;
+  const scrollToEnd = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, []);
 
-  const forceScrollToBottom = useCallback(() => {
-    autoScrollRef.current = true;
-    requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
-    });
+  // Detect manual scroll: disable auto-scroll when user scrolls up
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    autoScrollRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   }, []);
 
   // Scroll to bottom when conversation changes (open from history, app refresh)
   useEffect(() => {
-    forceScrollToBottom();
-  }, [activeConversationId, forceScrollToBottom]);
+    autoScrollRef.current = true;
+    requestAnimationFrame(scrollToEnd);
+  }, [activeConversationId, scrollToEnd]);
 
   // Force scroll when user sends a message
   const wasLoadingRef = useRef(false);
   useEffect(() => {
     if (isLoading && !wasLoadingRef.current) {
-      forceScrollToBottom();
+      autoScrollRef.current = true;
+      requestAnimationFrame(scrollToEnd);
     }
     wasLoadingRef.current = isLoading;
-  }, [isLoading, forceScrollToBottom]);
+  }, [isLoading, scrollToEnd]);
 
-  // Auto-scroll on new content (streaming chunks, new messages) — only if not manually scrolled up
+  // Auto-scroll on new content (streaming, new messages)
   useEffect(() => {
-    if (autoScrollRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
-    }
-  }, [messages, permissionRequests.length, domainRequests.length]);
+    if (autoScrollRef.current) scrollToEnd();
+  }, [messages, permissionRequests.length, domainRequests.length, scrollToEnd]);
 
   // Listen for network domain approval requests from the proxy
   useEffect(() => {
@@ -627,7 +621,6 @@ export function ChatPanel() {
             )}
           </>
         )}
-        <div ref={messagesEndRef} />
       </div>
 
       <div className="border-t border-border px-3 py-3">
