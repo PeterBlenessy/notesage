@@ -267,7 +267,7 @@ pub async fn acp_agent_spawn(
 
 - [x] Delegation: agent can only write to document's parent project folder
 
-- [ ] Delegation: agent cannot read files in other project folders (verify with tool call) — code in place, needs manual verification
+- [ ] Delegation: agent cannot read files in other project folders — Seatbelt read restrictions abandoned (breaks agents). Enforcement moved to tool call path filtering, see [delegation-sandbox-enforcement](2026-03-22-delegation-sandbox-enforcement.md) tasks #6–#8.
 
 - [x] Sensitive dirs always blocked: `~/.ssh`, `~/.aws`, `~/.gnupg`, `.env`
 
