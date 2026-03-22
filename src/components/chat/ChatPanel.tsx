@@ -165,38 +165,45 @@ export function ChatPanel() {
   }, [goalFiles.length, selectedProjectPaths.length]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const scrollToBottom = useCallback(() => {
+  // Track whether auto-scroll is active (user hasn't scrolled up)
+  const autoScrollRef = useRef(true);
+
+  // Detect manual scroll: if user scrolls away from bottom, disable auto-scroll.
+  // Re-enable when they scroll back near the bottom.
+  const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    // Only auto-scroll if the user is near the bottom (within 150px)
-    // This avoids yanking the scroll position when the user is reading history
     const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    if (distanceFromBottom < 150) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
-    }
+    autoScrollRef.current = distanceFromBottom < 80;
   }, []);
 
-  // Force scroll to bottom when conversation changes (open from history, app refresh)
-  useEffect(() => {
+  const forceScrollToBottom = useCallback(() => {
+    autoScrollRef.current = true;
     requestAnimationFrame(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
     });
-  }, [activeConversationId]);
+  }, []);
 
-  // Force scroll on new messages from the user (isLoading just turned on)
+  // Scroll to bottom when conversation changes (open from history, app refresh)
+  useEffect(() => {
+    forceScrollToBottom();
+  }, [activeConversationId, forceScrollToBottom]);
+
+  // Force scroll when user sends a message
   const wasLoadingRef = useRef(false);
   useEffect(() => {
     if (isLoading && !wasLoadingRef.current) {
-      requestAnimationFrame(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
-      });
+      forceScrollToBottom();
     }
     wasLoadingRef.current = isLoading;
-  }, [isLoading]);
+  }, [isLoading, forceScrollToBottom]);
 
+  // Auto-scroll on new content (streaming chunks, new messages) — only if not manually scrolled up
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, permissionRequests.length, domainRequests.length, scrollToBottom]);
+    if (autoScrollRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+    }
+  }, [messages, permissionRequests.length, domainRequests.length]);
 
   // Listen for network domain approval requests from the proxy
   useEffect(() => {
@@ -528,7 +535,7 @@ export function ChatPanel() {
         </div>
       )}
 
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-3 py-4">
+      <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 py-4">
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm text-center">
             <div>
