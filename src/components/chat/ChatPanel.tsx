@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe, Plus, MessageSquare, History, Clock, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentIcon } from '@/components/AgentIcon';
@@ -164,13 +164,33 @@ export function ChatPanel() {
     return 'Ask anything...';
   }, [goalFiles.length, selectedProjectPaths.length]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollToBottom = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    // Only auto-scroll if the user is near the bottom (within 150px)
+    // This avoids yanking the scroll position when the user is reading history
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distanceFromBottom < 150) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+    }
+  }, []);
+
+  // Force scroll on new messages from the user (isLoading just turned on)
+  const wasLoadingRef = useRef(false);
+  useEffect(() => {
+    if (isLoading && !wasLoadingRef.current) {
+      // User just sent a message — always scroll to show it
+      requestAnimationFrame(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+      });
+    }
+    wasLoadingRef.current = isLoading;
+  }, [isLoading]);
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, permissionRequests.length, domainRequests.length]);
+  }, [messages, permissionRequests.length, domainRequests.length, scrollToBottom]);
 
   // Listen for network domain approval requests from the proxy
   useEffect(() => {
@@ -502,7 +522,7 @@ export function ChatPanel() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-3 py-4">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-3 py-4">
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm text-center">
             <div>
