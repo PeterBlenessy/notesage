@@ -196,7 +196,7 @@ export function ChatPanel() {
 
   // Auto-scroll on new content (streaming, new messages)
   useEffect(() => {
-    if (autoScrollRef.current) scrollToEnd();
+    if (autoScrollRef.current) requestAnimationFrame(scrollToEnd);
   }, [messages, permissionRequests.length, domainRequests.length, scrollToEnd]);
 
   // Listen for network domain approval requests from the proxy
