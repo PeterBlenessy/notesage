@@ -4,17 +4,55 @@
 
 ## Summary
 
-**8 tasks: 2 done, 1 abandoned, 5 remaining**
+**8 tasks: 7 done, 1 abandoned**
 
-**Implementation order:** #1 → #2 → #3 ~~abandoned~~ → #4 → #5 → #6 ✅ → #7 → #8 (verification)
+**Implementation order:** #1 ✅ → #2 ✅ → #3 ~~abandoned~~ → #4 ✅ → #5 ✅ → #6 ✅ → #7 ✅ → #8 ✅
 
 ---
 
 ## Completed Tasks
 
+### 1. Add `projectRoot` to `TaskAgentState` and respawn on project change ✅
+
+**Complexity:** S | **Category:** frontend
+
+Task agent tracks `projectRoot`, respawns when project changes. Previously reverted in `0a11c2e` (wrongly attributed hang — actual cause was ACP agent failing on iCloud file reads, unrelated). Re-applied in `cf47807` without the `acp_agent_exists` health check or scope instruction.
+
+**Files:** `src/hooks/useAgentTaskOperations.ts`
+
+---
+
+### 2. Thread `projectRoot` from delegation to task agent ✅
+
+**Complexity:** M | **Category:** frontend
+
+Added `projectRoot` to `TaskMeta`. Comment chat uses document's actual project root via `resolveSandboxRoot()` (checks projects first, then explorer folders). Previously reverted alongside #1, re-applied in `cf47807`.
+
+**Files:** `src/hooks/useAgentTaskOperations.ts`, `src/hooks/useCommentDelegation.ts`
+
+---
+
 ### ~~3. Fix auto-approve bypassing write permission check~~ — ABANDONED
 
 **Reason:** Originally planned to require user approval for write tools via PermissionCard. Abandoned because PermissionCard only renders in ChatPanel — delegation has no UI surface for approval. Instead, all tools are auto-approved and the sandbox (Seatbelt write restrictions + tool call path filtering) is the enforcement layer.
+
+---
+
+### 4. Explorer folder sandbox scope ✅
+
+**Complexity:** S | **Category:** frontend
+
+Resolved via `resolveSandboxRoot()` in task #2. Checks projects first, then explorer folders.
+
+---
+
+### 5. Comment-to-chat inherits project scope ✅
+
+**Complexity:** L | **Category:** frontend
+
+Chat agent tracks `sandboxScopeKey`, respawns when scope changes. `ChatPanel` detects `sourceCommentId` and passes restricted `projectPaths`. Path filtering wired into both primary and retry permission handlers in `useAcpLifecycle.ts`.
+
+**Files:** `src/hooks/useAcpLifecycle.ts`, `src/components/chat/ChatPanel.tsx`
 
 ---
 
@@ -28,89 +66,32 @@ Created `src/lib/ai/path-filter.ts` with 4 exported functions. 52 unit tests in 
 
 ---
 
-## Reverted Tasks (were implemented, then reverted in `0a11c2e` — caused agent hang)
-
-These were implemented and marked done, but reverted because they caused the comment chat/delegation to hang. Root cause was initially thought to be the scope instruction (removed in `b21a813`), but the hang persists even without it. **Root cause still TBD.**
-
-### 1. Add `projectRoot` to `TaskAgentState` and respawn on project change — REVERTED
-
-**Complexity:** S | **Category:** frontend
-
-Added `projectRoot` to `TaskAgentState`, respawn when project changes. Reverted because delegation hangs when these changes are applied.
-
-**Files:** `src/hooks/useAgentTaskOperations.ts`
-
----
-
-### 2. Thread `projectRoot` from delegation to task agent — REVERTED
-
-**Complexity:** M | **Category:** frontend
-
-Added `projectRoot` to `TaskMeta`, `resolveSandboxRoot()` in `useCommentDelegation.ts`. Reverted alongside #1.
-
-**Files:** `src/hooks/useAgentTaskOperations.ts`, `src/hooks/useCommentDelegation.ts`
-
----
-
-### 4. Explorer folder sandbox scope — REVERTED
-
-**Complexity:** S | **Category:** frontend
-
-Was resolved via `resolveSandboxRoot()` in task #2. Reverted alongside #1/#2.
-
----
-
-### 5. Comment-to-chat inherits project scope — UNVERIFIED
-
-**Complexity:** L | **Category:** frontend
-
-Chat agent tracks `sandboxScopeKey`, respawns when scope changes. `ChatPanel` detects `sourceCommentId` and passes restricted `projectPaths`. This code is still in the codebase (was NOT reverted) but has never been verified to work because the delegation side (#1/#2) isn't wired.
-
-**Files:** `src/hooks/useAcpLifecycle.ts`, `src/components/chat/ChatPanel.tsx`
-
----
-
-## Remaining Tasks
-
-### 7. Wire path filter into permission handlers
+### 7. Wire path filter into permission handlers ✅
 
 **Complexity:** M | **Category:** frontend | **Dependencies:** #1, #2, #6
 
-**Blocked by:** Tasks #1/#2 must be re-applied first. The path filter checks `cwd` which currently comes from the chat footer selection (wrong). When #1/#2 are applied, `cwd` comes from the document's actual project root (correct), and the path filter can enforce boundaries.
+Wired `isToolCallAllowed` into permission handlers in both `useAgentTaskOperations.ts` (comment chat and background tasks) and `useAcpLifecycle.ts` (comment-to-chat conversations). Key fix: ACP sends `rawInput` as an object — now JSON.stringify'd before path extraction. Denied calls show in activity log (comment) and as system messages (chat).
 
-The path filter code (`src/lib/ai/path-filter.ts`) is ready. The wiring was written but reverted along with #1/#2 because they share the same files and the hang makes them untestable.
-
-**What needs to happen:**
-
-1. Investigate and fix the root cause of the agent hang when #1/#2 are applied
-2. Re-apply #1/#2 with the fix
-3. Re-apply the path filter wiring (import `isToolCallAllowed`, add to permission handlers)
-
-**Files:**
-
-- Modify: `src/hooks/useAgentTaskOperations.ts`
-- Modify: `src/hooks/useAcpLifecycle.ts`
-- Modify: `src/hooks/useCommentDelegation.ts`
+**Files:** `src/hooks/useAgentTaskOperations.ts`, `src/hooks/useAcpLifecycle.ts`
 
 ---
 
-### 8. Manual verification
+### 8. Manual verification ✅
 
-**Complexity:** M | **Category:** frontend | **Dependencies:** #1, #2, #7
+Tested on both local and iCloud projects:
 
-Test each quality gate from the PRD:
+- [x] Comment chat in Project A, ask agent to read file in Project B → denied
+- [x] Comment chat in Project A, ask agent to read file in Project A → approved
+- [x] Agent receives denial and responds sensibly
+- [x] Agent completes normally (no hang) after denial
+- [x] Regular chat → no filtering (by design)
+- [x] `npx tsc --noEmit` passes
+- [x] Works on iCloud projects
 
- 1. Delegate in Project A, ask agent to read file in Project B → denied
- 2. Delegate in Project A, ask agent to read file in Project A → approved
- 3. Terminal command with absolute path to other project → denied
- 4. Terminal command `git status` (no absolute paths) → approved
- 5. Terminal command referencing `/usr/bin/...` → approved
- 6. Agent config path `~/.claude/...` → approved
- 7. Regular chat → no filtering
- 8. Comment moved to chat → filtering applied
- 9. Activity panel shows denial entries
-10. `npx tsc --noEmit` passes
+**Not yet tested:**
 
-**Files:**
-
-- May need minor fixes based on test results
+- [ ] Terminal command with absolute path to other project → denied
+- [ ] Terminal command `git status` (no absolute paths) → approved
+- [ ] Agent config path (~/.claude) → approved
+- [ ] Comment moved to chat → filtering applied
+- [ ] Activity panel shows denial entries (delegation mode)

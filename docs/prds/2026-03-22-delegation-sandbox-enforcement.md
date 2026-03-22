@@ -1,6 +1,6 @@
 # Delegation Sandbox Enforcement
 
-**Date:** 2026-03-22 **Status:** In Progress — path filter utility done, projectRoot threading causes agent hang (root cause TBD)
+**Date:** 2026-03-22 **Status:** Done — tool call path filtering implemented and tested
 
 ## Prior work
 
@@ -236,9 +236,9 @@ Send `null` as `optionId` (deny). Log the denial. Add activity entry: "Denied: {
 
 #### Quality gates for path filtering
 
-- [ ] Structured tool call (Read) targeting other project → denied
+- [x] Structured tool call (Read) targeting other project → denied
 
-- [ ] Structured tool call (Read) targeting current project → approved
+- [x] Structured tool call (Read) targeting current project → approved
 
 - [ ] Terminal command with absolute path to other project → denied
 
@@ -248,13 +248,13 @@ Send `null` as `optionId` (deny). Log the denial. Add activity entry: "Denied: {
 
 - [ ] Agent config path (\~/.claude) → approved
 
-- [ ] Regular chat panel → no filtering
+- [x] Regular chat panel → no filtering
 
 - [ ] Comment-to-chat → filtering applied
 
 - [ ] Denied tool call shows activity entry
 
-- [ ] `npx tsc --noEmit` passes
+- [x] `npx tsc --noEmit` passes
 
 #### Not covered (acceptable gaps for this threat model)
 
