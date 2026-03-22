@@ -9,6 +9,17 @@ import { tauriApi } from '@/lib/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { formatAcpToolName, truncateDetail } from '@/hooks/useAIOperations';
+import { isToolCallAllowed } from '@/lib/ai/path-filter';
+import { log } from '@/lib/logger';
+
+// Lazy-resolved home directory for path filtering
+let _homeDir: string | null = null;
+async function getHomeDir(): Promise<string> {
+  if (!_homeDir) {
+    _homeDir = await tauriApi.getHomeDir();
+  }
+  return _homeDir;
+}
 
 // ---------------------------------------------------------------------------
 // ACP event payload types
@@ -63,6 +74,8 @@ interface AcpPermissionRequestPayload {
 interface TaskAgentState {
   instanceId: string;
   connectionId: string;
+  /** Project root the agent was spawned for (sandbox scope). */
+  projectRoot: string;
   sessionId: string | null;
 }
 
@@ -76,7 +89,8 @@ export function stopTaskAgent(): void {
 }
 
 async function ensureTaskAgent(connection: Connection, cwd: string, sandboxPaths?: string[]): Promise<string> {
-  if (taskAgent && taskAgent.connectionId !== connection.id) {
+  // Respawn if connection changed OR project changed (different sandbox scope)
+  if (taskAgent && (taskAgent.connectionId !== connection.id || taskAgent.projectRoot !== cwd)) {
     try {
       await tauriApi.acpAgentStop(taskAgent.instanceId);
     } catch {
@@ -140,6 +154,7 @@ async function ensureTaskAgent(connection: Connection, cwd: string, sandboxPaths
   taskAgent = {
     instanceId: result.instance_id,
     connectionId: connection.id,
+    projectRoot: cwd,
     sessionId: null,
   };
 
@@ -174,7 +189,7 @@ export interface TaskActivityEvent {
   kind: string;
   label: string;
   detail?: string;
-  event: 'tool_call' | 'tool_result' | 'agent_responding' | 'agent_complete' | 'permission_auto_approved';
+  event: 'tool_call' | 'tool_result' | 'agent_responding' | 'agent_complete' | 'permission_auto_approved' | 'tool_denied';
 }
 
 export interface TaskCallbacks {
@@ -190,6 +205,8 @@ export interface TaskMeta {
   sourceFile?: string;
   commentId?: string;
   documentId?: string;
+  /** Project root for sandbox scope — overrides selectedProjectPaths when set. */
+  projectRoot?: string;
   /** If provided, reuse this existing activity store task instead of creating a new one. */
   existingTaskId?: string;
   /** When false, skips activity-store tracking (chat mode stays invisible to the agent panel). Default: true. */
@@ -256,7 +273,8 @@ async function startAcpTask(
 ): Promise<string> {
   const { onComplete, onActivity, onError, onChunk } = callbacks ?? {};
 
-  const cwd = selectedProjectPaths[0] || '/tmp';
+  // Use explicit projectRoot from taskMeta (delegation/chat), fall back to chat selection
+  const cwd = taskMeta?.projectRoot ?? (selectedProjectPaths[0] || '/tmp');
   const instanceId = await ensureTaskAgent(connection, cwd);
   const session = await tauriApi.acpSessionNew(instanceId, cwd);
 
@@ -329,6 +347,9 @@ async function startAcpTask(
     }
   });
 
+  // Resolve home dir once for path filtering in this task
+  const homeDir = await getHomeDir();
+
   const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
     if (event.payload.instanceId !== instanceId) return;
     const payload = event.payload;
@@ -341,29 +362,29 @@ async function startAcpTask(
 
     const tc = payload.toolCall;
     const toolKind = String(tc?.kind ?? tc?.type ?? 'unknown');
-    const readOnly = ['read', 'read_file', 'glob', 'list', 'grep', 'fetch', 'web_search'];
-    if (!readOnly.includes(toolKind)) {
-      const options = Array.isArray(rawOptions)
-        ? rawOptions.map((o) => ({
-            optionId: String(o?.optionId ?? o?.id ?? ''),
-            kind: String(o?.kind ?? ''),
-            name: String(o?.name ?? ''),
-          }))
-        : [];
-      usePermissionStore.getState().addRequest({
-        id: `${payload.requestId}-${Date.now()}`,
-        instanceId,
-        sessionId: payload.sessionId,
-        requestId: payload.requestId,
-        toolKind,
-        toolTitle: String(tc?.title ?? tc?.name ?? ''),
-        toolInput: String(tc?.rawInput ?? '').slice(0, 200),
-        options,
-        timestamp: Date.now(),
-      });
+    const toolLabel = String(tc?.title ?? tc?.name ?? toolKind);
+    const rawInput = typeof tc?.rawInput === 'string' ? tc.rawInput : JSON.stringify(tc?.rawInput ?? '');
+
+    // Path filtering: deny tool calls targeting paths outside the project
+    if (cwd && cwd !== '/tmp') {
+      const result = isToolCallAllowed(toolKind, rawInput, cwd, homeDir);
+      if (!result.allowed) {
+        log.info('ai', `Tool call denied: ${toolLabel} targets ${result.deniedPath} outside project ${cwd}`);
+        onActivity?.({ kind: 'denied', label: `Denied: ${toolLabel} — outside project scope`, detail: result.deniedPath, event: 'tool_denied' });
+        if (track) {
+          useActivityStore.getState().appendActivity(taskId, {
+            label: `Denied: ${toolLabel} — outside project scope`,
+            detail: result.deniedPath,
+            status: 'error',
+            timestamp: Date.now(),
+          });
+        }
+        tauriApi.acpPermissionRespond(instanceId, payload.requestId, null).catch(() => {});
+        return;
+      }
     }
 
-    const toolLabel = String(tc?.title ?? tc?.name ?? toolKind);
+    // Auto-approve — sandbox is the enforcement layer
     onActivity?.({ kind: 'permission', label: `Auto-approved: ${toolLabel}`, event: 'permission_auto_approved' });
     tauriApi.acpPermissionRespond(instanceId, payload.requestId, firstOptionId).catch(() => {});
   });

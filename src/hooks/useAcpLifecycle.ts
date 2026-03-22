@@ -8,6 +8,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { log } from '@/lib/logger';
 import { isAcpConnectionError, friendlyAcpError } from '@/lib/ai/errors';
+import { isToolCallAllowed } from '@/lib/ai/path-filter';
+import { tauriApi } from '@/lib/tauri';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 
 /** Get all workspace folder paths (projects + explorer folders) for sandbox scope */
@@ -386,6 +388,10 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         connectionProvider: effectiveConnection.provider,
       });
 
+      // Path filtering: resolve once, available in both try and catch (retry) blocks
+      const pathFilterRoot = opts?.sandboxPaths ? (selectedProjectPaths[0] || null) : null;
+      const homeDir = pathFilterRoot ? await tauriApi.getHomeDir() : '';
+
       try {
         const cwd = selectedProjectPaths[0] || '/tmp';
         // Comment-sourced chats: scope to source project only. Regular chats: all workspace folders.
@@ -494,6 +500,21 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           if (Array.isArray(rawOptions) && rawOptions.length > 0) {
             const opt = rawOptions[0] as Record<string, unknown>;
             firstOptionId = typeof opt === 'string' ? opt : String(opt?.optionId ?? opt?.id ?? '');
+          }
+
+          // Path filtering for comment-sourced chats: deny tool calls outside project scope
+          if (pathFilterRoot) {
+            const filterResult = isToolCallAllowed(toolInfo.kind, toolInfo.input, pathFilterRoot, homeDir);
+            if (!filterResult.allowed) {
+              log.info('ai', `Chat tool call denied: ${toolInfo.title} targets ${filterResult.deniedPath} outside project ${pathFilterRoot}`);
+              addMessage({
+                role: 'system',
+                content: `Tool call denied: **${toolInfo.title}** — targets path outside project scope (\`${filterResult.deniedPath}\`)`,
+                timestamp: Date.now(),
+              });
+              invoke('acp_permission_respond', { instanceId, requestId: payload.requestId, optionId: null }).catch(() => {});
+              return;
+            }
           }
 
           if (usePermissionStore.getState().isAutoAllowed(toolInfo.kind)) {
@@ -655,6 +676,22 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
                 const opt = rawOptions[0] as Record<string, unknown>;
                 firstOptionId = typeof opt === 'string' ? opt : String(opt?.optionId ?? opt?.id ?? '');
               }
+
+              // Path filtering for comment-sourced chats (same as primary handler)
+              if (pathFilterRoot) {
+                const filterResult = isToolCallAllowed(toolInfo.kind, toolInfo.input, pathFilterRoot, homeDir);
+                if (!filterResult.allowed) {
+                  log.info('ai', `Chat tool call denied (retry): ${toolInfo.title} targets ${filterResult.deniedPath} outside project ${pathFilterRoot}`);
+                  addMessage({
+                    role: 'system',
+                    content: `Tool call denied: **${toolInfo.title}** — targets path outside project scope (\`${filterResult.deniedPath}\`)`,
+                    timestamp: Date.now(),
+                  });
+                  invoke('acp_permission_respond', { instanceId, requestId: payload.requestId, optionId: null }).catch(() => {});
+                  return;
+                }
+              }
+
               if (usePermissionStore.getState().isAutoAllowed(toolInfo.kind)) {
                 invoke('acp_permission_respond', { instanceId, requestId: payload.requestId, optionId: firstOptionId }).catch(() => {});
               } else {
