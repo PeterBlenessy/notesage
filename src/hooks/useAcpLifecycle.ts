@@ -7,7 +7,7 @@ import { setAgentModels, PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { log } from '@/lib/logger';
-import { friendlyAIError } from '@/lib/ai/errors';
+import { isAcpConnectionError, friendlyAcpError } from '@/lib/ai/errors';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 
 /** Get all workspace folder paths (projects + explorer folders) for sandbox scope */
@@ -154,6 +154,15 @@ async function ensureAcpAgent(connection: Connection, cwd: string, sandboxPaths?
     acpAgent = null;
   }
 
+  // Verify the backend still has this agent (may be gone after app restart or crash)
+  if (acpAgent) {
+    const alive = await invoke<boolean>('acp_agent_exists', { instanceId: acpAgent.instanceId });
+    if (!alive) {
+      log.info('ai', `ACP agent ${acpAgent.instanceId} no longer exists in backend, respawning`);
+      acpAgent = null;
+    }
+  }
+
   if (acpAgent) {
     return acpAgent.instanceId;
   }
@@ -265,66 +274,75 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     async (prompt: string): Promise<string> => {
       if (!effectiveConnection) throw new Error('No ACP connection');
 
-      const cwd = selectedProjectPaths[0] || '/tmp';
-      let instanceId: string;
-      try {
-        // Inline actions: sandbox to the document's parent folder only
+      const attemptGenerate = async (): Promise<string> => {
+        const cwd = selectedProjectPaths[0] || '/tmp';
         const inlineSandboxPaths = cwd !== '/tmp' ? [cwd] : [];
-        instanceId = await ensureAcpAgent(effectiveConnection, cwd, inlineSandboxPaths);
-      } catch (error) {
-        stopAcpAgent();
-        throw error;
-      }
+        const instanceId = await ensureAcpAgent(effectiveConnection, cwd, inlineSandboxPaths);
 
-      // Fresh session per inline action (no multi-turn)
-      const session = await invoke<AcpSessionResult>('acp_session_new', {
-        instanceId,
-        workingDirectory: cwd,
-      });
-
-      let result = '';
-      const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
-        if (event.payload.instanceId !== instanceId) return;
-        const { update } = event.payload;
-        if (
-          update.sessionUpdate === 'agent_message_chunk' &&
-          update.content?.type === 'text' &&
-          update.content.text
-        ) {
-          result += update.content.text;
-        }
-      });
-
-      // Auto-approve permission requests for inline actions
-      const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
-        if (event.payload.instanceId !== instanceId) return;
-        const payload = event.payload;
-        let firstOptionId: string | null = null;
-        if (Array.isArray(payload.options) && payload.options.length > 0) {
-          const opt = payload.options[0] as Record<string, unknown>;
-          firstOptionId = typeof opt === 'string' ? opt : String(opt?.id ?? '');
-        }
-        invoke('acp_permission_respond', {
+        const session = await invoke<AcpSessionResult>('acp_session_new', {
           instanceId,
-          requestId: payload.requestId,
-          optionId: firstOptionId,
-        }).catch(() => {});
-      });
+          workingDirectory: cwd,
+        });
+
+        let result = '';
+        const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
+          if (event.payload.instanceId !== instanceId) return;
+          const { update } = event.payload;
+          if (
+            update.sessionUpdate === 'agent_message_chunk' &&
+            update.content?.type === 'text' &&
+            update.content.text
+          ) {
+            result += update.content.text;
+          }
+        });
+
+        const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
+          if (event.payload.instanceId !== instanceId) return;
+          const payload = event.payload;
+          let firstOptionId: string | null = null;
+          if (Array.isArray(payload.options) && payload.options.length > 0) {
+            const opt = payload.options[0] as Record<string, unknown>;
+            firstOptionId = typeof opt === 'string' ? opt : String(opt?.id ?? '');
+          }
+          invoke('acp_permission_respond', {
+            instanceId,
+            requestId: payload.requestId,
+            optionId: firstOptionId,
+          }).catch(() => {});
+        });
+
+        try {
+          const fullPrompt = `${acpSystemMessage}\n\n${prompt}`;
+          await invoke('acp_session_prompt', {
+            instanceId,
+            sessionId: session.session_id,
+            content: fullPrompt,
+          });
+          return result;
+        } finally {
+          unlisten();
+          unlistenPermission();
+        }
+      };
 
       try {
-        const fullPrompt = `${acpSystemMessage}\n\n${prompt}`;
-        await invoke('acp_session_prompt', {
-          instanceId,
-          sessionId: session.session_id,
-          content: fullPrompt,
-        });
-        return result;
+        return await attemptGenerate();
       } catch (error) {
+        if (isAcpConnectionError(error)) {
+          log.warn('ai', `ACP inline action connection error, retrying: ${String(error)}`);
+          stopAcpAgent();
+          try {
+            return await attemptGenerate();
+          } catch (retryError) {
+            stopAcpAgent();
+            log.error('ai', 'ACP inline action retry also failed', retryError);
+            throw new Error(friendlyAcpError(retryError, effectiveConnection?.label || effectiveConnection?.provider));
+          }
+        }
         stopAcpAgent();
-        throw error;
-      } finally {
-        unlisten();
-        unlistenPermission();
+        log.error('ai', 'ACP inline action error', error);
+        throw new Error(friendlyAcpError(error, effectiveConnection?.label || effectiveConnection?.provider));
       }
     },
     [effectiveConnection, acpSystemMessage, selectedProjectPaths]
@@ -544,9 +562,148 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         if (cleanupRef.current) {
           cleanupRef.current();
         }
+
+        const agentLabel = effectiveConnection?.label || effectiveConnection?.provider || 'the agent';
+
+        // Auto-retry once on connection errors (dead agent, broken pipe, etc.)
+        if (isAcpConnectionError(error)) {
+          log.warn('ai', `ACP connection error, retrying: ${String(error)}`);
+          stopAcpAgent();
+          updateMessage(assistantMessageId, 'Reconnecting to agent...');
+
+          try {
+            const cwd = selectedProjectPaths[0] || '/tmp';
+            const instanceId = await ensureAcpAgent(effectiveConnection, cwd, getAllWorkspacePaths());
+
+            // Need a fresh session after reconnect
+            const session = await invoke<AcpSessionResult>('acp_session_new', {
+              instanceId,
+              workingDirectory: cwd,
+            });
+            acpAgent!.chatSessionId = session.session_id;
+            useChatStore.getState().setSegmentSessionId(session.session_id);
+
+            if (session.available_models.length > 0) {
+              setAgentModels(
+                effectiveConnection.id,
+                session.available_models.map((m) => ({
+                  modelId: m.model_id,
+                  name: m.name,
+                  description: m.description,
+                })),
+                session.current_model,
+              );
+            }
+
+            // Set up listeners for the retry
+            let streamedContent = '';
+            const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
+              if (event.payload.instanceId !== instanceId) return;
+              const { update } = event.payload;
+              if (
+                update.sessionUpdate === 'agent_message_chunk' &&
+                update.content?.type === 'text' &&
+                update.content.text
+              ) {
+                streamedContent += update.content.text;
+                updateMessage(assistantMessageId, streamedContent);
+              } else if (update.sessionUpdate === 'tool_call') {
+                const kind = (update as Record<string, unknown>).kind as string | undefined;
+                const title = (update as Record<string, unknown>).title as string | undefined;
+                const rawInput = (update as Record<string, unknown>).rawInput as string | undefined;
+                const toolLabel = formatAcpToolName(kind, title);
+                setActiveTool(toolLabel);
+                addActivity(assistantMessageId, {
+                  kind: kind || 'unknown',
+                  label: toolLabel,
+                  detail: rawInput ? truncateDetail(rawInput) : undefined,
+                  status: 'running',
+                  timestamp: Date.now(),
+                });
+              } else if (update.sessionUpdate === 'tool_call_update') {
+                const kind = (update as Record<string, unknown>).kind as string | undefined;
+                const title = (update as Record<string, unknown>).title as string | undefined;
+                setActiveTool(formatAcpToolName(kind, title));
+              } else if (update.sessionUpdate === 'tool_result') {
+                setActiveTool(null);
+                completeLastActivity(assistantMessageId);
+              } else if (update.sessionUpdate === 'agent_turn_complete') {
+                setActiveTool(null);
+                completeAllActivities(assistantMessageId);
+              }
+            });
+
+            const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
+              if (event.payload.instanceId !== instanceId) return;
+              const payload = event.payload;
+              setActiveTool(null);
+              const toolInfo = extractToolInfo(payload.toolCall);
+              const rawOptions = payload.options as unknown[];
+              let firstOptionId: string | null = null;
+              if (Array.isArray(rawOptions) && rawOptions.length > 0) {
+                const opt = rawOptions[0] as Record<string, unknown>;
+                firstOptionId = typeof opt === 'string' ? opt : String(opt?.optionId ?? opt?.id ?? '');
+              }
+              if (usePermissionStore.getState().isAutoAllowed(toolInfo.kind)) {
+                invoke('acp_permission_respond', { instanceId, requestId: payload.requestId, optionId: firstOptionId }).catch(() => {});
+              } else {
+                const options = Array.isArray(rawOptions)
+                  ? rawOptions.map((o) => {
+                      const opt = o as Record<string, unknown>;
+                      return { optionId: String(opt?.optionId ?? opt?.id ?? ''), kind: String(opt?.kind ?? ''), name: String(opt?.name ?? '') };
+                    })
+                  : [];
+                usePermissionStore.getState().addRequest({
+                  id: `${payload.requestId}-${Date.now()}`, instanceId, sessionId: payload.sessionId,
+                  requestId: payload.requestId, toolKind: toolInfo.kind, toolTitle: toolInfo.title,
+                  toolInput: truncateDetail(toolInfo.input, 200), options, timestamp: Date.now(),
+                });
+              }
+            });
+
+            cleanupRef.current = () => {
+              unlisten();
+              unlistenPermission();
+              const pendingRequests = usePermissionStore.getState().requests.filter((r) => r.instanceId === instanceId);
+              for (const req of pendingRequests) {
+                invoke('acp_permission_respond', { instanceId, requestId: req.requestId, optionId: null }).catch(() => {});
+              }
+              usePermissionStore.getState().clearRequestsForInstance(instanceId);
+              setLoading(false);
+              setActiveTool(null);
+              cleanupRef.current = null;
+            };
+
+            const effectiveSystemMessage = buildAcpSystemMessage
+              ? buildAcpSystemMessage(opts?.attachedFilePaths)
+              : acpSystemMessage;
+            const promptContent = `${effectiveSystemMessage}\n\n${content}`;
+
+            try {
+              await invoke('acp_session_prompt', { instanceId, sessionId: acpAgent!.chatSessionId, content: promptContent });
+              return; // Retry succeeded
+            } finally {
+              if (cleanupRef.current) {
+                cleanupRef.current();
+              }
+            }
+          } catch (retryError) {
+            if (cleanupRef.current) {
+              cleanupRef.current();
+            }
+            stopAcpAgent();
+            log.error('ai', 'ACP retry also failed', retryError);
+            setMessageError(assistantMessageId, friendlyAcpError(retryError, agentLabel));
+            setLoading(false);
+            setActiveTool(null);
+            return;
+          }
+        }
+
+        // Non-connection error — show friendly message, no retry
         stopAcpAgent();
         log.error('ai', 'ACP chat error', error);
-        setMessageError(assistantMessageId, friendlyAIError(error, effectiveConnection?.label || effectiveConnection?.provider, effectiveConnection?.id));
+        setMessageError(assistantMessageId, friendlyAcpError(error, agentLabel));
         setLoading(false);
         setActiveTool(null);
       }

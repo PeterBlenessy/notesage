@@ -68,6 +68,48 @@ export function friendlyAIError(error: unknown, provider?: string, connectionId?
   return prefix + friendly + (hint ? `\n\n${hint}` : '');
 }
 
+/** Error patterns that indicate a dead or broken agent connection (retryable). */
+const ACP_CONNECTION_ERROR_PATTERNS = [
+  'query closed',
+  'no longer running',
+  'did not respond',
+  'eof',
+  'broken pipe',
+  'no agent found',
+  'process exited',
+];
+
+/**
+ * Check if an error is a retryable ACP connection error (dead agent, broken pipe, etc.).
+ */
+export function isAcpConnectionError(error: unknown): boolean {
+  const msg = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return ACP_CONNECTION_ERROR_PATTERNS.some((pattern) => msg.includes(pattern));
+}
+
+/**
+ * Translate raw ACP errors into user-friendly messages.
+ * Returns null if the error doesn't match any known ACP pattern (fall through to generic handling).
+ */
+export function friendlyAcpError(error: unknown, agentLabel?: string): string {
+  const raw = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  const agent = agentLabel || 'the agent';
+
+  if (ACP_CONNECTION_ERROR_PATTERNS.some((p) => raw.includes(p))) {
+    return `Lost connection to ${agent}. Please try again.`;
+  }
+  if (raw.includes('timed out') || raw.includes('timeout')) {
+    return `${agent} is taking too long to respond. Please try again.`;
+  }
+  if (raw.includes('not found') && (raw.includes('binary') || raw.includes('spawn'))) {
+    return `${agent} is not installed. Check Settings \u2192 Connections.`;
+  }
+  if (raw.includes('authenticat') || raw.includes('unauthorized') || raw.includes('auth')) {
+    return `Authentication failed for ${agent}. Check Settings \u2192 Connections.`;
+  }
+  return `Something went wrong with ${agent}. Please try again.`;
+}
+
 /**
  * Return an actionable hint for common error patterns.
  */

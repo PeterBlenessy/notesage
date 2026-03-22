@@ -119,6 +119,7 @@ pub fn run() {
             acp_agent_check_availability,
             acp_agent_spawn,
             acp_agent_authenticate,
+            acp_agent_exists,
             acp_agent_stop,
             acp_session_new,
             acp_session_load,

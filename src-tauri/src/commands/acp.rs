@@ -1280,6 +1280,15 @@ pub async fn acp_agent_authenticate(
         .map_err(|_| "Agent thread did not respond to authenticate".to_string())?
 }
 
+/// Check if an ACP agent instance is still registered (lightweight map lookup).
+#[tauri::command]
+pub async fn acp_agent_exists(
+    state: State<'_, AcpState>,
+    instance_id: String,
+) -> Result<bool, String> {
+    Ok(state.agents.lock().await.contains_key(&instance_id))
+}
+
 /// Stop an ACP agent subprocess and clean up resources.
 #[tauri::command]
 pub async fn acp_agent_stop(
