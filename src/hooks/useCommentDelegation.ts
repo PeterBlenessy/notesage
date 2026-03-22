@@ -372,10 +372,15 @@ export function useCommentDelegation() {
         });
       }
 
+      const mode = s.delegationModeByComment[comment.id];
       s.setCommentStatus(documentId, comment.id, 'open');
       s.clearDelegationMode(comment.id);
       await s.saveComments(documentId, projectRoot);
-      toast('Delegation cancelled');
+      if (mode === 'chat') {
+        toast('Agent stopped');
+      } else {
+        toast('Delegation cancelled');
+      }
     },
     [cancelTask]
   );

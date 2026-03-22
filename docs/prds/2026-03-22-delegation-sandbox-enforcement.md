@@ -237,14 +237,23 @@ Send `null` as `optionId` (deny). Log the denial. Add activity entry: "Denied: {
 #### Quality gates for path filtering
 
 - [ ] Structured tool call (Read) targeting other project → denied
+
 - [ ] Structured tool call (Read) targeting current project → approved
+
 - [ ] Terminal command with absolute path to other project → denied
+
 - [ ] Terminal command with absolute path to system dir → approved
+
 - [ ] Terminal command with no absolute paths (e.g., `git status`) → approved
-- [ ] Agent config path (~/.claude) → approved
+
+- [ ] Agent config path (\~/.claude) → approved
+
 - [ ] Regular chat panel → no filtering
+
 - [ ] Comment-to-chat → filtering applied
+
 - [ ] Denied tool call shows activity entry
+
 - [ ] `npx tsc --noEmit` passes
 
 #### Not covered (acceptable gaps for this threat model)

@@ -377,13 +377,7 @@ async function startAcpTask(
   const cleanup = () => { unlisten(); unlistenPermission(); };
   cleanupMap.set(taskId, cleanup);
 
-  // Prepend project scope instruction so the agent respects folder boundaries
-  const scopeInstruction = cwd !== '/tmp'
-    ? `<project-scope>\nYou are working in the project folder: ${cwd}\nYou MUST only read and write files within this folder. Do NOT access files outside this project. If the user asks you to access files in a different folder, explain that you are scoped to this project and suggest they move the conversation to the chat panel for broader access.\n</project-scope>\n\n`
-    : '';
-  const scopedPrompt = scopeInstruction + prompt;
-
-  tauriApi.acpSessionPrompt(instanceId, session.session_id, scopedPrompt)
+  tauriApi.acpSessionPrompt(instanceId, session.session_id, prompt)
     .then(() => {
       const t = tasksMap.get(taskId);
       if (t && t.status === 'running') {

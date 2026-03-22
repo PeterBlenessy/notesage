@@ -1,7 +1,6 @@
 # Delegation Sandbox Enforcement — Tasks
 
-**PRD:** [delegation-sandbox-enforcement](../prds/2026-03-22-delegation-sandbox-enforcement.md)
-**Date:** 2026-03-22
+**PRD:** [delegation-sandbox-enforcement ](../prds/2026-03-22-delegation-sandbox-enforcement.md)**Date:** 2026-03-22
 
 ## Summary
 
@@ -71,6 +70,7 @@ Create `src/lib/ai/path-filter.ts` with:
 - `isToolCallAllowed(toolKind: string, rawInput: string, projectRoot: string): { allowed: boolean; deniedPath?: string }` — combines extraction + validation based on tool kind
 
 **Acceptance criteria:**
+
 - Structured input: extracts paths from JSON fields
 - Terminal commands: finds `/absolute/paths` in command strings
 - System paths (`/usr`, `/tmp`, `/opt`, etc.) always allowed
@@ -79,6 +79,7 @@ Create `src/lib/ai/path-filter.ts` with:
 - Other user paths denied, with the denied path returned for logging
 
 **Files:**
+
 - Create: `src/lib/ai/path-filter.ts`
 
 ---
@@ -87,7 +88,7 @@ Create `src/lib/ai/path-filter.ts` with:
 
 **Complexity:** M | **Category:** frontend | **Dependencies:** #6
 
-**In `useAgentTaskOperations.ts`:**
+**In** `useAgentTaskOperations.ts`**:**
 
 Replace the unconditional auto-approve in the permission handler with path-filtered logic:
 
@@ -109,11 +110,12 @@ onActivity?.({ kind: 'permission', label: `Auto-approved: ${toolLabel}`, event: 
 tauriApi.acpPermissionRespond(instanceId, payload.requestId, firstOptionId).catch(() => {});
 ```
 
-**In `useAcpLifecycle.ts`:**
+**In** `useAcpLifecycle.ts`**:**
 
 For comment-to-chat conversations (where `sandboxPaths` is set), apply the same path filtering in the chat panel's permission handler. Need to thread the project root to the permission handler scope.
 
 **Acceptance criteria:**
+
 - Delegation: tool call to other project → denied with activity entry
 - Delegation: tool call within project → auto-approved
 - Delegation: system path tool call → auto-approved
@@ -122,6 +124,7 @@ For comment-to-chat conversations (where `sandboxPaths` is set), apply the same 
 - Denied tool calls logged at info level
 
 **Files:**
+
 - Modify: `src/hooks/useAgentTaskOperations.ts`
 - Modify: `src/hooks/useAcpLifecycle.ts`
 
@@ -133,16 +136,17 @@ For comment-to-chat conversations (where `sandboxPaths` is set), apply the same 
 
 Test each quality gate from the PRD:
 
-1. Delegate in Project A, ask agent to read file in Project B → denied
-2. Delegate in Project A, ask agent to read file in Project A → approved
-3. Terminal command with absolute path to other project → denied
-4. Terminal command `git status` (no absolute paths) → approved
-5. Terminal command referencing `/usr/bin/...` → approved
-6. Agent config path `~/.claude/...` → approved
-7. Regular chat → no filtering
-8. Comment moved to chat → filtering applied
-9. Activity panel shows denial entries
+ 1. Delegate in Project A, ask agent to read file in Project B → denied
+ 2. Delegate in Project A, ask agent to read file in Project A → approved
+ 3. Terminal command with absolute path to other project → denied
+ 4. Terminal command `git status` (no absolute paths) → approved
+ 5. Terminal command referencing `/usr/bin/...` → approved
+ 6. Agent config path `~/.claude/...` → approved
+ 7. Regular chat → no filtering
+ 8. Comment moved to chat → filtering applied
+ 9. Activity panel shows denial entries
 10. `npx tsc --noEmit` passes
 
 **Files:**
+
 - May need minor fixes based on test results
