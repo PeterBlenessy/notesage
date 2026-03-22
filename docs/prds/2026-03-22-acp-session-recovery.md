@@ -1,6 +1,6 @@
 # ACP Session Recovery
 
-**Date:** 2026-03-22 **Status:** Draft
+**Date:** 2026-03-22 **Status:** Complete
 
 ## Problem
 
@@ -111,16 +111,16 @@ All error states must be logged with context:
 
 ## Quality Gates
 
-- [ ] Sending a message after agent death recovers automatically (no user action needed)
+- [x] Sending a message after agent death recovers automatically (no user action needed)
 
-- [ ] User never sees raw protocol errors like "Query closed before response received"
+- [x] User never sees raw protocol errors like "Query closed before response received"
 
-- [ ] Error messages are human-readable and actionable
+- [x] Error messages are human-readable and actionable
 
-- [ ] All error states logged with raw error for debugging
+- [x] All error states logged with raw error for debugging
 
-- [ ] Works for both chat and inline actions (Improve/Summarize/Expand)
+- [x] Works for both chat and inline actions (Improve/Summarize/Expand)
 
-- [ ] No regression when agent is healthy (health check adds negligible latency)
+- [x] No regression when agent is healthy (health check adds negligible latency)
 
-- [ ] Retry only happens once (no infinite retry loops)
+- [x] Retry only happens once (no infinite retry loops)

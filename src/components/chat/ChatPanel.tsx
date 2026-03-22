@@ -176,11 +176,17 @@ export function ChatPanel() {
     }
   }, []);
 
+  // Force scroll to bottom when conversation changes (open from history, app refresh)
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+    });
+  }, [activeConversationId]);
+
   // Force scroll on new messages from the user (isLoading just turned on)
   const wasLoadingRef = useRef(false);
   useEffect(() => {
     if (isLoading && !wasLoadingRef.current) {
-      // User just sent a message — always scroll to show it
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
       });

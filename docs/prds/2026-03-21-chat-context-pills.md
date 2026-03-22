@@ -1,6 +1,6 @@
 # Chat Context Pills
 
-**Date:** 2026-03-21 **Status:** Draft
+**Date:** 2026-03-21 **Status:** Complete
 
 ## Problem
 
@@ -172,41 +172,41 @@ No new libraries. Uses existing:
 
 ### Functional
 
-- [ ] Active tab file appears as a pill when a tab is open
+- [x] Active tab file appears as a pill when a tab is open
 
-- [ ] Pill shows filename only (not full path)
+- [x] Pill shows filename only (not full path)
 
-- [ ] Hovering the pill shows full path in a tooltip
+- [x] Hovering the pill shows full path in a tooltip
 
-- [ ] Hovering the pill shows an X close button on the right
+- [x] Hovering the pill shows an X close button on the right
 
-- [ ] Clicking X removes the pill and excludes the file from AI context
+- [x] Clicking X removes the pill and excludes the file from AI context
 
-- [ ] Switching tabs clears previous pills and shows the new active file
+- [x] Switching tabs clears previous pills and shows the new active file
 
-- [ ] Closing all tabs shows no pills (no empty row)
+- [x] Closing all tabs shows no pills (no empty row)
 
-- [ ] Removing the pill actually excludes the file path from the system message sent to AI
+- [x] Removing the pill actually excludes the file path from the system message sent to AI
 
-- [ ] Pill row is inside the ChatInput border, above the textarea
+- [x] Pill row is inside the ChatInput border, above the textarea
 
-- [ ] Works correctly for all provider types (direct API, ACP, local bundled)
+- [x] Works correctly for all provider types (direct API, ACP, local bundled)
 
 ### Design
 
-- [ ] Pill style matches the existing goals badge (neutral, compact, `bg-accent`)
+- [x] Pill style matches the existing goals badge (neutral, compact, `bg-accent`)
 
-- [ ] X button only visible on hover, with smooth fade-in
+- [x] X button only visible on hover, with smooth fade-in
 
-- [ ] Pill appears/disappears with smooth transition
+- [x] Pill appears/disappears with smooth transition
 
-- [ ] Looks correct in both light and dark mode
+- [x] Looks correct in both light and dark mode
 
-- [ ] Looks correct with soft contrast mode
+- [x] Looks correct with soft contrast mode
 
-- [ ] Pills wrap gracefully if multiple items are present (future-proofing)
+- [x] Pills wrap gracefully if multiple items are present (future-proofing)
 
-- [ ] No layout shift in the textarea when pills appear/disappear
+- [x] No layout shift in the textarea when pills appear/disappear
 
 ## Out of Scope (Future Work)
 

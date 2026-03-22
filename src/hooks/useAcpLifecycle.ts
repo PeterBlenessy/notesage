@@ -739,6 +739,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         instanceId: acpAgent.instanceId,
         sessionId: acpAgent.chatSessionId,
       }).catch(() => {});
+
+      // Clear the session so the next message creates a fresh one
+      acpAgent.chatSessionId = null;
     }
 
     setLoading(false);
