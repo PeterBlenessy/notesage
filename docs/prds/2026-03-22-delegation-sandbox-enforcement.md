@@ -1,6 +1,6 @@
 # Delegation Sandbox Enforcement
 
-**Date:** 2026-03-22 **Status:** Partial — soft enforcement implemented, hard enforcement deferred
+**Date:** 2026-03-22 **Status:** In Progress — soft enforcement done, tool call path filtering next
 
 ## Prior work
 
@@ -175,18 +175,89 @@ When a conversation has `sourceCommentId` set, the chat agent should be scoped t
 - **Scope instruction**: Agent system message tells the agent to stay within the project folder
 - **CLAUDECODE env fix**: Strip env var to prevent nested session detection when launched from Claude Code
 
-### Not implemented (hard enforcement deferred)
+### Seatbelt read restrictions — attempted and abandoned
 
-**Seatbelt read restrictions were attempted and abandoned.** Replacing `(allow file-read*)` with selective reads caused agents to crash — they need access to hundreds of system paths (dyld cache, Node.js internals, `realpathSync` parent directory traversal for iCloud paths, etc.). Each fix revealed another missing path. This is a fundamental mismatch: Seatbelt is designed to sandbox entire apps, not isolate project folders within a process that needs broad system access.
+Replacing `(allow file-read*)` with selective reads caused agents to crash — they need access to hundreds of system paths (dyld cache, Node.js internals, `realpathSync` parent directory traversal for iCloud paths, etc.). Each fix revealed another missing path. Seatbelt is designed to sandbox entire apps, not isolate project folders within a process that needs broad system access.
 
-**The soft enforcement (system message instruction) is a reasonable boundary for well-behaved agents** like Claude Code, which follow instructions. It is NOT a security boundary against malicious or prompt-injected agents.
+### Next: Tool call path filtering
 
-**For hard enforcement**, a container/chroot approach is needed — see future work section.
+**Threat model:** Prevent accidental leakage from a well-behaved agent. Not defending against prompt injection or deliberate circumvention.
+
+ACP agents request permission for every tool call. The agent **waits** for our response before executing. We currently auto-approve everything. By parsing the target paths from tool call inputs and checking them against the project root, we get enforcement at the protocol layer — no OS-level filesystem tricks needed.
+
+#### Path extraction
+
+**Structured tool calls** (Read, Write, Glob, Grep, etc.): Parse `rawInput` as JSON. Extract `file_path`, `path`, `directory` fields. Well-defined — 100% reliable.
+
+**Terminal/Bash commands**: Scan for absolute paths in the command string. Regex-based, catches direct path references like `ls "/other-project"`. Misses dynamic construction (`$(echo /path)`) and relative traversal (`cd ..`), which is acceptable for this threat model.
+
+#### Path validation
+
+```typescript
+function isPathAllowed(path: string, projectRoot: string): boolean {
+  // Within the project → allowed
+  if (path === projectRoot || path.startsWith(projectRoot + '/')) return true;
+
+  // System paths → allowed
+  const systemPrefixes = ['/tmp', '/private/tmp', '/private/var', '/dev',
+    '/usr', '/bin', '/sbin', '/opt', '/etc', '/private/etc',
+    '/System', '/Library', '/Applications', '/var'];
+  if (systemPrefixes.some(p => path.startsWith(p))) return true;
+
+  // Agent config dirs → allowed
+  const safeHomeDirs = ['.claude', '.codex', '.copilot', '.gemini', '.notesage',
+    '.config', '.npm', '.nvm', '.volta', '.fnm', '.local', '.cargo', '.rustup'];
+  if (safeHomeDirs.some(d => path.startsWith(home + '/' + d))) return true;
+
+  // Everything else → denied
+  return false;
+}
+```
+
+#### Deny response
+
+Send `null` as `optionId` (deny). Log the denial. Add activity entry: "Denied: {tool} — outside project scope". The agent receives the denial and can explain to the user.
+
+#### Scope
+
+| Context | Filtered? | Allowed paths |
+| --- | --- | --- |
+| Delegation (comment thread, activity strip) | Yes | Document's project folder only |
+| Comment moved to chat panel | Yes | Source project (widens if user changes project selector) |
+| Regular chat panel | No | All workspace folders |
+
+#### Files to modify
+
+| File | Changes |
+| --- | --- |
+| `src/lib/ai/path-filter.ts` | New: `isToolCallAllowed`, `extractPaths`, `isPathAllowed` |
+| `src/hooks/useAgentTaskOperations.ts` | Use path filter in permission handler |
+| `src/hooks/useAcpLifecycle.ts` | Add path filtering for comment-to-chat conversations |
+
+#### Quality gates for path filtering
+
+- [ ] Structured tool call (Read) targeting other project → denied
+- [ ] Structured tool call (Read) targeting current project → approved
+- [ ] Terminal command with absolute path to other project → denied
+- [ ] Terminal command with absolute path to system dir → approved
+- [ ] Terminal command with no absolute paths (e.g., `git status`) → approved
+- [ ] Agent config path (~/.claude) → approved
+- [ ] Regular chat panel → no filtering
+- [ ] Comment-to-chat → filtering applied
+- [ ] Denied tool call shows activity entry
+- [ ] `npx tsc --noEmit` passes
+
+#### Not covered (acceptable gaps for this threat model)
+
+- Relative path traversal (`cd ../other-project`)
+- Script content analysis (paths inside written scripts)
+- Dynamic path construction (`$(echo /other/path)`)
+- Eval-based file access (`node -e "fs.readFileSync(...)"`)
 
 ## Out of Scope / Future Work
 
-- **Container-based isolation**: Use a container runtime (e.g., [sandbox-runtime](https://github.com/anthropic-experimental/sandbox-runtime)) to create a fully isolated filesystem where only the project folder is mounted. This provides hard read/write isolation without the Seatbelt path enumeration problem. Requires significant architecture work.
-- PermissionCard rendering in delegation activity panel (may need follow-up if it doesn't render outside ChatPanel)
+- **Container-based isolation**: Use a container runtime (e.g., [sandbox-runtime](https://github.com/anthropic-experimental/sandbox-runtime)) to create a fully isolated filesystem where only the project folder is mounted. Hard read/write isolation without path enumeration. Requires Docker on macOS (heavy) or Bubblewrap on Linux (lightweight). Significant architecture work.
+- PermissionCard rendering in delegation activity panel
 - Batch delegation sandbox (all comments in one document share one agent — already correct)
 - Windows/Linux sandbox enforcement
 - Widening sandbox scope when user changes project selection in a comment-sourced chat
