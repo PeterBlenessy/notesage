@@ -88,10 +88,9 @@ Tested on both local and iCloud projects:
 - [x] `npx tsc --noEmit` passes
 - [x] Works on iCloud projects
 
-**Not yet tested:**
-
-- [ ] Terminal command with absolute path to other project → denied
-- [ ] Terminal command `git status` (no absolute paths) → approved
-- [ ] Agent config path (~/.claude) → approved
-- [ ] Comment moved to chat → filtering applied
-- [ ] Activity panel shows denial entries (delegation mode)
+- [x] Terminal command with absolute path to other project → denied
+- [x] Terminal command `git status` (no absolute paths) → approved
+- [x] System dir path (`which node`) → approved
+- [x] Agent config path (~/.claude) → approved
+- [x] Comment moved to chat → filtering applied
+- [x] Activity panel shows denial entries

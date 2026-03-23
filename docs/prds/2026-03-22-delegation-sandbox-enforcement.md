@@ -1,6 +1,6 @@
 # Delegation Sandbox Enforcement
 
-**Date:** 2026-03-22 **Status:** Done — tool call path filtering implemented and tested
+**Date:** 2026-03-22 **Status:** Complete — all quality gates passed
 
 ## Prior work
 
@@ -240,19 +240,19 @@ Send `null` as `optionId` (deny). Log the denial. Add activity entry: "Denied: {
 
 - [x] Structured tool call (Read) targeting current project → approved
 
-- [ ] Terminal command with absolute path to other project → denied
+- [x] Terminal command with absolute path to other project → denied
 
-- [ ] Terminal command with absolute path to system dir → approved
+- [x] Terminal command with absolute path to system dir → approved
 
-- [ ] Terminal command with no absolute paths (e.g., `git status`) → approved
+- [x] Terminal command with no absolute paths (e.g., `git status`) → approved
 
-- [ ] Agent config path (\~/.claude) → approved
+- [x] Agent config path (\~/.claude) → approved
 
 - [x] Regular chat panel → no filtering
 
-- [ ] Comment-to-chat → filtering applied
+- [x] Comment-to-chat → filtering applied
 
-- [ ] Denied tool call shows activity entry
+- [x] Denied tool call shows activity entry
 
 - [x] `npx tsc --noEmit` passes
 
