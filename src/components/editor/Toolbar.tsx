@@ -34,6 +34,8 @@ import {
   Highlighter,
   X,
   Settings2,
+  Link,
+  Unlink,
 } from "lucide-react";
 import { TableToolbarContent } from "./TableToolbar";
 import { Button } from "@/components/ui/button";
@@ -179,6 +181,107 @@ function HeadingPicker({ editor }: { editor: Editor }) {
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+// --- Link Button ---
+
+function LinkButton({ editor }: { editor: Editor }) {
+  const isLink = editor.isActive("link");
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleOpen = useCallback(() => {
+    if (isLink) {
+      // Already a link — remove it
+      editor.chain().focus().unsetLink().run();
+      return;
+    }
+    setUrl(editor.getAttributes("link").href || "");
+    setOpen(true);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [editor, isLink]);
+
+  const handleSubmit = useCallback(() => {
+    const raw = url.trim();
+    if (!raw) {
+      setOpen(false);
+      return;
+    }
+
+    // Auto-prepend https:// if no protocol specified
+    const href = /^https?:\/\/|^mailto:|^tel:|^#/.test(raw) ? raw : `https://${raw}`;
+
+    const { from, to } = editor.state.selection;
+    const hasSelection = from !== to;
+
+    if (hasSelection) {
+      editor.chain().focus().setLink({ href }).run();
+    } else {
+      editor.chain().focus().insertContent({
+        type: "text",
+        marks: [{ type: "link", attrs: { href } }],
+        text: raw,
+      }).run();
+    }
+    setOpen(false);
+    setUrl("");
+  }, [editor, url]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                "h-6 w-6 p-0 text-muted-foreground transition-colors duration-150",
+                isLink && "bg-accent text-accent-foreground"
+              )}
+              onClick={(e) => {
+                if (isLink) {
+                  e.preventDefault();
+                  handleOpen();
+                }
+              }}
+              title={isLink ? "Remove link" : "Insert link (Cmd+K)"}
+            >
+              {isLink ? (
+                <Unlink className="size-4" strokeWidth={1.5} />
+              ) : (
+                <Link className="size-4" strokeWidth={1.5} />
+              )}
+            </Button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">
+          {isLink ? "Remove link" : "Insert link (Cmd+K)"}
+        </TooltipContent>
+      </Tooltip>
+      <PopoverContent className="w-72 p-2" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+        <div className="flex items-center gap-1.5">
+          <input
+            ref={inputRef}
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); handleSubmit(); }
+              if (e.key === "Escape") { setOpen(false); }
+            }}
+            placeholder="https://..."
+            className="flex-1 h-7 px-2 text-xs rounded-md border border-input bg-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            autoFocus
+          />
+          <Button size="sm" className="h-7 px-2 text-xs" onClick={handleSubmit}>
+            Apply
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -670,6 +773,14 @@ function TableToolsPopover({ editor }: { editor: Editor }) {
 export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleViewMode, sourceWordWrap, onToggleWordWrap }: ToolbarProps) {
   const isSource = viewMode === "source";
 
+  // Force re-render on editor transactions so active state (heading level, bold, etc.) stays current
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!editor) return;
+    const onTransaction = () => setTick((t) => t + 1);
+    editor.on("transaction", onTransaction);
+    return () => { editor.off("transaction", onTransaction); };
+  }, [editor]);
 
   const isInList = editor
     ? editor.isActive("bulletList") || editor.isActive("orderedList") || editor.isActive("taskList")
@@ -744,6 +855,8 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           >
             <Code className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
+
+          <LinkButton editor={editor} />
 
           {/* Text Color & Highlight */}
           <TextColorPopover editor={editor} />
