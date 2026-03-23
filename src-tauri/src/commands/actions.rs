@@ -61,6 +61,21 @@ fn read_project_name(root: &Path) -> Option<String> {
     None
 }
 
+/// Load the doc-index.json for a project root, returning UUID → file path map.
+fn load_doc_index(root: &Path) -> std::collections::HashMap<String, String> {
+    let index_path = root.join(".notesage/doc-index.json");
+    if let Ok(content) = fs::read_to_string(&index_path) {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(entries) = json.get("entries").and_then(|v| v.as_object()) {
+                return entries.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect();
+            }
+        }
+    }
+    std::collections::HashMap::new()
+}
+
 fn scan_comments(
     root: &Path,
     project_root: &str,
@@ -76,6 +91,9 @@ fn scan_comments(
         Ok(e) => e,
         Err(_) => return,
     };
+
+    // Load document index to resolve UUIDs → file paths
+    let doc_index = load_doc_index(root);
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -95,7 +113,54 @@ fn scan_comments(
             Err(_) => continue,
         };
 
+        let document_id = name_str.trim_end_matches(".json");
+
+        // Resolve the document's actual file path from the index
+        let resolved_file_path = doc_index.get(document_id).cloned();
+
+        // If the referenced file no longer exists, clean up the orphaned comment sidecar
+        if let Some(ref resolved) = resolved_file_path {
+            if !Path::new(resolved).exists() {
+                let _ = fs::remove_file(&path);
+                continue;
+            }
+        }
+
+        // Read the document content to check if comment anchors still exist
+        let doc_content = resolved_file_path.as_ref()
+            .and_then(|p| fs::read_to_string(p).ok());
+
+        // Filter out comments whose anchor text is no longer in the file
+        let mut needs_cleanup = false;
+        let mut surviving_comments: Vec<&serde_json::Value> = Vec::new();
         for comment in &comments {
+            let anchor_text = comment.get("anchorText")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            // If we have the doc content and a non-empty anchor, check it still exists
+            if let Some(ref content) = doc_content {
+                if !anchor_text.is_empty() && !content.contains(anchor_text) {
+                    needs_cleanup = true;
+                    continue; // skip this orphaned comment
+                }
+            }
+            surviving_comments.push(comment);
+        }
+
+        // Write back the cleaned-up comment list if any were removed
+        if needs_cleanup {
+            if surviving_comments.is_empty() {
+                let _ = fs::remove_file(&path);
+                continue;
+            } else {
+                let cleaned: Vec<&serde_json::Value> = surviving_comments.iter().copied().collect();
+                if let Ok(json) = serde_json::to_string_pretty(&cleaned) {
+                    let _ = fs::write(&path, json);
+                }
+            }
+        }
+
+        for comment in &surviving_comments {
             let status_str = comment.get("status")
                 .and_then(|v| v.as_str())
                 .unwrap_or("open");
@@ -132,8 +197,6 @@ fn scan_comments(
                 .and_then(|v| v.as_i64())
                 .map(millis_to_iso);
 
-            let document_id = name_str.trim_end_matches(".json");
-
             let mapped_status = match status_str {
                 "open" => "open",
                 "delegated" => "delegated",
@@ -148,12 +211,16 @@ fn scan_comments(
                 metadata.insert("replyCount".to_string(), serde_json::Value::Number(serde_json::Number::from(reply_count)));
             }
 
+            // Use the resolved file path (from doc-index.json) instead of the JSON sidecar path
+            let file_path = resolved_file_path.clone()
+                .unwrap_or_else(|| path.to_string_lossy().to_string());
+
             items.push(ActionItem {
                 id: format!("comment:{}:{}", document_id, comment_id),
                 source_type: "comment".to_string(),
                 status: mapped_status.to_string(),
                 text: display_text,
-                file_path: path.to_string_lossy().to_string(),
+                file_path,
                 line_number: None,
                 project_name: project_name.clone(),
                 project_root: Some(project_root.to_string()),

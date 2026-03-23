@@ -492,16 +492,44 @@ function App() {
           open={actionsDialogOpen}
           onOpenChange={setActionsDialogOpen}
           onActionClick={(action) => {
-            if (action.file_path) {
-              const fileName = action.file_path.split("/").pop() ?? action.file_path;
-              if (action.text) {
-                openFileAtText(action.file_path, fileName, action.text).catch((error) => {
-                  log.error("lifecycle", "Failed to open file", error);
-                  toast.error(`Failed to open file: ${error}`);
-                });
-              } else {
-                handleOpenFile(action.file_path, fileName);
-              }
+            if (!action.file_path) return;
+
+            // Comments: open the document and scroll to the comment
+            if (action.source_type === 'comment' && action.metadata) {
+              const meta = typeof action.metadata === 'object' ? action.metadata as Record<string, unknown> : {};
+              const commentId = meta.commentId as string | undefined;
+              const filePath = action.file_path;
+              const fileName = filePath.split("/").pop() ?? filePath;
+
+              const { tabs, activeTabId } = useEditorStore.getState();
+              const alreadyActive = tabs.some((t) => t.filePath === filePath && t.id === activeTabId);
+
+              (async () => {
+                if (!alreadyActive) {
+                  await handleOpenFile(filePath, fileName);
+                }
+                if (commentId) {
+                  const delay = alreadyActive ? 50 : 300;
+                  setTimeout(() => {
+                    useCommentStore.getState().requestScrollToComment(commentId);
+                  }, delay);
+                }
+              })().catch((error) => {
+                log.error("lifecycle", "Failed to navigate to comment", error);
+                toast.error(`Failed to open file: ${error}`);
+              });
+              return;
+            }
+
+            // Default: open file and optionally search for text
+            const fileName = action.file_path.split("/").pop() ?? action.file_path;
+            if (action.text) {
+              openFileAtText(action.file_path, fileName, action.text).catch((error) => {
+                log.error("lifecycle", "Failed to open file", error);
+                toast.error(`Failed to open file: ${error}`);
+              });
+            } else {
+              handleOpenFile(action.file_path, fileName);
             }
           }}
         />

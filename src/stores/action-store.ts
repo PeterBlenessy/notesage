@@ -23,7 +23,7 @@ export interface ActionFilter {
 }
 
 const DEFAULT_FILTER: ActionFilter = {
-  status: ['open', 'delegated', 'pending', 'running'],
+  status: ['open', 'done', 'delegated', 'pending', 'running'],
   sourceType: ['task', 'comment', 'agent', 'goal'],
   project: null,
   search: '',
