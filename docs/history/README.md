@@ -79,3 +79,4 @@ Chronological log of major implementation milestones and changes.
 | 073 | [Release v0.22.7](073-release-v0.22.7.md) | Kernel-enforced Seatbelt network deny, violation monitoring, sandbox and indexer fixes |
 | 074 | [Release v0.22.8](074-release-v0.22.8.md) | Copilot LSP device code fix, Gemini API key auth, agent auth UX improvements |
 | 075 | [Release v0.22.9](075-release-v0.22.9.md) | Delegation sandbox path filtering, link toolbar button, heading dropdown fix |
+| 076 | [Release v0.22.10](076-release-v0.22.10.md) | Fix open actions comment navigation, orphaned comment cleanup |
