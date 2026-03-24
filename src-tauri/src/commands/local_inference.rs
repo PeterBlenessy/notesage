@@ -630,72 +630,182 @@ fn sidecar_binary_name() -> String {
 }
 
 /// Resolve the llama-server binary path.
-/// Checks: 1) next to the app executable (bundled sidecar), 2) ~/.notesage/bin/, 3) PATH
+/// Checks: 1) next to the app executable (bundled sidecar), 2) dev source dir, 3) PATH
 fn resolve_llama_server_binary() -> Result<PathBuf, String> {
-    // 1. Bundled sidecar — next to the app executable
-    //    Tauri v2 externalBin keeps the target triple suffix in prod (llama-server-aarch64-apple-darwin)
-    //    but uses the plain name in dev (llama-server)
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            // Try with triple suffix first (prod), then without (dev)
-            for name in &[sidecar_binary_name(), "llama-server".to_string()] {
-                let binary = dir.join(name);
-                if binary.exists() {
-                    let is_dev = dir.to_string_lossy().contains("/target/");
-                    if !is_dev || dir.join("lib").exists() {
-                        return Ok(binary);
-                    }
-                }
-            }
-        }
-    }
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|p| p.to_path_buf()));
 
-    // 2. Dev mode fallback — source binaries directory (survives cargo clean)
-    if let Ok(exe) = std::env::current_exe() {
-        // In dev mode, exe is at src-tauri/target/debug/notesage
-        // Binaries are at src-tauri/binaries/llama-server-{triple}
-        if let Some(target_dir) = exe.parent() {
-            let triple = format!("{}-{}", std::env::consts::ARCH, match std::env::consts::OS {
-                "macos" => "apple-darwin",
-                "linux" => "unknown-linux-gnu",
-                _ => "",
-            });
-            // Walk up from target/debug/ to src-tauri/binaries/
-            if let Some(src_tauri) = target_dir.parent().and_then(|p| p.parent()) {
-                let dev_binary = src_tauri.join("binaries").join(format!("llama-server-{}", triple));
-                if dev_binary.exists() {
-                    return Ok(dev_binary);
-                }
-            }
+    if let Some(ref dir) = exe_dir {
+        // 1. Bundled sidecar — next to the app executable
+        if let Some(path) = resolve_bundled_sidecar(dir) {
+            return Ok(path);
         }
-    }
 
-    // 3. Managed install location
-    if let Some(home) = dirs::home_dir() {
-        let managed = home.join(".notesage").join("bin").join("llama-server");
-        if managed.exists() {
-            return Ok(managed);
+        // 2. Dev mode fallback — source binaries directory (survives cargo clean)
+        if let Some(path) = resolve_dev_binary(dir) {
+            return Ok(path);
         }
     }
 
     // 3. System PATH
-    if let Ok(output) = std::process::Command::new("which")
-        .arg("llama-server")
-        .output()
-    {
-        if output.status.success() {
-            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path_str.is_empty() {
-                return Ok(PathBuf::from(path_str));
-            }
-        }
+    if let Some(path) = resolve_system_path() {
+        return Ok(path);
     }
 
+    log::warn!(target: "notesage::local_ai", "llama-server binary not found at any resolution path");
     Err(
-        "llama-server binary not found. It should be bundled with the app, \
-         installed at ~/.notesage/bin/llama-server, or available in PATH."
+        "llama-server binary not found. It should be bundled with the app or available in PATH."
             .to_string(),
     )
+}
+
+/// Check for bundled sidecar next to the executable directory.
+fn resolve_bundled_sidecar(exe_dir: &std::path::Path) -> Option<PathBuf> {
+    let candidates = [sidecar_binary_name(), "llama-server".to_string()];
+    for name in &candidates {
+        let binary = exe_dir.join(name);
+        let exists = binary.exists();
+        log::debug!(target: "notesage::local_ai", "Binary check: {} exists={}", binary.display(), exists);
+        if exists {
+            let is_dev = exe_dir.to_string_lossy().contains("/target/");
+            if !is_dev || exe_dir.join("lib").exists() {
+                log::info!(target: "notesage::local_ai", "Resolved binary: {} ({})", binary.display(), if is_dev { "dev" } else { "bundled" });
+                return Some(binary);
+            }
+            log::debug!(target: "notesage::local_ai", "Skipping {} — dev mode and lib/ not found", binary.display());
+        }
+    }
+    None
+}
+
+/// Check dev source binaries directory (survives cargo clean).
+fn resolve_dev_binary(exe_dir: &std::path::Path) -> Option<PathBuf> {
+    let triple = format!("{}-{}", std::env::consts::ARCH, match std::env::consts::OS {
+        "macos" => "apple-darwin",
+        "linux" => "unknown-linux-gnu",
+        _ => "",
+    });
+    // Walk up from target/debug/ to src-tauri/binaries/
+    let src_tauri = exe_dir.parent()?.parent()?;
+    let dev_binary = src_tauri.join("binaries").join(format!("llama-server-{}", triple));
+    let exists = dev_binary.exists();
+    log::debug!(target: "notesage::local_ai", "Dev fallback check: {} exists={}", dev_binary.display(), exists);
+    if exists {
+        log::info!(target: "notesage::local_ai", "Resolved binary: {} (dev fallback)", dev_binary.display());
+        return Some(dev_binary);
+    }
+    None
+}
+
+/// Check system PATH via `which`.
+fn resolve_system_path() -> Option<PathBuf> {
+    let output = std::process::Command::new("which")
+        .arg("llama-server")
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path_str.is_empty() {
+            log::info!(target: "notesage::local_ai", "Resolved binary: {} (system PATH)", path_str);
+            return Some(PathBuf::from(path_str));
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_resolve_bundled_sidecar_prod() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        // Create a binary with the sidecar name (simulating prod)
+        let binary_name = sidecar_binary_name();
+        fs::write(dir.join(&binary_name), b"fake binary").unwrap();
+
+        let result = resolve_bundled_sidecar(dir);
+        assert!(result.is_some(), "Should find bundled sidecar in prod-like dir");
+        assert!(result.unwrap().ends_with(&binary_name));
+    }
+
+    #[test]
+    fn test_resolve_bundled_sidecar_dev_with_lib() {
+        // Dev mode: dir contains /target/, but lib/ exists → should resolve
+        let tmp = tempfile::tempdir().unwrap();
+        let target_dir = tmp.path().join("some").join("target").join("debug");
+        fs::create_dir_all(&target_dir).unwrap();
+        fs::write(target_dir.join("llama-server"), b"fake binary").unwrap();
+        fs::create_dir_all(target_dir.join("lib")).unwrap();
+
+        let result = resolve_bundled_sidecar(&target_dir);
+        assert!(result.is_some(), "Should find binary in dev mode when lib/ exists");
+    }
+
+    #[test]
+    fn test_resolve_bundled_sidecar_dev_without_lib() {
+        // Dev mode: dir contains /target/, no lib/ → should skip
+        let tmp = tempfile::tempdir().unwrap();
+        let target_dir = tmp.path().join("some").join("target").join("debug");
+        fs::create_dir_all(&target_dir).unwrap();
+        fs::write(target_dir.join("llama-server"), b"fake binary").unwrap();
+
+        let result = resolve_bundled_sidecar(&target_dir);
+        assert!(result.is_none(), "Should skip dev binary when lib/ is missing");
+    }
+
+    #[test]
+    fn test_resolve_bundled_sidecar_not_found() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = resolve_bundled_sidecar(tmp.path());
+        assert!(result.is_none(), "Should return None when no binary exists");
+    }
+
+    #[test]
+    fn test_resolve_dev_binary() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Simulate: exe at src-tauri/target/debug/notesage
+        let target_dir = tmp.path().join("target").join("debug");
+        fs::create_dir_all(&target_dir).unwrap();
+
+        let triple = format!("{}-{}", std::env::consts::ARCH, match std::env::consts::OS {
+            "macos" => "apple-darwin",
+            "linux" => "unknown-linux-gnu",
+            _ => "",
+        });
+        let binaries_dir = tmp.path().join("binaries");
+        fs::create_dir_all(&binaries_dir).unwrap();
+        fs::write(binaries_dir.join(format!("llama-server-{}", triple)), b"fake binary").unwrap();
+
+        let result = resolve_dev_binary(&target_dir);
+        assert!(result.is_some(), "Should find dev binary in binaries/ relative to src-tauri");
+    }
+
+    #[test]
+    fn test_resolve_dev_binary_not_found() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target_dir = tmp.path().join("target").join("debug");
+        fs::create_dir_all(&target_dir).unwrap();
+
+        let result = resolve_dev_binary(&target_dir);
+        assert!(result.is_none(), "Should return None when dev binary doesn't exist");
+    }
+
+    #[test]
+    fn test_dir_total_size() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("a.txt"), b"hello").unwrap(); // 5 bytes
+        fs::write(tmp.path().join("b.txt"), b"world!").unwrap(); // 6 bytes
+        let sub = tmp.path().join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        fs::write(sub.join("c.txt"), b"test").unwrap(); // 4 bytes
+
+        assert_eq!(dir_total_size(tmp.path()), 15);
+    }
 }
 
 #[tauri::command]
@@ -939,18 +1049,132 @@ pub struct BinaryStatus {
 
 #[tauri::command]
 pub async fn check_llama_server_available() -> Result<BinaryStatus, String> {
-    // 1. Bundled sidecar — with triple suffix (prod) or plain name (dev)
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            for name in &[sidecar_binary_name(), "llama-server".to_string()] {
-                let binary = dir.join(name);
-                if binary.exists() {
-                    let is_dev = dir.to_string_lossy().contains("/target/");
-                    if !is_dev || dir.join("lib").exists() {
-                        return Ok(BinaryStatus {
-                            available: true,
-                            location: "bundled".to_string(),
-                            path: Some(binary.to_string_lossy().to_string()),
+    // Check for stale ~/.notesage/bin/ leftovers from legacy download feature
+    if let Some(home) = dirs::home_dir() {
+        let stale_bin_dir = home.join(".notesage").join("bin");
+        if stale_bin_dir.exists() {
+            let stale_size = dir_total_size(&stale_bin_dir);
+            log::warn!(
+                target: "notesage::local_ai",
+                "Stale ~/.notesage/bin/ directory found ({} bytes) — this is a leftover from a previous version and can be safely deleted",
+                stale_size
+            );
+        }
+    }
+
+    // Use the same resolution logic as start_local_server
+    match resolve_llama_server_binary() {
+        Ok(path) => {
+            let location = if path.to_string_lossy().contains("/target/") || path.to_string_lossy().contains("/binaries/") {
+                "dev"
+            } else if path.to_string_lossy().contains("/usr/") || path.to_string_lossy().contains("/bin/") {
+                "system"
+            } else {
+                "bundled"
+            };
+            Ok(BinaryStatus {
+                available: true,
+                location: location.to_string(),
+                path: Some(path.to_string_lossy().to_string()),
+            })
+        }
+        Err(_) => Ok(BinaryStatus {
+            available: false,
+            location: "not_found".to_string(),
+            path: None,
+        }),
+    }
+}
+
+/// Calculate total size of a directory recursively.
+fn dir_total_size(dir: &std::path::Path) -> u64 {
+    let mut total: u64 = 0;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            if let Ok(meta) = entry.metadata() {
+                if meta.is_file() {
+                    total += meta.len();
+                } else if meta.is_dir() {
+                    total += dir_total_size(&entry.path());
+                }
+            }
+        }
+    }
+    total
+}
+
+/// Collect Local AI diagnostic info for the diagnostics export.
+pub fn collect_local_ai_diagnostics() -> LocalAIDiagnostics {
+    let binary = resolve_llama_server_binary();
+    let (binary_available, binary_location, binary_path) = match &binary {
+        Ok(path) => {
+            let loc = if path.to_string_lossy().contains("/target/") || path.to_string_lossy().contains("/binaries/") {
+                "dev"
+            } else if path.to_string_lossy().contains("/usr/") || path.to_string_lossy().contains("/bin/") {
+                "system"
+            } else {
+                "bundled"
+            };
+            (true, loc.to_string(), Some(path.to_string_lossy().to_string()))
+        }
+        Err(_) => (false, "not_found".to_string(), None),
+    };
+
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let models_dir = home.join(".notesage").join("models").join("llm");
+    let bin_dir = home.join(".notesage").join("bin");
+
+    // Scan for model files on disk
+    let models_on_disk = if models_dir.exists() {
+        std::fs::read_dir(&models_dir)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .filter_map(|e| {
+                        let meta = e.metadata().ok()?;
+                        if meta.is_file() {
+                            Some(DiagnosticFile {
+                                name: e.file_name().to_string_lossy().to_string(),
+                                size_bytes: meta.len(),
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    } else {
+        vec![]
+    };
+
+    // Detect stale files
+    let mut stale_files: Vec<DiagnosticFile> = vec![];
+
+    // Stale ~/.notesage/bin/ leftovers
+    if bin_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&bin_dir) {
+            for entry in entries.flatten() {
+                if let Ok(meta) = entry.metadata() {
+                    stale_files.push(DiagnosticFile {
+                        name: format!("~/.notesage/bin/{}", entry.file_name().to_string_lossy()),
+                        size_bytes: if meta.is_dir() { dir_total_size(&entry.path()) } else { meta.len() },
+                    });
+                }
+            }
+        }
+    }
+
+    // Stale .tmp / .part files in models dir
+    if models_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&models_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.ends_with(".tmp") || name.ends_with(".part") {
+                    if let Ok(meta) = entry.metadata() {
+                        stale_files.push(DiagnosticFile {
+                            name: format!("~/.notesage/models/llm/{}", name),
+                            size_bytes: meta.len(),
                         });
                     }
                 }
@@ -958,217 +1182,32 @@ pub async fn check_llama_server_available() -> Result<BinaryStatus, String> {
         }
     }
 
-    // 2. Dev mode fallback — source binaries directory
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(target_dir) = exe.parent() {
-            let triple = format!("{}-{}", std::env::consts::ARCH, match std::env::consts::OS {
-                "macos" => "apple-darwin",
-                "linux" => "unknown-linux-gnu",
-                _ => "",
-            });
-            if let Some(src_tauri) = target_dir.parent().and_then(|p| p.parent()) {
-                let dev_binary = src_tauri.join("binaries").join(format!("llama-server-{}", triple));
-                if dev_binary.exists() {
-                    return Ok(BinaryStatus {
-                        available: true,
-                        location: "bundled".to_string(),
-                        path: Some(dev_binary.to_string_lossy().to_string()),
-                    });
-                }
-            }
-        }
+    LocalAIDiagnostics {
+        binary_available,
+        binary_location,
+        binary_path,
+        models_dir: models_dir.to_string_lossy().to_string(),
+        models_dir_exists: models_dir.exists(),
+        models_on_disk,
+        stale_files,
     }
-
-    // 3. Managed install
-    if let Some(home) = dirs::home_dir() {
-        let managed = home.join(".notesage").join("bin").join("llama-server");
-        if managed.exists() {
-            return Ok(BinaryStatus {
-                available: true,
-                location: "managed".to_string(),
-                path: Some(managed.to_string_lossy().to_string()),
-            });
-        }
-    }
-
-    // 3. System PATH
-    if let Ok(output) = std::process::Command::new("which").arg("llama-server").output() {
-        if output.status.success() {
-            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path_str.is_empty() {
-                return Ok(BinaryStatus {
-                    available: true,
-                    location: "system".to_string(),
-                    path: Some(path_str),
-                });
-            }
-        }
-    }
-
-    Ok(BinaryStatus {
-        available: false,
-        location: "not_found".to_string(),
-        path: None,
-    })
 }
 
-#[tauri::command]
-pub async fn download_llama_server_binary(
-    app: AppHandle,
-    state: State<'_, LocalInferenceState>,
-) -> Result<String, String> {
-    let version = "b5460";
-    let arch = std::env::consts::ARCH;
-    let release_name = match arch {
-        "aarch64" => "macos-arm64",
-        "x86_64" => "macos-x64",
-        _ => return Err(format!("Unsupported architecture: {}", arch)),
-    };
-
-    let url = format!(
-        "https://github.com/ggml-org/llama.cpp/releases/download/{}/llama-{}-bin-{}.zip",
-        version, version, release_name
-    );
-
-    let dest_dir = dirs::home_dir()
-        .ok_or("Could not determine home directory")?
-        .join(".notesage")
-        .join("bin");
-    std::fs::create_dir_all(&dest_dir)
-        .map_err(|e| format!("Failed to create directory: {}", e))?;
-    let dest_path = dest_dir.join("llama-server");
-
-    log::info!(target: "notesage::local_ai", "Downloading llama-server {} for {} from {}", version, arch, url);
-
-    // Set up cancel signal
-    let cancel = Arc::new(AtomicBool::new(false));
-    {
-        let mut cancels = state.download_cancels.lock().unwrap();
-        cancels.insert("__llama_server_binary__".to_string(), cancel.clone());
-    }
-
-    // Download
-    let client = reqwest::Client::new();
-    let resp = client.get(&url).send().await
-        .map_err(|e| format!("Download failed: {}", e))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("Download failed with status: {}", resp.status()));
-    }
-
-    let total = resp.content_length().unwrap_or(0);
-    let mut downloaded: u64 = 0;
-    let mut bytes = Vec::new();
-
-    use futures::StreamExt;
-    let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        if cancel.load(Ordering::Relaxed) {
-            return Err("Download cancelled".to_string());
-        }
-        let chunk = chunk.map_err(|e| format!("Download error: {}", e))?;
-        downloaded += chunk.len() as u64;
-        bytes.extend_from_slice(&chunk);
-
-        if total > 0 {
-            let _ = app.emit(
-                "llama-binary-download-progress",
-                serde_json::json!({
-                    "downloaded": downloaded,
-                    "total": total,
-                }),
-            );
-        }
-    }
-
-    // Extract llama-server and shared libraries from the zip
-    let cursor = std::io::Cursor::new(bytes);
-    let mut archive = zip::ZipArchive::new(cursor)
-        .map_err(|e| format!("Failed to open zip: {}", e))?;
-
-    let lib_dir = dest_dir.join("lib");
-    std::fs::create_dir_all(&lib_dir)
-        .map_err(|e| format!("Failed to create lib directory: {}", e))?;
-
-    let mut found_binary = false;
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i)
-            .map_err(|e| format!("Failed to read zip entry: {}", e))?;
-        let name = file.name().to_string();
-
-        // Extract the llama-server binary
-        if name.ends_with("/llama-server") || name == "llama-server" {
-            let mut out = std::fs::File::create(&dest_path)
-                .map_err(|e| format!("Failed to create binary file: {}", e))?;
-            std::io::copy(&mut file, &mut out)
-                .map_err(|e| format!("Failed to write binary: {}", e))?;
-            found_binary = true;
-        }
-
-        // Extract shared libraries (.dylib / .so) and Metal shader files (.metal, .h)
-        if name.ends_with(".dylib") || name.ends_with(".so")
-            || name.ends_with(".metal") || name.ends_with("ggml-metal-impl.h") || name.ends_with("ggml-common.h") {
-            if let Some(lib_name) = name.rsplit('/').next() {
-                let lib_path = lib_dir.join(lib_name);
-                let mut out = std::fs::File::create(&lib_path)
-                    .map_err(|e| format!("Failed to create library file: {}", e))?;
-                std::io::copy(&mut file, &mut out)
-                    .map_err(|e| format!("Failed to write library: {}", e))?;
-                log::debug!(target: "notesage::local_ai", "Extracted library: {}", lib_name);
-            }
-        }
-    }
-
-    if !found_binary {
-        return Err("llama-server not found in downloaded archive".to_string());
-    }
-
-    // Set executable permissions
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&dest_path, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| format!("Failed to set permissions: {}", e))?;
-    }
-
-    // Remove macOS Gatekeeper quarantine from binary and all dylibs
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("xattr")
-            .args(["-dr", "com.apple.quarantine"])
-            .arg(&dest_dir)
-            .output();
-    }
-
-    // Fix rpath so the binary finds dylibs in lib/ next to itself
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("install_name_tool")
-            .args(["-add_rpath", "@executable_path/lib", dest_path.to_str().unwrap_or("")])
-            .output();
-    }
-
-    // Cleanup cancel signal
-    {
-        let mut cancels = state.download_cancels.lock().unwrap();
-        cancels.remove("__llama_server_binary__");
-    }
-
-    log::info!(target: "notesage::local_ai", "Installed llama-server to {}", dest_path.display());
-    Ok(dest_path.to_string_lossy().to_string())
+#[derive(Serialize, Clone, Debug)]
+pub struct DiagnosticFile {
+    pub name: String,
+    pub size_bytes: u64,
 }
 
-#[tauri::command]
-pub async fn cancel_llama_server_download(
-    state: State<'_, LocalInferenceState>,
-) -> Result<(), String> {
-    let cancels = state.download_cancels.lock().unwrap();
-    if let Some(cancel) = cancels.get("__llama_server_binary__") {
-        cancel.store(true, Ordering::Relaxed);
-        Ok(())
-    } else {
-        Err("No active binary download".to_string())
-    }
+#[derive(Serialize, Clone, Debug)]
+pub struct LocalAIDiagnostics {
+    pub binary_available: bool,
+    pub binary_location: String,
+    pub binary_path: Option<String>,
+    pub models_dir: String,
+    pub models_dir_exists: bool,
+    pub models_on_disk: Vec<DiagnosticFile>,
+    pub stale_files: Vec<DiagnosticFile>,
 }
 
 // ---------------------------------------------------------------------------

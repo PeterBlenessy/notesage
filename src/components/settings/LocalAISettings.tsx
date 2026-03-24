@@ -317,7 +317,6 @@ export function LocalAISettings() {
     downloads,
     systemMemory,
     binaryStatus,
-    binaryDownloadProgress,
     categoryFilter,
     setActiveModel,
     refreshModels,
@@ -326,8 +325,7 @@ export function LocalAISettings() {
     deleteModel,
     removeCustomModel,
     checkBinary,
-    downloadBinary,
-    cancelBinaryDownload,
+    startServer,
     setCategoryFilter,
   } = useLocalAIStore();
 
@@ -415,7 +413,7 @@ export function LocalAISettings() {
     }
     if (serverStatus === 'starting') return 'Loading model...';
     if (serverStatus === 'error') {
-      if (binaryStatus === 'not_found') return 'AI engine not installed — download it below';
+      if (binaryStatus === 'not_found') return 'AI engine not found — try reinstalling Notesage';
       if (serverError) {
         if (serverError.includes('healthy within')) return 'Server took too long to start — try a smaller model or restart';
         if (serverError.includes('not found')) return 'Model file missing — download a model below';
@@ -428,6 +426,27 @@ export function LocalAISettings() {
     if (!activeModelId) return 'No model selected';
     return 'Stopped';
   })();
+
+  // Can the server be manually started?
+  const canStart = binaryStatus === 'available' && hasDownloadedModels && activeModelId && hasConnection;
+  const startDisabledReason = !hasConnection
+    ? 'Add Local AI connection first'
+    : binaryStatus !== 'available'
+    ? 'AI engine not found'
+    : !activeModelId
+    ? 'Select a model first'
+    : !hasDownloadedModels
+    ? 'Download a model first'
+    : undefined;
+
+  const handleStartOrRestart = async () => {
+    if (!activeModelId) return;
+    const store = useLocalAIStore.getState();
+    if (store.serverStatus === 'running') {
+      await tauriApi.stopLocalServer().catch(() => {});
+    }
+    await startServer(activeModelId, store.contextLength, store.gpuLayers);
+  };
 
   const renderModelCard = (model: LocalModelInfo) => (
     <ModelCard
@@ -494,61 +513,77 @@ export function LocalAISettings() {
             </span>
           )}
         </div>
-        {serverStatus === 'running' && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs gap-1.5 shrink-0"
-            onClick={handleHealthCheck}
-            disabled={healthChecking}
-          >
-            {healthChecking ? (
-              <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.5} />
-            ) : (
-              <HeartPulse className="h-3 w-3" strokeWidth={1.5} />
-            )}
-            Health check
-          </Button>
-        )}
-      </div>
-
-      {/* Binary download banner */}
-      {binaryStatus === 'not_found' && (
-        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">AI engine not installed</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Download the llama.cpp inference engine (~11 MB) to run models locally.
-              </p>
-            </div>
-            <Button
-              size="sm"
-              className="shrink-0 gap-1.5"
-              onClick={() => downloadBinary()}
-            >
-              <Download className="h-3.5 w-3.5" />
-              Download
-            </Button>
-          </div>
-        </div>
-      )}
-      {binaryStatus === 'downloading' && (
-        <div className="rounded-md border border-border p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium">Downloading AI engine...</p>
+        <div className="flex items-center gap-1 shrink-0">
+          {(serverStatus === 'stopped' || serverStatus === 'error') && hasConnection && (
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs gap-1.5"
+                      onClick={handleStartOrRestart}
+                      disabled={!canStart}
+                    >
+                      Start
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {startDisabledReason && (
+                  <TooltipContent side="bottom">
+                    <p className="text-xs">{startDisabledReason}</p>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          {serverStatus === 'starting' && (
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 text-xs"
-              onClick={() => cancelBinaryDownload()}
+              className="h-7 text-xs gap-1.5"
+              disabled
             >
-              Cancel
+              <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.5} />
+              Starting...
             </Button>
-          </div>
-          <Progress value={binaryDownloadProgress} className="h-1.5" />
-          <p className="text-xs text-muted-foreground text-center">
-            {Math.round(binaryDownloadProgress)}%
+          )}
+          {serverStatus === 'running' && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs gap-1.5"
+                onClick={handleStartOrRestart}
+              >
+                Restart
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs gap-1.5"
+                onClick={handleHealthCheck}
+                disabled={healthChecking}
+              >
+                {healthChecking ? (
+                  <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.5} />
+                ) : (
+                  <HeartPulse className="h-3 w-3" strokeWidth={1.5} />
+                )}
+                Health check
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Binary not found banner */}
+      {binaryStatus === 'not_found' && (
+        <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3">
+          <p className="text-sm font-medium">AI engine not found</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            The llama.cpp inference engine should be bundled with Notesage. Try reinstalling the app.
           </p>
         </div>
       )}

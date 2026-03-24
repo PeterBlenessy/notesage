@@ -6,7 +6,7 @@ import { tauriApi } from '@/lib/tauri';
 import type { LocalModelInfo, SystemMemoryInfo, BinaryStatus } from '@/lib/tauri';
 
 export type ServerStatus = 'stopped' | 'starting' | 'running' | 'error';
-export type BinaryState = 'unknown' | 'available' | 'downloading' | 'not_found';
+export type BinaryState = 'unknown' | 'available' | 'not_found';
 export type ModelCategory = 'all' | 'general' | 'code' | 'reasoning' | 'compact' | 'downloaded';
 
 export interface DownloadState {
@@ -23,17 +23,18 @@ interface LocalAIStore {
   // Runtime (non-persisted)
   serverStatus: ServerStatus;
   serverError: string | null;
+  serverStatusReason: string | null;
   serverPort: number | null;
   models: LocalModelInfo[];
   downloads: Record<string, DownloadState>;
   systemMemory: SystemMemoryInfo | null;
   binaryStatus: BinaryState;
-  binaryDownloadProgress: number;
   categoryFilter: ModelCategory;
 
   // Actions
   setActiveModel: (modelId: string) => void;
   setServerStatus: (status: ServerStatus, error?: string) => void;
+  setServerStatusReason: (reason: string | null) => void;
   setServerPort: (port: number | null) => void;
   setModels: (models: LocalModelInfo[]) => void;
   setSystemMemory: (info: SystemMemoryInfo) => void;
@@ -48,8 +49,7 @@ interface LocalAIStore {
   addCustomModel: (name: string, url: string) => Promise<void>;
   removeCustomModel: (modelId: string) => Promise<void>;
   checkBinary: () => Promise<BinaryStatus>;
-  downloadBinary: () => Promise<void>;
-  cancelBinaryDownload: () => void;
+  startServer: (modelId: string, contextLength: number, gpuLayers: number) => Promise<void>;
 }
 
 // RAF-throttled progress updates to avoid render storms
@@ -94,17 +94,18 @@ export const useLocalAIStore = create<LocalAIStore>()(
         // Runtime defaults
         serverStatus: 'stopped',
         serverError: null,
+        serverStatusReason: null,
         serverPort: null,
         models: [],
         downloads: {},
         systemMemory: null,
         binaryStatus: 'unknown',
-        binaryDownloadProgress: 0,
         categoryFilter: 'all',
 
         // Actions
         setActiveModel: (modelId) => set({ activeModelId: modelId }),
         setServerStatus: (status, error) => set({ serverStatus: status, serverError: error ?? null }),
+        setServerStatusReason: (reason) => set({ serverStatusReason: reason }),
         setServerPort: (port) => set({ serverPort: port }),
         setModels: (models) => set({ models }),
         setSystemMemory: (info) => set({ systemMemory: info }),
@@ -202,35 +203,16 @@ export const useLocalAIStore = create<LocalAIStore>()(
           return status;
         },
 
-        downloadBinary: async () => {
-          set({ binaryStatus: 'downloading', binaryDownloadProgress: 0 });
-
-          const unlisten = await listen<{ downloaded: number; total: number }>(
-            'llama-binary-download-progress',
-            (event) => {
-              if (event.payload.total > 0) {
-                set({ binaryDownloadProgress: (event.payload.downloaded / event.payload.total) * 100 });
-              }
-            },
-          );
-
+        startServer: async (modelId: string, contextLength: number, gpuLayers: number) => {
+          set({ serverStatus: 'starting', serverStatusReason: 'Starting...' });
           try {
-            await tauriApi.downloadLlamaServerBinary();
-            set({ binaryStatus: 'available', binaryDownloadProgress: 100 });
-            toast.success('AI engine downloaded');
+            const port = await tauriApi.startLocalServer(modelId, contextLength, gpuLayers);
+            set({ serverStatus: 'running', serverPort: port, serverStatusReason: null });
           } catch (err) {
-            const msg = String(err);
-            if (!msg.includes('cancelled')) {
-              toast.error(`Failed to download AI engine: ${err}`);
-            }
-            set({ binaryStatus: 'not_found', binaryDownloadProgress: 0 });
-          } finally {
-            unlisten();
+            const errorMsg = String(err);
+            set({ serverStatus: 'error', serverError: errorMsg, serverStatusReason: `Server failed to start: ${errorMsg}` });
+            toast.error(`Failed to start Local AI: ${errorMsg}`);
           }
-        },
-
-        cancelBinaryDownload: () => {
-          tauriApi.cancelLlamaServerDownload().catch((e) => console.warn('Failed to cancel binary download:', e));
         },
       };
     },

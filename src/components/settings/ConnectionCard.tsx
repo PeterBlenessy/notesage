@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import type { Connection } from '@/lib/ai/connections';
 import { CAPABILITY_LABELS, prettyModelName, setAgentModels } from '@/lib/ai/connections';
 import { useConnectionsStore } from '@/stores/connections-store';
+import { useLocalAIStore } from '@/stores/local-ai-store';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { Button } from '@/components/ui/button';
 import { Settings2, Unplug, HeartPulse, Loader2, Check, X, ArrowUpCircle, Shield, Globe } from 'lucide-react';
@@ -185,13 +186,20 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
     }
   }, [updateAvailable, onUpdateComplete]);
 
-  // Derive a contextual tooltip for the status dot
+  // Derive a contextual tooltip and subtitle for the status dot
+  const serverStatusReason = useLocalAIStore((s) => s.serverStatusReason);
   const statusTooltip = (() => {
+    if (connection.authMethod === 'local_bundled' && serverStatusReason) {
+      return serverStatusReason;
+    }
     if (connection.authMethod === 'local_bundled' && connection.status === 'expired') {
-      return 'No local models available';
+      return 'Not ready';
     }
     return undefined; // use default
   })();
+  const showStatusSubtitle = connection.authMethod === 'local_bundled'
+    && (connection.status === 'expired' || connection.status === 'error')
+    && serverStatusReason;
 
   return (
     <div className="space-y-0">
@@ -302,6 +310,11 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
           )}
         </div>
       </div>
+      {showStatusSubtitle && health !== 'fail' && (
+        <p className="text-xs text-muted-foreground px-4 py-1 break-words">
+          {serverStatusReason}
+        </p>
+      )}
       {health === 'fail' && healthError && (
         <p className="text-xs text-destructive px-4 py-1.5 break-words">
           {healthError}

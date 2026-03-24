@@ -24,6 +24,7 @@ export function useLocalAI() {
   const healthCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const retryCountRef = useRef(0);
   const startupLoadedRef = useRef(false);
+  const diagnosticsLoggedRef = useRef(false);
 
   // Check if Local AI connection exists in connections-store
   const hasLocalAIConnection = connections.some(
@@ -48,7 +49,7 @@ export function useLocalAI() {
         if (binaryResult.available) {
           log.debug('local-ai', `Binary found at ${binaryResult.location}: ${binaryResult.path}`);
         } else {
-          log.info('local-ai', 'Binary not found — user will need to download it');
+          log.warn('local-ai', 'Binary not found — sidecar may not be bundled correctly');
         }
         log.debug('local-ai', `Loaded system memory and ${fetchedModels.length} models`);
       } catch (e) {
@@ -62,19 +63,33 @@ export function useLocalAI() {
   // Depends on `models` and `binaryStatus` so it re-fires after startup fetch completes.
   useEffect(() => {
     if (!startupReady) return;
+
+    const store = useLocalAIStore.getState();
+    let autoStartResult = 'skipped';
+    let skipReason = '';
+
     if (!hasLocalAIConnection) {
-      log.info('local-ai', 'Auto-start skipped: no Local AI connection');
+      skipReason = 'no Local AI connection';
+      log.info('local-ai', `Auto-start skipped: ${skipReason}`, {
+        connectionCount: connections.length,
+        providers: connections.map(c => c.provider),
+      });
       return;
     }
     if (!activeModelId) {
-      log.info('local-ai', 'Auto-start skipped: no activeModelId');
+      skipReason = 'no activeModelId';
+      log.info('local-ai', `Auto-start skipped: ${skipReason}`);
+      store.setServerStatusReason('No model selected — choose a model in Settings → Local AI');
+      updateConnectionStatus('expired');
       return;
     }
 
     // Don't auto-start if binary is not available
-    if (binaryStatus === 'not_found' || binaryStatus === 'downloading' || binaryStatus === 'unknown') {
+    if (binaryStatus === 'not_found' || binaryStatus === 'unknown') {
       if (binaryStatus !== 'unknown') {
-        log.info('local-ai', `Auto-start skipped: binary not available (status: ${binaryStatus})`);
+        skipReason = `binary not available (status: ${binaryStatus})`;
+        log.info('local-ai', `Auto-start skipped: ${skipReason}`);
+        store.setServerStatusReason('AI engine not found — try reinstalling Notesage');
         updateConnectionStatus('expired');
       }
       return;
@@ -84,19 +99,61 @@ export function useLocalAI() {
     if (!model?.downloaded) {
       // Only log after startup has loaded models (avoid noise from empty initial state)
       if (startupLoadedRef.current) {
-        log.info('local-ai', `Auto-start skipped: model ${activeModelId} not downloaded`);
+        skipReason = `model ${activeModelId} not downloaded (${models.length} models loaded)`;
+        log.info('local-ai', `Auto-start skipped: ${skipReason}`);
+        store.setServerStatusReason('Model not downloaded — download it in Settings → Local AI');
         updateConnectionStatus('expired');
       }
       return;
     }
 
-    const store = useLocalAIStore.getState();
     // Don't auto-start if already running
-    if (store.serverStatus === 'running' || store.serverStatus === 'starting') return;
+    if (store.serverStatus === 'running' || store.serverStatus === 'starting') {
+      autoStartResult = store.serverStatus === 'running' ? 'already running' : 'already starting';
+      return;
+    }
 
-    log.info('local-ai', `Auto-starting server with model ${activeModelId}`);
+    autoStartResult = 'started';
+    log.info('local-ai', `Auto-starting server with model ${activeModelId}`, {
+      binaryStatus,
+      modelsLoaded: models.length,
+    });
+    store.setServerStatusReason('Starting...');
     startServer(activeModelId, contextLength, gpuLayers);
+
+    // Log startup diagnostics once (task 5)
+    if (!diagnosticsLoggedRef.current && startupLoadedRef.current) {
+      diagnosticsLoggedRef.current = true;
+      log.info('local-ai', 'Startup diagnostics', {
+        connection: hasLocalAIConnection,
+        activeModelId,
+        binaryStatus,
+        modelsLoaded: models.length,
+        modelDownloaded: !!model?.downloaded,
+        serverStatus: store.serverStatus,
+        autoStartResult: autoStartResult || `skipped (${skipReason})`,
+      });
+    }
   }, [startupReady, hasLocalAIConnection, activeModelId, contextLength, gpuLayers, models, binaryStatus]);
+
+  // Log startup diagnostics even if auto-start was skipped
+  useEffect(() => {
+    if (!startupReady || !startupLoadedRef.current || diagnosticsLoggedRef.current) return;
+    if (!hasLocalAIConnection) return; // Don't log diagnostics if Local AI isn't set up at all
+
+    diagnosticsLoggedRef.current = true;
+    const store = useLocalAIStore.getState();
+    const model = activeModelId ? models.find((m) => m.id === activeModelId) : null;
+    log.info('local-ai', 'Startup diagnostics', {
+      connection: hasLocalAIConnection,
+      activeModelId,
+      binaryStatus,
+      modelsLoaded: models.length,
+      modelDownloaded: !!model?.downloaded,
+      serverStatus: store.serverStatus,
+      autoStartResult: 'skipped',
+    });
+  }, [startupReady, hasLocalAIConnection, activeModelId, binaryStatus, models]);
 
   // Stop server when Local AI connection is removed
   useEffect(() => {
@@ -105,6 +162,7 @@ export function useLocalAI() {
       tauriApi.stopLocalServer().catch(() => {});
       useLocalAIStore.getState().setServerStatus('stopped');
       useLocalAIStore.getState().setServerPort(null);
+      useLocalAIStore.getState().setServerStatusReason(null);
     }
   }, [hasLocalAIConnection]);
 
@@ -120,6 +178,7 @@ export function useLocalAI() {
         if (running) {
           store.setServerStatus('running');
           store.setServerPort(port);
+          store.setServerStatusReason(null);
           retryCountRef.current = 0;
           updateConnectionStatus('connected');
           // Fetch runtime model metadata for tooltip enrichment
@@ -129,6 +188,7 @@ export function useLocalAI() {
         } else {
           store.setServerStatus('stopped');
           store.setServerPort(null);
+          store.setServerStatusReason('Server stopped unexpectedly');
           updateConnectionStatus('error');
         }
       },
@@ -158,10 +218,12 @@ export function useLocalAI() {
             const store = useLocalAIStore.getState();
             if (store.activeModelId) {
               toast.info('Local AI restarted');
+              store.setServerStatusReason('Restarting...');
               await startServer(store.activeModelId, store.contextLength, store.gpuLayers);
             }
           } else {
             useLocalAIStore.getState().setServerStatus('error', 'Server crashed and failed to restart after 3 attempts');
+            useLocalAIStore.getState().setServerStatusReason('Server crashed and failed to restart after 3 attempts');
             updateConnectionStatus('error');
             toast.error('Local AI failed to restart after 3 attempts');
           }
@@ -192,17 +254,20 @@ export function useLocalAI() {
 async function startServer(modelId: string, contextLength: number, gpuLayers: number) {
   log.info('local-ai', `Starting server: model=${modelId} ctx=${contextLength} gpu=${gpuLayers}`);
   useLocalAIStore.getState().setServerStatus('starting');
+  useLocalAIStore.getState().setServerStatusReason('Starting...');
   updateConnectionStatus('expired'); // Amber while starting
   try {
     const port = await tauriApi.startLocalServer(modelId, contextLength, gpuLayers);
     log.info('local-ai', `Server started on port ${port}`);
     useLocalAIStore.getState().setServerStatus('running');
     useLocalAIStore.getState().setServerPort(port);
+    useLocalAIStore.getState().setServerStatusReason(null);
     updateConnectionStatus('connected');
   } catch (err) {
     const errorMsg = String(err);
     log.error('local-ai', `Server start failed: ${errorMsg}`);
     useLocalAIStore.getState().setServerStatus('error', errorMsg);
+    useLocalAIStore.getState().setServerStatusReason(`Server failed to start: ${errorMsg}`);
     updateConnectionStatus('error');
     toast.error(`Failed to start Local AI: ${errorMsg}`);
   }

@@ -5,6 +5,7 @@ use super::watcher::WatcherState;
 use super::acp::AcpState;
 use super::mcp::McpState;
 use super::local_inference::LocalInferenceState;
+use super::transcription::TranscriptionState;
 use crate::index::IndexState;
 
 #[derive(Deserialize)]
@@ -99,6 +100,8 @@ pub struct DiagnosticDump {
     pub local_server_port: Option<u16>,
     pub index_healthy: bool,
     pub index_project_count: usize,
+    pub local_ai: super::local_inference::LocalAIDiagnostics,
+    pub whisper: super::transcription::WhisperDiagnostics,
 }
 
 /// Collects backend diagnostic state for export. No sensitive data included.
@@ -109,6 +112,7 @@ pub async fn collect_diagnostics(
     acp: tauri::State<'_, AcpState>,
     mcp: tauri::State<'_, McpState>,
     local_inference: tauri::State<'_, LocalInferenceState>,
+    transcription: tauri::State<'_, TranscriptionState>,
 ) -> Result<DiagnosticDump, String> {
     let log_dir = log_directory().unwrap_or_default();
     let log_size = log_dir_size(&log_dir);
@@ -123,6 +127,9 @@ pub async fn collect_diagnostics(
         .map(|s| s.health_info())
         .unwrap_or((false, 0, 0));
 
+    let local_ai = super::local_inference::collect_local_ai_diagnostics();
+    let whisper = transcription.collect_diagnostics();
+
     Ok(DiagnosticDump {
         os: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
@@ -136,6 +143,8 @@ pub async fn collect_diagnostics(
         local_server_port: local_port,
         index_healthy,
         index_project_count,
+        local_ai,
+        whisper,
     })
 }
 

@@ -210,8 +210,6 @@ pub fn run() {
             stop_local_server,
             get_local_server_status,
             check_llama_server_available,
-            download_llama_server_binary,
-            cancel_llama_server_download,
             // Model metadata
             get_model_metadata,
             fetch_hf_metadata,

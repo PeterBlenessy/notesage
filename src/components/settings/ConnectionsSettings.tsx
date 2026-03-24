@@ -1,22 +1,12 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
-import { useLocalAIStore } from '@/stores/local-ai-store';
 import { stopAcpAgent } from '@/hooks/useAIOperations';
-import { tauriApi } from '@/lib/tauri';
 import { toast } from 'sonner';
 import { ConnectionCard } from './ConnectionCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import {
   DropdownMenu,
@@ -132,11 +122,6 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
     requestAnimationFrame(() => setDropdownOpen(true));
   }, []);
 
-  // Binary download dialog state for Local AI
-  const [binaryDialogOpen, setBinaryDialogOpen] = useState(false);
-  const [binaryDownloading, setBinaryDownloading] = useState(false);
-  const binaryDownloadProgress = useLocalAIStore((s) => s.binaryDownloadProgress);
-
   const finishLocalAIConnect = useCallback(() => {
     // Start as 'expired' (amber) — useLocalAI hook will set 'connected' (green) once server is running
     const connectionId = addConnection({
@@ -150,23 +135,9 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
   }, [addConnection, autoAssign]);
 
   const handlePickProvider = useCallback((option: ProviderOption) => {
-    // Local AI: check binary availability first
+    // Local AI: connect immediately (binary is always bundled as sidecar)
     if (option.authMethod === 'local_bundled') {
-      (async () => {
-        try {
-          const status = await tauriApi.checkLlamaServerAvailable();
-          if (status.available) {
-            // Binary exists, connect immediately
-            finishLocalAIConnect();
-          } else {
-            // Binary missing — show download dialog
-            setBinaryDialogOpen(true);
-          }
-        } catch {
-          // On error, try to connect anyway
-          finishLocalAIConnect();
-        }
-      })();
+      finishLocalAIConnect();
       return;
     }
 
@@ -181,19 +152,6 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
       popoverOpenedAt.current = Date.now();
     }, 100);
   }, [addConnection, autoAssign, finishLocalAIConnect]);
-
-  const handleBinaryDownload = useCallback(async () => {
-    setBinaryDownloading(true);
-    try {
-      await useLocalAIStore.getState().downloadBinary();
-      setBinaryDialogOpen(false);
-      finishLocalAIConnect();
-    } catch {
-      // Toast already shown by the store action
-    } finally {
-      setBinaryDownloading(false);
-    }
-  }, [finishLocalAIConnect]);
 
   const handleSave = useCallback(() => {
     if (flow.step !== 'configure') return;
@@ -550,39 +508,6 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
         onNavigateToTab={onNavigateToTab}
       />
 
-      {/* Binary download dialog for Local AI */}
-      <Dialog open={binaryDialogOpen} onOpenChange={(open) => {
-        if (!open && !binaryDownloading) {
-          setBinaryDialogOpen(false);
-        }
-      }}>
-        <DialogContent className="sm:max-w-[400px]" onPointerDownOutside={(e) => { if (binaryDownloading) e.preventDefault(); }}>
-          <DialogHeader>
-            <DialogTitle className="text-base">Download AI Engine</DialogTitle>
-            <DialogDescription className="text-sm">
-              Local AI requires the llama.cpp inference engine (~11 MB download). This only needs to happen once.
-            </DialogDescription>
-          </DialogHeader>
-          {binaryDownloading ? (
-            <div className="py-4 space-y-3">
-              <Progress value={binaryDownloadProgress} className="h-1.5" />
-              <p className="text-xs text-muted-foreground text-center">
-                Downloading... {Math.round(binaryDownloadProgress)}%
-              </p>
-            </div>
-          ) : (
-            <DialogFooter className="gap-2 sm:gap-0">
-              <Button variant="outline" size="sm" onClick={() => setBinaryDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button size="sm" onClick={handleBinaryDownload} className="gap-1.5">
-                <Download className="h-3.5 w-3.5" />
-                Download
-              </Button>
-            </DialogFooter>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

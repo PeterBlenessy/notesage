@@ -41,15 +41,11 @@ export function LocalAISetupCard() {
     setIsSettingUp(true);
     const store = useLocalAIStore.getState();
 
-    // Check if binary is available; download if needed
+    // Check if binary is available (should always be bundled)
     try {
-      const binaryStatus = await store.checkBinary();
-      if (!binaryStatus.available) {
-        await store.downloadBinary();
-      }
+      await store.checkBinary();
     } catch {
-      setIsSettingUp(false);
-      return;
+      // Non-fatal — useLocalAI hook will handle missing binary
     }
 
     store.setActiveModel(recommended.id);

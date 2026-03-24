@@ -100,6 +100,62 @@ impl TranscriptionState {
             download_cancels: Mutex::new(HashMap::new()),
         }
     }
+
+    /// Collect diagnostic info for the diagnostics export.
+    pub fn collect_diagnostics(&self) -> WhisperDiagnostics {
+        let models_dir_exists = self.models_dir.exists();
+        let cached_model = self.whisper_ctx.lock()
+            .ok()
+            .and_then(|ctx| ctx.as_ref().map(|(name, _)| name.clone()));
+
+        let mut models_on_disk = Vec::new();
+        let mut stale_files = Vec::new();
+
+        if models_dir_exists {
+            if let Ok(entries) = std::fs::read_dir(&self.models_dir) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+
+                    if name.ends_with(".downloading") || name.ends_with(".tmp") || name.ends_with(".part") {
+                        stale_files.push(super::local_inference::DiagnosticFile {
+                            name: name.clone(),
+                            size_bytes: size,
+                        });
+                    }
+
+                    models_on_disk.push(super::local_inference::DiagnosticFile {
+                        name,
+                        size_bytes: size,
+                    });
+                }
+            }
+        }
+
+        let is_recording = self.recording.lock().map(|r| r.is_some()).unwrap_or(false);
+        let is_dictating = self.dictation_cancel.lock().map(|d| d.is_some()).unwrap_or(false);
+
+        WhisperDiagnostics {
+            models_dir: self.models_dir.to_string_lossy().to_string(),
+            models_dir_exists,
+            models_on_disk,
+            stale_files,
+            cached_model,
+            is_recording,
+            is_dictating,
+        }
+    }
+}
+
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct WhisperDiagnostics {
+    pub models_dir: String,
+    pub models_dir_exists: bool,
+    pub models_on_disk: Vec<super::local_inference::DiagnosticFile>,
+    pub stale_files: Vec<super::local_inference::DiagnosticFile>,
+    pub cached_model: Option<String>,
+    pub is_recording: bool,
+    pub is_dictating: bool,
 }
 
 // Known Whisper models with metadata
@@ -414,12 +470,18 @@ pub async fn transcribe(
     }
 
     let model_path = state.models_dir.join(format!("ggml-{}.bin", model));
+    log::info!(target: "notesage::transcription", "Transcribe requested: model={}, path={}, exists={}", model, model_path.display(), model_path.exists());
+
     if !model_path.exists() {
+        log::error!(target: "notesage::transcription", "Model file not found: {}", model_path.display());
         return Err(format!(
             "Model '{}' not downloaded. Download it from Settings > Transcription.",
             model
         ));
     }
+
+    let model_size = std::fs::metadata(&model_path).map(|m| m.len()).unwrap_or(0);
+    log::info!(target: "notesage::transcription", "Model file size: {} bytes, audio samples: {}, sample_rate: {}", model_size, audio_data.len(), sample_rate);
 
     let model_path_str = model_path
         .to_str()
@@ -444,11 +506,18 @@ pub async fn transcribe(
         };
 
         if needs_reload {
-            log::info!(target: "notesage::transcription", "Loading Whisper model: {}", model);
+            log::info!(target: "notesage::transcription", "Loading Whisper model: {} ({})", model, model_path_str);
+            let load_start = std::time::Instant::now();
             let params = whisper_rs::WhisperContextParameters::default();
             let ctx = whisper_rs::WhisperContext::new_with_params(&model_path_str, params)
-                .map_err(|e| format!("Failed to load Whisper model: {}", e))?;
+                .map_err(|e| {
+                    log::error!(target: "notesage::transcription", "Failed to load Whisper model '{}': {}", model, e);
+                    format!("Failed to load Whisper model: {}", e)
+                })?;
+            log::info!(target: "notesage::transcription", "Model loaded in {:.1}s", load_start.elapsed().as_secs_f64());
             *ctx_lock = Some((model.clone(), ctx));
+        } else {
+            log::debug!(target: "notesage::transcription", "Reusing cached Whisper context for model: {}", model);
         }
     }
 
@@ -585,15 +654,21 @@ pub async fn start_dictation(
     }
 
     let model_path = state.models_dir.join("ggml-base.bin");
+    log::info!(target: "notesage::transcription", "Dictation start requested: model_path={}, exists={}, models_dir={}", model_path.display(), model_path.exists(), state.models_dir.display());
     if !model_path.exists() {
+        log::error!(target: "notesage::transcription", "Dictation model not found: {}", model_path.display());
         return Err(
             "No Whisper model available for dictation. Download the 'base' model in Settings > Transcription."
                 .into(),
         );
     }
 
+    let model_size = std::fs::metadata(&model_path).map(|m| m.len()).unwrap_or(0);
+    log::info!(target: "notesage::transcription", "Dictation model file size: {} bytes", model_size);
+
     let (mic_buffer, stop_signal, native_rate, native_channels, _audio_thread) =
         start_mic_on_thread(app.clone())?;
+    log::info!(target: "notesage::transcription", "Mic started: rate={}, channels={}", native_rate, native_channels);
 
     // Store cancel signal
     {
@@ -801,19 +876,25 @@ pub async fn download_whisper_model(
     // Register cancel signal for this download
     let cancel = Arc::new(AtomicBool::new(false));
     {
-        let mut cancels = state.download_cancels.lock().unwrap();
+        let mut cancels = state.download_cancels.lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         if cancels.contains_key(&size) {
             return Err(format!("Model '{}' is already being downloaded", size));
         }
         cancels.insert(size.clone(), cancel.clone());
     }
 
+    log::info!(target: "notesage::transcription", "Starting download of Whisper model '{}'", size);
     let result = download_model_inner(&app, &state, &size, &cancel).await;
 
     // Clean up cancel signal and temp file on cancel/error
     {
-        let mut cancels = state.download_cancels.lock().unwrap();
-        cancels.remove(&size);
+        if let Ok(mut cancels) = state.download_cancels.lock() {
+            cancels.remove(&size);
+        }
+    }
+    if let Err(ref e) = result {
+        log::error!(target: "notesage::transcription", "Download of model '{}' failed: {}", size, e);
     }
 
     result
@@ -894,7 +975,8 @@ pub async fn cancel_model_download(
     state: State<'_, TranscriptionState>,
     size: String,
 ) -> Result<(), String> {
-    let cancels = state.download_cancels.lock().unwrap();
+    let cancels = state.download_cancels.lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
     if let Some(cancel) = cancels.get(&size) {
         cancel.store(true, Ordering::Relaxed);
         Ok(())

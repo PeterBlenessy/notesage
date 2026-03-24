@@ -18,6 +18,7 @@ import { useSettingsStore, type MeasurementUnit } from '@/stores/settings-store'
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useEditorStore } from '@/stores/editor-store';
+import { useLocalAIStore } from '@/stores/local-ai-store';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
@@ -740,6 +741,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                                 id, provider, authMethod, capabilities, status,
                               }));
                               const { routing } = useRoutingStore.getState();
+                              const localAIState = useLocalAIStore.getState();
                               const dump = {
                                 timestamp: new Date().toISOString(),
                                 version: (await import('@tauri-apps/api/app')).getVersion(),
@@ -749,6 +751,14 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                                   routing,
                                   logLevel,
                                   tabCount: useEditorStore.getState().tabs.length,
+                                  localAI: {
+                                    activeModelId: localAIState.activeModelId,
+                                    binaryStatus: localAIState.binaryStatus,
+                                    serverStatus: localAIState.serverStatus,
+                                    serverError: localAIState.serverError,
+                                    contextLength: localAIState.contextLength,
+                                    gpuLayers: localAIState.gpuLayers,
+                                  },
                                 },
                               };
                               const json = JSON.stringify(dump, null, 2);

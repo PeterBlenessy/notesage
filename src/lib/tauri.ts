@@ -850,14 +850,6 @@ export const tauriApi = {
     return await invoke<BinaryStatus>("check_llama_server_available");
   },
 
-  async downloadLlamaServerBinary(): Promise<string> {
-    return await invoke<string>("download_llama_server_binary");
-  },
-
-  async cancelLlamaServerDownload(): Promise<void> {
-    await invoke("cancel_llama_server_download");
-  },
-
   // Model metadata
   async getModelMetadata(modelId: string, modelType: 'llm' | 'whisper'): Promise<ModelMetadata> {
     return await invoke<ModelMetadata>("get_model_metadata", { modelId, modelType });
