@@ -35,10 +35,7 @@
 
 Also log a summary line when all conditions pass and auto-start proceeds, including: `binaryStatus`, `activeModelId`, `models.length`.
 
-**Acceptance criteria:**
-
-- Running a production build with Local AI configured produces log entries showing exactly which condition prevented (or allowed) auto-start
-- No logging when `startupReady` is false (avoid noise before startup completes)
+- [x] Done — all auto-start branches log with context (connection count, providers, models loaded count)
 
 ---
 
@@ -61,11 +58,7 @@ Also log a summary line when all conditions pass and auto-start proceeds, includ
 
 Add a log line in `check_llama_server_available()` showing each path checked and whether it exists, at `debug` level.
 
-**Acceptance criteria:**
-
-- Production `.app` bundle includes `llama-server` sidecar and its `lib/` dylibs
-- `check_llama_server_available()` returns `available: true` in production builds
-- Debug log shows the resolution path taken
+- [x] Done — added debug logging to every resolution step, extracted testable helpers, unified `check_llama_server_available()` with `resolve_llama_server_binary()`
 
 ---
 
@@ -94,11 +87,7 @@ Add a log line in `check_llama_server_available()` showing each path checked and
 - Export `startServer()` from `useLocalAI.ts` (or create a `startLocalAIServer()` function in the store) so LocalAISettings can call it
 - The button should be disabled with a tooltip explaining why when prerequisites aren't met (e.g., "Download AI engine first", "Select a model first")
 
-**Acceptance criteria:**
-
-- User can manually start the server from settings when auto-start fails
-- Clear error feedback when start fails
-- Button states match server lifecycle
+- [x] Done — Start/Restart button with disabled tooltip, `startServer()` action in store
 
 ---
 
@@ -131,10 +120,7 @@ Possible status reasons:
 - Set it alongside `updateConnectionStatus()` calls in `useLocalAI.ts`
 - Display it in the Local AI connection card in ConnectionsSettings
 
-**Acceptance criteria:**
-
-- Connection card shows the specific reason for amber/red status
-- Reason updates when conditions change (e.g., user downloads binary → reason clears)
+- [x] Done — added `serverStatusReason` to store, displayed as subtitle on ConnectionCard for Local AI
 
 ---
 
@@ -163,10 +149,7 @@ Local AI startup diagnostics:
 
 This gives a single log entry to diagnose issues without requiring step-by-step trace reading.
 
-**Acceptance criteria:**
-
-- Single structured diagnostic log entry appears after startup sequence completes
-- Contains all relevant state for debugging auto-start failures
+- [x] Done — single structured log entry with connection, activeModelId, binaryStatus, modelsLoaded, autoStartResult
 
 ---
 
@@ -189,10 +172,7 @@ This gives a single log entry to diagnose issues without requiring step-by-step 
 
 Use a testable helper that accepts a base directory rather than relying on `std::env::current_exe()`, or use `#[cfg(test)]` conditional paths.
 
-**Acceptance criteria:**
-
-- Tests cover all 4 resolution paths + the not-found case
-- Tests pass in CI (don't depend on actual binary presence)
+- [x] Done — 7 unit tests covering bundled prod, dev with/without lib, dev fallback, system PATH, not-found, dir_total_size
 
 ---
 
@@ -221,11 +201,7 @@ This dead code is actively harmful: when the bundled sidecar fails to resolve (t
 3. Replace the download banner with an error message: "AI engine not found — try reinstalling Notesage" when `binaryStatus === 'not_found'`
 4. Remove the download progress UI
 
-**Acceptance criteria:**
-
-- No binary download functionality remains
-- When binary is not found, user sees a clear reinstall message instead of a download button
-- `~/.notesage/bin/` resolution path removed from `check_llama_server_available()`
+- [x] Done — removed download commands, store actions, UI banner/dialog; replaced with "try reinstalling" error message
 
 ---
 
@@ -248,10 +224,7 @@ This dead code is actively harmful: when the bundled sidecar fails to resolve (t
 
 Keep this lightweight — just detection and reporting. No auto-deletion, no UI for cleanup (users can delete `~/.notesage/bin/` manually if they see it in diagnostics).
 
-**Acceptance criteria:**
-
-- Stale `~/.notesage/bin/` files logged at startup as a warning
-- Stale files included in diagnostics export
+- [x] Done — logs warning with total size on startup, included in diagnostics export
 
 ---
 
@@ -280,8 +253,4 @@ Keep this lightweight — just detection and reporting. No auto-deletion, no UI 
 - `localAI.activeModelId`, `localAI.binaryStatus`, `localAI.serverStatus`, `localAI.serverError`
 - `localAI.contextLength`, `localAI.gpuLayers`
 
-**Acceptance criteria:**
-
-- Diagnostics JSON includes comprehensive Local AI section
-- All file paths included but no file contents
-- Export still works when Local AI is not configured (null/empty values)
+- [x] Done — backend adds `local_ai` and `whisper` sections to DiagnosticDump; frontend adds localAI store state

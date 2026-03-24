@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date observed** | 2026-03-24 |
-| **Status** | Open |
+| **Status** | Fixed |
 | **Severity** | Medium |
 | **Impact** | Local AI unusable on laptop production build |
 | **Versions affected** | v0.21.0+ (worked in v0.19.3) |
