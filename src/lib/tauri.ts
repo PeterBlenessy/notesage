@@ -217,6 +217,8 @@ export interface AudioBufferInfo {
   sample_count: number;
   sample_rate: number;
   source: string;
+  rms: number;
+  peak: number;
 }
 
 export interface WhisperModelInfo {
@@ -777,8 +779,8 @@ export const tauriApi = {
     return await invoke<TranscriptionResultData>("transcribe", { model, language: language ?? null });
   },
 
-  async startDictation(language?: string): Promise<void> {
-    await invoke("start_dictation", { language: language ?? null });
+  async startDictation(language?: string, model?: string): Promise<void> {
+    await invoke("start_dictation", { language: language ?? null, model: model ?? null });
   },
 
   async stopDictation(): Promise<void> {

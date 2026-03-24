@@ -87,6 +87,12 @@ export function useRecording(): RecordingHook {
     try {
       const info = await tauriApi.stopRecording();
       storeStop();
+      // Warn if recording appears to be silence (microphone may be blocked)
+      if (info.peak < 0.0001 && info.sample_count > 0) {
+        toast.warning('No audio detected — check that Notesage has microphone permission in System Settings > Privacy & Security > Microphone.', {
+          duration: 8000,
+        });
+      }
       return info;
     } catch (err) {
       toast.error(`Failed to stop recording: ${err}`);

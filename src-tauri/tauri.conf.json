@@ -58,7 +58,7 @@
     ],
     "macOS": {
       "signingIdentity": null,
-      "entitlements": null,
+      "entitlements": "Entitlements.plist",
       "minimumSystemVersion": "14.0"
     },
     "fileAssociations": [

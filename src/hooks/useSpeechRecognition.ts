@@ -23,7 +23,7 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
 
   const recognitionRef = useRef<unknown>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
-  const { speechLanguage, startDictating: storeStartDictating, stopDictating: storeStopDictating } = useRecordingStore();
+  const { speechLanguage, defaultModel, startDictating: storeStartDictating, stopDictating: storeStopDictating } = useRecordingStore();
 
   // Cleanup on unmount
   useEffect(() => {
@@ -37,23 +37,27 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
 
   const startWhisperDictation = useCallback(async () => {
     try {
-      log.info('transcription', 'Starting Whisper dictation', { language: speechLanguage });
+      log.info('transcription', 'Starting Whisper dictation', { language: speechLanguage, defaultModel });
 
-      // Ensure the base Whisper model is downloaded before starting dictation
+      // Ensure a Whisper model is downloaded before starting dictation
       const models = await tauriApi.listWhisperModels();
-      const baseModel = models.find((m: { name: string; downloaded: boolean }) => m.name === 'base');
+      const downloadedModels = models.filter((m: { downloaded: boolean }) => m.downloaded);
+      const preferredModel = models.find((m: { name: string; downloaded: boolean }) => m.name === defaultModel);
       log.info('transcription', 'Whisper models check', {
         totalModels: models.length,
-        baseDownloaded: baseModel?.downloaded ?? false,
-        downloadedModels: models.filter((m: { downloaded: boolean }) => m.downloaded).map((m: { name: string }) => m.name),
+        preferredModel: defaultModel,
+        preferredDownloaded: preferredModel?.downloaded ?? false,
+        downloadedModels: downloadedModels.map((m: { name: string }) => m.name),
       });
 
-      if (!baseModel?.downloaded) {
-        log.info('transcription', 'Auto-downloading base Whisper model for dictation');
+      if (downloadedModels.length === 0) {
+        // No models at all — download the default (or base as fallback)
+        const modelToDownload = preferredModel ? defaultModel : 'base';
+        log.info('transcription', `Auto-downloading '${modelToDownload}' Whisper model for dictation`);
         toast.info('Downloading speech recognition model...');
-        await tauriApi.downloadWhisperModel('base');
+        await tauriApi.downloadWhisperModel(modelToDownload);
         toast.success('Speech model ready');
-        log.info('transcription', 'Base model download complete');
+        log.info('transcription', `Model '${modelToDownload}' download complete`);
       }
 
       const unlisten = await listen<{ text: string; is_final: boolean; error?: string }>(
@@ -77,15 +81,15 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
       );
       unlistenRef.current = unlisten;
 
-      await tauriApi.startDictation(speechLanguage);
-      log.info('transcription', 'Whisper dictation started successfully');
+      await tauriApi.startDictation(speechLanguage, defaultModel);
+      log.info('transcription', 'Whisper dictation started successfully', { model: defaultModel });
       setIsDictating(true);
       storeStartDictating();
     } catch (err) {
       log.error('transcription', 'Failed to start Whisper dictation', err);
       toast.error(`Failed to start dictation: ${err}`);
     }
-  }, [speechLanguage, storeStartDictating, storeStopDictating]);
+  }, [speechLanguage, defaultModel, storeStartDictating, storeStopDictating]);
 
   const startDictation = useCallback(async () => {
     if (isDictating) return;
