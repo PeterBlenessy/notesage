@@ -312,6 +312,89 @@ await invoke('copilot_lsp_finish_auth');
 window.open('https://github.com/login/device', '_blank');
 ```
 
+## Credential Operations
+
+Located in `src-tauri/src/commands/credentials.rs`
+
+API keys are stored in the OS credential manager (macOS Keychain) instead of localStorage. AI commands resolve keys from the keychain using a `connection_id` — keys never transit through Tauri IPC.
+
+### store_credential
+
+Stores an API key in the OS keychain.
+
+```rust
+#[tauri::command]
+async fn store_credential(service: String, key: String) -> Result<(), String>
+```
+
+**Parameters:**
+
+- `service`: Keychain service identifier (e.g., `"notesage:conn-abc123"`)
+- `key`: The API key to store
+
+### get_credential
+
+Retrieves an API key from the OS keychain.
+
+```rust
+#[tauri::command]
+async fn get_credential(service: String) -> Result<Option<String>, String>
+```
+
+**Parameters:**
+
+- `service`: Keychain service identifier
+
+**Returns:**
+
+- `Ok(Some(String))`: The stored key
+- `Ok(None)`: No entry found for this service
+- `Err(String)`: Keychain access error
+
+### delete_credential
+
+Removes an API key from the OS keychain.
+
+```rust
+#[tauri::command]
+async fn delete_credential(service: String) -> Result<(), String>
+```
+
+### migrate_credentials
+
+One-time migration: parses the raw `notesage-connections` localStorage JSON, extracts plaintext API keys, and stores them in the keychain. Called automatically on first launch after upgrade.
+
+```rust
+#[tauri::command]
+async fn migrate_credentials(connections_json: String) -> Result<u32, String>
+```
+
+**Parameters:**
+
+- `connections_json`: Raw value of `localStorage.getItem('notesage-connections')`
+
+**Returns:**
+
+- `Ok(u32)`: Number of credentials migrated
+- `Err(String)`: Error if migration fails
+
+**Frontend usage:**
+
+```typescript
+// Credentials are managed automatically by connections-store:
+// - addConnection() stores the key in keychain and strips it from localStorage
+// - removeConnection() deletes the keychain entry
+// - On rehydration, existing plaintext keys are migrated to keychain
+
+// AI commands receive connectionId instead of apiKey:
+await invoke('ai_chat_stream', {
+  messages,
+  provider: 'anthropic',
+  connectionId: 'conn-abc123',  // Rust resolves key from keychain
+  // ...
+});
+```
+
 ## AI Operations
 
 Located in `src-tauri/src/commands/ai.rs`
@@ -960,7 +1043,7 @@ try {
 ## Security Considerations
 
 - **All file paths are absolute**: Frontend must never construct paths from user input without validation
-- **API keys handled securely**: All AI API calls go through Rust backend, keys never exposed in frontend console
+- **API keys in OS keychain**: Keys stored in macOS Keychain via `keyring` crate, never in localStorage. Backend resolves keys from keychain using `connection_id` — keys never transit through IPC or appear in frontend console
 - **No direct filesystem access**: Frontend cannot read/write files directly, must use Tauri commands
 - **Permission boundaries**: Tauri enforces filesystem permissions, commands cannot access files outside allowed directories
 

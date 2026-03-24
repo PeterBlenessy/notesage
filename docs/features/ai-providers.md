@@ -10,6 +10,8 @@ Multi-provider AI architecture with subscription-based auth, agent mode, and per
 - GitHub Copilot split into two connections: CLI (ACP — chat/agents only) and LSP (inline completions + chat/agents)
 - Smart auto-assignment: first connection fills all compatible use case slots
 - One-time migration from v1 ai-store preserves existing API key configurations
+- API keys stored in OS keychain (macOS Keychain via `keyring` crate) — never in localStorage. Backend resolves keys from keychain using `connection_id`, keys never transit through IPC. Transparent migration moves existing plaintext keys to keychain on first launch.
+- Multiple OpenAI-compatible connections supported with user-defined labels (e.g., "Groq", "Together AI")
 - Settings UI: Connections list with provider cards, Add Connection popover with capability guidance, Advanced Routing collapsible section
 
 ## Four AI Paths
@@ -176,6 +178,7 @@ When web search is enabled (toggle in chat footer — only visible for direct AP
 | File | Purpose |
 | --- | --- |
 | `src-tauri/src/commands/ai.rs` | AI provider commands (direct API) |
+| `src-tauri/src/commands/credentials.rs` | OS keychain credential storage (store, get, delete, migrate) |
 | `src-tauri/src/commands/acp.rs` | ACP agent management |
 | `src-tauri/src/commands/network_proxy.rs` | HTTP proxy for agent network sandboxing |
 | `src-tauri/src/commands/sandbox_monitor.rs` | Seatbelt violation monitoring (macOS log stream) |

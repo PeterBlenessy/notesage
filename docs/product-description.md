@@ -60,6 +60,7 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 7. **Component modularity** — Sidebar, editor, tabs, chat panel are separate and composable.
 8. **Open standards (Agent Skills + MCP)** — Skills and tools follow widely adopted cross-tool standards. No proprietary format.
 9. **SQLite document index** — Persistent, structure-aware index built from comrak AST parsing. Replaces regex-based filesystem scanning with instant SQL queries for tags, mentions, tasks, goals, and FTS5 content search. Each device rebuilds its own index from files (iCloud safe).
+10. **OS keychain for credentials** — API keys stored in macOS Keychain (via `keyring` crate), never in localStorage. Backend resolves keys directly — they never transit through IPC. Transparent one-time migration for existing users.
 
 ## Implementation Philosophy
 

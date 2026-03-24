@@ -50,6 +50,7 @@ note-sage/
 │   │   │   ├── model_metadata.rs  # Model metadata merge, HF API fetcher, runtime metadata
 │   │   │   ├── gguf_parser.rs     # GGUF binary header parser
 │   │   │   ├── network_proxy.rs   # HTTP proxy for agent network sandboxing, domain allowlists
+│   │   │   ├── credentials.rs  # OS keychain credential storage (keyring crate)
 │   │   │   └── sandbox_monitor.rs # Seatbelt violation monitoring (macOS log stream)
 │   │   ├── index/          # SQLite document index (tags, mentions, tasks, goals, FTS5)
 │   │   │   ├── mod.rs      # IndexState, Tauri commands, indexing pipeline
@@ -179,12 +180,13 @@ All state stores use Zustand with the persist middleware for localStorage:
 
 ### Security Model
 
-**API Key Storage:**
+**API Key Storage (OS Keychain):**
 
-- Stored in localStorage via Zustand persist middleware
-- Keys stored in plaintext (browser developer tools visible)
-- **Trade-off**: Convenience vs security — documented limitation
-- All API calls go through Tauri backend (Rust) so keys never exposed in frontend console
+- API keys stored in the OS credential manager (macOS Keychain via `keyring` crate)
+- Keys never written to localStorage — only non-sensitive connection metadata persisted via Zustand
+- Backend resolves keys directly from keychain using `connection_id` — keys never transit through Tauri IPC
+- Transparent migration: existing plaintext keys in localStorage are automatically moved to keychain on first launch
+- Tauri commands: `store_credential`, `get_credential`, `delete_credential`, `migrate_credentials` in `credentials.rs`
 
 **File System Access:**
 

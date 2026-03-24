@@ -1,5 +1,7 @@
 # Secure Credential Storage
 
+**Status: Implemented (v0.23.0)**
+
 Migrate API key storage from plaintext localStorage to OS-native credential managers (macOS Keychain, Windows Credential Manager, Linux Secret Service).
 
 ## Problem
