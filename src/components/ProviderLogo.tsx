@@ -14,7 +14,7 @@ export function ProviderLogo({ provider, className = 'w-6 h-6' }: { provider: st
   if (provider === 'local_ai') {
     return (
       <span className={`${className} rounded bg-muted flex items-center justify-center`}>
-        <Cpu className="w-3.5 h-3.5 text-muted-foreground" strokeWidth={1.5} />
+        <Cpu className="w-[70%] h-[70%] text-foreground" strokeWidth={1.5} />
       </span>
     );
   }
@@ -22,7 +22,7 @@ export function ProviderLogo({ provider, className = 'w-6 h-6' }: { provider: st
   if (provider === 'openai_compatible') {
     return (
       <span className={`${className} rounded bg-muted flex items-center justify-center`}>
-        <Server className="w-3.5 h-3.5 text-muted-foreground" strokeWidth={1.5} />
+        <Server className="w-[70%] h-[70%] text-foreground" strokeWidth={1.5} />
       </span>
     );
   }

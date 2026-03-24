@@ -8,6 +8,7 @@ import type {
   AICapability,
   AuthMethod,
   ConnectionCredentials,
+  ConnectionConfig,
   ConnectionStatus,
 } from '@/lib/ai/connections';
 import { getCapabilities } from '@/lib/ai/connections';
@@ -21,6 +22,7 @@ interface ConnectionsStore {
     status: ConnectionStatus;
     label: string;
     credentials: ConnectionCredentials;
+    config?: ConnectionConfig;
   }) => string; // returns ID
   updateConnection: (id: string, updates: Partial<Omit<Connection, 'id' | 'createdAt'>>) => void;
   removeConnection: (id: string) => void;
@@ -42,6 +44,7 @@ export const useConnectionsStore = create<ConnectionsStore>()(
           id,
           capabilities,
           createdAt: Date.now(),
+          ...(conn.config ? { config: conn.config } : {}),
         };
         set((state) => ({
           connections: [...state.connections, connection],
@@ -76,6 +79,24 @@ export const useConnectionsStore = create<ConnectionsStore>()(
       getConnectionsByCapability: (capability) =>
         get().connections.filter((c) => c.capabilities.includes(capability)),
     }),
-    { name: 'notesage-connections' }
+    {
+      name: 'notesage-connections',
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        // Validate openai_compatible connections have required config.baseUrl
+        let changed = false;
+        const validated = state.connections.map((c) => {
+          if (c.provider === 'openai_compatible' && !c.config?.baseUrl && c.status !== 'error') {
+            changed = true;
+            log.warn('connections', 'OpenAI-compatible connection missing baseUrl, marking as error', { id: c.id, label: c.label });
+            return { ...c, status: 'error' as const };
+          }
+          return c;
+        });
+        if (changed) {
+          state.connections = validated;
+        }
+      },
+    }
   )
 );

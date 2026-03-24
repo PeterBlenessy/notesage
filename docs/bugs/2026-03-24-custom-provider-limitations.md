@@ -3,10 +3,11 @@
 |  |  |
 | --- | --- |
 | **Date observed** | 2026-03-24 |
-| **Status** | Open |
+| **Status** | Fixed |
 | **Severity** | Medium |
 | **Impact** | Blocks users from connecting to multiple custom AI endpoints |
 | **Versions affected** | All versions with OpenAI-compatible support |
+| **Tasks** | [custom-provider-limitations-tasks](../tasks/2026-03-24-custom-provider-limitations-tasks.md) |
 
 ## Symptoms
 

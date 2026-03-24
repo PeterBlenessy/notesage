@@ -26,7 +26,7 @@ import { Plus, Check, Eye, EyeOff, Loader2, AlertCircle, RefreshCw, Copy, Downlo
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { ConnectionConfigDialog } from './ConnectionConfigDialog';
 import type { Connection, ProviderOption } from '@/lib/ai/connections';
-import { PROVIDER_OPTIONS, CAPABILITY_LABELS } from '@/lib/ai/connections';
+import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import { invoke } from '@tauri-apps/api/core';
 import { log } from '@/lib/logger';
 
@@ -69,6 +69,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
   // Extra fields for OpenAI-Compatible provider
   const [oaiBaseUrl, setOaiBaseUrl] = useState('');
   const [oaiModel, setOaiModel] = useState('');
+  const [oaiLabel, setOaiLabel] = useState('');
 
   // Agent update checking
   const [agentUpdates, setAgentUpdates] = useState<Record<string, { currentVersion: string; latestVersion: string }>>({});
@@ -112,6 +113,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
     setPopoverOpen(false);
     setOaiBaseUrl('');
     setOaiModel('');
+    setOaiLabel('');
   }, []);
 
   const handleBack = useCallback(() => {
@@ -166,12 +168,8 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
         provider: 'openai_compatible',
         authMethod: 'api_key',
         status: 'connected',
-        label: option.label,
+        label: oaiLabel.trim() || option.label,
         credentials: { type: 'api_key', key: value },
-      });
-      // Set config with base URL and model
-      const updateConnection = useConnectionsStore.getState().updateConnection;
-      updateConnection(connectionId, {
         config: { baseUrl: oaiBaseUrl.trim(), model: oaiModel.trim() },
       });
       autoAssign(connectionId);
@@ -207,7 +205,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
     autoAssign(connectionId);
     setSavedFlash(true);
     setTimeout(() => resetFlow(), 600);
-  }, [flow, inputValue, oaiBaseUrl, oaiModel, addConnection, autoAssign, resetFlow]);
+  }, [flow, inputValue, oaiBaseUrl, oaiModel, oaiLabel, addConnection, autoAssign, resetFlow]);
 
   const handleAgentConnected = useCallback(
     (option: ProviderOption, envVars?: Record<string, string>) => {
@@ -281,11 +279,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                 </Button>
               </DropdownMenuTrigger>
             </PopoverAnchor>
-            <DropdownMenuContent align="end" className="w-80">
-              <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
-                Use your existing subscription or an API key
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
+            <DropdownMenuContent align="end" className="w-96">
               <DropdownMenuGroup>
                 <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
                   Subscription
@@ -295,34 +289,17 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                   return (
                     <DropdownMenuItem
                       key={`${option.provider}-${option.authMethod}-${option.label}`}
-                      className={`relative flex items-start gap-3 py-2.5 ${alreadyConnected ? 'opacity-50' : 'cursor-pointer'}`}
+                      className={`relative flex items-start gap-2.5 py-1.5 ${alreadyConnected ? 'opacity-50' : 'cursor-pointer'}`}
                       disabled={alreadyConnected}
                       onSelect={() => handlePickProvider(option)}
                     >
                       <ProviderLogo provider={option.provider} className="w-5 h-5 mt-0.5 shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium block">
-                          {option.label}
-                          {alreadyConnected && (
-                            <span className="ml-2 text-xs font-normal text-muted-foreground">Connected</span>
-                          )}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {option.description}
-                          {option.provider === 'github' && (
-                            <span className="ml-1 text-[10px] font-medium"> · Free tier available</span>
-                          )}
-                        </span>
-                        <div className="flex items-center gap-1.5 mt-1.5">
-                          {option.capabilities.map((cap) => (
-                            <span key={cap} className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground">
-                              {CAPABILITY_LABELS[cap]}
-                            </span>
-                          ))}
-                        </div>
+                        <span className="text-sm font-medium block truncate">{option.label}</span>
+                        <span className="text-xs text-muted-foreground block truncate">{option.description}</span>
                       </div>
                       {alreadyConnected && (
-                        <Check className="absolute right-2 top-3 h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                        <Check className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
                       )}
                     </DropdownMenuItem>
                   );
@@ -334,33 +311,30 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                   API Key
                 </DropdownMenuLabel>
                 {PROVIDER_OPTIONS.filter((o) => o.authMethod === 'api_key').map((option) => {
-                  const alreadyConnected = connectedLabels.has(option.label);
+                  // openai_compatible allows multiple connections — skip dedup
+                  const alreadyConnected = option.provider !== 'openai_compatible' && connectedLabels.has(option.label);
+                  const oaiCompatCount = option.provider === 'openai_compatible'
+                    ? connections.filter((c) => c.provider === 'openai_compatible').length
+                    : 0;
                   return (
                     <DropdownMenuItem
                       key={`${option.provider}-${option.authMethod}-${option.label}`}
-                      className={`relative flex items-start gap-3 py-2.5 ${alreadyConnected ? 'opacity-50' : 'cursor-pointer'}`}
+                      className={`relative flex items-start gap-2.5 py-1.5 ${alreadyConnected ? 'opacity-50' : 'cursor-pointer'}`}
                       disabled={alreadyConnected}
                       onSelect={() => handlePickProvider(option)}
                     >
                       <ProviderLogo provider={option.provider} className="w-5 h-5 mt-0.5 shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium block">
+                        <span className="text-sm font-medium block truncate">
                           {option.label}
-                          {alreadyConnected && (
-                            <span className="ml-2 text-xs font-normal text-muted-foreground">Connected</span>
+                          {oaiCompatCount > 0 && (
+                            <span className="ml-1.5 text-xs font-normal text-muted-foreground">({oaiCompatCount})</span>
                           )}
                         </span>
-                        <span className="text-xs text-muted-foreground">{option.description}</span>
-                        <div className="flex items-center gap-1.5 mt-1.5">
-                          {option.capabilities.map((cap) => (
-                            <span key={cap} className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground">
-                              {CAPABILITY_LABELS[cap]}
-                            </span>
-                          ))}
-                        </div>
+                        <span className="text-xs text-muted-foreground block truncate">{option.description}</span>
                       </div>
                       {alreadyConnected && (
-                        <Check className="absolute right-2 top-3 h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                        <Check className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
                       )}
                     </DropdownMenuItem>
                   );
@@ -376,29 +350,17 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                   return (
                     <DropdownMenuItem
                       key={`${option.provider}-${option.authMethod}-${option.label}`}
-                      className={`relative flex items-start gap-3 py-2.5 ${alreadyConnected ? 'opacity-50' : 'cursor-pointer'}`}
+                      className={`relative flex items-start gap-2.5 py-1.5 ${alreadyConnected ? 'opacity-50' : 'cursor-pointer'}`}
                       disabled={alreadyConnected}
                       onSelect={() => handlePickProvider(option)}
                     >
                       <ProviderLogo provider={option.provider} className="w-5 h-5 mt-0.5 shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium block">
-                          {option.label}
-                          {alreadyConnected && (
-                            <span className="ml-2 text-xs font-normal text-muted-foreground">Connected</span>
-                          )}
-                        </span>
-                        <span className="text-xs text-muted-foreground">{option.description}</span>
-                        <div className="flex items-center gap-1.5 mt-1.5">
-                          {option.capabilities.map((cap) => (
-                            <span key={cap} className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground">
-                              {CAPABILITY_LABELS[cap]}
-                            </span>
-                          ))}
-                        </div>
+                        <span className="text-sm font-medium block truncate">{option.label}</span>
+                        <span className="text-xs text-muted-foreground block truncate">{option.description}</span>
                       </div>
                       {alreadyConnected && (
-                        <Check className="absolute right-2 top-3 h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                        <Check className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
                       )}
                     </DropdownMenuItem>
                   );
@@ -421,6 +383,8 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                 onBaseUrlChange={setOaiBaseUrl}
                 model={oaiModel}
                 onModelChange={setOaiModel}
+                customLabel={oaiLabel}
+                onCustomLabelChange={setOaiLabel}
               />
             )}
             {flow.step === 'connecting' && flow.option.lspBinary && (
@@ -526,6 +490,8 @@ function ConfigureForm({
   onBaseUrlChange,
   model,
   onModelChange,
+  customLabel,
+  onCustomLabelChange,
 }: {
   option: ProviderOption;
   value: string;
@@ -538,6 +504,8 @@ function ConfigureForm({
   onBaseUrlChange?: (v: string) => void;
   model?: string;
   onModelChange?: (v: string) => void;
+  customLabel?: string;
+  onCustomLabelChange?: (v: string) => void;
 }) {
   const isApiKey = option.authMethod === 'api_key';
   const isOaiCompat = option.provider === 'openai_compatible';
@@ -573,6 +541,21 @@ function ConfigureForm({
 
       <p className="text-xs text-muted-foreground">{helpText}</p>
 
+      {/* Custom name — OpenAI-Compatible only */}
+      {isOaiCompat && onCustomLabelChange && (
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Name</Label>
+          <Input
+            type="text"
+            placeholder="e.g. Groq, Together AI, My vLLM"
+            value={customLabel ?? ''}
+            onChange={(e) => onCustomLabelChange(e.target.value)}
+            className="text-sm"
+            autoFocus
+          />
+        </div>
+      )}
+
       {/* Base URL — OpenAI-Compatible only */}
       {isOaiCompat && onBaseUrlChange && (
         <div className="space-y-1">
@@ -583,7 +566,6 @@ function ConfigureForm({
             value={baseUrl ?? ''}
             onChange={(e) => onBaseUrlChange(e.target.value)}
             className="text-sm"
-            autoFocus
           />
         </div>
       )}

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { Connection } from '@/lib/ai/connections';
 import { CAPABILITY_LABELS, prettyModelName, setAgentModels } from '@/lib/ai/connections';
 import { useConnectionsStore } from '@/stores/connections-store';
@@ -59,7 +59,26 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
   const [health, setHealth] = useState<HealthState>('idle');
   const [healthError, setHealthError] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [editingLabel, setEditingLabel] = useState(false);
+  const [labelDraft, setLabelDraft] = useState('');
+  const labelInputRef = useRef<HTMLInputElement>(null);
   const updateConnection = useConnectionsStore((s) => s.updateConnection);
+
+  const isRenamable = connection.provider === 'openai_compatible';
+
+  const startRename = useCallback(() => {
+    setLabelDraft(connection.label);
+    setEditingLabel(true);
+    requestAnimationFrame(() => labelInputRef.current?.select());
+  }, [connection.label]);
+
+  const commitRename = useCallback(() => {
+    const trimmed = labelDraft.trim();
+    if (trimmed && trimmed !== connection.label) {
+      updateConnection(connection.id, { label: trimmed });
+    }
+    setEditingLabel(false);
+  }, [labelDraft, connection.id, connection.label, updateConnection]);
 
   const testConnection = useCallback(async () => {
     setHealth('testing');
@@ -215,9 +234,28 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
         {/* Center: name + badges */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">
-              {connection.label}
-            </span>
+            {editingLabel ? (
+              <input
+                ref={labelInputRef}
+                value={labelDraft}
+                onChange={(e) => setLabelDraft(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitRename();
+                  if (e.key === 'Escape') setEditingLabel(false);
+                }}
+                className="text-sm font-medium bg-transparent border-b border-muted-foreground/40 outline-none px-0 py-0 w-32"
+                autoFocus
+              />
+            ) : (
+              <span
+                className={`text-sm font-medium ${isRenamable ? 'cursor-pointer hover:underline decoration-muted-foreground/40' : ''}`}
+                onDoubleClick={isRenamable ? startRename : undefined}
+                title={isRenamable ? 'Double-click to rename' : undefined}
+              >
+                {connection.label}
+              </span>
+            )}
             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
               {AUTH_BADGES[connection.authMethod] ?? connection.authMethod}
             </span>
