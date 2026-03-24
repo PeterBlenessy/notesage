@@ -35,10 +35,19 @@ Break a PRD or feature description into concrete, ordered implementation tasks.
    - State management (Zustand stores) second
    - UI components last
 
-5. **Include a summary** at the top:
-   - Total tasks and complexity breakdown (e.g., "12 tasks: 4S, 5M, 3L")
-   - Suggested implementation order
-   - Any risks or open questions
+5. **Include a header table** immediately after the `# ...` title:
+
+   ```markdown
+   |  |  |
+   | --- | --- |
+   | **Date** | YYYY-MM-DD |
+   | **Status** | Not started |
+   | **PRD** | [slug](../prds/YYYY-MM-DD-slug.md) |
+   | **Total** | 12 tasks: 4S, 5M, 3L |
+   | **Suggested order** | Backend (#1-#4) → State (#5-#6) → UI (#7-#12) |
+   ```
+
+   Follow the table with any risks or open questions.
 
 6. **Save the task list** to `docs/tasks/YYYY-MM-DD-<slug>-tasks.md` where:
    - Date is today's date

@@ -23,6 +23,18 @@ Write a Product Requirements Document for the given feature or initiative and sa
 
 3. **Write the PRD** with these sections:
 
+   ### Header table (immediately after the `# PRD: ...` title)
+
+   ```markdown
+   |  |  |
+   | --- | --- |
+   | **Date** | YYYY-MM-DD |
+   | **Status** | Draft |
+   | **Priority** | High / Medium / Low |
+   | **Impact** | One-line summary of user impact |
+   | **Phase** | Phase name if applicable, or omit row |
+   ```
+
    ### Problem
    What user pain or gap does this feature address? Why now?
 
