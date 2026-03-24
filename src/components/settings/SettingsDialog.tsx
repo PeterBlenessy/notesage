@@ -15,6 +15,9 @@ import { TranscriptionSettings } from './TranscriptionSettings';
 import { LocalAISettings } from './LocalAISettings';
 import { ChangelogDialog } from './ChangelogDialog';
 import { useSettingsStore, type MeasurementUnit } from '@/stores/settings-store';
+import { useConnectionsStore } from '@/stores/connections-store';
+import { useRoutingStore } from '@/stores/routing-store';
+import { useEditorStore } from '@/stores/editor-store';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
@@ -40,7 +43,10 @@ import {
 import { useState, useCallback, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
+import { setLogLevel as setLoggerLevel } from '@/lib/logger';
+import type { LogLevel } from '@/lib/logger';
 import type { UpdateState } from '@/hooks/useAutoUpdate';
 
 export type SettingsTab = 'ai' | 'local-ai' | 'prompts' | 'skills' | 'transcription' | 'editor' | 'git' | 'sync' | 'developer' | 'about';
@@ -140,7 +146,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
     pageBreaks, setPageBreaks,
     chatHistoryLimit, setChatHistoryLimit,
     skillManagement, setSkillManagement,
-    debugLogging, setDebugLogging,
+    logLevel, setLogLevel,
     autoCheckUpdates, setAutoCheckUpdates,
     lastUpdateCheck,
   } = useSettingsStore();
@@ -616,23 +622,31 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                   <div className="space-y-2">
                     <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
                       <div className="flex items-center justify-between gap-3">
-                        <Label
-                          htmlFor="debug-logging"
-                          className="text-sm font-medium cursor-pointer"
-                        >
-                          Debug Logging
+                        <Label className="text-sm font-medium">
+                          Log Level
                         </Label>
-                        <Switch
-                          id="debug-logging"
-                          checked={debugLogging}
-                          onCheckedChange={(checked) => {
-                            setDebugLogging(checked);
-                            tauriApi.setDebugLogging(checked);
+                        <Select
+                          value={logLevel}
+                          onValueChange={(value: string) => {
+                            const level = value as LogLevel;
+                            setLogLevel(level);
+                            setLoggerLevel(level);
+                            tauriApi.setLogLevel(level);
                           }}
-                        />
+                        >
+                          <SelectTrigger className="w-[130px] h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="error">Error</SelectItem>
+                            <SelectItem value="warn">Warn</SelectItem>
+                            <SelectItem value="info">Info</SelectItem>
+                            <SelectItem value="debug">Debug</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Log diagnostic messages to the console and log files for troubleshooting
+                        Controls which messages are written to log files. Default is Warn.
                       </p>
                       {logPath && (
                         <div className="flex items-center gap-1 mt-2.5 pt-2.5 border-t border-border">
@@ -707,6 +721,60 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                           </TooltipProvider>
                         </div>
                       )}
+                    </div>
+
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label className="text-sm font-medium">
+                          Export Diagnostics
+                        </Label>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={async () => {
+                            try {
+                              const backend = await tauriApi.collectDiagnostics();
+                              const { connections } = useConnectionsStore.getState();
+                              const redactedConnections = connections.map(({ id, provider, authMethod, capabilities, status }) => ({
+                                id, provider, authMethod, capabilities, status,
+                              }));
+                              const { routing } = useRoutingStore.getState();
+                              const dump = {
+                                timestamp: new Date().toISOString(),
+                                version: (await import('@tauri-apps/api/app')).getVersion(),
+                                backend,
+                                frontend: {
+                                  connections: redactedConnections,
+                                  routing,
+                                  logLevel,
+                                  tabCount: useEditorStore.getState().tabs.length,
+                                },
+                              };
+                              const json = JSON.stringify(dump, null, 2);
+                              const date = new Date().toISOString().split('T')[0];
+                              const { save } = await import('@tauri-apps/plugin-dialog');
+                              const path = await save({
+                                defaultPath: `notesage-diagnostics-${date}.json`,
+                                filters: [{ name: 'JSON', extensions: ['json'] }],
+                              });
+                              if (path) {
+                                await tauriApi.writeFile(path, json);
+                                toast.success('Diagnostics exported');
+                                tauriApi.revealInFinder(path);
+                              }
+                            } catch (err) {
+                              toast.error(`Export failed: ${err}`);
+                            }
+                          }}
+                        >
+                          <Download className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+                          Export
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Save backend and frontend state to a JSON file for bug reports. No API keys are included.
+                      </p>
                     </div>
 
                     <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">

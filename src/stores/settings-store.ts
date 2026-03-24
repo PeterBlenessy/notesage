@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { LogLevel } from '@/lib/logger';
 
 
 type Theme = "light" | "dark" | "system";
@@ -36,7 +37,9 @@ interface SettingsStore {
   inlineCompletionsDisabled: boolean;
   chatHistoryLimit: number;
   skillManagement: boolean;
-  debugLogging: boolean;
+  /** @deprecated Use logLevel instead. Kept for migration. */
+  debugLogging?: boolean;
+  logLevel: LogLevel;
   autoCheckUpdates: boolean;
   lastUpdateCheck: string | null;
   dismissedVersion: string | null;
@@ -75,7 +78,7 @@ interface SettingsStore {
   setInlineCompletionsDisabled: (disabled: boolean) => void;
   setChatHistoryLimit: (limit: number) => void;
   setSkillManagement: (enabled: boolean) => void;
-  setDebugLogging: (enabled: boolean) => void;
+  setLogLevel: (level: LogLevel) => void;
   setAutoCheckUpdates: (enabled: boolean) => void;
   setLastUpdateCheck: (timestamp: string | null) => void;
   setDismissedVersion: (version: string | null) => void;
@@ -121,7 +124,7 @@ export const useSettingsStore = create<SettingsStore>()(
       inlineCompletionsDisabled: false,
       chatHistoryLimit: 0,
       skillManagement: false,
-      debugLogging: false,
+      logLevel: 'warn',
       autoCheckUpdates: true,
       lastUpdateCheck: null,
       dismissedVersion: null,
@@ -230,8 +233,8 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ skillManagement: enabled });
       },
 
-      setDebugLogging: (enabled: boolean) => {
-        set({ debugLogging: enabled });
+      setLogLevel: (level: LogLevel) => {
+        set({ logLevel: level });
       },
 
       setAutoCheckUpdates: (enabled: boolean) => {
@@ -280,10 +283,23 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
+      version: 1,
+
+      migrate: (persisted: unknown, version: number) => {
+        const state = persisted as Record<string, unknown>;
+        if (version === 0) {
+          // Migrate debugLogging boolean → logLevel string
+          if (typeof state.debugLogging === 'boolean') {
+            state.logLevel = state.debugLogging ? 'debug' : 'warn';
+            delete state.debugLogging;
+          }
+        }
+        return state;
+      },
 
       partialize: (state) => {
-        // Exclude runtime-only fields from persistence
-        const { startupReady: _s, icloudAvailable: _a, icloudNotesagePath: _b, ...persisted } = state;
+        // Exclude runtime-only fields and deprecated fields from persistence
+        const { startupReady: _s, icloudAvailable: _a, icloudNotesagePath: _b, debugLogging: _d, ...persisted } = state;
         return persisted;
       },
     }

@@ -16,23 +16,38 @@ interface LogEntry {
   timestamp: number;
 }
 
+export type LogLevel = 'error' | 'warn' | 'info' | 'debug';
+
+const LOG_PRIORITY: Record<LogLevel, number> = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  debug: 3,
+};
+
 const isDev = import.meta.env.DEV;
 const FLUSH_INTERVAL = 500; // ms
 const FLUSH_THRESHOLD = 20; // entries
 
 let buffer: LogEntry[] = [];
 let flushTimer: ReturnType<typeof setInterval> | null = null;
-let debugEnabled = false;
+let minLevel: LogLevel = 'warn';
 
-/** Set whether debug-level logging is enabled (toggled from Settings). */
+/** Set the minimum log level for forwarding and console output. */
+export function setLogLevel(level: LogLevel): void {
+  minLevel = level;
+}
+
+/** @deprecated Use setLogLevel('debug') or setLogLevel('warn') instead. */
 export function setDebugLogging(enabled: boolean): void {
-  debugEnabled = enabled;
+  minLevel = enabled ? 'debug' : 'warn';
 }
 
 function shouldForward(level: string): boolean {
   if (isDev) return true;
-  if (level === 'warn' || level === 'error') return true;
-  return debugEnabled;
+  const priority = LOG_PRIORITY[level as LogLevel];
+  if (priority === undefined) return true;
+  return priority <= LOG_PRIORITY[minLevel];
 }
 
 function enqueue(entry: LogEntry): void {
@@ -59,23 +74,28 @@ function startTimer(): void {
 function logImpl(level: string, category: string, message: string, data?: unknown): void {
   const timestamp = Date.now();
 
-  // Console output
-  const prefix = `[${category}]`;
-  const args: unknown[] = data !== undefined ? [prefix, message, data] : [prefix, message];
+  // Console output — gated by min level (dev always shows all)
+  const priority = LOG_PRIORITY[level as LogLevel];
+  const show = isDev || (priority !== undefined && priority <= LOG_PRIORITY[minLevel]);
 
-  switch (level) {
-    case 'debug':
-      if (isDev || debugEnabled) console.debug(...args);
-      break;
-    case 'info':
-      if (isDev || debugEnabled) console.info(...args);
-      break;
-    case 'warn':
-      console.warn(...args);
-      break;
-    case 'error':
-      console.error(...args);
-      break;
+  if (show) {
+    const prefix = `[${category}]`;
+    const args: unknown[] = data !== undefined ? [prefix, message, data] : [prefix, message];
+
+    switch (level) {
+      case 'debug':
+        console.debug(...args);
+        break;
+      case 'info':
+        console.info(...args);
+        break;
+      case 'warn':
+        console.warn(...args);
+        break;
+      case 'error':
+        console.error(...args);
+        break;
+    }
   }
 
   // Backend forwarding

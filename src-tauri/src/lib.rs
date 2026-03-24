@@ -13,14 +13,16 @@ fn open_devtools(webview_window: tauri::WebviewWindow) {
 }
 
 #[tauri::command]
-fn set_debug_logging(enabled: bool) {
-    let level = if enabled {
-        log::LevelFilter::Debug
-    } else {
-        log::LevelFilter::Info
+fn set_log_level(level: String) {
+    let filter = match level.as_str() {
+        "error" => log::LevelFilter::Error,
+        "warn" => log::LevelFilter::Warn,
+        "info" => log::LevelFilter::Info,
+        "debug" => log::LevelFilter::Debug,
+        _ => log::LevelFilter::Warn,
     };
-    log::set_max_level(level);
-    log::info!(target: "notesage::settings", "Debug logging set to {}", enabled);
+    log::set_max_level(filter);
+    log::info!(target: "notesage::settings", "Log level set to {}", level);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -59,7 +61,7 @@ pub fn run() {
         .manage(IndexState::new())
         .invoke_handler(tauri::generate_handler![
             open_devtools,
-            set_debug_logging,
+            set_log_level,
             read_file,
             read_binary_file,
             write_file,
@@ -172,11 +174,12 @@ pub fn run() {
             mcp_import_configs,
             mcp_save_config,
             mcp_check_import_sources,
-            // Logging
+            // Logging & diagnostics
             log_frontend,
             get_log_path,
             clear_logs,
             get_log_size,
+            collect_diagnostics,
             // State persistence
             store_read,
             store_read_batch,
@@ -225,10 +228,10 @@ pub fn run() {
             sandbox_monitor_unregister_pid,
         ])
         .setup(|app| {
-            // Plugin accepts Debug level, but default to Info until user enables debug logging.
-            // set_debug_logging(true) raises this to Debug at runtime.
-            log::set_max_level(log::LevelFilter::Info);
+            // Log startup at Info before restricting to Warn — this line always appears.
             log::info!(target: "notesage::lifecycle", "Notesage starting up (version {})", app.package_info().version);
+            // Default to Warn until user raises it in Settings via set_log_level().
+            log::set_max_level(log::LevelFilter::Warn);
 
             // Kill orphaned agent processes from previous sessions that weren't cleaned up
             // (e.g. app was force-quit or crashed). Must be synchronous — if async, the

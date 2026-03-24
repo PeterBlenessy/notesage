@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date observed** | 2026-03-24 |
-| **Status** | Open |
+| **Status** | Fixed |
 | **Tasks** | [production-logging-gaps-tasks](../tasks/2026-03-24-production-logging-gaps-tasks.md) |
 | **Severity** | Low (enabler) |
 | **Impact** | Not user-facing, but blocks diagnosis of other bugs |

@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-24 |
-| **Status** | Not started |
+| **Status** | Complete |
 | **Bug** | [production-logging-gaps](../bugs/2026-03-24-production-logging-gaps.md) |
 | **Total** | 9 tasks: 4S, 4M, 1L |
 | **Suggested order** | Log level (#1) → Logger adoption (#2-#4) → Connection logging (#5) → Routing logging (#6) → Diagnostic dump (#7-#8) → Verify (#9) |
@@ -25,7 +25,7 @@ The following items from the bug report are **already resolved** and do not need
 
 ---
 
-## #1 — Replace debug logging toggle with log level selector
+## ~~#1 — Replace debug logging toggle with log level selector~~ ✅
 
 |  |  |
 | --- | --- |
@@ -38,18 +38,21 @@ The following items from the bug report are **already resolved** and do not need
 
 Replace the binary `debugLogging` toggle with a 4-level log level selector: Error, Warn, Info, Debug.
 
-**Frontend (`logger.ts`):**
+**Frontend (**`logger.ts`**):**
+
 1. Replace `let debugEnabled = false` with `let minLevel: 'error' | 'warn' | 'info' | 'debug' = 'warn'`
 2. Replace `setDebugLogging(enabled)` with `setLogLevel(level)` — assign numeric priority (error=0, warn=1, info=2, debug=3)
 3. Update `shouldForward()`: in dev always forward; in prod forward if the entry's level priority ≤ `minLevel` priority
 4. Update console output gating in `logImpl()` to use the same level check
 
 **Settings store:**
+
 1. Replace `debugLogging: boolean` with `logLevel: 'error' | 'warn' | 'info' | 'debug'` (default: `'warn'`)
 2. Replace `setDebugLogging()` with `setLogLevel()`
 3. Add migration in `partialize` or `migrate` to convert existing `debugLogging: true` → `'debug'`, `false` → `'warn'`
 
-**Backend (`lib.rs`):**
+**Backend (**`lib.rs`**):**
+
 1. Replace `set_debug_logging(enabled: bool)` with `set_log_level(level: String)` that maps:
    - `"error"` → `log::LevelFilter::Error`
    - `"warn"` → `log::LevelFilter::Warn`
@@ -58,15 +61,18 @@ Replace the binary `debugLogging` toggle with a 4-level log level selector: Erro
 2. Update default in `setup()` to `log::LevelFilter::Warn`
 
 **Settings UI:**
+
 1. Replace the `<Switch>` for "Debug Logging" with a `<Select>` dropdown labeled "Log Level"
 2. Options: Error (errors only), Warn (default — errors + warnings), Info (+ diagnostic info), Debug (verbose)
 3. On change: call `setLogLevel()` on store + `tauriApi.setLogLevel(level)` to update backend
 4. Keep the log path display and clear button below
 
-**Tauri bridge (`tauri.ts`):**
+**Tauri bridge (**`tauri.ts`**):**
+
 1. Replace `setDebugLogging(enabled)` with `setLogLevel(level)` calling `set_log_level`
 
-**App lifecycle (`useAppLifecycle.ts`):**
+**App lifecycle (**`useAppLifecycle.ts`**):**
+
 1. Read `logLevel` from settings store on startup
 2. Call `tauriApi.setLogLevel(logLevel)` and `setLogLevel(logLevel)` from logger
 
@@ -74,7 +80,7 @@ Replace the binary `debugLogging` toggle with a 4-level log level selector: Erro
 
 ---
 
-## #2 — Migrate `useLocalAI.ts` from `devLog` to structured logger
+## ~~#2 — Migrate~~ `useLocalAI.ts` ~~from~~ `devLog` ~~to structured logger~~ ✅
 
 |  |  |
 | --- | --- |
@@ -103,7 +109,7 @@ Replace the binary `debugLogging` toggle with a 4-level log level selector: Erro
 
 ---
 
-## #3 — Migrate `useLocalCompletion.ts` from console to structured logger
+## ~~#3 — Migrate~~ `useLocalCompletion.ts` ~~from console to structured logger~~ ✅
 
 |  |  |
 | --- | --- |
@@ -120,7 +126,7 @@ Replace the binary `debugLogging` toggle with a 4-level log level selector: Erro
 
 ---
 
-## #4 — Migrate `useProjectMetadata.ts` and `useAIOperations.ts` console calls
+## ~~#4 — Migrate~~ `useProjectMetadata.ts` ~~and~~ `useAIOperations.ts` ~~console calls~~ ✅
 
 |  |  |
 | --- | --- |
@@ -137,7 +143,7 @@ Replace the binary `debugLogging` toggle with a 4-level log level selector: Erro
 
 ---
 
-## #5 — Add connection lifecycle logging to `connections-store.ts`
+## ~~#5 — Add connection lifecycle logging to~~ `connections-store.ts` ✅
 
 |  |  |
 | --- | --- |
@@ -161,7 +167,7 @@ Replace the binary `debugLogging` toggle with a 4-level log level selector: Erro
 
 ---
 
-## #6 — Add routing assignment logging to `routing-store.ts`
+## ~~#6 — Add routing assignment logging to~~ `routing-store.ts` ✅
 
 |  |  |
 | --- | --- |
@@ -182,7 +188,7 @@ Replace the binary `debugLogging` toggle with a 4-level log level selector: Erro
 
 ---
 
-## #7 — Add diagnostic dump Tauri command
+## ~~#7 — Add diagnostic dump Tauri command~~ ✅
 
 |  |  |
 | --- | --- |
@@ -204,7 +210,7 @@ Replace the binary `debugLogging` toggle with a 4-level log level selector: Erro
 
 ---
 
-## #8 — Add "Export Diagnostics" button to Settings > Advanced
+## ~~#8 — Add "Export Diagnostics" button to Settings &gt; Advanced~~ ✅
 
 |  |  |
 | --- | --- |
@@ -216,12 +222,7 @@ Replace the binary `debugLogging` toggle with a 4-level log level selector: Erro
 **Description:**
 
 1. Add an "Export Diagnostics" button in the Advanced section of Settings
-2. On click:
-   a. Call `invoke('collect_diagnostics')` for backend state
-   b. Collect frontend state: connections (redacted — no API keys), routing config, local AI store state, settings store state, active tab count
-   c. Merge into a single JSON object with `{ backend, frontend, timestamp, version }` structure
-   d. Show native save dialog (default filename: `notesage-diagnostics-{date}.json`)
-   e. Write to disk via `save_binary_file` (or `write_file`)
+2. On click: a. Call `invoke('collect_diagnostics')` for backend state b. Collect frontend state: connections (redacted — no API keys), routing config, local AI store state, settings store state, active tab count c. Merge into a single JSON object with `{ backend, frontend, timestamp, version }` structure d. Show native save dialog (default filename: `notesage-diagnostics-{date}.json`) e. Write to disk via `save_binary_file` (or `write_file`)
 3. Redaction: strip `apiKey`, `credentials`, `envVars` from any connection data before export
 4. Show success toast with file path
 
@@ -229,7 +230,7 @@ Replace the binary `debugLogging` toggle with a 4-level log level selector: Erro
 
 ---
 
-## #9 — Verify logging coverage in production build
+## ~~#9 — Verify logging coverage in production build~~ ✅
 
 |  |  |
 | --- | --- |
@@ -241,16 +242,22 @@ Replace the binary `debugLogging` toggle with a 4-level log level selector: Erro
 **Description:**
 
 1. Build production app (`pnpm tauri build`)
+
 2. Launch and verify log file at `~/Library/Logs/com.notesage.app/`
+
 3. Check that the following scenarios produce log entries:
+
    - App startup with Local AI enabled but binary missing → "Auto-start skipped: binary not available"
    - Adding a new connection → "Connection added"
    - Routing auto-assignment → "Route assigned"
    - Action scan circuit breaker triggering → "fullScan circuit breaker" (already exists)
+
 4. Verify no API keys or tokens appear in log files
+
 5. Test diagnostic dump export and verify output is complete and redacted
 
 6. Test log level selector: set to Info, verify info-level messages appear; set back to Warn, verify they stop
+
 7. Verify log level persists across app restart
 
 **Acceptance criteria:** All six gaps from the bug report are addressed; log level selector works end-to-end; production logs are sufficient to diagnose the three related bugs (Local AI not starting, custom provider failures, index poisoning).

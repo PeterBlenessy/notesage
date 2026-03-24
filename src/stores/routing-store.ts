@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { log } from '@/lib/logger';
 
 import type { AICapability, Connection, UseCaseSlot, UseCaseRouting } from '@/lib/ai/connections';
 import { EMPTY_ROUTING } from '@/lib/ai/connections';
@@ -49,13 +50,16 @@ export const useRoutingStore = create<RoutingStore>()(
     (set, get) => ({
       routing: { ...EMPTY_ROUTING },
 
-      setRouting: (useCase, connectionId) =>
+      setRouting: (useCase, connectionId) => {
         set((state) => ({
           routing: {
             ...state.routing,
             [useCase]: { connectionId, model: undefined },
           },
-        })),
+        }));
+        const conn = connectionId ? useConnectionsStore.getState().getConnection(connectionId) : null;
+        log.debug('routing', `Route assigned: ${useCase} → ${conn?.provider ?? 'none'}`, { connectionId });
+      },
 
       setUseCaseModel: (useCase, model) =>
         set((state) => ({
@@ -83,15 +87,20 @@ export const useRoutingStore = create<RoutingStore>()(
         const connection = useConnectionsStore.getState().getConnection(connectionId);
         if (!connection) return;
 
+        const assigned: string[] = [];
         set((state) => {
           const updated = { ...state.routing };
           for (const capability of connection.capabilities) {
             if (!updated[capability]?.connectionId) {
               updated[capability] = { connectionId };
+              assigned.push(capability);
             }
           }
           return { routing: updated };
         });
+        if (assigned.length > 0) {
+          log.info('routing', `Auto-assigned ${connection.provider} to: ${assigned.join(', ')}`, { connectionId });
+        }
       },
 
       /** Clear all routing slots that reference a given connection ID */

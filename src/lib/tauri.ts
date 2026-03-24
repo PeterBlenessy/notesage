@@ -595,9 +595,9 @@ export const tauriApi = {
     return await invoke("health_check");
   },
 
-  // Debug logging
-  async setDebugLogging(enabled: boolean): Promise<void> {
-    await invoke("set_debug_logging", { enabled });
+  // Log level
+  async setLogLevel(level: string): Promise<void> {
+    await invoke("set_log_level", { level });
   },
 
   // Log file operations
@@ -611,6 +611,10 @@ export const tauriApi = {
 
   async clearLogs(): Promise<void> {
     await invoke("clear_logs");
+  },
+
+  async collectDiagnostics(): Promise<Record<string, unknown>> {
+    return await invoke<Record<string, unknown>>("collect_diagnostics");
   },
 
   // Action scanning

@@ -59,6 +59,13 @@ impl LocalInferenceState {
         let pid_file = self.models_dir.join(".server.pid");
         let _ = std::fs::remove_file(&pid_file);
     }
+
+    /// Returns (running, port) for diagnostic reporting.
+    pub fn status_info(&self) -> (bool, Option<u16>) {
+        let has_pid = self.server_pid.lock().map(|g| g.is_some()).unwrap_or(false);
+        let port = self.port.try_lock().ok().and_then(|g| *g);
+        (has_pid, port)
+    }
 }
 
 // ---------------------------------------------------------------------------

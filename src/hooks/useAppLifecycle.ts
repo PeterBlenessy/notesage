@@ -12,7 +12,7 @@ import { setBinaryData } from "@/lib/binary-cache";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { migrateV1AISettings } from "@/lib/ai/migration";
 import { scanICloudForProjects } from "@/lib/scan-icloud-projects";
-import { log } from "@/lib/logger";
+import { log, setLogLevel } from "@/lib/logger";
 import { stopAcpAgent } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { toast } from "sonner";
@@ -61,12 +61,11 @@ export function useAppLifecycle({ onOpenPalette }: UseAppLifecycleOptions) {
     localStorage.removeItem("mention-store");
   }, []);
 
-  // --- Sync debug logging to Rust backend on startup ---
+  // --- Sync log level to logger + Rust backend on startup ---
   useEffect(() => {
-    const { debugLogging } = useSettingsStore.getState();
-    if (debugLogging) {
-      tauriApi.setDebugLogging(true);
-    }
+    const { logLevel } = useSettingsStore.getState();
+    setLogLevel(logLevel);
+    tauriApi.setLogLevel(logLevel);
   }, []);
 
   // --- Stop ACP agent processes on window close ---

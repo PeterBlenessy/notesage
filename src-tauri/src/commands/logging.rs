@@ -1,5 +1,11 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use tauri::{AppHandle, Manager};
+use super::watcher::WatcherState;
+use super::acp::AcpState;
+use super::mcp::McpState;
+use super::local_inference::LocalInferenceState;
+use crate::index::IndexState;
 
 #[derive(Deserialize)]
 pub struct LogEntry {
@@ -77,6 +83,77 @@ pub async fn clear_logs() -> Result<(), String> {
 
     log::info!(target: "notesage::lifecycle", "Log files cleared");
     Ok(())
+}
+
+#[derive(Serialize)]
+pub struct DiagnosticDump {
+    pub os: String,
+    pub arch: String,
+    pub log_dir: String,
+    pub log_size_bytes: u64,
+    pub watcher_alive: bool,
+    pub watched_paths_count: usize,
+    pub acp_agent_count: usize,
+    pub mcp_server_count: usize,
+    pub local_server_running: bool,
+    pub local_server_port: Option<u16>,
+    pub index_healthy: bool,
+    pub index_project_count: usize,
+}
+
+/// Collects backend diagnostic state for export. No sensitive data included.
+#[tauri::command]
+pub async fn collect_diagnostics(
+    app: AppHandle,
+    watcher: tauri::State<'_, WatcherState>,
+    acp: tauri::State<'_, AcpState>,
+    mcp: tauri::State<'_, McpState>,
+    local_inference: tauri::State<'_, LocalInferenceState>,
+) -> Result<DiagnosticDump, String> {
+    let log_dir = log_directory().unwrap_or_default();
+    let log_size = log_dir_size(&log_dir);
+
+    let (watcher_alive, watched_paths) = watcher.health_info();
+    let acp_agents = acp.check_processes().await;
+    let mcp_servers = mcp.check_processes().await;
+    let (local_running, local_port) = local_inference.status_info();
+
+    let (index_healthy, index_project_count, _queue_len) = app
+        .try_state::<IndexState>()
+        .map(|s| s.health_info())
+        .unwrap_or((false, 0, 0));
+
+    Ok(DiagnosticDump {
+        os: std::env::consts::OS.to_string(),
+        arch: std::env::consts::ARCH.to_string(),
+        log_dir: log_dir.to_string_lossy().to_string(),
+        log_size_bytes: log_size,
+        watcher_alive,
+        watched_paths_count: watched_paths.len(),
+        acp_agent_count: acp_agents.len(),
+        mcp_server_count: mcp_servers.len(),
+        local_server_running: local_running,
+        local_server_port: local_port,
+        index_healthy,
+        index_project_count,
+    })
+}
+
+fn log_dir_size(dir: &PathBuf) -> u64 {
+    if !dir.exists() {
+        return 0;
+    }
+    let mut total: u64 = 0;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            if let Ok(meta) = entry.metadata() {
+                if meta.is_file() {
+                    total += meta.len();
+                }
+            }
+        }
+    }
+    total
 }
 
 /// Resolve the log directory path (macOS: ~/Library/Logs/com.notesage.app/).

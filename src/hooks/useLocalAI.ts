@@ -5,12 +5,7 @@ import { useLocalAIStore } from '@/stores/local-ai-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { tauriApi } from '@/lib/tauri';
-
-const isDev = import.meta.env.DEV;
-
-function devLog(...args: unknown[]) {
-  if (isDev) console.log('[LocalAI]', ...args);
-}
+import { log } from '@/lib/logger';
 
 /**
  * Lifecycle hook for local AI: fetches system info, auto-starts server,
@@ -51,13 +46,13 @@ export function useLocalAI() {
         store.setModels(fetchedModels);
         startupLoadedRef.current = true;
         if (binaryResult.available) {
-          devLog('Binary found at', binaryResult.location, binaryResult.path);
+          log.debug('local-ai', `Binary found at ${binaryResult.location}: ${binaryResult.path}`);
         } else {
-          devLog('Binary not found — user will need to download it');
+          log.info('local-ai', 'Binary not found — user will need to download it');
         }
-        devLog('Loaded system memory and', fetchedModels.length, 'models');
+        log.debug('local-ai', `Loaded system memory and ${fetchedModels.length} models`);
       } catch (e) {
-        console.error('[LocalAI] Failed to fetch local AI info:', e);
+        log.error('local-ai', 'Failed to fetch local AI info', e);
         startupLoadedRef.current = true; // Don't block auto-start forever
       }
     })();
@@ -66,12 +61,20 @@ export function useLocalAI() {
   // Auto-start server when Local AI connection exists and a model is downloaded.
   // Depends on `models` and `binaryStatus` so it re-fires after startup fetch completes.
   useEffect(() => {
-    if (!startupReady || !hasLocalAIConnection || !activeModelId) return;
+    if (!startupReady) return;
+    if (!hasLocalAIConnection) {
+      log.info('local-ai', 'Auto-start skipped: no Local AI connection');
+      return;
+    }
+    if (!activeModelId) {
+      log.info('local-ai', 'Auto-start skipped: no activeModelId');
+      return;
+    }
 
     // Don't auto-start if binary is not available
     if (binaryStatus === 'not_found' || binaryStatus === 'downloading' || binaryStatus === 'unknown') {
       if (binaryStatus !== 'unknown') {
-        devLog('Binary not available (status:', binaryStatus, '), skipping auto-start');
+        log.info('local-ai', `Auto-start skipped: binary not available (status: ${binaryStatus})`);
         updateConnectionStatus('expired');
       }
       return;
@@ -81,7 +84,7 @@ export function useLocalAI() {
     if (!model?.downloaded) {
       // Only log after startup has loaded models (avoid noise from empty initial state)
       if (startupLoadedRef.current) {
-        devLog('Active model', activeModelId, 'not downloaded, skipping auto-start');
+        log.info('local-ai', `Auto-start skipped: model ${activeModelId} not downloaded`);
         updateConnectionStatus('expired');
       }
       return;
@@ -91,14 +94,14 @@ export function useLocalAI() {
     // Don't auto-start if already running
     if (store.serverStatus === 'running' || store.serverStatus === 'starting') return;
 
-    devLog('Auto-starting server with model', activeModelId);
+    log.info('local-ai', `Auto-starting server with model ${activeModelId}`);
     startServer(activeModelId, contextLength, gpuLayers);
   }, [startupReady, hasLocalAIConnection, activeModelId, contextLength, gpuLayers, models, binaryStatus]);
 
   // Stop server when Local AI connection is removed
   useEffect(() => {
     if (!hasLocalAIConnection && useLocalAIStore.getState().serverStatus === 'running') {
-      devLog('Connection removed, stopping server');
+      log.info('local-ai', 'Connection removed, stopping server');
       tauriApi.stopLocalServer().catch(() => {});
       useLocalAIStore.getState().setServerStatus('stopped');
       useLocalAIStore.getState().setServerPort(null);
@@ -111,7 +114,7 @@ export function useLocalAI() {
       'local-server-status',
       (event) => {
         const { running, port } = event.payload;
-        devLog('Server status event:', event.payload);
+        log.debug('local-ai', 'Server status event', event.payload);
         const store = useLocalAIStore.getState();
 
         if (running) {
@@ -148,7 +151,7 @@ export function useLocalAI() {
       try {
         const status = await tauriApi.getLocalServerStatus();
         if (!status.running && useLocalAIStore.getState().serverStatus === 'running') {
-          devLog('Health check: server not running, attempt', retryCountRef.current + 1);
+          log.warn('local-ai', `Health check: server not running, retry ${retryCountRef.current + 1}/3`);
           // Server crashed — attempt restart
           if (retryCountRef.current < 3) {
             retryCountRef.current++;
@@ -187,18 +190,18 @@ export function useLocalAI() {
 }
 
 async function startServer(modelId: string, contextLength: number, gpuLayers: number) {
-  devLog('Starting server with model', modelId, 'ctx', contextLength, 'gpu', gpuLayers);
+  log.info('local-ai', `Starting server: model=${modelId} ctx=${contextLength} gpu=${gpuLayers}`);
   useLocalAIStore.getState().setServerStatus('starting');
   updateConnectionStatus('expired'); // Amber while starting
   try {
     const port = await tauriApi.startLocalServer(modelId, contextLength, gpuLayers);
-    devLog('Server started on port', port);
+    log.info('local-ai', `Server started on port ${port}`);
     useLocalAIStore.getState().setServerStatus('running');
     useLocalAIStore.getState().setServerPort(port);
     updateConnectionStatus('connected');
   } catch (err) {
     const errorMsg = String(err);
-    devLog('Server start failed:', errorMsg);
+    log.error('local-ai', `Server start failed: ${errorMsg}`);
     useLocalAIStore.getState().setServerStatus('error', errorMsg);
     updateConnectionStatus('error');
     toast.error(`Failed to start Local AI: ${errorMsg}`);

@@ -408,8 +408,8 @@ export function useAIOperations() {
         });
 
         const unlistenThinking = await listen<string>('ai-stream-thinking-chunk', (event) => {
-          if (import.meta.env.DEV && !streamedThinking) {
-            console.log('[AI] Thinking content detected');
+          if (!streamedThinking) {
+            log.debug('ai', 'Thinking content detected');
           }
           streamedThinking += event.payload;
           thinkingDirty = true;

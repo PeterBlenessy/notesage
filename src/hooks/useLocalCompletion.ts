@@ -4,6 +4,7 @@ import { useRoutingStore } from '@/stores/routing-store';
 import { useEditorStore } from '@/stores/editor-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { tauriApi } from '@/lib/tauri';
+import { log } from '@/lib/logger';
 import {
   setGhostText,
   clearGhostText,
@@ -126,9 +127,7 @@ export function useLocalCompletion(editor: Editor | null) {
         // Success — reset error counter
         consecutiveErrors.current = 0;
 
-        if (import.meta.env.DEV) {
-          console.log('[useLocalCompletion] got completion:', JSON.stringify(completion).slice(0, 100));
-        }
+        log.debug('local-completion', `Got completion: ${JSON.stringify(completion).slice(0, 100)}`);
 
         // Discard if a newer request was made while we were waiting
         if (thisRequest !== requestId.current) return;
@@ -164,8 +163,8 @@ export function useLocalCompletion(editor: Editor | null) {
         });
       } catch (err) {
         consecutiveErrors.current++;
-        if (import.meta.env.DEV && consecutiveErrors.current <= 3) {
-          console.warn('[useLocalCompletion] completion error:', err);
+        if (consecutiveErrors.current <= 3) {
+          log.warn('local-completion', `Completion error (${consecutiveErrors.current}/5)`, err);
         }
       }
     },

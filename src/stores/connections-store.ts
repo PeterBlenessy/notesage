@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { log } from '@/lib/logger';
 
 import type {
   Connection,
@@ -35,29 +36,36 @@ export const useConnectionsStore = create<ConnectionsStore>()(
 
       addConnection: (conn) => {
         const id = `conn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const capabilities = getCapabilities(conn.provider, conn.authMethod);
         const connection: Connection = {
           ...conn,
           id,
-          capabilities: getCapabilities(conn.provider, conn.authMethod),
+          capabilities,
           createdAt: Date.now(),
         };
         set((state) => ({
           connections: [...state.connections, connection],
         }));
+        log.info('connections', 'Connection added', { id, provider: conn.provider, authMethod: conn.authMethod, capabilities });
         return id;
       },
 
-      updateConnection: (id, updates) =>
+      updateConnection: (id, updates) => {
         set((state) => ({
           connections: state.connections.map((c) =>
             c.id === id ? { ...c, ...updates } : c
           ),
-        })),
+        }));
+        log.debug('connections', 'Connection updated', { id, fields: Object.keys(updates) });
+      },
 
-      removeConnection: (id) =>
+      removeConnection: (id) => {
+        const conn = get().connections.find((c) => c.id === id);
         set((state) => ({
           connections: state.connections.filter((c) => c.id !== id),
-        })),
+        }));
+        log.info('connections', 'Connection removed', { id, provider: conn?.provider });
+      },
 
       getConnection: (id) =>
         get().connections.find((c) => c.id === id),

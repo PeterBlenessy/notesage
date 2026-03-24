@@ -6,6 +6,7 @@ import {
   type ProjectMetadata,
 } from '@/stores/project-metadata-store';
 import { tauriApi } from '@/lib/tauri';
+import { log } from '@/lib/logger';
 import { buildDocumentIndex, type DocumentIndex } from '@/lib/document-index';
 
 const METADATA_DIR = '.notesage';
@@ -50,7 +51,7 @@ async function loadProjectMetadata(
       const newExists = await tauriApi.pathExists(dirPath);
       if (oldExists && !newExists) {
         await tauriApi.renamePath(oldDirPath, dirPath);
-        console.log(`Migrated .note-sage to .notesage for ${projectPath}`);
+        log.info('project-metadata', `Migrated .note-sage to .notesage for ${projectPath}`);
       }
     } catch (error) {
       console.warn(`Failed to migrate .note-sage to .notesage:`, error);

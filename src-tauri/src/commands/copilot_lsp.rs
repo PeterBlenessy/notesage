@@ -118,7 +118,7 @@ impl JsonRpcTransport {
         let id = json_rpc::next_request_id();
         let msg = JsonRpcRequest::new(id, method, params.clone());
 
-        log::info!(
+        log::debug!(
             target: "notesage::copilot",
             "LSP → request: method={}, id={}, params={}",
             method, id,
@@ -135,7 +135,7 @@ impl JsonRpcTransport {
 
         match rx.await {
             Ok(Ok(value)) => {
-                log::info!(
+                log::debug!(
                     target: "notesage::copilot",
                     "LSP → request response: method={}, id={}, result={}",
                     method, id, value,
@@ -143,7 +143,7 @@ impl JsonRpcTransport {
                 Ok(value)
             }
             Ok(Err(rpc_err)) => {
-                log::info!(
+                log::warn!(
                     target: "notesage::copilot",
                     "LSP → request error: method={}, id={}, error={}",
                     method, id, rpc_err,
@@ -160,7 +160,7 @@ impl JsonRpcTransport {
         method: &str,
         params: Option<Value>,
     ) -> Result<(), String> {
-        log::info!(
+        log::debug!(
             target: "notesage::copilot",
             "LSP → notification: method={}, params={}",
             method,
@@ -257,7 +257,7 @@ async fn reader_loop(
                     msg.id.as_ref().map(|v| v.to_string()).unwrap_or_default(),
                     msg.params.as_ref().map(|v| v.to_string()).unwrap_or_else(|| "null".to_string()),
                 );
-                log::info!(target: "notesage::copilot", "{}", log_msg);
+                log::debug!(target: "notesage::copilot", "{}", log_msg);
                 let _ = app.emit("copilot-lsp-message", serde_json::json!({
                     "direction": "incoming",
                     "type": "server_request",
@@ -271,7 +271,7 @@ async fn reader_loop(
                     method,
                     msg.params.as_ref().map(|v| v.to_string()).unwrap_or_else(|| "null".to_string()),
                 );
-                log::info!(target: "notesage::copilot", "{}", log_msg);
+                log::debug!(target: "notesage::copilot", "{}", log_msg);
                 let _ = app.emit("copilot-lsp-message", serde_json::json!({
                     "direction": "incoming",
                     "type": "notification",
@@ -286,7 +286,7 @@ async fn reader_loop(
                 msg.result.as_ref().map(|v| v.to_string()).unwrap_or_else(|| "null".to_string()),
                 msg.error.as_ref().map(|e| format!("{}", e)).unwrap_or_else(|| "null".to_string()),
             );
-            log::info!(target: "notesage::copilot", "{}", log_msg);
+            log::debug!(target: "notesage::copilot", "{}", log_msg);
             let _ = app.emit("copilot-lsp-message", serde_json::json!({
                 "direction": "incoming",
                 "type": "response",
