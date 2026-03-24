@@ -24,7 +24,7 @@ export function getAIProviderFromConnection(connection: Connection): AIProvider 
 
   if (connection.credentials.type === 'api_key') {
     const provider = connection.provider as AIProviderType;
-    return getAIProvider(provider, connection.credentials.key, undefined, connection.config);
+    return getAIProvider(provider, connection.id, undefined, connection.config);
   }
 
   if (connection.credentials.type === 'local') {
@@ -40,23 +40,23 @@ export function getAIProviderFromConnection(connection: Connection): AIProvider 
 
 /**
  * Create an AIProvider from loose parameters.
- * @deprecated Use getAIProviderFromConnection() with a Connection object instead.
+ * For api_key providers, connectionId is used to resolve the key from the OS keychain.
  */
 export function getAIProvider(
   provider: AIProviderType,
-  apiKey?: string,
+  connectionId?: string,
   ollamaUrl?: string,
   config?: ConnectionConfig
 ): AIProvider {
   switch (provider) {
     case 'anthropic':
-      return new AnthropicProvider(apiKey, config);
+      return new AnthropicProvider(connectionId, config);
     case 'openai':
-      return new OpenAIProvider(apiKey, config);
+      return new OpenAIProvider(connectionId, config);
     case 'ollama':
       return new OllamaProvider(ollamaUrl, config);
     case 'openai_compatible':
-      return new OpenAICompatibleProvider(apiKey, config);
+      return new OpenAICompatibleProvider(connectionId, config);
     case 'local_bundled':
       return new LocalProvider(config);
     default:

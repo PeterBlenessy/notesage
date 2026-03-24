@@ -157,17 +157,16 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
         updateConnection(connection.id, { status: 'connected' });
         setHealth('ok');
       } else if (connection.authMethod === 'api_key') {
-        // API key: try listing models
-        const key = connection.credentials.type === 'api_key' ? connection.credentials.key : undefined;
+        // API key: try listing models — key resolved from keychain in Rust
         const baseUrl = connection.config?.baseUrl;
         const provider = connection.provider === 'openai_compatible' ? 'openai_compatible' : connection.provider;
-        await invoke('list_models', { provider, apiKey: key, baseUrl: baseUrl ?? null });
+        await invoke('list_models', { provider, connectionId: connection.id, baseUrl: baseUrl ?? null });
         updateConnection(connection.id, { status: 'connected' });
         setHealth('ok');
       } else if (connection.authMethod === 'local') {
         // Ollama: check tags endpoint
         const url = connection.credentials.type === 'local' ? connection.credentials.url : 'http://localhost:11434';
-        await invoke('list_models', { provider: 'ollama', apiKey: null, baseUrl: url });
+        await invoke('list_models', { provider: 'ollama', baseUrl: url });
         updateConnection(connection.id, { status: 'connected' });
         setHealth('ok');
       } else if (connection.authMethod === 'local_bundled') {

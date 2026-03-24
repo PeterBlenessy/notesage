@@ -4,17 +4,17 @@ import type { ConnectionConfig } from '../connections';
 
 export class AnthropicProvider implements AIProvider {
   name: 'anthropic' = 'anthropic';
-  private apiKey: string;
+  private connectionId: string;
   private config?: ConnectionConfig;
 
-  constructor(apiKey?: string, config?: ConnectionConfig) {
-    this.apiKey = apiKey || '';
+  constructor(connectionId?: string, config?: ConnectionConfig) {
+    this.connectionId = connectionId || '';
     this.config = config;
   }
 
   async generateText(prompt: string, _options?: GenerateOptions): Promise<string> {
-    if (!this.apiKey) {
-      throw new Error('Anthropic API key is required');
+    if (!this.connectionId) {
+      throw new Error('Anthropic connection ID is required');
     }
 
     try {
@@ -22,7 +22,8 @@ export class AnthropicProvider implements AIProvider {
         request: {
           provider: 'anthropic',
           prompt,
-          api_key: this.apiKey,
+          api_key: null,
+          connection_id: this.connectionId,
           ollama_url: null,
           stream: false,
           model: this.config?.model ?? null,
@@ -42,15 +43,15 @@ export class AnthropicProvider implements AIProvider {
   }
 
   async chat(messages: ChatMessage[]): Promise<string> {
-    if (!this.apiKey) {
-      throw new Error('Anthropic API key is required');
+    if (!this.connectionId) {
+      throw new Error('Anthropic connection ID is required');
     }
 
     try {
       const result = await invoke<string>('ai_chat', {
         messages,
         provider: 'anthropic',
-        apiKey: this.apiKey,
+        connectionId: this.connectionId,
         ollamaUrl: null,
         model: this.config?.model ?? null,
         temperature: this.config?.temperature ?? null,

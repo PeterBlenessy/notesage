@@ -1,5 +1,25 @@
 use serde::{Deserialize, Serialize};
 use super::constants;
+use super::credentials::get_credential_internal;
+
+/// Resolve an API key: prefer explicit `api_key`, fall back to keychain via `connection_id`.
+fn resolve_api_key(api_key: &Option<String>, connection_id: &Option<String>) -> Result<Option<String>, String> {
+    if let Some(key) = api_key.as_ref() {
+        if !key.is_empty() {
+            log::debug!(target: "notesage::ai", "Using explicit api_key parameter");
+            return Ok(Some(key.clone()));
+        }
+    }
+    if let Some(conn_id) = connection_id.as_ref() {
+        log::debug!(target: "notesage::ai", "Resolving API key from keychain for connection={conn_id}");
+        let result = get_credential_internal(conn_id);
+        if let Ok(None) = &result {
+            log::warn!(target: "notesage::ai", "No credential found in keychain for connection={conn_id}");
+        }
+        return result;
+    }
+    Ok(None)
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ChatMessage {
@@ -12,6 +32,7 @@ pub struct AIRequest {
     pub provider: String,
     pub prompt: String,
     pub api_key: Option<String>,
+    pub connection_id: Option<String>,
     pub ollama_url: Option<String>,
     pub stream: bool,
     pub model: Option<String>,
@@ -49,6 +70,7 @@ pub async fn ai_chat(
     messages: Vec<ChatMessage>,
     provider: String,
     api_key: Option<String>,
+    connection_id: Option<String>,
     ollama_url: Option<String>,
     model: Option<String>,
     temperature: Option<f64>,
@@ -56,11 +78,12 @@ pub async fn ai_chat(
     base_url: Option<String>,
     state: tauri::State<'_, super::local_inference::LocalInferenceState>,
 ) -> Result<String, String> {
+    let resolved_key = resolve_api_key(&api_key, &connection_id)?;
     match provider.as_str() {
-        "anthropic" => anthropic_chat(&messages, &api_key, &model, temperature, max_tokens, &base_url).await,
-        "openai" => openai_chat(&messages, &api_key, &model, temperature, max_tokens, &base_url).await,
+        "anthropic" => anthropic_chat(&messages, &resolved_key, &model, temperature, max_tokens, &base_url).await,
+        "openai" => openai_chat(&messages, &resolved_key, &model, temperature, max_tokens, &base_url).await,
         "ollama" => ollama_chat(&messages, &ollama_url, &model, temperature, max_tokens, &base_url).await,
-        "openai_compatible" => openai_compatible_chat(&messages, &api_key, &model, temperature, max_tokens, &base_url).await,
+        "openai_compatible" => openai_compatible_chat(&messages, &resolved_key, &model, temperature, max_tokens, &base_url).await,
         "local_bundled" => {
             super::local_inference::local_bundled_chat(&messages, &state, &model, temperature, max_tokens).await
         }
@@ -74,6 +97,7 @@ pub async fn ai_chat_stream(
     messages: Vec<ChatMessage>,
     provider: String,
     api_key: Option<String>,
+    connection_id: Option<String>,
     ollama_url: Option<String>,
     web_search_enabled: Option<bool>,
     model: Option<String>,
@@ -85,12 +109,13 @@ pub async fn ai_chat_stream(
     use crate::commands::ai_streaming::*;
 
     let search = web_search_enabled.unwrap_or(false);
+    let resolved_key = resolve_api_key(&api_key, &connection_id)?;
 
     match provider.as_str() {
-        "anthropic" => anthropic_chat_stream(&window, &messages, &api_key, search, &model, temperature, max_tokens, &base_url).await,
-        "openai" => openai_chat_stream(&window, &messages, &api_key, search, &model, temperature, max_tokens, &base_url).await,
+        "anthropic" => anthropic_chat_stream(&window, &messages, &resolved_key, search, &model, temperature, max_tokens, &base_url).await,
+        "openai" => openai_chat_stream(&window, &messages, &resolved_key, search, &model, temperature, max_tokens, &base_url).await,
         "ollama" => ollama_chat_stream(&window, &messages, &ollama_url, &model, temperature, max_tokens, &base_url).await,
-        "openai_compatible" => openai_compatible_chat_stream(&window, &messages, &api_key, &model, temperature, max_tokens, &base_url).await,
+        "openai_compatible" => openai_compatible_chat_stream(&window, &messages, &resolved_key, &model, temperature, max_tokens, &base_url).await,
         "local_bundled" => {
             super::local_inference::local_bundled_chat_stream(&window, &messages, &state, &model, temperature, max_tokens).await
         }
@@ -102,13 +127,15 @@ pub async fn ai_chat_stream(
 pub async fn list_models(
     provider: String,
     api_key: Option<String>,
+    connection_id: Option<String>,
     base_url: Option<String>,
 ) -> Result<Vec<String>, String> {
     let client = reqwest::Client::new();
+    let resolved_key = resolve_api_key(&api_key, &connection_id)?;
 
     match provider.as_str() {
         "anthropic" => {
-            let api_key = api_key.as_ref().ok_or("Anthropic API key is required")?;
+            let api_key = resolved_key.as_ref().ok_or("Anthropic API key is required")?;
             let url = format!(
                 "{}/v1/models",
                 base_url.as_deref().unwrap_or("https://api.anthropic.com")
@@ -143,7 +170,7 @@ pub async fn list_models(
         }
 
         "openai" | "openai_compatible" => {
-            let api_key = api_key.as_ref().ok_or("API key is required")?;
+            let api_key = resolved_key.as_ref().ok_or("API key is required")?;
             let default_base = if provider == "openai" {
                 "https://api.openai.com"
             } else {
@@ -220,8 +247,8 @@ pub async fn list_models(
 
 // Anthropic API implementation
 async fn anthropic_generate(request: &AIRequest) -> Result<String, String> {
-    let api_key = request
-        .api_key
+    let resolved = resolve_api_key(&request.api_key, &request.connection_id)?;
+    let api_key = resolved
         .as_ref()
         .ok_or("Anthropic API key is required")?;
 
@@ -354,7 +381,8 @@ async fn anthropic_chat(
 
 // OpenAI Responses API implementation
 async fn openai_generate(request: &AIRequest) -> Result<String, String> {
-    let api_key = request.api_key.as_ref().ok_or("OpenAI API key is required")?;
+    let resolved = resolve_api_key(&request.api_key, &request.connection_id)?;
+    let api_key = resolved.as_ref().ok_or("OpenAI API key is required")?;
     let model = request.model.as_deref().unwrap_or(constants::DEFAULT_MODEL_OPENAI);
     let api_url = format!(
         "{}/v1/responses",
@@ -647,7 +675,8 @@ async fn ollama_chat(
 
 // OpenAI-Compatible API implementation (standard Chat Completions format)
 async fn openai_compatible_generate(request: &AIRequest) -> Result<String, String> {
-    let api_key = request.api_key.as_ref().ok_or("API key is required")?;
+    let resolved = resolve_api_key(&request.api_key, &request.connection_id)?;
+    let api_key = resolved.as_ref().ok_or("API key is required")?;
     let base_url = request.base_url.as_ref().ok_or("Base URL is required for OpenAI-Compatible provider")?;
     let model = request.model.as_deref().ok_or("Model is required for OpenAI-Compatible provider")?;
 
@@ -761,11 +790,13 @@ pub async fn ollama_fim_completion(
 pub async fn openai_completions_fim(
     base_url: String,
     api_key: Option<String>,
+    connection_id: Option<String>,
     model: String,
     prefix: String,
     suffix: String,
     max_tokens: Option<u32>,
 ) -> Result<String, String> {
+    let api_key = resolve_api_key(&api_key, &connection_id)?;
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
         .build()

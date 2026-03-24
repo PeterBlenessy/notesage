@@ -27,6 +27,7 @@ pub mod sandbox;
 pub mod sandbox_monitor;
 pub mod network_proxy;
 pub mod constants;
+pub mod credentials;
 
 pub use file::*;
 pub use dialog::*;
@@ -51,3 +52,4 @@ pub use agent_manager::*;
 pub use network_proxy::*;
 pub use sandbox_monitor::*;
 pub use actions::*;
+pub use credentials::*;

@@ -57,10 +57,7 @@ export function useLocalCompletion(editor: Editor | null) {
       ? connection?.config?.baseUrl
       : undefined;
 
-  const apiKey =
-    connection?.credentials.type === 'api_key'
-      ? connection.credentials.key
-      : undefined;
+  const connectionId = connection?.id;
 
   const model = useCaseModel ?? connection?.config?.model;
 
@@ -119,7 +116,7 @@ export function useLocalCompletion(editor: Editor | null) {
           completion = await tauriApi.localBundledFimCompletion(prefix, suffix, model);
         } else if (baseUrl && model) {
           // OpenAI-compatible — generic completions endpoint
-          completion = await tauriApi.openaiCompatibleFimCompletion(baseUrl, apiKey, model, prefix, suffix);
+          completion = await tauriApi.openaiCompatibleFimCompletion(baseUrl, connectionId, model, prefix, suffix);
         } else {
           return;
         }
@@ -168,7 +165,7 @@ export function useLocalCompletion(editor: Editor | null) {
         }
       }
     },
-    [editor, isActive, useSettingsStore.getState().inlineCompletionsDisabled, activeTab?.filePath, model, ollamaUrl, baseUrl, apiKey, connection?.authMethod, fimContextChars]
+    [editor, isActive, useSettingsStore.getState().inlineCompletionsDisabled, activeTab?.filePath, model, ollamaUrl, baseUrl, connectionId, connection?.authMethod, fimContextChars]
   );
 
   // -------------------------------------------------------------------------

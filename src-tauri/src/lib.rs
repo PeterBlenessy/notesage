@@ -224,6 +224,11 @@ pub fn run() {
             // Sandbox violation monitoring
             sandbox_monitor_register_pid,
             sandbox_monitor_unregister_pid,
+            // Secure credential storage
+            store_credential,
+            get_credential,
+            delete_credential,
+            migrate_credentials,
         ])
         .setup(|app| {
             // Log startup at Info before restricting to Warn — this line always appears.

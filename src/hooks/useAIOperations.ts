@@ -32,7 +32,7 @@ export { stopAcpAgent, truncateDetail, formatAcpToolName } from '@/hooks/useAcpL
  */
 function resolveConnectionCredentials(connection: Connection, useCaseModelOverride?: string): {
   provider: AIProviderType;
-  apiKey: string | undefined;
+  connectionId: string;
   ollamaUrl: string | undefined;
   config: import('@/lib/ai/connections').ConnectionConfig | undefined;
 } | null {
@@ -54,15 +54,15 @@ function resolveConnectionCredentials(connection: Connection, useCaseModelOverri
   }
 
   if (connection.credentials.type === 'api_key') {
-    return { provider, apiKey: connection.credentials.key, ollamaUrl: undefined, config };
+    return { provider, connectionId: connection.id, ollamaUrl: undefined, config };
   }
 
   if (connection.credentials.type === 'local') {
-    return { provider, apiKey: undefined, ollamaUrl: connection.credentials.url, config };
+    return { provider, connectionId: connection.id, ollamaUrl: connection.credentials.url, config };
   }
 
   if (connection.credentials.type === 'local_bundled') {
-    return { provider: 'local_bundled' as AIProviderType, apiKey: undefined, ollamaUrl: undefined, config };
+    return { provider: 'local_bundled' as AIProviderType, connectionId: connection.id, ollamaUrl: undefined, config };
   }
 
   return null;
@@ -74,19 +74,19 @@ function resolveWithConfig(
   configOverride: import('@/lib/ai/connections').ConnectionConfig
 ): {
   provider: AIProviderType;
-  apiKey: string | undefined;
+  connectionId: string;
   ollamaUrl: string | undefined;
   config: import('@/lib/ai/connections').ConnectionConfig | undefined;
 } | null {
   const config = { ...connection.config, ...configOverride };
   if (connection.credentials.type === 'api_key') {
-    return { provider, apiKey: connection.credentials.key, ollamaUrl: undefined, config };
+    return { provider, connectionId: connection.id, ollamaUrl: undefined, config };
   }
   if (connection.credentials.type === 'local') {
-    return { provider, apiKey: undefined, ollamaUrl: connection.credentials.url, config };
+    return { provider, connectionId: connection.id, ollamaUrl: connection.credentials.url, config };
   }
   if (connection.credentials.type === 'local_bundled') {
-    return { provider: 'local_bundled' as AIProviderType, apiKey: undefined, ollamaUrl: undefined, config };
+    return { provider: 'local_bundled' as AIProviderType, connectionId: connection.id, ollamaUrl: undefined, config };
   }
   return null;
 }
@@ -146,7 +146,7 @@ export function useAIOperations() {
       if (['anthropic', 'openai', 'ollama', 'google'].includes(legacyProvider)) {
         return {
           provider: legacyProvider,
-          apiKey: legacyProvider === 'ollama' ? undefined : apiKeys[legacyProvider],
+          connectionId: '',  // Legacy path — no keychain connection
           ollamaUrl,
           config: undefined,
         };
@@ -161,7 +161,7 @@ export function useAIOperations() {
     if (aiStore.provider) {
       return {
         provider: aiStore.provider,
-        apiKey: aiStore.provider === 'ollama' ? undefined : apiKeys[aiStore.provider],
+        connectionId: '',  // Legacy path — no keychain connection
         ollamaUrl,
         config: undefined,
       };
@@ -327,7 +327,7 @@ export function useAIOperations() {
       try {
         const aiProvider = getAIProvider(
           resolved.provider,
-          resolved.apiKey,
+          resolved.connectionId,
           resolved.ollamaUrl,
           resolved.config
         );
@@ -463,7 +463,7 @@ export function useAIOperations() {
         await invoke('ai_chat_stream', {
           messages: [systemMessage, ...effectiveHistory, userMessage],
           provider: resolved.provider,
-          apiKey: resolved.apiKey,
+          connectionId: resolved.connectionId,
           ollamaUrl: resolved.ollamaUrl,
           webSearchEnabled: webSearchEnabled && resolved.provider !== 'ollama',
           model: resolved.config?.model ?? null,

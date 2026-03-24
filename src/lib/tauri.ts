@@ -552,10 +552,10 @@ export const tauriApi = {
   },
 
   // OpenAI-compatible FIM completion (for openai_compatible connections)
-  async openaiCompatibleFimCompletion(baseUrl: string, apiKey: string | undefined, model: string, prefix: string, suffix: string, maxTokens?: number): Promise<string> {
+  async openaiCompatibleFimCompletion(baseUrl: string, connectionId: string | undefined, model: string, prefix: string, suffix: string, maxTokens?: number): Promise<string> {
     return await invoke<string>("openai_completions_fim", {
       baseUrl,
-      apiKey: apiKey ?? null,
+      connectionId: connectionId ?? null,
       model,
       prefix,
       suffix,
@@ -574,10 +574,10 @@ export const tauriApi = {
   },
 
   // AI model listing
-  async listModels(provider: string, apiKey?: string, baseUrl?: string): Promise<string[]> {
+  async listModels(provider: string, connectionId?: string, baseUrl?: string): Promise<string[]> {
     return await invoke<string[]>("list_models", {
       provider,
-      apiKey: apiKey ?? null,
+      connectionId: connectionId ?? null,
       baseUrl: baseUrl ?? null,
     });
   },

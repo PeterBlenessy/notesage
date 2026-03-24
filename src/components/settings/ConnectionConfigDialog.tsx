@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import {
   Dialog,
   DialogContent,
@@ -198,7 +199,7 @@ export function ConnectionConfigDialog({
       );
       setBaseUrl(connection.config?.baseUrl ?? '');
       if (connection.credentials.type === 'api_key') {
-        setApiKey(connection.credentials.key);
+        setApiKey(connection.credentials.key ?? '');
       } else {
         setApiKey('');
       }
@@ -230,14 +231,12 @@ export function ConnectionConfigDialog({
     setModelsError(null);
 
     try {
-      const effectiveApiKey =
-        connection.credentials.type === 'api_key' ? apiKey || connection.credentials.key : undefined;
       const effectiveBaseUrl = baseUrl || connection.config?.baseUrl || undefined;
 
       const provider =
         connection.provider === 'openai_compatible' ? 'openai_compatible' : connection.provider;
 
-      const result = await tauriApi.listModels(provider, effectiveApiKey, effectiveBaseUrl);
+      const result = await tauriApi.listModels(provider, connection.id, effectiveBaseUrl);
       setModels(result);
     } catch (err) {
       setModelsError(err instanceof Error ? err.message : String(err));
@@ -285,9 +284,11 @@ export function ConnectionConfigDialog({
         ? extraWritablePaths : undefined,
     };
 
-    // Update API key if changed
-    if (connection.credentials.type === 'api_key' && apiKey !== connection.credentials.key) {
-      updates.credentials = { type: 'api_key', key: apiKey };
+    // Update API key if changed — store in keychain, not in localStorage
+    if (connection.credentials.type === 'api_key' && apiKey && apiKey !== (connection.credentials.key ?? '')) {
+      invoke('store_credential', { service: `notesage:${connection.id}`, key: apiKey })
+        .catch((e) => console.error('Failed to store updated credential:', e));
+      updates.credentials = { type: 'api_key', credentialStored: true };
     }
 
     // Stop running agents so they re-spawn with new config (e.g. --model flag)

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { invoke } from '@tauri-apps/api/core';
 import { log } from '@/lib/logger';
 
 import type {
@@ -39,8 +40,19 @@ export const useConnectionsStore = create<ConnectionsStore>()(
       addConnection: (conn) => {
         const id = `conn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const capabilities = getCapabilities(conn.provider, conn.authMethod);
+
+        // For api_key credentials, store the key in the OS keychain and strip from persisted state
+        let credentials = conn.credentials;
+        if (credentials.type === 'api_key' && credentials.key) {
+          const key = credentials.key;
+          credentials = { type: 'api_key', credentialStored: true };
+          invoke('store_credential', { service: `notesage:${id}`, key })
+            .catch((e) => log.error('connections', 'Failed to store credential in keychain', { id, error: String(e) }));
+        }
+
         const connection: Connection = {
           ...conn,
+          credentials,
           id,
           capabilities,
           createdAt: Date.now(),
@@ -67,6 +79,9 @@ export const useConnectionsStore = create<ConnectionsStore>()(
         set((state) => ({
           connections: state.connections.filter((c) => c.id !== id),
         }));
+        // Clean up keychain entry
+        invoke('delete_credential', { service: `notesage:${id}` })
+          .catch((e) => log.error('connections', 'Failed to delete credential from keychain', { id, error: String(e) }));
         log.info('connections', 'Connection removed', { id, provider: conn?.provider });
       },
 
@@ -95,6 +110,32 @@ export const useConnectionsStore = create<ConnectionsStore>()(
         });
         if (changed) {
           state.connections = validated;
+        }
+
+        // Migrate plaintext API keys from localStorage to OS keychain (one-time)
+        const needsMigration = state.connections.some(
+          (c) => c.credentials.type === 'api_key' && c.credentials.key && !c.credentials.credentialStored
+        );
+        if (needsMigration) {
+          const raw = localStorage.getItem('notesage-connections');
+          if (raw) {
+            invoke('migrate_credentials', { connectionsJson: raw })
+              .then((count) => {
+                log.info('connections', `Migrated ${count} credential(s) to keychain`);
+                // Strip keys from persisted state
+                const store = useConnectionsStore.getState();
+                const migrated = store.connections.map((c) => {
+                  if (c.credentials.type === 'api_key' && c.credentials.key) {
+                    return { ...c, credentials: { type: 'api_key' as const, credentialStored: true } };
+                  }
+                  return c;
+                });
+                useConnectionsStore.setState({ connections: migrated });
+              })
+              .catch((e) => {
+                log.error('connections', 'Credential migration failed — keys remain in localStorage', { error: String(e) });
+              });
+          }
         }
       },
     }

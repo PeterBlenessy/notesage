@@ -447,13 +447,12 @@ async function startDirectApiTask(
 
   // Resolve provider credentials
   let provider: string;
-  let apiKey: string | null = null;
   let ollamaUrl: string | null = null;
   const config = connection.config;
+  const connectionId = connection.id;
 
   if (connection.credentials.type === 'api_key') {
     provider = connection.provider;
-    apiKey = connection.credentials.key;
   } else if (connection.credentials.type === 'local') {
     provider = connection.provider;
     ollamaUrl = connection.credentials.url;
@@ -504,7 +503,7 @@ async function startDirectApiTask(
   invoke('ai_chat_stream', {
     messages,
     provider,
-    apiKey,
+    connectionId,
     ollamaUrl,
     webSearchEnabled: false,
     model: config?.model ?? null,
