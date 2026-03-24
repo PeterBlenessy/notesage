@@ -7,6 +7,7 @@
 | **Severity** | Medium |
 | **Impact** | Local AI unusable on laptop production build |
 | **Versions affected** | v0.21.0+ (worked in v0.19.3) |
+| **Tasks** | [local-ai-not-starting-production-tasks](../tasks/2026-03-24-local-ai-not-starting-production-tasks.md) |
 
 ## Symptoms
 
