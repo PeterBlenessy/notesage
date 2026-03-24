@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date observed** | 2026-03-22 (dev), 2026-03-16 (production) |
-| **Status** | Partially mitigated, not fixed |
+| **Status** | Fixed |
 | **Severity** | High |
 | **Impact** | Breaks actions dashboard, causes unbounded log/store growth, degrades watcher |
 | **Versions affected** | v0.21.0 → v0.22.10 (current) |

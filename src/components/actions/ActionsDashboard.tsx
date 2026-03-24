@@ -38,6 +38,7 @@ export function ActionsDashboard({
   const handleRefresh = useCallback(() => {
     setSpinning(true);
     clearTimeout(spinTimer.current);
+    useActionStore.getState().resetScanCircuitBreaker();
     fullScan().finally(() => {
       // Keep spinning for at least 600ms total
       spinTimer.current = setTimeout(() => setSpinning(false), 600);

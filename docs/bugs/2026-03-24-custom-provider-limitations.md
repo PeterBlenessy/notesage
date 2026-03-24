@@ -26,7 +26,7 @@
 
 ### Single-instance limitation (confirmed)
 
-`ConnectionsSettings.tsx` (line ~68, ~336-341):
+`ConnectionsSettings.tsx` (line \~68, \~336-341):
 
 ```typescript
 const connectedLabels = new Set(connections.map((c) => c.label));
@@ -41,7 +41,7 @@ This was designed for built-in single-instance providers (one Anthropic, one Ope
 
 ### Config persistence race (likely)
 
-`ConnectionsSettings.tsx` (lines ~204-223):
+`ConnectionsSettings.tsx` (lines \~204-223):
 
 ```typescript
 // Step 1: Create connection WITHOUT config
@@ -69,11 +69,11 @@ if (!this.config?.baseUrl) {
 
 ### Multiple providers
 
-1. **Exempt `openai_compatible` from label-based dedup:** Check `option.provider !== 'openai_compatible'` before disabling
+1. **Exempt** `openai_compatible` **from label-based dedup:** Check `option.provider !== 'openai_compatible'` before disabling
 2. **Allow user-defined labels:** Let users name their custom connections (e.g., "Groq", "Together AI", "My vLLM") instead of the hardcoded "OpenAI-Compatible"
 3. **Show count badge:** If multiple are allowed, show how many are connected
 
 ### Base URL persistence
 
-4. **Merge into single `addConnection()` call:** Pass `config: { baseUrl, model }` directly in the initial `addConnection()` instead of a separate `updateConnection()` — eliminates the race
+4. **Merge into single** `addConnection()` **call:** Pass `config: { baseUrl, model }` directly in the initial `addConnection()` instead of a separate `updateConnection()` — eliminates the race
 5. **Add validation on connection load:** On app startup, check that all `openai_compatible` connections have `config.baseUrl` set; if not, mark status as `'error'` with a clear message

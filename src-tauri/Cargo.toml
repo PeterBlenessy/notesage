@@ -53,6 +53,9 @@ sha2 = "0.10"
 # Skills & Agents Platform (Phase 7)
 serde_norway = "0.9"
 
+# Non-poisoning mutexes (replaces std::sync::Mutex for index + watcher)
+parking_lot = "0.12"
+
 # Filesystem watcher (Phase 5)
 notify = { version = "7", features = ["macos_fsevent"] }
 notify-debouncer-full = "0.4"

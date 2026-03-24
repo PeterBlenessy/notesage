@@ -9,20 +9,9 @@ use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
-
-/// Lock a Mutex, recovering from poison if a previous thread panicked while holding it.
-fn lock_or_recover<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>, String> {
-    match mutex.lock() {
-        Ok(guard) => Ok(guard),
-        Err(poisoned) => {
-            log::warn!(target: "notesage::index", "Recovering from poisoned lock");
-            Ok(poisoned.into_inner())
-        }
-    }
-}
 
 /// Text file extensions for FTS-only indexing (non-markdown files).
 const TEXT_EXTENSIONS: &[&str] = &[
@@ -31,6 +20,11 @@ const TEXT_EXTENSIONS: &[&str] = &[
     "kt", "sh", "bash", "zsh", "fish", "ps1", "bat", "cmd", "sql", "r", "lua", "pl",
     "ini", "cfg", "conf", "env", "csv",
 ];
+
+/// Max reindexes per file within the circuit breaker window.
+const REINDEX_CIRCUIT_BREAKER_MAX: u32 = 5;
+/// Circuit breaker window duration.
+const REINDEX_CIRCUIT_BREAKER_WINDOW: Duration = Duration::from_secs(30);
 
 /// Managed state for the document index.
 pub struct IndexState {
@@ -42,6 +36,8 @@ pub struct IndexState {
     reindex_queue: Mutex<Vec<ReindexEntry>>,
     /// Whether a reindex batch is currently being processed
     processing: Mutex<bool>,
+    /// Per-file reindex rate limiter: path → (count, window_start)
+    reindex_counts: Mutex<HashMap<String, (u32, Instant)>>,
 }
 
 #[derive(Clone)]
@@ -57,14 +53,54 @@ impl IndexState {
             project_dbs: Mutex::new(HashMap::new()),
             reindex_queue: Mutex::new(Vec::new()),
             processing: Mutex::new(false),
+            reindex_counts: Mutex::new(HashMap::new()),
         }
     }
 
     /// Queue a file for reindexing (called from watcher).
     pub fn queue_reindex(&self, path: String, kind: String) {
-        if let Ok(mut queue) = lock_or_recover(&self.reindex_queue) {
-            queue.push(ReindexEntry { path, kind });
+        self.reindex_queue.lock().push(ReindexEntry { path, kind });
+    }
+
+    /// Check if reindexing should be throttled for this file.
+    /// Returns true if the file has been reindexed too many times recently.
+    fn is_reindex_throttled(&self, path: &str) -> bool {
+        let mut counts = self.reindex_counts.lock();
+        let now = Instant::now();
+
+        if let Some((count, window_start)) = counts.get_mut(path) {
+            if now.duration_since(*window_start) > REINDEX_CIRCUIT_BREAKER_WINDOW {
+                // Window expired — reset
+                *count = 1;
+                *window_start = now;
+                false
+            } else if *count >= REINDEX_CIRCUIT_BREAKER_MAX {
+                // Log once at the threshold, then suppress
+                if *count == REINDEX_CIRCUIT_BREAKER_MAX {
+                    log::warn!(
+                        target: "notesage::index",
+                        "Throttling rapid reindex for {} ({} times in 30s)",
+                        path, count
+                    );
+                }
+                *count += 1;
+                true
+            } else {
+                *count += 1;
+                false
+            }
+        } else {
+            counts.insert(path.to_string(), (1, now));
+            false
         }
+    }
+
+    /// Return index health info for the health check subsystem.
+    pub fn health_info(&self) -> (bool, usize, usize) {
+        let global_ok = self.global_db.lock().is_some();
+        let project_count = self.project_dbs.lock().len();
+        let queue_len = self.reindex_queue.lock().len();
+        (global_ok, project_count, queue_len)
     }
 }
 
@@ -75,7 +111,7 @@ fn init_global_db(state: &IndexState) -> Result<(), String> {
 
     let conn = db::open_or_create(&db_path)?;
 
-    let mut global = lock_or_recover(&state.global_db)?;
+    let mut global = state.global_db.lock();
     *global = Some(conn);
 
     log::info!(target: "notesage::index", "Global index DB initialized at {}", db_path.display());
@@ -102,7 +138,7 @@ fn init_project_db(state: &IndexState, project_path: &str) -> Result<(), String>
 
     let conn = db::open_or_create(&db_path)?;
 
-    let mut projects = lock_or_recover(&state.project_dbs)?;
+    let mut projects = state.project_dbs.lock();
     projects.insert(PathBuf::from(project_path), conn);
 
     // Migrate: remove old index.db from project's .notesage/ folder (was synced via iCloud)
@@ -516,10 +552,7 @@ pub fn process_reindex_queue(app: &AppHandle) {
 
     // Check if already processing
     {
-        let mut processing = match lock_or_recover(&state.processing) {
-            Ok(p) => p,
-            Err(_) => return,
-        };
+        let mut processing = state.processing.lock();
         if *processing {
             return;
         }
@@ -527,39 +560,22 @@ pub fn process_reindex_queue(app: &AppHandle) {
     }
 
     // Drain the queue
-    let entries: Vec<ReindexEntry> = {
-        let mut queue = match lock_or_recover(&state.reindex_queue) {
-            Ok(q) => q,
-            Err(_) => {
-                let _ = lock_or_recover(&state.processing).map(|mut p| *p = false);
-                return;
-            }
-        };
-        queue.drain(..).collect()
-    };
+    let entries: Vec<ReindexEntry> = state.reindex_queue.lock().drain(..).collect();
 
     if entries.is_empty() {
-        let _ = lock_or_recover(&state.processing).map(|mut p| *p = false);
+        *state.processing.lock() = false;
         return;
     }
 
-    let global = match lock_or_recover(&state.global_db) {
-        Ok(g) => g,
-        Err(_) => {
-            let _ = lock_or_recover(&state.processing).map(|mut p| *p = false);
-            return;
-        }
-    };
-
-    let projects = match lock_or_recover(&state.project_dbs) {
-        Ok(p) => p,
-        Err(_) => {
-            let _ = lock_or_recover(&state.processing).map(|mut p| *p = false);
-            return;
-        }
-    };
+    let global = state.global_db.lock();
+    let projects = state.project_dbs.lock();
 
     for entry in entries {
+        // Apply circuit breaker — skip files being reindexed too rapidly
+        if entry.kind != "delete" && state.is_reindex_throttled(&entry.path) {
+            continue;
+        }
+
         if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &entry.path) {
             if entry.kind == "delete" {
                 let _ = db::remove_file(conn, &entry.path);
@@ -569,13 +585,14 @@ pub fn process_reindex_queue(app: &AppHandle) {
         }
     }
 
-    let _ = lock_or_recover(&state.processing).map(|mut p| *p = false);
+    *state.processing.lock() = false;
 }
 
 // ---- Tauri Commands ----
 
 /// Initialize the index for a project or global scope.
 /// If project_path is None, initializes the global index.
+/// Wraps initialization in catch_unwind to log panics instead of silently poisoning state.
 #[tauri::command]
 pub async fn index_init(
     app: AppHandle,
@@ -583,9 +600,28 @@ pub async fn index_init(
     project_path: Option<String>,
 ) -> Result<IndexStats, String> {
     if let Some(ref pp) = project_path {
-        init_project_db(&state, pp)?;
+        // Wrap in catch_unwind to capture panics during init
+        let pp_clone = pp.clone();
+        let init_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            init_project_db(&state, &pp_clone)
+        }));
+        match init_result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(e),
+            Err(panic_payload) => {
+                let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "unknown panic".to_string()
+                };
+                log::error!(target: "notesage::index", "Index initialization panicked for {}: {}", pp_clone, msg);
+                return Err(format!("Index initialization panicked: {}", msg));
+            }
+        }
 
-        let projects = lock_or_recover(&state.project_dbs)?;
+        let projects = state.project_dbs.lock();
         if let Some(conn) = projects.get(&PathBuf::from(pp)) {
             let stats = reindex_directory(conn, pp, Some(pp), Some(&app))?;
             let _ = app.emit("index-ready", serde_json::json!({ "project_path": pp }));
@@ -595,7 +631,7 @@ pub async fn index_init(
     } else {
         init_global_db(&state)?;
 
-        let global = lock_or_recover(&state.global_db)?;
+        let global = state.global_db.lock();
         if let Some(ref conn) = *global {
             // For global, index the ~/Notesage directory if it exists
             let home = dirs::home_dir().ok_or("Cannot find home directory")?;
@@ -618,8 +654,8 @@ pub async fn index_file(
     state: tauri::State<'_, IndexState>,
     path: String,
 ) -> Result<(), String> {
-    let global = lock_or_recover(&state.global_db)?;
-    let projects = lock_or_recover(&state.project_dbs)?;
+    let global = state.global_db.lock();
+    let projects = state.project_dbs.lock();
 
     if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &path) {
         reindex_file_in_db(conn, &path, project_path.as_deref())?;
@@ -635,14 +671,14 @@ pub async fn index_rebuild(
     project_path: Option<String>,
 ) -> Result<IndexStats, String> {
     if let Some(ref pp) = project_path {
-        let projects = lock_or_recover(&state.project_dbs)?;
+        let projects = state.project_dbs.lock();
         if let Some(conn) = projects.get(&PathBuf::from(pp)) {
             db::clear_all(conn)?;
             return reindex_directory(conn, pp, Some(pp), Some(&app));
         }
         Err("Project not initialized".to_string())
     } else {
-        let global = lock_or_recover(&state.global_db)?;
+        let global = state.global_db.lock();
         if let Some(ref conn) = *global {
             db::clear_all(conn)?;
             let home = dirs::home_dir().ok_or("Cannot find home directory")?;
@@ -665,8 +701,8 @@ fn with_dbs<T, F>(
 where
     F: Fn(&Connection) -> Result<Vec<T>, String>,
 {
-    let global = lock_or_recover(&state.global_db)?;
-    let projects = lock_or_recover(&state.project_dbs)?;
+    let global = state.global_db.lock();
+    let projects = state.project_dbs.lock();
 
     let mut results = Vec::new();
 
@@ -819,9 +855,7 @@ pub async fn index_toggle_task(
     // Mark as self-write to suppress watcher
     if let Some(watcher_state) = app.try_state::<crate::commands::WatcherState>() {
         let normalized = std::fs::canonicalize(&path).unwrap_or_else(|_| PathBuf::from(&path));
-        if let Ok(mut sw) = watcher_state.self_writes.lock() {
-            sw.insert(normalized, std::time::Instant::now());
-        }
+        watcher_state.self_writes.lock().insert(normalized, Instant::now());
     }
 
     // Write file
@@ -829,8 +863,8 @@ pub async fn index_toggle_task(
         .map_err(|e| format!("Failed to write file: {}", e))?;
 
     // Reindex the file
-    let global = lock_or_recover(&state.global_db)?;
-    let projects = lock_or_recover(&state.project_dbs)?;
+    let global = state.global_db.lock();
+    let projects = state.project_dbs.lock();
     if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &path) {
         reindex_file_in_db(conn, &path, project_path.as_deref())?;
     }
@@ -868,13 +902,13 @@ pub async fn index_stats(
     project_path: Option<String>,
 ) -> Result<IndexStats, String> {
     if let Some(ref pp) = project_path {
-        let projects = lock_or_recover(&state.project_dbs)?;
+        let projects = state.project_dbs.lock();
         if let Some(conn) = projects.get(&PathBuf::from(pp)) {
             return queries::query_stats(conn);
         }
         Err("Project not initialized".to_string())
     } else {
-        let global = lock_or_recover(&state.global_db)?;
+        let global = state.global_db.lock();
         if let Some(ref conn) = *global {
             return queries::query_stats(conn);
         }

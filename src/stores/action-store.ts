@@ -41,6 +41,7 @@ interface ActionStore {
 
   // Actions
   fullScan(): Promise<void>;
+  resetScanCircuitBreaker(): void;
   incrementalUpdate(filePath: string): Promise<void>;
   toggleTaskDone(action: ActionItem): Promise<void>;
   setFilter(filter: Partial<ActionFilter>): void;
@@ -185,8 +186,15 @@ export const useActionStore = create<ActionStore>()(
       actions: [],
       isScanning: false,
       lastFullScan: 0,
+      _consecutiveFailures: 0,
+      _scanDisabled: false,
 
       async fullScan() {
+        // Circuit breaker: stop retrying after consecutive failures
+        const state = get();
+        if (state._scanDisabled) {
+          return;
+        }
         set({ isScanning: true });
         try {
           const paths = getAllScanPaths();
@@ -231,11 +239,21 @@ export const useActionStore = create<ActionStore>()(
           }
 
           const allActions = rebuildActions(cache);
-          set({ actionCache: cache, actions: allActions, isScanning: false, lastFullScan: now });
+          set({ actionCache: cache, actions: allActions, isScanning: false, lastFullScan: now, _consecutiveFailures: 0, _scanDisabled: false });
         } catch (error) {
-          log.error('actions', 'Full scan failed', error);
-          set({ isScanning: false });
+          const failures = get()._consecutiveFailures + 1;
+          if (failures >= 3) {
+            log.error('actions', `Full scan disabled after ${failures} consecutive failures`, error);
+            set({ isScanning: false, _consecutiveFailures: failures, _scanDisabled: true });
+          } else {
+            log.error('actions', 'Full scan failed', error);
+            set({ isScanning: false, _consecutiveFailures: failures });
+          }
         }
+      },
+
+      resetScanCircuitBreaker() {
+        set({ _consecutiveFailures: 0, _scanDisabled: false });
       },
 
       async incrementalUpdate(filePath: string) {

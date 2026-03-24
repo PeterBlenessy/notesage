@@ -3,20 +3,9 @@ use notify_debouncer_full::{new_debouncer, DebouncedEvent, Debouncer, Recommende
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
+use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
-
-/// Lock a mutex, recovering from poison if another thread panicked while holding it.
-fn lock_or_recover<T>(mutex: &Mutex<T>) -> Result<MutexGuard<'_, T>, String> {
-    match mutex.lock() {
-        Ok(guard) => Ok(guard),
-        Err(poisoned) => {
-            log::warn!(target: "notesage::watcher", "Recovering from poisoned lock");
-            Ok(poisoned.into_inner())
-        }
-    }
-}
 
 /// Event payload emitted to the frontend via `file-changed`.
 #[derive(Clone, Serialize)]
@@ -53,12 +42,11 @@ impl WatcherState {
 
     /// Check watcher health: returns (alive, list of watched paths).
     pub fn health_info(&self) -> (bool, Vec<String>) {
-        let watcher_alive = lock_or_recover(&self.watcher)
-            .map(|w| w.is_some())
-            .unwrap_or(false);
-        let paths: Vec<String> = lock_or_recover(&self.watched_paths)
-            .map(|wp| wp.iter().map(|p| p.to_string_lossy().to_string()).collect())
-            .unwrap_or_default();
+        let watcher_alive = self.watcher.lock().is_some();
+        let paths: Vec<String> = self.watched_paths.lock()
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
         (watcher_alive, paths)
     }
 
@@ -66,20 +54,17 @@ impl WatcherState {
     /// Used for automatic recovery when the watcher dies.
     pub fn recover_watcher(&self, app: &AppHandle) -> Result<(), String> {
         // 1. Drop existing watcher
-        {
-            let mut watcher_guard = lock_or_recover(&self.watcher)?;
-            *watcher_guard = None;
-        }
+        *self.watcher.lock() = None;
 
         // 2. Recreate the debouncer via ensure_watcher
         ensure_watcher(app)?;
 
         // 3. Re-watch all known paths
-        let watched = lock_or_recover(&self.watched_paths)?;
+        let watched = self.watched_paths.lock();
         let count = watched.len();
 
         if count > 0 {
-            let mut watcher_guard = lock_or_recover(&self.watcher)?;
+            let mut watcher_guard = self.watcher.lock();
             if let Some(ref mut debouncer) = *watcher_guard {
                 for path in watched.iter() {
                     if path.is_dir() {
@@ -138,7 +123,7 @@ fn is_self_write(self_writes: &mut HashMap<PathBuf, Instant>, path: &std::path::
 /// Ensure the debouncer is created (lazy init) and return access to it.
 fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<WatcherState>();
-    let mut watcher_guard = lock_or_recover(&state.watcher)?;
+    let mut watcher_guard = state.watcher.lock();
 
     if watcher_guard.is_some() {
         return Ok(());
@@ -161,10 +146,7 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
             };
 
             let state = app_handle.state::<WatcherState>();
-            let mut self_writes = match lock_or_recover(&state.self_writes) {
-                Ok(guard) => guard,
-                Err(_) => return,
-            };
+            let mut self_writes = state.self_writes.lock();
 
             let mut batch: Vec<FileChangedEvent> = Vec::new();
 
@@ -261,8 +243,7 @@ pub async fn watch_directory(app: AppHandle, path: String) -> Result<(), String>
 
     // Check if already watching this path
     {
-        let watched = lock_or_recover(&state.watched_paths)?;
-        if watched.contains(&watch_path) {
+        if state.watched_paths.lock().contains(&watch_path) {
             return Ok(());
         }
     }
@@ -272,15 +253,14 @@ pub async fn watch_directory(app: AppHandle, path: String) -> Result<(), String>
 
     // Add the path to the watcher
     {
-        let mut watcher_guard = lock_or_recover(&state.watcher)?;
+        let mut watcher_guard = state.watcher.lock();
         if let Some(ref mut debouncer) = *watcher_guard {
             debouncer
                 .watch(&watch_path, RecursiveMode::Recursive)
                 .map_err(|e| format!("Failed to watch directory: {}", e))?;
         }
 
-        let mut watched = lock_or_recover(&state.watched_paths)?;
-        watched.insert(watch_path);
+        state.watched_paths.lock().insert(watch_path);
     }
 
     Ok(())
@@ -291,15 +271,9 @@ pub async fn watch_directory(app: AppHandle, path: String) -> Result<(), String>
 pub async fn unwatch_directory(app: AppHandle) -> Result<(), String> {
     let state = app.state::<WatcherState>();
 
-    let mut watcher = lock_or_recover(&state.watcher)?;
-    *watcher = None;
-
-    let mut watched = lock_or_recover(&state.watched_paths)?;
-    watched.clear();
-
-    // Clear self-write set too
-    let mut self_writes = lock_or_recover(&state.self_writes)?;
-    self_writes.clear();
+    *state.watcher.lock() = None;
+    state.watched_paths.lock().clear();
+    state.self_writes.lock().clear();
 
     Ok(())
 }
@@ -309,9 +283,8 @@ pub async fn unwatch_directory(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn mark_self_write(app: AppHandle, path: String) -> Result<(), String> {
     let state = app.state::<WatcherState>();
-    let mut self_writes = lock_or_recover(&state.self_writes)?;
     let normalized = normalize_path(&PathBuf::from(path));
-    self_writes.insert(normalized, Instant::now());
+    state.self_writes.lock().insert(normalized, Instant::now());
     Ok(())
 }
 
@@ -320,8 +293,7 @@ pub async fn mark_self_write(app: AppHandle, path: String) -> Result<(), String>
 #[tauri::command]
 pub async fn clear_self_write(app: AppHandle, path: String) -> Result<(), String> {
     let state = app.state::<WatcherState>();
-    let mut self_writes = lock_or_recover(&state.self_writes)?;
     let normalized = normalize_path(&PathBuf::from(path));
-    self_writes.remove(&normalized);
+    state.self_writes.lock().remove(&normalized);
     Ok(())
 }

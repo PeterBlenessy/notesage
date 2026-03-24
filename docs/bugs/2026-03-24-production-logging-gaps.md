@@ -34,7 +34,7 @@ Creating, validating, and routing connections produces no backend logs. When a c
 
 ### 4. Action scan retry flooding (too much logging)
 
-When `fullScan()` fails, the frontend retries on every file-changed event (~1/second). Each failure logs an ERROR. In production this produced 7000+ identical error lines in one session.
+When `fullScan()` fails, the frontend retries on every file-changed event (\~1/second). Each failure logs an ERROR. In production this produced 7000+ identical error lines in one session.
 
 **What we need:** Circuit breaker — after N consecutive failures, stop retrying and log a single summary error
 
@@ -52,12 +52,12 @@ Many important decisions (auto-start, routing, retry logic) happen in React hook
 
 ## Proposed changes
 
-1. **Add Tauri command `log_frontend(level, target, message)`** — allows frontend hooks to write to the same log file as the backend
-2. **Add diagnostic logging to `useLocalAI.ts`** — log which auto-start condition failed
-3. **Rate-limit `lock_or_recover()` warnings** — max once per minute per mutex instance
-4. **Add circuit breaker to `fullScan()`** — stop retrying after 3 consecutive failures, resume on next successful index operation
-5. **Wrap index init in `catch_unwind`** — capture and log the panic payload before it poisons the mutex
-6. **Consider a "Diagnostic dump" button** in Settings > Advanced that exports current state (connection statuses, binary paths, store sizes, lock states) to a file for bug reports
+1. **Add Tauri command** `log_frontend(level, target, message)` — allows frontend hooks to write to the same log file as the backend
+2. **Add diagnostic logging to** `useLocalAI.ts` — log which auto-start condition failed
+3. **Rate-limit** `lock_or_recover()` **warnings** — max once per minute per mutex instance
+4. **Add circuit breaker to** `fullScan()` — stop retrying after 3 consecutive failures, resume on next successful index operation
+5. **Wrap index init in** `catch_unwind` — capture and log the panic payload before it poisons the mutex
+6. **Consider a "Diagnostic dump" button** in Settings &gt; Advanced that exports current state (connection statuses, binary paths, store sizes, lock states) to a file for bug reports
 
 ## Affected files
 

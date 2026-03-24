@@ -3745,6 +3745,7 @@ dependencies = [
  "log",
  "notify",
  "notify-debouncer-full",
+ "parking_lot",
  "regex",
  "reqwest 0.12.28",
  "rusqlite",

@@ -1,9 +1,10 @@
 use serde::Serialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use super::watcher::WatcherState;
 use super::acp::AcpState;
 use super::copilot_lsp::CopilotLspState;
 use super::mcp::McpState;
+use crate::index::IndexState;
 
 #[derive(Serialize, Clone)]
 pub struct ProcessStatus {
@@ -19,6 +20,8 @@ pub struct HealthStatus {
     pub acp_agents: Vec<ProcessStatus>,
     pub copilot_lsp: Option<ProcessStatus>,
     pub mcp_servers: Vec<ProcessStatus>,
+    pub index_healthy: bool,
+    pub index_project_count: usize,
 }
 
 /// No-op IPC liveness test — returns immediately.
@@ -36,7 +39,7 @@ pub async fn health_check(
     copilot: State<'_, CopilotLspState>,
     mcp: State<'_, McpState>,
 ) -> Result<HealthStatus, String> {
-    // Check watcher (uses std::sync::Mutex — call from sync context)
+    // Check watcher
     let (watcher_alive, watched_paths) = watcher.health_info();
 
     // Auto-recover watcher if it died but paths are still registered
@@ -69,18 +72,28 @@ pub async fn health_check(
     // Check MCP servers
     let mcp_servers = mcp.check_processes().await;
 
+    // Check index health
+    let (index_healthy, index_project_count, _queue_len) = app
+        .try_state::<IndexState>()
+        .map(|s| s.health_info())
+        .unwrap_or((false, 0, 0));
+
     let status = HealthStatus {
         watcher_alive,
         watched_paths,
         acp_agents,
         copilot_lsp,
         mcp_servers,
+        index_healthy,
+        index_project_count,
     };
 
     log::info!(
         target: "notesage::health",
-        "Health check: watcher={}, acp={}/{} alive, copilot={}, mcp={}/{} alive",
+        "Health check: watcher={}, index={} ({} projects), acp={}/{} alive, copilot={}, mcp={}/{} alive",
         status.watcher_alive,
+        if status.index_healthy { "ok" } else { "no_global_db" },
+        status.index_project_count,
         status.acp_agents.iter().filter(|a| a.alive).count(),
         status.acp_agents.len(),
         status.copilot_lsp.as_ref().map_or("none".to_string(), |c| if c.alive { "alive".to_string() } else { "dead".to_string() }),
