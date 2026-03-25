@@ -1,11 +1,11 @@
 # Full Codebase Audit — 2026-03-25
 
-**Date:** 2026-03-25  **Status:** Audit complete
+**Date:** 2026-03-25 **Status:** Audit complete
 
 | Stage | Link | Status |
 | --- | --- | --- |
-| PRD | — | Pending |
-| Tasks | — | Pending |
+| PRD | — | Not planned |
+| Tasks | [full-codebase-audit-tasks](../tasks/2026-03-25-full-codebase-audit-tasks.md) | Not started |
 
 Comprehensive audit of the Notesage codebase covering component size, memory leaks, async flows, render performance, and Rust backend patterns.
 
