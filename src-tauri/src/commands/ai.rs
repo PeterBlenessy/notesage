@@ -171,15 +171,13 @@ pub async fn list_models(
 
         "openai" | "openai_compatible" => {
             let api_key = resolved_key.as_ref().ok_or("API key is required")?;
-            let default_base = if provider == "openai" {
-                "https://api.openai.com"
+            let effective_base = if provider == "openai_compatible" {
+                base_url.as_deref()
+                    .ok_or("Base URL is required for OpenAI-Compatible provider")?
             } else {
-                return Err("Base URL is required for OpenAI-Compatible provider".to_string());
+                base_url.as_deref().unwrap_or("https://api.openai.com")
             };
-            let url = format!(
-                "{}/v1/models",
-                base_url.as_deref().unwrap_or(default_base)
-            );
+            let url = format!("{}/v1/models", effective_base);
 
             let response = client
                 .get(&url)
