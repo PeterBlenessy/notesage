@@ -398,7 +398,7 @@ pub async fn get_model_metadata(
         "llm" => {
             // Load from catalog via LocalInferenceState
             let models_dir = &state.models_dir;
-            let all = super::local_inference::get_all_models_pub(models_dir);
+            let all = super::model_management::get_all_models_pub(models_dir);
             if let Some((entry, _)) = all.into_iter().find(|(e, _)| e.id == model_id) {
                 merged.author = entry.author;
                 merged.organization = entry.organization;

@@ -296,16 +296,16 @@ Extracted 4 modules (1,267 → 665 lines):
 
 **Complexity:** L **Category:** frontend **Dependencies:** #7, #12 (same file — do bug fixes first) **Files:** `src/hooks/useAcpLifecycle.ts` + 3 new files
 
-### #36 — Decompose local_inference.rs (1,769 lines)
+### #36 — Decompose local_inference.rs (1,769 → 752 lines) ✅
 
-**Description:** Model management, thinking tag detection, and server lifecycle are mixed. Extract:
+**Description:** Extracted 2 focused modules from `local_inference.rs` (1,769 → 752 lines).
 
 | Extract to | Responsibility |
 | --- | --- |
-| `model_management.rs` | Download, delete, list, catalog queries |
-| `thinking_tags.rs` | Hardcoded thinking tag parser (7 tag pairs) |
+| `model_management.rs` (920 lines) | Types, catalog loading, model CRUD commands, binary resolution, diagnostics, tests |
+| `thinking_tags.rs` (171 lines) | Thinking tag detection from /props, Jinja parsing, tag stripping |
 
-Leave `local_inference.rs` focused on server lifecycle (start, stop, health, restart).
+`local_inference.rs` now focused on: managed state, server lifecycle (start/stop/health/orphan cleanup), streaming/non-streaming chat, FIM completions. Added accessor methods to `LocalInferenceState` for clean cross-module access.
 
 **Complexity:** L **Category:** backend **Dependencies:** None **Files:** `src-tauri/src/commands/local_inference.rs` + 2 new modules
 

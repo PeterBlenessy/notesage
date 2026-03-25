@@ -100,7 +100,7 @@ pub struct DiagnosticDump {
     pub local_server_port: Option<u16>,
     pub index_healthy: bool,
     pub index_project_count: usize,
-    pub local_ai: super::local_inference::LocalAIDiagnostics,
+    pub local_ai: super::model_management::LocalAIDiagnostics,
     pub whisper: super::transcription::WhisperDiagnostics,
 }
 
@@ -127,7 +127,7 @@ pub async fn collect_diagnostics(
         .map(|s| s.health_info())
         .unwrap_or((false, 0, 0));
 
-    let local_ai = super::local_inference::collect_local_ai_diagnostics();
+    let local_ai = super::model_management::collect_local_ai_diagnostics();
     let whisper = transcription.collect_diagnostics();
 
     Ok(DiagnosticDump {

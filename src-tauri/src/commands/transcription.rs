@@ -140,13 +140,13 @@ impl TranscriptionState {
                     let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
 
                     if name.ends_with(".downloading") || name.ends_with(".tmp") || name.ends_with(".part") {
-                        stale_files.push(super::local_inference::DiagnosticFile {
+                        stale_files.push(super::model_management::DiagnosticFile {
                             name: name.clone(),
                             size_bytes: size,
                         });
                     }
 
-                    models_on_disk.push(super::local_inference::DiagnosticFile {
+                    models_on_disk.push(super::model_management::DiagnosticFile {
                         name,
                         size_bytes: size,
                     });
@@ -173,8 +173,8 @@ impl TranscriptionState {
 pub struct WhisperDiagnostics {
     pub models_dir: String,
     pub models_dir_exists: bool,
-    pub models_on_disk: Vec<super::local_inference::DiagnosticFile>,
-    pub stale_files: Vec<super::local_inference::DiagnosticFile>,
+    pub models_on_disk: Vec<super::model_management::DiagnosticFile>,
+    pub stale_files: Vec<super::model_management::DiagnosticFile>,
     pub cached_model: Option<String>,
     pub is_recording: bool,
     pub is_dictating: bool,
