@@ -249,7 +249,7 @@
 
 **Complexity:** L **Category:** frontend **Dependencies:** #25 (may touch same files) **Files:** `src/components/editor/Editor.tsx` + 7 new files
 
-### #32 — Extract ConnectAgent and ConnectCopilotLsp from ConnectionsSettings.tsx
+### #32 — Extract ConnectAgent and ConnectCopilotLsp from ConnectionsSettings.tsx ✅
 
 **Description:** `ConnectionsSettings.tsx` (1,685 lines) has `ConnectAgent` (468 lines) and `ConnectCopilotLsp` (384 lines) nested inline. Extract each to its own file. They're self-contained dialogs with clear boundaries.
 
