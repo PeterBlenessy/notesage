@@ -85,6 +85,7 @@ export function useAppLifecycle({ onOpenPalette }: UseAppLifecycleOptions) {
   // --- Visibility-change wake handler ---
   const lastWakeCheckRef = useRef(0);
   useEffect(() => {
+    let mounted = true;
     const handleVisibilityChange = async () => {
       if (document.visibilityState !== "visible") return;
 
@@ -106,6 +107,8 @@ export function useAppLifecycle({ onOpenPalette }: UseAppLifecycleOptions) {
         window.location.reload();
         return;
       }
+
+      if (!mounted) return;
 
       try {
         const health = await tauriApi.healthCheck();
@@ -147,6 +150,7 @@ export function useAppLifecycle({ onOpenPalette }: UseAppLifecycleOptions) {
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
+      mounted = false;
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);

@@ -215,21 +215,24 @@ export function useCopilotCompletion(editor: Editor | null) {
       // Send didChange — use ProseMirror plain text so positions match
       docVersion.current += 1;
       const content = editor.state.doc.textBetween(0, editor.state.doc.content.size, '\n');
-      invoke('copilot_lsp_did_change', {
+      const changeVersion = docVersion.current;
+      const changePromise = invoke('copilot_lsp_did_change', {
         uri: activeTab.filePath,
         content,
-        version: docVersion.current,
+        version: changeVersion,
       }).catch(() => {});
 
       // Skip completion request if disabled for this tab
       if (useSettingsStore.getState().inlineCompletionsDisabled) return;
 
-      // Debounce completion request: wait 150ms after typing stops
+      // Debounce completion request: wait 150ms after typing stops.
+      // Await didChange completion before requesting to avoid stale document version.
       if (completionTimeout.current) {
         clearTimeout(completionTimeout.current);
       }
-      completionTimeout.current = setTimeout(() => {
-        requestCompletion(activeTab.filePath, docVersion.current);
+      completionTimeout.current = setTimeout(async () => {
+        await changePromise;
+        requestCompletion(activeTab.filePath, changeVersion);
       }, 150);
     };
 

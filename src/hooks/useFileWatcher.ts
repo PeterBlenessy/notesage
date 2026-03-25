@@ -106,14 +106,15 @@ export function useFileWatcher() {
                 delete icloudDiscoveryDebounce.current[projectRoot];
                 try {
                   // Re-check: project may have been added by another event
-                  const ws = useWorkspaceStore.getState();
-                  if (ws.projects.some((p) => p.path === projectRoot)) return;
+                  if (useWorkspaceStore.getState().projects.some((p) => p.path === projectRoot)) return;
 
                   const hasMetadata = await tauriApi.pathExists(`${projectRoot}/.notesage`);
                   if (!hasMetadata) return;
 
                   const tree = await tauriApi.listDirectory(projectRoot);
-                  ws.addProject(projectRoot, tree);
+                  // Re-read fresh state after awaits to avoid stale snapshot
+                  if (useWorkspaceStore.getState().projects.some((p) => p.path === projectRoot)) return;
+                  useWorkspaceStore.getState().addProject(projectRoot, tree);
 
                   const syncStore = useSyncStore.getState();
                   syncStore.addSyncedProject(projectRoot);
@@ -230,36 +231,43 @@ async function handleModifyEvent(path: string, normalizedPath: string) {
     const raw = await tauriApi.readFile(path);
     const { content } = parseFrontmatter(raw);
 
+    // Re-read state after await — tab state may have changed during the read
+    const freshState = useEditorStore.getState();
+    const freshTab = freshState.tabs.find(
+      (t) => normalizePath(t.filePath) === normalizedPath
+    );
+    if (!freshTab) return;
+
     // Skip if content matches what's in the tab (no change)
-    if (content === tab.content) return;
+    if (content === freshTab.content) return;
 
     // Skip if content matches what we last saved — this handles the race where the
     // user continues typing after a save but the watcher fires for the save event.
     // The disk content matches our save, so it's not an external change.
-    if (tab.lastSavedContent !== undefined && content === tab.lastSavedContent) return;
+    if (freshTab.lastSavedContent !== undefined && content === freshTab.lastSavedContent) return;
 
     // If a git branch diff review is active, auto-accept silently
     if (useDiffReviewStore.getState().reviewActive) {
-      state.setExternalChange(tab.filePath, content);
+      freshState.setExternalChange(freshTab.filePath, content);
       return;
     }
 
-    if (tab.isDirty) {
+    if (freshTab.isDirty) {
       // Dirty tabs: toast with Reload action shown by Editor.tsx
-      state.setExternalChange(tab.filePath, content);
+      freshState.setExternalChange(freshTab.filePath, content);
     } else {
       if (!useSettingsStore.getState().externalChangeDiffReview) {
         // Auto-accept: editor-store path → Editor.tsx auto-reloads clean tabs
-        state.setExternalChange(tab.filePath, content);
+        freshState.setExternalChange(freshTab.filePath, content);
       } else {
         // Diff review beta: external-change-store → inline decorations
-        const existing = useExternalChangeStore.getState().getChange(tab.filePath);
+        const existing = useExternalChangeStore.getState().getChange(freshTab.filePath);
         if (existing && existing.newContent === content) return;
 
         useExternalChangeStore.getState().addChange(
-          tab.filePath,
-          tab.fileName,
-          tab.content,
+          freshTab.filePath,
+          freshTab.fileName,
+          freshTab.content,
           content,
         );
       }
