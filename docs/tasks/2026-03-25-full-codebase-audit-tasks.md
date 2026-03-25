@@ -226,9 +226,9 @@
 
 ## Decomposition (Large refactors)
 
-### #31 — Decompose Editor.tsx (1,822 lines → \~600 lines)
+### #31 — Decompose Editor.tsx (1,822 lines → \~600 lines) ✅
 
-**Description:** Extract modules from `Editor.tsx` to bring it under ~700 lines.
+**Description:** Extract modules from `Editor.tsx` to bring it under \~700 lines.
 
 **Phase 1 (done ✅):** Extracted 4 modules (1,822 → 1,304 lines):
 
@@ -239,13 +239,13 @@
 | `useEditorKeyBindings.ts` | Keyboard shortcut handlers + find bar | ✅ |
 | `useCommentEditorSync.ts` | Comment position remapping | ✅ |
 
-**Phase 2 (todo):** Extract 3 more modules (1,304 → \~700 lines):
+**Phase 2 (done ✅):** Extracted 3 more modules (1,304 → 753 lines):
 
-| Extract to | Lines | Responsibility |
+| Extract to | Responsibility | Status |
 | --- | --- | --- |
-| `editor-utils.ts` | ~190 | Utility functions: `stripMarkdownInline`, `findTextPositionInDoc`, `scrollPosToCenter`, `scrollToTextInEditor`, `findNthTagInDoc`, content width/height constants |
-| `EditorEmptyState.tsx` | ~150 | Welcome screen rendered when no tab is active (cards, recent projects/files) |
-| `useEditorTabSwitch.ts` | ~150 | Tab switch content loading, EditorState cache save/restore, scroll-to-tag/text, source↔WYSIWYG mode switch, page position calculation |
+| `editor-utils.ts` | Utility functions: `stripMarkdownInline`, `findTextPositionInDoc`, `scrollPosToCenter`, `scrollToTextInEditor`, `findNthTagInDoc`, content width/height constants | ✅ |
+| `EditorEmptyState.tsx` | Welcome screen rendered when no tab is active (cards, recent projects/files) | ✅ |
+| `useEditorTabSwitch.ts` | Tab switch content loading, EditorState cache save/restore, scroll-to-tag/text, source↔WYSIWYG mode switch, page position calculation | ✅ |
 
 **Complexity:** L **Category:** frontend **Dependencies:** #25 (may touch same files) **Files:** `src/components/editor/Editor.tsx` + 7 new files
 
