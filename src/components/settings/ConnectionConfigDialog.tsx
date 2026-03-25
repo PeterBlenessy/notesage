@@ -159,6 +159,7 @@ export function ConnectionConfigDialog({
   const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [originalApiKey, setOriginalApiKey] = useState(''); // track keychain value to detect changes
 
   // Local AI server settings
   const [contextLength, setContextLength] = useState(4096);
@@ -199,7 +200,12 @@ export function ConnectionConfigDialog({
       );
       setBaseUrl(connection.config?.baseUrl ?? '');
       if (connection.credentials.type === 'api_key') {
-        setApiKey(connection.credentials.key ?? '');
+        // Load key from OS keychain (credentials.key is always empty after keychain migration)
+        setApiKey('');
+        setOriginalApiKey('');
+        invoke<string | null>('get_credential', { service: `notesage:${connection.id}` })
+          .then((key) => { if (key) { setApiKey(key); setOriginalApiKey(key); } })
+          .catch(() => {});
       } else {
         setApiKey('');
       }
@@ -285,7 +291,7 @@ export function ConnectionConfigDialog({
     };
 
     // Update API key if changed — store in keychain, not in localStorage
-    if (connection.credentials.type === 'api_key' && apiKey && apiKey !== (connection.credentials.key ?? '')) {
+    if (connection.credentials.type === 'api_key' && apiKey && apiKey !== originalApiKey) {
       invoke('store_credential', { service: `notesage:${connection.id}`, key: apiKey })
         .catch((e) => console.error('Failed to store updated credential:', e));
       updates.credentials = { type: 'api_key', credentialStored: true };
