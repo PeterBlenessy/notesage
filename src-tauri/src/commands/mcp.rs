@@ -2,17 +2,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
-use tokio::io::{AsyncReadExt, BufReader, BufWriter};
-use tokio::process::{Child, ChildStdin, ChildStdout};
+use tokio::io::BufReader;
+use tokio::process::{Child, ChildStdout};
 use tokio::sync::Mutex;
 use super::constants;
-use tokio::time::timeout;
 
 use super::json_rpc::{
-    self, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, PendingRequests,
+    self, JsonRpcTransport, PendingRequests, ReadMessageResult,
 };
 use super::shell_path::get_shell_path;
 
@@ -95,76 +93,36 @@ pub struct McpContent {
 }
 
 // ---------------------------------------------------------------------------
-// MCP Transport
+// MCP Transport — uses shared JsonRpcTransport from json_rpc module
 // ---------------------------------------------------------------------------
 
-struct McpTransport {
-    writer: Arc<Mutex<BufWriter<ChildStdin>>>,
-    pending: PendingRequests,
-}
+/// Spawn a new MCP transport: creates a `JsonRpcTransport` for stdin and
+/// starts the reader loop on stdout. Returns the transport handle.
+fn spawn_mcp_transport(
+    stdin: tokio::process::ChildStdin,
+    stdout: ChildStdout,
+    child_pid: Option<u32>,
+    server_id: String,
+    app: AppHandle,
+) -> JsonRpcTransport {
+    let transport = JsonRpcTransport::new(stdin);
+    let reader_pending = transport.pending.clone();
 
-impl McpTransport {
-    /// Create a lightweight clone of the Arc-wrapped transport fields for use outside the mutex.
-    fn clone_handle(&self) -> Self {
-        Self {
-            writer: self.writer.clone(),
-            pending: self.pending.clone(),
+    tokio::spawn(async move {
+        if let Err(e) = mcp_reader_loop(stdout, reader_pending, child_pid, &server_id, &app).await {
+            log::error!(target: "notesage::mcp", "Reader loop exited for server {}: {}", server_id, e);
+            let _ = app.emit(
+                "mcp-server-status",
+                serde_json::json!({
+                    "serverId": server_id,
+                    "status": "error",
+                    "error": format!("Server process exited: {}", e),
+                }),
+            );
         }
-    }
+    });
 
-    fn new(stdin: ChildStdin, stdout: ChildStdout, child_pid: Option<u32>, server_id: String, app: AppHandle) -> Self {
-        let writer = Arc::new(Mutex::new(BufWriter::new(stdin)));
-        let pending = json_rpc::new_pending_requests();
-
-        let reader_pending = pending.clone();
-
-        tokio::spawn(async move {
-            if let Err(e) = mcp_reader_loop(stdout, reader_pending, child_pid, &server_id, &app).await {
-                log::error!(target: "notesage::mcp", "Reader loop exited for server {}: {}", server_id, e);
-                let _ = app.emit(
-                    "mcp-server-status",
-                    serde_json::json!({
-                        "serverId": server_id,
-                        "status": "error",
-                        "error": format!("Server process exited: {}", e),
-                    }),
-                );
-            }
-        });
-
-        Self {
-            writer,
-            pending,
-        }
-    }
-
-    async fn send_request(&self, method: &str, params: Option<Value>) -> Result<Value, String> {
-        let id = json_rpc::next_request_id();
-
-        let msg = JsonRpcRequest::new(id, method, params);
-
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.pending.lock().await.insert(id, tx);
-
-        let json_str = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
-        let mut writer = self.writer.lock().await;
-        json_rpc::write_message(&mut *writer, &json_str).await?;
-        drop(writer);
-
-        match rx.await {
-            Ok(Ok(value)) => Ok(value),
-            Ok(Err(rpc_err)) => Err(rpc_err.to_string()),
-            Err(_) => Err("Response channel closed (MCP server may have exited)".to_string()),
-        }
-    }
-
-    async fn send_notification(&self, method: &str, params: Option<Value>) -> Result<(), String> {
-        let msg = JsonRpcNotification::new(method, params);
-
-        let json_str = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
-        let mut writer = self.writer.lock().await;
-        json_rpc::write_message(&mut *writer, &json_str).await
-    }
+    transport
 }
 
 // ---------------------------------------------------------------------------
@@ -183,64 +141,29 @@ async fn mcp_reader_loop(
     let mut reader = BufReader::new(stdout);
 
     loop {
-        let content_length = match timeout(MCP_READER_TIMEOUT, json_rpc::read_content_length(&mut reader)).await {
-            Ok(result) => result?,
-            Err(_) => {
-                log::warn!(target: "notesage::mcp", "Reader timeout for server {} — checking process health", server_id);
-                if !json_rpc::is_process_alive(child_pid) {
-                    log::error!(target: "notesage::mcp", "MCP server {} process is dead after reader timeout", server_id);
-                    let _ = app.emit(
-                        "mcp-server-status",
-                        serde_json::json!({
-                            "serverId": server_id,
-                            "status": "error",
-                            "error": "Server process exited unexpectedly",
-                        }),
-                    );
-                    return Err(format!("MCP server {} process died during header read", server_id));
-                }
-                // Process is alive but slow — retry
+        match json_rpc::read_next_message(&mut reader, MCP_READER_TIMEOUT, child_pid).await {
+            ReadMessageResult::Message(msg) => {
+                // MCP servers primarily send responses. We don't handle server-initiated
+                // requests or notifications in v1 (no sampling, no notifications support).
+                json_rpc::dispatch_response(&pending, &msg).await;
+            }
+            ReadMessageResult::Timeout => {
+                log::warn!(target: "notesage::mcp", "Reader timeout for server {} — retrying", server_id);
                 continue;
             }
-        };
-
-        let mut body = vec![0u8; content_length];
-        match timeout(MCP_READER_TIMEOUT, reader.read_exact(&mut body)).await {
-            Ok(result) => {
-                result.map_err(|e| format!("Failed to read body: {}", e))?;
+            ReadMessageResult::Fatal(e) => {
+                log::error!(target: "notesage::mcp", "MCP server {} reader fatal: {}", server_id, e);
+                let _ = app.emit(
+                    "mcp-server-status",
+                    serde_json::json!({
+                        "serverId": server_id,
+                        "status": "error",
+                        "error": format!("Server process exited: {}", e),
+                    }),
+                );
+                return Err(format!("MCP server {} reader: {}", server_id, e));
             }
-            Err(_) => {
-                log::warn!(target: "notesage::mcp", "Reader timeout reading body for server {} — checking process health", server_id);
-                if !json_rpc::is_process_alive(child_pid) {
-                    log::error!(target: "notesage::mcp", "MCP server {} process is dead after body read timeout", server_id);
-                    let _ = app.emit(
-                        "mcp-server-status",
-                        serde_json::json!({
-                            "serverId": server_id,
-                            "status": "error",
-                            "error": "Server process exited unexpectedly",
-                        }),
-                    );
-                    return Err(format!("MCP server {} process died during body read", server_id));
-                }
-                continue;
-            }
-        };
-
-        let body_str =
-            String::from_utf8(body).map_err(|e| format!("Invalid UTF-8 in body: {}", e))?;
-
-        let msg: JsonRpcMessage = match serde_json::from_str(&body_str) {
-            Ok(m) => m,
-            Err(e) => {
-                log::warn!(target: "notesage::mcp", "Failed to parse message from server {}: {} — {}", server_id, e, &body_str[..body_str.len().min(200)]);
-                continue;
-            }
-        };
-
-        // MCP servers primarily send responses. We don't handle server-initiated
-        // requests or notifications in v1 (no sampling, no notifications support).
-        json_rpc::dispatch_response(&pending, &msg).await;
+        }
     }
 }
 
@@ -251,7 +174,7 @@ async fn mcp_reader_loop(
 struct McpServerHandle {
     config: McpServerConfig,
     child: Child,
-    transport: McpTransport,
+    transport: JsonRpcTransport,
     tools: Vec<McpToolInfo>,
     status: McpServerStatus,
     error: Option<String>,
@@ -331,7 +254,7 @@ impl McpState {
 // MCP Protocol Operations
 // ---------------------------------------------------------------------------
 
-async fn mcp_initialize(transport: &McpTransport) -> Result<Value, String> {
+async fn mcp_initialize(transport: &JsonRpcTransport) -> Result<Value, String> {
     let init_params = serde_json::json!({
         "protocolVersion": constants::MCP_PROTOCOL_VERSION,
         "capabilities": {},
@@ -354,7 +277,7 @@ async fn mcp_initialize(transport: &McpTransport) -> Result<Value, String> {
 }
 
 async fn mcp_list_tools_from_server(
-    transport: &McpTransport,
+    transport: &JsonRpcTransport,
     server_id: &str,
 ) -> Result<Vec<McpToolInfo>, String> {
     let result = transport
@@ -397,7 +320,7 @@ async fn mcp_list_tools_from_server(
 }
 
 async fn mcp_call_tool_on_server(
-    transport: &McpTransport,
+    transport: &JsonRpcTransport,
     tool_name: &str,
     arguments: Value,
 ) -> Result<McpToolResult, String> {
@@ -483,7 +406,7 @@ pub async fn mcp_start_server(
     let stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
 
-    let transport = McpTransport::new(stdin, stdout, child_pid, server_id.clone(), app.clone());
+    let transport = spawn_mcp_transport(stdin, stdout, child_pid, server_id.clone(), app.clone());
 
     // Initialize the MCP protocol
     let _server_caps = mcp_initialize(&transport).await.map_err(|e| {

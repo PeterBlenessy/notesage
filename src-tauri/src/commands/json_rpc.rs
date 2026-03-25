@@ -12,8 +12,12 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::process::ChildStdin;
 use tokio::sync::{oneshot, Mutex};
+use tokio::io::BufWriter;
+use tokio::time::timeout;
 
 // ---------------------------------------------------------------------------
 // JSON-RPC 2.0 message types
@@ -257,6 +261,155 @@ pub fn is_process_alive(pid: Option<u32>) -> bool {
             }
         }
         None => true,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shared JSON-RPC transport
+// ---------------------------------------------------------------------------
+
+/// A reusable JSON-RPC 2.0 transport over Content-Length framed stdio.
+///
+/// Wraps a child process's stdin writer and a pending-request map. Both the
+/// Copilot LSP and MCP client use this to send requests and notifications.
+/// Each caller spawns its own reader loop (they handle server→client messages
+/// differently) using [`read_next_message`] for the common read/parse/timeout logic.
+pub struct JsonRpcTransport {
+    pub writer: Arc<Mutex<BufWriter<ChildStdin>>>,
+    pub pending: PendingRequests,
+}
+
+impl JsonRpcTransport {
+    /// Create a new transport from a child process's stdin.
+    ///
+    /// The caller is responsible for spawning a reader loop on stdout that
+    /// calls [`dispatch_response`] for incoming responses.
+    pub fn new(stdin: ChildStdin) -> Self {
+        Self {
+            writer: Arc::new(Mutex::new(BufWriter::new(stdin))),
+            pending: new_pending_requests(),
+        }
+    }
+
+    /// Create a lightweight clone sharing the same writer and pending map.
+    pub fn clone_handle(&self) -> Self {
+        Self {
+            writer: self.writer.clone(),
+            pending: self.pending.clone(),
+        }
+    }
+
+    /// Send a JSON-RPC request and wait for the response.
+    pub async fn send_request(
+        &self,
+        method: &str,
+        params: Option<Value>,
+    ) -> Result<Value, String> {
+        let id = next_request_id();
+        let msg = JsonRpcRequest::new(id, method, params);
+
+        let (tx, rx) = oneshot::channel();
+        self.pending.lock().await.insert(id, tx);
+
+        let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
+        let mut writer = self.writer.lock().await;
+        write_message(&mut *writer, &json).await?;
+        drop(writer);
+
+        match rx.await {
+            Ok(Ok(value)) => Ok(value),
+            Ok(Err(rpc_err)) => Err(rpc_err.to_string()),
+            Err(_) => Err("Response channel closed (process may have exited)".to_string()),
+        }
+    }
+
+    /// Send a JSON-RPC notification (no response expected).
+    pub async fn send_notification(
+        &self,
+        method: &str,
+        params: Option<Value>,
+    ) -> Result<(), String> {
+        let msg = JsonRpcNotification::new(method, params);
+        let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
+        let mut writer = self.writer.lock().await;
+        write_message(&mut *writer, &json).await
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Reader loop helper
+// ---------------------------------------------------------------------------
+
+/// Result of attempting to read the next JSON-RPC message from a framed stream.
+pub enum ReadMessageResult {
+    /// Successfully read and parsed a message.
+    Message(JsonRpcMessage),
+    /// Timeout occurred but process is still alive — caller should retry.
+    Timeout,
+    /// Fatal error — process exited, EOF, or IO failure.
+    Fatal(String),
+}
+
+/// Read the next Content-Length framed JSON-RPC message with timeout and
+/// process health checking.
+///
+/// This encapsulates the read/timeout/health-check/parse pattern shared by
+/// both the Copilot LSP and MCP reader loops. Parse failures are logged and
+/// returned as `Timeout` (caller retries) to match the existing behavior of
+/// both readers.
+pub async fn read_next_message<R: AsyncBufRead + Unpin>(
+    reader: &mut R,
+    timeout_duration: Duration,
+    child_pid: Option<u32>,
+) -> ReadMessageResult {
+    // 1. Read Content-Length header with timeout
+    let content_length = match timeout(timeout_duration, read_content_length(reader)).await {
+        Ok(Ok(len)) => len,
+        Ok(Err(e)) => return ReadMessageResult::Fatal(e),
+        Err(_) => {
+            if !is_process_alive(child_pid) {
+                return ReadMessageResult::Fatal(
+                    "Process died during header read".to_string(),
+                );
+            }
+            return ReadMessageResult::Timeout;
+        }
+    };
+
+    // 2. Read body with timeout
+    let mut body = vec![0u8; content_length];
+    match timeout(timeout_duration, reader.read_exact(&mut body)).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(e)) => {
+            return ReadMessageResult::Fatal(format!("Failed to read body: {}", e))
+        }
+        Err(_) => {
+            if !is_process_alive(child_pid) {
+                return ReadMessageResult::Fatal(
+                    "Process died during body read".to_string(),
+                );
+            }
+            return ReadMessageResult::Timeout;
+        }
+    };
+
+    // 3. Parse UTF-8 + JSON
+    let body_str = match String::from_utf8(body) {
+        Ok(s) => s,
+        Err(e) => return ReadMessageResult::Fatal(format!("Invalid UTF-8 in body: {}", e)),
+    };
+
+    match serde_json::from_str(&body_str) {
+        Ok(msg) => ReadMessageResult::Message(msg),
+        Err(e) => {
+            log::warn!(
+                "Failed to parse JSON-RPC message: {} — {}",
+                e,
+                &body_str[..body_str.len().min(200)]
+            );
+            // Not fatal — skip this message and retry
+            ReadMessageResult::Timeout
+        }
     }
 }
 

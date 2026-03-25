@@ -5,14 +5,13 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tauri_plugin_opener::OpenerExt;
-use tokio::io::{AsyncReadExt, BufReader, BufWriter};
+use tokio::io::{BufReader, BufWriter};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::Mutex;
-use tokio::time::timeout;
 
 use super::json_rpc::{
-    self, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, PendingRequests,
+    self, JsonRpcRequest, JsonRpcTransport, PendingRequests,
+    ReadMessageResult,
 };
 use super::shell_path::get_shell_path;
 use super::constants;
@@ -60,117 +59,38 @@ pub struct SignInResponse {
 }
 
 // ---------------------------------------------------------------------------
-// JSON-RPC Transport
+// Copilot LSP Transport — wraps shared JsonRpcTransport with LSP-specific
+// logging and reader loop setup.
 // ---------------------------------------------------------------------------
 
-/// Minimal JSON-RPC 2.0 transport over stdio (Content-Length framing).
-///
-/// The writer half sends requests and notifications to the LSP server.
-/// The reader half runs in a separate task, dispatching responses to
-/// pending request channels and server-initiated notifications/requests
-/// to Tauri events.
-pub struct JsonRpcTransport {
-    pub(super) writer: Arc<Mutex<BufWriter<ChildStdin>>>,
-    pub(super) pending: PendingRequests,
-}
+/// Spawn a Copilot LSP transport: creates a `JsonRpcTransport` for stdin and
+/// starts the LSP-specific reader loop on stdout (handles server→client
+/// requests, notifications, and auth flows). Returns the transport handle.
+fn spawn_copilot_transport(
+    stdin: ChildStdin,
+    stdout: ChildStdout,
+    child_pid: Option<u32>,
+    app: AppHandle,
+) -> JsonRpcTransport {
+    let transport = JsonRpcTransport::new(stdin);
+    let reader_pending = transport.pending.clone();
+    let reader_writer = transport.writer.clone();
 
-impl JsonRpcTransport {
-    /// Create a new transport from a child process's stdin/stdout.
-    ///
-    /// Spawns a background reader task that:
-    /// - Routes responses to pending request channels
-    /// - Handles server→client requests (window/showDocument, etc.)
-    /// - Emits server→client notifications as Tauri events
-    pub fn new(stdin: ChildStdin, stdout: ChildStdout, child_pid: Option<u32>, app: AppHandle) -> Self {
-        let writer = Arc::new(Mutex::new(BufWriter::new(stdin)));
-        let pending = json_rpc::new_pending_requests();
-
-        let reader_pending = pending.clone();
-        let reader_writer = writer.clone();
-
-        // Spawn the reader loop
-        tokio::spawn(async move {
-            if let Err(e) = reader_loop(
-                stdout,
-                reader_pending,
-                reader_writer,
-                child_pid,
-                app,
-            )
-            .await
-            {
-                log::error!(target: "notesage::copilot", "Reader loop exited: {}", e);
-            }
-        });
-
-        Self {
-            writer,
-            pending,
+    tokio::spawn(async move {
+        if let Err(e) = reader_loop(
+            stdout,
+            reader_pending,
+            reader_writer,
+            child_pid,
+            app,
+        )
+        .await
+        {
+            log::error!(target: "notesage::copilot", "Reader loop exited: {}", e);
         }
-    }
+    });
 
-    /// Send a JSON-RPC request and wait for the response.
-    pub async fn send_request(
-        &self,
-        method: &str,
-        params: Option<Value>,
-    ) -> Result<Value, String> {
-        let id = json_rpc::next_request_id();
-        let msg = JsonRpcRequest::new(id, method, params.clone());
-
-        log::debug!(
-            target: "notesage::copilot",
-            "LSP → request: method={}, id={}, params={}",
-            method, id,
-            params.as_ref().map(|v| v.to_string()).unwrap_or_else(|| "null".to_string()),
-        );
-
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.pending.lock().await.insert(id, tx);
-
-        let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
-        let mut writer = self.writer.lock().await;
-        json_rpc::write_message(&mut *writer, &json).await?;
-        drop(writer);
-
-        match rx.await {
-            Ok(Ok(value)) => {
-                log::debug!(
-                    target: "notesage::copilot",
-                    "LSP → request response: method={}, id={}, result={}",
-                    method, id, value,
-                );
-                Ok(value)
-            }
-            Ok(Err(rpc_err)) => {
-                log::warn!(
-                    target: "notesage::copilot",
-                    "LSP → request error: method={}, id={}, error={}",
-                    method, id, rpc_err,
-                );
-                Err(rpc_err.to_string())
-            }
-            Err(_) => Err("Response channel closed (LSP process may have exited)".to_string()),
-        }
-    }
-
-    /// Send a JSON-RPC notification (no response expected).
-    pub async fn send_notification(
-        &self,
-        method: &str,
-        params: Option<Value>,
-    ) -> Result<(), String> {
-        log::debug!(
-            target: "notesage::copilot",
-            "LSP → notification: method={}, params={}",
-            method,
-            params.as_ref().map(|v| v.to_string()).unwrap_or_else(|| "null".to_string()),
-        );
-        let msg = JsonRpcNotification::new(method, params);
-        let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
-        let mut writer = self.writer.lock().await;
-        json_rpc::write_message(&mut *writer, &json).await
-    }
+    transport
 }
 
 // ---------------------------------------------------------------------------
@@ -190,59 +110,22 @@ async fn reader_loop(
     let mut reader = BufReader::new(stdout);
 
     loop {
-        // 1. Read headers until we find Content-Length (with timeout)
-        let content_length = match timeout(READER_TIMEOUT, json_rpc::read_content_length(&mut reader)).await {
-            Ok(result) => result?,
-            Err(_) => {
-                log::warn!(target: "notesage::copilot_lsp", "Reader timeout — checking process health");
-                if !json_rpc::is_process_alive(child_pid) {
-                    log::error!(target: "notesage::copilot_lsp", "LSP process is dead after reader timeout");
-                    let _ = app.emit(
-                        "copilot-status-changed",
-                        serde_json::json!({
-                            "message": "LSP process exited unexpectedly",
-                            "kind": "Error",
-                        }),
-                    );
-                    return Err("LSP process died during header read".to_string());
-                }
-                // Process is alive but slow — retry
+        let msg = match json_rpc::read_next_message(&mut reader, READER_TIMEOUT, child_pid).await {
+            ReadMessageResult::Message(msg) => msg,
+            ReadMessageResult::Timeout => {
+                log::warn!(target: "notesage::copilot_lsp", "Reader timeout — retrying");
                 continue;
             }
-        };
-
-        // 2. Read the body (with timeout)
-        let mut body = vec![0u8; content_length];
-        match timeout(READER_TIMEOUT, reader.read_exact(&mut body)).await {
-            Ok(result) => {
-                result.map_err(|e| format!("Failed to read body: {}", e))?;
-            }
-            Err(_) => {
-                log::warn!(target: "notesage::copilot_lsp", "Reader timeout reading body — checking process health");
-                if !json_rpc::is_process_alive(child_pid) {
-                    log::error!(target: "notesage::copilot_lsp", "LSP process is dead after body read timeout");
-                    let _ = app.emit(
-                        "copilot-status-changed",
-                        serde_json::json!({
-                            "message": "LSP process exited unexpectedly",
-                            "kind": "Error",
-                        }),
-                    );
-                    return Err("LSP process died during body read".to_string());
-                }
-                continue;
-            }
-        };
-
-        let body_str =
-            String::from_utf8(body).map_err(|e| format!("Invalid UTF-8 in body: {}", e))?;
-
-        // 3. Parse the JSON-RPC message
-        let msg: JsonRpcMessage = match serde_json::from_str(&body_str) {
-            Ok(m) => m,
-            Err(e) => {
-                log::warn!(target: "notesage::copilot", "Failed to parse message: {} — {}", e, body_str);
-                continue;
+            ReadMessageResult::Fatal(e) => {
+                log::error!(target: "notesage::copilot_lsp", "Reader fatal: {}", e);
+                let _ = app.emit(
+                    "copilot-status-changed",
+                    serde_json::json!({
+                        "message": "LSP process exited unexpectedly",
+                        "kind": "Error",
+                    }),
+                );
+                return Err(format!("Copilot LSP reader: {}", e));
             }
         };
 
@@ -543,7 +426,7 @@ pub struct CopilotLspState {
 }
 
 pub struct CopilotLspProcess {
-    pub transport: JsonRpcTransport,
+    pub transport: json_rpc::JsonRpcTransport,
     pub child: Child,
     pub status: tokio::sync::Mutex<CopilotStatus>,
     /// Stashed embedded command from signIn response (e.g. finishDeviceFlow).
@@ -748,7 +631,7 @@ pub async fn copilot_lsp_start(
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
 
     // Create the JSON-RPC transport (spawns reader loop)
-    let transport = JsonRpcTransport::new(stdin, stdout, child_pid, app.clone());
+    let transport = spawn_copilot_transport(stdin, stdout, child_pid, app.clone());
 
     // Read app version from package.json (via Tauri config)
     let app_version = app

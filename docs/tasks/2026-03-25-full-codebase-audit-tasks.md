@@ -309,9 +309,19 @@ Extracted 4 modules (1,267 → 665 lines):
 
 **Complexity:** L **Category:** backend **Dependencies:** None **Files:** `src-tauri/src/commands/local_inference.rs` + 2 new modules
 
-### #37 — Deduplicate JSON-RPC transport between copilot_lsp.rs and mcp.rs
+### #37 — Deduplicate JSON-RPC transport between copilot_lsp.rs and mcp.rs ✅
 
 **Description:** `copilot_lsp.rs` (1,684 lines) and `mcp.rs` both implement Content-Length framed JSON-RPC 2.0 transport independently. The shared types are already in `json_rpc.rs` but the framing/read/write logic is duplicated. Extract shared transport into `json_rpc.rs` or a new `json_rpc_transport.rs` module, then refactor both callers to use it.
+
+Extracted into `json_rpc.rs` (501 → 654 lines):
+
+| Addition | Responsibility |
+| --- | --- |
+| `JsonRpcTransport` struct | Shared writer + pending map, `send_request`, `send_notification`, `clone_handle` |
+| `ReadMessageResult` enum | Message / Timeout / Fatal — eliminates duplicated timeout+health-check pattern |
+| `read_next_message()` fn | Shared Content-Length read with timeout, process health check, UTF-8 + JSON parse |
+
+`copilot_lsp.rs` (1,684 → 1,567 lines) and `mcp.rs` (866 → 789 lines) now use `JsonRpcTransport` from `json_rpc` module. Each retains its own reader loop for protocol-specific message handling (LSP server requests/notifications vs MCP response-only).
 
 **Complexity:** L **Category:** backend **Dependencies:** None **Files:** `src-tauri/src/commands/copilot_lsp.rs`, `src-tauri/src/commands/mcp.rs`, `src-tauri/src/commands/json_rpc.rs`
 
