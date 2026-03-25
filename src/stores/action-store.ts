@@ -38,6 +38,8 @@ interface ActionStore {
   actions: ActionItem[];
   isScanning: boolean;
   lastFullScan: number;
+  _consecutiveFailures: number;
+  _scanDisabled: boolean;
 
   // Actions
   fullScan(): Promise<void>;
