@@ -15,16 +15,14 @@ import { Sparkles, Check, X, Loader2, Eye, EyeOff } from 'lucide-react';
 import type { AIProviderType } from '@/lib/ai/types';
 
 export function AISettings() {
-  const {
-    provider,
-    apiKeys,
-    ollamaUrl,
-    suggestionsEnabled,
-    setProvider,
-    setApiKey,
-    setOllamaUrl,
-    toggleSuggestions,
-  } = useAIStore();
+  const provider = useAIStore(s => s.provider);
+  const apiKeys = useAIStore(s => s.apiKeys);
+  const ollamaUrl = useAIStore(s => s.ollamaUrl);
+  const suggestionsEnabled = useAIStore(s => s.suggestionsEnabled);
+  const setProvider = useAIStore(s => s.setProvider);
+  const setApiKey = useAIStore(s => s.setApiKey);
+  const setOllamaUrl = useAIStore(s => s.setOllamaUrl);
+  const toggleSuggestions = useAIStore(s => s.toggleSuggestions);
 
   const [anthropicKey, setAnthropicKey] = useState(apiKeys.anthropic || '');
   const [openaiKey, setOpenaiKey] = useState(apiKeys.openai || '');

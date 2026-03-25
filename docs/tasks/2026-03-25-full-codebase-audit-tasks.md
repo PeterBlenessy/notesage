@@ -192,7 +192,7 @@
 
 **Complexity:** L **Category:** frontend **Dependencies:** None **Files:** `src/components/Layout.tsx`, `src/components/chat/ChatPanel.tsx`, `src/components/sidebar/Sidebar.tsx`, `src/components/sidebar/FileTreeItem.tsx`
 
-### #26 — Add Zustand selectors to AISettings
+### #26 — Add Zustand selectors to AISettings ✅
 
 **Description:** `AISettings.tsx` (lines 18-27) destructures 8 fields from `useAIStore()`. Lower impact than #25 (modal-based, not always visible) but same pattern. Replace with individual selectors.
 
