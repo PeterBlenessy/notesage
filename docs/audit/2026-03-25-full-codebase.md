@@ -5,7 +5,7 @@
 | Stage | Link | Status |
 | --- | --- | --- |
 | PRD | — | Not planned |
-| Tasks | [full-codebase-audit-tasks](../tasks/2026-03-25-full-codebase-audit-tasks.md) | Not started |
+| Tasks | [full-codebase-audit-tasks](../tasks/2026-03-25-full-codebase-audit-tasks.md) | In progress |
 
 Comprehensive audit of the Notesage codebase covering component size, memory leaks, async flows, render performance, and Rust backend patterns.
 

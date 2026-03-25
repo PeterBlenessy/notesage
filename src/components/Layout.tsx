@@ -166,7 +166,8 @@ export function Layout({
   onCancelTask,
   onClickTask,
 }: LayoutProps) {
-  const { chatPanelOpen, setChatPanelOpen } = useSettingsStore();
+  const chatPanelOpen = useSettingsStore((s) => s.chatPanelOpen);
+  const setChatPanelOpen = useSettingsStore((s) => s.setChatPanelOpen);
 
   const handlePanelLayout = useCallback((layout: Record<string, number>) => {
     savePanelSizes(layout);

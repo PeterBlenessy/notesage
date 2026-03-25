@@ -179,7 +179,7 @@
 
 ## Render Performance
 
-### #25 — Add Zustand selectors to Layout, ChatPanel, Sidebar, FileTreeItem
+### #25 — Add Zustand selectors to Layout, ChatPanel, Sidebar, FileTreeItem ✅
 
 **Description:** Replace broad `const { x, y } = useStore()` destructuring with individual `const x = useStore(s => s.x)` selectors in the four highest-impact components. This prevents re-renders from unrelated store mutations.
 

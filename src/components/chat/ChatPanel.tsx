@@ -48,7 +48,19 @@ import {
 
 
 export function ChatPanel() {
-  const { isLoading, activeTool, setSelectedProjectPaths, toggleProjectPath, webSearchEnabled, setWebSearchEnabled, conversations, activeConversationId, createConversation, deleteConversation, setActiveConversation, setPendingProjectSwitch, setPendingAgentSwitch } = useChatStore();
+  const isLoading = useChatStore((s) => s.isLoading);
+  const activeTool = useChatStore((s) => s.activeTool);
+  const setSelectedProjectPaths = useChatStore((s) => s.setSelectedProjectPaths);
+  const toggleProjectPath = useChatStore((s) => s.toggleProjectPath);
+  const webSearchEnabled = useChatStore((s) => s.webSearchEnabled);
+  const setWebSearchEnabled = useChatStore((s) => s.setWebSearchEnabled);
+  const conversations = useChatStore((s) => s.conversations);
+  const activeConversationId = useChatStore((s) => s.activeConversationId);
+  const createConversation = useChatStore((s) => s.createConversation);
+  const deleteConversation = useChatStore((s) => s.deleteConversation);
+  const setActiveConversation = useChatStore((s) => s.setActiveConversation);
+  const setPendingProjectSwitch = useChatStore((s) => s.setPendingProjectSwitch);
+  const setPendingAgentSwitch = useChatStore((s) => s.setPendingAgentSwitch);
   const messages = useChatStore(selectMessages);
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const pendingProjectSwitch = useChatStore(selectPendingProjectSwitch);

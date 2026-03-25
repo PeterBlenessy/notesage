@@ -24,20 +24,18 @@ interface SidebarProps {
 
 export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpenProjectSettings, onMakeProject, onExportFile, panelCollapsed }: SidebarProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const {
-    explorerFolders,
-    addExplorerFolder,
-    projects,
-    removeProject,
-    notesTree,
-    explorerCollapsed,
-    projectsCollapsed,
-    notesCollapsed,
-    setExplorerCollapsed,
-    setProjectsCollapsed,
-    setNotesCollapsed,
-  } = useWorkspaceStore();
-  const { notesRootPath } = useSettingsStore();
+  const explorerFolders = useWorkspaceStore((s) => s.explorerFolders);
+  const addExplorerFolder = useWorkspaceStore((s) => s.addExplorerFolder);
+  const projects = useWorkspaceStore((s) => s.projects);
+  const removeProject = useWorkspaceStore((s) => s.removeProject);
+  const notesTree = useWorkspaceStore((s) => s.notesTree);
+  const explorerCollapsed = useWorkspaceStore((s) => s.explorerCollapsed);
+  const projectsCollapsed = useWorkspaceStore((s) => s.projectsCollapsed);
+  const notesCollapsed = useWorkspaceStore((s) => s.notesCollapsed);
+  const setExplorerCollapsed = useWorkspaceStore((s) => s.setExplorerCollapsed);
+  const setProjectsCollapsed = useWorkspaceStore((s) => s.setProjectsCollapsed);
+  const setNotesCollapsed = useWorkspaceStore((s) => s.setNotesCollapsed);
+  const notesRootPath = useSettingsStore((s) => s.notesRootPath);
   const { openFile } = useFileOperations();
 
   const handleOpenFolder = async () => {

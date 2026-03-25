@@ -66,8 +66,10 @@ interface FileTreeItemProps {
 }
 
 export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProject, expandKeyPrefix = "", gitRepoRoot, onCommitFile, onExportFile }: FileTreeItemProps) {
-  const { isExpanded, toggleFolder } = useWorkspaceStore();
-  const { tabs, activeTabId } = useEditorStore();
+  const isExpanded = useWorkspaceStore((s) => s.isExpanded);
+  const toggleFolder = useWorkspaceStore((s) => s.toggleFolder);
+  const tabs = useEditorStore((s) => s.tabs);
+  const activeTabId = useEditorStore((s) => s.activeTabId);
   const { renamePath, deletePath } = useFileOperations();
   const expandKey = expandKeyPrefix + entry.path;
   const expanded = isExpanded(expandKey);
