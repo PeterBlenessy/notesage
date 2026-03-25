@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState, useMemo, lazy, Suspense, type MutableRefObject } from "react";
+import { useEffect, useCallback, useRef, useState, lazy, Suspense, type MutableRefObject } from "react";
 import { useScrollPersistence } from "@/hooks/useScrollPersistence";
 import { useEditorResize } from "@/hooks/useEditorResize";
 import { EditorContent } from "@tiptap/react";
@@ -11,43 +11,27 @@ import { useRoutingStore } from "@/stores/routing-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore, type ContentWidth } from "@/stores/settings-store";
 import { useEditorStylesStore, fontFamilyCSS } from "@/stores/editor-styles-store";
-import { useExternalChangeStore } from "@/stores/external-change-store";
 import { useEditor } from "@/hooks/useEditor";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { useExportOperations } from "@/hooks/useExportOperations";
 import { useDiffReview } from "@/hooks/useDiffReview";
 import { useFileWatcher } from "@/hooks/useFileWatcher";
-import { useCommentOperations } from "@/hooks/useCommentOperations";
+import { useCommentEditorSync } from "@/hooks/useCommentEditorSync";
 import { useCopilotCompletion } from "@/hooks/useCopilotCompletion";
 import { useCopilotCompletionCM } from "@/hooks/useCopilotCompletionCM";
 import { useLocalCompletion } from "@/hooks/useLocalCompletion";
+import { useEditorKeyBindings } from "@/hooks/useEditorKeyBindings";
+import { useFileWatcherIntegration } from "@/hooks/useFileWatcherIntegration";
 import type { EditorView as CMEditorView } from "@codemirror/view";
-import { useCommentDelegation } from "@/hooks/useCommentDelegation";
-import { useAIOperations } from "@/hooks/useAIOperations";
-import { useCommentStore, type DelegationActivity } from "@/stores/comment-store";
+import { useCommentStore } from "@/stores/comment-store";
 import { useChatStore } from "@/stores/chat-store";
 import {
   setPendingCommentRange as setPendingRangeDecoration,
-  showInlineDiff,
-  clearInlineDiff,
-  acceptAllDiffHunks,
-  rejectAllDiffHunks,
-  acceptDiffHunk,
-  rejectDiffHunk,
   getInlineDiffHunks,
-  setSearchQuery,
-  searchNext,
-  searchPrevious,
-  clearSearch,
-  replaceCurrentMatch,
-  replaceAllMatches,
-  getSearchState,
   setSuggestion,
   hasActiveSuggestion,
   AISuggestionPluginKey,
 } from "@/components/editor/extensions";
-import type { AISuggestionType } from "@/components/editor/extensions";
-import { mapExternalChangeToPM } from "@/lib/external-diff";
 import { extractReplacementText, resolveAnchorRange } from "@/lib/pm-replace";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { useGitStore } from "@/stores/git-store";
@@ -57,18 +41,12 @@ const ExportDialog = lazy(() => import("@/components/ExportDialog").then(m => ({
 import { Toolbar } from "./Toolbar";
 import { SourceModeEditor } from "./SourceModeEditor";
 import { ImageInsertDialog } from "./ImageInsertDialog";
-import { PlainTextViewer } from "./viewers/PlainTextViewer";
 import { tauriApi } from "@/lib/tauri";
 import { isBinaryFileType } from "@/lib/file-utils";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { setBinaryData } from "@/lib/binary-cache";
 
-// Lazy-load heavy viewers — their libraries (pdfjs-dist, mammoth, foliate-js)
-// are only fetched when the user actually opens that file type.
-const ImageViewer = lazy(() => import("./viewers/ImageViewer").then(m => ({ default: m.ImageViewer })));
-const PdfViewer = lazy(() => import("./viewers/PdfViewer").then(m => ({ default: m.PdfViewer })));
-const DocxViewer = lazy(() => import("./viewers/DocxViewer").then(m => ({ default: m.DocxViewer })));
-const EpubViewer = lazy(() => import("./viewers/EpubViewer").then(m => ({ default: m.EpubViewer })));
+import { EditorViewerContainer } from "./EditorViewerContainer";
 import { BubbleMenu } from "./BubbleMenu";
 
 import { FindBar } from "./FindBar";
@@ -80,7 +58,7 @@ import { DatePickerPopover } from "./DatePickerPopover";
 import { StatusBar } from "./StatusBar";
 import { FrontmatterBlock } from "./FrontmatterBlock";
 import { DocumentOutline } from "@/components/DocumentOutline";
-import { getMarkdownFromEditor, loadRawMarkdownIntoEditor } from "@/lib/markdown";
+import { loadRawMarkdownIntoEditor } from "@/lib/markdown";
 import { getDocumentDir } from "@/lib/image-utils";
 import { toast } from "sonner";
 import "@/styles/editor.css";
@@ -88,8 +66,6 @@ import "@/styles/editor.css";
 // 1 CSS px = 1/96 inch, 1 inch = 2.54 cm
 const PX_PER_CM = 96 / 2.54;
 
-// Stable empty array for Zustand selector fallback (avoids infinite re-render loop)
-const EMPTY_ACTIVITIES: DelegationActivity[] = [];
 
 /**
  * Find the ProseMirror position of `searchText` in the document.
@@ -390,13 +366,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
   const [cmView, setCmView] = useState<CMEditorView | null>(null);
 
-  // Find in document state
-  const [findBarOpen, setFindBarOpen] = useState(false);
-  const [findMatchCount, setFindMatchCount] = useState(0);
-  const [findCurrentMatch, setFindCurrentMatch] = useState(-1);
-  const [findInitialQuery, setFindInitialQuery] = useState("");
-  const [findReplaceExpanded, setFindReplaceExpanded] = useState(false);
-
   // Convert cm margins to px
   const paddingTop = `${marginTop * PX_PER_CM}px`;
   const paddingBottom = `${marginBottom * PX_PER_CM}px`;
@@ -427,6 +396,29 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   useCopilotCompletion(editor);
   useCopilotCompletionCM(cmView);
   useLocalCompletion(editor);
+
+  // Keyboard shortcuts + find bar
+  const {
+    findBarOpen,
+    findMatchCount,
+    findCurrentMatch,
+    findInitialQuery,
+    findReplaceExpanded,
+    setFindReplaceExpanded,
+    handleFindSearch,
+    handleFindNext,
+    handleFindPrevious,
+    handleFindReplace,
+    handleFindReplaceAll,
+    handleFindClose,
+    handleToggleViewMode,
+  } = useEditorKeyBindings({
+    editor,
+    activeTab: activeTab ?? null,
+    saveFile,
+    updateTabContent,
+    toggleViewMode,
+  });
 
   // Page position: calculate from editor content height and page geometry
   const marginTopPx = marginTop * PX_PER_CM;
@@ -492,356 +484,46 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   }, [editor, isPaperMode, usablePageHeight, activeTab?.id]);
 
   // Comments
-  const commentOps = useCommentOperations(editor);
-  const { delegateComment, delegateReply, cancelDelegation, delegateAll, moveToChat, canDelegate } = useCommentDelegation();
-  const { sendChatMessage } = useAIOperations();
-  const activeCommentId = commentOps.activeComment?.id ?? null;
-  const activeCommentActivities = useCommentStore((s) =>
-    activeCommentId ? s.activitiesByComment[activeCommentId] : undefined
-  ) ?? EMPTY_ACTIVITIES;
-  const [commentPopoverOpen, setCommentPopoverOpen] = useState(false);
-  const [pendingCommentRange, setPendingCommentRange] = useState<{ from: number; to: number } | null>(null);
-  const [commentAnchorPos, setCommentAnchorPos] = useState<{ top: number; left: number } | null>(null);
-  // Track if we generated a UUID for this popover session (to revert on cancel)
-  const generatedUUIDRef = useRef(false);
-  // Track whether an AI suggestion decoration is active (for Apply collision prevention)
-  const savedSuggestionsRef = useRef<Map<string, AISuggestionType>>(new Map());
+  const {
+    commentOps,
+    delegateComment,
+    delegateReply,
+    cancelDelegation,
+    delegateAll,
+    moveToChat,
+    canDelegate,
+    sendChatMessage,
+    activeCommentActivities,
+    commentPopoverOpen,
+    setCommentPopoverOpen,
+    pendingCommentRange,
+    setPendingCommentRange,
+    commentAnchorPos,
+    generatedUUIDRef,
+    savedSuggestionsRef,
+    suggestionActive,
+  } = useCommentEditorSync(editor);
   /** Per-tab ProseMirror EditorState cache — preserves undo/redo, selection, and plugin state across tab switches. */
   const cachedEditorStatesRef = useRef<Map<string, EditorState>>(new Map());
-  const [suggestionActive, setSuggestionActiveState] = useState(false);
-  useEffect(() => {
-    if (!editor) return;
-    const check = () => setSuggestionActiveState(hasActiveSuggestion(editor));
-    check();
-    editor.on('transaction', check);
-    return () => { editor.off('transaction', check); };
-  }, [editor]);
 
-  // Listen for comment creation requests (Cmd+Shift+M or bubble menu)
-  useEffect(() => {
-    if (!editor) return;
-    const check = () => {
-      const pending = commentOps.consumePendingCreate();
-      if (pending) {
-        setPendingCommentRange(pending);
-        commentOps.setActiveComment(null);
-        // For project files, ensure document has a UUID before the popover opens.
-        // Non-project files use a path hash — no frontmatter modification needed.
-        if (commentOps.isProjectFile) {
-          generatedUUIDRef.current = !commentOps.documentId;
-          commentOps.ensureUUID();
-        }
-        // Show pending range decoration in the editor
-        setPendingRangeDecoration(editor, pending);
-        // Position popover at the selection
-        const coords = editor.view.coordsAtPos(pending.from);
-        setCommentAnchorPos({ top: coords.bottom, left: coords.left });
-        setCommentPopoverOpen(true);
-      }
-    };
-    editor.on('transaction', check);
-    return () => { editor.off('transaction', check); };
-  }, [editor, commentOps]);
-
-  // Listen for comment click (active comment changed).
-  // Only depend on activeCommentId — not the full activeComment object, which changes
-  // on status/reply updates and would re-open the popover during delegation.
-  useEffect(() => {
-    if (commentOps.activeCommentId && commentOps.activeComment && editor) {
-      setPendingCommentRange(null);
-      setPendingRangeDecoration(editor, null);
-      // Position popover at the comment's start
-      const coords = editor.view.coordsAtPos(commentOps.activeComment.from);
-      setCommentAnchorPos({ top: coords.bottom, left: coords.left });
-      setCommentPopoverOpen(true);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commentOps.activeCommentId, editor]);
-
-  // Scroll-to-comment: triggered by external navigation (e.g. activity panel click)
-  const scrollToCommentId = useCommentStore((s) => s.scrollToCommentId);
-  useEffect(() => {
-    if (!scrollToCommentId || !editor) return;
-    useCommentStore.getState().clearScrollToComment();
-    const docId = commentOps.documentId;
-    if (!docId) return;
-    const comments = useCommentStore.getState().commentsByDocument[docId] ?? [];
-    const comment = comments.find((c) => c.id === scrollToCommentId);
-    if (!comment) return;
-    try {
-      const dom = editor.view.domAtPos(comment.from);
-      const node = dom.node instanceof HTMLElement ? dom.node : dom.node.parentElement;
-      node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    } catch { /* position may be invalid */ }
-    // Delay activation so scroll completes and coordsAtPos returns correct position
-    setTimeout(() => commentOps.setActiveComment(scrollToCommentId), 300);
-  }, [scrollToCommentId, editor, commentOps]);
-
-  // External change detection via editor-store
-  const activeExternalContent = activeTab ? externalChanges[activeTab.filePath] : undefined;
-
-  // Auto-reload clean tabs; show toast with Reload action for dirty tabs
-  useEffect(() => {
-    if (!editor || !activeTab || activeExternalContent === undefined) return;
-
-    if (!activeTab.isDirty) {
-      // Clean tab: auto-reload silently + toast
-      cachedEditorStatesRef.current.delete(activeTab.id);
-      loadRawMarkdownIntoEditor(editor, activeExternalContent);
-      updateTabContent(activeTab.id, activeExternalContent, false);
-      clearExternalChange(activeTab.filePath);
-      toast("File updated from disk", { id: "external-change", description: activeTab.fileName });
-    } else {
-      // Dirty tab: persistent toast with Reload action
-      const filePath = activeTab.filePath;
-      const tabId = activeTab.id;
-      const content = activeExternalContent;
-      toast("File modified externally", {
-        id: `external-change-dirty-${filePath}`,
-        description: activeTab.fileName,
-        duration: 8000,
-        action: {
-          label: "Reload",
-          onClick: () => {
-            const currentEditor = editor;
-            if (!currentEditor) return;
-            cachedEditorStatesRef.current.delete(tabId);
-            loadRawMarkdownIntoEditor(currentEditor, content);
-            useEditorStore.getState().updateTabContent(tabId, content, false);
-            useEditorStore.getState().clearExternalChange(filePath);
-          },
-        },
-        onDismiss: () => {
-          useEditorStore.getState().clearExternalChange(filePath);
-        },
-      });
-    }
-  }, [editor, activeTab?.id, activeTab?.isDirty, activeExternalContent, updateTabContent, clearExternalChange]);
-
-  // Listen for content refreshes from non-editor sources (e.g., actions dashboard task toggle).
-  // These writes go through the backend and update Zustand, but ProseMirror needs an explicit push.
-  useEffect(() => {
-    if (!editor || !activeTab) return;
-    const handler = (e: Event) => {
-      const { filePath, content } = (e as CustomEvent).detail;
-      if (!content) return;
-
-      if (filePath === activeTab.filePath) {
-        // Active tab: push content into ProseMirror immediately
-        loadRawMarkdownIntoEditor(editor, content);
-      } else {
-        // Non-active tab: invalidate cached EditorState so the next tab switch
-        // loads the fresh content from the store instead of the stale cached state.
-        const tab = useEditorStore.getState().tabs.find((t) => t.filePath === filePath);
-        if (tab) {
-          cachedEditorStatesRef.current.delete(tab.id);
-        }
-      }
-    };
-    window.addEventListener('notesage:refresh-editor-content', handler);
-    return () => window.removeEventListener('notesage:refresh-editor-content', handler);
-  }, [editor, activeTab?.filePath]);
-
-  // --- External change review (clean tabs) ---
-  // Select the raw record and derive the array in a memo to avoid new-reference infinite loops
-  const externalChangesRecord = useExternalChangeStore((s) => s.changes);
-  const externalChangesAll = useMemo(() => Object.values(externalChangesRecord), [externalChangesRecord]);
-  const activeExternalChange = activeTab ? externalChangesRecord[activeTab.filePath] : undefined;
-  const [changeListOpen, setChangeListOpen] = useState(false);
-  const lastExternalDecoratedFile = useRef<string | null>(null);
-
-  // When a new external change arrives for the active tab, immediately show
-  // inline diffs (red/green decorations) and a toast with Accept / Review.
-  // On auto-dismiss the change defers to the status bar tracker.
-  //
-  // Uses rAF to ensure the editor content is loaded first — when switching tabs,
-  // this effect may fire BEFORE the tab-switch effect loads the correct content.
-  // Without rAF, mapExternalChangeToPM would diff the previous tab's content
-  // against the new file, producing a giant incorrect diff.
-  useEffect(() => {
-    if (!editor || !activeTab || !activeExternalChange) return;
-    if (activeExternalChange.status !== "pending") return;
-
-    const filePath = activeTab.filePath;
-    const tabId = activeTab.id;
-    const fileName = activeTab.fileName;
-
-    const rafId = requestAnimationFrame(() => {
-      // Re-check: the change may have been resolved during the rAF delay
-      const currentChange = useExternalChangeStore.getState().getChange(filePath);
-      if (!currentChange || currentChange.status !== "pending") return;
-
-      // Compute PM-level diff (this is the single source of truth for display)
-      const pmHunks = mapExternalChangeToPM(editor, currentChange.newContent);
-
-      if (pmHunks.length === 0) {
-        // Content renders identically at PM level — silently accept the new markdown
-        useExternalChangeStore.getState().resolveChange(filePath);
-        updateTabContent(tabId, currentChange.newContent, false);
-        return;
-      }
-
-      // Load decorations and sync store hunks to match PM-level hunks
-      showInlineDiff(editor, pmHunks);
-      lastExternalDecoratedFile.current = filePath;
-      useExternalChangeStore.getState().setHunks(filePath, pmHunks.map(h => ({
-        id: h.id,
-        charFrom: h.from,
-        charTo: h.to,
-        deleteText: h.deleteText,
-        insertText: h.insertText,
-      })));
-
-      // Set to deferred — decorations visible, no banner, tracked in status bar.
-      // This prevents the effect from re-firing and is the default resting state.
-      useExternalChangeStore.getState().setStatus(filePath, "deferred");
-
-      toast("File changed externally", {
-        id: `external-change-${filePath}`,
-        description: fileName,
-        duration: 8000,
-        closeButton: true,
-        cancel: {
-          label: "Accept",
-          onClick: () => {
-            const change = useExternalChangeStore.getState().getChange(filePath);
-            if (!change) return;
-            // Nullify ref and resolve BEFORE dispatching the accept transaction.
-            // acceptAllDiffHunks dispatches synchronously, which fires the sync
-            // effect's onTransaction listener. Without this guard, the sync effect
-            // would also resolve + save, causing a double-save race condition.
-            lastExternalDecoratedFile.current = null;
-            useExternalChangeStore.getState().resolveChange(filePath);
-            acceptAllDiffHunks(editor);
-            const markdown = getMarkdownFromEditor(editor);
-            updateTabContent(tabId, markdown, true);
-            saveFile(filePath, markdown, tabId).catch((err) =>
-              console.error("Failed to save after accepting:", err)
-            );
-          },
-        },
-      });
-    });
-
-    return () => cancelAnimationFrame(rafId);
-  }, [editor, activeTab?.filePath, activeExternalChange?.timestamp]);
-
-  // Load/unload external change decorations when switching tabs or editor changes
-  useEffect(() => {
-    if (!editor || !activeTab) return;
-
-    const change = useExternalChangeStore.getState().getChange(activeTab.filePath);
-
-    // Clear decorations from the previous file
-    if (lastExternalDecoratedFile.current && lastExternalDecoratedFile.current !== activeTab.filePath) {
-      clearInlineDiff(editor);
-      lastExternalDecoratedFile.current = null;
-    }
-
-    // Load decorations for the incoming tab if it has a pending change
-    if (change && change.status !== "pending") {
-      // Use rAF to ensure editor content is loaded first (tab-switch sets content synchronously)
-      requestAnimationFrame(() => {
-        const currentChange = useExternalChangeStore.getState().getChange(activeTab.filePath);
-        if (!currentChange) return;
-        const hunks = mapExternalChangeToPM(editor, currentChange.newContent);
-        if (hunks.length > 0) {
-          showInlineDiff(editor, hunks);
-          lastExternalDecoratedFile.current = activeTab.filePath;
-        }
-      });
-    }
-  }, [editor, activeTab?.id]);
-
-  // Handle accept all for external change review
-  const handleExternalAcceptAll = useCallback(async () => {
-    if (!editor || !activeTab) return;
-    // Nullify ref and resolve BEFORE dispatching — prevents sync effect double-save
-    lastExternalDecoratedFile.current = null;
-    useExternalChangeStore.getState().resolveChange(activeTab.filePath);
-    acceptAllDiffHunks(editor);
-    const markdown = getMarkdownFromEditor(editor);
-    updateTabContent(activeTab.id, markdown, true);
-    try {
-      await saveFile(activeTab.filePath, markdown, activeTab.id);
-    } catch (error) {
-      console.error("Failed to save after accepting external changes:", error);
-    }
-  }, [editor, activeTab, updateTabContent, saveFile]);
-
-  // Handle reject all for external change review
-  const handleExternalRejectAll = useCallback(() => {
-    if (!editor || !activeTab) return;
-    // Nullify ref and resolve BEFORE dispatching — prevents sync effect double-save
-    lastExternalDecoratedFile.current = null;
-    useExternalChangeStore.getState().resolveChange(activeTab.filePath);
-    rejectAllDiffHunks(editor);
-    // Save the old content to disk to overwrite the external change.
-    // Without this, the file watcher would re-detect the mismatch in a loop.
-    const markdown = getMarkdownFromEditor(editor);
-    saveFile(activeTab.filePath, markdown, activeTab.id).catch((err) =>
-      console.error("Failed to save after rejecting external changes:", err)
-    );
-  }, [editor, activeTab, saveFile]);
-
-  // Handle per-hunk accept/reject from the ChangeListPopover.
-  // Only works for the focused file (PM plugin dispatch).
-  const handleExternalAcceptHunk = useCallback((hunkId: string) => {
-    if (!editor || !activeTab) return;
-    acceptDiffHunk(editor, hunkId);
-  }, [editor, activeTab]);
-
-  const handleExternalRejectHunk = useCallback((hunkId: string) => {
-    if (!editor || !activeTab) return;
-    rejectDiffHunk(editor, hunkId);
-  }, [editor, activeTab]);
-
-  // Sync: keep the external-change-store's hunks in sync with the InlineDiff
-  // plugin state. When individual hunks are accepted/rejected via inline controls,
-  // only the plugin state updates — this effect mirrors those changes to the store
-  // so the ChangeListPopover stays accurate.
-  //
-  // When ALL hunks are resolved, resolves the change entry and saves.
-  //
-  // Guards against race conditions:
-  // 1. Only fires if we previously loaded decorations for this specific file
-  //    (prevents premature resolution before decorations exist)
-  // 2. Only fires if the change status is not "pending"
-  //    (prevents resolution during the window before the toast effect runs)
-  useEffect(() => {
-    if (!editor || !activeTab) return;
-    const onTransaction = () => {
-      const filePath = activeTab.filePath;
-      // Guard: only process if we actually loaded decorations for this file
-      if (lastExternalDecoratedFile.current !== filePath) return;
-      const change = useExternalChangeStore.getState().getChange(filePath);
-      if (!change || change.status === "pending") return;
-
-      const pluginHunks = getInlineDiffHunks(editor);
-
-      if (pluginHunks.length === 0) {
-        // All hunks resolved — clean up and save
-        lastExternalDecoratedFile.current = null;
-        useExternalChangeStore.getState().resolveChange(filePath);
-        const markdown = getMarkdownFromEditor(editor);
-        updateTabContent(activeTab.id, markdown, true);
-        saveFile(filePath, markdown, activeTab.id).catch((err) =>
-          console.error("Failed to save after resolving all hunks:", err)
-        );
-      } else if (pluginHunks.length !== change.hunks.length) {
-        // Some hunks resolved — update store to keep popover in sync
-        useExternalChangeStore.getState().setHunks(filePath, pluginHunks.map(h => ({
-          id: h.id,
-          charFrom: h.from,
-          charTo: h.to,
-          deleteText: h.deleteText,
-          insertText: h.insertText,
-        })));
-      }
-    };
-    editor.on('transaction', onTransaction);
-    return () => { editor.off('transaction', onTransaction); };
-  }, [editor, activeTab?.filePath, activeTab?.id, updateTabContent, saveFile]);
+  // External change detection + inline diff review
+  const {
+    externalChangesAll,
+    changeListOpen,
+    setChangeListOpen,
+    handleExternalAcceptAll,
+    handleExternalRejectAll,
+    handleExternalAcceptHunk,
+    handleExternalRejectHunk,
+  } = useFileWatcherIntegration({
+    editor,
+    activeTab: activeTab ?? null,
+    cachedEditorStatesRef,
+    updateTabContent,
+    clearExternalChange,
+    saveFile,
+    externalChanges,
+  });
 
   // Update editor content when switching tabs or when placeholder content finishes loading.
   useEffect(() => {
@@ -996,158 +678,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     }
   }, [editor, activeTab?.viewMode, activeTab?.id]);
 
-  // Handle view mode toggle — sync content between WYSIWYG and Source
-  const handleToggleViewMode = useCallback(() => {
-    if (!activeTab || activeTab.fileType !== "markdown") return;
-    const isCurrentlySource = activeTab.viewMode === "source";
-
-    if (!isCurrentlySource && editor) {
-      // WYSIWYG → Source: serialize current editor state to markdown
-      const markdown = getMarkdownFromEditor(editor);
-      updateTabContent(activeTab.id, markdown, activeTab.isDirty);
-    }
-    // Source → WYSIWYG: content is already in tab store (updated by SourceEditor)
-
-    toggleViewMode(activeTab.id);
-  }, [activeTab, editor, updateTabContent, toggleViewMode]);
-
-  // Handle Cmd+S to save
-  useEffect(() => {
-    const handleSave = async (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-        e.preventDefault();
-        if (activeTab && activeTab.isDirty) {
-          try {
-            await saveFile(activeTab.filePath, activeTab.content, activeTab.id);
-          } catch (error) {
-            toast.error(`Failed to save file: ${error}`);
-          }
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleSave);
-    return () => window.removeEventListener("keydown", handleSave);
-  }, [activeTab, saveFile]);
-
-  // Handle Cmd+/ to toggle view mode (Shift+7 = / on Nordic keyboards)
-  useEffect(() => {
-    const handleToggle = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return;
-      const isSlash =
-        e.key === "/" ||                              // US layout: Cmd+/
-        e.key === "?" ||                              // US layout: Cmd+Shift+/
-        e.code === "Slash" ||                         // US layout by code
-        (e.shiftKey && e.code === "Digit7");          // Nordic layout: / = Shift+7
-      if (isSlash) {
-        e.preventDefault();
-        handleToggleViewMode();
-      }
-    };
-    window.addEventListener("keydown", handleToggle);
-    return () => window.removeEventListener("keydown", handleToggle);
-  }, [handleToggleViewMode]);
-
-  // Find in document — listen for custom events from App.tsx (WYSIWYG mode only; source mode handled by SourceModeEditor)
-  useEffect(() => {
-    const handleFindOpen = () => {
-      if (!activeTab || activeTab.viewMode === "source") return;
-
-      if (activeTab.fileType === "markdown" && editor) {
-        const { from, to } = editor.state.selection;
-        const selectedText = from !== to ? editor.state.doc.textBetween(from, to) : "";
-        setFindInitialQuery(selectedText);
-        setFindBarOpen(true);
-      }
-    };
-
-    const handleFindReplaceOpen = () => {
-      if (!activeTab || activeTab.viewMode === "source") return;
-
-      if (activeTab.fileType === "markdown" && editor) {
-        const { from, to } = editor.state.selection;
-        const selectedText = from !== to ? editor.state.doc.textBetween(from, to) : "";
-        setFindInitialQuery(selectedText);
-        setFindReplaceExpanded(true);
-        setFindBarOpen(true);
-      }
-    };
-
-    window.addEventListener("notesage:find-open", handleFindOpen);
-    window.addEventListener("notesage:find-replace-open", handleFindReplaceOpen);
-    return () => {
-      window.removeEventListener("notesage:find-open", handleFindOpen);
-      window.removeEventListener("notesage:find-replace-open", handleFindReplaceOpen);
-    };
-  }, [activeTab, editor]);
-
-  // Clear find state on tab switch
-  const prevFindTabId = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (activeTab?.id !== prevFindTabId.current) {
-      prevFindTabId.current = activeTab?.id;
-      if (findBarOpen) {
-        if (editor) clearSearch(editor);
-        setFindBarOpen(false);
-        setFindMatchCount(0);
-        setFindCurrentMatch(-1);
-        setFindInitialQuery("");
-        setFindReplaceExpanded(false);
-      }
-    }
-  }, [activeTab?.id, findBarOpen, editor]);
-
-  // FindBar callbacks
-  const handleFindSearch = useCallback((query: string) => {
-    if (!editor) return;
-    setSearchQuery(editor, query);
-    const state = getSearchState(editor);
-    setFindMatchCount(state?.matchCount ?? 0);
-    setFindCurrentMatch(state?.currentIndex ?? -1);
-  }, [editor]);
-
-  const handleFindNext = useCallback(() => {
-    if (!editor) return;
-    searchNext(editor);
-    const state = getSearchState(editor);
-    setFindCurrentMatch(state?.currentIndex ?? -1);
-  }, [editor]);
-
-  const handleFindPrevious = useCallback(() => {
-    if (!editor) return;
-    searchPrevious(editor);
-    const state = getSearchState(editor);
-    setFindCurrentMatch(state?.currentIndex ?? -1);
-  }, [editor]);
-
-  const handleFindReplace = useCallback((replacement: string) => {
-    if (!editor) return;
-    replaceCurrentMatch(editor, replacement);
-    // State updates after transaction via rAF
-    requestAnimationFrame(() => {
-      const state = getSearchState(editor);
-      setFindMatchCount(state?.matchCount ?? 0);
-      setFindCurrentMatch(state?.currentIndex ?? -1);
-    });
-  }, [editor]);
-
-  const handleFindReplaceAll = useCallback((replacement: string) => {
-    if (!editor) return;
-    replaceAllMatches(editor, replacement);
-    requestAnimationFrame(() => {
-      const state = getSearchState(editor);
-      setFindMatchCount(state?.matchCount ?? 0);
-      setFindCurrentMatch(state?.currentIndex ?? -1);
-    });
-  }, [editor]);
-
-  const handleFindClose = useCallback(() => {
-    if (editor) clearSearch(editor);
-    setFindBarOpen(false);
-    setFindMatchCount(0);
-    setFindCurrentMatch(-1);
-    setFindInitialQuery("");
-  }, [editor]);
 
   // Auto-save on blur (when switching tabs or focus changes)
   useEffect(() => {
@@ -1337,62 +867,14 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
   // Route non-markdown file types to their viewers
   if (activeTab && activeTab.fileType !== "markdown") {
-    let viewer: React.ReactNode = null;
-    switch (activeTab.fileType) {
-      case "image":
-        viewer = <ImageViewer filePath={activeTab.filePath} />;
-        break;
-      case "pdf":
-        viewer = <PdfViewer filePath={activeTab.filePath} fileName={activeTab.fileName} />;
-        break;
-      case "docx":
-        viewer = (
-          <DocxViewer
-            filePath={activeTab.filePath}
-            fileName={activeTab.fileName}
-            onConvertToMarkdown={async (_html, name) => {
-              try {
-                const { docxToMarkdown } = await import("@/lib/import-utils");
-                const { getBinaryData } = await import("@/lib/binary-cache");
-                const data = getBinaryData(activeTab.filePath);
-                if (!data) { toast.error("No DOCX data available"); return; }
-                const md = await docxToMarkdown(data);
-                const mdName = name.replace(/\.docx$/i, ".md");
-                const dir = activeTab.filePath.slice(0, activeTab.filePath.lastIndexOf("/"));
-                const mdPath = `${dir}/${mdName}`;
-                const { tauriApi } = await import("@/lib/tauri");
-                await tauriApi.writeFile(mdPath, md);
-                onOpenFile?.(mdPath, mdName);
-                toast.success(`Saved ${mdName}`);
-              } catch (err) {
-                toast.error(`Import failed: ${err}`);
-              }
-            }}
-          />
-        );
-        break;
-      case "epub":
-        viewer = <EpubViewer filePath={activeTab.filePath} fileName={activeTab.fileName} />;
-        break;
-      case "other":
-        viewer = <PlainTextViewer content={activeTab.content} fileName={activeTab.fileName} />;
-        break;
-    }
     return (
-      <div className="h-full flex flex-col overflow-hidden">
-        <div className="flex-1 min-h-0 overflow-hidden">
-          <Suspense fallback={<div className="flex items-center justify-center h-full text-muted-foreground text-sm">Loading viewer...</div>}>
-            {viewer}
-          </Suspense>
-        </div>
-        {!focusMode && (
-          <StatusBar
-            editor={null}
-            onShortcutsOpen={onShortcutsOpen}
-            onOpenActions={onOpenActions}
-          />
-        )}
-      </div>
+      <EditorViewerContainer
+        activeTab={activeTab}
+        focusMode={!!focusMode}
+        onOpenFile={onOpenFile}
+        onShortcutsOpen={onShortcutsOpen}
+        onOpenActions={onOpenActions}
+      />
     );
   }
 

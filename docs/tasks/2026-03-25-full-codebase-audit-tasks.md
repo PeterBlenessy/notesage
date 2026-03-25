@@ -226,7 +226,7 @@
 
 ## Decomposition (Large refactors)
 
-### #31 — Decompose Editor.tsx (1,822 lines → \~600 lines)
+### #31 — Decompose Editor.tsx (1,822 lines → \~600 lines) ✅
 
 **Description:** Extract four modules from `Editor.tsx`:
 
