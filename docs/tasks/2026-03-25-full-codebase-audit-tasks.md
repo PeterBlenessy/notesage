@@ -255,17 +255,17 @@
 
 **Complexity:** M **Category:** frontend **Dependencies:** None **Files:** `src/components/settings/ConnectionsSettings.tsx`, `src/components/settings/ConnectAgent.tsx` (new), `src/components/settings/ConnectCopilotLsp.tsx` (new)
 
-### #33 — Decompose useAIOperations.ts into per-provider hooks
+### #33 — Decompose useAIOperations.ts into focused modules ✅
 
-**Description:** Extract the \~50-line provider routing conditional into per-provider hooks:
+**Description:** Decompose `useAIOperations.ts` (505 lines) into focused modules following the code's natural boundaries. The original task proposed per-provider hooks (Anthropic/OpenAI/Ollama), but all direct API providers share a single streaming path through `ai_chat_stream` — splitting by provider would have duplicated code. Instead, extracted by concern:
 
-| Extract to | Provider |
+| Extract to | Responsibility |
 | --- | --- |
-| `useAnthropicChat.ts` | Anthropic streaming |
-| `useOpenAiChat.ts` | OpenAI streaming |
-| `useOllamaChat.ts` | Ollama streaming |
+| `src/lib/ai/credentials.ts` | Pure credential resolution functions (`resolveConnectionCredentials`, `resolveWithConfig`) |
+| `src/hooks/useAIContext.ts` | Agent body loading, goals, project context, skill descriptions, system message composition |
+| `src/hooks/useDirectApiChat.ts` | Direct API streaming (sendChatMessage + generateText for non-ACP connections) |
 
-Leave `useAIOperations.ts` as a router (\~150 lines) that delegates based on connection type.
+`useAIOperations.ts` is now a ~130-line router that delegates to `useAIContext`, `useDirectApiChat`, and `useAcpLifecycle` based on connection type. Re-exports preserved for backward compatibility.
 
 **Complexity:** L **Category:** frontend **Dependencies:** None **Files:** `src/hooks/useAIOperations.ts` + 3 new files
 
