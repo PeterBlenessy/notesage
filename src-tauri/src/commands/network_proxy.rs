@@ -198,9 +198,13 @@ impl NetworkProxyState {
                 let _ = instance.shutdown_tx.send(true);
                 log::info!(target: "notesage::network_proxy", "Stopped proxy {} on exit", id);
             }
+        } else {
+            log::warn!(target: "notesage::network_proxy", "Could not acquire instances lock during shutdown — proxy processes may not be cleaned up");
         }
         if let Ok(mut shared) = self.shared_states.try_lock() {
             shared.clear();
+        } else {
+            log::warn!(target: "notesage::network_proxy", "Could not acquire shared_states lock during shutdown");
         }
     }
 }

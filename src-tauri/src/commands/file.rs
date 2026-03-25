@@ -107,10 +107,10 @@ pub async fn list_files_shallow(path: String) -> Result<Vec<FileEntry>, String> 
     }
 
     let mut entries = Vec::new();
-    let read_dir = fs::read_dir(dir_path).map_err(|e| e.to_string())?;
+    let read_dir = fs::read_dir(dir_path).map_err(|e| format!("Failed to read directory {}: {e}", path))?;
 
     for entry in read_dir {
-        let entry = entry.map_err(|e| e.to_string())?;
+        let entry = entry.map_err(|e| format!("Failed to read entry in {}: {e}", path))?;
         let entry_path = entry.path();
         let file_name = entry.file_name().to_string_lossy().to_string();
 
@@ -189,12 +189,12 @@ pub async fn copy_file(source: String, destination: String) -> Result<(), String
     // Ensure destination parent directory exists
     if let Some(parent) = Path::new(&destination).parent() {
         if !parent.exists() {
-            fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {}", e))?;
+            fs::create_dir_all(parent).map_err(|e| format!("Failed to create parent directory {}: {e}", parent.display()))?;
         }
     }
     fs::copy(&source, &destination)
         .map(|_| ())
-        .map_err(|e| format!("Failed to copy file: {}", e))
+        .map_err(|e| format!("Failed to copy file {} → {}: {e}", source, destination))
 }
 
 #[tauri::command]
@@ -210,7 +210,7 @@ pub async fn copy_directory(source: String, destination: String) -> Result<(), S
         return Err(format!("Destination already exists: {}", destination));
     }
     copy_dir_recursive(src, Path::new(&destination))
-        .map_err(|e| format!("Failed to copy directory: {}", e))
+        .map_err(|e| format!("Failed to copy directory {} → {}: {e}", source, destination))
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -239,5 +239,5 @@ pub async fn get_home_dir() -> Result<String, String> {
 pub async fn reveal_in_finder(app: tauri::AppHandle, path: String) -> Result<(), String> {
     app.opener()
         .reveal_item_in_dir(&path)
-        .map_err(|e| e.to_string())
+        .map_err(|e| format!("Failed to reveal {}: {e}", path))
 }

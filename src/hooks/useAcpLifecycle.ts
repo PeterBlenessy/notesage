@@ -552,6 +552,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         });
 
         cleanupRef.current = () => {
+          // Null the ref first to prevent re-entrant calls
+          cleanupRef.current = null;
           unlisten();
           unlistenPermission();
           // Deny any pending permission requests for this agent and clear from store
@@ -568,7 +570,6 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           usePermissionStore.getState().clearRequestsForInstance(instanceId);
           setLoading(false);
           setActiveTool(null);
-          cleanupRef.current = null;
         };
 
         try {
@@ -710,6 +711,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             });
 
             cleanupRef.current = () => {
+              // Null the ref first to prevent re-entrant calls
+              cleanupRef.current = null;
               unlisten();
               unlistenPermission();
               const pendingRequests = usePermissionStore.getState().requests.filter((r) => r.instanceId === instanceId);
@@ -719,7 +722,6 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
               usePermissionStore.getState().clearRequestsForInstance(instanceId);
               setLoading(false);
               setActiveTool(null);
-              cleanupRef.current = null;
             };
 
             const effectiveSystemMessage = buildAcpSystemMessage

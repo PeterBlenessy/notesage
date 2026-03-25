@@ -285,15 +285,25 @@ export function useCopilotCompletion(editor: Editor | null) {
   useEffect(() => {
     if (!connection) return;
 
-    const unlisten = listen<{ message: string; kind: string }>('copilot-status-changed', (event) => {
+    let mounted = true;
+    let unlistenFn: (() => void) | null = null;
+
+    listen<{ message: string; kind: string }>('copilot-status-changed', (event) => {
       const { kind, message } = event.payload;
       if (kind === 'Error') {
         log.error('copilot', 'Status error', { kind, message });
       }
+    }).then((fn) => {
+      if (mounted) {
+        unlistenFn = fn;
+      } else {
+        fn();
+      }
     });
 
     return () => {
-      unlisten.then((fn) => fn());
+      mounted = false;
+      unlistenFn?.();
     };
   }, [connection?.id]);
 }

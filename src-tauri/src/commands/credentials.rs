@@ -15,9 +15,9 @@ pub fn get_credential_internal(connection_id: &str) -> Result<Option<String>, St
     let service = format!("{SERVICE_PREFIX}:{connection_id}");
     let entry = make_entry(&service)?;
     match entry.get_password() {
-        Ok(_) => {
+        Ok(password) => {
             log::debug!(target: "notesage::credentials", "Retrieved credential from keychain for connection={connection_id}");
-            Ok(Some(entry.get_password().unwrap()))
+            Ok(Some(password))
         }
         Err(keyring::Error::NoEntry) => {
             log::debug!(target: "notesage::credentials", "No keychain entry found for connection={connection_id}");

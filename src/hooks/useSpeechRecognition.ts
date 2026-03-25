@@ -23,11 +23,14 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
 
   const recognitionRef = useRef<unknown>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
+  const mountedRef = useRef(true);
   const { speechLanguage, defaultModel, startDictating: storeStartDictating, stopDictating: storeStopDictating } = useRecordingStore();
 
   // Cleanup on unmount
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       if (unlistenRef.current) {
         unlistenRef.current();
         unlistenRef.current = null;
@@ -56,8 +59,15 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
         log.info('transcription', `Auto-downloading '${modelToDownload}' Whisper model for dictation`);
         toast.info('Downloading speech recognition model...');
         await tauriApi.downloadWhisperModel(modelToDownload);
+        if (!mountedRef.current) return;
         toast.success('Speech model ready');
         log.info('transcription', `Model '${modelToDownload}' download complete`);
+      }
+
+      // Clean up any previous listener before setting up a new one
+      if (unlistenRef.current) {
+        unlistenRef.current();
+        unlistenRef.current = null;
       }
 
       const unlisten = await listen<{ text: string; is_final: boolean; error?: string }>(
@@ -79,9 +89,14 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
           }
         }
       );
+      if (!mountedRef.current) {
+        unlisten();
+        return;
+      }
       unlistenRef.current = unlisten;
 
       await tauriApi.startDictation(speechLanguage, defaultModel);
+      if (!mountedRef.current) return;
       log.info('transcription', 'Whisper dictation started successfully', { model: defaultModel });
       setIsDictating(true);
       storeStartDictating();

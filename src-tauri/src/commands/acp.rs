@@ -405,10 +405,16 @@ fn run_agent_thread(
         std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
     let captured_pid_inner = std::sync::Arc::clone(&captured_pid);
 
-    let rt = tokio::runtime::Builder::new_current_thread()
+    let rt = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .expect("Failed to create tokio runtime for ACP agent");
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            let _ = init_tx.send(Err(format!("Failed to create tokio runtime: {e}")));
+            return;
+        }
+    };
 
     let local = tokio::task::LocalSet::new();
 

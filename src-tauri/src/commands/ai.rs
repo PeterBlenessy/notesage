@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 use super::constants;
 use super::credentials::get_credential_internal;
+
+/// Shared HTTP client for connection pooling across all AI provider requests.
+static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 
 /// Normalize a base URL: strip trailing slashes and `/v1` suffix to prevent
 /// double-path issues like `https://api.example.com//v1/models` or `.../v1/v1/chat/completions`.
@@ -138,7 +142,7 @@ pub async fn list_models(
     connection_id: Option<String>,
     base_url: Option<String>,
 ) -> Result<Vec<String>, String> {
-    let client = reqwest::Client::new();
+    let client = &*HTTP_CLIENT;
     let resolved_key = resolve_api_key(&api_key, &connection_id)?;
 
     match provider.as_str() {
@@ -195,14 +199,15 @@ pub async fn list_models(
                 .map_err(|e| format!("Failed to fetch models: {}", e))?;
 
             if !response.status().is_success() {
+                let status = response.status();
                 let error_text = response.text().await.unwrap_or_default();
-                return Err(format!("API error: {}", error_text));
+                return Err(format!("API error ({}): {} — {}", url, status, error_text));
             }
 
             let json: serde_json::Value = response
                 .json()
                 .await
-                .map_err(|e| format!("Failed to parse models response: {}", e))?;
+                .map_err(|e| format!("Failed to parse models response from {}: {}", url, e))?;
 
             let mut models: Vec<String> = json["data"]
                 .as_array()
@@ -225,17 +230,18 @@ pub async fn list_models(
                 .get(&url)
                 .send()
                 .await
-                .map_err(|e| format!("Failed to fetch Ollama models: {}", e))?;
+                .map_err(|e| format!("Failed to fetch Ollama models from {}: {}", url, e))?;
 
             if !response.status().is_success() {
+                let status = response.status();
                 let error_text = response.text().await.unwrap_or_default();
-                return Err(format!("Ollama API error: {}", error_text));
+                return Err(format!("Ollama API error ({}): {} — {}", url, status, error_text));
             }
 
             let json: serde_json::Value = response
                 .json()
                 .await
-                .map_err(|e| format!("Failed to parse Ollama models response: {}", e))?;
+                .map_err(|e| format!("Failed to parse Ollama models response from {}: {}", url, e))?;
 
             let models: Vec<String> = json["models"]
                 .as_array()
@@ -265,7 +271,7 @@ async fn anthropic_generate(request: &AIRequest) -> Result<String, String> {
         request.base_url.as_deref().unwrap_or("https://api.anthropic.com")
     );
 
-    let client = reqwest::Client::new();
+    let client = &*HTTP_CLIENT;
 
     let mut body = serde_json::json!({
         "model": model,
@@ -324,7 +330,7 @@ async fn anthropic_chat(
         base_url.as_deref().unwrap_or("https://api.anthropic.com")
     );
 
-    let client = reqwest::Client::new();
+    let client = &*HTTP_CLIENT;
 
     // Extract system message for Anthropic's top-level "system" parameter
     let system_content: Option<String> = messages
@@ -395,7 +401,7 @@ async fn openai_generate(request: &AIRequest) -> Result<String, String> {
         normalize_base_url(request.base_url.as_deref().unwrap_or("https://api.openai.com"))
     );
 
-    let client = reqwest::Client::new();
+    let client = &*HTTP_CLIENT;
 
     let mut body = serde_json::json!({
         "model": model,
@@ -453,7 +459,7 @@ async fn openai_chat(
         normalize_base_url(base_url.as_deref().unwrap_or("https://api.openai.com"))
     );
 
-    let client = reqwest::Client::new();
+    let client = &*HTTP_CLIENT;
 
     // Extract system message as top-level `instructions`
     let instructions: Option<String> = messages
@@ -686,7 +692,7 @@ async fn openai_compatible_generate(request: &AIRequest) -> Result<String, Strin
     let base_url = request.base_url.as_ref().ok_or("Base URL is required for OpenAI-Compatible provider")?;
     let model = request.model.as_deref().ok_or("Model is required for OpenAI-Compatible provider")?;
 
-    let client = reqwest::Client::new();
+    let client = &*HTTP_CLIENT;
 
     let mut body = serde_json::json!({
         "model": model,
@@ -710,21 +716,22 @@ async fn openai_compatible_generate(request: &AIRequest) -> Result<String, Strin
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("API request failed: {}", e))?;
+        .map_err(|e| format!("OpenAI-compatible request to {} failed: {}", base_url, e))?;
 
     if !response.status().is_success() {
+        let status = response.status();
         let error_text = response.text().await.unwrap_or_default();
-        return Err(format!("API error: {}", error_text));
+        return Err(format!("OpenAI-compatible API error ({} {}): {}", base_url, status, error_text));
     }
 
     let json: serde_json::Value = response
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse response from {}: {}", base_url, e))?;
 
     let content = json["choices"][0]["message"]["content"]
         .as_str()
-        .ok_or("Invalid response format")?
+        .ok_or_else(|| format!("Invalid response format from {} — expected choices[0].message.content", base_url))?
         .to_string();
 
     Ok(content)
@@ -858,7 +865,7 @@ async fn openai_compatible_chat(
     let base_url = base_url.as_ref().ok_or("Base URL is required for OpenAI-Compatible provider")?;
     let model = model.as_deref().ok_or("Model is required for OpenAI-Compatible provider")?;
 
-    let client = reqwest::Client::new();
+    let client = &*HTTP_CLIENT;
 
     let api_messages: Vec<serde_json::Value> = messages
         .iter()
@@ -889,21 +896,22 @@ async fn openai_compatible_chat(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("API request failed: {}", e))?;
+        .map_err(|e| format!("OpenAI-compatible chat request to {} failed: {}", base_url, e))?;
 
     if !response.status().is_success() {
+        let status = response.status();
         let error_text = response.text().await.unwrap_or_default();
-        return Err(format!("API error: {}", error_text));
+        return Err(format!("OpenAI-compatible API error ({} {}): {}", base_url, status, error_text));
     }
 
     let json: serde_json::Value = response
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| format!("Failed to parse chat response from {}: {}", base_url, e))?;
 
     let content = json["choices"][0]["message"]["content"]
         .as_str()
-        .ok_or("Invalid response format")?
+        .ok_or_else(|| format!("Invalid chat response format from {} — expected choices[0].message.content", base_url))?
         .to_string();
 
     Ok(content)

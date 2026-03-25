@@ -19,6 +19,7 @@ interface SandboxViolationPayload {
 export function useSandboxViolations() {
   useEffect(() => {
     let unlisten: (() => void) | null = null;
+    let mounted = true;
 
     listen<SandboxViolationPayload>('sandbox-violation', (event) => {
       const v = event.payload;
@@ -44,8 +45,18 @@ export function useSandboxViolations() {
         status: 'error',
         timestamp: Date.now(),
       });
-    }).then((fn) => { unlisten = fn; });
+    }).then((fn) => {
+      if (mounted) {
+        unlisten = fn;
+      } else {
+        // Already unmounted — clean up immediately
+        fn();
+      }
+    });
 
-    return () => { unlisten?.(); };
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
   }, []);
 }

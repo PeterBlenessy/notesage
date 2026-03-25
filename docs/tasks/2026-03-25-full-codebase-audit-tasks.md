@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-25 |
-| **Status** | Not started |
+| **Status** | In progress |
 | **Audit** | [2026-03-25-full-codebase](../audit/2026-03-25-full-codebase.md) |
 | **Total** | 38 tasks (covering all 43 findings): 14S, 15M, 9L |
 | **Suggested order** | Rust backend (#1-#5) → Memory leaks (#6-#11) → Async fixes (#12-#24) → Render perf (#25-#30) → Decomposition (#31-#38) |
@@ -23,41 +23,31 @@
 
 ## Rust Backend (LOW risk, quick wins)
 
-### #1 — Fix double keychain read in credentials.rs
-
-- [ ] Done
+### #1 — Fix double keychain read in [credentials.rs](http://credentials.rs) ✅ 
 
 **Description:** `get_credential` calls `entry.get_password()` twice — once to check, then with `.unwrap()`. Replace with single call using `match Ok(password) => Ok(Some(password))`.
 
 **Complexity:** S **Category:** backend **Dependencies:** None **Files:** `src-tauri/src/commands/credentials.rs`
 
-### #2 — Replace panic with error return in acp.rs tokio runtime creation
-
-- [ ] Done
+### #2 — Replace panic with error return in acp.rs tokio runtime creation ✅
 
 **Description:** Line 411 uses `.expect()` which panics. Replace with `map_err(|e| e.to_string())?` to return a proper error to the frontend.
 
 **Complexity:** S **Category:** backend **Dependencies:** None **Files:** `src-tauri/src/commands/acp.rs`
 
-### #3 — Add warn logging for silent try_lock failures in network_proxy.rs
-
-- [ ] Done
+### #3 — Add warn logging for silent try_lock failures in network_proxy.rs ✅
 
 **Description:** `try_lock()` failures during shutdown are silently ignored — proxy processes may not clean up. Add `log::warn!` on else branches (lines 195-205).
 
 **Complexity:** S **Category:** backend **Dependencies:** None **Files:** `src-tauri/src/commands/network_proxy.rs`
 
-### #4 — Reuse reqwest::Client instead of creating per request
-
-- [ ] Done
+### #4 — Reuse reqwest::Client instead of creating per request ✅
 
 **Description:** `ai.rs` line 133 creates `reqwest::Client::new()` per request — no connection pooling. Store a shared `Client` in Tauri managed state or as a `once_cell::sync::Lazy` static. Low impact for UI app but easy to fix.
 
 **Complexity:** S **Category:** backend **Dependencies:** None **Files:** `src-tauri/src/commands/ai.rs`
 
-### #5 — Audit string-typed error context loss
-
-- [ ] Done
+### #5 — Audit string-typed error context loss ✅
 
 **Description:** All Tauri commands use `Result<T, String>` which is acceptable for IPC, but some error paths lose diagnostic detail during `.to_string()` conversion. Audit the worst offenders and add context where errors are most opaque (e.g., include file paths in IO errors, include HTTP status in network errors).
 
@@ -67,49 +57,37 @@
 
 ## Memory Leaks (HIGH priority)
 
-### #6 — Fix useSandboxViolations listener leak on early unmount
-
-- [ ] Done
+### #6 — Fix useSandboxViolations listener leak on early unmount ✅
 
 **Description:** The `listen()` promise may resolve after unmount, leaving the listener orphaned. Add a `mounted` flag pattern: if already unmounted when the promise resolves, call the unlisten function immediately.
 
 **Complexity:** S **Category:** frontend **Dependencies:** None **Files:** `src/hooks/useSandboxViolations.ts`
 
-### #7 — Fix useAcpLifecycle double cleanup guard
-
-- [ ] Done
+### #7 — Fix useAcpLifecycle double cleanup guard ✅
 
 **Description:** The `cleanupRef` callback chain can be called multiple times if unmount races with `acpCancelChat`. Add a null-guard: set `cleanupRef.current = null` at the start of cleanup to prevent re-entry.
 
 **Complexity:** S **Category:** frontend **Dependencies:** None **Files:** `src/hooks/useAcpLifecycle.ts`
 
-### #8 — Fix useSpeechRecognition listener overwrite leak
-
-- [ ] Done
+### #8 — Fix useSpeechRecognition listener overwrite leak ✅
 
 **Description:** When `startWhisperDictation` is called multiple times, old `unlistenRef.current` is overwritten without cleanup. Call `unlistenRef.current()` and null it before setting up a new listener.
 
 **Complexity:** S **Category:** frontend **Dependencies:** None **Files:** `src/hooks/useSpeechRecognition.ts`
 
-### #9 — Verify useMcpDiscovery listener cleanup
-
-- [ ] Done
+### #9 — Verify useMcpDiscovery listener cleanup ✅
 
 **Description:** Audit `useMcpOperations.ts` lines 139-150 to confirm the `mcp-server-status` Tauri event listener is properly cleaned up on unmount. Apply the same `mounted` flag pattern if needed.
 
 **Complexity:** S **Category:** frontend **Dependencies:** None **Files:** `src/hooks/useMcpOperations.ts`
 
-### #10 — Fix useSpeechRecognition unmount guard for Whisper fallback
-
-- [ ] Done
+### #10 — Fix useSpeechRecognition unmount guard for Whisper fallback ✅
 
 **Description:** When Web Speech API fails, `startWhisperDictation()` is called async without unmount protection. Add a `mountedRef` that is checked before any state updates after the async call resolves.
 
 **Complexity:** S **Category:** frontend **Dependencies:** #8 (same file) **Files:** `src/hooks/useSpeechRecognition.ts`
 
-### #11 — Audit useCopilotCompletion timeout cleanup
-
-- [ ] Done
+### #11 — Audit useCopilotCompletion timeout cleanup ✅
 
 **Description:** Tracked open document timeouts are cleaned up, but other places in the hook may have stale timers. Full review of all `setTimeout`/`setInterval` usage in `useCopilotCompletion.ts` to confirm all are cleared on unmount.
 

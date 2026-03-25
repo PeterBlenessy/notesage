@@ -138,17 +138,27 @@ export function useMcpDiscovery() {
 
   // Listen for server status events from backend
   useEffect(() => {
-    const unlisten = listen<McpStatusEvent>('mcp-server-status', (event) => {
+    let mounted = true;
+    let unlistenFn: (() => void) | null = null;
+
+    listen<McpStatusEvent>('mcp-server-status', (event) => {
       const { serverId, status, error, tools } = event.payload;
       const store = useMcpStore.getState();
       store.setServerStatus(serverId, status, error);
       if (tools) {
         store.setServerTools(serverId, tools);
       }
+    }).then((fn) => {
+      if (mounted) {
+        unlistenFn = fn;
+      } else {
+        fn();
+      }
     });
 
     return () => {
-      unlisten.then((fn) => fn());
+      mounted = false;
+      unlistenFn?.();
     };
   }, []);
 }
