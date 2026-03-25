@@ -325,16 +325,15 @@ Extracted into `json_rpc.rs` (501 → 654 lines):
 
 **Complexity:** L **Category:** backend **Dependencies:** None **Files:** `src-tauri/src/commands/copilot_lsp.rs`, `src-tauri/src/commands/mcp.rs`, `src-tauri/src/commands/json_rpc.rs`
 
-### #38 — Decompose acp.rs (1,481 lines)
+### #38 — Decompose acp.rs (1,481 → 1,016 lines) ✅
 
-**Description:** Auth, binary resolution, permissions, and session management are all in one file. Extract:
+**Description:** Extracted 2 focused modules from `acp.rs` (1,481 → 1,016 lines). The original task proposed auth/binary/permissions as 3 modules, but auth and permissions are deeply interleaved with the agent thread command loop — extracting them would have created awkward cross-module dependencies. Instead, extracted by natural code boundaries:
 
 | Extract to | Responsibility |
 | --- | --- |
-| `acp_auth.rs` | Authentication methods, credential handling |
-| `acp_binary.rs` | Binary resolution, version checking, sidecar detection |
-| `acp_permissions.rs` | Permission request handling, approval flow |
+| `acp_binary.rs` (299 lines) | Binary resolution (`resolve_agent_binary`, `resolve_cli_binary`), auth checking (`check_agent_auth`), `acp_agent_check_availability` command, `AgentAvailability` type |
+| `acp_client.rs` (201 lines) | ACP Client trait implementation (`NotesageClient`), permission request/session notification forwarding, `JsonLineFilter` stdout filter, `InitInfo`/`PermissionReply` internal types |
 
-Leave `acp.rs` focused on session lifecycle (spawn, prompt, cleanup).
+`acp.rs` now focused on: types, managed state, agent command channel, agent thread lifecycle (`run_agent_thread`), and all session Tauri commands (spawn, authenticate, exists, stop, session new/load/prompt/cancel, permission respond).
 
-**Complexity:** L **Category:** backend **Dependencies:** #2 (fix panic first) **Files:** `src-tauri/src/commands/acp.rs` + 3 new modules
+**Complexity:** L **Category:** backend **Dependencies:** #2 (fix panic first) **Files:** `src-tauri/src/commands/acp.rs` + 2 new modules
