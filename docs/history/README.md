@@ -82,3 +82,4 @@ Chronological log of major implementation milestones and changes.
 | 076 | [Release v0.22.10](076-release-v0.22.10.md) | Fix open actions comment navigation, orphaned comment cleanup |
 | 077 | [Release v0.23.0](077-release-v0.23.0.md) | Secure credential storage (OS keychain), multiple OpenAI-compatible providers, production fixes |
 | 078 | [Release v0.23.1](078-release-v0.23.1.md) | Fix OpenAI-compatible heartbeat, API key visibility, action-store build error |
+| 079 | [Release v0.23.2](079-release-v0.23.2.md) | Full codebase audit: 38 tasks fixing memory leaks, async races, render perf, decomposition |
