@@ -416,7 +416,7 @@ pub async fn openai_chat_stream(
     let model = model.as_deref().unwrap_or(constants::DEFAULT_MODEL_OPENAI);
     let api_url = format!(
         "{}/v1/responses",
-        base_url.as_deref().unwrap_or("https://api.openai.com")
+        super::ai::normalize_base_url(base_url.as_deref().unwrap_or("https://api.openai.com"))
     );
 
     let client = reqwest::Client::new();
@@ -810,13 +810,8 @@ pub async fn openai_compatible_chat_stream(
         body["max_tokens"] = serde_json::json!(max);
     }
 
-    // Normalize base_url: strip trailing /v1 or /v1/ to prevent double /v1/v1/...
-    let normalized_base = base_url
-        .trim_end_matches('/')
-        .trim_end_matches("/v1");
-
     let response = client
-        .post(format!("{}/v1/chat/completions", normalized_base))
+        .post(format!("{}/v1/chat/completions", super::ai::normalize_base_url(base_url)))
         .header("Authorization", format!("Bearer {}", api_key))
         .header("content-type", "application/json")
         .json(&body)

@@ -2,6 +2,14 @@ use serde::{Deserialize, Serialize};
 use super::constants;
 use super::credentials::get_credential_internal;
 
+/// Normalize a base URL: strip trailing slashes and `/v1` suffix to prevent
+/// double-path issues like `https://api.example.com//v1/models` or `.../v1/v1/chat/completions`.
+pub fn normalize_base_url(url: &str) -> &str {
+    url.trim_end_matches('/')
+        .trim_end_matches("/v1")
+        .trim_end_matches('/')
+}
+
 /// Resolve an API key: prefer explicit `api_key`, fall back to keychain via `connection_id`.
 fn resolve_api_key(api_key: &Option<String>, connection_id: &Option<String>) -> Result<Option<String>, String> {
     if let Some(key) = api_key.as_ref() {
@@ -138,7 +146,7 @@ pub async fn list_models(
             let api_key = resolved_key.as_ref().ok_or("Anthropic API key is required")?;
             let url = format!(
                 "{}/v1/models",
-                base_url.as_deref().unwrap_or("https://api.anthropic.com")
+                normalize_base_url(base_url.as_deref().unwrap_or("https://api.anthropic.com"))
             );
 
             let response = client
@@ -177,7 +185,7 @@ pub async fn list_models(
             } else {
                 base_url.as_deref().unwrap_or("https://api.openai.com")
             };
-            let url = format!("{}/v1/models", effective_base);
+            let url = format!("{}/v1/models", normalize_base_url(effective_base));
 
             let response = client
                 .get(&url)
@@ -384,7 +392,7 @@ async fn openai_generate(request: &AIRequest) -> Result<String, String> {
     let model = request.model.as_deref().unwrap_or(constants::DEFAULT_MODEL_OPENAI);
     let api_url = format!(
         "{}/v1/responses",
-        request.base_url.as_deref().unwrap_or("https://api.openai.com")
+        normalize_base_url(request.base_url.as_deref().unwrap_or("https://api.openai.com"))
     );
 
     let client = reqwest::Client::new();
@@ -442,7 +450,7 @@ async fn openai_chat(
     let model = model.as_deref().unwrap_or(constants::DEFAULT_MODEL_OPENAI);
     let api_url = format!(
         "{}/v1/responses",
-        base_url.as_deref().unwrap_or("https://api.openai.com")
+        normalize_base_url(base_url.as_deref().unwrap_or("https://api.openai.com"))
     );
 
     let client = reqwest::Client::new();
@@ -695,13 +703,8 @@ async fn openai_compatible_generate(request: &AIRequest) -> Result<String, Strin
         body["max_tokens"] = serde_json::json!(max);
     }
 
-    // Normalize base_url: strip trailing /v1 or /v1/ to prevent double /v1/v1/...
-    let normalized_base = base_url
-        .trim_end_matches('/')
-        .trim_end_matches("/v1");
-
     let response = client
-        .post(format!("{}/v1/chat/completions", normalized_base))
+        .post(format!("{}/v1/chat/completions", normalize_base_url(base_url)))
         .header("Authorization", format!("Bearer {}", api_key))
         .header("content-type", "application/json")
         .json(&body)
@@ -800,11 +803,7 @@ pub async fn openai_completions_fim(
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
-    let url = if base_url.ends_with("/v1") || base_url.ends_with("/v1/") {
-        format!("{}/completions", base_url.trim_end_matches('/'))
-    } else {
-        format!("{}/v1/completions", base_url.trim_end_matches('/'))
-    };
+    let url = format!("{}/v1/completions", normalize_base_url(&base_url));
 
     let body = serde_json::json!({
         "model": model,
@@ -883,13 +882,8 @@ async fn openai_compatible_chat(
         body["max_tokens"] = serde_json::json!(max);
     }
 
-    // Normalize base_url: strip trailing /v1 or /v1/ to prevent double /v1/v1/...
-    let normalized_base = base_url
-        .trim_end_matches('/')
-        .trim_end_matches("/v1");
-
     let response = client
-        .post(format!("{}/v1/chat/completions", normalized_base))
+        .post(format!("{}/v1/chat/completions", normalize_base_url(base_url)))
         .header("Authorization", format!("Bearer {}", api_key))
         .header("content-type", "application/json")
         .json(&body)
