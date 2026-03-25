@@ -269,11 +269,20 @@
 
 **Complexity:** L **Category:** frontend **Dependencies:** None **Files:** `src/hooks/useAIOperations.ts` + 3 new files
 
-### #34 — Extract SkillsSettings.tsx inline dialogs
+### #34 — Extract SkillsSettings.tsx inline dialogs ✅
 
 **Description:** `SkillsSettings.tsx` (1,267 lines) has 3 dialogs and `AgentGroup` (406 lines) nested inline. Extract `AgentGroup` and the dialogs to separate files.
 
-**Complexity:** L **Category:** frontend **Dependencies:** None **Files:** `src/components/settings/SkillsSettings.tsx` + new extracted files
+Extracted 4 modules (1,267 → 665 lines):
+
+| Extract to | Responsibility |
+| --- | --- |
+| `skills-settings-utils.ts` | Shared helpers: `sourceLabel`, `sourceBadgeClass`, `isManageable`, bundled name sets |
+| `NewAddressableAgentDialog.tsx` | New agent creation dialog with advanced options |
+| `EditSkillDialog.tsx` | Skill editing dialog (loads SKILL.md, saves frontmatter) |
+| `EditAgentDialog.tsx` | Agent editing dialog (loads agent .md, saves frontmatter) |
+
+**Complexity:** L **Category:** frontend **Dependencies:** None **Files:** `src/components/settings/SkillsSettings.tsx` + 4 new files
 
 ### #35 — Decompose useAcpLifecycle.ts (800 lines)
 
