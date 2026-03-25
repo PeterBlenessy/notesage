@@ -379,7 +379,6 @@ function App() {
         <Layout
           focusMode={focusMode}
           stripExpanded={stripExpanded}
-          isManuallyHidden={isManuallyHidden}
           onNewNote={handleNewNote}
           onNewProject={handleNewProject}
           onOpenFolder={handleOpenFolder}

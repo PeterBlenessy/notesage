@@ -201,9 +201,14 @@ export function CommandPalette({
   }, [mode, open, query]);
 
   // --- Workspace files ---
-  const { recentFiles, activeTabId } = useEditorStore();
-  const { explorerFolders, projects, notesTree } = useWorkspaceStore();
-  const { theme, setTheme, sidebarPinned, setSidebarPinned, chatPanelOpen, setChatPanelOpen } = useSettingsStore();
+  const recentFiles = useEditorStore(s => s.recentFiles);
+  const explorerFolders = useWorkspaceStore(s => s.explorerFolders);
+  const projects = useWorkspaceStore(s => s.projects);
+  const notesTree = useWorkspaceStore(s => s.notesTree);
+  const activeTabId = useEditorStore(s => s.activeTabId);
+  const setTheme = useSettingsStore(s => s.setTheme);
+  const setSidebarPinned = useSettingsStore(s => s.setSidebarPinned);
+  const setChatPanelOpen = useSettingsStore(s => s.setChatPanelOpen);
   const { openFile } = useFileOperations();
 
   // Helper: find the parent category + folder name for a file path
@@ -267,6 +272,22 @@ export function CommandPalette({
     return results;
   }, [allFiles, query, recentPaths, mode]);
 
+  // --- Toggle callbacks (read current state at call time to avoid stale closures) ---
+  const toggleTheme = useCallback(() => {
+    const current = useSettingsStore.getState().theme;
+    setTheme(current === "dark" ? "light" : "dark");
+  }, [setTheme]);
+
+  const toggleSidebar = useCallback(() => {
+    const current = useSettingsStore.getState().sidebarPinned;
+    setSidebarPinned(!current);
+  }, [setSidebarPinned]);
+
+  const toggleChat = useCallback(() => {
+    const current = useSettingsStore.getState().chatPanelOpen;
+    setChatPanelOpen(!current);
+  }, [setChatPanelOpen]);
+
   // --- Actions list (for commands mode filtering) ---
   interface Action {
     value: string;
@@ -282,13 +303,13 @@ export function CommandPalette({
     { value: "new project", label: "New Project", icon: FolderDot, shortcut: "\u2318\u21E7N", action: onNewProject },
     { value: "open folder", label: "Open Folder", icon: FolderOpen, shortcut: "\u2318O", action: onOpenFolder },
     { value: "export pdf", label: "Export as PDF", icon: FileOutput, shortcut: "\u2318\u21E7E", action: onExportPdf, condition: !!activeTabId },
-    { value: "toggle theme dark light", label: "Toggle Theme", icon: SunMoon, shortcut: "\u2318T", action: () => setTheme(theme === "dark" ? "light" : "dark") },
-    { value: "toggle sidebar", label: "Toggle Sidebar", icon: PanelLeft, shortcut: "\u2318B", action: () => setSidebarPinned(!sidebarPinned) },
-    { value: "toggle chat ai", label: "Toggle Chat", icon: MessageSquare, shortcut: "\u2318\u21E7A", action: () => setChatPanelOpen(!chatPanelOpen) },
+    { value: "toggle theme dark light", label: "Toggle Theme", icon: SunMoon, shortcut: "\u2318T", action: toggleTheme },
+    { value: "toggle sidebar", label: "Toggle Sidebar", icon: PanelLeft, shortcut: "\u2318B", action: toggleSidebar },
+    { value: "toggle chat ai", label: "Toggle Chat", icon: MessageSquare, shortcut: "\u2318\u21E7A", action: toggleChat },
     { value: "toggle focus mode distraction free", label: "Toggle Focus Mode", icon: Focus, shortcut: "\u2318.", action: onToggleFocusMode },
     { value: "open settings preferences", label: "Settings", icon: Settings, shortcut: "\u2318,", action: onOpenSettings },
     ...(onOpenActions ? [{ value: "open actions dashboard tasks", label: "Open Actions", icon: CheckSquare, shortcut: "\u23185", action: onOpenActions }] : []),
-  ], [activeTabId, theme, sidebarPinned, chatPanelOpen, onNewNote, onNewProject, onOpenFolder, onExportPdf, onOpenSettings, onToggleFocusMode, onOpenActions, setTheme, setSidebarPinned, setChatPanelOpen]);
+  ], [activeTabId, onNewNote, onNewProject, onOpenFolder, onExportPdf, toggleTheme, toggleSidebar, toggleChat, onToggleFocusMode, onOpenSettings, onOpenActions]);
 
   const filteredActions = useMemo(() => {
     if (mode !== "commands") return actions;

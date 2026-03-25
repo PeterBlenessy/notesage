@@ -198,25 +198,25 @@
 
 **Complexity:** S **Category:** frontend **Dependencies:** None **Files:** `src/components/settings/AISettings.tsx`
 
-### #27 — Fix CommandPalette useMemo defeated by unmemoized callbacks
+### #27 — Fix CommandPalette useMemo defeated by unmemoized callbacks ✅
 
 **Description:** The `actions` array is wrapped in `useMemo` with 13 dependencies, but many are inline arrow functions recreated every render. Extract the action callbacks into `useCallback` hooks so the `useMemo` is actually effective.
 
 **Complexity:** M **Category:** frontend **Dependencies:** None **Files:** `src/components/CommandPalette.tsx`
 
-### #28 — Memoize Layout.tsx inline callback props
+### #28 — Memoize Layout.tsx inline callback props ✅
 
 **Description:** Arrow functions created on every render and passed as props to `TitleBar` (lines 204-206). Wrap in `useCallback`.
 
 **Complexity:** S **Category:** frontend **Dependencies:** None **Files:** `src/components/Layout.tsx`
 
-### #29 — Stabilize ChatPanel selectedProjectPaths array identity
+### #29 — Stabilize ChatPanel selectedProjectPaths array identity ✅
 
 **Description:** `selectedProjectPaths` array identity changes on every render, causing a useEffect to run too often (line 120). Memoize with `useMemo` or use a stable reference via `useRef` + shallow comparison.
 
 **Complexity:** M **Category:** frontend **Dependencies:** None **Files:** `src/components/chat/ChatPanel.tsx`
 
-### #30 — Memoize DocumentOutline per-heading callbacks and style objects
+### #30 — Memoize DocumentOutline per-heading callbacks and style objects ✅
 
 **Description:** Each heading button creates inline `onClick` and `style` objects (covers 2 audit findings: inline onClick per heading + inline style objects). Use a single memoized handler that reads the position from `data-*` attributes, and convert padding to Tailwind classes or CSS custom properties.
 

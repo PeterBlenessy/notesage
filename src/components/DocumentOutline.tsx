@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
 import { List } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import type { Editor } from "@tiptap/core";
@@ -31,8 +31,10 @@ export function DocumentOutline({ open, onOpenChange, editor }: DocumentOutlineP
     return items;
   }, [editor, open]); // Re-compute when dialog opens
 
-  const handleSelect = (pos: number) => {
+  const handleSelect = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
     if (!editor) return;
+    const pos = Number(e.currentTarget.dataset.pos);
+    if (Number.isNaN(pos)) return;
     editor.commands.setTextSelection(pos + 1);
     onOpenChange(false);
     requestAnimationFrame(() => {
@@ -46,7 +48,7 @@ export function DocumentOutline({ open, onOpenChange, editor }: DocumentOutlineP
         editorEl.scrollBy({ top: scrollOffset, behavior: "smooth" });
       }
     });
-  };
+  }, [editor, onOpenChange]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -75,14 +77,13 @@ export function DocumentOutline({ open, onOpenChange, editor }: DocumentOutlineP
               </p>
             </div>
           ) : (
-            headings.map((heading, index) => {
-              const indent = (heading.level - 1) * 16;
-              return (
+            headings.map((heading, index) => (
                 <button
                   key={`${heading.pos}-${index}`}
-                  onClick={() => handleSelect(heading.pos)}
+                  data-pos={heading.pos}
+                  onClick={handleSelect}
                   className="w-[calc(100%-8px)] text-left py-1.5 pr-3 flex items-center gap-2 transition-colors duration-150 mx-1 rounded-md hover:bg-accent"
-                  style={{ paddingLeft: `${12 + indent}px` }}
+                  style={{ paddingLeft: `${12 + (heading.level - 1) * 16}px` } as React.CSSProperties}
                 >
                   <span className="text-xs font-mono shrink-0 w-5 text-center text-muted-foreground">
                     H{heading.level}
@@ -91,8 +92,7 @@ export function DocumentOutline({ open, onOpenChange, editor }: DocumentOutlineP
                     {heading.text || "Untitled"}
                   </span>
                 </button>
-              );
-            })
+              ))
           )}
         </div>
 

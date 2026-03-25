@@ -62,7 +62,20 @@ export function ChatPanel() {
   const setPendingProjectSwitch = useChatStore((s) => s.setPendingProjectSwitch);
   const setPendingAgentSwitch = useChatStore((s) => s.setPendingAgentSwitch);
   const messages = useChatStore(selectMessages);
-  const selectedProjectPaths = useChatStore(selectProjectPaths);
+  const rawProjectPaths = useChatStore(selectProjectPaths);
+  // Stabilize array identity — only update reference when values actually change
+  const stableProjectPathsRef = useRef(rawProjectPaths);
+  const selectedProjectPaths = useMemo(() => {
+    const prev = stableProjectPathsRef.current;
+    if (
+      prev.length === rawProjectPaths.length &&
+      prev.every((p, i) => p === rawProjectPaths[i])
+    ) {
+      return prev;
+    }
+    stableProjectPathsRef.current = rawProjectPaths;
+    return rawProjectPaths;
+  }, [rawProjectPaths]);
   const pendingProjectSwitch = useChatStore(selectPendingProjectSwitch);
   const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
   const segments = useChatStore(selectSegments);

@@ -110,7 +110,6 @@ function EditorArea({
 export interface LayoutProps {
   focusMode: boolean;
   stripExpanded: boolean;
-  isManuallyHidden: boolean;
   // Editor area callbacks
   onNewNote: (parentPath?: string) => void;
   onNewProject: () => void;
@@ -143,7 +142,6 @@ export interface LayoutProps {
 export function Layout({
   focusMode,
   stripExpanded,
-  isManuallyHidden,
   onNewNote,
   onNewProject,
   onOpenFolder,
@@ -171,6 +169,16 @@ export function Layout({
 
   const handlePanelLayout = useCallback((layout: Record<string, number>) => {
     savePanelSizes(layout);
+  }, []);
+
+  const handleToggleChat = useCallback(() => {
+    const current = useSettingsStore.getState().chatPanelOpen;
+    setChatPanelOpen(!current);
+  }, [setChatPanelOpen]);
+
+  const handleToggleActivityStrip = useCallback(() => {
+    const store = useActivityStore.getState();
+    store.setManuallyHidden(!store.isManuallyHidden);
   }, []);
 
   // Panel config key (editor + optional chat + optional activity)
@@ -201,10 +209,8 @@ export function Layout({
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {!focusMode && (
           <TitleBar
-            onToggleChat={() => setChatPanelOpen(!chatPanelOpen)}
-            onToggleActivityStrip={() => {
-              useActivityStore.getState().setManuallyHidden(!isManuallyHidden);
-            }}
+            onToggleChat={handleToggleChat}
+            onToggleActivityStrip={handleToggleActivityStrip}
           />
         )}
 
