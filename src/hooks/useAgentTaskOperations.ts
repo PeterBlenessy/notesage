@@ -8,7 +8,8 @@ import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import { tauriApi } from '@/lib/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { formatAcpToolName, truncateDetail } from '@/hooks/useAIOperations';
+import { formatAcpToolName, truncateDetail } from '@/lib/ai/acp-utils';
+import type { AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
 import { isToolCallAllowed } from '@/lib/ai/path-filter';
 import { log } from '@/lib/logger';
 
@@ -19,47 +20,6 @@ async function getHomeDir(): Promise<string> {
     _homeDir = await tauriApi.getHomeDir();
   }
   return _homeDir;
-}
-
-// ---------------------------------------------------------------------------
-// ACP event payload types
-// ---------------------------------------------------------------------------
-
-interface AcpSessionUpdate {
-  sessionUpdate: 'agent_message_chunk' | 'tool_call' | 'tool_result' | 'agent_turn_complete' | string;
-  content?: { type: string; text?: string };
-  kind?: string;
-  title?: string;
-  rawInput?: string;
-}
-
-interface AcpSessionUpdatePayload {
-  instanceId: string;
-  sessionId: string;
-  update: AcpSessionUpdate;
-}
-
-interface AcpToolCall {
-  kind?: string;
-  type?: string;
-  title?: string;
-  name?: string;
-  rawInput?: string;
-}
-
-interface AcpPermissionOption {
-  optionId?: string;
-  id?: string;
-  kind?: string;
-  name?: string;
-}
-
-interface AcpPermissionRequestPayload {
-  instanceId: string;
-  sessionId: string;
-  requestId: string;
-  toolCall: AcpToolCall | null;
-  options: AcpPermissionOption[];
 }
 
 // ---------------------------------------------------------------------------

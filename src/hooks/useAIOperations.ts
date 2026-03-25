@@ -11,7 +11,8 @@ import { useDirectApiChat } from '@/hooks/useDirectApiChat';
 import { useAcpLifecycle } from '@/hooks/useAcpLifecycle';
 
 // Re-export ACP utilities for external consumers
-export { stopAcpAgent, truncateDetail, formatAcpToolName } from '@/hooks/useAcpLifecycle';
+export { stopAcpAgent } from '@/lib/ai/acp-agent-state';
+export { truncateDetail, formatAcpToolName } from '@/lib/ai/acp-utils';
 
 // ---------------------------------------------------------------------------
 // Hook — routes AI operations between direct API and ACP paths

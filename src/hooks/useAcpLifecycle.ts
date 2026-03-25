@@ -3,267 +3,21 @@ import { useChatStore, selectProjectPaths, selectPendingProjectSwitch } from '@/
 import { usePermissionStore } from '@/stores/permission-store';
 import type { ChatMessage } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
-import { setAgentModels, PROVIDER_OPTIONS } from '@/lib/ai/connections';
+import { setAgentModels } from '@/lib/ai/connections';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { log } from '@/lib/logger';
 import { isAcpConnectionError, friendlyAcpError } from '@/lib/ai/errors';
-import { isToolCallAllowed } from '@/lib/ai/path-filter';
 import { tauriApi } from '@/lib/tauri';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
+import { getAllWorkspacePaths } from '@/lib/ai/acp-utils';
+import { acpAgent, stopAcpAgent, ensureAcpAgent } from '@/lib/ai/acp-agent-state';
+import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
 
-/** Get all workspace folder paths (projects + explorer folders) for sandbox scope */
-function getAllWorkspacePaths(): string[] {
-  const ws = useWorkspaceStore.getState();
-  const paths = new Set<string>();
-  for (const p of ws.projects) paths.add(p.path);
-  for (const f of ws.explorerFolders) paths.add(f.path);
-  return [...paths];
-}
-
-// ---------------------------------------------------------------------------
-// ACP types
-// ---------------------------------------------------------------------------
-
-interface AcpSpawnResult {
-  instance_id: string;
-  agent_name: string | null;
-  agent_version: string | null;
-  auth_methods: { id: string; name: string; description: string | null }[];
-  sandbox_enabled: boolean;
-  network_sandbox_enabled: boolean;
-}
-
-interface AcpModelInfo {
-  model_id: string;
-  name: string;
-  description: string | null;
-}
-
-interface AcpSessionResult {
-  session_id: string;
-  current_model: string | null;
-  available_models: AcpModelInfo[];
-}
-
-interface AcpSessionUpdatePayload {
-  instanceId: string;
-  sessionId: string;
-  update: {
-    sessionUpdate: string;
-    content?: { type: string; text?: string };
-    [key: string]: unknown;
-  };
-}
-
-interface AcpPermissionRequestPayload {
-  instanceId: string;
-  sessionId: string;
-  requestId: string;
-  toolCall: unknown;
-  options: unknown[];
-}
-
-// ---------------------------------------------------------------------------
-// Pure utility functions (shared with useAgentTaskOperations)
-// ---------------------------------------------------------------------------
-
-/** Extract tool kind and title from an ACP toolCall payload. */
-function extractToolInfo(toolCall: unknown): { kind: string; title: string; input: string } {
-  const tc = toolCall as Record<string, unknown> | null;
-  return {
-    kind: String(tc?.kind ?? tc?.type ?? 'unknown'),
-    title: String(tc?.title ?? tc?.name ?? ''),
-    input: typeof tc?.rawInput === 'string' ? tc.rawInput : JSON.stringify(tc?.rawInput ?? ''),
-  };
-}
-
-/** Truncate a tool detail string (e.g. rawInput) for display. */
-export function truncateDetail(text: unknown, max = 80): string {
-  const str = typeof text === 'string' ? text : JSON.stringify(text ?? '');
-  const oneLine = str.replace(/\n/g, ' ').trim();
-  // Skip empty or meaningless values
-  if (!oneLine || oneLine === '{}' || oneLine === '""' || oneLine === 'null') return '';
-  if (oneLine.length <= max) return oneLine;
-  return oneLine.slice(0, max) + '…';
-}
-
-/** Map ACP tool kind/title to a user-friendly label */
-export function formatAcpToolName(kind?: string, title?: string): string {
-  switch (kind) {
-    case 'fetch':
-      return 'Searching the web';
-    case 'bash':
-    case 'terminal':
-      return 'Running command';
-    case 'read':
-    case 'read_file':
-      return 'Reading file';
-    case 'write':
-    case 'write_file':
-    case 'edit':
-      return 'Editing file';
-    case 'glob':
-    case 'list':
-      return 'Searching files';
-    case 'grep':
-      return 'Searching content';
-    case 'execute_skill_script':
-      return 'Running skill script';
-    case 'read_skill_content':
-      return 'Loading skill';
-    default:
-      // Fall back to title if available, otherwise generic label
-      if (title) return title;
-      if (kind) return kind;
-      return 'Working';
-  }
-}
-
-// ---------------------------------------------------------------------------
-// ACP agent state (module-level singleton — survives re-renders)
-// ---------------------------------------------------------------------------
-
-interface AcpAgentState {
-  instanceId: string;
-  connectionId: string;
-  /** Serialized sandbox scope key — used to detect when agent needs respawning. */
-  sandboxScopeKey: string;
-  chatSessionId: string | null;
-}
-
-/** Persistent ACP agent state — survives re-renders, reset on connection change. */
-let acpAgent: AcpAgentState | null = null;
-
-/** In-flight spawn promise — prevents concurrent callers from double-spawning. */
-let acpSpawnPromise: Promise<string> | null = null;
-
-/** Stop any running ACP agent and clear state. Called on disconnect. */
-export function stopAcpAgent(): void {
-  if (acpAgent) {
-    invoke('acp_agent_stop', { instanceId: acpAgent.instanceId }).catch(() => {});
-    acpAgent = null;
-  }
-  acpSpawnPromise = null;
-}
-
-/**
- * Ensure an ACP agent is spawned and authenticated for the given connection.
- * Reuses the existing agent if the connection matches. Stops and replaces
- * if the connection changed.
- */
-async function ensureAcpAgent(connection: Connection, cwd: string, sandboxPaths?: string[]): Promise<string> {
-  const scopeKey = (sandboxPaths ?? []).sort().join('|');
-
-  // Respawn if connection changed OR sandbox scope changed
-  if (acpAgent && (acpAgent.connectionId !== connection.id || acpAgent.sandboxScopeKey !== scopeKey)) {
-    if (acpAgent.sandboxScopeKey !== scopeKey) {
-      log.info('ai', 'Chat agent sandbox scope changed, respawning');
-    }
-    try {
-      await invoke('acp_agent_stop', { instanceId: acpAgent.instanceId });
-    } catch {
-      // Agent may already be stopped
-    }
-    acpAgent = null;
-    acpSpawnPromise = null;
-  }
-
-  // Verify the backend still has this agent (may be gone after app restart or crash)
-  if (acpAgent) {
-    const alive = await invoke<boolean>('acp_agent_exists', { instanceId: acpAgent.instanceId });
-    if (!alive) {
-      log.info('ai', `ACP agent ${acpAgent.instanceId} no longer exists in backend, respawning`);
-      acpAgent = null;
-      acpSpawnPromise = null;
-    }
-  }
-
-  if (acpAgent) {
-    return acpAgent.instanceId;
-  }
-
-  // If a spawn is already in progress, await it instead of double-spawning
-  if (acpSpawnPromise) {
-    return acpSpawnPromise;
-  }
-
-  // Wrap spawn in a tracked promise so concurrent callers await instead of double-spawning
-  acpSpawnPromise = (async () => {
-    try {
-      const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[]; envVars?: Record<string, string> };
-      // Inject model flag if the connection has a model configured
-      // Different agents use different flag formats:
-      //   codex-acp: -c model="<model>"
-      //   others:    --model <model>
-      const args = [...(creds.agentArgs ?? [])];
-      if (connection.config?.model) {
-        // Append reasoning effort suffix for codex-acp (e.g., "gpt-5.2-codex" → "gpt-5.2-codex/low")
-        let modelId = connection.config.model;
-        if (creds.agentBinary === 'codex-acp' && connection.config.reasoningEffort) {
-          modelId = `${modelId}/${connection.config.reasoningEffort}`;
-        }
-        if (creds.agentBinary === 'codex-acp') {
-          args.push('-c', `model="${modelId}"`);
-        } else {
-          args.push('--model', modelId);
-        }
-      }
-      // Build network sandbox config if enabled
-      const networkSandboxEnabled = connection.networkSandboxEnabled ?? false;
-      let networkAllowedDomains: string[] | null = null;
-      if (networkSandboxEnabled) {
-        const providerOption = PROVIDER_OPTIONS.find(
-          (o) => o.agentBinary === creds.agentBinary || o.lspBinary === creds.agentBinary
-        );
-        const builtIn = providerOption?.installMeta?.allowedDomains ?? [];
-        const permStore = usePermissionStore.getState();
-        const userDomains = permStore.getDomainAllowedList(connection.id);
-        networkAllowedDomains = [...builtIn, ...userDomains];
-      }
-
-      const result = await invoke<AcpSpawnResult>('acp_agent_spawn', {
-        agentBinary: creds.agentBinary,
-        agentArgs: args.length > 0 ? args : null,
-        role: 'interactive',
-        workingDirectory: cwd,
-        envVars: creds.envVars ?? null,
-        sandboxEnabled: connection.sandboxEnabled ?? null,
-        sandboxPaths: [
-          ...(sandboxPaths ?? []),
-          ...(connection.extraWritablePaths ?? []),
-        ].length > 0 ? [...(sandboxPaths ?? []), ...(connection.extraWritablePaths ?? [])] : null,
-        networkSandboxEnabled: networkSandboxEnabled || null,
-        networkAllowedDomains,
-        kernelNetworkDeny: connection.kernelNetworkDeny ?? null,
-      });
-      // Try to authenticate — some agents handle auth internally
-      // (e.g. claude-agent-acp uses Claude CLI's stored credentials)
-      try {
-        await invoke('acp_agent_authenticate', {
-          instanceId: result.instance_id,
-        });
-      } catch (authErr) {
-        const msg = String(authErr);
-        if (!msg.toLowerCase().includes('not implemented')) {
-          throw authErr;
-        }
-      }
-
-      acpAgent = {
-        instanceId: result.instance_id,
-        connectionId: connection.id,
-        sandboxScopeKey: scopeKey,
-        chatSessionId: null,
-      };
-      return result.instance_id;
-    } finally {
-      acpSpawnPromise = null;
-    }
-  })();
-
-  return acpSpawnPromise;
-}
+// Re-export for backward compatibility
+export { stopAcpAgent } from '@/lib/ai/acp-agent-state';
+export { truncateDetail, formatAcpToolName } from '@/lib/ai/acp-utils';
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -412,6 +166,18 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       const pathFilterRoot = opts?.sandboxPaths ? (selectedProjectPaths[0] || null) : null;
       const homeDir = pathFilterRoot ? await tauriApi.getHomeDir() : '';
 
+      const listenerDeps = {
+        assistantMessageId,
+        pathFilterRoot,
+        homeDir,
+        updateMessage,
+        addMessage,
+        setActiveTool,
+        addActivity,
+        completeLastActivity,
+        completeAllActivities,
+      };
+
       try {
         const cwd = selectedProjectPaths[0] || '/tmp';
         // Comment-sourced chats: scope to source project only. Regular chats: all workspace folders.
@@ -428,7 +194,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         const segment = useChatStore.getState().getActiveSegment();
         let isNewSession = false;
 
-        // New conversation or new segment → need a fresh ACP session
+        // New conversation or new segment -> need a fresh ACP session
         if (messages.length === 0 && acpAgent) {
           acpAgent.chatSessionId = null;
         }
@@ -462,135 +228,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           }
         }
 
-        let streamedContent = '';
-        let chunkCount = 0;
-
-        const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
-          if (event.payload.instanceId !== instanceId) return;
-          const { update } = event.payload;
-
-          if (
-            update.sessionUpdate === 'agent_message_chunk' &&
-            update.content?.type === 'text' &&
-            update.content.text
-          ) {
-            chunkCount++;
-            streamedContent += update.content.text;
-            updateMessage(assistantMessageId, streamedContent);
-          } else if (update.sessionUpdate === 'tool_call') {
-            const kind = (update as Record<string, unknown>).kind as string | undefined;
-            const title = (update as Record<string, unknown>).title as string | undefined;
-            const rawInput = (update as Record<string, unknown>).rawInput as string | undefined;
-            const toolLabel = formatAcpToolName(kind, title);
-            setActiveTool(toolLabel);
-            addActivity(assistantMessageId, {
-              kind: kind || 'unknown',
-              label: toolLabel,
-              detail: rawInput ? truncateDetail(rawInput) : undefined,
-              status: 'running',
-              timestamp: Date.now(),
-            });
-          } else if (update.sessionUpdate === 'tool_call_update') {
-            const kind = (update as Record<string, unknown>).kind as string | undefined;
-            const title = (update as Record<string, unknown>).title as string | undefined;
-            const toolLabel = formatAcpToolName(kind, title);
-            setActiveTool(toolLabel);
-          } else if (update.sessionUpdate === 'tool_result') {
-            setActiveTool(null);
-            completeLastActivity(assistantMessageId);
-          } else if (update.sessionUpdate === 'agent_turn_complete') {
-            setActiveTool(null);
-            completeAllActivities(assistantMessageId);
-          }
-        });
-
-        // Handle permission requests: auto-approve read-only tools,
-        // show inline permission card for write tools (user must Allow/Deny).
-        const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
-          if (event.payload.instanceId !== instanceId) return;
-          const payload = event.payload;
-
-          // Clear the active tool spinner — the previous tool finished,
-          // now the agent is asking permission for the next action.
-          setActiveTool(null);
-
-          const toolInfo = extractToolInfo(payload.toolCall);
-          const rawOptions = payload.options as unknown[];
-          let firstOptionId: string | null = null;
-          if (Array.isArray(rawOptions) && rawOptions.length > 0) {
-            const opt = rawOptions[0] as Record<string, unknown>;
-            firstOptionId = typeof opt === 'string' ? opt : String(opt?.optionId ?? opt?.id ?? '');
-          }
-
-          // Path filtering for comment-sourced chats: deny tool calls outside project scope
-          if (pathFilterRoot) {
-            const filterResult = isToolCallAllowed(toolInfo.kind, toolInfo.input, pathFilterRoot, homeDir);
-            if (!filterResult.allowed) {
-              log.info('ai', `Chat tool call denied: ${toolInfo.title} targets ${filterResult.deniedPath} outside project ${pathFilterRoot}`);
-              addMessage({
-                role: 'system',
-                content: `Tool call denied: **${toolInfo.title}** — targets path outside project scope (\`${filterResult.deniedPath}\`)`,
-                timestamp: Date.now(),
-              });
-              invoke('acp_permission_respond', { instanceId, requestId: payload.requestId, optionId: null }).catch(() => {});
-              return;
-            }
-          }
-
-          if (usePermissionStore.getState().isAutoAllowed(toolInfo.kind)) {
-            // Tool kinds in session or always allow-lists: auto-approve silently
-            invoke('acp_permission_respond', {
-              instanceId,
-              requestId: payload.requestId,
-              optionId: firstOptionId,
-            }).catch(() => {});
-          } else {
-            // Write tools: add to permission store, let PermissionCard UI handle response
-            const options = Array.isArray(rawOptions)
-              ? rawOptions.map((o) => {
-                  const opt = o as Record<string, unknown>;
-                  return {
-                    optionId: String(opt?.optionId ?? opt?.id ?? ''),
-                    kind: String(opt?.kind ?? ''),
-                    name: String(opt?.name ?? ''),
-                  };
-                })
-              : [];
-
-            usePermissionStore.getState().addRequest({
-              id: `${payload.requestId}-${Date.now()}`,
-              instanceId,
-              sessionId: payload.sessionId,
-              requestId: payload.requestId,
-              toolKind: toolInfo.kind,
-              toolTitle: toolInfo.title,
-              toolInput: truncateDetail(toolInfo.input, 200),
-              options,
-              timestamp: Date.now(),
-            });
-          }
-        });
-
-        cleanupRef.current = () => {
-          // Null the ref first to prevent re-entrant calls
-          cleanupRef.current = null;
-          unlisten();
-          unlistenPermission();
-          // Deny any pending permission requests for this agent and clear from store
-          const pendingRequests = usePermissionStore.getState().requests.filter(
-            (r) => r.instanceId === instanceId
-          );
-          for (const req of pendingRequests) {
-            invoke('acp_permission_respond', {
-              instanceId,
-              requestId: req.requestId,
-              optionId: null,
-            }).catch(() => {});
-          }
-          usePermissionStore.getState().clearRequestsForInstance(instanceId);
-          setLoading(false);
-          setActiveTool(null);
-        };
+        const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId });
+        cleanupRef.current = buildAcpChatCleanup(listeners, instanceId, cleanupRef, setLoading, setActiveTool);
 
         try {
           // Prepend system prompt on the first message of a new session
@@ -648,101 +287,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
               );
             }
 
-            // Set up listeners for the retry
-            let streamedContent = '';
-            const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
-              if (event.payload.instanceId !== instanceId) return;
-              const { update } = event.payload;
-              if (
-                update.sessionUpdate === 'agent_message_chunk' &&
-                update.content?.type === 'text' &&
-                update.content.text
-              ) {
-                streamedContent += update.content.text;
-                updateMessage(assistantMessageId, streamedContent);
-              } else if (update.sessionUpdate === 'tool_call') {
-                const kind = (update as Record<string, unknown>).kind as string | undefined;
-                const title = (update as Record<string, unknown>).title as string | undefined;
-                const rawInput = (update as Record<string, unknown>).rawInput as string | undefined;
-                const toolLabel = formatAcpToolName(kind, title);
-                setActiveTool(toolLabel);
-                addActivity(assistantMessageId, {
-                  kind: kind || 'unknown',
-                  label: toolLabel,
-                  detail: rawInput ? truncateDetail(rawInput) : undefined,
-                  status: 'running',
-                  timestamp: Date.now(),
-                });
-              } else if (update.sessionUpdate === 'tool_call_update') {
-                const kind = (update as Record<string, unknown>).kind as string | undefined;
-                const title = (update as Record<string, unknown>).title as string | undefined;
-                setActiveTool(formatAcpToolName(kind, title));
-              } else if (update.sessionUpdate === 'tool_result') {
-                setActiveTool(null);
-                completeLastActivity(assistantMessageId);
-              } else if (update.sessionUpdate === 'agent_turn_complete') {
-                setActiveTool(null);
-                completeAllActivities(assistantMessageId);
-              }
-            });
-
-            const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
-              if (event.payload.instanceId !== instanceId) return;
-              const payload = event.payload;
-              setActiveTool(null);
-              const toolInfo = extractToolInfo(payload.toolCall);
-              const rawOptions = payload.options as unknown[];
-              let firstOptionId: string | null = null;
-              if (Array.isArray(rawOptions) && rawOptions.length > 0) {
-                const opt = rawOptions[0] as Record<string, unknown>;
-                firstOptionId = typeof opt === 'string' ? opt : String(opt?.optionId ?? opt?.id ?? '');
-              }
-
-              // Path filtering for comment-sourced chats (same as primary handler)
-              if (pathFilterRoot) {
-                const filterResult = isToolCallAllowed(toolInfo.kind, toolInfo.input, pathFilterRoot, homeDir);
-                if (!filterResult.allowed) {
-                  log.info('ai', `Chat tool call denied (retry): ${toolInfo.title} targets ${filterResult.deniedPath} outside project ${pathFilterRoot}`);
-                  addMessage({
-                    role: 'system',
-                    content: `Tool call denied: **${toolInfo.title}** — targets path outside project scope (\`${filterResult.deniedPath}\`)`,
-                    timestamp: Date.now(),
-                  });
-                  invoke('acp_permission_respond', { instanceId, requestId: payload.requestId, optionId: null }).catch(() => {});
-                  return;
-                }
-              }
-
-              if (usePermissionStore.getState().isAutoAllowed(toolInfo.kind)) {
-                invoke('acp_permission_respond', { instanceId, requestId: payload.requestId, optionId: firstOptionId }).catch(() => {});
-              } else {
-                const options = Array.isArray(rawOptions)
-                  ? rawOptions.map((o) => {
-                      const opt = o as Record<string, unknown>;
-                      return { optionId: String(opt?.optionId ?? opt?.id ?? ''), kind: String(opt?.kind ?? ''), name: String(opt?.name ?? '') };
-                    })
-                  : [];
-                usePermissionStore.getState().addRequest({
-                  id: `${payload.requestId}-${Date.now()}`, instanceId, sessionId: payload.sessionId,
-                  requestId: payload.requestId, toolKind: toolInfo.kind, toolTitle: toolInfo.title,
-                  toolInput: truncateDetail(toolInfo.input, 200), options, timestamp: Date.now(),
-                });
-              }
-            });
-
-            cleanupRef.current = () => {
-              // Null the ref first to prevent re-entrant calls
-              cleanupRef.current = null;
-              unlisten();
-              unlistenPermission();
-              const pendingRequests = usePermissionStore.getState().requests.filter((r) => r.instanceId === instanceId);
-              for (const req of pendingRequests) {
-                invoke('acp_permission_respond', { instanceId, requestId: req.requestId, optionId: null }).catch(() => {});
-              }
-              usePermissionStore.getState().clearRequestsForInstance(instanceId);
-              setLoading(false);
-              setActiveTool(null);
-            };
+            // Set up listeners for the retry (reuses the same shared setup)
+            const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId });
+            cleanupRef.current = buildAcpChatCleanup(listeners, instanceId, cleanupRef, setLoading, setActiveTool);
 
             const effectiveSystemMessage = buildAcpSystemMessage
               ? buildAcpSystemMessage(opts?.attachedFilePaths)

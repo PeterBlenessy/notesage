@@ -284,17 +284,15 @@ Extracted 4 modules (1,267 → 665 lines):
 
 **Complexity:** L **Category:** frontend **Dependencies:** None **Files:** `src/components/settings/SkillsSettings.tsx` + 4 new files
 
-### #35 — Decompose useAcpLifecycle.ts (800 lines)
+### #35 — Decompose useAcpLifecycle.ts (823 → 369 lines) ✅
 
-**Description:** Auth flow, sandbox setup, and binary resolution are all interleaved. Extract into focused modules:
+**Description:** Extracted 3 focused modules from `useAcpLifecycle.ts` (823 → 369 lines). Also deduplicated ACP types from `useAgentTaskOperations.ts`.
 
 | Extract to | Responsibility |
 | --- | --- |
-| `useAcpAuth.ts` | Authentication flow (OAuth, API key, terminal fallback) |
-| `useAcpSandbox.ts` | Sandbox profile generation, network proxy setup |
-| `acp-binary.ts` | Binary resolution (bundled → \~/.notesage/bin → PATH) |
-
-Leave `useAcpLifecycle.ts` as the orchestrator.
+| `src/lib/ai/acp-utils.ts` | Shared types (AcpSpawnResult, AcpSessionUpdatePayload, etc.) + pure utilities (extractToolInfo, truncateDetail, formatAcpToolName, getAllWorkspacePaths) |
+| `src/lib/ai/acp-agent-state.ts` | Module-level agent singleton, ensureAcpAgent (spawn + auth + sandbox config), stopAcpAgent |
+| `src/hooks/useAcpSessionListeners.ts` | Deduplicated session update + permission request listener setup (was copy-pasted between primary and retry paths) |
 
 **Complexity:** L **Category:** frontend **Dependencies:** #7, #12 (same file — do bug fixes first) **Files:** `src/hooks/useAcpLifecycle.ts` + 3 new files
 
