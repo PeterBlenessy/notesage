@@ -135,12 +135,16 @@ interface AcpAgentState {
 /** Persistent ACP agent state — survives re-renders, reset on connection change. */
 let acpAgent: AcpAgentState | null = null;
 
+/** In-flight spawn promise — prevents concurrent callers from double-spawning. */
+let acpSpawnPromise: Promise<string> | null = null;
+
 /** Stop any running ACP agent and clear state. Called on disconnect. */
 export function stopAcpAgent(): void {
   if (acpAgent) {
     invoke('acp_agent_stop', { instanceId: acpAgent.instanceId }).catch(() => {});
     acpAgent = null;
   }
+  acpSpawnPromise = null;
 }
 
 /**
@@ -162,6 +166,7 @@ async function ensureAcpAgent(connection: Connection, cwd: string, sandboxPaths?
       // Agent may already be stopped
     }
     acpAgent = null;
+    acpSpawnPromise = null;
   }
 
   // Verify the backend still has this agent (may be gone after app restart or crash)
@@ -170,6 +175,7 @@ async function ensureAcpAgent(connection: Connection, cwd: string, sandboxPaths?
     if (!alive) {
       log.info('ai', `ACP agent ${acpAgent.instanceId} no longer exists in backend, respawning`);
       acpAgent = null;
+      acpSpawnPromise = null;
     }
   }
 
@@ -177,72 +183,86 @@ async function ensureAcpAgent(connection: Connection, cwd: string, sandboxPaths?
     return acpAgent.instanceId;
   }
 
-  const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[]; envVars?: Record<string, string> };
-  // Inject model flag if the connection has a model configured
-  // Different agents use different flag formats:
-  //   codex-acp: -c model="<model>"
-  //   others:    --model <model>
-  const args = [...(creds.agentArgs ?? [])];
-  if (connection.config?.model) {
-    // Append reasoning effort suffix for codex-acp (e.g., "gpt-5.2-codex" → "gpt-5.2-codex/low")
-    let modelId = connection.config.model;
-    if (creds.agentBinary === 'codex-acp' && connection.config.reasoningEffort) {
-      modelId = `${modelId}/${connection.config.reasoningEffort}`;
-    }
-    if (creds.agentBinary === 'codex-acp') {
-      args.push('-c', `model="${modelId}"`);
-    } else {
-      args.push('--model', modelId);
-    }
-  }
-  // Build network sandbox config if enabled
-  const networkSandboxEnabled = connection.networkSandboxEnabled ?? false;
-  let networkAllowedDomains: string[] | null = null;
-  if (networkSandboxEnabled) {
-    const providerOption = PROVIDER_OPTIONS.find(
-      (o) => o.agentBinary === creds.agentBinary || o.lspBinary === creds.agentBinary
-    );
-    const builtIn = providerOption?.installMeta?.allowedDomains ?? [];
-    const permStore = usePermissionStore.getState();
-    const userDomains = permStore.getDomainAllowedList(connection.id);
-    networkAllowedDomains = [...builtIn, ...userDomains];
+  // If a spawn is already in progress, await it instead of double-spawning
+  if (acpSpawnPromise) {
+    return acpSpawnPromise;
   }
 
-  const result = await invoke<AcpSpawnResult>('acp_agent_spawn', {
-    agentBinary: creds.agentBinary,
-    agentArgs: args.length > 0 ? args : null,
-    role: 'interactive',
-    workingDirectory: cwd,
-    envVars: creds.envVars ?? null,
-    sandboxEnabled: connection.sandboxEnabled ?? null,
-    sandboxPaths: [
-      ...(sandboxPaths ?? []),
-      ...(connection.extraWritablePaths ?? []),
-    ].length > 0 ? [...(sandboxPaths ?? []), ...(connection.extraWritablePaths ?? [])] : null,
-    networkSandboxEnabled: networkSandboxEnabled || null,
-    networkAllowedDomains,
-    kernelNetworkDeny: connection.kernelNetworkDeny ?? null,
-  });
-  // Try to authenticate — some agents handle auth internally
-  // (e.g. claude-agent-acp uses Claude CLI's stored credentials)
-  try {
-    await invoke('acp_agent_authenticate', {
-      instanceId: result.instance_id,
-    });
-  } catch (authErr) {
-    const msg = String(authErr);
-    if (!msg.toLowerCase().includes('not implemented')) {
-      throw authErr;
-    }
-  }
+  // Wrap spawn in a tracked promise so concurrent callers await instead of double-spawning
+  acpSpawnPromise = (async () => {
+    try {
+      const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[]; envVars?: Record<string, string> };
+      // Inject model flag if the connection has a model configured
+      // Different agents use different flag formats:
+      //   codex-acp: -c model="<model>"
+      //   others:    --model <model>
+      const args = [...(creds.agentArgs ?? [])];
+      if (connection.config?.model) {
+        // Append reasoning effort suffix for codex-acp (e.g., "gpt-5.2-codex" → "gpt-5.2-codex/low")
+        let modelId = connection.config.model;
+        if (creds.agentBinary === 'codex-acp' && connection.config.reasoningEffort) {
+          modelId = `${modelId}/${connection.config.reasoningEffort}`;
+        }
+        if (creds.agentBinary === 'codex-acp') {
+          args.push('-c', `model="${modelId}"`);
+        } else {
+          args.push('--model', modelId);
+        }
+      }
+      // Build network sandbox config if enabled
+      const networkSandboxEnabled = connection.networkSandboxEnabled ?? false;
+      let networkAllowedDomains: string[] | null = null;
+      if (networkSandboxEnabled) {
+        const providerOption = PROVIDER_OPTIONS.find(
+          (o) => o.agentBinary === creds.agentBinary || o.lspBinary === creds.agentBinary
+        );
+        const builtIn = providerOption?.installMeta?.allowedDomains ?? [];
+        const permStore = usePermissionStore.getState();
+        const userDomains = permStore.getDomainAllowedList(connection.id);
+        networkAllowedDomains = [...builtIn, ...userDomains];
+      }
 
-  acpAgent = {
-    instanceId: result.instance_id,
-    connectionId: connection.id,
-    sandboxScopeKey: scopeKey,
-    chatSessionId: null,
-  };
-  return result.instance_id;
+      const result = await invoke<AcpSpawnResult>('acp_agent_spawn', {
+        agentBinary: creds.agentBinary,
+        agentArgs: args.length > 0 ? args : null,
+        role: 'interactive',
+        workingDirectory: cwd,
+        envVars: creds.envVars ?? null,
+        sandboxEnabled: connection.sandboxEnabled ?? null,
+        sandboxPaths: [
+          ...(sandboxPaths ?? []),
+          ...(connection.extraWritablePaths ?? []),
+        ].length > 0 ? [...(sandboxPaths ?? []), ...(connection.extraWritablePaths ?? [])] : null,
+        networkSandboxEnabled: networkSandboxEnabled || null,
+        networkAllowedDomains,
+        kernelNetworkDeny: connection.kernelNetworkDeny ?? null,
+      });
+      // Try to authenticate — some agents handle auth internally
+      // (e.g. claude-agent-acp uses Claude CLI's stored credentials)
+      try {
+        await invoke('acp_agent_authenticate', {
+          instanceId: result.instance_id,
+        });
+      } catch (authErr) {
+        const msg = String(authErr);
+        if (!msg.toLowerCase().includes('not implemented')) {
+          throw authErr;
+        }
+      }
+
+      acpAgent = {
+        instanceId: result.instance_id,
+        connectionId: connection.id,
+        sandboxScopeKey: scopeKey,
+        chatSessionId: null,
+      };
+      return result.instance_id;
+    } finally {
+      acpSpawnPromise = null;
+    }
+  })();
+
+  return acpSpawnPromise;
 }
 
 // ---------------------------------------------------------------------------

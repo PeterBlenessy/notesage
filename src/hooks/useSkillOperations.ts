@@ -316,7 +316,9 @@ export function useSkillDiscovery() {
       log.info('skills', 'Skill/agent discovery pipeline complete');
     };
 
-    run();
+    run().catch((e) => {
+      log.error('skills', 'Unhandled error in skill/agent discovery pipeline', e);
+    });
   }, [startupReady, connectionKey, projectPaths, rescanCounter]);
 }
 

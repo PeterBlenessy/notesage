@@ -97,57 +97,50 @@
 
 ## Async Flows & Race Conditions
 
-### #12 — Add spawn lock to ACP agent singleton
+### #12 — Add spawn lock to ACP agent singleton ✅
 
-- [ ] Done
 
 **Description:** Module-level `acpAgent` has a race condition: concurrent `ensureAcpAgent` calls can both see null and both spawn. Add a `spawnPromise` variable — if a spawn is in progress, concurrent callers await it instead of spawning again.
 
 **Complexity:** M **Category:** frontend **Dependencies:** None **Files:** `src/hooks/useAcpLifecycle.ts`
 
-### #13 — Add spawn lock to task agent singleton
+### #13 — Add spawn lock to task agent singleton ✅
 
-- [ ] Done
 
 **Description:** Identical race to #12 in the task agent. Same fix: add a `spawnPromise` that concurrent callers await.
 
 **Complexity:** M **Category:** frontend **Dependencies:** None **Files:** `src/hooks/useAgentTaskOperations.ts`
 
-### #14 — Fix stale closure in comment save debounce
+### #14 — Fix stale closure in comment save debounce ✅
 
-- [ ] Done
 
 **Description:** The `positionSaveTimeoutRef` debounce callback captures `commentKey` and `storageRoot` from closure. If the user switches tabs during the 2s debounce, the pending timeout uses stale values. Read current values from store/ref inside the timeout callback.
 
 **Complexity:** M **Category:** frontend **Dependencies:** None **Files:** `src/hooks/useCommentOperations.ts`
 
-### #15 — Add AbortController to useLocalCompletion
+### #15 — Add AbortController to useLocalCompletion ✅
 
-- [ ] Done
 
 **Description:** Completion requests lack abort capability — while `requestId` discards stale results, the HTTP request still completes. Add an `AbortController` that is aborted on new requests and on unmount.
 
 **Complexity:** M **Category:** frontend **Dependencies:** None **Files:** `src/hooks/useLocalCompletion.ts`
 
-### #16 — Fix useModelMetadata fetchedRef reset
+### #16 — Fix useModelMetadata fetchedRef reset ✅
 
-- [ ] Done
 
 **Description:** `fetchedRef` is never reset when `modelType` changes, preventing refetch. Reset it when `modelType` changes (add `modelType` to the check or use a `lastModelTypeRef`).
 
 **Complexity:** S **Category:** frontend **Dependencies:** None **Files:** `src/hooks/useModelMetadata.ts`
 
-### #17 — Replace Promise.all with Promise.allSettled in useLocalAI
+### #17 — Replace Promise.all with Promise.allSettled in useLocalAI ✅
 
-- [ ] Done
 
 **Description:** If any promise rejects, all results are lost. Use `Promise.allSettled` and handle individual `rejected` results gracefully (log warning, continue with successful ones).
 
 **Complexity:** M **Category:** frontend **Dependencies:** None **Files:** `src/hooks/useLocalAI.ts`
 
-### #18 — Add outer error boundary to useSkillDiscovery
+### #18 — Add outer error boundary to useSkillDiscovery ✅
 
-- [ ] Done
 
 **Description:** The async IIFE in `useSkillOperations.ts` (lines 196-244) has no outer try/catch. Wrap the entire IIFE body in a try/catch with `console.error` to prevent unhandled rejections.
 
@@ -155,7 +148,6 @@
 
 ### #19 — Fix useFileWatcher stale state in debounced modify handler
 
-- [ ] Done
 
 **Description:** The `handleModifyEvent` async handler fires from a `setTimeout` callback and reads `useEditorStore.getState()` at call time. State may be stale when awaits complete. Re-read state after each await boundary, or capture only the values needed before the first await.
 
@@ -163,7 +155,6 @@
 
 ### #20 — Add editor null check after await in useLocalCompletion
 
-- [ ] Done
 
 **Description:** After an async operation, code accesses `editor.isFocused` and `editor.isDestroyed` without null check (line 133). If editor is destroyed during the await, this throws. Add a guard: `if (!editor || editor.isDestroyed) return;` after the await.
 
@@ -171,7 +162,6 @@
 
 ### #21 — Fix useCopilotCompletion didChange/completion race
 
-- [ ] Done
 
 **Description:** `didChange` invoke and debounced `requestCompletion` fire without coordination. Completion could use a stale document version. Add a version counter or ensure `didChange` completes before firing completion. Low severity but easy to fix.
 
@@ -179,7 +169,6 @@
 
 ### #22 — Add abort/cancellation to useAppLifecycle visibility handlers
 
-- [ ] Done
 
 **Description:** `tauriApi.ping()` and `tauriApi.healthCheck()` called from visibility change handler have no abort on unmount. Add an `AbortController` or mounted guard so in-flight requests are cancelled on cleanup.
 
@@ -187,7 +176,6 @@
 
 ### #23 — Fix iCloud discovery stale store snapshot
 
-- [ ] Done
 
 **Description:** iCloud project discovery reads store state inside a 1s debounced `setTimeout`. Calling `addProject()` on a potentially superseded snapshot could lose concurrent updates. Read fresh state (`useWorkspaceStore.getState()`) inside the timeout callback instead of capturing it outside.
 
@@ -195,7 +183,6 @@
 
 ### #24 — Guard useFileWatcher debounce map overflow
 
-- [ ] Done
 
 **Description:** Per-file debounce maps can briefly exceed `MAX_DEBOUNCE_ENTRIES` before the overflow guard triggers. Move the overflow check before adding a new entry, or use a bounded `Map` that evicts oldest entries. Low severity — only matters with very high file churn.
 
@@ -207,7 +194,6 @@
 
 ### #25 — Add Zustand selectors to Layout, ChatPanel, Sidebar, FileTreeItem
 
-- [ ] Done
 
 **Description:** Replace broad `const { x, y } = useStore()` destructuring with individual `const x = useStore(s => s.x)` selectors in the four highest-impact components. This prevents re-renders from unrelated store mutations.
 
@@ -222,7 +208,6 @@
 
 ### #26 — Add Zustand selectors to AISettings
 
-- [ ] Done
 
 **Description:** `AISettings.tsx` (lines 18-27) destructures 8 fields from `useAIStore()`. Lower impact than #25 (modal-based, not always visible) but same pattern. Replace with individual selectors.
 
@@ -230,7 +215,6 @@
 
 ### #27 — Fix CommandPalette useMemo defeated by unmemoized callbacks
 
-- [ ] Done
 
 **Description:** The `actions` array is wrapped in `useMemo` with 13 dependencies, but many are inline arrow functions recreated every render. Extract the action callbacks into `useCallback` hooks so the `useMemo` is actually effective.
 
@@ -238,7 +222,6 @@
 
 ### #28 — Memoize Layout.tsx inline callback props
 
-- [ ] Done
 
 **Description:** Arrow functions created on every render and passed as props to `TitleBar` (lines 204-206). Wrap in `useCallback`.
 
@@ -246,7 +229,6 @@
 
 ### #29 — Stabilize ChatPanel selectedProjectPaths array identity
 
-- [ ] Done
 
 **Description:** `selectedProjectPaths` array identity changes on every render, causing a useEffect to run too often (line 120). Memoize with `useMemo` or use a stable reference via `useRef` + shallow comparison.
 
@@ -254,7 +236,6 @@
 
 ### #30 — Memoize DocumentOutline per-heading callbacks and style objects
 
-- [ ] Done
 
 **Description:** Each heading button creates inline `onClick` and `style` objects (covers 2 audit findings: inline onClick per heading + inline style objects). Use a single memoized handler that reads the position from `data-*` attributes, and convert padding to Tailwind classes or CSS custom properties.
 
@@ -266,7 +247,6 @@
 
 ### #31 — Decompose Editor.tsx (1,822 lines → \~600 lines)
 
-- [ ] Done
 
 **Description:** Extract four modules from `Editor.tsx`:
 
@@ -283,7 +263,6 @@ Leave `Editor.tsx` as a thin orchestrator (\~600 lines). Each extraction should 
 
 ### #32 — Extract ConnectAgent and ConnectCopilotLsp from ConnectionsSettings.tsx
 
-- [ ] Done
 
 **Description:** `ConnectionsSettings.tsx` (1,685 lines) has `ConnectAgent` (468 lines) and `ConnectCopilotLsp` (384 lines) nested inline. Extract each to its own file. They're self-contained dialogs with clear boundaries.
 
@@ -291,7 +270,6 @@ Leave `Editor.tsx` as a thin orchestrator (\~600 lines). Each extraction should 
 
 ### #33 — Decompose useAIOperations.ts into per-provider hooks
 
-- [ ] Done
 
 **Description:** Extract the \~50-line provider routing conditional into per-provider hooks:
 
@@ -307,7 +285,6 @@ Leave `useAIOperations.ts` as a router (\~150 lines) that delegates based on con
 
 ### #34 — Extract SkillsSettings.tsx inline dialogs
 
-- [ ] Done
 
 **Description:** `SkillsSettings.tsx` (1,267 lines) has 3 dialogs and `AgentGroup` (406 lines) nested inline. Extract `AgentGroup` and the dialogs to separate files.
 
@@ -315,7 +292,6 @@ Leave `useAIOperations.ts` as a router (\~150 lines) that delegates based on con
 
 ### #35 — Decompose useAcpLifecycle.ts (800 lines)
 
-- [ ] Done
 
 **Description:** Auth flow, sandbox setup, and binary resolution are all interleaved. Extract into focused modules:
 
@@ -331,7 +307,6 @@ Leave `useAcpLifecycle.ts` as the orchestrator.
 
 ### #36 — Decompose local_inference.rs (1,769 lines)
 
-- [ ] Done
 
 **Description:** Model management, thinking tag detection, and server lifecycle are mixed. Extract:
 
@@ -346,7 +321,6 @@ Leave `local_inference.rs` focused on server lifecycle (start, stop, health, res
 
 ### #37 — Deduplicate JSON-RPC transport between copilot_lsp.rs and mcp.rs
 
-- [ ] Done
 
 **Description:** `copilot_lsp.rs` (1,684 lines) and `mcp.rs` both implement Content-Length framed JSON-RPC 2.0 transport independently. The shared types are already in `json_rpc.rs` but the framing/read/write logic is duplicated. Extract shared transport into `json_rpc.rs` or a new `json_rpc_transport.rs` module, then refactor both callers to use it.
 
@@ -354,7 +328,6 @@ Leave `local_inference.rs` focused on server lifecycle (start, stop, health, res
 
 ### #38 — Decompose acp.rs (1,481 lines)
 
-- [ ] Done
 
 **Description:** Auth, binary resolution, permissions, and session management are all in one file. Extract:
 

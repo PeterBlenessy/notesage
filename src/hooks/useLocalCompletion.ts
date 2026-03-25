@@ -45,6 +45,7 @@ export function useLocalCompletion(editor: Editor | null) {
   const lastRequestedPos = useRef<string | null>(null);
   const requestId = useRef(0);
   const consecutiveErrors = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Resolve connection details
   const ollamaUrl =
@@ -102,6 +103,13 @@ export function useLocalCompletion(editor: Editor | null) {
       if (posKey === lastRequestedPos.current) return;
       lastRequestedPos.current = posKey;
 
+      // Abort any in-flight request before starting a new one
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
       // Track this request to discard stale responses
       const thisRequest = ++requestId.current;
 
@@ -126,11 +134,11 @@ export function useLocalCompletion(editor: Editor | null) {
 
         log.debug('local-completion', `Got completion: ${JSON.stringify(completion).slice(0, 100)}`);
 
-        // Discard if a newer request was made while we were waiting
-        if (thisRequest !== requestId.current) return;
+        // Discard if aborted or a newer request was made while we were waiting
+        if (abortController.signal.aborted || thisRequest !== requestId.current) return;
 
         // The editor state may have changed while we were waiting
-        if (!editor.isFocused || editor.isDestroyed) return;
+        if (!editor || editor.isDestroyed || !editor.isFocused) return;
 
         const trimmed = completion.trimEnd();
         if (!trimmed) {
@@ -159,6 +167,8 @@ export function useLocalCompletion(editor: Editor | null) {
           to: currentPos,
         });
       } catch (err) {
+        // Don't count aborted requests as errors
+        if (abortController.signal.aborted) return;
         consecutiveErrors.current++;
         if (consecutiveErrors.current <= 3) {
           log.warn('local-completion', `Completion error (${consecutiveErrors.current}/5)`, err);
@@ -196,6 +206,11 @@ export function useLocalCompletion(editor: Editor | null) {
       editor.off('update', handleUpdate);
       if (completionTimeout.current) {
         clearTimeout(completionTimeout.current);
+      }
+      // Abort any in-flight completion request on unmount
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
     };
   }, [editor, isActive, activeTab?.filePath, useSettingsStore.getState().inlineCompletionsDisabled, requestCompletion]);

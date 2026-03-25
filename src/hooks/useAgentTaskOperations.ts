@@ -81,11 +81,15 @@ interface TaskAgentState {
 
 let taskAgent: TaskAgentState | null = null;
 
+/** In-flight spawn promise — prevents concurrent callers from double-spawning. */
+let taskSpawnPromise: Promise<string> | null = null;
+
 export function stopTaskAgent(): void {
   if (taskAgent) {
     tauriApi.acpAgentStop(taskAgent.instanceId).catch(() => {});
     taskAgent = null;
   }
+  taskSpawnPromise = null;
 }
 
 async function ensureTaskAgent(connection: Connection, cwd: string, sandboxPaths?: string[]): Promise<string> {
@@ -97,68 +101,83 @@ async function ensureTaskAgent(connection: Connection, cwd: string, sandboxPaths
       // Agent may already be stopped
     }
     taskAgent = null;
+    taskSpawnPromise = null;
   }
 
   if (taskAgent) {
     return taskAgent.instanceId;
   }
 
-  const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[] };
-  // Inject model flag — codex-acp uses -c model="...", others use --model
-  const args = [...(creds.agentArgs ?? [])];
-  if (connection.config?.model) {
-    let modelId = connection.config.model;
-    if (creds.agentBinary === 'codex-acp' && connection.config.reasoningEffort) {
-      modelId = `${modelId}/${connection.config.reasoningEffort}`;
+  // If a spawn is already in progress, await it instead of double-spawning
+  if (taskSpawnPromise) {
+    return taskSpawnPromise;
+  }
+
+  // Wrap spawn in a tracked promise so concurrent callers await instead of double-spawning
+  taskSpawnPromise = (async () => {
+    try {
+      const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[] };
+      // Inject model flag — codex-acp uses -c model="...", others use --model
+      const args = [...(creds.agentArgs ?? [])];
+      if (connection.config?.model) {
+        let modelId = connection.config.model;
+        if (creds.agentBinary === 'codex-acp' && connection.config.reasoningEffort) {
+          modelId = `${modelId}/${connection.config.reasoningEffort}`;
+        }
+        if (creds.agentBinary === 'codex-acp') {
+          args.push('-c', `model="${modelId}"`);
+        } else {
+          args.push('--model', modelId);
+        }
+      }
+      // Build network sandbox config if enabled
+      const networkSandboxEnabled = connection.networkSandboxEnabled ?? false;
+      let networkAllowedDomains: string[] | null = null;
+      if (networkSandboxEnabled) {
+        const providerOption = PROVIDER_OPTIONS.find(
+          (o) => o.agentBinary === creds.agentBinary || o.lspBinary === creds.agentBinary
+        );
+        const builtIn = providerOption?.installMeta?.allowedDomains ?? [];
+        const permStore = usePermissionStore.getState();
+        const userDomains = permStore.getDomainAllowedList(connection.id);
+        networkAllowedDomains = [...builtIn, ...userDomains];
+      }
+
+      // Delegation: sandbox to single folder only
+      const result = await tauriApi.acpAgentSpawn(
+        creds.agentBinary,
+        args.length > 0 ? args : null,
+        'task',
+        cwd,
+        connection.sandboxEnabled ?? null,
+        [...(sandboxPaths ?? (cwd !== '/tmp' ? [cwd] : [])), ...(connection.extraWritablePaths ?? [])],
+        networkSandboxEnabled || null,
+        networkAllowedDomains,
+        connection.kernelNetworkDeny ?? null,
+      );
+
+      // Try to authenticate — some agents handle auth internally
+      try {
+        await tauriApi.acpAgentAuthenticate(result.instance_id);
+      } catch (authErr) {
+        const msg = String(authErr);
+        if (!msg.toLowerCase().includes('not implemented')) throw authErr;
+      }
+
+      taskAgent = {
+        instanceId: result.instance_id,
+        connectionId: connection.id,
+        projectRoot: cwd,
+        sessionId: null,
+      };
+
+      return result.instance_id;
+    } finally {
+      taskSpawnPromise = null;
     }
-    if (creds.agentBinary === 'codex-acp') {
-      args.push('-c', `model="${modelId}"`);
-    } else {
-      args.push('--model', modelId);
-    }
-  }
-  // Build network sandbox config if enabled
-  const networkSandboxEnabled = connection.networkSandboxEnabled ?? false;
-  let networkAllowedDomains: string[] | null = null;
-  if (networkSandboxEnabled) {
-    const providerOption = PROVIDER_OPTIONS.find(
-      (o) => o.agentBinary === creds.agentBinary || o.lspBinary === creds.agentBinary
-    );
-    const builtIn = providerOption?.installMeta?.allowedDomains ?? [];
-    const permStore = usePermissionStore.getState();
-    const userDomains = permStore.getDomainAllowedList(connection.id);
-    networkAllowedDomains = [...builtIn, ...userDomains];
-  }
+  })();
 
-  // Delegation: sandbox to single folder only
-  const result = await tauriApi.acpAgentSpawn(
-    creds.agentBinary,
-    args.length > 0 ? args : null,
-    'task',
-    cwd,
-    connection.sandboxEnabled ?? null,
-    [...(sandboxPaths ?? (cwd !== '/tmp' ? [cwd] : [])), ...(connection.extraWritablePaths ?? [])],
-    networkSandboxEnabled || null,
-    networkAllowedDomains,
-    connection.kernelNetworkDeny ?? null,
-  );
-
-  // Try to authenticate — some agents handle auth internally
-  try {
-    await tauriApi.acpAgentAuthenticate(result.instance_id);
-  } catch (authErr) {
-    const msg = String(authErr);
-    if (!msg.toLowerCase().includes('not implemented')) throw authErr;
-  }
-
-  taskAgent = {
-    instanceId: result.instance_id,
-    connectionId: connection.id,
-    projectRoot: cwd,
-    sessionId: null,
-  };
-
-  return result.instance_id;
+  return taskSpawnPromise;
 }
 
 // ---------------------------------------------------------------------------

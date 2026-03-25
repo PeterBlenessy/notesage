@@ -12,6 +12,13 @@ export function useModelMetadata(
   const [metadataMap, setMetadataMap] = useState<Record<string, ModelMetadata>>({});
   const [loading, setLoading] = useState(false);
   const fetchedRef = useRef(false);
+  const lastModelTypeRef = useRef(modelType);
+
+  // Reset fetchedRef when modelType changes so we refetch
+  if (lastModelTypeRef.current !== modelType) {
+    lastModelTypeRef.current = modelType;
+    fetchedRef.current = false;
+  }
 
   useEffect(() => {
     if (models.length === 0 || fetchedRef.current) return;

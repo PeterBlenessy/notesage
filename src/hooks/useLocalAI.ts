@@ -38,20 +38,33 @@ export function useLocalAI() {
     (async () => {
       try {
         const store = useLocalAIStore.getState();
-        const [memory, fetchedModels, binaryResult] = await Promise.all([
+        const [memoryResult, modelsResult, binaryResultSettled] = await Promise.allSettled([
           tauriApi.getSystemMemory(),
           tauriApi.listLocalModels(),
           store.checkBinary(),
         ]);
-        store.setSystemMemory(memory);
-        store.setModels(fetchedModels);
-        startupLoadedRef.current = true;
-        if (binaryResult.available) {
-          log.debug('local-ai', `Binary found at ${binaryResult.location}: ${binaryResult.path}`);
+        if (memoryResult.status === 'fulfilled') {
+          store.setSystemMemory(memoryResult.value);
         } else {
-          log.warn('local-ai', 'Binary not found — sidecar may not be bundled correctly');
+          log.warn('local-ai', 'Failed to fetch system memory', memoryResult.reason);
         }
-        log.debug('local-ai', `Loaded system memory and ${fetchedModels.length} models`);
+        if (modelsResult.status === 'fulfilled') {
+          store.setModels(modelsResult.value);
+          log.debug('local-ai', `Loaded ${modelsResult.value.length} models`);
+        } else {
+          log.warn('local-ai', 'Failed to list local models', modelsResult.reason);
+        }
+        if (binaryResultSettled.status === 'fulfilled') {
+          const binaryResult = binaryResultSettled.value;
+          if (binaryResult.available) {
+            log.debug('local-ai', `Binary found at ${binaryResult.location}: ${binaryResult.path}`);
+          } else {
+            log.warn('local-ai', 'Binary not found — sidecar may not be bundled correctly');
+          }
+        } else {
+          log.warn('local-ai', 'Failed to check binary', binaryResultSettled.reason);
+        }
+        startupLoadedRef.current = true;
       } catch (e) {
         log.error('local-ai', 'Failed to fetch local AI info', e);
         startupLoadedRef.current = true; // Don't block auto-start forever

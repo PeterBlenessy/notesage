@@ -106,10 +106,13 @@ export function useCommentOperations(editor: Editor | null) {
 
       updateCommentPositions(commentKey, positions);
 
-      // Debounce save to disk (2s after last edit)
+      // Debounce save to disk (2s after last edit).
+      // Capture current values to avoid stale closure if tab switches during debounce.
+      const currentKey = commentKey;
+      const currentRoot = storageRoot;
       if (positionSaveTimeoutRef.current) clearTimeout(positionSaveTimeoutRef.current);
       positionSaveTimeoutRef.current = setTimeout(() => {
-        saveComments(commentKey, storageRoot);
+        saveComments(currentKey, currentRoot);
       }, 2000);
     };
 
