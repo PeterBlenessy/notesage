@@ -5,8 +5,8 @@
 | **Date** | 2026-03-26 |
 | **Status** | Not started |
 | **PRD** | [test-infrastructure](../prds/2026-03-26-test-infrastructure.md) |
-| **Total** | 18 tasks: 5S, 8M, 5L |
-| **Suggested order** | Coverage tooling (#1-#3) → Component test infra (#4-#5) → Component tests (#6-#11) → Playwright infra (#12-#13) → E2E tests (#14-#17) → CI (#18) |
+| **Total** | 19 tasks: 6S, 8M, 5L |
+| **Suggested order** | Coverage tooling (#1-#3) → Component test infra (#4-#5) → Component tests (#6-#11) → Playwright infra (#12-#13) → E2E tests (#14-#17) → CI (#18) → Skill update (#19) |
 
 **Risks:**
 
@@ -202,3 +202,15 @@
 **Complexity:** L | **Category:** both | **Dependencies:** #1, #12
 
 **Files:** new: `.github/workflows/test.yml`
+
+---
+
+## Phase E: Skill Update
+
+### #19 — Update `/test` skill to reflect new test infrastructure
+
+**Description:** Update `.claude/skills/test/SKILL.md` to reflect the full test infrastructure now in place. Add: (a) `pnpm test:coverage` step with coverage thresholds and report locations, (b) `pnpm test:e2e` Playwright step with browser requirements and Tauri mock context, (c) `pnpm test:all` as the comprehensive command, (d) update the "When Tests Fail" section with E2E and coverage-specific failure guidance, (e) update quality gates to include coverage minimums and E2E pass requirements. Remove any "if configured" hedging — all test types are now concrete.
+
+**Complexity:** S | **Category:** frontend | **Dependencies:** #18
+
+**Files:** `.claude/skills/test/SKILL.md`

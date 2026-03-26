@@ -34,7 +34,18 @@ Runs:
 - Utility function tests
 - Store tests
 
-### 3. Markdown Round-Trip Tests
+### 3. Rust Backend Tests
+
+```bash
+cd src-tauri && cargo test
+```
+
+Runs:
+- Unit tests in Rust backend modules
+- Integration tests for Tauri commands
+- Parser tests (GGUF, markdown-to-typst, frontmatter, etc.)
+
+### 4. Markdown Round-Trip Tests
 
 ```bash
 pnpm test:roundtrip
@@ -85,7 +96,7 @@ Input and output must be equivalent (whitespace-normalized).
 A release cannot ship unless:
 
 - All TypeScript type checks pass
-- All unit tests pass
+- All unit tests pass (frontend + Rust)
 - **All markdown round-trip tests pass** (critical!)
 - No console errors during tests
 
