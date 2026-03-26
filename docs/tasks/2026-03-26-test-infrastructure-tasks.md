@@ -133,7 +133,7 @@
 
 ## Phase C: Playwright E2E Foundation
 
-### #12 — Install Playwright and configure for Vite dev server
+### #12 — Install Playwright and configure for Vite dev server ✅
 
 **Description:** Install `@playwright/test`. Run `npx playwright install chromium`. Create `playwright.config.ts` with `webServer` pointing to `pnpm dev` on `http://localhost:1420`, `testDir: './e2e'`, Chromium only, HTML reporter on failure. Add `e2e/` directory structure: `e2e/fixtures/`, `e2e/tests/`. Add `test-results/` and `playwright-report/` to `.gitignore`. Verify `pnpm test:e2e` starts dev server and runs an empty test suite.
 
@@ -143,7 +143,7 @@
 
 ---
 
-### #13 — Create Tauri IPC mock for Playwright
+### #13 — Create Tauri IPC mock for Playwright ✅
 
 **Description:** Create `e2e/fixtures/tauri-mock.ts` that exports a `setupTauriMock(page)` function. This function calls `page.addInitScript()` to define `window.__TAURI_INTERNALS__` with a mock `invoke` handler. Provide default responses for: `list_directory` (returns sample file tree), `read_file` (returns sample markdown), `write_file` (no-op success), `path_exists` (true), `watch_directory` (no-op), `mark_self_write` (no-op), `open_folder_dialog` (returns test path). Create a helper to add custom command overrides per test. Write a smoke test `e2e/tests/app-loads.spec.ts` that verifies the app renders without errors.
 
@@ -153,7 +153,7 @@
 
 ---
 
-### #14 — E2E tests: file operations
+### #14 — E2E tests: file operations ✅
 
 **Description:** Write `e2e/tests/file-operations.spec.ts` covering: click file in sidebar → content appears in editor, open second file → new tab opens, switch tabs → content changes, Cmd+S triggers save (verify `write_file` mock called). Use `setupTauriMock` with file tree containing 3-5 sample markdown files.
 
@@ -163,7 +163,7 @@
 
 ---
 
-### #15 — E2E tests: editor interactions
+### #15 — E2E tests: editor interactions ✅
 
 **Description:** Write `e2e/tests/editor.spec.ts` covering: type text in editor → content updates, type `/` → slash command menu appears, select heading from menu → heading inserted, Cmd+F → find bar opens, type search query → matches highlighted, Escape → find bar closes.
 
@@ -173,7 +173,7 @@
 
 ---
 
-### #16 — E2E tests: navigation and UI
+### #16 — E2E tests: navigation and UI ✅
 
 **Description:** Write `e2e/tests/navigation.spec.ts` covering: Cmd+K → command palette opens, type filename → filtered results, select result → file opens, Escape → palette closes, Cmd+T → theme toggles (verify class change on `<html>`), Cmd+Shift+C → chat panel opens, Cmd+Shift+L → sidebar toggles.
 
@@ -183,7 +183,7 @@
 
 ---
 
-### #17 — E2E tests: chat panel
+### #17 — E2E tests: chat panel ✅
 
 **Description:** Write `e2e/tests/chat.spec.ts` covering: open chat panel, type message in input, click send → message appears in list, mock streaming response via `ai-stream-chunk` events → assistant message renders. This requires the Tauri mock to support event emission (mock `listen` to capture handlers, then trigger them from the test).
 

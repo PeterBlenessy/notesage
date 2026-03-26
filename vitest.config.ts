@@ -9,6 +9,7 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    exclude: ['e2e/**', 'node_modules/**', 'bundled-skills/**/node_modules/**', '.claude/worktrees/**'],
     environmentOptions: {
       jsdom: {
         url: 'http://localhost',

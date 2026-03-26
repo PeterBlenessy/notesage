@@ -32,6 +32,10 @@ src-tauri/binaries/lib/
 # Coverage reports
 coverage/
 
+# Playwright
+test-results/
+playwright-report/
+
 # Build outputs
 *.dmg
 *.app
