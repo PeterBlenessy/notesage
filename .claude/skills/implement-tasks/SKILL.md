@@ -21,7 +21,21 @@ Execute tasks from a task breakdown file with quality gates, parallel execution 
    - If tasks touch **overlapping files**: run sequentially, or group overlapping tasks together
 5. **Flag blockers or ambiguities** before writing any code
 
-### 1. Implement
+### 1. Write tests first
+
+Before implementing, write tests that define the expected behavior:
+
+| Task type | Test approach |
+|-----------|--------------|
+| Bug fixes | Write a failing test that reproduces the bug — red first, then fix to green |
+| New utilities, hooks, stores | Define expected behavior as Vitest tests, then implement |
+| New Tauri commands | Write Rust `#[test]` for the command logic, then implement |
+| Refactors | Ensure existing behavior is covered by tests before changing code |
+| UI components | Skip this step — write component tests after implementation (step 3) |
+
+If the task doesn't change testable behavior (e.g., docs-only, config changes), skip this step.
+
+### 2. Implement
 
 For each task (parallel or sequential depending on pre-flight):
 
@@ -29,11 +43,13 @@ For each task (parallel or sequential depending on pre-flight):
    - The task description and acceptance criteria from the breakdown file
    - The files to create or modify (from the task's `Files` field)
    - `CLAUDE.md` for project conventions
-   - The relevant feature doc (e.g., `docs/features/editor.md` for editor tasks — see the docs table in step 5)
+   - The relevant feature doc (e.g., `docs/features/editor.md` for editor tasks — see the docs table in step 6)
+   - Any tests written in step 1 (the implementation must make them pass)
 2. Use `isolation: "worktree"` for parallel tasks to avoid conflicts
 3. The sub-agent implements the task following project conventions
+4. **For UI components**: write component tests after implementation to cover the new behavior
 
-### 2. Merge worktrees
+### 3. Merge worktrees
 
 For tasks that ran in worktree isolation:
 
@@ -42,28 +58,38 @@ For tasks that ran in worktree isolation:
 3. **Resolve any conflicts** if multiple worktrees modified adjacent code
 4. Repeat for each completed worktree before proceeding to tests
 
-### 3. Test gate
+### 4. Test gate
 
 When implementation is merged:
 
 1. **Run automatic tests** (`/test`)
 2. **If tests fail**: fix and re-run. Do not proceed until green.
-3. **Run `/review-code`** for M and L complexity tasks to catch convention violations
-4. **If task touches UI components**: run `/review-ui` for design system compliance
+3. **Run automatable verifications** — if the task's acceptance criteria can be verified by running commands (checking file existence, running scripts, verifying output), do it now. Don't defer to the user what a script can confirm.
+4. **Run `/review-code`** for M and L complexity tasks to catch convention violations
+5. **If task touches UI components**: run `/review-ui` for design system compliance
 
-### 4. Manual test checkpoint
+### 5. Manual test checkpoint
 
-1. **Report to user**: what was changed, what to test manually
-2. **Wait for user confirmation** that manual testing passes
-3. Do NOT proceed to marking done until the user confirms
-4. **If user reports issues**: fix and re-run the test gate from step 3
+Only pause for tests that genuinely require a human:
 
-### 5. Mark done
+| Requires human | Does NOT require human |
+|----------------|----------------------|
+| Visual appearance, animations, transitions | File exists, command runs, output matches |
+| UX feel, interaction flow | Config values are correct |
+| Cross-process behavior (Tauri IPC in real app) | Test suite passes |
+| Accessibility with real screen reader | Script produces expected output |
+
+1. **If there are truly manual tests**: report what to test and wait for user confirmation
+2. **If everything is automatable**: report results and proceed — no need to block
+3. **If user reports issues**: fix and re-run the test gate from step 4
+4. Do NOT proceed to marking done until any required manual tests are confirmed
+
+### 6. Mark done
 
 1. **Task breakdown file**: add ` ✅` at the end of the task heading (e.g., `### #35 — Title ✅`)
 2. **PRD file**: if the task completes a PRD checkbox, mark it too
 
-### 6. Update docs
+### 7. Update docs
 
 Update relevant documentation to reflect the changes:
 
@@ -81,14 +107,14 @@ Update relevant documentation to reflect the changes:
 
 Only update docs that are actually affected by the changes.
 
-### 7. Commit
+### 8. Commit
 
-1. **Stage** the implementation files, task breakdown, and updated docs
+1. **Stage** the implementation files, tests, task breakdown, and updated docs
 2. **Commit** with a descriptive message
 3. **Run tests post-commit** to verify pre-commit hooks didn't break anything
 4. If post-commit tests fail, fix and create a new commit
 
-### 8. Report & wait
+### 9. Report & wait
 
 1. **Report completion** to the user with a summary of what was done
 2. **Wait for user go-ahead** before starting the next task
@@ -96,7 +122,8 @@ Only update docs that are actually affected by the changes.
 
 ## Guidelines
 
-- **Never commit without user confirmation** that manual testing passes
+- **Every task that adds or changes behavior must include corresponding tests** — no exceptions. Tests are part of the implementation, not a follow-up.
+- **Never commit without user confirmation** when manual testing is required
 - **Never skip the test gate** — all automatic tests must be green
 - **One task = one commit** unless tasks are tightly coupled
 - **Preserve existing behavior** — don't break other features
