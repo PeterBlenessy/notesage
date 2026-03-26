@@ -58,7 +58,7 @@
 
 ---
 
-### #5 — Add mounted guard to useMcpDiscovery listener
+### #5 — Add mounted guard to useMcpDiscovery listener ✅
 
 **Description:** Add `if (!mounted) return;` at the top of the `mcp-server-status` listener callback to skip store updates after unmount.
 

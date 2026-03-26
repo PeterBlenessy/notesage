@@ -142,6 +142,7 @@ export function useMcpDiscovery() {
     let unlistenFn: (() => void) | null = null;
 
     listen<McpStatusEvent>('mcp-server-status', (event) => {
+      if (!mounted) return;
       const { serverId, status, error, tools } = event.payload;
       const store = useMcpStore.getState();
       store.setServerStatus(serverId, status, error);
