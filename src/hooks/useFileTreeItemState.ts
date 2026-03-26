@@ -33,12 +33,14 @@ export function useFileTreeItemState(
   isDirectory: boolean,
   gitRepoRoot?: string,
 ): FileTreeItemState {
-  // Editor store — active tab detection
-  const tabs = useEditorStore((s) => s.tabs);
-  const activeTabId = useEditorStore((s) => s.activeTabId);
+  // Editor store — active file path only (not full tabs array)
+  const activeFilePath = useEditorStore((s) => {
+    const tab = s.tabs.find((t) => t.id === s.activeTabId);
+    return tab?.filePath ?? null;
+  });
 
   // External changes (old and new stores)
-  const externalChangesOld = useEditorStore((s) => s.externalChanges);
+  const hasExternalChangeOld = useEditorStore((s) => path in s.externalChanges);
   const externalChangeNew = useExternalChangeStore((s) => s.getChange(path));
 
   // iCloud path
@@ -52,11 +54,10 @@ export function useFileTreeItemState(
 
   return useMemo(() => {
     // isActive
-    const activeTab = tabs.find((t) => t.id === activeTabId);
-    const isActive = activeTab?.filePath === path;
+    const isActive = activeFilePath === path;
 
     // hasExternalChange
-    const hasExternalChange = !isDirectory && (path in externalChangesOld || !!externalChangeNew);
+    const hasExternalChange = !isDirectory && (hasExternalChangeOld || !!externalChangeNew);
 
     // isCloudFile
     const isCloudFile = !!(icloudNotesagePath && path.startsWith(icloudNotesagePath + "/"));
@@ -81,11 +82,10 @@ export function useFileTreeItemState(
 
     return { isActive, hasExternalChange, isCloudFile, gitInfo };
   }, [
-    tabs,
-    activeTabId,
+    activeFilePath,
     path,
     isDirectory,
-    externalChangesOld,
+    hasExternalChangeOld,
     externalChangeNew,
     icloudNotesagePath,
     gitEnabled,

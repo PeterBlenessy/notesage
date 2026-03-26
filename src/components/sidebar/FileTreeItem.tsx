@@ -53,11 +53,10 @@ interface FileTreeItemProps {
 }
 
 const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProject, expandKeyPrefix = "", gitRepoRoot, onCommitFile, onExportFile }: FileTreeItemProps) {
-  const isExpanded = useWorkspaceStore((s) => s.isExpanded);
   const toggleFolder = useWorkspaceStore((s) => s.toggleFolder);
   const { renamePath, deletePath } = useFileOperations();
   const expandKey = expandKeyPrefix + entry.path;
-  const expanded = isExpanded(expandKey);
+  const expanded = useWorkspaceStore((s) => s.expandedFolders.has(expandKey));
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(entry.name);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
