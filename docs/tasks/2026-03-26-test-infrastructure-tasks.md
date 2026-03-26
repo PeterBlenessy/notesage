@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-26 |
-| **Status** | Not started |
+| **Status** | In progress |
 | **PRD** | [test-infrastructure](../prds/2026-03-26-test-infrastructure.md) |
 | **Total** | 19 tasks: 6S, 8M, 5L |
 | **Suggested order** | Coverage tooling (#1-#3) → Component test infra (#4-#5) → Component tests (#6-#11) → Playwright infra (#12-#13) → E2E tests (#14-#17) → CI (#18) → Skill update (#19) |
@@ -19,7 +19,7 @@
 
 ## Phase A: Coverage Tooling
 
-### #1 — Pin Node 22 LTS and verify coverage works
+### #1 — Pin Node 22 LTS and verify coverage works ✅
 
 **Description:** Add `.nvmrc` with `22` to the project root. Install `@vitest/coverage-istanbul@4.0.18`. Uncomment and configure the coverage block in `vitest.config.ts` with `provider: 'istanbul'`, reporters `['text', 'json-summary', 'html']`, and `reportsDirectory: './coverage'`. Verify `pnpm test:coverage` (under Node 22) prints a coverage table. Add `coverage/` to `.gitignore`.
 
@@ -29,7 +29,7 @@
 
 ---
 
-### #2 — Add test scripts to package.json
+### #2 — Add test scripts to package.json ✅
 
 **Description:** Add scripts: `"test:coverage": "vitest run --coverage"`, `"test:e2e": "playwright test"`, `"test:all": "vitest run && playwright test"`. Verify `pnpm test` (existing) and `pnpm test:coverage` both work. Leave `test:e2e` as a no-op until Playwright is installed in task #12.
 
@@ -39,7 +39,7 @@
 
 ---
 
-### #3 — Document Rust coverage approach
+### #3 — Document Rust coverage approach ✅
 
 **Description:** Add a section to `docs/architecture.md` under a "Testing" heading documenting: (a) how to run frontend coverage (`pnpm test:coverage`), (b) that Rust coverage uses `cargo-tarpaulin` or `cargo-llvm-cov` in CI, (c) Node 22 requirement for coverage via `.nvmrc`. This is documentation only — no Rust tooling installation.
 
