@@ -48,7 +48,7 @@
 
 ---
 
-### #4 — Make TabBar close button keyboard accessible
+### #4 — Make TabBar close button keyboard accessible ✅
 
 **Description:** Add `tabIndex={0}` and `onKeyDown` handler (Enter/Space) to the tab close `<span role="button">`. Follow the pattern in FileTreeItem for keyboard event handling.
 

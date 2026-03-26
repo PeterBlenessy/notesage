@@ -30,7 +30,7 @@ export function TabBar() {
   }, [activeTabId]);
 
   const handleCloseTab = (
-    e: React.MouseEvent,
+    e: React.MouseEvent | React.KeyboardEvent,
     tabId: string,
     isDirty: boolean
   ) => {
@@ -73,10 +73,10 @@ export function TabBar() {
             ref={isActive ? activeTabRef : undefined}
             onClick={() => setActiveTab(tab.id)}
             className={cn(
-              "group relative flex items-center gap-1.5 px-3 h-8 text-sm rounded-t-md transition-colors duration-150 shrink-0 max-w-[200px]",
+              "group relative flex items-center gap-1.5 px-3 h-8 text-sm rounded-t-md transition-colors duration-150 shrink-0 max-w-[200px] focus-visible:outline-none",
               isActive
                 ? "bg-muted text-foreground"
-                : "bg-accent text-muted-foreground hover:text-foreground hover:bg-muted"
+                : "bg-accent text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:text-foreground focus-visible:bg-muted"
             )}
           >
             {/* Active indicator */}
@@ -98,11 +98,13 @@ export function TabBar() {
             {/* Close button */}
             <span
               onClick={(e) => handleCloseTab(e, tab.id, tab.isDirty)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleCloseTab(e, tab.id, tab.isDirty); } }}
+              tabIndex={0}
               className={cn(
-                "shrink-0 rounded-sm p-0.5 transition-all cursor-pointer inline-flex items-center justify-center",
+                "shrink-0 rounded-sm p-0.5 transition-all cursor-pointer inline-flex items-center justify-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                 isActive
                   ? "opacity-60 hover:opacity-100 hover:bg-foreground/10"
-                  : "opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-foreground/10"
+                  : "opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:bg-foreground/10 focus-visible:opacity-60"
               )}
               role="button"
               aria-label="Close tab"
