@@ -24,6 +24,7 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
   const recognitionRef = useRef<unknown>(null);
   const unlistenRef = useRef<UnlistenFn | null>(null);
   const mountedRef = useRef(true);
+  const listenGenerationRef = useRef(0);
   const { speechLanguage, defaultModel, startDictating: storeStartDictating, stopDictating: storeStopDictating } = useRecordingStore();
 
   // Cleanup on unmount
@@ -70,6 +71,9 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
         unlistenRef.current = null;
       }
 
+      // Track generation so stale listeners from rapid toggles don't overwrite newer ones
+      const generation = ++listenGenerationRef.current;
+
       const unlisten = await listen<{ text: string; is_final: boolean; error?: string }>(
         'dictation-result',
         (event) => {
@@ -89,7 +93,7 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
           }
         }
       );
-      if (!mountedRef.current) {
+      if (!mountedRef.current || generation !== listenGenerationRef.current) {
         unlisten();
         return;
       }
@@ -144,7 +148,7 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
           }
         };
 
-        recognition.onerror = (event: { error: string }) => {
+        recognition.onerror = async (event: { error: string }) => {
           if (event.error === 'service-not-allowed' || event.error === 'not-allowed') {
             // Web Speech API not available in this webview — permanently fall back to whisper-rs
             log.info('transcription', `Web Speech API unavailable (${event.error}), falling back to Whisper`);
@@ -152,7 +156,8 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
             recognition.stop();
             recognitionRef.current = null;
             // Retry immediately with whisper-rs
-            startWhisperDictation();
+            await startWhisperDictation();
+            if (!mountedRef.current) return;
             return;
           }
           if (event.error !== 'aborted') {

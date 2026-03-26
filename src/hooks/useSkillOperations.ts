@@ -318,6 +318,7 @@ export function useSkillDiscovery() {
 
     run().catch((e) => {
       log.error('skills', 'Unhandled error in skill/agent discovery pipeline', e);
+      toast.error('Failed to load skills and agents. Check logs for details.');
     });
   }, [startupReady, connectionKey, projectPaths, rescanCounter]);
 }

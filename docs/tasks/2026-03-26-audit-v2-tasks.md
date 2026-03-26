@@ -150,7 +150,7 @@
 
 ## Tier 2: Targeted Fixes
 
-### #14 — Fix useSpeechRecognition listener race conditions
+### #14 — Fix useSpeechRecognition listener race conditions ✅
 
 **Description:** Two fixes in one: (a) Await the recursive `startWhisperDictation()` call in the Web Speech API error handler and add a mounted guard after the await. (b) In `startWhisperDictation`, await the `listen()` promise and check `mountedRef.current` before storing the new unlisten to prevent rapid-toggle overwrites.
 
@@ -160,7 +160,7 @@
 
 ---
 
-### #15 — Fix useDirectApiChat sequential listener race
+### #15 — Fix useDirectApiChat sequential listener race ✅
 
 **Description:** Replace the four sequential `await listen()` calls with a single `Promise.all()` so all listeners are set up atomically. If any fails, the others are still cleaned up.
 
@@ -170,7 +170,7 @@
 
 ---
 
-### #16 — Fix ACP agent singleton race condition
+### #16 — Fix ACP agent singleton race condition ✅
 
 **Description:** Replace the global `acpAgent` null-check pattern with a `Map<connectionId, Promise<AgentHandle>>` that deduplicates concurrent spawn attempts per connection. If a spawn is already in flight for the same connection, await the existing promise instead of spawning a second agent.
 
@@ -180,7 +180,7 @@
 
 ---
 
-### #17 — Fix Task agent singleton race condition
+### #17 — Fix Task agent singleton race condition ✅
 
 **Description:** Same fix as #16 but for `taskAgent` in `useAgentTaskOperations`. Use a per-connection map to prevent concurrent spawn races.
 
@@ -190,7 +190,7 @@
 
 ---
 
-### #18 — Fix useModelMetadata fetchedRef reset
+### #18 — Fix useModelMetadata fetchedRef reset ✅
 
 **Description:** Add a separate `useEffect` that resets `fetchedRef.current = false` when the `models` dependency changes, so the fetch re-runs with new models.
 
@@ -200,7 +200,7 @@
 
 ---
 
-### #19 — Fix useLocalAI Promise.all → Promise.allSettled
+### #19 — Fix useLocalAI Promise.all → Promise.allSettled ✅
 
 **Description:** Replace `Promise.all([getSystemMemory(), listLocalModels(), ...])` with `Promise.allSettled()`. Handle each result individually so one failure doesn't lose the others.
 
@@ -210,7 +210,7 @@
 
 ---
 
-### #20 — Add error boundary to useSkillDiscovery
+### #20 — Add error boundary to useSkillDiscovery ✅
 
 **Description:** Add `.catch()` to the async IIFE in useSkillDiscovery that shows a `toast.error()` so users know skills/agents failed to load. Log the full error to console for debugging.
 
@@ -220,7 +220,7 @@
 
 ---
 
-### #21 — Fix useLocalCompletion editor stale reference
+### #21 — Fix useLocalCompletion editor stale reference ✅
 
 **Description:** Capture the editor instance at request time. After the async completion request resolves, validate the captured instance matches the current editor before inserting ghost text. Return early if editor has changed (tab switch during await).
 
@@ -230,7 +230,7 @@
 
 ---
 
-### #22 — Add keyboard navigation to FileTreeItem
+### #22 — Add keyboard navigation to FileTreeItem ✅
 
 **Description:** Add ArrowRight (expand directory) and ArrowLeft (collapse directory) keyboard handlers to the FileTreeItem's `onKeyDown`. Follow WAI-ARIA tree view pattern. Only apply to directories.
 

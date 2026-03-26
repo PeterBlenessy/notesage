@@ -20,6 +20,18 @@ export function useModelMetadata(
     fetchedRef.current = false;
   }
 
+  // Create a stable key from model IDs to detect when models list changes
+  const modelsKey = models.map((m) => m.id).sort().join(',');
+  const lastModelsKeyRef = useRef(modelsKey);
+
+  // Reset fetchedRef when models list changes so we refetch
+  useEffect(() => {
+    if (lastModelsKeyRef.current !== modelsKey) {
+      lastModelsKeyRef.current = modelsKey;
+      fetchedRef.current = false;
+    }
+  }, [modelsKey]);
+
   useEffect(() => {
     if (models.length === 0 || fetchedRef.current) return;
     fetchedRef.current = true;

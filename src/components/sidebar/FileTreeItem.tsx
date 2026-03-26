@@ -352,7 +352,18 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
             onClick={handleClick}
             tabIndex={0}
             aria-current={isActive ? "page" : undefined}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(); } }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleClick();
+              } else if (entry.is_directory && e.key === 'ArrowRight' && !expanded) {
+                e.preventDefault();
+                toggleFolder(expandKey);
+              } else if (entry.is_directory && e.key === 'ArrowLeft' && expanded) {
+                e.preventDefault();
+                toggleFolder(expandKey);
+              }
+            }}
           >
             {entry.is_directory ? (
               <span className="shrink-0 text-muted-foreground">

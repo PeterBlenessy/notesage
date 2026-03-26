@@ -76,6 +76,9 @@ export function useLocalCompletion(editor: Editor | null) {
     async () => {
       if (!editor || !isActive) return;
 
+      // Capture active tab path for stale reference detection after async await
+      const capturedTabPath = activeTab?.filePath;
+
       // Back off after repeated errors (e.g., server loading, model doesn't support FIM)
       if (consecutiveErrors.current >= 5) return;
 
@@ -139,6 +142,11 @@ export function useLocalCompletion(editor: Editor | null) {
 
         // The editor state may have changed while we were waiting
         if (!editor || editor.isDestroyed || !editor.isFocused) return;
+
+        // Verify the active tab hasn't changed during the async request (tab switch during await)
+        const currentState = useEditorStore.getState();
+        const currentTab = currentState.tabs.find(t => t.id === currentState.activeTabId);
+        if (currentTab?.filePath !== capturedTabPath) return;
 
         const trimmed = completion.trimEnd();
         if (!trimmed) {

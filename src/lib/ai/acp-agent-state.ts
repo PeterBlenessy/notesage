@@ -26,6 +26,11 @@ export let acpAgent: AcpAgentState | null = null;
 /** In-flight spawn promise — prevents concurrent callers from double-spawning. */
 let acpSpawnPromise: Promise<string> | null = null;
 
+/** Read the current agent state — bypasses TypeScript control-flow narrowing. */
+function getAcpAgent(): AcpAgentState | null {
+  return acpAgent;
+}
+
 /** Stop any running ACP agent and clear state. Called on disconnect. */
 export function stopAcpAgent(): void {
   if (acpAgent) {
@@ -71,9 +76,17 @@ export async function ensureAcpAgent(connection: Connection, cwd: string, sandbo
     return acpAgent.instanceId;
   }
 
-  // If a spawn is already in progress, await it instead of double-spawning
+  // If a spawn is already in progress, await it then verify the result
   if (acpSpawnPromise) {
-    return acpSpawnPromise;
+    const instanceId = await acpSpawnPromise;
+    // Re-read module-level state after await (may have changed during suspension)
+    const current = getAcpAgent();
+    // Verify the spawned agent matches our connection (another caller may have changed it)
+    if (current?.instanceId === instanceId && current.connectionId === connection.id) {
+      return instanceId;
+    }
+    // Agent changed or was replaced during await — restart the entire check
+    return ensureAcpAgent(connection, cwd, sandboxPaths);
   }
 
   // Wrap spawn in a tracked promise so concurrent callers await instead of double-spawning

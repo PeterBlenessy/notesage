@@ -41,6 +41,9 @@ interface TaskAgentState {
 
 let taskAgent: TaskAgentState | null = null;
 
+/** Read `taskAgent` without TS narrowing it to `never` after early-return checks. */
+function getTaskAgent(): TaskAgentState | null { return taskAgent; }
+
 /** In-flight spawn promise — prevents concurrent callers from double-spawning. */
 let taskSpawnPromise: Promise<string> | null = null;
 
@@ -64,13 +67,31 @@ async function ensureTaskAgent(connection: Connection, cwd: string, sandboxPaths
     taskSpawnPromise = null;
   }
 
+  // Verify the backend still has this agent (may be gone after app restart or crash)
+  if (taskAgent) {
+    const alive = await invoke<boolean>('acp_agent_exists', { instanceId: taskAgent.instanceId });
+    if (!alive) {
+      log.info('ai', `Task agent ${taskAgent.instanceId} no longer exists in backend, respawning`);
+      taskAgent = null;
+      taskSpawnPromise = null;
+    }
+  }
+
   if (taskAgent) {
     return taskAgent.instanceId;
   }
 
-  // If a spawn is already in progress, await it instead of double-spawning
+  // If a spawn is already in progress, await it then verify the result
   if (taskSpawnPromise) {
-    return taskSpawnPromise;
+    const instanceId = await taskSpawnPromise;
+    // Re-read module-level state after await (may have changed during suspension)
+    const current = getTaskAgent();
+    // Verify the spawned agent matches our connection (another caller may have changed it)
+    if (current?.instanceId === instanceId && current.connectionId === connection.id && current.projectRoot === cwd) {
+      return instanceId;
+    }
+    // Agent changed or was replaced during await — restart the entire check
+    return ensureTaskAgent(connection, cwd, sandboxPaths);
   }
 
   // Wrap spawn in a tracked promise so concurrent callers await instead of double-spawning

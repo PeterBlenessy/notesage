@@ -122,31 +122,30 @@ export function useDirectApiChat({
           }
         }, 50);
 
-        const unlistenChunk = await listen<string>('ai-stream-chunk', (event) => {
-          streamedContent += event.payload;
-          contentDirty = true;
-        });
-
-        const unlistenThinking = await listen<string>('ai-stream-thinking-chunk', (event) => {
-          if (!streamedThinking) {
-            log.debug('ai', 'Thinking content detected');
-          }
-          streamedThinking += event.payload;
-          thinkingDirty = true;
-        });
-
-        const unlistenTool = await listen<{ tool: string; status: string }>('ai-tool-use', (event) => {
-          if (event.payload.status === 'start') {
-            setActiveTool(event.payload.tool);
-          }
-        });
-
-        const unlistenCitation = await listen<{ url: string; title: string; cited_text: string }>('ai-citation', (event) => {
-          const { url, title, cited_text } = event.payload;
-          if (!collectedCitations.some((c) => c.url === url)) {
-            collectedCitations.push({ url, title, citedText: cited_text });
-          }
-        });
+        const [unlistenChunk, unlistenThinking, unlistenTool, unlistenCitation] = await Promise.all([
+          listen<string>('ai-stream-chunk', (event) => {
+            streamedContent += event.payload;
+            contentDirty = true;
+          }),
+          listen<string>('ai-stream-thinking-chunk', (event) => {
+            if (!streamedThinking) {
+              log.debug('ai', 'Thinking content detected');
+            }
+            streamedThinking += event.payload;
+            thinkingDirty = true;
+          }),
+          listen<{ tool: string; status: string }>('ai-tool-use', (event) => {
+            if (event.payload.status === 'start') {
+              setActiveTool(event.payload.tool);
+            }
+          }),
+          listen<{ url: string; title: string; cited_text: string }>('ai-citation', (event) => {
+            const { url, title, cited_text } = event.payload;
+            if (!collectedCitations.some((c) => c.url === url)) {
+              collectedCitations.push({ url, title, citedText: cited_text });
+            }
+          }),
+        ]);
 
         const cleanup = () => {
           clearInterval(flushInterval);
