@@ -68,7 +68,7 @@
 
 ---
 
-### #6 — Fix dark mode muted text contrast
+### #6 — Fix dark mode muted text contrast ✅
 
 **Description:** Increase `--color-muted-foreground` in dark mode from `oklch(70% 0 0)` to `oklch(75% 0 0)` (or higher) to meet WCAG AA contrast ratio (4.5:1 for normal text). Test in both dark and dark+soft modes.
 
