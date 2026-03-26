@@ -29,6 +29,15 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | TagHighlight | `tag-highlight.ts` | Plugin + Decoration | Inline tag badge decorations (#tag → styled pill) |
 | TagSuggestion | `tag-suggestion.tsx` | Suggestion | Tag autocomplete popup (triggered by # character, uses `@tiptap/suggestion`) |
 | SlashCommand | `slash-command.ts` | Suggestion | Block insertion menu (triggered by / at start of line) |
+| AISuggestion | `ai-suggestion.ts` | Plugin + Decoration | Inline diff decorations for AI suggestions (green insert, red delete) with accept/reject |
+| DateHighlight | `date-highlight.ts` | Plugin + Decoration | Decorates `//YYYY-MM-DD` date patterns as styled badge pills |
+| DateSuggestion | `date-suggestion.tsx` | Suggestion | Date picker popup triggered by `//` prefix with calendar and preset options |
+| LocalImage | `local-image.ts` | Node Extension | Extends Tiptap Image to resolve local file paths via Tauri asset protocol |
+| MentionHighlight | `mention-highlight.ts` | Plugin + Decoration | Decorates `@mention` patterns as styled badge pills |
+| MentionSuggestion | `mention-suggestion.tsx` | Suggestion | Mention autocomplete popup triggered by `@` with cross-file search |
+| PageBreaks | `page-breaks.ts` | Plugin + Decoration | Calculates and renders CSS-based page break indicators in the editor |
+| TableMarkdown | `table-markdown.ts` | Utility | Custom table markdown serializer for GFM round-tripping |
+| ThemedHighlight | `themed-highlight.ts` | Mark Extension | Extends Tiptap Highlight with semantic color names for light/dark mode |
 | ~~ItemAnnotation~~ | ~~`item-annotation.ts`~~ | ~~Plugin + Decoration~~ | ~~Emoji annotations on list items (deferred — needs unified gutter design)~~ |
 | ~~DragHandle~~ | ~~`drag-handle.ts`~~ | ~~Plugin + DOM~~ | ~~Block drag handles (deferred — needs unified gutter design)~~ |
 

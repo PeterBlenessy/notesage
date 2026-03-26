@@ -51,7 +51,12 @@ note-sage/
 │   │   │   ├── gguf_parser.rs     # GGUF binary header parser
 │   │   │   ├── network_proxy.rs   # HTTP proxy for agent network sandboxing, domain allowlists
 │   │   │   ├── credentials.rs  # OS keychain credential storage (keyring crate)
-│   │   │   └── sandbox_monitor.rs # Seatbelt violation monitoring (macOS log stream)
+│   │   │   ├── sandbox_monitor.rs # Seatbelt violation monitoring (macOS log stream)
+│   │   │   ├── acp_binary.rs   # ACP agent binary path resolution (PATH, Homebrew, npm, bundled)
+│   │   │   ├── acp_client.rs   # ACP Client trait impl (Tauri event forwarding, permission channels)
+│   │   │   ├── agent_manager.rs # Agent binary installation, versioning, progress tracking
+│   │   │   ├── model_management.rs # Local LLM model lifecycle (catalog, download, RAM, capabilities)
+│   │   │   └── thinking_tags.rs # Thinking tag detection from llama-server Jinja2 chat templates
 │   │   ├── index/          # SQLite document index (tags, mentions, tasks, goals, FTS5)
 │   │   │   ├── mod.rs      # IndexState, Tauri commands, indexing pipeline
 │   │   │   ├── db.rs       # Schema creation, migrations, connection management
@@ -169,6 +174,12 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `recording-store` | Whisper models, downloads, language | Partial (`speechLanguage`, `defaultModel`) |
 | `external-change-store` | Pending external changes with hunks | None |
 | `local-ai-store` | Local AI server state, models | Partial (`enabled`, `activeModelId`, etc.) |
+| `action-store` | Actions dashboard (task/goal scanning, comments, agent tasks) | Partial (`actionCache`, `filter` only) |
+| `diff-review-store` | Git branch diff review with per-hunk accept/reject | None |
+| `editor-styles-store` | Editor font family, size, line height, paragraph spacing | Disk file (`editor-styles.json`) |
+| `git-store` | Git repo state per path (branch, file statuses, loading) | None |
+| `pdf-store` | PDF viewer preferences (zoom, fit mode, bookmarks) | Full |
+| `sync-store` | iCloud sync settings (enabled flag, synced projects) | Disk file (settings JSON) |
 
 ### Styling
 

@@ -88,7 +88,7 @@
 
 ---
 
-### #8 — Update architecture.md: add missing stores
+### #8 — Update architecture.md: add missing stores ✅
 
 **Description:** Add 6 missing Zustand stores to the state management table: `action-store`, `diff-review-store`, `editor-styles-store`, `git-store`, `pdf-store`, `sync-store`. Include purpose and persistence level for each.
 
@@ -98,7 +98,7 @@
 
 ---
 
-### #9 — Update editor-architecture.md: add missing extensions
+### #9 — Update editor-architecture.md: add missing extensions ✅
 
 **Description:** Add 9 missing extensions to the Custom Extensions Inventory table: `ai-suggestion`, `date-highlight`, `date-suggestion`, `local-image`, `mention-highlight`, `mention-suggestion`, `page-breaks`, `table-markdown`, `themed-highlight`. Include type and purpose for each.
 
@@ -108,7 +108,7 @@
 
 ---
 
-### #10 — Update architecture.md: add missing command modules
+### #10 — Update architecture.md: add missing command modules ✅
 
 **Description:** Add 5 missing command modules to the project structure: `acp_binary.rs`, `acp_client.rs`, `agent_manager.rs`, `model_management.rs`, `thinking_tags.rs`.
 
