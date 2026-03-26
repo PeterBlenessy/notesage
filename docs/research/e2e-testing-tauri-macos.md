@@ -5,7 +5,7 @@
 | Stage | Link | Status |
 | --- | --- | --- |
 | PRD | [test-infrastructure](../prds/2026-03-26-test-infrastructure.md) | Draft |
-| Tasks | — | Not planned |
+| Tasks | [test-infrastructure-tasks](../tasks/2026-03-26-test-infrastructure-tasks.md) | Not started |
 
 **Context:** Notesage is a Tauri v2 desktop app (React + Rust) targeting macOS. The official `tauri-driver` does NOT support macOS (Apple's `safaridriver` cannot automate embedded WKWebView). This research evaluates all viable alternatives for automated testing.
 
