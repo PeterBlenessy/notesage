@@ -91,5 +91,11 @@
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
     "vitest": "^4.0.18"
+  },
+  "pnpm": {
+    "overrides": {
+      "yaml": ">=2.8.3",
+      "picomatch": ">=4.0.4"
+    }
   }
 }
