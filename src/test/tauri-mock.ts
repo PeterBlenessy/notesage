@@ -120,6 +120,34 @@ vi.mock('sonner', () => ({
 }));
 
 // ---------------------------------------------------------------------------
+// Default handlers for common commands
+// ---------------------------------------------------------------------------
+
+/**
+ * Register default no-op/success handlers for commonly invoked Tauri commands.
+ * Call this in beforeEach or at the top of a test file to avoid
+ * "No handler registered" errors for background commands.
+ */
+export function registerDefaultHandlers(): void {
+  setMockInvokeHandler('list_directory', () => []);
+  setMockInvokeHandler('read_file', () => '');
+  setMockInvokeHandler('write_file', () => undefined);
+  setMockInvokeHandler('path_exists', () => true);
+  setMockInvokeHandler('watch_directory', () => undefined);
+  setMockInvokeHandler('unwatch_directory', () => undefined);
+  setMockInvokeHandler('mark_self_write', () => undefined);
+  setMockInvokeHandler('clear_self_write', () => undefined);
+  setMockInvokeHandler('open_folder_dialog', () => null);
+  setMockInvokeHandler('get_credential', () => null);
+  setMockInvokeHandler('store_credential', () => undefined);
+  setMockInvokeHandler('health_check', () => undefined);
+  setMockInvokeHandler('get_store_value', () => null);
+  setMockInvokeHandler('set_store_value', () => undefined);
+  setMockInvokeHandler('store_read', () => null);
+  setMockInvokeHandler('store_write', () => undefined);
+}
+
+// ---------------------------------------------------------------------------
 // Reset between tests
 // ---------------------------------------------------------------------------
 

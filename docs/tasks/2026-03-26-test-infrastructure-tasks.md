@@ -51,7 +51,7 @@
 
 ## Phase B: Component Rendering Tests
 
-### #4 — Create component test harness and shared mocks
+### #4 — Create component test harness and shared mocks ✅
 
 **Description:** Create `src/test/component-harness.tsx` with a `renderWithProviders()` helper that wraps components in required providers (TooltipProvider, etc.), sets up the Tauri IPC mock, and initializes Zustand stores with sensible defaults. Create `src/test/mock-data.ts` with factory functions for common test data: `createMockTab()`, `createMockFileEntry()`, `createMockProject()`, `createMockConnection()`. Extend `tauri-mock.ts` with default handlers for the most common commands (`list_directory`, `read_file`, `path_exists`, `watch_directory`).
 
@@ -61,7 +61,7 @@
 
 ---
 
-### #5 — Create editor mock for toolbar/findbar/statusbar tests
+### #5 — Create editor mock for toolbar/findbar/statusbar tests ✅
 
 **Description:** Create `src/test/mock-editor.ts` that exports a `createMockEditor()` function returning a minimal Tiptap `Editor`-like object with stubbed `commands`, `state`, `isActive()`, `can()`, and `chain()`. This allows testing Toolbar, FindBar, and StatusBar without a real ProseMirror instance. Mock the `useEditor` hook to return this object.
 
@@ -71,7 +71,7 @@
 
 ---
 
-### #6 — Component test: StatusBar and FindBar
+### #6 — Component test: StatusBar and FindBar ✅
 
 **Description:** Write tests for the two simplest editor-dependent components. StatusBar: mounts, shows word count and line info from mocked editor. FindBar: mounts, accepts search input, shows match count, responds to Enter/Escape. Both should test light and dark theme by toggling `settings-store.theme`.
 
@@ -81,7 +81,7 @@
 
 ---
 
-### #7 — Component test: TabBar
+### #7 — Component test: TabBar ✅
 
 **Description:** Write tests for TabBar. Renders tabs from editor-store, active tab has correct styling, close button appears on hover (or is keyboard accessible), dirty indicator shows for unsaved tabs, clicking a tab calls `setActiveTab`. Use `createMockTab()` factory from #4.
 
@@ -91,7 +91,7 @@
 
 ---
 
-### #8 — Component test: FileTreeItem
+### #8 — Component test: FileTreeItem ✅
 
 **Description:** Write tests for FileTreeItem. Renders file name and folder icon, click on directory triggers expand, click on file calls `onFileClick`, keyboard ArrowRight/ArrowLeft expand/collapse directories, context menu renders on right-click. Set up workspace-store with expand state via `store.setState()`.
 
@@ -101,7 +101,7 @@
 
 ---
 
-### #9 — Component test: Sidebar
+### #9 — Component test: Sidebar ✅
 
 **Description:** Write tests for Sidebar and its section components. Renders QuickNotesSection, ProjectsSection, FoldersSection. Each section responds to its workspace-store slice. Collapse/expand sections works. Empty state renders correctly when no projects or folders are open.
 
@@ -111,7 +111,7 @@
 
 ---
 
-### #10 — Component test: CommandPalette and Toolbar
+### #10 — Component test: CommandPalette and Toolbar ✅
 
 **Description:** CommandPalette: opens, renders file list, filters on input, prefix modes (`#`, `@`, `>`, `?`) switch mode, keyboard navigation (ArrowDown/Up/Enter) works, Escape closes. Toolbar: renders all formatting buttons, heading picker opens dropdown, buttons reflect editor active state.
 
@@ -121,7 +121,7 @@
 
 ---
 
-### #11 — Component test: Layout, ChatPanel, SettingsDialog
+### #11 — Component test: Layout, ChatPanel, SettingsDialog ✅
 
 **Description:** Layout: mounts without crash, renders sidebar and editor panels, resizable panels functional. ChatPanel: renders message list and input, send button present, history tab switches. SettingsDialog: opens, renders all setting tabs (General, Connections, etc.), closes on Escape. These components have many dependencies — focus on smoke tests (mounts, no crash, key elements present).
 
