@@ -10,7 +10,7 @@
 
 **Risks:**
 
-- Decoration plugin instrumentation (#5) adds `performance.now()` calls to every keystroke — must verify overhead is <1ms even on large documents
+- Decoration plugin instrumentation (#5) adds `performance.now()` calls to every keystroke — must verify overhead is &lt;1ms even on large documents
 - ProseMirror benchmark tests (#12, #13) require creating a real editor instance in jsdom — may need the same Tiptap extension setup as `markdown-roundtrip.test.ts`
 - Budget numbers (#15) are machine-dependent — CI machines may be faster/slower than dev machines, budgets need generous headroom (3x baseline recommended for CI)
 
@@ -60,7 +60,7 @@
 
 ### #5 — Instrument editor typing (decoration plugins)
 
-**Description:** Add `perf:typing` logs to the `apply()` method of the 3 heaviest decoration plugins: `TagHighlight`, `SearchHighlight`, and `CommentMark`. Only log when `tr.docChanged` is true (skip selection-only transactions). Log `{ plugin, docNodes, decorationCount, ms }`. Use a sampling strategy: only log every 10th keystroke to avoid console spam (use a module-level counter). Verify overhead is <1ms on a 50KB document.
+**Description:** Add `perf:typing` logs to the `apply()` method of the 3 heaviest decoration plugins: `TagHighlight`, `SearchHighlight`, and `CommentMark`. Only log when `tr.docChanged` is true (skip selection-only transactions). Log `{ plugin, docNodes, decorationCount, ms }`. Use a sampling strategy: only log every 10th keystroke to avoid console spam (use a module-level counter). Verify overhead is &lt;1ms on a 50KB document.
 
 **Complexity:** M | **Category:** frontend | **Dependencies:** None
 
@@ -154,7 +154,7 @@
 
 ### #14 — Benchmark: store operations and command palette filtering
 
-**Description:** Create `src/perf/stores.perf.ts`. Tests: (a) Zustand `editor-store.updateTabContent()` with varying tab counts (10, 50, 100 tabs), assert <5ms. (b) Workspace store `listDirectory` result processing with varying file counts (100, 500, 1000 entries), assert <10ms. (c) Command palette filtering: generate 500 file entries, filter with a 3-char query, assert <20ms. No Tauri IPC needed — test pure JS logic.
+**Description:** Create `src/perf/stores.perf.ts`. Tests: (a) Zustand `editor-store.updateTabContent()` with varying tab counts (10, 50, 100 tabs), assert &lt;5ms. (b) Workspace store `listDirectory` result processing with varying file counts (100, 500, 1000 entries), assert &lt;10ms. (c) Command palette filtering: generate 500 file entries, filter with a 3-char query, assert &lt;20ms. No Tauri IPC needed — test pure JS logic.
 
 **Complexity:** M | **Category:** frontend | **Dependencies:** #10
 

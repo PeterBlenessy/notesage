@@ -160,9 +160,9 @@ And there is no end.`;
   it('does not treat --- with trailing text on the same line as a closing delimiter', () => {
     // The closing delimiter must be exactly "---" followed by newline or end of string.
     // "---extra" is skipped by findClosingDelimiter, so the real closing is the
-    // standalone "---" on a later line. However, the YAML between opening and
-    // real closing includes "---extra text here" which is invalid YAML, so
-    // the yaml parser throws.
+    // standalone "---" on a later line. The YAML between opening and real closing
+    // includes "---extra text here" which is invalid YAML, so the parser fails
+    // and parseFrontmatter gracefully returns null frontmatter with the full raw content.
     const raw = `---
 title: Edge Case
 ---extra text here
@@ -170,7 +170,9 @@ title: Edge Case
 
 Body.`;
 
-    expect(() => parseFrontmatter(raw)).toThrow();
+    const result = parseFrontmatter(raw);
+    expect(result.frontmatter).toBeNull();
+    expect(result.content).toBe(raw);
   });
 });
 
