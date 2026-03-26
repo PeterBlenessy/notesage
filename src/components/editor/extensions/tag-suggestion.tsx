@@ -251,7 +251,7 @@ export const TagSuggestion = Extension.create({
             },
 
             onExit() {
-              popup?.[0]?.destroy();
+              if (popup?.[0] && !popup[0].state.isDestroyed) popup[0].destroy();
               component?.destroy();
             },
           };

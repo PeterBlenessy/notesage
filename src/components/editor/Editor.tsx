@@ -38,6 +38,7 @@ import { SourceModeEditor } from "./SourceModeEditor";
 import { ImageInsertDialog } from "./ImageInsertDialog";
 import { tauriApi } from "@/lib/tauri";
 import { isBinaryFileType } from "@/lib/file-utils";
+import { log } from "@/lib/logger";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { setBinaryData } from "@/lib/binary-cache";
 import { CONTENT_WIDTHS, CONTENT_HEIGHTS, PX_PER_CM } from "./editor-utils";
@@ -97,30 +98,87 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   useEffect(() => {
     if (!activeTab || activeTab.contentLoaded !== false) return;
     const { id, filePath, fileType } = activeTab;
+    const t0 = performance.now();
+    const fileName = filePath.split("/").pop() ?? filePath;
     (async () => {
       try {
         if (fileType === "image") {
           useEditorStore.getState().loadTabContent(id, "");
+          log.debug("perf:tab-load", "Tab content loaded from disk", { file: fileName, type: fileType, sizeKB: 0, ms: +(performance.now() - t0).toFixed(1) });
           return;
         }
         if (isBinaryFileType(fileType)) {
           const bytes = await tauriApi.readBinaryFile(filePath);
+          const sizeKB = +(bytes.length / 1024).toFixed(1);
           setBinaryData(filePath, new Uint8Array(bytes));
           useEditorStore.getState().loadTabContent(id, "");
+          log.debug("perf:tab-load", "Tab content loaded from disk", { file: fileName, type: fileType, sizeKB, ms: +(performance.now() - t0).toFixed(1) });
           return;
         }
         const raw = await tauriApi.readFile(filePath);
+        const sizeKB = +(new TextEncoder().encode(raw).length / 1024).toFixed(1);
         if (fileType === "markdown") {
           const { frontmatter, content } = parseFrontmatter(raw);
           useEditorStore.getState().loadTabContent(id, content, frontmatter);
         } else {
           useEditorStore.getState().loadTabContent(id, raw);
         }
+        log.debug("perf:tab-load", "Tab content loaded from disk", { file: fileName, type: fileType, sizeKB, ms: +(performance.now() - t0).toFixed(1) });
       } catch (err) {
         console.warn("Failed to load tab content:", filePath, err);
       }
     })();
   }, [activeTab?.id, activeTab?.contentLoaded]);
+
+  // Background preloading: once the active tab is loaded, preload remaining placeholder tabs
+  // so they open instantly when clicked.
+  useEffect(() => {
+    if (!activeTab || activeTab.contentLoaded === false) return;
+    const unloaded = tabs.filter((t) => t.contentLoaded === false && t.id !== activeTabId);
+    if (unloaded.length === 0) return;
+
+    log.debug("perf:tab-preload", "Starting background preload", { count: unloaded.length });
+    const t0 = performance.now();
+    let cancelled = false;
+    (async () => {
+      for (const tab of unloaded) {
+        if (cancelled) break;
+        const tabT0 = performance.now();
+        const fileName = tab.filePath.split("/").pop() ?? tab.filePath;
+        try {
+          if (tab.fileType === "image") {
+            useEditorStore.getState().loadTabContent(tab.id, "");
+            log.debug("perf:tab-preload", "Tab preloaded", { file: fileName, type: tab.fileType, sizeKB: 0, ms: +(performance.now() - tabT0).toFixed(1) });
+            continue;
+          }
+          if (isBinaryFileType(tab.fileType)) {
+            const bytes = await tauriApi.readBinaryFile(tab.filePath);
+            if (cancelled) break;
+            setBinaryData(tab.filePath, new Uint8Array(bytes));
+            useEditorStore.getState().loadTabContent(tab.id, "");
+            log.debug("perf:tab-preload", "Tab preloaded", { file: fileName, type: tab.fileType, sizeKB: +(bytes.length / 1024).toFixed(1), ms: +(performance.now() - tabT0).toFixed(1) });
+            continue;
+          }
+          const raw = await tauriApi.readFile(tab.filePath);
+          if (cancelled) break;
+          const sizeKB = +(new TextEncoder().encode(raw).length / 1024).toFixed(1);
+          if (tab.fileType === "markdown") {
+            const { frontmatter, content } = parseFrontmatter(raw);
+            useEditorStore.getState().loadTabContent(tab.id, content, frontmatter);
+          } else {
+            useEditorStore.getState().loadTabContent(tab.id, raw);
+          }
+          log.debug("perf:tab-preload", "Tab preloaded", { file: fileName, type: tab.fileType, sizeKB, ms: +(performance.now() - tabT0).toFixed(1) });
+        } catch (err) {
+          console.warn("Failed to preload tab:", tab.filePath, err);
+        }
+      }
+      if (!cancelled) {
+        log.debug("perf:tab-preload", "All tabs preloaded", { count: unloaded.length, ms: +(performance.now() - t0).toFixed(1) });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab?.contentLoaded, activeTabId, tabs.length]);
 
   const {
     isProgrammaticScroll,

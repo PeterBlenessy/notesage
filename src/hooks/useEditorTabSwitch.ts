@@ -11,6 +11,7 @@ import { loadRawMarkdownIntoEditor } from "@/lib/markdown";
 import { getDocumentDir } from "@/lib/image-utils";
 import { getEditorStorage, type EditorStorageImage } from "@/lib/editor-storage";
 import { toast } from "sonner";
+import { log } from "@/lib/logger";
 
 interface AISuggestion {
   from: number;
@@ -72,6 +73,10 @@ export function useEditorTabSwitch({
   useEffect(() => {
     if (!editor || !activeTab || activeTab.contentLoaded === false) return;
     if (activeTab.id === lastLoadedTabId.current) return;
+      const switchT0 = performance.now();
+      const fileName = activeTab.filePath.split("/").pop() ?? activeTab.filePath;
+      const contentSizeKB = activeTab.content ? +(new TextEncoder().encode(activeTab.content).length / 1024).toFixed(1) : 0;
+
       // Save full editor state of the tab we're LEAVING (preserves undo/redo, selection, decorations)
       const prevTabId = lastLoadedTabId.current;
       if (prevTabId) {
@@ -141,6 +146,9 @@ export function useEditorTabSwitch({
         }
       }
 
+      const restoreMethod = restoredFromCache ? "cache" : "parse";
+      log.debug("perf:tab-switch", "Editor state restored", { file: fileName, sizeKB: contentSizeKB, restore: restoreMethod, setupMs: +(performance.now() - switchT0).toFixed(1) });
+
       // If scrollToTag is set, scroll to that tag instead of restoring saved position
       if (activeTab.scrollToTag) {
         const { tag, occurrence } = activeTab.scrollToTag;
@@ -153,6 +161,7 @@ export function useEditorTabSwitch({
             scrollPosToCenter(editor, pos, scrollAreaRef.current, isProgrammaticScroll);
           }
           if (scrollAreaRef.current) scrollAreaRef.current.style.opacity = '1';
+          log.debug("perf:tab-switch", "Tab visible", { file: fileName, scroll: "tag", totalMs: +(performance.now() - switchT0).toFixed(1) });
         }); });
       } else if (activeTab.scrollToText) {
         const text = activeTab.scrollToText;
@@ -160,6 +169,7 @@ export function useEditorTabSwitch({
         requestAnimationFrame(() => { requestAnimationFrame(() => {
           scrollToTextInEditor(editor, text, scrollAreaRef.current, isProgrammaticScroll);
           if (scrollAreaRef.current) scrollAreaRef.current.style.opacity = '1';
+          log.debug("perf:tab-switch", "Tab visible", { file: fileName, scroll: "text", totalMs: +(performance.now() - switchT0).toFixed(1) });
         }); });
       } else {
         // Restore scroll position then reveal
@@ -167,6 +177,7 @@ export function useEditorTabSwitch({
           if (scrollAreaRef.current) {
             scrollAreaRef.current.style.opacity = '1';
           }
+          log.debug("perf:tab-switch", "Tab visible", { file: fileName, scroll: "position", totalMs: +(performance.now() - switchT0).toFixed(1) });
         });
       }
   }, [activeTab?.id, editor, activeTab, saveOutgoingTabScroll, restoreScrollRatio, externalChanges, updateTabContent, clearExternalChange, setScrollToTag, setScrollToText]);
