@@ -38,7 +38,7 @@
 
 ---
 
-### #3 — Add aria-labels to FindBar inputs
+### #3 — Add aria-labels to FindBar inputs ✅
 
 **Description:** Add `aria-label="Find in document"` to the search input and `aria-label="Replace"` to the replace input. Also add `aria-expanded` to the replace toggle chevron button.
 

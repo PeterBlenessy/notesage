@@ -144,6 +144,7 @@ export function FindBar({
             onClick={() => onReplaceExpandedChange(!replaceExpanded)}
             className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground"
             title={replaceExpanded ? "Hide replace" : "Show replace"}
+            aria-expanded={replaceExpanded}
           >
             <ChevronRight
               size={14}
@@ -159,6 +160,7 @@ export function FindBar({
           onChange={(e) => handleQueryChange(e.target.value)}
           onKeyDown={handleSearchKeyDown}
           placeholder="Find..."
+          aria-label="Find in document"
           className="h-6 w-48 px-2 text-xs bg-muted border border-border rounded focus:outline-none focus:ring-1 focus:ring-muted-foreground/50"
         />
         <span className="text-[10px] text-muted-foreground w-16 text-center select-none tabular-nums">
@@ -201,6 +203,7 @@ export function FindBar({
             onChange={(e) => setReplacement(e.target.value)}
             onKeyDown={handleReplaceKeyDown}
             placeholder="Replace..."
+            aria-label="Replace"
             className="h-6 w-48 px-2 text-xs bg-muted border border-border rounded focus:outline-none focus:ring-1 focus:ring-muted-foreground/50"
           />
           <button
