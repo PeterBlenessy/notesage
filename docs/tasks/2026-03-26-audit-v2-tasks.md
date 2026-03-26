@@ -78,7 +78,7 @@
 
 ---
 
-### #7 — Fix tauri-storage generic type
+### #7 — Fix tauri-storage generic type ✅
 
 **Description:** Change `createJSONStorage<any>()` to `createJSONStorage<T>()` with a generic parameter.
 

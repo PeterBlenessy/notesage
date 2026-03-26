@@ -164,7 +164,6 @@ function createRawTauriStorage(): StateStorage {
  * Create a Zustand PersistStorage backed by Tauri file storage.
  * Used for stores with unbounded data (chat history, activity tasks).
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function createTauriStorage() {
-  return createJSONStorage<any>(() => createRawTauriStorage());
+export function createTauriStorage<T>() {
+  return createJSONStorage<T>(() => createRawTauriStorage());
 }
