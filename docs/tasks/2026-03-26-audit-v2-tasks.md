@@ -118,7 +118,7 @@
 
 ---
 
-### #11 — Add aria-labels to TitleBar and activity rail
+### #11 — Add aria-labels to TitleBar and activity rail ✅
 
 **Description:** Add `aria-label` to icon-only buttons in TitleBar (chat toggle, activity toggle). Add `role="status"` and `aria-live="polite"` to StatusBar. Add semantic button role to ActivityStrip rail icons.
 
@@ -128,7 +128,7 @@
 
 ---
 
-### #12 — Add aria-current to active file in tree
+### #12 — Add aria-current to active file in tree ✅
 
 **Description:** Add `aria-current="page"` to the active file's FileTreeItem div. Add `disabled:opacity-50` (was `opacity-30`) to FindBar disabled buttons.
 
@@ -138,7 +138,7 @@
 
 ---
 
-### #13 — Add DOMPurify defense-in-depth for markdown HTML
+### #13 — Add DOMPurify defense-in-depth for markdown HTML ✅
 
 **Description:** Add `DOMPurify.sanitize()` before `wrapper.innerHTML = html` in `ai-suggestion.ts` and `external-diff.ts`. DOMPurify is already a dependency (used in DocxViewer). This is a preventive measure — current code is safe but this guards against future parser changes.
 

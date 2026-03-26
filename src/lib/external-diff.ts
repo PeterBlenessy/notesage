@@ -1,4 +1,5 @@
 import DiffMatchPatch from "diff-match-patch";
+import DOMPurify from "dompurify";
 import type { Editor } from "@tiptap/core";
 import { DOMParser as PMDOMParser, type Node as PMNode } from "@tiptap/pm/model";
 import type { InlineDiffHunk } from "@/components/editor/extensions/inline-diff";
@@ -149,7 +150,7 @@ function parseMarkdownToDoc(editor: Editor, markdown: string): PMNode | null {
       if (typeof html !== "string") return null;
       // Parse the HTML into a DOM element, then into a PM document
       const wrapper = document.createElement("div");
-      wrapper.innerHTML = html;
+      wrapper.innerHTML = DOMPurify.sanitize(html);
       return PMDOMParser.fromSchema(editor.schema).parse(wrapper);
     }
   } catch {

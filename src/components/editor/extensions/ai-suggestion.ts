@@ -3,6 +3,7 @@ import type { Editor } from '@tiptap/core';
 import { DOMParser as PMDOMParser } from '@tiptap/pm/model';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import DOMPurify from 'dompurify';
 import { parseMarkdownToHtmlFull } from '@/lib/pm-replace';
 
 export interface AISuggestion {
@@ -125,7 +126,7 @@ function createDiffDecorations(
       newText.className = 'ai-suggestion-insert';
       const parsedHtml = parseMarkdownToHtmlFull(editor, suggestion.suggestedText);
       if (parsedHtml) {
-        newText.innerHTML = parsedHtml;
+        newText.innerHTML = DOMPurify.sanitize(parsedHtml);
       } else {
         newText.textContent = suggestion.suggestedText;
       }
@@ -227,7 +228,7 @@ function acceptSuggestion(editor: Editor, suggestion: AISuggestion) {
       const html = parseMarkdownToHtmlFull(editor, suggestion.suggestedText);
       if (html) {
         const wrapper = document.createElement('div');
-        wrapper.innerHTML = html;
+        wrapper.innerHTML = DOMPurify.sanitize(html);
         const slice = PMDOMParser.fromSchema(editor.schema).parseSlice(wrapper);
         tr.replace(suggestion.from, suggestion.to, slice);
       } else {

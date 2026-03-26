@@ -53,6 +53,7 @@ export function TitleBar({ onToggleChat, onToggleActivityStrip }: TitleBarProps)
             chatPanelOpen && "text-foreground bg-accent"
           )}
           title={`${chatPanelOpen ? "Hide" : "Show"} AI Chat (⌘⇧C)`}
+          aria-label={chatPanelOpen ? "Hide AI Chat" : "Show AI Chat"}
         >
           <MessageSquare className="size-4" strokeWidth={1.5} />
         </Button>
@@ -65,6 +66,7 @@ export function TitleBar({ onToggleChat, onToggleActivityStrip }: TitleBarProps)
             panelExpanded && "text-foreground bg-accent"
           )}
           title={`${panelExpanded ? "Hide" : "Show"} Agent Panel (⌘⇧A)`}
+          aria-label={panelExpanded ? "Hide Agent Panel" : "Show Agent Panel"}
         >
           <Bot className="size-4" strokeWidth={1.5} />
           {hasRunning && (

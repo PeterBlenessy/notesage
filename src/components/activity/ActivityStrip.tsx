@@ -29,7 +29,7 @@ function RailIcon({ task }: { task: AgentTask }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="relative flex items-center justify-center w-10 h-10">
+        <div role="button" tabIndex={0} className="relative flex items-center justify-center w-10 h-10">
           <TypeIcon className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
           {/* Status badge */}
           <span className="absolute bottom-1.5 right-1.5">

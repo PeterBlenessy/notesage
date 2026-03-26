@@ -169,7 +169,7 @@ export function FindBar({
         <button
           onClick={onPrevious}
           disabled={matchCount === 0}
-          className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-30"
+          className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-50"
           title="Previous match (Shift+Enter)"
         >
           <ChevronUp size={14} strokeWidth={1.5} />
@@ -177,7 +177,7 @@ export function FindBar({
         <button
           onClick={onNext}
           disabled={matchCount === 0}
-          className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-30"
+          className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-50"
           title="Next match (Enter)"
         >
           <ChevronDown size={14} strokeWidth={1.5} />
@@ -209,7 +209,7 @@ export function FindBar({
           <button
             onClick={() => onReplace?.(replacement)}
             disabled={matchCount === 0}
-            className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-30"
+            className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-50"
             title="Replace (Enter in replace field)"
           >
             <Replace size={14} strokeWidth={1.5} />
@@ -217,7 +217,7 @@ export function FindBar({
           <button
             onClick={() => onReplaceAll?.(replacement)}
             disabled={matchCount === 0}
-            className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-30"
+            className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-50"
             title="Replace All (Cmd+Shift+Enter)"
           >
             <ReplaceAll size={14} strokeWidth={1.5} />

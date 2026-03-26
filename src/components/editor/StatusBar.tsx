@@ -403,7 +403,7 @@ export function StatusBar({
 }: StatusBarProps) {
   if (!editor) {
     return (
-      <div className="h-6 border-t border-border px-3 flex items-center text-[11px] shrink-0 overflow-x-auto overflow-y-hidden whitespace-nowrap bg-background text-muted-foreground">
+      <div role="status" aria-live="polite" className="h-6 border-t border-border px-3 flex items-center text-[11px] shrink-0 overflow-x-auto overflow-y-hidden whitespace-nowrap bg-background text-muted-foreground">
         <div className="flex items-center gap-2 min-w-0">
           <IndexProgressIndicator />
           <ModelDownloadIndicator />
@@ -447,6 +447,8 @@ export function StatusBar({
 
   return (
     <div
+      role="status"
+      aria-live="polite"
       className="h-6 border-t border-border px-3 flex items-center text-[11px] shrink-0 overflow-x-auto overflow-y-hidden whitespace-nowrap bg-background text-muted-foreground"
     >
       {/* Left zone: workspace context */}

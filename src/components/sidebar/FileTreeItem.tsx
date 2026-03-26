@@ -351,6 +351,7 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
             style={{ paddingLeft }}
             onClick={handleClick}
             tabIndex={0}
+            aria-current={isActive ? "page" : undefined}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(); } }}
           >
             {entry.is_directory ? (
