@@ -28,7 +28,7 @@
 
 ---
 
-### #2 — Remove unused Cargo dependencies
+### #2 — Remove unused Cargo dependencies ✅
 
 **Description:** Remove `hyper`, `hyper-util`, and `http-body-util` from `src-tauri/Cargo.toml`. Run `cargo check` to verify no compile errors.
 
