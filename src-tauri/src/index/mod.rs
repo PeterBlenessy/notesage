@@ -1,7 +1,9 @@
 pub mod db;
+mod file_scanner;
 pub mod icloud;
 pub mod parser;
 pub mod queries;
+mod reindex_queue;
 pub mod tasks;
 
 use queries::*;
@@ -9,41 +11,26 @@ use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 
-/// Text file extensions for FTS-only indexing (non-markdown files).
-const TEXT_EXTENSIONS: &[&str] = &[
-    "txt", "text", "log", "json", "yaml", "yml", "toml", "xml", "html", "htm", "css", "js",
-    "ts", "tsx", "jsx", "py", "rb", "rs", "go", "java", "c", "cpp", "h", "hpp", "swift",
-    "kt", "sh", "bash", "zsh", "fish", "ps1", "bat", "cmd", "sql", "r", "lua", "pl",
-    "ini", "cfg", "conf", "env", "csv",
-];
-
-/// Max reindexes per file within the circuit breaker window.
-const REINDEX_CIRCUIT_BREAKER_MAX: u32 = 5;
-/// Circuit breaker window duration.
-const REINDEX_CIRCUIT_BREAKER_WINDOW: Duration = Duration::from_secs(30);
+use file_scanner::{is_indexable, scan_files};
+use reindex_queue::ReindexEntry;
+pub use reindex_queue::process_reindex_queue;
 
 /// Managed state for the document index.
 pub struct IndexState {
     /// Global index DB connection (~/.notesage/index.db)
-    global_db: Mutex<Option<Connection>>,
+    pub(super) global_db: Mutex<Option<Connection>>,
     /// Per-project index DB connections (project_path → connection)
-    project_dbs: Mutex<HashMap<PathBuf, Connection>>,
+    pub(super) project_dbs: Mutex<HashMap<PathBuf, Connection>>,
     /// Pending reindex queue (debounced)
-    reindex_queue: Mutex<Vec<ReindexEntry>>,
+    pub(super) reindex_queue: Mutex<Vec<ReindexEntry>>,
     /// Whether a reindex batch is currently being processed
-    processing: Mutex<bool>,
+    pub(super) processing: Mutex<bool>,
     /// Per-file reindex rate limiter: path → (count, window_start)
-    reindex_counts: Mutex<HashMap<String, (u32, Instant)>>,
-}
-
-#[derive(Clone)]
-struct ReindexEntry {
-    path: String,
-    kind: String,
+    pub(super) reindex_counts: Mutex<HashMap<String, (u32, Instant)>>,
 }
 
 impl IndexState {
@@ -54,44 +41,6 @@ impl IndexState {
             reindex_queue: Mutex::new(Vec::new()),
             processing: Mutex::new(false),
             reindex_counts: Mutex::new(HashMap::new()),
-        }
-    }
-
-    /// Queue a file for reindexing (called from watcher).
-    pub fn queue_reindex(&self, path: String, kind: String) {
-        self.reindex_queue.lock().push(ReindexEntry { path, kind });
-    }
-
-    /// Check if reindexing should be throttled for this file.
-    /// Returns true if the file has been reindexed too many times recently.
-    fn is_reindex_throttled(&self, path: &str) -> bool {
-        let mut counts = self.reindex_counts.lock();
-        let now = Instant::now();
-
-        if let Some((count, window_start)) = counts.get_mut(path) {
-            if now.duration_since(*window_start) > REINDEX_CIRCUIT_BREAKER_WINDOW {
-                // Window expired — reset
-                *count = 1;
-                *window_start = now;
-                false
-            } else if *count >= REINDEX_CIRCUIT_BREAKER_MAX {
-                // Log once at the threshold, then suppress
-                if *count == REINDEX_CIRCUIT_BREAKER_MAX {
-                    log::warn!(
-                        target: "notesage::index",
-                        "Throttling rapid reindex for {} ({} times in 30s)",
-                        path, count
-                    );
-                }
-                *count += 1;
-                true
-            } else {
-                *count += 1;
-                false
-            }
-        } else {
-            counts.insert(path.to_string(), (1, now));
-            false
         }
     }
 
@@ -171,7 +120,7 @@ fn now_ts() -> u64 {
 }
 
 /// Determine which DB a file belongs to based on its path.
-fn get_db_for_path<'a>(
+pub(super) fn get_db_for_path<'a>(
     global: &'a Option<Connection>,
     projects: &'a HashMap<PathBuf, Connection>,
     file_path: &str,
@@ -188,7 +137,7 @@ fn get_db_for_path<'a>(
 }
 
 /// Reindex a single file in the given database.
-fn reindex_file_in_db(
+pub(super) fn reindex_file_in_db(
     conn: &Connection,
     file_path: &str,
     project_path: Option<&str>,
@@ -404,70 +353,6 @@ fn index_file_inner(
     Ok(true) // Changed
 }
 
-/// Check if a file extension is indexable.
-fn is_indexable(path: &str) -> bool {
-    if path.ends_with(".md") {
-        return true;
-    }
-    if let Some(ext) = Path::new(path).extension() {
-        let ext_str = ext.to_string_lossy().to_lowercase();
-        TEXT_EXTENSIONS.contains(&ext_str.as_str())
-    } else {
-        false
-    }
-}
-
-/// Directories that contain metadata, config, or non-user-content — never index.
-const SKIP_DIRS: &[&str] = &[
-    "node_modules", "target", "dist", "build",
-    // Skill & agent directories (contain SKILL.md, agent .md, not user notes)
-    "bundled-skills", "bundled-agents", "skills", "agents",
-    // Source code / build artifacts
-    "src-tauri", "src", "public",
-    // Package manager / tooling
-    ".cargo", ".rustup", "__pycache__", ".venv", "venv",
-];
-
-/// Recursively scan a directory for indexable files.
-/// Only indexes user content — skips metadata, config, skill/agent, and build directories.
-fn scan_files(dir: &Path, files: &mut Vec<PathBuf>) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        // Skip hidden except .notesage
-        if name.starts_with('.') && name != ".notesage" {
-            continue;
-        }
-
-        if path.is_dir() {
-            // Skip non-content directories
-            if SKIP_DIRS.contains(&name.as_str()) {
-                continue;
-            }
-            // For .notesage, only scan research/ subdirectory (user research notes)
-            if name == ".notesage" {
-                let research_dir = path.join("research");
-                if research_dir.is_dir() {
-                    scan_files(&research_dir, files);
-                }
-                continue;
-            }
-            scan_files(&path, files);
-        } else if is_indexable(&path.to_string_lossy()) {
-            files.push(path);
-        }
-    }
-}
-
 /// Full index rebuild for a directory into a DB.
 fn reindex_directory(
     conn: &Connection,
@@ -541,51 +426,6 @@ fn prune_deleted_files(conn: &Connection) -> Result<(), String> {
     }
 
     Ok(())
-}
-
-/// Process the reindex queue (called from watcher integration).
-pub fn process_reindex_queue(app: &AppHandle) {
-    let state = match app.try_state::<IndexState>() {
-        Some(s) => s,
-        None => return,
-    };
-
-    // Check if already processing
-    {
-        let mut processing = state.processing.lock();
-        if *processing {
-            return;
-        }
-        *processing = true;
-    }
-
-    // Drain the queue
-    let entries: Vec<ReindexEntry> = state.reindex_queue.lock().drain(..).collect();
-
-    if entries.is_empty() {
-        *state.processing.lock() = false;
-        return;
-    }
-
-    let global = state.global_db.lock();
-    let projects = state.project_dbs.lock();
-
-    for entry in entries {
-        // Apply circuit breaker — skip files being reindexed too rapidly
-        if entry.kind != "delete" && state.is_reindex_throttled(&entry.path) {
-            continue;
-        }
-
-        if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &entry.path) {
-            if entry.kind == "delete" {
-                let _ = db::remove_file(conn, &entry.path);
-            } else if is_indexable(&entry.path) {
-                let _ = reindex_file_in_db(conn, &entry.path, project_path.as_deref());
-            }
-        }
-    }
-
-    *state.processing.lock() = false;
 }
 
 // ---- Tauri Commands ----

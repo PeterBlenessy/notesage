@@ -316,7 +316,7 @@
 
 ## Tier 5: Type Safety
 
-### #30 — Create Rust AIProviderType enum
+### #30 — Create Rust AIProviderType enum ✅
 
 **Description:** Replace `provider: String` with `#[derive(Serialize, Deserialize)] enum AIProviderType { Anthropic, OpenAI, Ollama, OpenAICompatible, LocalBundled }` using `#[serde(rename_all = "snake_case")]`. Update all `match provider.as_str()` patterns to `match provider { AIProviderType::Anthropic => ... }`. Update frontend Tauri invoke calls to pass the enum string values (serde handles the rename). **High blast radius — test all provider paths.**
 
@@ -326,7 +326,7 @@
 
 ---
 
-### #31 — Create typed editor storage interfaces
+### #31 — Create typed editor storage interfaces ✅
 
 **Description:** Define `EditorStorageImage`, `EditorStorageMarkdown` interfaces. Replace `(editor.storage as any).image` with typed access via a `getEditorStorage<T>(editor, key)` helper. Update 3 call sites in `useEditorTabSwitch.ts`, `useEditor.ts`, and `pm-replace.ts`. Also change `editor: any` to `editor: Editor` in `ai-suggestion.ts` exports.
 
@@ -338,7 +338,7 @@
 
 ## Tier 6: Decomposition
 
-### #32 — Extract Toolbar sub-components
+### #32 — Extract Toolbar sub-components ✅
 
 **Description:** Extract 8 inline sub-components from Toolbar.tsx into separate files: `HeadingPicker`, `LinkButton`, `TextColorPopover`, `HighlightPopover`, `TypographyPopover`, `MicButton`, `TableGridPicker`, `TableToolsPopover`. Keep `ToolbarButton` in Toolbar.tsx (tiny). Target: Toolbar.tsx reduces from 1,050 to \~150 lines.
 
@@ -348,7 +348,7 @@
 
 ---
 
-### #33 — Extract ConnectionConfigDialog form sections
+### #33 — Extract ConnectionConfigDialog form sections ✅
 
 **Description:** Extract form sections from ConnectionConfigDialog.tsx: `ApiKeyForm`, `ModelSelectionForm`, `AdvancedSettingsForm` (temp/tokens/telemetry/sandbox). Target: dialog reduces from 896 to \~300 lines.
 
@@ -358,7 +358,7 @@
 
 ---
 
-### #34 — Extract index/mod.rs internal modules
+### #34 — Extract index/mod.rs internal modules ✅
 
 **Description:** Extract `file_scanner.rs` (scan_files, is_indexable) and `reindex_queue.rs` (queue management, process_reindex_queue) from index/mod.rs. Target: mod.rs reduces from 917 to \~680 lines.
 

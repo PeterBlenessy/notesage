@@ -2,6 +2,7 @@ import type { Editor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
 import { CommentMarkPluginKey } from "@/components/editor/extensions/comment-mark";
 import type { Comment } from "@/stores/comment-store";
+import { getEditorStorage, type EditorStorageMarkdown } from "@/lib/editor-storage";
 
 /**
  * Parse a markdown string to inline HTML using the editor's tiptap-markdown parser.
@@ -13,16 +14,10 @@ export function parseMarkdownToHtml(
   markdown: string
 ): string | null {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mdStorage = (editor.storage as any).markdown as
-      | Record<string, unknown>
-      | undefined;
-    const parser = mdStorage?.parser as
-      | { parse: (content: string) => string }
-      | undefined;
-    if (!parser) return null;
+    const mdStorage = getEditorStorage<EditorStorageMarkdown>(editor, 'markdown');
+    if (!mdStorage?.parser) return null;
 
-    const html = parser.parse(markdown);
+    const html = mdStorage.parser.parse(markdown);
     if (typeof html !== "string") return null;
 
     // Strip <p> wrappers — we need inline HTML for insertContentAt.
@@ -60,16 +55,10 @@ export function parseMarkdownToHtmlFull(
   markdown: string
 ): string | null {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mdStorage = (editor.storage as any).markdown as
-      | Record<string, unknown>
-      | undefined;
-    const parser = mdStorage?.parser as
-      | { parse: (content: string) => string }
-      | undefined;
-    if (!parser) return null;
+    const mdStorage = getEditorStorage<EditorStorageMarkdown>(editor, 'markdown');
+    if (!mdStorage?.parser) return null;
 
-    const html = parser.parse(markdown);
+    const html = mdStorage.parser.parse(markdown);
     if (typeof html !== "string" || !html.trim()) return null;
 
     return html;

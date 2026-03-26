@@ -20,6 +20,7 @@ import { SlashCommand } from "@/components/editor/extensions/slash-command";
 import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSuggestion, MentionHighlight, MentionSuggestion, DateHighlight, DateSuggestion, SearchHighlight } from "@/components/editor/extensions";
 import { PageBreaks } from "@/components/editor/extensions/page-breaks";
 import { getMarkdownFromEditor } from "@/lib/markdown";
+import { getEditorStorage, type EditorStorageImage } from "@/lib/editor-storage";
 
 const lowlight = createLowlight(common);
 
@@ -36,7 +37,7 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
     onCreate: ({ editor }) => {
       // Set documentDir early so image nodes created during initial parse resolve correctly
       if (documentDir) {
-        const imageStorage = (editor.storage as unknown as Record<string, Record<string, unknown> | undefined>).image;
+        const imageStorage = getEditorStorage<EditorStorageImage>(editor, 'image');
         if (imageStorage) {
           imageStorage.documentDir = documentDir;
         }

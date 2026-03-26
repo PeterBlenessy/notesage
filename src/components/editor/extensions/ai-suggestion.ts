@@ -242,7 +242,7 @@ function acceptSuggestion(editor: Editor, suggestion: AISuggestion) {
 }
 
 // Reject the suggestion
-function rejectSuggestion(editor: any) {
+function rejectSuggestion(editor: Editor) {
   editor
     .chain()
     .focus()
@@ -252,7 +252,7 @@ function rejectSuggestion(editor: any) {
 
 // Helper to set a suggestion from outside
 export function setSuggestion(
-  editor: any,
+  editor: Editor,
   from: number,
   to: number,
   originalText: string,
@@ -291,7 +291,7 @@ export function setSuggestion(
 }
 
 // Helper to clear suggestion
-export function clearSuggestion(editor: any) {
+export function clearSuggestion(editor: Editor) {
   editor.view.dispatch(
     editor.state.tr.setMeta(AISuggestionPluginKey, {
       clearSuggestion: true,
@@ -300,6 +300,6 @@ export function clearSuggestion(editor: any) {
 }
 
 // Helper to check if there's an active suggestion
-export function hasActiveSuggestion(editor: any): boolean {
+export function hasActiveSuggestion(editor: Editor): boolean {
   return !!AISuggestionPluginKey.getState(editor.state)?.suggestion;
 }

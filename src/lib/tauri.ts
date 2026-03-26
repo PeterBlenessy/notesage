@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { AIProviderType } from './ai/types';
 
 export interface FileEntry {
   name: string;
@@ -573,8 +574,8 @@ export const tauriApi = {
     });
   },
 
-  // AI model listing
-  async listModels(provider: string, connectionId?: string, baseUrl?: string): Promise<string[]> {
+  // AI model listing — provider must match the Rust AIProviderType enum
+  async listModels(provider: AIProviderType | string, connectionId?: string, baseUrl?: string): Promise<string[]> {
     return await invoke<string[]>("list_models", {
       provider,
       connectionId: connectionId ?? null,

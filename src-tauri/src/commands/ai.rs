@@ -1,7 +1,39 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::sync::LazyLock;
 use super::constants;
 use super::credentials::get_credential_internal;
+
+/// Typed AI provider enum replacing raw `String` for compile-time safety.
+/// JSON values match the frontend strings: `"anthropic"`, `"openai"`, `"ollama"`,
+/// `"openai_compatible"`, `"local_bundled"`.
+///
+/// Note: `#[serde(rename_all = "snake_case")]` would convert `OpenAI` to `"open_a_i"`
+/// (not `"openai"`), so we use explicit `#[serde(rename)]` on variants whose
+/// natural snake_case doesn't match the established wire format.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AIProviderType {
+    Anthropic,
+    #[serde(rename = "openai")]
+    OpenAI,
+    Ollama,
+    #[serde(rename = "openai_compatible")]
+    OpenAICompatible,
+    LocalBundled,
+}
+
+impl fmt::Display for AIProviderType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AIProviderType::Anthropic => write!(f, "anthropic"),
+            AIProviderType::OpenAI => write!(f, "openai"),
+            AIProviderType::Ollama => write!(f, "ollama"),
+            AIProviderType::OpenAICompatible => write!(f, "openai_compatible"),
+            AIProviderType::LocalBundled => write!(f, "local_bundled"),
+        }
+    }
+}
 
 /// Shared HTTP client for connection pooling across all AI provider requests.
 static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
@@ -41,7 +73,7 @@ pub struct ChatMessage {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AIRequest {
-    pub provider: String,
+    pub provider: AIProviderType,
     pub prompt: String,
     pub api_key: Option<String>,
     pub connection_id: Option<String>,
@@ -58,12 +90,12 @@ pub async fn ai_generate_text(
     request: AIRequest,
     state: tauri::State<'_, super::local_inference::LocalInferenceState>,
 ) -> Result<String, String> {
-    match request.provider.as_str() {
-        "anthropic" => anthropic_generate(&request).await,
-        "openai" => openai_generate(&request).await,
-        "ollama" => ollama_generate(&request).await,
-        "openai_compatible" => openai_compatible_generate(&request).await,
-        "local_bundled" => {
+    match request.provider {
+        AIProviderType::Anthropic => anthropic_generate(&request).await,
+        AIProviderType::OpenAI => openai_generate(&request).await,
+        AIProviderType::Ollama => ollama_generate(&request).await,
+        AIProviderType::OpenAICompatible => openai_compatible_generate(&request).await,
+        AIProviderType::LocalBundled => {
             super::local_inference::local_bundled_generate(
                 &request.prompt,
                 &state,
@@ -73,14 +105,13 @@ pub async fn ai_generate_text(
             )
             .await
         }
-        _ => Err(format!("Unknown provider: {}", request.provider)),
     }
 }
 
 #[tauri::command]
 pub async fn ai_chat(
     messages: Vec<ChatMessage>,
-    provider: String,
+    provider: AIProviderType,
     api_key: Option<String>,
     connection_id: Option<String>,
     ollama_url: Option<String>,
@@ -91,15 +122,14 @@ pub async fn ai_chat(
     state: tauri::State<'_, super::local_inference::LocalInferenceState>,
 ) -> Result<String, String> {
     let resolved_key = resolve_api_key(&api_key, &connection_id)?;
-    match provider.as_str() {
-        "anthropic" => anthropic_chat(&messages, &resolved_key, &model, temperature, max_tokens, &base_url).await,
-        "openai" => openai_chat(&messages, &resolved_key, &model, temperature, max_tokens, &base_url).await,
-        "ollama" => ollama_chat(&messages, &ollama_url, &model, temperature, max_tokens, &base_url).await,
-        "openai_compatible" => openai_compatible_chat(&messages, &resolved_key, &model, temperature, max_tokens, &base_url).await,
-        "local_bundled" => {
+    match provider {
+        AIProviderType::Anthropic => anthropic_chat(&messages, &resolved_key, &model, temperature, max_tokens, &base_url).await,
+        AIProviderType::OpenAI => openai_chat(&messages, &resolved_key, &model, temperature, max_tokens, &base_url).await,
+        AIProviderType::Ollama => ollama_chat(&messages, &ollama_url, &model, temperature, max_tokens, &base_url).await,
+        AIProviderType::OpenAICompatible => openai_compatible_chat(&messages, &resolved_key, &model, temperature, max_tokens, &base_url).await,
+        AIProviderType::LocalBundled => {
             super::local_inference::local_bundled_chat(&messages, &state, &model, temperature, max_tokens).await
         }
-        _ => Err(format!("Unknown provider: {}", provider)),
     }
 }
 
@@ -107,7 +137,7 @@ pub async fn ai_chat(
 pub async fn ai_chat_stream(
     window: tauri::Window,
     messages: Vec<ChatMessage>,
-    provider: String,
+    provider: AIProviderType,
     api_key: Option<String>,
     connection_id: Option<String>,
     ollama_url: Option<String>,
@@ -123,21 +153,20 @@ pub async fn ai_chat_stream(
     let search = web_search_enabled.unwrap_or(false);
     let resolved_key = resolve_api_key(&api_key, &connection_id)?;
 
-    match provider.as_str() {
-        "anthropic" => anthropic_chat_stream(&window, &messages, &resolved_key, search, &model, temperature, max_tokens, &base_url).await,
-        "openai" => openai_chat_stream(&window, &messages, &resolved_key, search, &model, temperature, max_tokens, &base_url).await,
-        "ollama" => ollama_chat_stream(&window, &messages, &ollama_url, &model, temperature, max_tokens, &base_url).await,
-        "openai_compatible" => openai_compatible_chat_stream(&window, &messages, &resolved_key, &model, temperature, max_tokens, &base_url).await,
-        "local_bundled" => {
+    match provider {
+        AIProviderType::Anthropic => anthropic_chat_stream(&window, &messages, &resolved_key, search, &model, temperature, max_tokens, &base_url).await,
+        AIProviderType::OpenAI => openai_chat_stream(&window, &messages, &resolved_key, search, &model, temperature, max_tokens, &base_url).await,
+        AIProviderType::Ollama => ollama_chat_stream(&window, &messages, &ollama_url, &model, temperature, max_tokens, &base_url).await,
+        AIProviderType::OpenAICompatible => openai_compatible_chat_stream(&window, &messages, &resolved_key, &model, temperature, max_tokens, &base_url).await,
+        AIProviderType::LocalBundled => {
             super::local_inference::local_bundled_chat_stream(&window, &messages, &state, &model, temperature, max_tokens).await
         }
-        _ => Err(format!("Unknown provider: {}", provider)),
     }
 }
 
 #[tauri::command]
 pub async fn list_models(
-    provider: String,
+    provider: AIProviderType,
     api_key: Option<String>,
     connection_id: Option<String>,
     base_url: Option<String>,
@@ -145,8 +174,8 @@ pub async fn list_models(
     let client = &*HTTP_CLIENT;
     let resolved_key = resolve_api_key(&api_key, &connection_id)?;
 
-    match provider.as_str() {
-        "anthropic" => {
+    match provider {
+        AIProviderType::Anthropic => {
             let api_key = resolved_key.as_ref().ok_or("Anthropic API key is required")?;
             let url = format!(
                 "{}/v1/models",
@@ -181,9 +210,9 @@ pub async fn list_models(
             Ok(models)
         }
 
-        "openai" | "openai_compatible" => {
+        AIProviderType::OpenAI | AIProviderType::OpenAICompatible => {
             let api_key = resolved_key.as_ref().ok_or("API key is required")?;
-            let effective_base = if provider == "openai_compatible" {
+            let effective_base = if provider == AIProviderType::OpenAICompatible {
                 base_url.as_deref()
                     .ok_or("Base URL is required for OpenAI-Compatible provider")?
             } else {
@@ -220,7 +249,7 @@ pub async fn list_models(
             Ok(models)
         }
 
-        "ollama" => {
+        AIProviderType::Ollama => {
             let url = format!(
                 "{}/api/tags",
                 base_url.as_deref().unwrap_or("http://localhost:11434")
@@ -253,7 +282,9 @@ pub async fn list_models(
             Ok(models)
         }
 
-        _ => Err(format!("Unknown provider: {}", provider)),
+        AIProviderType::LocalBundled => {
+            Err("Local bundled provider does not support model listing via this endpoint".to_string())
+        }
     }
 }
 

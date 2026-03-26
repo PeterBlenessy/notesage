@@ -9,6 +9,7 @@ import {
 import { findNthTagInDoc, scrollPosToCenter, scrollToTextInEditor, PX_PER_CM } from "@/components/editor/editor-utils";
 import { loadRawMarkdownIntoEditor } from "@/lib/markdown";
 import { getDocumentDir } from "@/lib/image-utils";
+import { getEditorStorage, type EditorStorageImage } from "@/lib/editor-storage";
 import { toast } from "sonner";
 
 interface AISuggestion {
@@ -96,8 +97,7 @@ export function useEditorTabSwitch({
       lastLoadedTabId.current = activeTab.id;
 
       // Set document directory BEFORE setContent so image nodes resolve paths correctly
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const imageStorage = (editor.storage as any).image;
+      const imageStorage = getEditorStorage<EditorStorageImage>(editor, 'image');
       if (imageStorage) {
         imageStorage.documentDir = getDocumentDir(activeTab.filePath);
         imageStorage.openInsertDialog = () => setImageDialogOpen(true);
@@ -211,11 +211,10 @@ export function useEditorTabSwitch({
       cachedEditorStatesRef.current.delete(activeTab.id);
       loadRawMarkdownIntoEditor(editor, activeTab.content);
       // Re-set image storage in case it was lost
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const imageStorage = (editor.storage as any).image;
-      if (imageStorage) {
-        imageStorage.documentDir = getDocumentDir(activeTab.filePath);
-        imageStorage.openInsertDialog = () => setImageDialogOpen(true);
+      const imgStorage = getEditorStorage<EditorStorageImage>(editor, 'image');
+      if (imgStorage) {
+        imgStorage.documentDir = getDocumentDir(activeTab.filePath);
+        imgStorage.openInsertDialog = () => setImageDialogOpen(true);
       }
     }
   }, [editor, activeTab?.viewMode, activeTab?.id]);
