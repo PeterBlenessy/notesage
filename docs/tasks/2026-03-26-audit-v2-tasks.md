@@ -18,7 +18,7 @@
 
 ## Tier 1: Quick Wins (batch in one session)
 
-### #1 — Remove unused npm dependencies
+### #1 — Remove unused npm dependencies ✅
 
 **Description:** Remove `date-fns` and `linkifyjs` from `package.json`. Run `pnpm install` to update lockfile. Verify no import errors with `pnpm tauri dev`.
 
