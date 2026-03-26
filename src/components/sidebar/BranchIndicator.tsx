@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { GitBranch, Check } from "lucide-react";
+import { GitBranch, Check, AlertTriangle } from "lucide-react";
 import { useGitStore } from "@/stores/git-store";
 import { useGitOperations } from "@/hooks/useGitOperations";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface BranchIndicatorProps {
   projectPath: string;
@@ -18,6 +24,7 @@ interface BranchIndicatorProps {
 export function BranchIndicator({ projectPath }: BranchIndicatorProps) {
   const repo = useGitStore((s) => s.repos[projectPath]);
   const currentBranch = repo?.currentBranch ?? "";
+  const statusError = repo?.statusError ?? false;
   const { switchBranch, listBranches } = useGitOperations(projectPath);
   const [branches, setBranches] = useState<string[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -59,6 +66,18 @@ export function BranchIndicator({ projectPath }: BranchIndicatorProps) {
         >
           <GitBranch className="h-3 w-3 shrink-0" strokeWidth={1.5} />
           <span className="truncate">{currentBranch}</span>
+          {statusError && (
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <AlertTriangle className="h-3 w-3 shrink-0 text-destructive" strokeWidth={1.5} />
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  <p>Git status refresh failed</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-48">

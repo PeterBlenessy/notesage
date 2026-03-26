@@ -93,7 +93,19 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
         return;
       }
       const raw = await tauriApi.readFile(filePath);
-      const comments: Comment[] = JSON.parse(raw).map((c: Comment) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (parseError) {
+        console.error('Failed to parse comment file:', filePath, parseError);
+        log.error('comments', `Failed to parse comment file: ${filePath}`, parseError);
+        toast.error('Failed to load comments — file may be corrupted');
+        set((state) => ({
+          commentsByDocument: { ...state.commentsByDocument, [documentId]: [] },
+        }));
+        return;
+      }
+      const comments: Comment[] = (parsed as Comment[]).map((c: Comment) => {
         // Reset 'delegated' status on load — agent sessions don't survive restart
         if (c.status === 'delegated') {
           return { ...c, status: (c.replies && c.replies.length > 0) ? 'done' : 'open' };
@@ -104,7 +116,8 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
         commentsByDocument: { ...state.commentsByDocument, [documentId]: comments },
       }));
     } catch (error) {
-      log.error('comments', 'Failed to load comments', error);
+      console.error('Failed to load comment file:', filePath, error);
+      log.error('comments', `Failed to load comments from ${filePath}`, error);
       set((state) => ({
         commentsByDocument: { ...state.commentsByDocument, [documentId]: [] },
       }));

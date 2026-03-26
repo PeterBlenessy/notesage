@@ -12,6 +12,105 @@ function flagFreeAccount(connectionId: string) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Provider name formatting
+// ---------------------------------------------------------------------------
+
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  ollama: 'Ollama',
+  local: 'Local AI',
+  local_bundled: 'Local AI',
+  openai_compatible: 'OpenAI-compatible provider',
+};
+
+/**
+ * Capitalize a provider identifier into a user-facing display name.
+ * Known providers get their canonical casing; unknown names are title-cased.
+ */
+function formatProviderName(provider: string): string {
+  return PROVIDER_DISPLAY_NAMES[provider] ?? provider.charAt(0).toUpperCase() + provider.slice(1);
+}
+
+// ---------------------------------------------------------------------------
+// Error pattern → friendly message mapping
+// ---------------------------------------------------------------------------
+
+interface ErrorMapping {
+  /** Patterns to test against the lowercased error string (any match triggers). */
+  patterns: RegExp[];
+  /** Template function producing the user-friendly message. */
+  message: (provider: string) => string;
+  /** Whether to suggest opening Settings → Connections. */
+  settingsHint: boolean;
+}
+
+const ERROR_MAPPINGS: ErrorMapping[] = [
+  {
+    patterns: [/connection\s*refused/, /econnrefused/, /connect\s+econnrefused/],
+    message: (p) => `Could not reach ${p}. Check that the service is running.`,
+    settingsHint: true,
+  },
+  {
+    patterns: [/\b401\b/, /\bunauthorized\b/, /invalid.{0,10}key/, /invalid.{0,10}api.{0,5}key/, /authentication\s+failed/],
+    message: (p) => `Invalid API key for ${p}. Check your settings.`,
+    settingsHint: true,
+  },
+  {
+    patterns: [/\b429\b/, /rate.{0,5}limit/, /too\s+many\s+requests/],
+    message: (p) => `Rate limited by ${p}. Try again in a moment.`,
+    settingsHint: false,
+  },
+  {
+    patterns: [/\btimeout\b/, /etimedout/, /timed?\s*out/, /request\s+timed?\s*out/],
+    message: (p) => `Request to ${p} timed out. Check your connection.`,
+    settingsHint: false,
+  },
+  {
+    patterns: [/\b50[0-3]\b/, /internal\s+server\s+error/, /bad\s+gateway/, /service\s+unavailable/],
+    message: (p) => `${p} returned a server error. Try again later.`,
+    settingsHint: false,
+  },
+  {
+    patterns: [/\b403\b/, /\bforbidden\b/],
+    message: (p) => `Access denied by ${p}. Check your API key permissions.`,
+    settingsHint: true,
+  },
+  {
+    patterns: [/\b404\b.*model/, /model.*not\s+found/, /model.*does\s+not\s+exist/],
+    message: (p) => `Model not found on ${p}. Check your model selection in settings.`,
+    settingsHint: true,
+  },
+];
+
+/**
+ * Map common AI error patterns to user-friendly messages.
+ *
+ * Checks the raw error string against known HTTP status codes, network errors,
+ * and provider-specific patterns. Returns a clean message with the provider
+ * name formatted nicely, or `null` if no pattern matches (caller should
+ * fall back to other formatting).
+ *
+ * Pure function — no side effects.
+ */
+export function mapAIError(error: string, provider: string): string | null {
+  const lower = error.toLowerCase();
+  const displayName = formatProviderName(provider);
+
+  for (const mapping of ERROR_MAPPINGS) {
+    if (mapping.patterns.some((re) => re.test(lower))) {
+      const msg = mapping.message(displayName);
+      if (mapping.settingsHint) {
+        return `${msg}\n\nOpen Settings → Connections to update your configuration.`;
+      }
+      return msg;
+    }
+  }
+
+  return null;
+}
+
 /**
  * Extract a user-friendly error message from AI provider errors.
  * Provider backends return raw JSON error bodies — parse out the message field.
@@ -22,6 +121,21 @@ function flagFreeAccount(connectionId: string) {
  */
 export function friendlyAIError(error: unknown, provider?: string, connectionId?: string): string {
   const raw = error instanceof Error ? error.message : String(error);
+
+  // First, try pattern-based mapping for common HTTP/network errors.
+  // This catches errors before JSON parsing, so "connection refused" and
+  // status code errors get clean messages even if wrapped in JSON.
+  if (provider) {
+    const mapped = mapAIError(raw, provider);
+    if (mapped) {
+      // Still run free account detection
+      if (connectionId && raw.toLowerCase().includes('chatgpt account')) {
+        flagFreeAccount(connectionId);
+      }
+      return mapped;
+    }
+  }
+
   const prefix = provider ? `${provider}: ` : '';
 
   // Try to extract the nested JSON message from provider error strings
@@ -57,6 +171,17 @@ export function friendlyAIError(error: unknown, provider?: string, connectionId?
   }
 
   const friendly = msg || 'Something went wrong. Please try again.';
+
+  // After JSON extraction, try pattern mapping on the extracted message too
+  if (provider) {
+    const mapped = mapAIError(friendly, provider);
+    if (mapped) {
+      if (connectionId && friendly.toLowerCase().includes('chatgpt account')) {
+        flagFreeAccount(connectionId);
+      }
+      return mapped;
+    }
+  }
 
   // Detect free account limitations and flag the connection
   if (connectionId && friendly.toLowerCase().includes('chatgpt account')) {

@@ -8,6 +8,7 @@ import {
 import { tauriApi } from '@/lib/tauri';
 import { log } from '@/lib/logger';
 import { buildDocumentIndex, type DocumentIndex } from '@/lib/document-index';
+import { toast } from 'sonner';
 
 const METADATA_DIR = '.notesage';
 const METADATA_FILE = 'project.json';
@@ -109,7 +110,11 @@ export function useProjectMetadata() {
         // Build document index in background (non-blocking)
         buildDocumentIndex(project.path)
           .then((index) => documentIndexCache.set(project.path, index))
-          .catch((err) => console.error('Failed to build document index:', err));
+          .catch((err) => {
+            const projectName = folderNameFromPath(project.path);
+            console.error(`Failed to build document index for ${projectName}:`, err);
+            toast.warning(`Tag index for ${projectName} failed — search may be incomplete`);
+          });
       }
     }
 

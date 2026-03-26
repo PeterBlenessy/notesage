@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, memo } from "react";
 import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown } from "lucide-react";
 import { SyncedIcon } from "./SyncedIcon";
 import { FolderPickerItem } from "./FolderPickerItem";
@@ -6,14 +6,11 @@ import { NewFolderDialog } from "./NewFolderDialog";
 import { toast } from "sonner";
 import { FileEntry, tauriApi } from "@/lib/tauri";
 import { NOTESAGE_DRAG_MIME, parseNotesageDrop } from "@/lib/drag-utils";
-import type { GitStatus } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
-import { useEditorStore } from "@/stores/editor-store";
-import { useExternalChangeStore } from "@/stores/external-change-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { useGitStore } from "@/stores/git-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
+import { useFileTreeItemState } from "@/hooks/useFileTreeItemState";
 import { cn } from "@/lib/utils";
 import {
   ContextMenu,
@@ -43,16 +40,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-const GIT_STATUS_CONFIG: Record<GitStatus, { label: string; color: string; tooltip: string }> = {
-  modified: { label: "M", color: "text-muted-foreground/50", tooltip: "Modified" },
-  added: { label: "A", color: "text-muted-foreground/50", tooltip: "Added — new file staged for commit" },
-  staged: { label: "S", color: "text-muted-foreground/50", tooltip: "Staged" },
-  untracked: { label: "U", color: "text-muted-foreground/50", tooltip: "Untracked — not yet tracked by git" },
-  deleted: { label: "D", color: "text-muted-foreground/50", tooltip: "Deleted" },
-  renamed: { label: "R", color: "text-muted-foreground/50", tooltip: "Renamed" },
-  conflicted: { label: "C", color: "text-destructive", tooltip: "Conflicted — merge conflict" },
-};
-
 interface FileTreeItemProps {
   entry: FileEntry;
   level: number;
@@ -65,11 +52,9 @@ interface FileTreeItemProps {
   onExportFile?: (filePath: string, fileName: string) => void;
 }
 
-export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProject, expandKeyPrefix = "", gitRepoRoot, onCommitFile, onExportFile }: FileTreeItemProps) {
+const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProject, expandKeyPrefix = "", gitRepoRoot, onCommitFile, onExportFile }: FileTreeItemProps) {
   const isExpanded = useWorkspaceStore((s) => s.isExpanded);
   const toggleFolder = useWorkspaceStore((s) => s.toggleFolder);
-  const tabs = useEditorStore((s) => s.tabs);
-  const activeTabId = useEditorStore((s) => s.activeTabId);
   const { renamePath, deletePath } = useFileOperations();
   const expandKey = expandKeyPrefix + entry.path;
   const expanded = isExpanded(expandKey);
@@ -89,49 +74,18 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
   const notesRootPath = useSettingsStore((s) => s.notesRootPath);
 
-  const icloudNotesagePath = useSettingsStore((s) => s.icloudNotesagePath);
-
-  const externalChangesOld = useEditorStore((s) => s.externalChanges);
-  const externalChangeNew = useExternalChangeStore((s) => s.getChange(entry.path));
-  const hasExternalChange = !entry.is_directory && (entry.path in externalChangesOld || !!externalChangeNew);
-
-  const isCloudFile = !!(icloudNotesagePath && entry.path.startsWith(icloudNotesagePath + "/"));
-
-  const activeTab = tabs.find((t) => t.id === activeTabId);
-  const isActive = activeTab?.filePath === entry.path;
+  // Consolidated store computations via hook
+  const { isActive, hasExternalChange, isCloudFile, gitInfo } = useFileTreeItemState(
+    entry.path,
+    entry.is_directory,
+    gitRepoRoot,
+  );
 
   // Detect if this directory is a project (in workspace or has .notesage/ child)
   const isProjectFolder = entry.is_directory && (
     projects.some((p) => p.path === entry.path) ||
     entry.children?.some((c) => c.name === ".notesage" && c.is_directory)
   );
-
-  // Git status — paths from the backend are absolute, so we match directly.
-  const gitEnabled = useSettingsStore((s) => s.gitEnabled);
-  const repo = useGitStore((s) => gitRepoRoot ? s.repos[gitRepoRoot] : undefined);
-  const fileStatusMap = repo?.fileStatusMap;
-  const fileStatuses = repo?.fileStatuses;
-  const gitInfo = useMemo(() => {
-    if (!gitEnabled || !gitRepoRoot || !fileStatusMap || fileStatusMap.size === 0) return null;
-
-    if (!entry.is_directory) {
-      // O(1) Map lookup by absolute path (prefer unstaged over staged for display)
-      const statuses = fileStatusMap.get(entry.path);
-      if (!statuses) return null;
-      const unstaged = statuses.find((s) => !s.staged);
-      const staged = statuses.find((s) => s.staged);
-      if (unstaged) return GIT_STATUS_CONFIG[unstaged.status];
-      if (staged) return GIT_STATUS_CONFIG[staged.status];
-      return null;
-    }
-
-    // For directories: check if any status path is inside this directory
-    // This still iterates, but only for directories (far fewer than files)
-    const dirPrefix = entry.path + "/";
-    const hasChanges = fileStatuses?.some((s) => s.path.startsWith(dirPrefix));
-    if (hasChanges) return { label: "●", color: "text-muted-foreground/50", tooltip: "Contains changes" };
-    return null;
-  }, [gitEnabled, gitRepoRoot, entry.path, entry.is_directory, fileStatusMap, fileStatuses]);
 
   useEffect(() => {
     if (isRenaming) {
@@ -663,4 +617,26 @@ export function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProje
       )}
     </div>
   );
+}, fileTreeItemAreEqual);
+
+function fileTreeItemAreEqual(
+  prev: Readonly<FileTreeItemProps>,
+  next: Readonly<FileTreeItemProps>,
+): boolean {
+  return (
+    prev.entry.path === next.entry.path &&
+    prev.entry.name === next.entry.name &&
+    prev.entry.is_directory === next.entry.is_directory &&
+    prev.entry.children === next.entry.children &&
+    prev.level === next.level &&
+    prev.expandKeyPrefix === next.expandKeyPrefix &&
+    prev.gitRepoRoot === next.gitRepoRoot &&
+    prev.onFileClick === next.onFileClick &&
+    prev.onNewNote === next.onNewNote &&
+    prev.onMakeProject === next.onMakeProject &&
+    prev.onCommitFile === next.onCommitFile &&
+    prev.onExportFile === next.onExportFile
+  );
 }
+
+export const FileTreeItem = FileTreeItemInner;

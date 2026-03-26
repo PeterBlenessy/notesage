@@ -228,7 +228,9 @@ async function reloadTrees() {
       const tree = await tauriApi.listDirectory(project.path);
       ws.updateProjectTree(project.path, tree);
     } catch {
+      const projectName = project.path.split('/').pop() || project.path;
       ws.removeProject(project.path);
+      toast.warning(`Project "${projectName}" was removed — directory no longer exists`);
     }
   }
 

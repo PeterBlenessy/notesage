@@ -242,7 +242,7 @@
 
 ## Tier 3: Render Performance
 
-### #23 — Refactor ChatPanel Zustand subscriptions
+### #23 — Refactor ChatPanel Zustand subscriptions ✅
 
 **Description:** Replace the 18 unselectored store reads with individual `useChatStore(s => s.field)` selectors. Split ChatPanel into memoized sub-components: `ChatMessageList`, `ChatFooter`, `ChatHistoryView`. Wrap each in `React.memo()`.
 
@@ -252,7 +252,7 @@
 
 ---
 
-### #24 — Refactor Sidebar Zustand subscriptions
+### #24 — Refactor Sidebar Zustand subscriptions ✅
 
 **Description:** Replace 11 unselectored workspace store reads with individual selectors. Extract `QuickNotesSection`, `ProjectsSection`, `FoldersSection` as `React.memo()` sub-components. Each section subscribes only to the fields it needs.
 
@@ -262,7 +262,7 @@
 
 ---
 
-### #25 — Optimize FileTreeItem with React.memo
+### #25 — Optimize FileTreeItem with React.memo ✅
 
 **Description:** Wrap FileTreeItem in `React.memo()` with a custom comparator that checks `entry.path`, `entry.name`, `entry.is_directory`, `level`, and `isActive`. Extract expensive store computations (git status, external changes) into a single `useFileTreeItemState(path)` hook that returns a stable object via `useMemo`.
 
@@ -274,7 +274,7 @@
 
 ## Tier 4: Error UX
 
-### #26 — Add error feedback for index build failures
+### #26 — Add error feedback for index build failures ✅
 
 **Description:** In `useProjectMetadata`, catch `buildDocumentIndex()` errors and show a non-blocking toast: "Tag index for \[project\] failed — search may be incomplete." Log the full error. In `useFileOperations`, replace `.catch(() => {})` on `indexFile()` with a `console.warn` + debounced toast for repeated failures.
 
@@ -284,7 +284,7 @@
 
 ---
 
-### #27 — Improve AI chat error messages
+### #27 — Improve AI chat error messages ✅
 
 **Description:** Create an `mapAIError(error: string, provider: string)` utility that maps common error patterns to user-friendly messages: connection refused → "Could not reach \[provider\]", 401 → "Invalid API key", 429 → "Rate limited", timeout → "Request timed out". Include a "Open Settings" link in the error message for configuration issues.
 
@@ -294,7 +294,7 @@
 
 ---
 
-### #28 — Fix comment file loading error handling
+### #28 — Fix comment file loading error handling ✅
 
 **Description:** In `comment-store.ts`, wrap `JSON.parse()` of comment files in try/catch. On parse error, show toast: "Failed to load comments — file may be corrupted." Log the file path and error. Don't silently show empty comments.
 
@@ -304,7 +304,7 @@
 
 ---
 
-### #29 — Add error feedback for common silent failures
+### #29 — Add error feedback for common silent failures ✅
 
 **Description:** Batch fix for remaining MEDIUM/LOW error UX findings: (a) Git status refresh: show warning badge on git indicator when operations fail. (b) Markdown links: show toast when link resolution fails. (c) Project disappearance: show toast when project directory not found. (d) Search empty state: show "No results" message in command palette.
 

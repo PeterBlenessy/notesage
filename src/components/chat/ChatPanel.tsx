@@ -1,68 +1,47 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { Trash2, Loader2, Target, ChevronUp, FolderOpen, Check, Globe, Plus, MessageSquare, History, Clock, Download } from 'lucide-react';
+import { Plus, MessageSquare, History } from 'lucide-react';
 import { toast } from 'sonner';
-import { AgentIcon } from '@/components/AgentIcon';
-import { ProviderLogo } from '@/components/ProviderLogo';
-import { useChatStore, selectMessages, selectProjectPaths, selectPendingProjectSwitch, selectPendingAgentSwitch, selectSegments } from '@/stores/chat-store';
+import { useChatStore, selectMessages, selectProjectPaths, selectPendingProjectSwitch, selectPendingAgentSwitch } from '@/stores/chat-store';
 import { useAIStore } from '@/stores/ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
-import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { useRoutingStore } from '@/stores/routing-store';
-import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
+import { useSkillStore } from '@/stores/skill-store';
 import { tauriApi } from '@/lib/tauri';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import { useAIOperations } from '@/hooks/useAIOperations';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { useChatContext } from '@/hooks/useChatContext';
-import { usePermissionStore } from '@/stores/permission-store';
-import { useSkillStore } from '@/stores/skill-store';
-import { ChatMessage } from './ChatMessage';
-import { ChatInput } from './ChatInput';
-import { LocalAISetupCard } from './LocalAISetupCard';
-import { PermissionCard } from './PermissionCard';
-import { DomainApprovalCard, type DomainApprovalRequest } from './DomainApprovalCard';
-import { ProjectSwitchCard } from './ProjectSwitchCard';
-import { AgentSwitchCard } from './AgentSwitchCard';
-import { ContextDivider } from './ContextDivider';
-import { QuickReplies, parseQuickReplies } from './QuickReplies';
+import { ChatHistoryView } from './ChatHistoryView';
+import { ChatMessageList } from './ChatMessageList';
+import { ChatFooter } from './ChatFooter';
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 
 
 
 export function ChatPanel() {
-  const isLoading = useChatStore((s) => s.isLoading);
-  const activeTool = useChatStore((s) => s.activeTool);
-  const setSelectedProjectPaths = useChatStore((s) => s.setSelectedProjectPaths);
-  const toggleProjectPath = useChatStore((s) => s.toggleProjectPath);
-  const webSearchEnabled = useChatStore((s) => s.webSearchEnabled);
-  const setWebSearchEnabled = useChatStore((s) => s.setWebSearchEnabled);
   const conversations = useChatStore((s) => s.conversations);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const createConversation = useChatStore((s) => s.createConversation);
-  const deleteConversation = useChatStore((s) => s.deleteConversation);
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
   const setPendingProjectSwitch = useChatStore((s) => s.setPendingProjectSwitch);
   const setPendingAgentSwitch = useChatStore((s) => s.setPendingAgentSwitch);
   const messages = useChatStore(selectMessages);
   const rawProjectPaths = useChatStore(selectProjectPaths);
+  const pendingProjectSwitch = useChatStore(selectPendingProjectSwitch);
+  const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
+
+  const legacyProvider = useAIStore((s) => s.provider);
+  const setActiveAgent = useSkillStore((s) => s.setActiveAgent);
+
+  const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
+  const interactiveConnection = useRoutingStore((s) => s.getConnectionForUseCase('interactive'));
+  const allConnections = useConnectionsStore((s) => s.connections);
+
   // Stabilize array identity — only update reference when values actually change
   const stableProjectPathsRef = useRef(rawProjectPaths);
   const selectedProjectPaths = useMemo(() => {
@@ -76,22 +55,6 @@ export function ChatPanel() {
     stableProjectPathsRef.current = rawProjectPaths;
     return rawProjectPaths;
   }, [rawProjectPaths]);
-  const pendingProjectSwitch = useChatStore(selectPendingProjectSwitch);
-  const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
-  const segments = useChatStore(selectSegments);
-  const legacyProvider = useAIStore((s) => s.provider);
-  const agents = useSkillStore((s) => s.agents);
-  const agentEnabledOverrides = useSkillStore((s) => s.agentEnabledOverrides);
-  const activeAgentName = useSkillStore((s) => s.activeAgentName);
-  const invocableAgents = useMemo(() => useSkillStore.getState().getUserInvocableAgents(), [agents, agentEnabledOverrides]);
-  const activeAgent = useMemo(() => useSkillStore.getState().getActiveAgent(), [agents, agentEnabledOverrides, activeAgentName]);
-  const setActiveAgent = useSkillStore((s) => s.setActiveAgent);
-  const projects = useWorkspaceStore((s) => s.projects);
-  const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
-  const interactiveConnection = useRoutingStore((s) => s.getConnectionForUseCase('interactive'));
-  const setRouting = useRoutingStore((s) => s.setRouting);
-  const allConnections = useConnectionsStore((s) => s.connections);
-  const interactiveConnections = useMemo(() => allConnections.filter((c) => c.capabilities.includes('interactive')), [allConnections]);
 
   // Resolve effective connection: project override takes priority over global routing
   const singleProjectPath = selectedProjectPaths.length === 1 ? selectedProjectPaths[0] : null;
@@ -105,23 +68,13 @@ export function ChatPanel() {
 
   // AI availability: check v2 routing/connections first, fall back to v1 ai-store
   const hasAIProvider = !!effectiveConnection || !!legacyProvider;
-  // Effective provider type for capability checks (e.g. web search support)
-  const effectiveProviderType = effectiveConnection?.provider || legacyProvider;
 
   // Goals discovery for single-project selection only
   const { goalFiles } = useGoalsDiscovery(singleProjectPath);
-  const { sendChatMessage, cancelChat } = useAIOperations();
-  const { contextItems, attachedFilePaths, dismissItem } = useChatContext();
-  const permissionRequests = usePermissionStore((s) => s.requests);
-  const [providerOpen, setProviderOpen] = useState(false);
-  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
-  const [projectOpen, setProjectOpen] = useState(false);
+  const { sendChatMessage } = useAIOperations();
+  const { attachedFilePaths } = useChatContext();
+
   const [chatView, setChatView] = useState<'chat' | 'history'>('chat');
-
-  const [domainRequests, setDomainRequests] = useState<DomainApprovalRequest[]>([]);
-
-  const isAcpConnection = effectiveConnection?.authMethod === 'agent_managed';
-  const hasProjectOverride = !!projectOverrideConnection;
 
   // Detect project selection changes → trigger context isolation prompt
   const prevProjectPathsRef = useRef<string[]>(selectedProjectPaths);
@@ -165,19 +118,6 @@ export function ChatPanel() {
     );
   }, [effectiveConnection?.id, messages.length, pendingAgentSwitch, setPendingAgentSwitch, allConnections]);
 
-
-  // Derive display label for the project selector trigger
-  const projectLabel = useMemo(() => {
-    if (selectedProjectPaths.length === 0) return 'No projects';
-    if (selectedProjectPaths.length === 1) {
-      const meta = metadataMap[selectedProjectPaths[0]];
-      return meta?.name || selectedProjectPaths[0].split('/').pop() || 'Project';
-    }
-    const allSelected = projects.length > 0 && selectedProjectPaths.length === projects.length;
-    if (allSelected) return 'All projects';
-    return `${selectedProjectPaths.length} projects`;
-  }, [selectedProjectPaths, metadataMap, projects.length]);
-
   const chatPlaceholder = useMemo(() => {
     if (goalFiles.length > 0) {
       return 'Ask about your project goals, or type a message...';
@@ -188,93 +128,6 @@ export function ChatPanel() {
     return 'Ask anything...';
   }, [goalFiles.length, selectedProjectPaths.length]);
 
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const autoScrollRef = useRef(true);
-
-  const scrollToEnd = useCallback(() => {
-    const el = scrollContainerRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, []);
-
-  // Detect manual scroll: disable auto-scroll when user scrolls up
-  const handleScroll = useCallback(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    autoScrollRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-  }, []);
-
-  // MutationObserver: scroll when DOM content actually changes (covers async
-  // markdown rendering that happens after React state updates)
-  useEffect(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const observer = new MutationObserver(() => {
-      if (autoScrollRef.current) {
-        el.scrollTop = el.scrollHeight;
-      }
-    });
-    observer.observe(el, { childList: true, subtree: true, characterData: true });
-    return () => observer.disconnect();
-  }, []);
-
-  // Scroll to bottom when conversation changes (open from history, app refresh)
-  useEffect(() => {
-    autoScrollRef.current = true;
-    requestAnimationFrame(scrollToEnd);
-  }, [activeConversationId, scrollToEnd]);
-
-  // Force scroll when user sends a message
-  const wasLoadingRef = useRef(false);
-  useEffect(() => {
-    if (isLoading && !wasLoadingRef.current) {
-      autoScrollRef.current = true;
-      requestAnimationFrame(scrollToEnd);
-    }
-    wasLoadingRef.current = isLoading;
-  }, [isLoading, scrollToEnd]);
-
-  // Listen for network domain approval requests from the proxy
-  useEffect(() => {
-    const unlisten = listen<{
-      instanceId: string;
-      agentId: string;
-      domain: string;
-      port: number;
-      requestId: string;
-    }>('network-domain-request', (event) => {
-      const { instanceId, agentId, domain, port, requestId } = event.payload;
-
-      // Auto-approve if domain is already allowed (built-in, session, or always)
-      const connId = effectiveConnection?.id;
-      if (connId) {
-        const provOpt = PROVIDER_OPTIONS.find(
-          (o) => o.agentBinary === agentId
-        );
-        const builtIn = provOpt?.installMeta?.allowedDomains ?? [];
-        const permStore = usePermissionStore.getState();
-        if (permStore.isDomainAllowed(connId, domain, builtIn)) {
-          // Auto-respond with allow_once
-          invoke('network_domain_respond', {
-            instanceId,
-            requestId,
-            decision: 'allow_once',
-          }).catch(() => {});
-          return;
-        }
-      }
-
-      setDomainRequests((prev) => [
-        ...prev,
-        { instanceId, agentId, domain, port, requestId, connectionId: connId ?? '' },
-      ]);
-    });
-    return () => { unlisten.then((fn) => fn()); };
-  }, [effectiveConnection?.id]);
-
-  const handleDomainResolved = (requestId: string) => {
-    setDomainRequests((prev) => prev.filter((r) => r.requestId !== requestId));
-  };
-
   // Auto-create a conversation when none exists (e.g. after deleting the last one)
   useEffect(() => {
     if (!activeConversationId && conversations.length === 0) {
@@ -282,7 +135,7 @@ export function ChatPanel() {
     }
   }, [activeConversationId, conversations.length, createConversation]);
 
-  const handleSend = async (content: string) => {
+  const handleSend = useCallback(async (content: string) => {
     if (!hasAIProvider) {
       return;
     }
@@ -325,124 +178,30 @@ export function ChatPanel() {
     }
 
     // Comment-sourced conversations: restrict sandbox to the source project only
-    const activeConv = conversations.find((c) => c.id === activeConversationId);
+    const convs = useChatStore.getState().conversations;
+    const activeId = useChatStore.getState().activeConversationId;
+    const activeConv = convs.find((c) => c.id === activeId);
     const sandboxPaths = activeConv?.sourceCommentId && activeConv.projectPaths.length > 0
       ? activeConv.projectPaths
       : undefined; // undefined = all workspace folders (default)
 
     await sendChatMessage(expandedContent, messages, { ...(skillName ? { displayContent: content, skillName } : {}), attachedFilePaths, sandboxPaths });
-  };
+  }, [hasAIProvider, setActiveAgent, sendChatMessage, messages, attachedFilePaths]);
 
-  const handleNewChat = () => {
+  const handleNewChat = useCallback(() => {
     createConversation();
-  };
+  }, [createConversation]);
 
-  const handleExportConversation = (conv: typeof conversations[0], format: 'markdown' | 'json') => {
-    let content: string;
-    let filename: string;
-    const title = conv.title || 'conversation';
-    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '').slice(0, 40);
-
-    if (format === 'markdown') {
-      const lines = [`# ${title}`, ''];
-      for (const msg of conv.messages) {
-        const role = msg.role === 'user' ? 'You' : msg.role === 'system' ? 'System' : 'Assistant';
-        const time = msg.timestamp ? new Date(msg.timestamp).toLocaleString() : '';
-        lines.push(`## ${role}${time ? ` — ${time}` : ''}`, '', msg.content, '');
-      }
-      content = lines.join('\n');
-      filename = `${slug}.md`;
-    } else {
-      content = JSON.stringify({
-        title: conv.title,
-        createdAt: new Date(conv.createdAt).toISOString(),
-        updatedAt: new Date(conv.updatedAt).toISOString(),
-        messages: conv.messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-          timestamp: m.timestamp ? new Date(m.timestamp).toISOString() : undefined,
-        })),
-      }, null, 2);
-      filename = `${slug}.json`;
-    }
-
-    // Use Tauri save dialog for native file picker
-    import('@tauri-apps/plugin-dialog').then(async ({ save }) => {
-      const filePath = await save({
-        defaultPath: filename,
-        filters: format === 'markdown'
-          ? [{ name: 'Markdown', extensions: ['md'] }]
-          : [{ name: 'JSON', extensions: ['json'] }],
-      });
-      if (!filePath) return;
-      await tauriApi.writeFile(filePath, content);
-      toast.success(`Exported to ${filePath.split('/').pop()}`, {
-        action: {
-          label: 'Reveal',
-          onClick: () => tauriApi.revealInFinder(filePath),
-        },
-      });
-    }).catch((err) => {
-      toast.error(`Export failed: ${err}`);
-    });
-  };
+  const handleSelectConversation = useCallback((id: string) => {
+    setActiveConversation(id);
+    setChatView('chat');
+  }, [setActiveConversation]);
 
   const activeConvTitle = useMemo(() => {
     if (!activeConversationId) return 'New Chat';
     const conv = conversations.find((c) => c.id === activeConversationId);
     return conv?.title || 'New Chat';
   }, [activeConversationId, conversations]);
-
-  const allSelected = projects.length > 0 && selectedProjectPaths.length === projects.length;
-
-  /** Get a project's provider override (connection ID), or null if none. */
-  const getProjectOverride = (path: string): string | null =>
-    metadataMap[path]?.ai?.provider ?? null;
-
-  const handleProjectToggle = (path: string) => {
-    const isSelected = selectedProjectPaths.includes(path);
-    if (isSelected) {
-      // Deselecting — always allowed
-      toggleProjectPath(path);
-      return;
-    }
-
-    // Selecting — check for provider override conflicts
-    const newOverride = getProjectOverride(path);
-    if (newOverride) {
-      // Check if any currently selected project has a different non-null override
-      const conflicting = selectedProjectPaths.some((sp) => {
-        const existing = getProjectOverride(sp);
-        return existing !== null && existing !== newOverride;
-      });
-      if (conflicting) {
-        // Swap to just the new project
-        setSelectedProjectPaths([path]);
-        toast.info('Switched project — selected projects had conflicting provider overrides.', { id: 'provider-conflict' });
-        return;
-      }
-    }
-
-    toggleProjectPath(path);
-  };
-
-  const handleToggleAll = () => {
-    if (allSelected) {
-      setSelectedProjectPaths([]);
-    } else {
-      // Check for conflicting overrides across all projects
-      const overrides = new Set<string>();
-      for (const p of projects) {
-        const ov = getProjectOverride(p.path);
-        if (ov) overrides.add(ov);
-      }
-      if (overrides.size > 1) {
-        toast.info('Cannot select all — projects have conflicting provider overrides.', { id: 'provider-conflict' });
-        return;
-      }
-      setSelectedProjectPaths(projects.map((p) => p.path));
-    }
-  };
 
   return (
     <div className="h-full w-full bg-card flex flex-col">
@@ -490,74 +249,7 @@ export function ChatPanel() {
       </div>
 
       {chatView === 'history' ? (
-        <div className="flex-1 overflow-y-auto">
-          {conversations.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-              No conversations yet
-            </div>
-          ) : (
-            <div className="divide-y divide-border">
-              {[...conversations].sort((a, b) => b.updatedAt - a.updatedAt).map((conv) => (
-                <div
-                  key={conv.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => { setActiveConversation(conv.id); setChatView('chat'); }}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setActiveConversation(conv.id); setChatView('chat'); } }}
-                  className={`group flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors hover:bg-accent/50 ${
-                    conv.id === activeConversationId ? 'bg-accent/30' : ''
-                  }`}
-                >
-                  <MessageSquare className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" strokeWidth={1.5} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{conv.title || 'New Chat'}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                        <Clock className="h-2.5 w-2.5" strokeWidth={1.5} />
-                        {new Date(conv.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                        {' '}
-                        {new Date(conv.updatedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {conv.messages.length} message{conv.messages.length !== 1 ? 's' : ''}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          onClick={(e) => e.stopPropagation()}
-                          className="h-6 w-6 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground active:opacity-75"
-                          title="Export conversation"
-                        >
-                          <Download className="h-3 w-3" strokeWidth={1.5} />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="min-w-[140px]">
-                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExportConversation(conv, 'markdown'); }}>
-                          Export as Markdown
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleExportConversation(conv, 'json'); }}>
-                          Export as JSON
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
-                      className="h-6 w-6 inline-flex items-center justify-center rounded text-muted-foreground hover:text-destructive active:opacity-75"
-                      title="Delete conversation"
-                    >
-                      <Trash2 className="h-3 w-3" strokeWidth={1.5} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <ChatHistoryView onSelectConversation={handleSelectConversation} />
       ) : (
       <>
 
@@ -569,297 +261,17 @@ export function ChatPanel() {
         </div>
       )}
 
-      <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 py-4">
-        {messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-muted-foreground text-sm text-center">
-            <div>
-              <LocalAISetupCard />
-              <p className="mt-4">
-                Start a conversation with AI.
-                <br />
-                Ask questions about your writing or get suggestions.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <>
-            {messages.map((message, index) => {
-              const isLast = index === messages.length - 1;
-              const isLastAssistant = !isLoading && message.role === 'assistant' && isLast;
-              const isAssistant = message.role === 'assistant';
-              const parsed = isAssistant && message.content ? parseQuickReplies(message.content) : null;
-              const displayMessage = parsed && parsed.strippedContent !== message.content
-                ? { ...message, content: parsed.strippedContent }
-                : message;
+      <ChatMessageList
+        onSend={handleSend}
+        selectedProjectPaths={selectedProjectPaths}
+      />
 
-              // Check if a segment boundary falls before this message
-              const segmentAtIndex = segments.findIndex((s, si) => si > 0 && s.startMessageIndex === index);
-              const segment = segmentAtIndex >= 0 ? segments[segmentAtIndex] : null;
-              const prevSegment = segmentAtIndex >= 1 ? segments[segmentAtIndex - 1] : undefined;
-
-              return (
-                <div key={index}>
-                  {segment && (
-                    <ContextDivider segment={segment} previousSegment={prevSegment} />
-                  )}
-                  <ChatMessage message={displayMessage} isLast={isLast} />
-                  {isLastAssistant && parsed && parsed.replies.length > 0 && (
-                    <QuickReplies replies={parsed.replies} onSelect={handleSend} />
-                  )}
-                </div>
-              );
-            })}
-            {/* Context divider for the latest segment (when no messages sent in it yet) */}
-            {segments.length > 1 && (() => {
-              const lastSeg = segments[segments.length - 1];
-              if (lastSeg.startMessageIndex >= messages.length && !pendingProjectSwitch) {
-                return <ContextDivider segment={lastSeg} previousSegment={segments[segments.length - 2]} />;
-              }
-              return null;
-            })()}
-            {/* Pending project switch prompt — shown after all messages */}
-            {pendingProjectSwitch && (
-              <ProjectSwitchCard
-                newPaths={pendingProjectSwitch.newPaths}
-                previousPaths={pendingProjectSwitch.previousPaths}
-              />
-            )}
-            {/* Pending agent switch prompt */}
-            {pendingAgentSwitch && (
-              <AgentSwitchCard
-                newAgent={pendingAgentSwitch.newAgent}
-                previousAgent={pendingAgentSwitch.previousAgent}
-              />
-            )}
-            {isLoading && !activeTool && (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span className="text-sm">AI is thinking...</span>
-              </div>
-            )}
-            {activeTool && (
-              <div className="flex items-center gap-2 text-muted-foreground px-1 py-1">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                <span className="text-xs">
-                  {activeTool === 'web_search' ? 'Searching the web...' : `${activeTool}...`}
-                </span>
-              </div>
-            )}
-            {(permissionRequests.length > 0 || domainRequests.length > 0) && (
-              <div className="flex flex-col gap-2 mt-2">
-                {permissionRequests.map((req) => (
-                  <PermissionCard key={req.id} request={req} />
-                ))}
-                {domainRequests.map((req) => (
-                  <DomainApprovalCard
-                    key={req.requestId}
-                    request={req}
-                    onResolved={handleDomainResolved}
-                  />
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      <div className="border-t border-border px-3 py-3">
-        <ChatInput
-          onSend={handleSend}
-          onStop={cancelChat}
-          isLoading={isLoading}
-          disabled={!hasAIProvider || !!pendingProjectSwitch || !!pendingAgentSwitch}
-          placeholder={pendingProjectSwitch ? 'Resolve project context change first...' : pendingAgentSwitch ? 'Resolve provider change first...' : chatPlaceholder}
-          contextItems={contextItems}
-          onDismissContext={dismissItem}
-          footer={
-            <>
-              {(interactiveConnections.length > 0 || hasProjectOverride) && (
-                <Popover open={providerOpen} onOpenChange={hasProjectOverride ? undefined : setProviderOpen}>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className={`flex items-center gap-1.5 text-xs text-muted-foreground transition-colors rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                        hasProjectOverride ? 'cursor-default' : 'hover:text-foreground hover:bg-accent/50 active:opacity-75'
-                      }`}
-                      title={hasProjectOverride ? `Set by project: ${singleMetadata?.name || singleProjectPath}` : undefined}
-                    >
-                      {effectiveConnection && (
-                        <ProviderLogo provider={effectiveConnection.provider} className="w-3.5 h-3.5" />
-                      )}
-                      <span className="max-w-[80px] truncate">
-                        {effectiveConnection?.label ?? 'Select provider'}
-                      </span>
-                      {!hasProjectOverride && <ChevronUp className="h-3 w-3 opacity-50" />}
-                    </button>
-                  </PopoverTrigger>
-                  {!hasProjectOverride && (
-                  <PopoverContent side="top" align="start" className="w-52 p-1">
-                    {interactiveConnections.map((conn) => (
-                      <button
-                        key={conn.id}
-                        onClick={() => {
-                          setRouting('interactive', conn.id);
-                          setProviderOpen(false);
-                        }}
-                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${
-                          effectiveConnection?.id === conn.id
-                            ? 'bg-accent text-accent-foreground'
-                            : 'text-foreground hover:bg-accent/50'
-                        }`}
-                      >
-                        <ProviderLogo provider={conn.provider} className="w-4 h-4" />
-                        <span className="truncate">{conn.label}</span>
-                      </button>
-                    ))}
-                  </PopoverContent>
-                  )}
-                </Popover>
-              )}
-              <Popover open={agentPickerOpen} onOpenChange={setAgentPickerOpen}>
-                <PopoverTrigger asChild>
-                  <button type="button" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent/50 active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-                    <AgentIcon icon={activeAgent?.icon} size={14} />
-                    <span>{activeAgent?.name ?? 'No agent'}</span>
-                    <ChevronUp className="h-3 w-3 opacity-50" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent side="top" align="start" className="w-56 p-1 max-h-64 overflow-y-auto thin-scrollbar">
-                  {invocableAgents.map((agent) => (
-                    <button
-                      key={agent.path}
-                      onClick={() => {
-                        setActiveAgent(agent.name);
-                        setAgentPickerOpen(false);
-                      }}
-                      className={`w-full flex items-start gap-2 px-2 py-1.5 rounded text-xs transition-colors ${
-                        agent.name === activeAgent?.name
-                          ? 'bg-accent text-accent-foreground'
-                          : 'text-foreground hover:bg-accent/50'
-                      }`}
-                    >
-                      <AgentIcon icon={agent.icon} size={14} className="mt-0.5 shrink-0" />
-                      <div className="min-w-0 text-left">
-                        <div className="truncate font-medium">{agent.name}</div>
-                        {agent.description && (
-                          <div className="text-muted-foreground line-clamp-1 mt-0.5">{agent.description}</div>
-                        )}
-                      </div>
-                      {agent.name === activeAgent?.name && (
-                        <Check className="h-3 w-3 shrink-0 mt-0.5 text-muted-foreground" />
-                      )}
-                    </button>
-                  ))}
-                  {invocableAgents.length === 0 && (
-                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                      No agents discovered
-                    </div>
-                  )}
-                </PopoverContent>
-              </Popover>
-              <Popover open={projectOpen} onOpenChange={setProjectOpen}>
-                <PopoverTrigger asChild>
-                  <button type="button" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent/50 active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-                    <FolderOpen className="h-3 w-3" strokeWidth={1.5} />
-                    <span className="max-w-[100px] truncate">{projectLabel}</span>
-                    <ChevronUp className="h-3 w-3 opacity-50" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent side="top" align="start" className="w-52 p-1">
-                  {projects.length > 1 && (
-                    <>
-                      <button
-                        onClick={handleToggleAll}
-                        className="w-full flex items-center justify-between px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50"
-                      >
-                        <span>{allSelected ? 'Deselect all' : 'Select all'}</span>
-                        {allSelected && <Check className="h-3 w-3 text-muted-foreground" />}
-                      </button>
-                      <div className="mx-2 my-1 border-t border-border" />
-                    </>
-                  )}
-                  {projects.map((project) => {
-                    const meta = metadataMap[project.path];
-                    const name = meta?.name || project.path.split('/').pop() || 'Project';
-                    const isChecked = selectedProjectPaths.includes(project.path);
-                    return (
-                      <button
-                        key={project.path}
-                        onClick={() => handleProjectToggle(project.path)}
-                        className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50"
-                      >
-                        <span className="truncate">{name}</span>
-                        {isChecked && <Check className="h-3 w-3 shrink-0 text-muted-foreground" />}
-                      </button>
-                    );
-                  })}
-                  {projects.length === 0 && (
-                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                      No projects open
-                    </div>
-                  )}
-                </PopoverContent>
-              </Popover>
-              {!isAcpConnection && (
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!hasAIProvider) return;
-                          if (effectiveProviderType === 'ollama') {
-                            toast.info('Web search is not yet available for Ollama. Please use Anthropic or OpenAI for search.');
-                            return;
-                          }
-                          setWebSearchEnabled(!webSearchEnabled);
-                        }}
-                        disabled={!hasAIProvider}
-                        className={`flex items-center gap-1 text-xs transition-colors rounded px-1 py-0.5 hover:bg-accent/50 active:opacity-75 disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                          webSearchEnabled && hasAIProvider && effectiveProviderType !== 'ollama'
-                            ? 'text-foreground'
-                            : 'text-muted-foreground'
-                        }`}
-                      >
-                        <Globe className="h-3 w-3" strokeWidth={1.5} />
-                        <span>Search</span>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-64">
-                      <p className="text-xs">
-                        {!hasAIProvider
-                          ? 'Configure an AI provider to use search'
-                          : effectiveProviderType === 'ollama'
-                            ? 'Web search is not available for Ollama'
-                            : webSearchEnabled
-                              ? 'Web search enabled — AI can search the internet'
-                              : 'Click to enable web search'}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-              {goalFiles.length > 0 && (
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex items-center gap-0.5 px-1 py-px rounded text-[10px] font-medium text-muted-foreground bg-accent">
-                        <Target className="h-2.5 w-2.5" />
-                        {goalFiles.length} {goalFiles.length === 1 ? 'goal' : 'goals'}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-64">
-                      <p className="text-xs">
-                        {goalFiles.length} project {goalFiles.length === 1 ? 'goal is' : 'goals are'} included as AI context
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-            </>
-          }
-        />
-      </div>
+      <ChatFooter
+        onSend={handleSend}
+        selectedProjectPaths={selectedProjectPaths}
+        hasAIProvider={hasAIProvider}
+        chatPlaceholder={chatPlaceholder}
+      />
       </>
       )}
     </div>

@@ -13,6 +13,8 @@ export function useGitOperations(repoPath: string) {
   const repo = useGitStore((s) => s.repos[repoPath]);
   const isGitRepo = repo?.isGitRepo ?? false;
 
+  const setStatusError = useGitStore((s) => s.setStatusError);
+
   const fetchStatus = useCallback(async () => {
     if (!repoPath) return;
 
@@ -24,9 +26,10 @@ export function useGitOperations(repoPath: string) {
       setFileStatuses(repoPath, statuses);
       setCurrentBranch(repoPath, branch);
     } catch (error) {
-      console.error("Failed to refresh git status:", error);
+      console.warn("Git status refresh failed for", repoPath, error);
+      setStatusError(repoPath, true);
     }
-  }, [repoPath, setFileStatuses, setCurrentBranch]);
+  }, [repoPath, setFileStatuses, setCurrentBranch, setStatusError]);
 
   // Keep a ref so the focus handler always calls the latest fetchStatus.
   const fetchStatusRef = useRef(fetchStatus);

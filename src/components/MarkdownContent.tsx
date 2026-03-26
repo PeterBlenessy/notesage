@@ -8,6 +8,7 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { setBinaryData } from '@/lib/binary-cache';
 import { parseFrontmatter } from '@/lib/frontmatter';
 import { getFileType, isBinaryFileType } from '@/lib/file-utils';
+import { toast } from 'sonner';
 
 /** File extensions that can be opened as editor tabs. */
 const OPENABLE_EXTENSIONS = /\.(md|txt|json|yaml|yml|toml|csv|html|htm|css|js|ts|jsx|tsx|rs|py|rb|go|java|c|cpp|h|sh|sql|xml|svg|epub|pdf|docx)$/i;
@@ -74,22 +75,24 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
 
     // Only try to open as file if it has a recognized extension
     if (!OPENABLE_EXTENSIONS.test(href)) {
-      openUrl(href).catch(() => {});
+      openUrl(href).catch(() => {
+        toast.error(`Could not open link: ${href}`);
+      });
       return;
     }
 
     // Absolute path — try directly
     if (href.startsWith('/') || href.startsWith('~')) {
       if (await tryOpenFile(href)) return;
-      openUrl(href).catch(() => {});
+      toast.error(`File not found: ${href}`);
       return;
     }
 
     // Relative path — resolve against workspace roots
     if (await resolveRelativePath(href)) return;
 
-    // Nothing worked — last resort
-    openUrl(href).catch(() => {});
+    // Nothing worked
+    toast.error(`Could not resolve link: ${href}`);
   };
 
   return (

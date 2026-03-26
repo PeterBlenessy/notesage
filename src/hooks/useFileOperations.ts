@@ -10,6 +10,7 @@ import { useActionStore } from "@/stores/action-store";
 import { migrateProjectPath } from "@/lib/migrate-project-path";
 import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { setBinaryData } from "@/lib/binary-cache";
+import { toast } from "sonner";
 
 /** Debounced git status refresh per repo. Each repo gets its own timer. */
 const repoRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -43,7 +44,8 @@ export function refreshGitForPath(filePath: string) {
           setFileStatuses(repoPath, statuses);
           setCurrentBranch(repoPath, branch);
         } catch (error) {
-          console.error("Failed to refresh git status:", error);
+          console.warn("Git status refresh failed for", repoPath, error);
+          useGitStore.getState().setStatusError(repoPath, true);
         }
       }, 300)
     );
@@ -83,6 +85,9 @@ async function detectRenamedProject(
   }
   return null;
 }
+
+/** Timestamp of the last indexFile failure toast (module-level for dedup across renders). */
+let lastIndexFailureToast = 0;
 
 export function useFileOperations() {
   const { openTab, markTabClean } = useEditorStore();
@@ -152,7 +157,9 @@ export function useFileOperations() {
         if (renamed) {
           await migrateProjectPath(project.path, renamed);
         } else {
+          const projectName = project.path.split('/').pop() || project.path;
           ws.removeProject(project.path);
+          toast.warning(`Project "${projectName}" was removed — directory no longer exists`);
         }
       }
     }
@@ -226,7 +233,14 @@ export function useFileOperations() {
         // Incrementally reindex for tags/mentions/FTS, then refresh actions dashboard
         tauriApi.indexFile(filePath).then(() => {
           useActionStore.getState().incrementalUpdate(filePath);
-        }).catch(() => {});
+        }).catch((err) => {
+          console.warn(`Failed to index file ${filePath}:`, err);
+          const now = Date.now();
+          if (now - lastIndexFailureToast > 10_000) {
+            lastIndexFailureToast = now;
+            toast.warning("File indexing failed — search may be incomplete");
+          }
+        });
         return true;
       } catch (error) {
         await tauriApi.clearSelfWrite(filePath).catch(() => {});

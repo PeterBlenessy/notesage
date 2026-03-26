@@ -8,6 +8,8 @@ interface RepoState {
   /** Pre-computed Map<path, statuses[]> for O(1) lookups in FileTreeItem */
   fileStatusMap: Map<string, GitFileStatus[]>;
   isLoading: boolean;
+  /** Set to true when the last git status refresh failed */
+  statusError: boolean;
 }
 
 function buildStatusMap(statuses: GitFileStatus[]): Map<string, GitFileStatus[]> {
@@ -31,6 +33,7 @@ const DEFAULT_REPO_STATE: RepoState = {
   fileStatuses: [],
   fileStatusMap: EMPTY_STATUS_MAP,
   isLoading: false,
+  statusError: false,
 };
 
 interface GitStore {
@@ -41,6 +44,7 @@ interface GitStore {
   setCurrentBranch: (path: string, branch: string) => void;
   setFileStatuses: (path: string, statuses: GitFileStatus[]) => void;
   setIsLoading: (path: string, loading: boolean) => void;
+  setStatusError: (path: string, hasError: boolean) => void;
   resetRepo: (path: string) => void;
 }
 
@@ -73,6 +77,7 @@ export const useGitStore = create<GitStore>()((set, get) => ({
           ...(state.repos[path] ?? DEFAULT_REPO_STATE),
           fileStatuses: statuses,
           fileStatusMap: buildStatusMap(statuses),
+          statusError: false,
         },
       },
     })),
@@ -82,6 +87,14 @@ export const useGitStore = create<GitStore>()((set, get) => ({
       repos: {
         ...state.repos,
         [path]: { ...(state.repos[path] ?? DEFAULT_REPO_STATE), isLoading: loading },
+      },
+    })),
+
+  setStatusError: (path, hasError) =>
+    set((state) => ({
+      repos: {
+        ...state.repos,
+        [path]: { ...(state.repos[path] ?? DEFAULT_REPO_STATE), statusError: hasError },
       },
     })),
 
