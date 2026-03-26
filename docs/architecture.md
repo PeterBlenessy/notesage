@@ -189,6 +189,21 @@ All state stores use Zustand with the persist middleware for localStorage:
 - Do NOT use styled-components, CSS modules, or emotion
 - All colors defined as CSS variables in `globals.css` (supports light/dark mode)
 
+### Testing
+
+| Command | What it runs | Notes |
+| --- | --- | --- |
+| `pnpm test` | Vitest unit tests | Fast, watch mode by default |
+| `pnpm test:coverage` | Unit tests + Istanbul coverage | Reports: text (console), JSON summary, HTML in `./coverage/` |
+| `pnpm test:roundtrip` | Markdown round-trip tests | Critical quality gate — parse → serialize → compare. Must pass before any PR. |
+| `cd src-tauri && cargo test` | Rust backend tests | Runs all `#[test]` functions in the Tauri crate |
+| `pnpm test:e2e` | Playwright end-to-end tests | Not yet configured |
+| `pnpm test:all` | All of the above | Full suite |
+
+**Frontend coverage** uses `@vitest/coverage-istanbul` and requires Node 22 (pinned in `.nvmrc`). Coverage output lands in `./coverage/` (gitignored).
+
+**Rust coverage** uses `cargo-tarpaulin` or `cargo-llvm-cov` in CI. Neither is required locally — contributors run `cargo test` directly.
+
 ### Security Model
 
 **API Key Storage (OS Keychain):**

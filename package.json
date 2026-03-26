@@ -11,7 +11,10 @@
     "generate-changelog": "npx tsx scripts/generate-changelog.ts",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:all": "vitest run && playwright test"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.2",
@@ -86,6 +89,7 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "@vitest/coverage-istanbul": "4.0.18",
     "jsdom": "^29.0.1",
     "tailwindcss": "^4.1.18",
     "typescript": "~5.8.3",
