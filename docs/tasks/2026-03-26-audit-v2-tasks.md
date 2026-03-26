@@ -3,10 +3,11 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-26 |
-| **Status** | Not started |
+| **Status** | Complete (38/38 tasks done) |
 | **Audit** | [full-v2](../audit/2026-03-25-full-v2.md) |
-| **Total** | 38 tasks: 13S, 15M, 10L |
+| **Total** | 38 tasks: 13S, 15M, 10L — all complete |
 | **Suggested order** | Quick wins (#1-#13) → Targeted fixes (#14-#22) → Render perf (#23-#25) → Error UX (#26-#29) → Type safety (#30-#31) → Decomposition (#32-#34) → Tests (#35-#38) |
+| **Completed** | 2026-03-26 |
 
 **Risks:**
 
@@ -370,7 +371,7 @@
 
 ## Tier 7: Test Infrastructure
 
-### #35 — Create markdown round-trip test framework
+### #35 — Create markdown round-trip test framework ✅
 
 **Description:** Create 10+ fixture `.md` files in `tests/fixtures/` covering all supported syntax (headings, lists, tables, code blocks, frontmatter, task lists, blockquotes, images, links, horizontal rules). Write a vitest test that for each fixture: parses markdown → creates ProseMirror doc → serializes back → compares with whitespace normalization. This is the #1 spec requirement ("must pass before any PR").
 
@@ -380,7 +381,7 @@
 
 ---
 
-### #36 — Add Rust tests for SQL query builders
+### #36 — Add Rust tests for SQL query builders ✅
 
 **Description:** Add `#[cfg(test)]` module to `src-tauri/src/index/queries.rs` with in-memory SQLite database. Test `query_tags`, `query_mentions`, `query_content` (FTS5), `query_stats`, and task toggle. Use the schema from `db.rs` to set up test database.
 
@@ -390,7 +391,7 @@
 
 ---
 
-### #37 — Add vitest tests for core hooks
+### #37 — Add vitest tests for core hooks ✅
 
 **Description:** Set up Tauri IPC mocking infrastructure (`vi.mock('@tauri-apps/api/core')`). Write tests for `useFileOperations` (create/save/delete cycle) and `useAIOperations` (provider routing, error handling). Use `@testing-library/react` `renderHook`. Target: 15+ test cases covering happy path and error cases.
 
@@ -400,7 +401,7 @@
 
 ---
 
-### #38 — Add store persistence round-trip tests
+### #38 — Add store persistence round-trip tests ✅
 
 **Description:** Write vitest tests that verify Zustand persist middleware correctly saves to and restores from localStorage for the 3 most critical stores: `editor-store` (tabs, active tab), `connections-store` (provider connections minus API keys), `chat-store` (messages, conversations). Mock localStorage, write state, create fresh store, verify rehydration matches.
 

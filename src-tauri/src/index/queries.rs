@@ -498,3 +498,573 @@ pub fn query_stats(conn: &Connection) -> Result<IndexStats, String> {
         indexed_at,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    const SCHEMA_SQL: &str = "
+        CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            path TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            project_path TEXT,
+            content_hash TEXT NOT NULL,
+            title TEXT,
+            has_frontmatter INTEGER DEFAULT 0,
+            indexed_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS tags (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+            tag TEXT NOT NULL,
+            context_before TEXT DEFAULT '',
+            context_after TEXT DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
+        CREATE INDEX IF NOT EXISTS idx_tags_file ON tags(file_id);
+        CREATE TABLE IF NOT EXISTS mentions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+            mention TEXT NOT NULL,
+            context_before TEXT DEFAULT '',
+            context_after TEXT DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_mentions_mention ON mentions(mention);
+        CREATE INDEX IF NOT EXISTS idx_mentions_file ON mentions(file_id);
+        CREATE TABLE IF NOT EXISTS headings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+            level INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            position INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_headings_file ON headings(file_id);
+        CREATE TABLE IF NOT EXISTS research (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id INTEGER NOT NULL UNIQUE REFERENCES files(id) ON DELETE CASCADE,
+            source_url TEXT DEFAULT '',
+            date_saved TEXT DEFAULT '',
+            word_count INTEGER DEFAULT 0,
+            snippet TEXT DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS research_tags (
+            research_id INTEGER NOT NULL REFERENCES research(id) ON DELETE CASCADE,
+            tag TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_research_tags ON research_tags(tag);
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+            text TEXT NOT NULL,
+            done INTEGER DEFAULT 0,
+            position INTEGER NOT NULL,
+            context_before TEXT DEFAULT '',
+            context_after TEXT DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_tasks_file ON tasks(file_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_done ON tasks(done);
+        CREATE TABLE IF NOT EXISTS goals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id INTEGER NOT NULL UNIQUE REFERENCES files(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            template TEXT DEFAULT '',
+            total_tasks INTEGER DEFAULT 0,
+            completed_tasks INTEGER DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_goals_file ON goals(file_id);
+        CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
+            title, body,
+            tokenize='porter unicode61'
+        );
+    ";
+
+    /// Create an in-memory database with the full schema.
+    fn setup_db() -> Connection {
+        let conn = Connection::open_in_memory().expect("Failed to open in-memory DB");
+        conn.execute_batch("PRAGMA foreign_keys = ON;")
+            .expect("Failed to enable foreign keys");
+        conn.execute_batch(SCHEMA_SQL)
+            .expect("Failed to create schema");
+        conn
+    }
+
+    /// Insert a file record and return its id.
+    fn insert_file(conn: &Connection, path: &str, name: &str, project_path: Option<&str>, title: Option<&str>) -> i64 {
+        conn.execute(
+            "INSERT INTO files (path, name, project_path, content_hash, title, has_frontmatter, indexed_at)
+             VALUES (?1, ?2, ?3, 'hash123', ?4, 0, 1000)",
+            params![path, name, project_path, title],
+        )
+        .expect("Failed to insert file");
+        conn.last_insert_rowid()
+    }
+
+    // ---- query_tags tests ----
+
+    #[test]
+    fn test_query_tags_empty_db() {
+        let conn = setup_db();
+        let result = query_tags(&conn, None).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_query_tags_returns_unique_tags_with_counts() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/notes.md", "notes.md", None, None);
+        let file2 = insert_file(&conn, "/a/todo.md", "todo.md", None, None);
+
+        // #rust in both files, #python in one
+        conn.execute("INSERT INTO tags (file_id, tag, context_before, context_after) VALUES (?1, 'rust', 'before', 'after')", [file1]).unwrap();
+        conn.execute("INSERT INTO tags (file_id, tag, context_before, context_after) VALUES (?1, 'rust', 'ctx', 'ctx')", [file2]).unwrap();
+        conn.execute("INSERT INTO tags (file_id, tag, context_before, context_after) VALUES (?1, 'python', 'ctx', 'ctx')", [file1]).unwrap();
+
+        let result = query_tags(&conn, None).unwrap();
+        assert_eq!(result.len(), 2);
+        // Sorted by count desc: rust (2 files) first, python (1 file) second
+        assert_eq!(result[0].tag, "rust");
+        assert_eq!(result[0].file_count, 2);
+        assert_eq!(result[1].tag, "python");
+        assert_eq!(result[1].file_count, 1);
+    }
+
+    #[test]
+    fn test_query_tags_with_filter() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/notes.md", "notes.md", None, None);
+
+        conn.execute("INSERT INTO tags (file_id, tag) VALUES (?1, 'rust')", [file1]).unwrap();
+        conn.execute("INSERT INTO tags (file_id, tag) VALUES (?1, 'rustlang')", [file1]).unwrap();
+        conn.execute("INSERT INTO tags (file_id, tag) VALUES (?1, 'python')", [file1]).unwrap();
+
+        let result = query_tags(&conn, Some("rust")).unwrap();
+        assert_eq!(result.len(), 2);
+        // Both "rust" and "rustlang" match the LIKE %rust% filter
+        let tags: Vec<&str> = result.iter().map(|t| t.tag.as_str()).collect();
+        assert!(tags.contains(&"rust"));
+        assert!(tags.contains(&"rustlang"));
+    }
+
+    #[test]
+    fn test_query_tags_duplicate_in_same_file_counts_as_one() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/notes.md", "notes.md", None, None);
+
+        // Same tag twice in the same file
+        conn.execute("INSERT INTO tags (file_id, tag) VALUES (?1, 'rust')", [file1]).unwrap();
+        conn.execute("INSERT INTO tags (file_id, tag) VALUES (?1, 'rust')", [file1]).unwrap();
+
+        let result = query_tags(&conn, None).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].file_count, 1); // COUNT(DISTINCT file_id) = 1
+    }
+
+    // ---- query_tag_occurrences tests ----
+
+    #[test]
+    fn test_query_tag_occurrences() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/notes.md", "notes.md", None, None);
+        let file2 = insert_file(&conn, "/a/todo.md", "todo.md", None, None);
+
+        conn.execute("INSERT INTO tags (file_id, tag, context_before, context_after) VALUES (?1, 'rust', 'learning', 'is fun')", [file1]).unwrap();
+        conn.execute("INSERT INTO tags (file_id, tag, context_before, context_after) VALUES (?1, 'rust', 'use', 'here')", [file2]).unwrap();
+
+        let result = query_tag_occurrences(&conn, "rust").unwrap();
+        assert_eq!(result.len(), 2);
+        // Sorted by file name ASC
+        assert_eq!(result[0].file_name, "notes.md");
+        assert_eq!(result[0].context_before, "learning");
+        assert_eq!(result[0].context_after, "is fun");
+        assert_eq!(result[1].file_name, "todo.md");
+    }
+
+    #[test]
+    fn test_query_tag_occurrences_no_match() {
+        let conn = setup_db();
+        let result = query_tag_occurrences(&conn, "nonexistent").unwrap();
+        assert!(result.is_empty());
+    }
+
+    // ---- query_mentions tests ----
+
+    #[test]
+    fn test_query_mentions_empty() {
+        let conn = setup_db();
+        let result = query_mentions(&conn, None).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_query_mentions_returns_unique_with_counts() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/notes.md", "notes.md", None, None);
+        let file2 = insert_file(&conn, "/a/todo.md", "todo.md", None, None);
+
+        conn.execute("INSERT INTO mentions (file_id, mention) VALUES (?1, 'alice')", [file1]).unwrap();
+        conn.execute("INSERT INTO mentions (file_id, mention) VALUES (?1, 'alice')", [file2]).unwrap();
+        conn.execute("INSERT INTO mentions (file_id, mention) VALUES (?1, 'bob')", [file1]).unwrap();
+
+        let result = query_mentions(&conn, None).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].mention, "alice");
+        assert_eq!(result[0].file_count, 2);
+        assert_eq!(result[1].mention, "bob");
+        assert_eq!(result[1].file_count, 1);
+    }
+
+    #[test]
+    fn test_query_mentions_with_filter() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/notes.md", "notes.md", None, None);
+
+        conn.execute("INSERT INTO mentions (file_id, mention) VALUES (?1, 'alice')", [file1]).unwrap();
+        conn.execute("INSERT INTO mentions (file_id, mention) VALUES (?1, 'bob')", [file1]).unwrap();
+
+        let result = query_mentions(&conn, Some("ali")).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].mention, "alice");
+    }
+
+    // ---- query_mention_occurrences tests ----
+
+    #[test]
+    fn test_query_mention_occurrences() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/notes.md", "notes.md", None, None);
+
+        conn.execute("INSERT INTO mentions (file_id, mention, context_before, context_after) VALUES (?1, 'alice', 'ask', 'about it')", [file1]).unwrap();
+
+        let result = query_mention_occurrences(&conn, "alice").unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].context_before, "ask");
+        assert_eq!(result[0].context_after, "about it");
+    }
+
+    // ---- query_content (FTS5) tests ----
+
+    #[test]
+    fn test_query_content_empty_query_returns_empty() {
+        let conn = setup_db();
+        let result = query_content(&conn, "", 10).unwrap();
+        assert!(result.is_empty());
+
+        let result2 = query_content(&conn, "   ", 10).unwrap();
+        assert!(result2.is_empty());
+    }
+
+    #[test]
+    fn test_query_content_finds_matching_documents() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/notes.md", "notes.md", None, Some("Rust Guide"));
+        let file2 = insert_file(&conn, "/a/todo.md", "todo.md", None, Some("Python Guide"));
+
+        conn.execute(
+            "INSERT INTO files_fts(rowid, title, body) VALUES (?1, 'Rust Guide', 'Learning Rust programming language is rewarding')",
+            [file1],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO files_fts(rowid, title, body) VALUES (?1, 'Python Guide', 'Python is a great scripting language')",
+            [file2],
+        ).unwrap();
+
+        let result = query_content(&conn, "Rust", 10).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].file_name, "notes.md");
+        assert_eq!(result[0].title, Some("Rust Guide".to_string()));
+    }
+
+    #[test]
+    fn test_query_content_prefix_matching() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/notes.md", "notes.md", None, Some("Programming"));
+
+        conn.execute(
+            "INSERT INTO files_fts(rowid, title, body) VALUES (?1, 'Programming', 'Rust and Rustaceans love programming')",
+            [file1],
+        ).unwrap();
+
+        // "Progr" should match "Programming" via prefix matching (last token gets *)
+        let result = query_content(&conn, "Progr", 10).unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_query_content_respects_limit() {
+        let conn = setup_db();
+
+        for i in 0..5 {
+            let path = format!("/a/file{}.md", i);
+            let name = format!("file{}.md", i);
+            let fid = insert_file(&conn, &path, &name, None, None);
+            conn.execute(
+                "INSERT INTO files_fts(rowid, title, body) VALUES (?1, '', 'common search term here')",
+                [fid],
+            ).unwrap();
+        }
+
+        let result = query_content(&conn, "common", 3).unwrap();
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn test_query_content_multi_word() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/notes.md", "notes.md", None, Some("Guide"));
+
+        conn.execute(
+            "INSERT INTO files_fts(rowid, title, body) VALUES (?1, 'Guide', 'Rust programming language guide for beginners')",
+            [file1],
+        ).unwrap();
+
+        let result = query_content(&conn, "Rust programming", 10).unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    // ---- query_tasks tests ----
+
+    #[test]
+    fn test_query_tasks_all() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/todo.md", "todo.md", None, None);
+
+        conn.execute("INSERT INTO tasks (file_id, text, done, position, context_before, context_after) VALUES (?1, 'Buy milk', 0, 0, '', '')", [file1]).unwrap();
+        conn.execute("INSERT INTO tasks (file_id, text, done, position, context_before, context_after) VALUES (?1, 'Write tests', 1, 1, '', '')", [file1]).unwrap();
+
+        let result = query_tasks(&conn, None, None, 100).unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_query_tasks_filter_by_done() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/todo.md", "todo.md", None, None);
+
+        conn.execute("INSERT INTO tasks (file_id, text, done, position) VALUES (?1, 'Buy milk', 0, 0)", [file1]).unwrap();
+        conn.execute("INSERT INTO tasks (file_id, text, done, position) VALUES (?1, 'Write tests', 1, 1)", [file1]).unwrap();
+
+        let pending = query_tasks(&conn, Some(false), None, 100).unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].text, "Buy milk");
+        assert!(!pending[0].done);
+
+        let completed = query_tasks(&conn, Some(true), None, 100).unwrap();
+        assert_eq!(completed.len(), 1);
+        assert_eq!(completed[0].text, "Write tests");
+        assert!(completed[0].done);
+    }
+
+    #[test]
+    fn test_query_tasks_filter_by_text() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/todo.md", "todo.md", None, None);
+
+        conn.execute("INSERT INTO tasks (file_id, text, done, position) VALUES (?1, 'Buy milk', 0, 0)", [file1]).unwrap();
+        conn.execute("INSERT INTO tasks (file_id, text, done, position) VALUES (?1, 'Write tests', 0, 1)", [file1]).unwrap();
+
+        let result = query_tasks(&conn, None, Some("milk"), 100).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].text, "Buy milk");
+    }
+
+    #[test]
+    fn test_query_tasks_respects_limit() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/todo.md", "todo.md", None, None);
+
+        for i in 0..10 {
+            conn.execute(
+                "INSERT INTO tasks (file_id, text, done, position) VALUES (?1, ?2, 0, ?3)",
+                params![file1, format!("Task {}", i), i as i64],
+            ).unwrap();
+        }
+
+        let result = query_tasks(&conn, None, None, 5).unwrap();
+        assert_eq!(result.len(), 5);
+    }
+
+    #[test]
+    fn test_query_tasks_includes_project_name() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/projects/myproject/todo.md", "todo.md", Some("/projects/myproject"), None);
+
+        conn.execute("INSERT INTO tasks (file_id, text, done, position) VALUES (?1, 'A task', 0, 0)", [file1]).unwrap();
+
+        let result = query_tasks(&conn, None, None, 100).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].project_name, Some("myproject".to_string()));
+    }
+
+    // ---- query_goals tests ----
+
+    #[test]
+    fn test_query_goals_empty() {
+        let conn = setup_db();
+        let result = query_goals(&conn).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_query_goals_returns_data() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/goals.md", "goals.md", Some("/a"), None);
+
+        conn.execute(
+            "INSERT INTO goals (file_id, title, template, total_tasks, completed_tasks) VALUES (?1, 'Q1 Goals', 'okr', 5, 2)",
+            [file1],
+        ).unwrap();
+
+        let result = query_goals(&conn).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].title, "Q1 Goals");
+        assert_eq!(result[0].template, "okr");
+        assert_eq!(result[0].total_tasks, 5);
+        assert_eq!(result[0].completed_tasks, 2);
+        assert_eq!(result[0].project_name, Some("a".to_string()));
+    }
+
+    // ---- query_research tests ----
+
+    #[test]
+    fn test_query_research_empty() {
+        let conn = setup_db();
+        let result = query_research(&conn, None, None, 50).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_query_research_returns_data_with_tags() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/research/article.md", "article.md", None, Some("Climate Policy"));
+
+        conn.execute(
+            "INSERT INTO research (file_id, source_url, date_saved, word_count, snippet) VALUES (?1, 'https://example.com', '2026-01-15', 500, 'A study on climate')",
+            [file1],
+        ).unwrap();
+        let research_id = conn.last_insert_rowid();
+        conn.execute("INSERT INTO research_tags (research_id, tag) VALUES (?1, 'climate')", [research_id]).unwrap();
+        conn.execute("INSERT INTO research_tags (research_id, tag) VALUES (?1, 'policy')", [research_id]).unwrap();
+
+        let result = query_research(&conn, None, None, 50).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].title, "Climate Policy");
+        assert_eq!(result[0].source_url, "https://example.com");
+        assert_eq!(result[0].word_count, 500);
+        assert_eq!(result[0].tags.len(), 2);
+        assert!(result[0].tags.contains(&"climate".to_string()));
+        assert!(result[0].tags.contains(&"policy".to_string()));
+    }
+
+    #[test]
+    fn test_query_research_filter_by_query() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/r1.md", "r1.md", None, Some("Climate Study"));
+        let file2 = insert_file(&conn, "/a/r2.md", "r2.md", None, Some("Math Paper"));
+
+        conn.execute("INSERT INTO research (file_id, source_url, date_saved, word_count, snippet) VALUES (?1, 'https://a.com', '2026-01-15', 100, 'About climate change')", [file1]).unwrap();
+        conn.execute("INSERT INTO research (file_id, source_url, date_saved, word_count, snippet) VALUES (?1, 'https://b.com', '2026-01-16', 200, 'About math')", [file2]).unwrap();
+
+        let result = query_research(&conn, Some("climate"), None, 50).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].title, "Climate Study");
+    }
+
+    #[test]
+    fn test_query_research_filter_by_tag() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/r1.md", "r1.md", None, Some("Article A"));
+        let file2 = insert_file(&conn, "/a/r2.md", "r2.md", None, Some("Article B"));
+
+        conn.execute("INSERT INTO research (file_id, source_url, date_saved, word_count, snippet) VALUES (?1, '', '', 100, '')", [file1]).unwrap();
+        let rid1 = conn.last_insert_rowid();
+        conn.execute("INSERT INTO research_tags (research_id, tag) VALUES (?1, 'science')", [rid1]).unwrap();
+
+        conn.execute("INSERT INTO research (file_id, source_url, date_saved, word_count, snippet) VALUES (?1, '', '', 200, '')", [file2]).unwrap();
+        let rid2 = conn.last_insert_rowid();
+        conn.execute("INSERT INTO research_tags (research_id, tag) VALUES (?1, 'history')", [rid2]).unwrap();
+
+        let result = query_research(&conn, None, Some("science"), 50).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].title, "Article A");
+    }
+
+    // ---- query_stats tests ----
+
+    #[test]
+    fn test_query_stats_empty_db() {
+        let conn = setup_db();
+        let stats = query_stats(&conn).unwrap();
+        assert_eq!(stats.file_count, 0);
+        assert_eq!(stats.tag_count, 0);
+        assert_eq!(stats.mention_count, 0);
+        assert_eq!(stats.task_count, 0);
+        assert_eq!(stats.goal_count, 0);
+        assert_eq!(stats.indexed_at, 0);
+    }
+
+    #[test]
+    fn test_query_stats_with_data() {
+        let conn = setup_db();
+        let file1 = insert_file(&conn, "/a/notes.md", "notes.md", None, None);
+        let file2 = insert_file(&conn, "/a/todo.md", "todo.md", None, None);
+
+        conn.execute("INSERT INTO tags (file_id, tag) VALUES (?1, 'rust')", [file1]).unwrap();
+        conn.execute("INSERT INTO tags (file_id, tag) VALUES (?1, 'python')", [file1]).unwrap();
+        conn.execute("INSERT INTO tags (file_id, tag) VALUES (?1, 'rust')", [file2]).unwrap();
+
+        conn.execute("INSERT INTO mentions (file_id, mention) VALUES (?1, 'alice')", [file1]).unwrap();
+
+        conn.execute("INSERT INTO tasks (file_id, text, done, position) VALUES (?1, 'Do stuff', 0, 0)", [file1]).unwrap();
+        conn.execute("INSERT INTO tasks (file_id, text, done, position) VALUES (?1, 'More stuff', 1, 1)", [file2]).unwrap();
+
+        conn.execute("INSERT INTO goals (file_id, title, template, total_tasks, completed_tasks) VALUES (?1, 'Goal', 'simple', 3, 1)", [file1]).unwrap();
+
+        let stats = query_stats(&conn).unwrap();
+        assert_eq!(stats.file_count, 2);
+        assert_eq!(stats.tag_count, 2); // "rust" and "python" (distinct)
+        assert_eq!(stats.mention_count, 1);
+        assert_eq!(stats.task_count, 2);
+        assert_eq!(stats.goal_count, 1);
+        assert_eq!(stats.indexed_at, 1000); // From our insert_file helper
+    }
+
+    // ---- build_fts_query tests ----
+
+    #[test]
+    fn test_build_fts_query_single_word() {
+        assert_eq!(build_fts_query("rust"), "\"rust\"*");
+    }
+
+    #[test]
+    fn test_build_fts_query_multi_word() {
+        assert_eq!(build_fts_query("rust programming"), "\"rust\" \"programming\"*");
+    }
+
+    #[test]
+    fn test_build_fts_query_empty() {
+        assert_eq!(build_fts_query(""), "");
+    }
+
+    #[test]
+    fn test_build_fts_query_whitespace_only() {
+        assert_eq!(build_fts_query("   "), "");
+    }
+
+    // ---- task toggle (via tasks module) ----
+
+    #[test]
+    fn test_task_toggle_integration() {
+        use crate::index::tasks::toggle_task_in_content;
+
+        let content = "# Tasks\n\n- [ ] Buy groceries\n- [x] Done task\n";
+        let toggled = toggle_task_in_content(content, "Buy groceries", "", "", true).unwrap();
+        assert!(toggled.contains("- [x] Buy groceries"));
+
+        // Toggle back
+        let toggled2 = toggle_task_in_content(&toggled, "Buy groceries", "", "", false).unwrap();
+        assert!(toggled2.contains("- [ ] Buy groceries"));
+    }
+}
