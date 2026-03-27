@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-26 |
-| **Status** | In progress |
+| **Status** | Complete |
 | **PRD** | [test-infrastructure](../prds/2026-03-26-test-infrastructure.md) |
 | **Total** | 19 tasks: 6S, 8M, 5L |
 | **Suggested order** | Coverage tooling (#1-#3) → Component test infra (#4-#5) → Component tests (#6-#11) → Playwright infra (#12-#13) → E2E tests (#14-#17) → CI (#18) → Skill update (#19) |
@@ -195,7 +195,7 @@
 
 ## Phase D: CI Integration
 
-### #18 — GitHub Actions workflow for tests and coverage
+### #18 — GitHub Actions workflow for tests and coverage ✅
 
 **Description:** Create `.github/workflows/test.yml` that runs on push and PR. Steps: (1) checkout, (2) setup Node 22 via `.nvmrc`, (3) `pnpm install`, (4) `pnpm test:coverage` — upload `coverage/` as artifact, (5) `pnpm test:e2e` — upload `playwright-report/` as artifact on failure, (6) `cargo test` in `src-tauri/`. Gate merge on all steps passing. Optionally post coverage summary as PR comment using a GitHub Action (e.g., `davelosert/vitest-coverage-report-action`).
 
@@ -207,7 +207,7 @@
 
 ## Phase E: Skill Update
 
-### #19 — Update `/test` skill to reflect new test infrastructure
+### #19 — Update `/test` skill to reflect new test infrastructure ✅
 
 **Description:** Update `.claude/skills/test/SKILL.md` to reflect the full test infrastructure now in place. Add: (a) `pnpm test:coverage` step with coverage thresholds and report locations, (b) `pnpm test:e2e` Playwright step with browser requirements and Tauri mock context, (c) `pnpm test:all` as the comprehensive command, (d) update the "When Tests Fail" section with E2E and coverage-specific failure guidance, (e) update quality gates to include coverage minimums and E2E pass requirements. Remove any "if configured" hedging — all test types are now concrete.
 

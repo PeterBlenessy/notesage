@@ -9,7 +9,12 @@ permissions:
   contents: write
 
 jobs:
+  tests:
+    name: Run Tests
+    uses: ./.github/workflows/test.yml
+
   create-release:
+    needs: tests
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.create-release.outputs.result }}

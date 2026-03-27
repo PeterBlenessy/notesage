@@ -195,14 +195,16 @@ All state stores use Zustand with the persist middleware for localStorage:
 | --- | --- | --- |
 | `pnpm test` | Vitest unit tests | Fast, watch mode by default |
 | `pnpm test:coverage` | Unit tests + Istanbul coverage | Reports: text (console), JSON summary, HTML in `./coverage/` |
-| `pnpm test:roundtrip` | Markdown round-trip tests | Critical quality gate — parse → serialize → compare. Must pass before any PR. |
 | `cd src-tauri && cargo test` | Rust backend tests | Runs all `#[test]` functions in the Tauri crate |
-| `pnpm test:e2e` | Playwright end-to-end tests | Not yet configured |
+| `pnpm test:e2e` | Playwright end-to-end tests | Chromium, Tauri IPC mocked, starts Vite dev server |
 | `pnpm test:all` | All of the above | Full suite |
+| `pnpm typecheck` | TypeScript type checking | `tsc --noEmit` |
 
 **Frontend coverage** uses `@vitest/coverage-istanbul` and requires Node 22 (pinned in `.nvmrc`). Coverage output lands in `./coverage/` (gitignored).
 
 **Rust coverage** uses `cargo-tarpaulin` or `cargo-llvm-cov` in CI. Neither is required locally — contributors run `cargo test` directly.
+
+**CI pipeline** (`.github/workflows/test.yml`) runs on push to `main` and PRs: frontend tests with coverage, Playwright E2E, and Rust backend tests. All jobs must pass for merge.
 
 ### Security Model
 
