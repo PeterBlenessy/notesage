@@ -230,13 +230,29 @@ playwright.config.ts
 
 All 19 tasks complete. The test infrastructure is fully operational.
 
-| Layer | Tests | Coverage |
+### Test counts
+
+| Layer | Tests | What's covered |
 | --- | --- | --- |
 | Component rendering | 82 tests across 12 files (`src/components/__tests__/`) | StatusBar, FindBar, TabBar, FileTreeItem, Sidebar, CommandPalette, Toolbar, Layout, ChatPanel, SettingsDialog |
 | Hooks & utilities | 15 test files (markdown round-trip, frontmatter, persistence, stores) | Markdown conversion, store hydration, AI context |
 | Playwright E2E | 28 tests across 5 spec files (`e2e/tests/`) | App load, file operations, editor interactions, navigation, chat panel |
 | Rust backend | 186 tests (`cargo test`) | Parsers, index, export, commands |
 | **Total frontend** | **322 Vitest + 28 Playwright** | |
+
+### Frontend coverage (`pnpm test:coverage`)
+
+| Directory | Files tested / total | Stmts% | Branch% | Funcs% | Lines% |
+| --- | --- | --- | --- | --- | --- |
+| src/components | 26 / 125 | 41.9% | 34.9% | 42.8% | 42.4% |
+| src/hooks | 2 / 45 | 71.0% | 55.6% | 73.3% | 72.0% |
+| src/lib | 14 / 42 | 43.6% | 38.7% | 22.0% | 44.2% |
+| src/stores | 11 / 27 | 23.8% | 15.5% | 21.5% | 26.0% |
+| **Total** | **57 / 271** | **40.5%** | **32.6%** | **31.6%** | **42.4%** |
+
+**Biggest uncovered areas** (by uncovered lines): chat-store (132), FileTreeItem (127), CommandPalette (120), tauri.ts (93), markdown.ts (87), SettingsDialog (85), editor-store (60).
+
+**Next steps:** [Test Coverage Expansion PRD](2026-03-27-test-coverage-expansion.md) targets stores to 70%+, 8 critical hooks tested, coverage regression gate, and markdown edge case hardening — bringing total frontend line coverage to 65%+.
 
 **Test commands:**
 
@@ -263,7 +279,7 @@ All 19 tasks complete. The test infrastructure is fully operational.
 
 ## Out of Scope
 
-- True E2E with real Tauri runtime (no mature macOS solution — see [research](../research/e2e-testing-tauri-macos.md))
+- True E2E with real Tauri runtime — see [Real E2E Testing PRD](2026-03-27-real-e2e-testing.md) for the plan using `tauri-plugin-webdriver`
 - Visual regression / screenshot comparison (defer until Playwright E2E is stable)
 - Vitest Browser Mode (defer until specific DOM-dependent components are identified)
 - Replacing `tauri-mock.ts` with `@tauri-apps/api/mocks` (evaluate but not required)
