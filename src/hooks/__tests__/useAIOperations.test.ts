@@ -99,7 +99,7 @@ function resetStores() {
   });
   useConnectionsStore.setState({ connections: [] });
   useAIStore.setState({ provider: null, apiKeys: {}, ollamaUrl: 'http://localhost:11434' });
-  useChatStore.setState({ selectedProjectPaths: [], messages: [] });
+  useChatStore.setState({ conversations: [], activeConversationId: null });
   useProjectMetadataStore.setState({ metadataMap: {} });
 }
 
@@ -319,12 +319,27 @@ describe('useAIOperations', () => {
           inline_completion: { connectionId: null },
         },
       });
-      useChatStore.setState({ selectedProjectPaths: ['/my-project'] });
+      useChatStore.setState({
+        conversations: [{
+          id: 'conv-test',
+          title: '',
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          projectPaths: ['/my-project'],
+          segments: [{ projectPaths: ['/my-project'], sessionId: null, startMessageIndex: 0, historyIncluded: false }],
+          activeSegmentIndex: 0,
+          pendingProjectSwitch: null,
+        }],
+        activeConversationId: 'conv-test',
+      });
       useProjectMetadataStore.setState({
         metadataMap: {
           '/my-project': {
+            version: 1,
             name: 'My Project',
-            ai: { provider: 'conn-project' },
+            description: '',
+            ai: { provider: 'conn-project', agentName: null, projectContext: '' },
           },
         },
       });

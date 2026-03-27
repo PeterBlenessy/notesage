@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-26 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | High |
 | **Impact** | Enables data-driven quality decisions, catches regressions before release, unblocks confident refactoring |
 | **Research** | [e2e-testing-tauri-macos](../research/e2e-testing-tauri-macos.md) |
@@ -225,6 +225,41 @@ playwright.config.ts
 - [ ] Failed tests block merge
 
 - [ ] Coverage report accessible as artifact or PR comment
+
+## Current State (2026-03-27)
+
+All 19 tasks complete. The test infrastructure is fully operational.
+
+| Layer | Tests | Coverage |
+| --- | --- | --- |
+| Component rendering | 82 tests across 12 files (`src/components/__tests__/`) | StatusBar, FindBar, TabBar, FileTreeItem, Sidebar, CommandPalette, Toolbar, Layout, ChatPanel, SettingsDialog |
+| Hooks & utilities | 15 test files (markdown round-trip, frontmatter, persistence, stores) | Markdown conversion, store hydration, AI context |
+| Playwright E2E | 28 tests across 5 spec files (`e2e/tests/`) | App load, file operations, editor interactions, navigation, chat panel |
+| Rust backend | 186 tests (`cargo test`) | Parsers, index, export, commands |
+| **Total frontend** | **322 Vitest + 28 Playwright** | |
+
+**Test commands:**
+
+| Command | Purpose |
+| --- | --- |
+| `pnpm test` | Vitest unit tests (fast) |
+| `pnpm test:coverage` | Unit tests + Istanbul coverage report in `./coverage/` |
+| `pnpm test:e2e` | Playwright E2E (Chromium, starts Vite dev server) |
+| `pnpm test:all` | Unit + E2E combined |
+| `pnpm typecheck` | TypeScript type checking (`tsc --noEmit`) |
+| `cd src-tauri && cargo test` | Rust backend tests |
+
+**CI pipeline** (`.github/workflows/test.yml`):
+- Triggers on PRs to `main` and manual dispatch
+- Three parallel jobs: frontend tests + coverage, Playwright E2E, Rust backend (all on `macos-latest`)
+- Release workflow (`.github/workflows/release.yml`) runs the full test suite as a prerequisite before building
+- Coverage report uploaded as artifact; Playwright report uploaded on failure
+
+**Infrastructure:**
+- Node 22 LTS pinned via `.nvmrc` (required for Istanbul coverage)
+- Tauri IPC fully mocked for both Vitest (`src/test/tauri-mock.ts`) and Playwright (`e2e/fixtures/tauri-mock.ts`)
+- Component test harness with `renderWithProviders()`, mock data factories, and mock editor
+- `/test` skill updated with all commands, failure guidance, and quality gates
 
 ## Out of Scope
 

@@ -96,6 +96,13 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Set whisper.cpp build flags
+        run: |
+          # Avoid i8mm intrinsic errors on CI clang (same fix as release workflow).
+          # Metal GPU handles inference; CPU path needs only dotprod+fp16.
+          echo "CMAKE_C_FLAGS=-march=armv8.2-a+dotprod+fp16" >> $GITHUB_ENV
+          echo "CMAKE_CXX_FLAGS=-march=armv8.2-a+dotprod+fp16" >> $GITHUB_ENV
+
       - name: Run Rust tests
         working-directory: src-tauri
         run: cargo test

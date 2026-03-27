@@ -42,7 +42,7 @@ import { vi, beforeEach } from 'vitest';
  * Map of Tauri command name → mock implementation.
  * Tests call `setMockInvokeHandler(name, fn)` to register handlers.
  */
-const invokeHandlers = new Map<string, (...args: unknown[]) => unknown>();
+const invokeHandlers = new Map<string, (args?: Record<string, unknown>) => unknown>();
 
 /**
  * Register a mock handler for a specific Tauri invoke command.

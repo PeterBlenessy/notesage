@@ -88,7 +88,7 @@ async function waitForPersist(): Promise<void> {
 async function simulateRestart(
   store: {
     setState: (state: Record<string, unknown>) => void;
-    persist: { rehydrate: () => Promise<void> };
+    persist: { rehydrate: () => void | Promise<void> };
   },
   storageKey: string,
   defaults: Record<string, unknown>,

@@ -2,7 +2,6 @@
 
 import '@/test/tauri-mock';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import React from 'react';
 import {
   renderWithProviders,
   screen,

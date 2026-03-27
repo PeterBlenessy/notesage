@@ -273,12 +273,10 @@ describe('useFileOperations', () => {
     });
 
     it('still refreshes tree and throws when delete_path fails', async () => {
-      let listCalled = false;
       setMockInvokeHandler('delete_path', () => {
         throw new Error('Permission denied');
       });
       setMockInvokeHandler('list_directory', () => {
-        listCalled = true;
         return [];
       });
 
@@ -348,8 +346,8 @@ describe('useFileOperations', () => {
 
       // Set up workspace with an explorer folder and project
       useWorkspaceStore.setState({
-        explorerFolders: [{ path: '/folder1', tree: [] }],
-        projects: [{ path: '/project1', tree: [], expanded: true }],
+        explorerFolders: [{ path: '/folder1', fileTree: [] }],
+        projects: [{ path: '/project1', fileTree: [] }],
       });
 
       const { result } = renderHook(() => useFileOperations());
@@ -370,8 +368,8 @@ describe('useFileOperations', () => {
       });
 
       useWorkspaceStore.setState({
-        explorerFolders: [{ path: '/folder1', tree: [] }],
-        projects: [{ path: '/project1', tree: [], expanded: true }],
+        explorerFolders: [{ path: '/folder1', fileTree: [] }],
+        projects: [{ path: '/project1', fileTree: [] }],
       });
 
       const { result } = renderHook(() => useFileOperations());
