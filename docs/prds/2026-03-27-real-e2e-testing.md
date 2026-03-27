@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-27 |
-| **Status** | Draft |
+| **Status** | In progress — Phase 1 (Spike) complete |
 | **Priority** | Medium |
 | **Impact** | Eliminates manual testing of integration issues (latency, editor behavior, IPC round-trips, watcher interactions) |
 | **Depends on** | [test-infrastructure](2026-03-26-test-infrastructure.md) (complete), [test-coverage-expansion](2026-03-27-test-coverage-expansion.md) (independent) |
@@ -195,17 +195,17 @@ Create `scripts/run-real-e2e.sh`, add to `/test` skill documentation, document t
 
 ### Spike (Phase 1)
 
-- [ ] `tauri-plugin-webdriver` compiles behind feature flag
+- [x] `tauri-plugin-webdriver` compiles behind feature flag
 
-- [ ] `pnpm tauri dev` still works normally (no WebDriver overhead)
+- [x] `pnpm tauri dev` still works normally (no WebDriver overhead)
 
-- [ ] `pnpm tauri:test` starts app with WebDriver active
+- [x] `pnpm tauri:test` starts app with WebDriver active
 
-- [ ] `tauri-wd` connects to the app
+- [x] `tauri-wd` connects to the app
 
-- [ ] One webdriverio test passes: finds an element in the real app
+- [x] One webdriverio test passes: finds an element in the real app
 
-- [ ] Spike findings documented (what works, what doesn't)
+- [x] Spike findings documented (what works, what doesn't)
 
 ### Core suite (Phase 2)
 
@@ -224,6 +224,38 @@ Create `scripts/run-real-e2e.sh`, add to `/test` skill documentation, document t
 - [ ] Clean exit on Ctrl+C (no orphan processes)
 
 - [ ] Results printed with pass/fail summary and timing
+
+## Spike Findings (2026-03-27)
+
+**Result: SUCCESS** — all 5 spike tests pass, proceed to Phase 2.
+
+### What works
+
+- `tauri-plugin-webdriver` v0.2.1 compiles and runs behind `e2e-testing` Cargo feature flag
+- `tauri-webdriver` v0.1.1 CLI connects to the plugin (port 4445) and exposes W3C WebDriver on port 4444
+- WebDriverIO v9.27.0 connects and runs mocha tests against the real Notesage app
+- DOM queries work: `$('selector')`, `waitForExist()`, `isExisting()` all function correctly
+- `browser.execute()` runs JavaScript in the app's WKWebView context — `performance.now()`, computed styles, DOM access all work
+- Sidebar found in 10ms, full test suite completes in 30ms — very fast
+- `tauri dev --features e2e-testing` is the correct syntax for feature-flagged builds
+
+### What required adjustment
+
+- WKWebView reports `browserName: "webview"` in capabilities — the wdio config uses `browserName: 'webview'`
+- No semantic IDs or `data-testid` attributes on sidebar — used `button[title*="Settings"]` as selector. Consider adding `data-testid` attributes for key landmarks in Phase 2.
+- `document.documentElement.backgroundColor` returns `rgba(0, 0, 0, 0)` (transparent) — the themed background is on a nested element. Style assertions should target specific elements, not `:root`.
+
+### Setup requirements
+
+- `cargo install tauri-webdriver --locked` (one-time CLI install)
+- Three-terminal setup: (1) `pnpm tauri:test`, (2) `tauri-webdriver`, (3) `pnpm test:e2e-real`
+- First build with `e2e-testing` feature takes ~36s (subsequent builds are incremental)
+
+### WKWebView quirks observed
+
+- User agent string: `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15` (no version-specific info)
+- Window title: `"Tauri + React + Typescript"` (the default Tauri title)
+- No shadow DOM issues — standard DOM queries work as expected
 
 ## Out of Scope
 

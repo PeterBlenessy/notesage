@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-27 |
-| **Status** | Not started |
+| **Status** | In progress — Phase 1 complete (4/13 tasks) |
 | **PRD** | [real-e2e-testing](../prds/2026-03-27-real-e2e-testing.md) |
 | **Total** | 13 tasks: 4S, 5M, 4L |
 | **Suggested order** | Spike (#1-#4) → decision gate → Helpers (#5) → Core tests (#6-#11) → Runner script (#12) → Docs (#13) |
@@ -22,7 +22,7 @@
 
 ## Phase 1: Spike
 
-### #1 — Add tauri-plugin-webdriver behind Cargo feature flag
+### #1 — Add tauri-plugin-webdriver behind Cargo feature flag ✅
 
 **Description:** Add `tauri-plugin-webdriver` as an optional dependency in `src-tauri/Cargo.toml` behind an `e2e-testing` feature flag. Add the plugin initialization to `src-tauri/src/lib.rs` gated by `#[cfg(feature = "e2e-testing")]`. Verify `cargo build` (without the feature) still compiles normally — no new dependencies pulled in. Verify `cargo build --features e2e-testing` compiles with the plugin.
 
@@ -32,7 +32,7 @@
 
 ---
 
-### #2 — Create tauri:test script for feature-flagged dev build
+### #2 — Create tauri:test script for feature-flagged dev build ✅
 
 **Description:** Add a `tauri:test` script to `package.json` that starts `tauri dev` with the `e2e-testing` Cargo feature enabled. Research how Tauri CLI accepts feature flags — likely `tauri dev --features e2e-testing` or via `TAURI_DEV_ARGS` env var. Verify: `pnpm tauri dev` starts normally (no WebDriver), `pnpm tauri:test` starts with the WebDriver plugin active (look for the plugin's HTTP server port in stdout/logs). Verify `pnpm tauri dev` build time is unaffected by the optional dependency.
 
@@ -42,7 +42,7 @@
 
 ---
 
-### #3 — Install webdriverio and tauri-wd, create config
+### #3 — Install webdriverio and tauri-wd, create config ✅
 
 **Description:** Install `@wdio/cli`, `@wdio/local-runner`, `@wdio/mocha-framework`, `@wdio/spec-reporter`, and `webdriverio` as dev dependencies. Install `tauri-wd` CLI (check if it's an npm package or cargo install). Create `wdio.conf.ts` configured for: W3C WebDriver protocol, `localhost:4444` (the `tauri-wd` endpoint), mocha framework, spec reporter, TypeScript support. Create directory structure: `e2e-real/tests/`, `e2e-real/helpers/`. Add `e2e-real/tsconfig.json` if needed. Add a `test:e2e-real` script to `package.json`.
 
@@ -52,7 +52,7 @@
 
 ---
 
-### #4 — Write spike test: app loads and sidebar renders
+### #4 — Write spike test: app loads and sidebar renders ✅
 
 **Description:** Write `e2e-real/tests/spike.test.ts` — the single validation test. Steps: (1) connect to the running app via WebDriver, (2) wait for the app to be interactive (sidebar element visible), (3) assert the sidebar rendered within 3 seconds, (4) find at least one element inside the editor area, (5) log timing measurements. Run manually: start `pnpm tauri:test` in one terminal, `tauri-wd` in another, `pnpm test:e2e-real` in a third. Document: what worked, what didn't, any workarounds needed, WKWebView quirks encountered. Update the PRD spike quality gates with results.
 
