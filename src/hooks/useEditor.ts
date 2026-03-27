@@ -119,7 +119,7 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       Markdown.configure({
         html: true,
         transformPastedText: true,
-        transformCopiedText: true,
+        transformCopiedText: false,
         // Prevent duplicate extensions
         linkify: false,
       }),
