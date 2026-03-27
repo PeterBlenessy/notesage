@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-27 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | High |
 | **Impact** | Raises frontend line coverage from 42% to 65%+, prevents regression on all future changes, hardens the most bug-prone code paths |
 | **Depends on** | [test-infrastructure](2026-03-26-test-infrastructure.md) (complete) |
