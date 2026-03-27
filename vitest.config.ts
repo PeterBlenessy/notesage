@@ -19,6 +19,13 @@ export default defineConfig({
       provider: 'istanbul',
       reporter: ['text', 'json-summary', 'html'],
       reportsDirectory: './coverage',
+      thresholds: {
+        perFile: true,
+        lines: 0,
+        functions: 0,
+        branches: 0,
+        statements: 0,
+      },
     },
     // NOTE: setupFiles intentionally omitted. Tests that need Tauri IPC mocking
     // import '@/test/tauri-mock' directly. This avoids conflicts with tests that

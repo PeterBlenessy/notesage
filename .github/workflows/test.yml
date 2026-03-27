@@ -17,6 +17,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install pnpm
         uses: pnpm/action-setup@v3
@@ -38,6 +40,10 @@ jobs:
       - name: Unit tests with coverage
         run: pnpm test:coverage
 
+      - name: Check coverage regression
+        if: github.event_name == 'pull_request'
+        run: pnpm coverage:check
+
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -45,6 +51,13 @@ jobs:
           name: coverage-report
           path: coverage/
           retention-days: 14
+
+      - name: Post coverage summary on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: davelosert/vitest-coverage-report-action@v2
+        with:
+          json-summary-path: ./coverage/coverage-summary.json
+          file-coverage-mode: none
 
   e2e-tests:
     name: Playwright E2E Tests

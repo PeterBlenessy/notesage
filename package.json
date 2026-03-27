@@ -15,7 +15,9 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:all": "vitest run && playwright test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "coverage:check": "bash scripts/coverage-check.sh",
+    "coverage:update-baseline": "vitest run --coverage && node scripts/update-coverage-baseline.js"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.2",
