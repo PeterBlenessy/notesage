@@ -109,6 +109,20 @@ Before any release, ALL of these must pass:
 
 - [ ] No console errors during normal operation
 
+### Testing & Performance
+
+- [ ] All unit tests pass (`pnpm test`)
+
+- [ ] All Playwright E2E tests pass (`pnpm test:e2e`)
+
+- [ ] TypeScript type check passes (`pnpm typecheck`)
+
+- [ ] Performance benchmarks pass within budget (`pnpm test:perf`)
+
+- [ ] No coverage regressions in changed files (`pnpm coverage:check`)
+
+- [ ] Markdown round-trip tests pass (parse → serialize → compare)
+
 ### Design
 
 - [ ] App looks like it belongs next to Linear, Bear, or Craft

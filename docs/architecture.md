@@ -105,14 +105,46 @@ note-sage/
 │   └── logos/              # AI provider logos
 ├── bundled-skills/         # Built-in skills (extracted to ~/.notesage/skills/)
 ├── bundled-agents/         # Built-in agents (extracted to ~/.notesage/agents/)
+├── src/perf/               # Performance benchmarks
+│   ├── harness.ts          # Benchmark runner (median timing, budget multiplier, test editor factory)
+│   ├── harness.test.ts     # Harness self-tests
+│   ├── setup.ts            # jsdom setup for ProseMirror benchmarks
+│   ├── markdown.perf.test.ts    # Parse/serialize benchmarks (1KB–100KB)
+│   ├── decorations.perf.test.ts # Search + tag decoration rebuild benchmarks
+│   └── stores.perf.test.ts      # Store ops + command palette filter benchmarks
+├── src/test/               # Test infrastructure
+│   ├── tauri-mock.ts       # Vitest Tauri IPC mock (invoke handlers, event listeners, toast)
+│   ├── component-harness.tsx # React testing utilities
+│   ├── mock-data.ts        # Test data generators
+│   └── mock-editor.ts      # Mock editor instance
+├── tests/fixtures/         # Test fixtures
+│   ├── *.md                # Markdown round-trip test files
+│   └── perf/               # Pre-generated perf fixtures (1KB, 10KB, 50KB, 100KB)
+├── e2e/                    # Playwright E2E tests (mocked Tauri IPC)
+│   ├── tests/              # Test specs (app-loads, chat, editor, file-operations, navigation)
+│   └── fixtures/           # Sample data + Tauri mock injection
+├── e2e-real/               # Real E2E tests (WebDriverIO + Tauri WebDriver)
+│   ├── tests/              # Test specs (editor, external-changes, navigation, performance, startup, tabs)
+│   ├── fixtures/           # Real filesystem test project
+│   └── helpers/            # Setup, actions, timing utilities
+├── scripts/                # Build and test scripts
+│   ├── coverage-check.sh   # Coverage regression detection vs baseline
+│   ├── update-coverage-baseline.js # Generate coverage-baseline.json from Istanbul output
+│   └── run-real-e2e.sh     # Full real E2E orchestrator (app + driver lifecycle)
 ├── docs/                   # Documentation
 │   ├── features/           # Feature-specific docs (editor, ai-providers, ai-workflows, etc.)
 │   ├── prds/               # Product requirements documents
 │   ├── tasks/              # Implementation task breakdowns
-│   └── history/            # Implementation history
+│   ├── history/            # Implementation history
+│   └── performance-baseline.md # Benchmark baseline with budget thresholds
+├── coverage-baseline.json  # Per-file coverage snapshot for regression detection
 ├── CLAUDE.md               # Project spec (references docs/)
 ├── package.json
 ├── tsconfig.json
+├── vitest.config.ts        # Main test config (excludes perf tests)
+├── vitest.perf.config.ts   # Performance benchmark config
+├── playwright.config.ts    # Playwright E2E config
+├── wdio.conf.ts            # WebDriverIO real E2E config
 ├── vite.config.ts
 └── index.html
 ```
@@ -193,7 +225,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 
 | Command | What it runs | Notes |
 | --- | --- | --- |
-| `pnpm test` | Vitest unit tests | Fast, watch mode by default |
+| `pnpm test` | Vitest unit tests | Fast, one-shot run |
 | `pnpm test:coverage` | Unit tests + Istanbul coverage | Reports: text (console), JSON summary, HTML in `./coverage/` |
 | `cd src-tauri && cargo test` | Rust backend tests | Runs all `#[test]` functions in the Tauri crate |
 | `pnpm test:e2e` | Playwright end-to-end tests | Chromium, Tauri IPC mocked, starts Vite dev server |
@@ -202,14 +234,60 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `pnpm test:perf` | Performance benchmarks | Markdown parse/serialize, decorations, stores — uses `vitest.perf.config.ts` |
 | `pnpm test:all` | All of the above (excludes real E2E and perf) | Full suite |
 | `pnpm typecheck` | TypeScript type checking | `tsc --noEmit` |
+| `pnpm coverage:check` | Coverage regression detection | Compares changed files against `coverage-baseline.json` |
+| `pnpm coverage:update-baseline` | Update coverage baseline | Runs tests + writes `coverage-baseline.json` |
 
-**Frontend coverage** uses `@vitest/coverage-istanbul` and requires Node 22 (pinned in `.nvmrc`). Coverage output lands in `./coverage/` (gitignored). Current coverage (2026-03-28): 70.25% lines overall, 84.09% stores, 86.95% hooks, 89.91% markdown.ts. Coverage baseline tracked in `coverage-baseline.json` with regression detection via `pnpm coverage:check`.
+**Test inventory (2026-03-28):** 52 unit test files (18 stores, 10 components, 11 hooks, 8 libraries, 4 perf harness), 5 Playwright E2E specs, 7 real E2E specs. ~1115 total test cases, 70.22% line coverage.
+
+**Frontend coverage** uses `@vitest/coverage-istanbul` and requires Node 22 (pinned in `.nvmrc`). Coverage output lands in `./coverage/` (gitignored). Coverage baseline tracked in `coverage-baseline.json` with per-file metrics. Regression detection via `scripts/coverage-check.sh`: identifies changed `.ts`/`.tsx` files via git diff, compares per-file coverage against baseline, reports regressions. Currently warning-only (exit 0).
 
 **Rust coverage** uses `cargo-tarpaulin` or `cargo-llvm-cov` in CI. Neither is required locally — contributors run `cargo test` directly.
 
-**Performance benchmarks** (`src/perf/`) measure markdown parse/serialize, decoration rebuilds, and store operations against budget thresholds. Excluded from default `pnpm test` runs via vitest exclude pattern. Uses `PERF_BUDGET_MULTIPLIER` env var for CI (1.5x) vs dev (1x) budgets. Baseline recorded in `docs/performance-baseline.md`.
+**CI pipeline** (`.github/workflows/test.yml`) runs on push to `main` and PRs with three parallel jobs:
 
-**CI pipeline** (`.github/workflows/test.yml`) runs on push to `main` and PRs: frontend tests with coverage, performance benchmarks, coverage regression check, Playwright E2E, and Rust backend tests. Coverage summary posted as PR comment via `vitest-coverage-report-action`. All jobs must pass for merge.
+1. **Frontend tests:** typecheck → unit tests with coverage → performance benchmarks (`PERF_BUDGET_MULTIPLIER=1.5`) → coverage regression check (PR only) → post coverage summary to PR via `vitest-coverage-report-action`
+2. **Playwright E2E:** install Chromium → run E2E specs → upload report on failure
+3. **Rust backend:** install stable toolchain → `cargo test` in `src-tauri/`
+
+All jobs must pass for merge. Perf benchmark results uploaded as CI artifacts (14-day retention).
+
+### Performance Benchmarks
+
+Performance benchmark infrastructure in `src/perf/` measures critical editor operations against budget thresholds. Baseline recorded on Apple M3 (24GB) in `docs/performance-baseline.md`.
+
+**Benchmark harness** (`src/perf/harness.ts`):
+
+- `benchmark(name, fn, budgetMs, iterations)` — runs N times (default 3), uses median elapsed, multiplies budget by `PERF_BUDGET_MULTIPLIER` env var (default 1.0)
+- `generateMarkdown(sizeKB)` — synthetic markdown with realistic mixed content (headings, lists, code blocks, tables, tags, mentions)
+- `createTestEditor(content)` — Tiptap editor factory matching production extension set
+- Pre-generated fixtures in `tests/fixtures/perf/` (1KB, 10KB, 50KB, 100KB)
+
+**Benchmark suites:**
+
+| Suite | What it measures | Budget range |
+| --- | --- | --- |
+| `markdown.perf.test.ts` | Parse (markdown → ProseMirror) and serialize (ProseMirror → markdown) at 4 sizes | Parse: 34–364ms, Serialize: 1–15ms |
+| `decorations.perf.test.ts` | Search highlight and tag decoration rebuilds at 4 sizes | All under 2ms |
+| `stores.perf.test.ts` | `updateTabContent` (10–100 tabs), `listDirectory` (100–1000 entries), command palette filter (500 entries) | 1–20ms |
+
+**Budget multipliers:** Dev 1x (strict), CI 1.5x (runner variability). Baseline doc records dev 2x and CI 3x as recommended maximums.
+
+### Performance Instrumentation
+
+Structured performance logging embedded in production code via `src/lib/logger.ts`. All entries use `[perf:category]` prefixes for filtering. Logger batches entries (flush every 500ms or 20 entries) and forwards to Rust backend via Tauri IPC.
+
+| Category | Location | What it measures |
+| --- | --- | --- |
+| `[perf:startup]` | `useAppLifecycle.ts` | Tree validation, index init (per-project + total), tab restoration, total startup time |
+| `[perf:save]` | `useFileOperations.ts` | Serialization time, Tauri write time, total save time per file |
+| `[perf:tree]` | `useFileOperations.ts`, `workspace-store.ts` | Per-directory load time, entry count, total tree refresh |
+| `[perf:find]` | `search-highlight.ts` | Query, match count, doc node size, elapsed time |
+| `[perf:typing]` | `tag-highlight.ts`, `search-highlight.ts`, `comment-mark.ts` | Decoration rebuild per keystroke (sampled every 10th keystroke) |
+| `[perf:palette]` | `CommandPalette.tsx`, `SymbolSearchResults.tsx` | Mode, query, result count, IPC timing for index-backed modes |
+| `[perf:tab-load]` | `Editor.tsx` | File type, size, load elapsed time |
+| `[perf:skills]` | `useSkillOperations.ts` | Skill/agent/instruction discovery timing |
+| `[perf:ai-chat]` | `useDirectApiChat.ts` | First token latency, stream complete (provider, total tokens, elapsed) |
+| `[perf:index]` | `src-tauri/src/index/mod.rs` | Index build (project, files, changed, ms), query timing per type |
 
 ### Security Model
 
