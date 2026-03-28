@@ -248,14 +248,15 @@ pub fn run() {
             log::set_max_level(log::LevelFilter::Warn);
 
             // Kill orphaned agent processes from previous sessions that weren't cleaned up
-            // (e.g. app was force-quit or crashed). Must be synchronous — if async, the
-            // frontend's auto-start can spawn llama-server before pkill runs, killing the
-            // freshly started server (race condition after app updates).
-            for pattern in &["claude-agent-acp", "codex-acp", "llama-server"] {
+            // (e.g. app was force-quit or crashed).
+            for pattern in &["claude-agent-acp", "codex-acp"] {
                 let _ = std::process::Command::new("pkill")
                     .args(["-f", pattern])
                     .output();
             }
+            // Kill orphaned llama-server by PID file — NOT pkill, which would kill
+            // llama-server instances from other apps (Ollama, LM Studio, etc.) and
+            // race with the frontend's auto-start after app updates.
             local_inference::kill_orphaned_servers();
             sandbox::cleanup_legacy_profiles();
             log::debug!(target: "notesage::lifecycle", "Cleaned up orphaned agent processes");
