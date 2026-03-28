@@ -145,7 +145,7 @@ export async function openProject(projectPath: string): Promise<void> {
  */
 export async function openFile(fileName: string, projectPath?: string): Promise<void> {
     // Read file content via Tauri invoke and open it in the editor store
-    await browser.executeAsync(
+    const result = await browser.executeAsync(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (name: string, basePath: string | undefined, done: (result: any) => void) => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -156,7 +156,7 @@ export async function openFile(fileName: string, projectPath?: string): Promise<
             if (basePath) {
                 filePath = `${basePath}/${name}`;
             } else {
-                // Use the first explorer folder as the base
+                // Use the last explorer folder as the base
                 const folders = w.__E2E_WORKSPACE_STORE__?.getState().explorerFolders ?? [];
                 if (folders.length === 0) {
                     done({ error: 'No explorer folders open' });
@@ -181,7 +181,11 @@ export async function openFile(fileName: string, projectPath?: string): Promise<
         },
         fileName,
         projectPath,
-    );
+    ) as { ok?: boolean; error?: string };
+
+    if (result?.error) {
+        throw new Error(result.error);
+    }
 
     // Wait for the ProseMirror editor to appear
     await browser.waitUntil(

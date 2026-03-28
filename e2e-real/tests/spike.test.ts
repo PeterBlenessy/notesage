@@ -8,6 +8,21 @@
  *   Terminal 3: pnpm test:e2e-real
  */
 describe('Spike — app loads and sidebar renders', () => {
+    before(async () => {
+        // Ensure sidebar is visible (may be hidden by focus mode from prior test runs)
+        await browser.keys(['Escape']); // Exit focus mode (React useState, not in store)
+        await browser.execute(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const w = window as any;
+            if (w.__E2E_SETTINGS_STORE__) {
+                const s = w.__E2E_SETTINGS_STORE__.getState();
+                if (!s.sidebarPinned) s.setSidebarPinned(true);
+                if (!s.sidebarOpen) s.setSidebarOpen(true);
+            }
+        });
+        await browser.pause(300);
+    });
+
     it('should connect to the running app', async () => {
         const title = await browser.getTitle();
         console.log(`[spike] Window title: "${title}"`);

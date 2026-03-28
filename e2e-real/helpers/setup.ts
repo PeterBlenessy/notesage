@@ -8,8 +8,9 @@
 import { openProject } from './actions';
 
 /**
- * Resets the app to a clean state by closing all open tabs and
- * removing all explorer folders / projects from the sidebar.
+ * Resets the app to a clean state by closing all open tabs,
+ * exiting focus mode, restoring window size, and ensuring the
+ * sidebar is open.
  *
  * Intended to be called in `beforeEach` or `before` to ensure tests
  * don't leak state into each other.
@@ -25,6 +26,13 @@ export async function ensureCleanState(): Promise<void> {
             for (const tab of [...state.tabs]) {
                 state.closeTab(tab.id);
             }
+        }
+
+        // Hide sidebar to give editor full width in the WebDriver viewport
+        if (w.__E2E_SETTINGS_STORE__) {
+            const settings = w.__E2E_SETTINGS_STORE__.getState();
+            if (settings.sidebarPinned) settings.setSidebarPinned(false);
+            if (settings.sidebarOpen) settings.setSidebarOpen(false);
         }
     });
 
@@ -59,20 +67,27 @@ export async function ensureCleanState(): Promise<void> {
  * @param projectPath - Absolute path to the project folder
  */
 export async function ensureProjectOpen(projectPath: string): Promise<void> {
-    // Check if the project folder is already in the explorer
-    const isOpen = await browser.execute((path: string) => {
+    // Remove any explorer folders that aren't the target project.
+    // This ensures openFile() resolves paths against the correct project,
+    // even if the app had persisted folders from a previous session.
+    const needsOpen = await browser.execute((targetPath: string) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const w = window as any;
-        if (w.__E2E_WORKSPACE_STORE__) {
-            const s = w.__E2E_WORKSPACE_STORE__.getState();
-            const folders: Array<{ path: string; fileTree?: unknown[] }> = s.explorerFolders ?? [];
-            const folder = folders.find((f) => f.path === path);
-            return folder && folder.fileTree && folder.fileTree.length > 0;
+        if (!w.__E2E_WORKSPACE_STORE__) return true;
+        const s = w.__E2E_WORKSPACE_STORE__.getState();
+        const folders: Array<{ path: string; fileTree?: unknown[] }> = [...(s.explorerFolders ?? [])];
+        // Remove non-target folders
+        for (const f of folders) {
+            if (f.path !== targetPath) {
+                s.removeExplorerFolder(f.path);
+            }
         }
-        return false;
+        // Check if target is already open with a loaded file tree
+        const target = folders.find((f) => f.path === targetPath);
+        return !(target && target.fileTree && target.fileTree.length > 0);
     }, projectPath);
 
-    if (!isOpen) {
+    if (needsOpen) {
         await openProject(projectPath);
     }
 }
