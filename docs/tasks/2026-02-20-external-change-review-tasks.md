@@ -125,7 +125,7 @@ Wider popover (`w-96` / 384px) with cross-file layout:
 
 ---
 
-### #9 — Clean up old externalChanges ✅ (Partial)
+### #9 — Clean up old externalChanges ✅
 
 | Field | Value |
 | --- | --- |
@@ -136,11 +136,7 @@ Wider popover (`w-96` / 384px) with cross-file layout:
 
 Old `externalChanges` field in editor-store still used for dirty tab reload/keep banner flow. Frontend `self-write-guard.ts` is dead code (no longer imported). `ExternalReviewBanner.tsx` is dead code (no longer imported).
 
-**Remaining cleanup (low priority):**
-
-- Delete `src/lib/self-write-guard.ts`
-- Delete `src/components/editor/ExternalReviewBanner.tsx`
-- Consider migrating dirty-tab flow to external-change-store
+**Cleanup completed (2026-03-28):** Deleted `src/lib/self-write-guard.ts` and `src/components/editor/ExternalReviewBanner.tsx` — both were dead code with no imports.
 
 ---
 
