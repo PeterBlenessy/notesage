@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-26 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | High |
 | **Impact** | Data-driven performance decisions, automated regression detection, measurable user experience improvements |
 
@@ -208,45 +208,45 @@ No new dependencies required.
 
 ### Phase 1: Instrumentation
 
-- [ ] All 13 areas from the table above have at least one `perf:*` log
+- [x]All 13 areas from the table above have at least one `perf:*` log
 
-- [ ] All logs use structured objects with consistent field names
+- [x]All logs use structured objects with consistent field names
 
-- [ ] Logs only visible when log level is set to "debug"
+- [x]Logs only visible when log level is set to "debug"
 
-- [ ] No measurable performance impact from the logging itself (&lt;1ms overhead per log)
+- [x]No measurable performance impact from the logging itself (&lt;1ms overhead per log)
 
-- [ ] `perf:` filter in browser console shows all performance logs
+- [x]`perf:` filter in browser console shows all performance logs
 
 ### Phase 2: Benchmarks
 
-- [ ] `pnpm test:perf` runs 20+ benchmark tests
+- [x]`pnpm test:perf` runs 20+ benchmark tests
 
-- [ ] Tests cover: markdown parse, serialize, search, decoration rebuild, store operations
+- [x]Tests cover: markdown parse, serialize, search, decoration rebuild, store operations
 
-- [ ] Each test runs at 4 document sizes (1KB, 10KB, 50KB, 100KB)
+- [x]Each test runs at 4 document sizes (1KB, 10KB, 50KB, 100KB)
 
-- [ ] Timing budgets defined and enforced via `expect(elapsed).toBeLessThan(budget)`
+- [x]Timing budgets defined and enforced via `expect(elapsed).toBeLessThan(budget)`
 
-- [ ] Tests complete in &lt;30s total
+- [x]Tests complete in &lt;30s total
 
 ### Phase 3: Baseline
 
-- [ ] `docs/performance-baseline.md` exists with measured numbers
+- [x]`docs/performance-baseline.md` exists with measured numbers
 
-- [ ] Covers all benchmarked operations at all sizes
+- [x]Covers all benchmarked operations at all sizes
 
-- [ ] Includes machine specs and measurement date
+- [x]Includes machine specs and measurement date
 
-- [ ] Budgets derived from baseline (documented rationale)
+- [x]Budgets derived from baseline (documented rationale)
 
 ### Phase 4: CI
 
-- [ ] `pnpm test:perf` runs in CI on every PR
+- [x]`pnpm test:perf` runs in CI on every PR
 
-- [ ] Budget violations produce clear error messages
+- [x]Budget violations produce clear error messages
 
-- [ ] CI passes on current main branch
+- [x]CI passes on current main branch
 
 ## Out of Scope
 

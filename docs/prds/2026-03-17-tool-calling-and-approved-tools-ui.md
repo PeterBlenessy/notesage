@@ -1,6 +1,6 @@
 # Tool Calling & Approved Tools UI
 
-**Date:** 2026-03-17 **Status:** 📋 Draft
+**Date:** 2026-03-17 **Status:** Superseded by [local-ai-tool-calling](2026-03-11-local-ai-tool-calling.md)
 
 ## Problem
 
