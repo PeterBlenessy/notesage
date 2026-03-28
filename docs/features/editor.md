@@ -16,7 +16,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 
 ## Editing Features
 
-- Top toolbar with formatting controls: heading level picker, undo/redo, bold, italic, underline, strikethrough, code, text color, highlight, bullet list, ordered list, task list, indent/outdent, blockquote, code block, horizontal rule, alignment (left/center/right), table, image, typography settings, dictation
+- Top toolbar with formatting controls: heading level picker, undo/redo, bold, italic, underline, strikethrough, code, text color, highlight, bullet list, ordered list, task list, indent/outdent, blockquote, code block, horizontal rule, alignment (left/center/right), table, image, typography settings (searchable font picker with 14 presets + all installed system fonts, font size, line height, paragraph spacing), dictation
 - Bubble menu on text selection with AI actions (Improve, Summarize, Expand) — toggleable in settings
 - Floating table toolbar appears when cursor is inside a table — add/remove rows and columns, merge/split cells, toggle header row, delete table
 - ~~Block drag handles~~ — deferred, needs unified left-gutter design

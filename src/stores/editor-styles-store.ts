@@ -1,7 +1,14 @@
 import { create } from "zustand";
+import { invoke } from "@tauri-apps/api/core";
 import { tauriApi } from "@/lib/tauri";
 
+/** Font family key — either a preset key (e.g. "system") or a system font family name (e.g. "Fira Sans"). */
 export type EditorFontFamily = string;
+
+export interface SystemFont {
+  family: string;
+  category: "sans" | "serif" | "mono" | "other";
+}
 
 export interface FontPreset {
   value: string;
@@ -32,9 +39,11 @@ export const FONT_PRESETS: FontPreset[] = [
 
 const FONT_CSS_MAP = Object.fromEntries(FONT_PRESETS.map((f) => [f.value, f.css]));
 
-/** Resolve a font family key to its CSS font-family string. Falls back to system. */
+/** Resolve a font family key to its CSS font-family string.
+ *  Preset keys map to their full CSS stacks. System font names pass through directly.
+ *  Falls back to the system preset if key is empty/undefined. */
 export function fontFamilyCSS(key: string): string {
-  return FONT_CSS_MAP[key] ?? FONT_CSS_MAP["system"];
+  return FONT_CSS_MAP[key] ?? (key || FONT_CSS_MAP["system"]);
 }
 
 export interface EditorStyles {
@@ -55,9 +64,11 @@ const SETTINGS_FILE = "editor-styles.json";
 
 interface EditorStylesStore extends EditorStyles {
   loaded: boolean;
+  systemFonts: SystemFont[];
 
   loadSettings: (notesagePath: string) => Promise<void>;
   saveSettings: (notesagePath: string) => Promise<void>;
+  loadSystemFonts: () => Promise<void>;
 
   setFontFamily: (family: EditorFontFamily) => void;
   setFontSize: (size: number) => void;
@@ -69,6 +80,7 @@ interface EditorStylesStore extends EditorStyles {
 export const useEditorStylesStore = create<EditorStylesStore>()((set, get) => ({
   ...EDITOR_STYLES_DEFAULTS,
   loaded: false,
+  systemFonts: [],
 
   loadSettings: async (notesagePath: string) => {
     try {
@@ -85,6 +97,15 @@ export const useEditorStylesStore = create<EditorStylesStore>()((set, get) => ({
     } catch {
       // File doesn't exist yet or is invalid — use defaults
       set({ loaded: true });
+    }
+  },
+
+  loadSystemFonts: async () => {
+    try {
+      const fonts = await invoke<SystemFont[]>("list_system_fonts");
+      set({ systemFonts: fonts });
+    } catch (err) {
+      console.error("Failed to load system fonts:", err);
     }
   },
 

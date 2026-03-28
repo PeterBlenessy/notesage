@@ -56,7 +56,8 @@ note-sage/
 │   │   │   ├── acp_client.rs   # ACP Client trait impl (Tauri event forwarding, permission channels)
 │   │   │   ├── agent_manager.rs # Agent binary installation, versioning, progress tracking
 │   │   │   ├── model_management.rs # Local LLM model lifecycle (catalog, download, RAM, capabilities)
-│   │   │   └── thinking_tags.rs # Thinking tag detection from llama-server Jinja2 chat templates
+│   │   │   ├── thinking_tags.rs # Thinking tag detection from llama-server Jinja2 chat templates
+│   │   │   └── fonts.rs    # System font enumeration (font-kit crate)
 │   │   ├── index/          # SQLite document index (tags, mentions, tasks, goals, FTS5)
 │   │   │   ├── mod.rs      # IndexState, Tauri commands, indexing pipeline
 │   │   │   ├── db.rs       # Schema creation, migrations, connection management

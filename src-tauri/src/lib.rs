@@ -240,6 +240,8 @@ pub fn run() {
             migrate_credentials,
             // Web search
             web_search,
+            // System font enumeration
+            list_system_fonts,
         ])
         .setup(|app| {
             // Log startup at Info before restricting to Warn — this line always appears.

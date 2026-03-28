@@ -33,6 +33,7 @@ pub mod network_proxy;
 pub mod constants;
 pub mod credentials;
 pub mod web_search;
+pub mod fonts;
 
 pub use file::*;
 pub use dialog::*;
@@ -61,3 +62,4 @@ pub use sandbox_monitor::*;
 pub use actions::*;
 pub use credentials::*;
 pub use web_search::*;
+pub use fonts::*;

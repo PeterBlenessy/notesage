@@ -272,6 +272,9 @@ async function reloadTrees() {
     await useEditorStylesStore.getState().loadSettings(notesRoot);
   }
 
+  // Load system fonts for font picker (non-blocking)
+  useEditorStylesStore.getState().loadSystemFonts();
+
   // Detect iCloud availability
   try {
     const icloudRoot = await tauriApi.getICloudPath();
