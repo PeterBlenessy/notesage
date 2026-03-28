@@ -170,6 +170,7 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
 
         // Editor styles
         read_editor_styles: () => null,
+        list_fonts: () => [],
       };
 
       // Apply overrides
@@ -222,6 +223,13 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
       };
 
       (window as Record<string, unknown>).__TAURI_INTERNALS__ = internals;
+
+      // Tauri event plugin internals — required for listen() unlisten cleanup
+      (window as Record<string, unknown>).__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+        unregisterListener: (_event: string, _eventId: number) => {
+          // No-op in mock — listeners cleaned up naturally
+        },
+      };
 
       // ---------------------------------------------------------------------------
       // Helper for tests to emit mock events

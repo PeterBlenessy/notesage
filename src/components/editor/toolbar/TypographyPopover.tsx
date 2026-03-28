@@ -51,7 +51,7 @@ export function TypographyPopover() {
 
   // Group system fonts by category, filtering out presets and limiting results
   const filteredSystemFonts = useMemo(() => {
-    const unique = systemFonts.filter((f) => !isPresetFont(f.family));
+    const unique = (systemFonts ?? []).filter((f) => !isPresetFont(f.family));
     if (!fontSearch) return unique.slice(0, MAX_SYSTEM_FONTS);
     const query = fontSearch.toLowerCase();
     return unique.filter((f) => f.family.toLowerCase().includes(query)).slice(0, MAX_SYSTEM_FONTS);

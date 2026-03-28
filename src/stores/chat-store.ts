@@ -621,8 +621,9 @@ export const selectMessages = (() => {
 
     // If conversation has branching data, return only the active thread
     if (conv.activeLeafId) {
-      // Cache key: conversation id + leaf id + message count to detect changes
-      const key = `${conv.id}:${conv.activeLeafId}:${conv.messages.length}`;
+      // Cache key: conversation id + leaf id + message count + updatedAt
+      // updatedAt changes on every message add/update/delete, ensuring cache invalidation
+      const key = `${conv.id}:${conv.activeLeafId}:${conv.messages.length}:${conv.updatedAt}`;
       if (key !== cachedKey) {
         const thread = getThread(conv.messages, conv.activeLeafId);
         cachedThread = thread.length > 0 ? thread : conv.messages;

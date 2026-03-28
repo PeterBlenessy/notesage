@@ -129,6 +129,14 @@ jobs:
           echo "CMAKE_C_FLAGS=-march=armv8.2-a+dotprod+fp16" >> $GITHUB_ENV
           echo "CMAKE_CXX_FLAGS=-march=armv8.2-a+dotprod+fp16" >> $GITHUB_ENV
 
+      - name: Create sidecar placeholder
+        run: |
+          # Tauri build.rs validates externalBin paths exist.
+          # The actual binary is too large to commit; create a placeholder for CI.
+          mkdir -p src-tauri/binaries/lib
+          touch src-tauri/binaries/llama-server-aarch64-apple-darwin
+          chmod +x src-tauri/binaries/llama-server-aarch64-apple-darwin
+
       - name: Run Rust tests
         working-directory: src-tauri
         run: cargo test
