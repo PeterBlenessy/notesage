@@ -1,7 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useEditorStore, type FileType } from "@/stores/editor-store";
 import { X, FileText, FileImage, FileType2, FileSpreadsheet, File } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const TAB_DRAG_MIME = "application/x-notesage-tab";
 
 function TabIcon({ fileType }: { fileType?: FileType }) {
   const cls = "h-3.5 w-3.5 shrink-0 text-muted-foreground";
@@ -21,8 +23,10 @@ function TabIcon({ fileType }: { fileType?: FileType }) {
 }
 
 export function TabBar() {
-  const { tabs, activeTabId, setActiveTab, closeTab } = useEditorStore();
+  const { tabs, activeTabId, setActiveTab, closeTab, reorderTab } = useEditorStore();
   const activeTabRef = useRef<HTMLButtonElement>(null);
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [dropIndicatorIndex, setDropIndicatorIndex] = useState<number | null>(null);
 
   // Scroll the active tab into view when it changes
   useEffect(() => {
@@ -56,6 +60,56 @@ export function TabBar() {
     });
   };
 
+  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData(TAB_DRAG_MIME, String(index));
+    setDraggingIndex(index);
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggingIndex(null);
+    setDropIndicatorIndex(null);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    if (!e.dataTransfer.types.includes(TAB_DRAG_MIME)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+
+    // Determine if cursor is in the left or right half of the tab
+    const rect = e.currentTarget.getBoundingClientRect();
+    const midpoint = rect.left + rect.width / 2;
+    const insertIndex = e.clientX < midpoint ? index : index + 1;
+    setDropIndicatorIndex(insertIndex);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    const sourceIndexStr = e.dataTransfer.getData(TAB_DRAG_MIME);
+    if (!sourceIndexStr) return;
+    e.preventDefault();
+
+    const fromIndex = parseInt(sourceIndexStr, 10);
+    if (dropIndicatorIndex === null || isNaN(fromIndex)) return;
+
+    // Adjust toIndex: if dragging forward, the removal shifts indices
+    let toIndex = dropIndicatorIndex;
+    if (fromIndex < toIndex) toIndex -= 1;
+    if (fromIndex !== toIndex) {
+      reorderTab(fromIndex, toIndex);
+    }
+
+    setDraggingIndex(null);
+    setDropIndicatorIndex(null);
+  }, [dropIndicatorIndex, reorderTab]);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    // Only clear if leaving the tab bar entirely
+    const relatedTarget = e.relatedTarget as HTMLElement | null;
+    if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
+      setDropIndicatorIndex(null);
+    }
+  }, []);
+
   if (tabs.length === 0) {
     return null;
   }
@@ -63,22 +117,41 @@ export function TabBar() {
   return (
     <div
       className="h-9 border-b border-border flex items-end shrink-0 overflow-x-auto overflow-y-hidden tabbar-scrollbar gap-0.5 px-2 bg-background"
+      onDrop={handleDrop}
+      onDragLeave={handleDragLeave}
     >
-      {tabs.map((tab) => {
+      {tabs.map((tab, index) => {
         const isActive = activeTabId === tab.id;
+        const isDragging = draggingIndex === index;
+        const showIndicatorBefore = dropIndicatorIndex === index && draggingIndex !== index && draggingIndex !== index - 1;
 
         return (
           <button
             key={tab.id}
             ref={isActive ? activeTabRef : undefined}
             onClick={() => setActiveTab(tab.id)}
+            draggable
+            onDragStart={(e) => handleDragStart(e, index)}
+            onDragEnd={handleDragEnd}
+            onDragOver={(e) => handleDragOver(e, index)}
             className={cn(
               "group relative flex items-center gap-1.5 px-3 h-8 text-sm rounded-t-md transition-colors duration-150 shrink-0 max-w-[200px] focus-visible:outline-none",
               isActive
                 ? "bg-muted text-foreground"
-                : "bg-accent text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:text-foreground focus-visible:bg-muted"
+                : "bg-accent text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:text-foreground focus-visible:bg-muted",
+              isDragging && "opacity-50"
             )}
           >
+            {/* Drop insertion indicator — left side */}
+            {showIndicatorBefore && (
+              <span className="absolute -left-[2px] top-0 bottom-0 w-[2px] bg-primary rounded-full z-10" />
+            )}
+
+            {/* Drop insertion indicator — right side (after last tab) */}
+            {dropIndicatorIndex === index + 1 && draggingIndex !== index && draggingIndex !== index + 1 && (
+              <span className="absolute -right-[2px] top-0 bottom-0 w-[2px] bg-primary rounded-full z-10" />
+            )}
+
             {/* Active indicator */}
             {isActive && (
               <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-primary rounded-full" />

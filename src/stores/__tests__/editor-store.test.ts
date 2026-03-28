@@ -712,6 +712,64 @@ describe('copilot toggle', () => {
   });
 });
 
+describe('reorderTab', () => {
+  it('reorders tabs by moving a tab from one index to another', () => {
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
+    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
+    useEditorStore.getState().openTab('/c.md', 'c.md', 'c');
+    useEditorStore.getState().openTab('/d.md', 'd.md', 'd');
+
+    // Move tab at index 0 (a) to index 2
+    useEditorStore.getState().reorderTab(0, 2);
+
+    const paths = useEditorStore.getState().tabs.map((t) => t.filePath);
+    expect(paths).toEqual(['/b.md', '/c.md', '/a.md', '/d.md']);
+  });
+
+  it('no-op when fromIndex equals toIndex', () => {
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
+    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
+
+    useEditorStore.getState().reorderTab(1, 1);
+
+    const paths = useEditorStore.getState().tabs.map((t) => t.filePath);
+    expect(paths).toEqual(['/a.md', '/b.md']);
+  });
+
+  it('does not change activeTabId', () => {
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
+    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
+    useEditorStore.getState().openTab('/c.md', 'c.md', 'c');
+    const activeId = useEditorStore.getState().activeTabId;
+
+    useEditorStore.getState().reorderTab(0, 2);
+
+    expect(useEditorStore.getState().activeTabId).toBe(activeId);
+  });
+
+  it('updates persistedTabs order to match', () => {
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
+    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
+    useEditorStore.getState().openTab('/c.md', 'c.md', 'c');
+
+    useEditorStore.getState().reorderTab(2, 0);
+
+    const persistedPaths = useEditorStore.getState().persistedTabs.map((p) => p.filePath);
+    expect(persistedPaths).toEqual(['/c.md', '/a.md', '/b.md']);
+  });
+
+  it('moving last tab to first position works', () => {
+    useEditorStore.getState().openTab('/a.md', 'a.md', 'a');
+    useEditorStore.getState().openTab('/b.md', 'b.md', 'b');
+    useEditorStore.getState().openTab('/c.md', 'c.md', 'c');
+
+    useEditorStore.getState().reorderTab(2, 0);
+
+    const paths = useEditorStore.getState().tabs.map((t) => t.filePath);
+    expect(paths).toEqual(['/c.md', '/a.md', '/b.md']);
+  });
+});
+
 describe('scroll-to targets', () => {
   it('setScrollToTag sets and clears scrollToTag', () => {
     useEditorStore.getState().openTab('/a.md', 'a.md', 'content');

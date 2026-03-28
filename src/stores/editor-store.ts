@@ -91,6 +91,8 @@ interface EditorStore {
   toggleViewMode: (tabId: string) => void;
   /** Toggle Copilot completions for a specific tab (session-only, not persisted). */
   toggleCopilotForTab: (tabId: string) => void;
+  /** Reorder tabs by moving a tab from one index to another. */
+  reorderTab: (fromIndex: number, toIndex: number) => void;
   /** Set a tag scroll target. Cleared after Editor.tsx consumes it. */
   setScrollToTag: (tabId: string, target: ScrollToTag | undefined) => void;
   /** Set a text scroll target. Cleared after Editor.tsx consumes it. */
@@ -356,6 +358,24 @@ export const useEditorStore = create<EditorStore>()(
             tab.id === tabId ? { ...tab, copilotDisabled: !tab.copilotDisabled } : tab
           ),
         }));
+      },
+
+      reorderTab: (fromIndex: number, toIndex: number) => {
+        if (fromIndex === toIndex) return;
+        set((state) => {
+          const newTabs = [...state.tabs];
+          const [moved] = newTabs.splice(fromIndex, 1);
+          if (!moved) return state;
+          newTabs.splice(toIndex, 0, moved);
+
+          const newPersisted = [...state.persistedTabs];
+          const [movedPersisted] = newPersisted.splice(fromIndex, 1);
+          if (movedPersisted) {
+            newPersisted.splice(toIndex, 0, movedPersisted);
+          }
+
+          return { tabs: newTabs, persistedTabs: newPersisted };
+        });
       },
 
       setScrollToTag: (tabId: string, target: ScrollToTag | undefined) => {
