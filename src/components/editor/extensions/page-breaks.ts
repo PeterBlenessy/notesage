@@ -64,29 +64,44 @@ export const PageBreaks = Extension.create({
             let contentHeight = 0
             let pageNumber = 1
 
-            doc.forEach((_node, offset) => {
+            // Collect node info first so we can look back for widow headings
+            const nodes: { node: typeof doc.firstChild; offset: number; height: number }[] = []
+            doc.forEach((node, offset) => {
               const dom = editorView.nodeDOM(offset)
               if (!dom || !(dom instanceof HTMLElement)) return
-
               const style = getComputedStyle(dom)
               const marginTop = parseFloat(style.marginTop) || 0
               const marginBottom = parseFloat(style.marginBottom) || 0
-              const nodeHeight = dom.offsetHeight + marginTop + marginBottom
+              nodes.push({ node, offset, height: dom.offsetHeight + marginTop + marginBottom })
+            })
+
+            for (let i = 0; i < nodes.length; i++) {
+              const { offset, height: nodeHeight } = nodes[i]
 
               if (contentHeight > 0 && contentHeight + nodeHeight > pageNumber * usablePerPage) {
+                // Widow heading prevention: if the previous node is a heading,
+                // move the break before it so it stays with its following content
+                let breakOffset = offset
+                let breakKey = pageNumber
+                if (i > 0 && nodes[i - 1].node?.type.name === 'heading') {
+                  breakOffset = nodes[i - 1].offset
+                  // Recalculate: the heading's height moves to the new page
+                  contentHeight -= nodes[i - 1].height
+                }
+
                 decorations.push(
-                  Decoration.widget(offset, () => {
+                  Decoration.widget(breakOffset, () => {
                     const gap = document.createElement('div')
                     gap.className = 'page-break-gap'
                     gap.setAttribute('contenteditable', 'false')
                     return gap
-                  }, { side: -1, key: `page-break-${pageNumber}` })
+                  }, { side: -1, key: `page-break-${breakKey}` })
                 )
                 pageNumber++
               }
 
               contentHeight += nodeHeight
-            })
+            }
 
             // Pad the last page to full height so it renders as a complete page
             const lastPageUsed = contentHeight - (pageNumber - 1) * usablePerPage
