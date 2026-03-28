@@ -93,13 +93,13 @@ note-sage/
 │   │   ├── sidebar/        # Sidebar.tsx, FileTree.tsx, FileTreeItem.tsx, ExplorerFolderItem.tsx
 │   │   ├── tabs/           # TabBar.tsx, Tab.tsx
 │   │   ├── settings/       # SettingsDialog, ConnectionsSettings, LocalAISettings, TranscriptionSettings, etc.
-│   │   ├── chat/           # ChatPanel, ChatMessage, ChatInput, PermissionCard, DomainApprovalCard, AgentSwitchCard, etc.
+│   │   ├── chat/           # ChatPanel, ChatMessage, ChatInput, BranchSwitcher, PermissionCard, DomainApprovalCard, AgentSwitchCard, etc.
 │   │   ├── activity/       # ActivityStrip.tsx, ActivityTaskCard.tsx
 │   │   ├── editor/viewers/ # EpubViewer, PdfViewer, DocxViewer, PlainTextViewer
 │   │   └── ui/             # shadcn/ui components (auto-generated)
 │   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, etc.)
 │   ├── stores/             # Zustand stores (editor, workspace, ai, chat, skill, etc.)
-│   ├── lib/                # Utilities (markdown, tauri, ai/{context,errors}, dom-search, etc.)
+│   ├── lib/                # Utilities (markdown, tauri, ai/{context,errors}, dom-search, chat-tree, etc.)
 │   └── styles/             # globals.css, editor.css
 ├── public/
 │   ├── foliate-js/         # Vendored EPUB renderer (MIT)
@@ -198,7 +198,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `connections-store` | Multi-provider connections, sandbox/network config, kernel enforcement, writable paths | Full |
 | `routing-store` | Per-use-case provider routing | Full |
 | `permission-store` | ACP tool call permissions, domain allowlists, session domains, tool call permissions (`toolCallSession`, `toolCallAlways`) | Partial (`alwaysAllowed`, `alwaysAllowedDomains`, `toolCallAlways` only) |
-| `chat-store` | Chat conversation messages | Full |
+| `chat-store` | Chat conversations with tree-based branching (id/parentId/activeLeafId), memoized thread selectors | Full |
 | `comment-store` | Comments, replies, delegation | JSON sidecar files |
 | `mcp-store` | MCP server registry | Partial (enabled overrides) |
 | `epub-store` | EPUB view mode + bookmarks | Full |
