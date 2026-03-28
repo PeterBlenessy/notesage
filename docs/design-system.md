@@ -94,12 +94,13 @@ Define the palette using CSS variables in globals.css. All colors must come from
 - Borders: `oklch(32% 0 0)`
 - Focus ring: `oklch(60% 0 0)` — never blue
 
-**Soft contrast mode:**
+**Contrast slider:**
 
-A "Soft contrast" toggle (Settings > Appearance) applies reduced-contrast overrides to both light and dark themes via `.soft` and `.dark.soft` CSS classes in `globals.css`. This pulls the extreme lightness values inward for a gentler look:
+A "Contrast" slider (Settings > Appearance, range 0–100) continuously interpolates between full contrast (0) and soft contrast (100) for both light and dark themes. The `ThemeProvider` computes intermediate oklch lightness values via `src/lib/contrast.ts` and applies them as inline CSS variables on `<html>`. At level 0, no overrides are applied (base CSS values). The `.soft` / `.dark.soft` classes in `globals.css` are preserved as reference documentation for the soft endpoints.
 
-- Light soft: background `oklch(96% 0 0)`, foreground `oklch(20% 0 0)`, cards `oklch(94% 0 0)`
-- Dark soft: background `oklch(25% 0 0)`, foreground `oklch(90% 0 0)`, cards `oklch(28% 0 0)`
+- Full contrast (0): Light `oklch(100% 0 0)` bg / `oklch(14% 0 0)` fg; Dark `oklch(18% 0 0)` bg / `oklch(98% 0 0)` fg
+- Soft contrast (100): Light `oklch(96% 0 0)` bg / `oklch(20% 0 0)` fg; Dark `oklch(25% 0 0)` bg / `oklch(90% 0 0)` fg
+- Intermediate values are linearly interpolated between these endpoints
 
 **Forbidden colors:**
 
@@ -231,7 +232,7 @@ All components must work in both light and dark modes, and with soft contrast en
 - Test every component in both themes (and with soft contrast toggled)
 - Use `dark:` prefix for dark mode-specific styles
 - Logos and images should be visible in both modes (add white background if needed: `bg-white p-0.5`)
-- Soft contrast is applied via `.soft` / `.dark.soft` CSS classes on `<html>` — no component-level changes needed if CSS variables are used correctly
+- Soft contrast is applied via inline CSS variable overrides on `<html>` by the `ThemeProvider` — no component-level changes needed if CSS variables are used correctly
 
 ### Accessibility
 

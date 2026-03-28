@@ -2,8 +2,9 @@
  * Unit tests for settings-store.
  *
  * Covers: initial state defaults, setters (boolean, string/enum, number),
- * sidebar width clamping, runtime-only setters, persistence round-trip,
- * transient field exclusion, and v0→v1 migration (debugLogging→logLevel).
+ * sidebar width clamping, contrast level clamping, runtime-only setters,
+ * persistence round-trip, transient field exclusion,
+ * v0→v1 migration (debugLogging→logLevel), and v1→v2 migration (softMode→contrastLevel).
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -106,7 +107,7 @@ async function simulateRestart(
 
 const SETTINGS_DEFAULTS: Record<string, unknown> = {
   theme: 'system',
-  softMode: false,
+  contrastLevel: 0,
   showFloatingToolbar: true,
   toolbarVisible: true,
   contentWidth: 'auto',
@@ -168,7 +169,7 @@ describe('initial state defaults', () => {
     const s = useSettingsStore.getState();
 
     expect(s.theme).toBe('system');
-    expect(s.softMode).toBe(false);
+    expect(s.contrastLevel).toBe(0);
     expect(s.showFloatingToolbar).toBe(true);
     expect(s.toolbarVisible).toBe(true);
     expect(s.contentWidth).toBe('auto');
@@ -241,19 +242,39 @@ describe('setTheme', () => {
 });
 
 // ===========================================================================
-// setSoftMode toggles
+// setContrastLevel
 // ===========================================================================
 
-describe('setSoftMode', () => {
-  it('toggles soft mode on', () => {
-    useSettingsStore.getState().setSoftMode(true);
-    expect(useSettingsStore.getState().softMode).toBe(true);
+describe('setContrastLevel', () => {
+  it('sets contrast level to 100', () => {
+    useSettingsStore.getState().setContrastLevel(100);
+    expect(useSettingsStore.getState().contrastLevel).toBe(100);
   });
 
-  it('toggles soft mode off', () => {
-    useSettingsStore.getState().setSoftMode(true);
-    useSettingsStore.getState().setSoftMode(false);
-    expect(useSettingsStore.getState().softMode).toBe(false);
+  it('sets contrast level to 0', () => {
+    useSettingsStore.getState().setContrastLevel(100);
+    useSettingsStore.getState().setContrastLevel(0);
+    expect(useSettingsStore.getState().contrastLevel).toBe(0);
+  });
+
+  it('sets contrast level to intermediate value', () => {
+    useSettingsStore.getState().setContrastLevel(50);
+    expect(useSettingsStore.getState().contrastLevel).toBe(50);
+  });
+
+  it('clamps values above 100 to 100', () => {
+    useSettingsStore.getState().setContrastLevel(150);
+    expect(useSettingsStore.getState().contrastLevel).toBe(100);
+  });
+
+  it('clamps values below 0 to 0', () => {
+    useSettingsStore.getState().setContrastLevel(-10);
+    expect(useSettingsStore.getState().contrastLevel).toBe(0);
+  });
+
+  it('rounds fractional values', () => {
+    useSettingsStore.getState().setContrastLevel(33.7);
+    expect(useSettingsStore.getState().contrastLevel).toBe(34);
   });
 });
 
@@ -541,7 +562,7 @@ describe('persistence round-trip', () => {
   it('persists and restores persisted fields', async () => {
     useSettingsStore.setState({
       theme: 'dark',
-      softMode: true,
+      contrastLevel: 75,
       contentWidth: 'a4',
       sidebarWidth: 320,
       notesRootPath: '/custom/path',
@@ -563,7 +584,7 @@ describe('persistence round-trip', () => {
 
     const s = useSettingsStore.getState();
     expect(s.theme).toBe('dark');
-    expect(s.softMode).toBe(true);
+    expect(s.contrastLevel).toBe(75);
     expect(s.contentWidth).toBe('a4');
     expect(s.sidebarWidth).toBe(320);
     expect(s.notesRootPath).toBe('/custom/path');
@@ -718,7 +739,8 @@ describe('v0 → v1 migration (debugLogging → logLevel)', () => {
     expect(s.logLevel).toBe('warn');
     // Other fields should carry through
     expect(s.theme).toBe('dark');
-    expect(s.softMode).toBe(true);
+    // softMode: true in v0 state migrates to contrastLevel: 100
+    expect(s.contrastLevel).toBe(100);
   });
 
   it('v0 state without debugLogging uses logLevel default', async () => {
@@ -745,5 +767,119 @@ describe('v0 → v1 migration (debugLogging → logLevel)', () => {
 
     // logLevel should fall through to the store default 'warn'
     expect(useSettingsStore.getState().logLevel).toBe('warn');
+  });
+});
+
+// ===========================================================================
+// v1 → v2 migration (softMode → contrastLevel)
+// ===========================================================================
+
+describe('v1 → v2 migration (softMode → contrastLevel)', () => {
+  it('migrates softMode: true to contrastLevel: 100', async () => {
+    const v1State = {
+      state: {
+        theme: 'dark',
+        softMode: true,
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+      },
+      version: 1,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v1State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.contrastLevel).toBe(100);
+    expect(s.theme).toBe('dark');
+  });
+
+  it('migrates softMode: false to contrastLevel: 0', async () => {
+    const v1State = {
+      state: {
+        theme: 'light',
+        softMode: false,
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+      },
+      version: 1,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v1State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.contrastLevel).toBe(0);
+  });
+
+  it('v1 state without softMode defaults contrastLevel to 0', async () => {
+    const v1State = {
+      state: {
+        theme: 'system',
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+        logLevel: 'warn',
+      },
+      version: 1,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v1State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    expect(useSettingsStore.getState().contrastLevel).toBe(0);
+  });
+
+  it('v0 state with softMode: true migrates through both steps', async () => {
+    const v0State = {
+      state: {
+        theme: 'dark',
+        softMode: true,
+        debugLogging: true,
+        showFloatingToolbar: true,
+        toolbarVisible: true,
+        contentWidth: 'auto',
+        sidebarOpen: true,
+        sidebarPinned: true,
+        sidebarWidth: 280,
+        chatPanelOpen: false,
+        notesRootPath: '~/Notesage',
+        gitEnabled: false,
+      },
+      version: 0,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v0State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.contrastLevel).toBe(100);
+    expect(s.logLevel).toBe('debug');
   });
 });

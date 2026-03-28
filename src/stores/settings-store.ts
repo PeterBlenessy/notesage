@@ -12,7 +12,7 @@ export type PageBreaks = "continuous" | "visible";
 
 interface SettingsStore {
   theme: Theme;
-  softMode: boolean;
+  contrastLevel: number;
   showFloatingToolbar: boolean;
   toolbarVisible: boolean;
   contentWidth: ContentWidth;
@@ -58,7 +58,7 @@ interface SettingsStore {
   icloudAvailable: boolean;
   icloudNotesagePath: string | null;
   setTheme: (theme: Theme) => void;
-  setSoftMode: (soft: boolean) => void;
+  setContrastLevel: (level: number) => void;
   setShowFloatingToolbar: (show: boolean) => void;
   setToolbarVisible: (visible: boolean) => void;
   setContentWidth: (width: ContentWidth) => void;
@@ -101,7 +101,7 @@ export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set) => ({
       theme: "system",
-      softMode: false,
+      contrastLevel: 0,
       showFloatingToolbar: true,
       toolbarVisible: true,
       contentWidth: "auto",
@@ -144,8 +144,8 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ theme });
       },
 
-      setSoftMode: (soft: boolean) => {
-        set({ softMode: soft });
+      setContrastLevel: (level: number) => {
+        set({ contrastLevel: Math.round(Math.max(0, Math.min(100, level))) });
       },
 
       setShowFloatingToolbar: (show: boolean) => {
@@ -294,7 +294,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 1,
+      version: 2,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -304,6 +304,15 @@ export const useSettingsStore = create<SettingsStore>()(
             state.logLevel = state.debugLogging ? 'debug' : 'warn';
             delete state.debugLogging;
           }
+        }
+        if (version < 2) {
+          // Migrate softMode boolean → contrastLevel number
+          if (typeof state.softMode === 'boolean') {
+            state.contrastLevel = state.softMode ? 100 : 0;
+          } else {
+            state.contrastLevel = 0;
+          }
+          delete state.softMode;
         }
         return state;
       },

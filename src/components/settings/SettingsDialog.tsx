@@ -21,6 +21,7 @@ import { useEditorStore } from '@/stores/editor-store';
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -133,7 +134,7 @@ function formatRelativeTime(isoString: string | null): string {
 export function SettingsDialog({ open, onOpenChange, initialTab, updateState, onCheckForUpdate, onOpenUpdateDialog }: SettingsDialogProps) {
   const {
     theme, setTheme,
-    softMode, setSoftMode,
+    contrastLevel, setContrastLevel,
     showFloatingToolbar, setShowFloatingToolbar,
     toolbarVisible, setToolbarVisible,
     externalChangeDiffReview, setExternalChangeDiffReview,
@@ -368,12 +369,24 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                     ))}
                   </div>
 
-                  <div className="flex items-center justify-between mt-3">
-                    <div>
-                      <span className="text-sm">Soft contrast</span>
-                      <p className="text-xs text-muted-foreground">Reduce contrast for a gentler look</p>
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <span className="text-sm">Contrast</span>
+                        <p className="text-xs text-muted-foreground">Adjust contrast for eye comfort</p>
+                      </div>
+                      <span className="text-xs text-muted-foreground tabular-nums w-8 text-right">
+                        {contrastLevel === 0 ? "Full" : contrastLevel === 100 ? "Soft" : `${contrastLevel}%`}
+                      </span>
                     </div>
-                    <Switch checked={softMode} onCheckedChange={setSoftMode} />
+                    <Slider
+                      value={[contrastLevel]}
+                      onValueChange={([v]) => setContrastLevel(v)}
+                      min={0}
+                      max={100}
+                      step={1}
+                      className="w-full"
+                    />
                   </div>
                 </div>
 

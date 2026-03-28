@@ -1,5 +1,14 @@
 // @vitest-environment jsdom
 
+// Radix Slider uses ResizeObserver (via @radix-ui/react-use-size)
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
+
 import '@/test/tauri-mock';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
