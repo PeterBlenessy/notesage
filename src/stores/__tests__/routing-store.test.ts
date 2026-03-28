@@ -143,7 +143,7 @@ const ollamaConn: Connection = {
 
 const copilotLspConn: Connection = {
   id: 'conn-copilot-lsp-1',
-  provider: 'copilot',
+  provider: 'github',
   authMethod: 'agent_managed',
   status: 'connected',
   label: 'Copilot LSP',

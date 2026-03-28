@@ -73,7 +73,7 @@ import {
   selectActiveSegmentIndex,
 } from '../chat-store';
 import type { Conversation } from '../chat-store';
-import type { ChatMessage, AgentActivity, ToolCall, ToolCallActivity } from '@/lib/ai/types';
+import type { AgentActivity, ToolCall, ToolCallActivity } from '@/lib/ai/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -166,7 +166,7 @@ describe('Conversation CRUD', () => {
 
   it('setActiveConversation updates activeConversationId', () => {
     const id1 = useChatStore.getState().createConversation();
-    const id2 = useChatStore.getState().createConversation();
+    useChatStore.getState().createConversation();
     useChatStore.getState().setActiveConversation(id1);
     expect(useChatStore.getState().activeConversationId).toBe(id1);
     useChatStore.getState().setActiveConversation(null);
@@ -622,10 +622,10 @@ describe('Tool calls', () => {
   it('addToolCallActivity appends to existing activities', () => {
     useChatStore.getState().addMessage({ role: 'assistant', content: 'resp', timestamp: 100 });
     useChatStore.getState().addToolCallActivity(100, {
-      id: 'tc-1', name: 'a', status: 'complete', startedAt: 1,
+      id: 'tc-1', name: 'a', arguments: {}, status: 'complete', startedAt: 1,
     });
     useChatStore.getState().addToolCallActivity(100, {
-      id: 'tc-2', name: 'b', status: 'running', startedAt: 2,
+      id: 'tc-2', name: 'b', arguments: {}, status: 'running', startedAt: 2,
     });
 
     expect(activeConv()!.messages[0].toolCallActivities).toHaveLength(2);
@@ -634,10 +634,10 @@ describe('Tool calls', () => {
   it('updateToolCallActivity updates the right activity by toolCallId', () => {
     useChatStore.getState().addMessage({ role: 'assistant', content: 'resp', timestamp: 100 });
     useChatStore.getState().addToolCallActivity(100, {
-      id: 'tc-1', name: 'read_file', status: 'running', startedAt: 1,
+      id: 'tc-1', name: 'read_file', arguments: {}, status: 'running', startedAt: 1,
     });
     useChatStore.getState().addToolCallActivity(100, {
-      id: 'tc-2', name: 'write_file', status: 'running', startedAt: 2,
+      id: 'tc-2', name: 'write_file', arguments: {}, status: 'running', startedAt: 2,
     });
 
     useChatStore.getState().updateToolCallActivity(100, 'tc-1', {
@@ -655,7 +655,7 @@ describe('Tool calls', () => {
   it('updateToolCallActivity can set error status', () => {
     useChatStore.getState().addMessage({ role: 'assistant', content: 'resp', timestamp: 100 });
     useChatStore.getState().addToolCallActivity(100, {
-      id: 'tc-1', name: 'read_file', status: 'running', startedAt: 1,
+      id: 'tc-1', name: 'read_file', arguments: {}, status: 'running', startedAt: 1,
     });
 
     useChatStore.getState().updateToolCallActivity(100, 'tc-1', {
@@ -697,7 +697,7 @@ describe('Tool calls', () => {
   it('tool call methods are no-ops when no active conversation', () => {
     reset();
     expect(() => useChatStore.getState().addToolCallsToMessage(100, [{ id: 'tc-1', name: 'a', arguments: {} }])).not.toThrow();
-    expect(() => useChatStore.getState().addToolCallActivity(100, { id: 'tc-1', name: 'a', status: 'running', startedAt: 1 })).not.toThrow();
+    expect(() => useChatStore.getState().addToolCallActivity(100, { id: 'tc-1', name: 'a', arguments: {}, status: 'running', startedAt: 1 })).not.toThrow();
     expect(() => useChatStore.getState().updateToolCallActivity(100, 'tc-1', { status: 'complete' })).not.toThrow();
   });
 

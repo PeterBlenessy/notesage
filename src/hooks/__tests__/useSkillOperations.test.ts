@@ -34,7 +34,7 @@ const mockWriteFile = vi.fn(async () => {});
 const mockReadSkillContent = vi.fn(async () => ({
   path: '/test/skill',
   readme: '# Skill',
-  scripts: [],
+  scripts: [] as string[],
 }));
 const mockReadAgentContent = vi.fn(async () => ({
   path: '/test/agent.md',
@@ -50,15 +50,15 @@ const mockExecuteSkillScript = vi.fn(async () => ({
 
 vi.mock('@/lib/tauri', () => ({
   tauriApi: {
-    getHomeDir: (...args: unknown[]) => mockGetHomeDir(...args),
-    extractBundledSkills: (...args: unknown[]) => mockExtractBundledSkills(...args),
-    extractBundledAgents: (...args: unknown[]) => mockExtractBundledAgents(...args),
+    getHomeDir: (...args: unknown[]) => (mockGetHomeDir as (...a: unknown[]) => unknown)(...args),
+    extractBundledSkills: (...args: unknown[]) => (mockExtractBundledSkills as (...a: unknown[]) => unknown)(...args),
+    extractBundledAgents: (...args: unknown[]) => (mockExtractBundledAgents as (...a: unknown[]) => unknown)(...args),
     pathExists: (path: string) => mockPathExists(path),
-    createDirectory: (...args: unknown[]) => mockCreateDirectory(...args),
-    writeFile: (...args: unknown[]) => mockWriteFile(...args),
-    readSkillContent: (...args: unknown[]) => mockReadSkillContent(...args),
-    readAgentContent: (...args: unknown[]) => mockReadAgentContent(...args),
-    executeSkillScript: (...args: unknown[]) => mockExecuteSkillScript(...args),
+    createDirectory: (...args: unknown[]) => (mockCreateDirectory as (...a: unknown[]) => unknown)(...args),
+    writeFile: (...args: unknown[]) => (mockWriteFile as (...a: unknown[]) => unknown)(...args),
+    readSkillContent: (...args: unknown[]) => (mockReadSkillContent as (...a: unknown[]) => unknown)(...args),
+    readAgentContent: (...args: unknown[]) => (mockReadAgentContent as (...a: unknown[]) => unknown)(...args),
+    executeSkillScript: (...args: unknown[]) => (mockExecuteSkillScript as (...a: unknown[]) => unknown)(...args),
   },
 }));
 
@@ -236,12 +236,12 @@ describe('useSkillDiscovery', () => {
       await new Promise((r) => setTimeout(r, 100));
     });
 
-    const skillDirs = scanSkills.mock.calls[0][0] as string[];
+    const skillDirs = (scanSkills.mock.calls as unknown as [string[]][])[0][0];
     expect(skillDirs).toContain('/Users/test/.notesage/skills');
     expect(skillDirs).toContain('/projects/alpha/.notesage/skills');
     expect(skillDirs).toContain('/projects/beta/.notesage/skills');
 
-    const agentDirs = scanAgents.mock.calls[0][0] as string[];
+    const agentDirs = (scanAgents.mock.calls as unknown as [string[]][])[0][0];
     expect(agentDirs).toContain('/Users/test/.notesage/agents');
     expect(agentDirs).toContain('/projects/alpha/.notesage/agents');
     expect(agentDirs).toContain('/projects/beta/.notesage/agents');
@@ -266,11 +266,11 @@ describe('useSkillDiscovery', () => {
       await new Promise((r) => setTimeout(r, 100));
     });
 
-    const skillDirs = scanSkills.mock.calls[0][0] as string[];
+    const skillDirs = (scanSkills.mock.calls as unknown as [string[]][])[0][0];
     expect(skillDirs).toContain('/Users/test/.claude/skills');
     expect(skillDirs).toContain('/Users/test/.codex/skills');
 
-    const agentDirs = scanAgents.mock.calls[0][0] as string[];
+    const agentDirs = (scanAgents.mock.calls as unknown as [string[]][])[0][0];
     expect(agentDirs).toContain('/Users/test/.claude/agents');
     expect(agentDirs).toContain('/Users/test/.codex/agents');
   });
@@ -296,7 +296,7 @@ describe('useSkillDiscovery', () => {
       await new Promise((r) => setTimeout(r, 100));
     });
 
-    const skillDirs = scanSkills.mock.calls[0][0] as string[];
+    const skillDirs = (scanSkills.mock.calls as unknown as [string[]][])[0][0];
     // Only the global dir, no provider-specific paths
     expect(skillDirs).toEqual(['/Users/test/.notesage/skills']);
   });
@@ -319,7 +319,7 @@ describe('useSkillDiscovery', () => {
       await new Promise((r) => setTimeout(r, 100));
     });
 
-    const skillDirs = scanSkills.mock.calls[0][0] as string[];
+    const skillDirs = (scanSkills.mock.calls as unknown as [string[]][])[0][0];
     const geminiCount = skillDirs.filter((d) => d === '/Users/test/.gemini/skills').length;
     const agentsCount = skillDirs.filter((d) => d === '/Users/test/.agents/skills').length;
     expect(geminiCount).toBe(1);
@@ -348,7 +348,7 @@ describe('useSkillDiscovery', () => {
       await new Promise((r) => setTimeout(r, 100));
     });
 
-    const agentDirs = scanAgents.mock.calls[0][0] as string[];
+    const agentDirs = (scanAgents.mock.calls as unknown as [string[]][])[0][0];
     expect(agentDirs).toContain('/Users/test/.github/agents');
   });
 
@@ -441,7 +441,7 @@ describe('useSkillDiscovery', () => {
       await new Promise((r) => setTimeout(r, 100));
     });
 
-    const skillDirs = scanSkills.mock.calls[0][0] as string[];
+    const skillDirs = (scanSkills.mock.calls as unknown as [string[]][])[0][0];
     // Should not include provider paths for disconnected connections
     expect(skillDirs).not.toContain('/Users/test/.claude/skills');
   });

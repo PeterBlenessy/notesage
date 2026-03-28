@@ -15,7 +15,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // localStorage without standard methods (setItem, getItem, clear, etc.).
 // ---------------------------------------------------------------------------
 
-const { localStorageMock, storageBacking } = vi.hoisted(() => {
+const { storageBacking } = vi.hoisted(() => {
   const storageBacking = new Map<string, string>();
   const localStorageMock: Storage = {
     getItem: (key: string) => storageBacking.get(key) ?? null,

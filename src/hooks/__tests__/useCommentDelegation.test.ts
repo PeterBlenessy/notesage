@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@/test/tauri-mock';
 import { renderHook, act } from '@testing-library/react';
-import { useCommentStore, type Comment, type DelegationMode } from '@/stores/comment-store';
+import { useCommentStore, type Comment } from '@/stores/comment-store';
 import { useChatStore } from '@/stores/chat-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useEditorStore } from '@/stores/editor-store';
@@ -84,16 +84,18 @@ function resetStores() {
       {
         id: 'tab-1',
         filePath: '/Users/test/project/notes/test.md',
-        title: 'test.md',
+        fileName: 'test.md',
         content: '',
-        dirty: false,
+        isDirty: false,
+        frontmatter: null,
+        fileType: 'markdown',
       },
     ],
     activeTabId: 'tab-1',
   });
 
   useWorkspaceStore.setState({
-    projects: [{ path: '/Users/test/project', name: 'Test Project' }],
+    projects: [{ path: '/Users/test/project', fileTree: [] }],
     explorerFolders: [],
   });
 }
@@ -274,12 +276,12 @@ describe('useCommentDelegation', () => {
       expect(activityCalls.length).toBeGreaterThanOrEqual(2);
 
       const sendingActivity = activityCalls.find(
-        (c: [string, { label: string }]) => c[1].label.includes('Sending to Claude Code')
+        (c: unknown[]) => (c[1] as { label: string }).label.includes('Sending to Claude Code')
       );
       expect(sendingActivity).toBeDefined();
 
       const sessionStarted = activityCalls.find(
-        (c: [string, { label: string }]) => c[1].label.includes('Agent session started')
+        (c: unknown[]) => (c[1] as { label: string }).label.includes('Agent session started')
       );
       expect(sessionStarted).toBeDefined();
     });
@@ -443,7 +445,7 @@ describe('useCommentDelegation', () => {
 
       // Error activity logged
       const errorActivity = addActivitySpy.mock.calls.find(
-        (c: [string, { label: string }]) => c[1].label.includes('Error: Connection timed out')
+        (c: unknown[]) => (c[1] as { label: string }).label.includes('Error: Connection timed out')
       );
       expect(errorActivity).toBeDefined();
 
@@ -483,7 +485,7 @@ describe('useCommentDelegation', () => {
       });
 
       const toolCallActivity = addActivitySpy.mock.calls.find(
-        (c: [string, { label: string }]) => c[1].label === 'Read file'
+        (c: unknown[]) => (c[1] as { label: string }).label === 'Read file'
       );
       expect(toolCallActivity).toBeDefined();
       expect(toolCallActivity![1].status).toBe('running');
@@ -561,7 +563,7 @@ describe('useCommentDelegation', () => {
 
       // Error activity logged
       const errorActivity = addActivitySpy.mock.calls.find(
-        (c: [string, { label: string }]) => c[1].label.includes('Spawn failed')
+        (c: unknown[]) => (c[1] as { label: string }).label.includes('Spawn failed')
       );
       expect(errorActivity).toBeDefined();
 
@@ -873,7 +875,7 @@ describe('useCommentDelegation', () => {
 
       // Activity should say no active task
       const noTaskActivity = addActivitySpy.mock.calls.find(
-        (c: [string, { label: string }]) => c[1].label.includes('no active task')
+        (c: unknown[]) => (c[1] as { label: string }).label.includes('no active task')
       );
       expect(noTaskActivity).toBeDefined();
     });
@@ -1111,12 +1113,12 @@ describe('useCommentDelegation', () => {
     it('uses project path when file is within a project', async () => {
       useEditorStore.setState({
         tabs: [
-          { id: 'tab-1', filePath: '/Users/test/project/notes/test.md', title: 'test.md', content: '', dirty: false },
+          { id: 'tab-1', filePath: '/Users/test/project/notes/test.md', fileName: 'test.md', content: '', isDirty: false, frontmatter: null, fileType: 'markdown' as const },
         ],
         activeTabId: 'tab-1',
       });
       useWorkspaceStore.setState({
-        projects: [{ path: '/Users/test/project', name: 'Test Project' }],
+        projects: [{ path: '/Users/test/project', fileTree: [] }],
         explorerFolders: [],
       });
 
@@ -1147,7 +1149,7 @@ describe('useCommentDelegation', () => {
     it('falls back to provided projectRoot when file is not in any project or explorer folder', async () => {
       useEditorStore.setState({
         tabs: [
-          { id: 'tab-1', filePath: '/tmp/random/file.md', title: 'file.md', content: '', dirty: false },
+          { id: 'tab-1', filePath: '/tmp/random/file.md', fileName: 'file.md', content: '', isDirty: false, frontmatter: null, fileType: 'markdown' as const },
         ],
         activeTabId: 'tab-1',
       });

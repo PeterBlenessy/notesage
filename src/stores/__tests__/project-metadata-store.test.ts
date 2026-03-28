@@ -121,7 +121,7 @@ describe('setMetadata', () => {
   });
 
   it('clears dirty flag for the path', () => {
-    const { setMetadata, updateMetadata } = useProjectMetadataStore.getState();
+    const { setMetadata } = useProjectMetadataStore.getState();
     setMetadata('/path/a', makeMetadata());
     // Make it dirty
     useProjectMetadataStore.getState().updateMetadata('/path/a', { name: 'Changed' });
@@ -148,7 +148,7 @@ describe('getMetadata', () => {
 
 describe('removeMetadata', () => {
   it('deletes metadata for a path', () => {
-    const { setMetadata, removeMetadata, getMetadata } = useProjectMetadataStore.getState();
+    const { setMetadata, removeMetadata } = useProjectMetadataStore.getState();
     setMetadata('/path/a', makeMetadata());
     removeMetadata('/path/a');
 

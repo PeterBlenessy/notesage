@@ -128,8 +128,7 @@ function resetStores() {
   useActivityStore.setState({ tasks: [], isManuallyHidden: false });
   useChatStore.setState({ conversations: [], activeConversationId: null });
   usePermissionStore.setState({
-    alwaysAllowed: {},
-    alwaysAllowedDomains: {},
+    alwaysAllowed: [],
     domainSessionAllowed: {},
     domainAlwaysAllowed: {},
   });

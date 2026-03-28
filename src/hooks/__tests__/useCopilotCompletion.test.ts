@@ -68,7 +68,7 @@ const mockNotifyCompletionAccepted = _notifyCompletionAccepted as ReturnType<typ
 function makeAgentManagedConnection(overrides: Partial<Connection> = {}): Connection {
   return {
     id: 'conn-copilot-lsp',
-    provider: 'github_copilot_lsp',
+    provider: 'github',
     authMethod: 'agent_managed',
     status: 'connected',
     label: 'Copilot LSP',
@@ -86,7 +86,7 @@ function makeApiKeyConnection(overrides: Partial<Connection> = {}): Connection {
     authMethod: 'local',
     status: 'connected',
     label: 'Ollama Local',
-    credentials: { type: 'local' },
+    credentials: { type: 'local', url: 'http://localhost:11434' },
     capabilities: ['inline_completion', 'interactive'],
     createdAt: Date.now(),
     ...overrides,
@@ -700,7 +700,7 @@ describe('useCopilotCompletion', () => {
         await vi.runAllTimersAsync();
       });
 
-      mockSetGhostText.mockClear();
+      vi.mocked(mockSetGhostText).mockClear();
 
       // Trigger editor update
       act(() => {
@@ -737,7 +737,7 @@ describe('useCopilotCompletion', () => {
         await vi.runAllTimersAsync();
       });
 
-      mockClearGhostText.mockClear();
+      vi.mocked(mockClearGhostText).mockClear();
 
       // Trigger editor update
       act(() => {
@@ -903,7 +903,7 @@ describe('useCopilotCompletion', () => {
         await vi.runAllTimersAsync();
       });
 
-      mockClearGhostText.mockClear();
+      vi.mocked(mockClearGhostText).mockClear();
 
       // Switch to tab 2
       act(() => {
@@ -936,7 +936,7 @@ describe('useCopilotCompletion', () => {
         await vi.runAllTimersAsync();
       });
 
-      mockClearGhostText.mockClear();
+      vi.mocked(mockClearGhostText).mockClear();
 
       // Disable completions
       act(() => {

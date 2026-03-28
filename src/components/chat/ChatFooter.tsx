@@ -4,7 +4,6 @@ import { toast } from 'sonner';
 import { AgentIcon } from '@/components/AgentIcon';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { useChatStore, selectPendingProjectSwitch, selectPendingAgentSwitch } from '@/stores/chat-store';
-import { useAIStore } from '@/stores/ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -40,7 +39,6 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
   const setSelectedProjectPaths = useChatStore((s) => s.setSelectedProjectPaths);
   const toggleProjectPath = useChatStore((s) => s.toggleProjectPath);
 
-  const legacyProvider = useAIStore((s) => s.provider);
   const agents = useSkillStore((s) => s.agents);
   const agentEnabledOverrides = useSkillStore((s) => s.agentEnabledOverrides);
   const activeAgentName = useSkillStore((s) => s.activeAgentName);
@@ -63,8 +61,6 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
     return allConnections.find((c) => c.id === projectProviderOverride) ?? null;
   }, [projectProviderOverride, allConnections]);
   const effectiveConnection = projectOverrideConnection ?? interactiveConnection;
-  const effectiveProviderType = effectiveConnection?.provider || legacyProvider;
-  const isAcpConnection = effectiveConnection?.authMethod === 'agent_managed';
   const hasProjectOverride = !!projectOverrideConnection;
 
   const { goalFiles } = useGoalsDiscovery(singleProjectPath);

@@ -235,9 +235,9 @@ describe('useLocalCompletion', () => {
     it('does NOT activate for agent_managed connection', () => {
       const conn = makeConnection({
         id: 'conn-acp',
-        provider: 'claude_code',
+        provider: 'anthropic',
         authMethod: 'agent_managed',
-        credentials: { type: 'agent_managed' },
+        credentials: { type: 'agent_managed', agentBinary: 'claude-agent-acp' },
       } as Partial<Connection>);
       setupRouting(conn);
       const editor = makeMockEditor();

@@ -10,7 +10,7 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useExternalChangeStore } from '@/stores/external-change-store';
 import { useDiffReviewStore } from '@/stores/diff-review-store';
 import { useMcpStore } from '@/stores/mcp-store';
-import { useSyncStore } from '@/stores/sync-store';
+// useSyncStore imported by module under test
 
 // ---------------------------------------------------------------------------
 // Module mocks
