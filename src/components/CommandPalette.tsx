@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, useLayoutEffect } from "react";
 import {
   File,
   FilePlus,
@@ -136,13 +136,17 @@ export function CommandPalette({
 
     setResearchSearching(true);
     if (researchSearchTimerRef.current) clearTimeout(researchSearchTimerRef.current);
+    const researchStartTotal = performance.now();
     researchSearchTimerRef.current = setTimeout(async () => {
       researchSearchTimerRef.current = null;
       try {
         const paths = getSearchPaths();
         const q = query.trim();
+        const ipcStart = performance.now();
         const results = await tauriApi.indexSearchResearch(paths, q || undefined, undefined, 50);
+        console.log('[perf:palette] ipc', { mode: 'research' as const, ms: Math.round(performance.now() - ipcStart) });
         setResearchResults(results);
+        console.log('[perf:palette]', { mode: 'research' as const, query: q, resultCount: results.length, ms: Math.round(performance.now() - researchStartTotal) });
       } catch (error) {
         console.error("Failed to search research:", error);
         setResearchResults([]);
@@ -177,13 +181,17 @@ export function CommandPalette({
 
     setContentSearching(true);
     if (contentSearchTimerRef.current) clearTimeout(contentSearchTimerRef.current);
+    const contentStartTotal = performance.now();
     contentSearchTimerRef.current = setTimeout(async () => {
       contentSearchTimerRef.current = null;
       try {
         const searchPaths = getSearchPaths();
         if (searchPaths.length > 0) {
+          const ipcStart = performance.now();
           const matches = await tauriApi.indexSearchContent(searchPaths, q, 50);
+          console.log('[perf:palette] ipc', { mode: 'files' as const, ms: Math.round(performance.now() - ipcStart) });
           setContentMatches(matches);
+          console.log('[perf:palette]', { mode: 'files' as const, query: q, resultCount: matches.length, ms: Math.round(performance.now() - contentStartTotal) });
         } else {
           setContentMatches([]);
         }
@@ -362,6 +370,30 @@ export function CommandPalette({
     if (!nextOpen) setInput("");
     onOpenChange(nextOpen);
   }, [onOpenChange]);
+
+  // --- Perf: measure synchronous filter time for non-IPC modes ---
+  const perfFilterStart = useRef<number>(0);
+  const prevModeQuery = useRef<string>("");
+
+  // Capture start time when mode or query changes (synchronous modes only)
+  useEffect(() => {
+    const key = `${mode}:${query}`;
+    if (key !== prevModeQuery.current) {
+      prevModeQuery.current = key;
+      if (mode === "default" || mode === "commands" || mode === "files") {
+        perfFilterStart.current = performance.now();
+      }
+    }
+  }, [mode, query]);
+
+  // Log after render for synchronous modes
+  useLayoutEffect(() => {
+    if (perfFilterStart.current > 0 && (mode === "default" || mode === "commands")) {
+      const resultCount = mode === "commands" ? filteredActions.length : filteredFiles.length + recentFiles.length + actions.length;
+      console.log('[perf:palette]', { mode, query, resultCount, ms: Math.round(performance.now() - perfFilterStart.current) });
+      perfFilterStart.current = 0;
+    }
+  }, [mode, query, filteredActions, filteredFiles, recentFiles, actions]);
 
   // --- Empty state text ---
   const emptyText = useMemo(() => {

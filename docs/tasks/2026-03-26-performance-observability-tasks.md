@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-26 |
-| **Status** | Not started |
+| **Status** | In progress |
 | **PRD** | [performance-observability](../prds/2026-03-26-performance-observability.md) |
 | **Total** | 16 tasks: 6S, 6M, 4L |
 | **Suggested order** | Instrumentation (#1-#9) → Benchmark infra (#10-#11) → Benchmark tests (#12-#14) → Baseline (#15) → CI (#16) |
@@ -18,7 +18,7 @@
 
 ## Phase 1: Instrumentation
 
-### #1 — Instrument app startup
+### #1 — Instrument app startup ✅
 
 **Description:** Add `perf:startup` logs to `useAppLifecycle.ts`. Capture `performance.now()` at the start of `reloadTrees()`, then log after each major step: tree validation complete (`{ projects, folders, totalFiles, ms }`), index init per project (`{ project, fileCount, ms }`), tabs restored (`{ tabCount, activeTab, ms }`), and `startupReady=true` (`{ totalMs }`). Also log the tab restoration step in `restorePersistedTabs()`.
 
@@ -28,7 +28,7 @@
 
 ---
 
-### #2 — Instrument file save
+### #2 — Instrument file save ✅
 
 **Description:** Add `perf:save` logs to `useFileOperations.ts`. In `saveFile()`, measure: markdown serialization time (time to call `serializeFrontmatter` + content prep), Tauri write time (time for `tauriApi.writeFile`), and total. Log `{ file, sizeKB, serializeMs, writeMs, totalMs }`.
 
@@ -38,7 +38,7 @@
 
 ---
 
-### #3 — Instrument file tree loading
+### #3 — Instrument file tree loading ✅
 
 **Description:** Add `perf:tree` logs to `workspace-store.ts` and `useFileOperations.ts`. In `refreshFileTree()` and the store's tree-update actions, measure time for each `tauriApi.listDirectory()` call. Log `{ path, fileCount, ms }` where `path` is the last path segment (not full path). Also log the total tree refresh: `{ sections, totalFiles, ms }`.
 
@@ -48,7 +48,7 @@
 
 ---
 
-### #4 — Instrument find in document
+### #4 — Instrument find in document ✅
 
 **Description:** Add `perf:find` logs to `search-highlight.ts`. In the `findMatches()` function, measure time to walk the document and build the match list. Log `{ query, matchCount, docNodes, ms }` where `docNodes` is `doc.nodeSize`. Only log when query is non-empty (skip empty-query clears).
 
@@ -58,7 +58,7 @@
 
 ---
 
-### #5 — Instrument editor typing (decoration plugins)
+### #5 — Instrument editor typing (decoration plugins) ✅
 
 **Description:** Add `perf:typing` logs to the `apply()` method of the 3 heaviest decoration plugins: `TagHighlight`, `SearchHighlight`, and `CommentMark`. Only log when `tr.docChanged` is true (skip selection-only transactions). Log `{ plugin, docNodes, decorationCount, ms }`. Use a sampling strategy: only log every 10th keystroke to avoid console spam (use a module-level counter). Verify overhead is &lt;1ms on a 50KB document.
 
@@ -68,7 +68,7 @@
 
 ---
 
-### #6 — Instrument command palette
+### #6 — Instrument command palette ✅
 
 **Description:** Add `perf:palette` logs to `CommandPalette.tsx`. Measure time from mode change or query change to results rendered. Log `{ mode, query, resultCount, ms }` where `mode` is "files", "tags", "mentions", "commands", or "research". For index-backed modes (tags, mentions, research), measure the Tauri IPC call time separately.
 
@@ -78,7 +78,7 @@
 
 ---
 
-### #7 — Instrument AI chat streaming
+### #7 — Instrument AI chat streaming ✅
 
 **Description:** Add `perf:ai-chat` logs to `useDirectApiChat.ts`. Capture `performance.now()` when `sendChatMessage` is called. Log "First token" when the first `ai-stream-chunk` event arrives (`{ provider, ms }`). Log "Stream complete" when `ai-stream-done` fires (`{ provider, totalTokens, ms }`). For ACP path, add equivalent logs around `acp_session_prompt`.
 
@@ -88,7 +88,7 @@
 
 ---
 
-### #8 — Instrument skill/agent discovery
+### #8 — Instrument skill/agent discovery ✅
 
 **Description:** Add `perf:skills` logs to `useSkillOperations.ts`. Measure the full discovery pipeline: bundled extraction, skill scanning, agent scanning, instruction scanning. Log individual steps (`{ step, ms }`) and the total (`{ skillCount, agentCount, totalMs }`).
 
@@ -98,7 +98,7 @@
 
 ---
 
-### #9 — Instrument document index (Rust backend)
+### #9 — Instrument document index (Rust backend) ✅
 
 **Description:** Add timing logs to `src-tauri/src/index/mod.rs` for index build and query operations. Use `std::time::Instant` to measure `build_index()` per project and each query function. Log via Rust's `log::debug!` macro (already configured). Log `[perf:index] build: project={} files={} ms={}` and `[perf:index] query: type={} results={} ms={}`.
 

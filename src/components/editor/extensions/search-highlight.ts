@@ -8,6 +8,8 @@ import type { Editor } from "@tiptap/core";
 
 export const SearchPluginKey = new PluginKey("searchHighlight");
 
+let searchHighlightCounter = 0;
+
 interface SearchState {
   query: string;
   matches: { from: number; to: number }[];
@@ -19,6 +21,7 @@ const EMPTY_STATE: SearchState = { query: "", matches: [], currentIndex: -1 };
 function findMatches(doc: PMNode, query: string): { from: number; to: number }[] {
   if (!query) return [];
 
+  const t0 = performance.now();
   const matches: { from: number; to: number }[] = [];
   const lowerQuery = query.toLowerCase();
 
@@ -37,6 +40,13 @@ function findMatches(doc: PMNode, query: string): { from: number; to: number }[]
       matches.push({ from: pos + idx, to: pos + idx + query.length });
       searchFrom = idx + 1;
     }
+  });
+
+  console.log('[perf:find]', {
+    query,
+    matchCount: matches.length,
+    docNodes: doc.nodeSize,
+    ms: Math.round(performance.now() - t0),
   });
 
   return matches;
@@ -124,6 +134,7 @@ export const SearchHighlight = Extension.create({
 
             // If document changed, re-run matches with the current query
             if (tr.docChanged && value.search.query) {
+              const t0 = performance.now();
               const matches = findMatches(tr.doc, value.search.query);
               // Try to keep currentIndex valid
               let currentIndex = value.search.currentIndex;
@@ -131,10 +142,20 @@ export const SearchHighlight = Extension.create({
                 currentIndex = matches.length > 0 ? 0 : -1;
               }
               const search = { ...value.search, matches, currentIndex };
-              return {
+              const result = {
                 search,
                 decorations: buildDecorations(tr.doc, search),
               };
+              searchHighlightCounter++;
+              if (searchHighlightCounter % 10 === 0) {
+                console.log('[perf:typing]', {
+                  plugin: 'SearchHighlight',
+                  docNodes: tr.doc.nodeSize,
+                  decorationCount: matches.length,
+                  ms: Math.round(performance.now() - t0),
+                });
+              }
+              return result;
             }
 
             return value;

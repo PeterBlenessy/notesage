@@ -5,7 +5,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useSyncStore } from "@/stores/sync-store";
 import { useEditorStylesStore } from "@/stores/editor-styles-store";
 import { useChatStore } from "@/stores/chat-store";
-import { tauriApi } from "@/lib/tauri";
+import { tauriApi, type FileEntry } from "@/lib/tauri";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { setBinaryData } from "@/lib/binary-cache";
@@ -187,6 +187,7 @@ export function useAppLifecycle({ onOpenPalette }: UseAppLifecycleOptions) {
  * Quick Notes, SQLite index, and re-opens persisted tabs.
  */
 async function reloadTrees() {
+  const t0 = performance.now();
   const ws = useWorkspaceStore.getState();
   const settings = useSettingsStore.getState();
 
@@ -205,6 +206,7 @@ async function reloadTrees() {
 
   // Kick off tab restoration early — file reads run concurrently with
   // tree validation, iCloud scanning, and index init below.
+  const tTabs0 = performance.now();
   const tabRestorePromise = restorePersistedTabs();
 
   // Reload explorer folder trees (remove invalid ones)
@@ -235,6 +237,17 @@ async function reloadTrees() {
       ws.removeProject(project.path);
       toast.warning(`Project "${projectName}" was removed — directory no longer exists`);
     }
+  }
+
+  {
+    const wsNow = useWorkspaceStore.getState();
+    const totalFiles = wsNow.explorerFolders.length + wsNow.projects.length;
+    console.log('[perf:startup] trees validated', {
+      projects: wsNow.projects.length,
+      folders: wsNow.explorerFolders.length,
+      totalFiles,
+      ms: Math.round(performance.now() - t0),
+    });
   }
 
   // Ensure notes directory exists
@@ -322,19 +335,40 @@ async function reloadTrees() {
 
   // Initialize the SQLite document index
   try {
+    const tIndex0 = performance.now();
     await tauriApi.indexInit();
-    for (const project of useWorkspaceStore.getState().projects) {
+    const projectsForIndex = useWorkspaceStore.getState().projects;
+    for (const project of projectsForIndex) {
+      const tProjectIndex0 = performance.now();
       await tauriApi.indexInit(project.path);
+      const projectTree = useWorkspaceStore.getState().projects.find(p => p.path === project.path);
+      const fileCount = countFiles(projectTree?.fileTree);
+      console.log('[perf:startup] index init', {
+        project: project.path,
+        fileCount,
+        ms: Math.round(performance.now() - tProjectIndex0),
+      });
     }
+    console.log('[perf:startup] index init total', {
+      ms: Math.round(performance.now() - tIndex0),
+    });
   } catch (error) {
     log.error("lifecycle", "Failed to initialize index", error);
   }
 
   // Signal that startup tree validation is complete
   settings.setStartupReady(true);
+  console.log('[perf:startup] ready', { totalMs: Math.round(performance.now() - t0) });
 
   // Wait for tab restoration (started earlier, runs concurrently with above)
   await tabRestorePromise;
+  const editorState = useEditorStore.getState();
+  const activeTabForLog = editorState.tabs.find(t => t.id === editorState.activeTabId);
+  console.log('[perf:startup] tabs restored', {
+    tabCount: editorState.tabs.length,
+    activeTab: activeTabForLog?.filePath ?? null,
+    ms: Math.round(performance.now() - tTabs0),
+  });
 }
 
 /**
@@ -384,5 +418,19 @@ async function restorePersistedTabs() {
   }
 
   // Phase 2: Background tabs load on demand when the user clicks them.
+}
+
+/** Recursively count files (non-directories) in a FileEntry tree. */
+function countFiles(entries: FileEntry[] | undefined): number {
+  if (!entries) return 0;
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.is_directory) {
+      count += countFiles(entry.children);
+    } else {
+      count += 1;
+    }
+  }
+  return count;
 }
 

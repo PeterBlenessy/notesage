@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { tauriApi } from "@/lib/tauri";
+import { tauriApi, type FileEntry } from "@/lib/tauri";
 import { useEditorStore, type ScrollToTag } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -11,6 +11,19 @@ import { migrateProjectPath } from "@/lib/migrate-project-path";
 import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { setBinaryData } from "@/lib/binary-cache";
 import { toast } from "sonner";
+
+/** Recursively count files in a FileEntry tree. */
+function countFiles(entries: FileEntry[]): number {
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.is_directory) {
+      if (entry.children) count += countFiles(entry.children);
+    } else {
+      count += 1;
+    }
+  }
+  return count;
+}
 
 /** Debounced git status refresh per repo. Each repo gets its own timer. */
 const repoRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -93,8 +106,11 @@ export function useFileOperations() {
   const { openTab, markTabClean } = useEditorStore();
 
   const refreshFileTree = useCallback(async (targetPath?: string) => {
+    const refreshStart = performance.now();
     const ws = useWorkspaceStore.getState();
     const settings = useSettingsStore.getState();
+    let sections = 0;
+    let totalFiles = 0;
 
     // If a specific path is given, determine which section to refresh
     if (targetPath) {
@@ -102,7 +118,14 @@ export function useFileOperations() {
       for (const folder of ws.explorerFolders) {
         if (targetPath.startsWith(folder.path)) {
           try {
+            const t0 = performance.now();
             const tree = await tauriApi.listDirectory(folder.path);
+            const ms = Math.round(performance.now() - t0);
+            const fileCount = countFiles(tree);
+            const path = folder.path.split('/').pop() ?? folder.path;
+            console.log('[perf:tree] list', { path, fileCount, ms });
+            totalFiles += fileCount;
+            sections += 1;
             ws.updateExplorerTree(folder.path, tree);
           } catch (error) {
             console.error("Failed to refresh explorer tree:", error);
@@ -114,7 +137,14 @@ export function useFileOperations() {
       for (const project of ws.projects) {
         if (targetPath.startsWith(project.path)) {
           try {
+            const t0 = performance.now();
             const tree = await tauriApi.listDirectory(project.path);
+            const ms = Math.round(performance.now() - t0);
+            const fileCount = countFiles(tree);
+            const path = project.path.split('/').pop() ?? project.path;
+            console.log('[perf:tree] list', { path, fileCount, ms });
+            totalFiles += fileCount;
+            sections += 1;
             ws.updateProjectTree(project.path, tree);
           } catch (error) {
             console.error("Failed to refresh project tree:", error);
@@ -130,15 +160,25 @@ export function useFileOperations() {
         (icloudPath && targetPath.startsWith(icloudPath))
       ) {
         await refreshNotesTree();
+        sections += 1;
       }
 
+      const ms = Math.round(performance.now() - refreshStart);
+      console.log('[perf:tree] refresh', { sections, totalFiles, ms });
       return;
     }
 
     // No target path: refresh everything that's open
     for (const folder of ws.explorerFolders) {
       try {
+        const t0 = performance.now();
         const tree = await tauriApi.listDirectory(folder.path);
+        const ms = Math.round(performance.now() - t0);
+        const fileCount = countFiles(tree);
+        const path = folder.path.split('/').pop() ?? folder.path;
+        console.log('[perf:tree] list', { path, fileCount, ms });
+        totalFiles += fileCount;
+        sections += 1;
         ws.updateExplorerTree(folder.path, tree);
       } catch (error) {
         console.error("Failed to refresh explorer tree:", error);
@@ -147,7 +187,14 @@ export function useFileOperations() {
 
     for (const project of ws.projects) {
       try {
+        const t0 = performance.now();
         const tree = await tauriApi.listDirectory(project.path);
+        const ms = Math.round(performance.now() - t0);
+        const fileCount = countFiles(tree);
+        const path = project.path.split('/').pop() ?? project.path;
+        console.log('[perf:tree] list', { path, fileCount, ms });
+        totalFiles += fileCount;
+        sections += 1;
         ws.updateProjectTree(project.path, tree);
       } catch {
         // Expected: project path no longer exists — check if it was renamed
@@ -165,6 +212,10 @@ export function useFileOperations() {
     }
 
     await refreshNotesTree();
+    sections += 1;
+
+    const ms = Math.round(performance.now() - refreshStart);
+    console.log('[perf:tree] refresh', { sections, totalFiles, ms });
   }, []);
 
   const openFile = useCallback(
@@ -222,11 +273,20 @@ export function useFileOperations() {
   const saveFile = useCallback(
     async (filePath: string, content: string, tabId: string) => {
       try {
+        const saveStart = performance.now();
         const tab = useEditorStore.getState().tabs.find((t) => t.id === tabId);
         const frontmatter = tab?.frontmatter ?? null;
+        const serializeStart = performance.now();
         const raw = serializeFrontmatter(frontmatter, content);
+        const serializeMs = Math.round(performance.now() - serializeStart);
         await tauriApi.markSelfWrite(filePath);
+        const writeStart = performance.now();
         await tauriApi.writeFile(filePath, raw);
+        const writeMs = Math.round(performance.now() - writeStart);
+        const totalMs = Math.round(performance.now() - saveStart);
+        const file = filePath.split('/').pop() ?? filePath;
+        const sizeKB = Math.round(raw.length / 1024 * 10) / 10;
+        console.log('[perf:save]', { file, sizeKB, serializeMs, writeMs, totalMs });
         markTabClean(tabId, content);
         useEditorStore.getState().clearExternalChange(filePath);
         refreshGitForPath(filePath);

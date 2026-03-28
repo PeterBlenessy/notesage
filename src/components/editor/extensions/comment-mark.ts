@@ -22,6 +22,8 @@ interface CommentMarkState {
 
 export const CommentMarkPluginKey = new PluginKey('commentMark');
 
+let commentMarkCounter = 0;
+
 export const CommentMark = Extension.create({
   name: 'commentMark',
 
@@ -72,6 +74,7 @@ export const CommentMark = Extension.create({
 
             // Remap through document changes
             if (tr.docChanged && (value.comments.length > 0 || value.pendingRange)) {
+              const t0 = performance.now();
               const mapped = value.comments.map((c) => ({
                 ...c,
                 from: tr.mapping.map(c.from, 1),
@@ -88,6 +91,15 @@ export const CommentMark = Extension.create({
               }
 
               const decorations = buildDecorations(newState.doc, mapped, value.activeCommentId, pending);
+              commentMarkCounter++;
+              if (commentMarkCounter % 10 === 0) {
+                console.log('[perf:typing]', {
+                  plugin: 'CommentMark',
+                  docNodes: newState.doc.nodeSize,
+                  decorationCount: mapped.length + (pending ? 1 : 0),
+                  ms: Math.round(performance.now() - t0),
+                });
+              }
               return { comments: mapped, decorations, activeCommentId: value.activeCommentId, pendingRange: pending };
             }
 

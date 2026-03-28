@@ -360,6 +360,7 @@ fn reindex_directory(
     project_path: Option<&str>,
     app: Option<&AppHandle>,
 ) -> Result<IndexStats, String> {
+    let start = Instant::now();
     let dir_path = Path::new(dir);
     let mut files = Vec::new();
     scan_files(dir_path, &mut files);
@@ -390,6 +391,14 @@ fn reindex_directory(
 
     // Prune files that no longer exist on disk
     prune_deleted_files(conn)?;
+
+    let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+    let project_name = project_path.unwrap_or("global");
+    log::debug!(
+        target: "notesage::index",
+        "[perf:index] build: project={} files={} changed={} ms={:.1}",
+        project_name, total, changed, elapsed_ms
+    );
 
     log::info!(
         target: "notesage::index",
@@ -568,6 +577,7 @@ pub async fn index_tags(
     project_paths: Vec<String>,
     query: Option<String>,
 ) -> Result<Vec<IndexedTag>, String> {
+    let start = Instant::now();
     let mut all_tags: HashMap<String, usize> = HashMap::new();
 
     let tags_per_db = with_dbs(&state, &project_paths, |conn| {
@@ -585,6 +595,12 @@ pub async fn index_tags(
         .collect();
     result.sort_by(|a, b| b.file_count.cmp(&a.file_count).then(a.tag.cmp(&b.tag)));
 
+    log::debug!(
+        target: "notesage::index",
+        "[perf:index] query: type=tags results={} ms={:.1}",
+        result.len(), start.elapsed().as_secs_f64() * 1000.0
+    );
+
     Ok(result)
 }
 
@@ -595,9 +611,16 @@ pub async fn index_tag_occurrences(
     tag: String,
     project_paths: Vec<String>,
 ) -> Result<Vec<TagOccurrence>, String> {
-    with_dbs(&state, &project_paths, |conn| {
+    let start = Instant::now();
+    let result = with_dbs(&state, &project_paths, |conn| {
         queries::query_tag_occurrences(conn, &tag)
-    })
+    })?;
+    log::debug!(
+        target: "notesage::index",
+        "[perf:index] query: type=tag_occurrences results={} ms={:.1}",
+        result.len(), start.elapsed().as_secs_f64() * 1000.0
+    );
+    Ok(result)
 }
 
 /// Query mentions across projects.
@@ -607,6 +630,7 @@ pub async fn index_mentions(
     project_paths: Vec<String>,
     query: Option<String>,
 ) -> Result<Vec<IndexedMention>, String> {
+    let start = Instant::now();
     let mut all_mentions: HashMap<String, usize> = HashMap::new();
 
     let mentions_per_db = with_dbs(&state, &project_paths, |conn| {
@@ -623,6 +647,12 @@ pub async fn index_mentions(
         .collect();
     result.sort_by(|a, b| b.file_count.cmp(&a.file_count).then(a.mention.cmp(&b.mention)));
 
+    log::debug!(
+        target: "notesage::index",
+        "[perf:index] query: type=mentions results={} ms={:.1}",
+        result.len(), start.elapsed().as_secs_f64() * 1000.0
+    );
+
     Ok(result)
 }
 
@@ -633,9 +663,16 @@ pub async fn index_mention_occurrences(
     mention: String,
     project_paths: Vec<String>,
 ) -> Result<Vec<TagOccurrence>, String> {
-    with_dbs(&state, &project_paths, |conn| {
+    let start = Instant::now();
+    let result = with_dbs(&state, &project_paths, |conn| {
         queries::query_mention_occurrences(conn, &mention)
-    })
+    })?;
+    log::debug!(
+        target: "notesage::index",
+        "[perf:index] query: type=mention_occurrences results={} ms={:.1}",
+        result.len(), start.elapsed().as_secs_f64() * 1000.0
+    );
+    Ok(result)
 }
 
 /// Search research files across projects.
@@ -647,10 +684,17 @@ pub async fn index_search_research(
     tag: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<ResearchResult>, String> {
+    let start = Instant::now();
     let lim = limit.unwrap_or(50);
-    with_dbs(&state, &project_paths, |conn| {
+    let result = with_dbs(&state, &project_paths, |conn| {
         queries::query_research(conn, query.as_deref(), tag.as_deref(), lim)
-    })
+    })?;
+    log::debug!(
+        target: "notesage::index",
+        "[perf:index] query: type=search_research results={} ms={:.1}",
+        result.len(), start.elapsed().as_secs_f64() * 1000.0
+    );
+    Ok(result)
 }
 
 /// Query tasks across projects.
@@ -662,10 +706,17 @@ pub async fn index_tasks(
     query: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<IndexedTask>, String> {
+    let start = Instant::now();
     let lim = limit.unwrap_or(500);
-    with_dbs(&state, &project_paths, |conn| {
+    let result = with_dbs(&state, &project_paths, |conn| {
         queries::query_tasks(conn, done, query.as_deref(), lim)
-    })
+    })?;
+    log::debug!(
+        target: "notesage::index",
+        "[perf:index] query: type=tasks results={} ms={:.1}",
+        result.len(), start.elapsed().as_secs_f64() * 1000.0
+    );
+    Ok(result)
 }
 
 /// Toggle a task's completion status via context-based matching.
@@ -718,7 +769,14 @@ pub async fn index_goals(
     state: tauri::State<'_, IndexState>,
     project_paths: Vec<String>,
 ) -> Result<Vec<IndexedGoal>, String> {
-    with_dbs(&state, &project_paths, |conn| queries::query_goals(conn))
+    let start = Instant::now();
+    let result = with_dbs(&state, &project_paths, |conn| queries::query_goals(conn))?;
+    log::debug!(
+        target: "notesage::index",
+        "[perf:index] query: type=goals results={} ms={:.1}",
+        result.len(), start.elapsed().as_secs_f64() * 1000.0
+    );
+    Ok(result)
 }
 
 /// Full-text content search across projects.
@@ -729,10 +787,17 @@ pub async fn index_search_content(
     query: String,
     limit: Option<usize>,
 ) -> Result<Vec<ContentSearchResult>, String> {
+    let start = Instant::now();
     let lim = limit.unwrap_or(50);
-    with_dbs(&state, &project_paths, |conn| {
+    let result = with_dbs(&state, &project_paths, |conn| {
         queries::query_content(conn, &query, lim)
-    })
+    })?;
+    log::debug!(
+        target: "notesage::index",
+        "[perf:index] query: type=search_content results={} ms={:.1}",
+        result.len(), start.elapsed().as_secs_f64() * 1000.0
+    );
+    Ok(result)
 }
 
 /// Get index statistics.

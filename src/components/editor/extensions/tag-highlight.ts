@@ -7,6 +7,8 @@ const TAG_RE = /(?:^|(?:[^\w]))#([a-zA-Z][a-zA-Z0-9_-]*)/g;
 
 export const TagHighlightPluginKey = new PluginKey("tagHighlight");
 
+let tagHighlightCounter = 0;
+
 function buildTagDecorations(doc: PMNode): DecorationSet {
   const decorations: Decoration[] = [];
 
@@ -56,7 +58,18 @@ export const TagHighlight = Extension.create({
           },
           apply(tr, value) {
             if (!tr.docChanged) return value;
-            return buildTagDecorations(tr.doc);
+            const t0 = performance.now();
+            const result = buildTagDecorations(tr.doc);
+            tagHighlightCounter++;
+            if (tagHighlightCounter % 10 === 0) {
+              console.log('[perf:typing]', {
+                plugin: 'TagHighlight',
+                docNodes: tr.doc.nodeSize,
+                decorationCount: (result as DecorationSet).find().length,
+                ms: Math.round(performance.now() - t0),
+              });
+            }
+            return result;
           },
         },
         props: {

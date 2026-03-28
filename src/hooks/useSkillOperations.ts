@@ -202,6 +202,7 @@ export function useSkillDiscovery() {
 
     const run = async () => {
       log.info('skills', 'Starting skill/agent discovery pipeline');
+      const pipelineStart = performance.now();
 
       // Extract bundled skills and agents once per session (on startup).
       // Rescans triggered by connection/project changes skip extraction to
@@ -209,6 +210,7 @@ export function useSkillDiscovery() {
       let skillsExtracted = false;
       let agentsExtracted = false;
       if (!bundledExtracted) {
+        let stepStart = performance.now();
         try {
           const skillsPath = await tauriApi.extractBundledSkills();
           skillsExtracted = true;
@@ -217,6 +219,9 @@ export function useSkillDiscovery() {
           log.error('skills', 'Failed to extract bundled skills', e);
           toast.error('Failed to extract bundled skills. Check logs for details.');
         }
+        console.log('[perf:skills]', { step: 'bundled-skills-extract', ms: Math.round(performance.now() - stepStart) });
+
+        stepStart = performance.now();
         try {
           const agentsPath = await tauriApi.extractBundledAgents();
           agentsExtracted = true;
@@ -225,6 +230,8 @@ export function useSkillDiscovery() {
           log.error('skills', 'Failed to extract bundled agents', e);
           toast.error('Failed to extract bundled agents. Check logs for details.');
         }
+        console.log('[perf:skills]', { step: 'bundled-agents-extract', ms: Math.round(performance.now() - stepStart) });
+
         bundledExtracted = true;
       }
 
@@ -265,9 +272,11 @@ export function useSkillDiscovery() {
 
       // Scan skills
       log.info('skills', `Scanning skills in ${baseDirs.length} directories`);
+      let stepStart = performance.now();
       await useSkillStore.getState().scanSkills(baseDirs);
       const skillCount = useSkillStore.getState().skills.length;
       log.info('skills', `Discovered ${skillCount} skills`);
+      console.log('[perf:skills]', { step: 'skill-scan', ms: Math.round(performance.now() - stepStart) });
 
       // Build agent base dirs
       const agentBaseDirs: string[] = [];
@@ -296,9 +305,11 @@ export function useSkillDiscovery() {
 
       // Scan agents
       log.info('skills', `Scanning agents in ${agentBaseDirs.length} directories`);
+      stepStart = performance.now();
       await useSkillStore.getState().scanAgents(agentBaseDirs);
       const agentCount = useSkillStore.getState().agents.length;
       log.info('skills', `Discovered ${agentCount} agents`);
+      console.log('[perf:skills]', { step: 'agent-scan', ms: Math.round(performance.now() - stepStart) });
 
       // Warn if extraction succeeded but nothing was discovered
       if (skillsExtracted && skillCount === 0) {
@@ -311,8 +322,12 @@ export function useSkillDiscovery() {
       // Scan agent instructions (use first project as root, or null)
       const projectRoot = projects.length > 0 ? projects[0].path : null;
       const providerTypes = getConnectedProviderTypes();
+      stepStart = performance.now();
       await useSkillStore.getState().scanAgentInstructions(projectRoot, providerTypes);
+      console.log('[perf:skills]', { step: 'instruction-scan', ms: Math.round(performance.now() - stepStart) });
 
+      const totalMs = Math.round(performance.now() - pipelineStart);
+      console.log('[perf:skills] total', { skillCount, agentCount, totalMs });
       log.info('skills', 'Skill/agent discovery pipeline complete');
     };
 

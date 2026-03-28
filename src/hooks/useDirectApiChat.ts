@@ -84,6 +84,9 @@ export function useDirectApiChat({
       setLoading(true);
       setError(null);
 
+      const perfStart = performance.now();
+      let firstTokenLogged = false;
+
       const userTimestamp = Date.now();
       const userMessage: ChatMessage = { role: 'user', content, timestamp: userTimestamp, displayContent: opts?.displayContent, skillName: opts?.skillName };
       addMessage(userMessage);
@@ -124,6 +127,13 @@ export function useDirectApiChat({
 
         const [unlistenChunk, unlistenThinking, unlistenTool, unlistenCitation] = await Promise.all([
           listen<string>('ai-stream-chunk', (event) => {
+            if (!firstTokenLogged) {
+              firstTokenLogged = true;
+              console.log('[perf:ai-chat] first token', {
+                provider: resolved.provider,
+                ms: Math.round(performance.now() - perfStart),
+              });
+            }
             streamedContent += event.payload;
             contentDirty = true;
           }),
@@ -167,6 +177,11 @@ export function useDirectApiChat({
         cleanupRef.current = cleanup;
 
         const unlistenDone = await listen('ai-stream-done', () => {
+          console.log('[perf:ai-chat] stream complete', {
+            provider: resolved.provider,
+            totalTokens: streamedContent.length,
+            ms: Math.round(performance.now() - perfStart),
+          });
           unlistenDone();
           cleanup();
         });

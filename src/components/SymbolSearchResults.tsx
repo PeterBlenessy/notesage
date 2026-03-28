@@ -34,12 +34,17 @@ export function SymbolSearchResults({
     }
 
     if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current);
+    const fetchStartTotal = performance.now();
     fetchTimerRef.current = setTimeout(async () => {
       try {
         const paths = getSearchPaths();
         const q = query.trim();
+        const modeName = config.label.toLowerCase() as 'tags' | 'mentions';
+        const ipcStart = performance.now();
         const results = await config.fetchItems(q || "", paths);
+        console.log('[perf:palette] ipc', { mode: modeName, ms: Math.round(performance.now() - ipcStart) });
         setItems(results);
+        console.log('[perf:palette]', { mode: modeName, query: q, resultCount: results.length, ms: Math.round(performance.now() - fetchStartTotal) });
       } catch (error) {
         console.error(`Failed to fetch ${config.label.toLowerCase()}:`, error);
         setItems([]);
@@ -65,7 +70,10 @@ export function SymbolSearchResults({
     try {
       const paths = getSearchPaths();
       if (paths.length > 0) {
+        const modeName = config.label.toLowerCase() as 'tags' | 'mentions';
+        const ipcStart = performance.now();
         const results = await config.findOccurrences(name, paths);
+        console.log('[perf:palette] ipc', { mode: modeName, ms: Math.round(performance.now() - ipcStart) });
         setOccurrences(results);
       }
     } catch (error) {
