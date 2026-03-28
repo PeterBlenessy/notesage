@@ -1,8 +1,9 @@
-import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2, X, AlertTriangle, Brain, Zap, Wrench, Ban } from 'lucide-react';
+import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2, X, AlertTriangle, Brain, Zap, Wrench, Ban, GitBranch } from 'lucide-react';
 import { useState } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { MarkdownContent } from '@/components/MarkdownContent';
 import { ProviderLogo } from '@/components/ProviderLogo';
+import { BranchSwitcher } from './BranchSwitcher';
 import { useChatStore } from '@/stores/chat-store';
 import type { ChatMessage as ChatMessageType, AgentActivity, ToolCallActivity, ToolCallStatus } from '@/lib/ai/types';
 
@@ -178,9 +179,13 @@ interface ChatMessageProps {
   message: ChatMessageType;
   /** Whether this is the last message in the list (controls streaming cursor) */
   isLast?: boolean;
+  /** Number of child branches from this message (shows branch indicator when > 1) */
+  branchCount?: number;
+  /** Callback to create a branch from this message */
+  onBranch?: () => void;
 }
 
-export function ChatMessage({ message, isLast = false }: ChatMessageProps) {
+export function ChatMessage({ message, isLast = false, branchCount, onBranch }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const { isLoading, deleteMessage } = useChatStore();
 
@@ -218,7 +223,8 @@ export function ChatMessage({ message, isLast = false }: ChatMessageProps) {
   };
 
   return (
-    <div className={`flex gap-2.5 ${isUser ? 'flex-row-reverse' : ''} mb-4`}>
+    <div className="mb-4">
+    <div className={`flex gap-2.5 ${isUser ? 'flex-row-reverse' : ''}`}>
       {/* Avatar */}
       <div className="h-6 w-6 rounded-full shrink-0 flex items-center justify-center mt-0.5 bg-muted">
         {isUser ? (
@@ -341,21 +347,48 @@ export function ChatMessage({ message, isLast = false }: ChatMessageProps) {
           </button>
         )}
 
-        {/* Copy button */}
-        {!isUser && message.content && (
-          <button
-            className="absolute -bottom-3 right-2 h-6 w-6 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-card border border-border"
-            onClick={handleCopy}
-            title="Copy message"
-          >
-            {copied ? (
-              <Check className="h-3 w-3 text-foreground" strokeWidth={1.5} />
-            ) : (
-              <Copy className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+        {/* Action buttons — bottom row */}
+        {!isLoading && message.content && (
+          <div className={`absolute -bottom-3 ${isUser ? 'left-2' : 'right-2'} flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
+            {onBranch && (
+              <button
+                className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
+                onClick={onBranch}
+                title="Branch from here"
+              >
+                <GitBranch className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+              </button>
             )}
-          </button>
+            {!isUser && (
+              <button
+                className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
+                onClick={handleCopy}
+                title="Copy message"
+              >
+                {copied ? (
+                  <Check className="h-3 w-3 text-foreground" strokeWidth={1.5} />
+                ) : (
+                  <Copy className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+                )}
+              </button>
+            )}
+          </div>
         )}
       </div>
+    </div>
+
+    {/* Branch separator — full-width, clickable to open branch switcher */}
+    {branchCount != null && branchCount > 1 && message.id && (
+      <BranchSwitcher messageId={message.id} branchCount={branchCount}>
+        <button className="flex items-center gap-2.5 w-full py-3 px-1 group/branch cursor-pointer">
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground group-hover/branch:text-foreground transition-colors duration-150 shrink-0">
+            <GitBranch className="h-3.5 w-3.5" strokeWidth={1.5} />
+            <span className="font-medium">{branchCount} branches</span>
+          </span>
+          <div className="flex-1 border-t border-border group-hover/branch:border-muted-foreground transition-colors duration-150" />
+        </button>
+      </BranchSwitcher>
+    )}
     </div>
   );
 }

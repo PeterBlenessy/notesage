@@ -1,8 +1,10 @@
-import { memo, useEffect, useRef, useCallback, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { memo, useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { Loader2, GitBranch } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { useChatStore, selectMessages, selectPendingProjectSwitch, selectPendingAgentSwitch, selectSegments } from '@/stores/chat-store';
+import { toast } from 'sonner';
+import { useChatStore, selectMessages, selectAllMessages, selectPendingProjectSwitch, selectPendingAgentSwitch, selectSegments } from '@/stores/chat-store';
+import { getChildren } from '@/lib/chat-tree';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
@@ -28,12 +30,24 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
   const isLoading = useChatStore((s) => s.isLoading);
   const activeTool = useChatStore((s) => s.activeTool);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
+  const branchFromMessage = useChatStore((s) => s.branchFromMessage);
   const messages = useChatStore(selectMessages);
+  const allMessages = useChatStore(selectAllMessages);
   const pendingProjectSwitch = useChatStore(selectPendingProjectSwitch);
   const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
   const segments = useChatStore(selectSegments);
   const permissionRequests = usePermissionStore((s) => s.requests);
   const toolPermission = useToolPermissionStore((s) => s.pending);
+
+  // Detect if the user is at a branch point (last visible message has children in the full tree)
+  const branchPointInfo = useMemo(() => {
+    if (messages.length === 0 || allMessages.length === messages.length) return null;
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg?.id) return null;
+    const children = getChildren(allMessages, lastMsg.id);
+    if (children.length === 0) return null;
+    return { messageId: lastMsg.id, branchCount: children.length + 1 }; // +1 for the new branch being created
+  }, [messages, allMessages]);
 
   const [domainRequests, setDomainRequests] = useState<DomainApprovalRequest[]>([]);
 
@@ -155,26 +169,70 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
               ? { ...message, content: parsed.strippedContent }
               : message;
 
-            const segmentAtIndex = segments.findIndex((s, si) => si > 0 && s.startMessageIndex === index);
+            // Segment dividers: match by message identity, not flat array index.
+            // Only show if the segment's start message is in the current thread.
+            const segmentAtIndex = message.id
+              ? segments.findIndex((s, si) => {
+                  if (si === 0) return false;
+                  const segMsg = allMessages[s.startMessageIndex];
+                  return segMsg?.id === message.id;
+                })
+              : -1;
             const segment = segmentAtIndex >= 0 ? segments[segmentAtIndex] : null;
             const prevSegment = segmentAtIndex >= 1 ? segments[segmentAtIndex - 1] : undefined;
+
+            const branchChildren = message.id ? getChildren(allMessages, message.id) : [];
+            const branchCount = branchChildren.length;
 
             return (
               <div key={index}>
                 {segment && (
                   <ContextDivider segment={segment} previousSegment={prevSegment} />
                 )}
-                <ChatMessage message={displayMessage} isLast={isLast} />
+                <ChatMessage
+                  message={displayMessage}
+                  isLast={isLast}
+                  branchCount={branchCount}
+                  onBranch={message.timestamp ? () => {
+                    branchFromMessage(message.timestamp!);
+                    toast('Branched conversation', {
+                      description: 'Type a new message to continue on this branch.',
+                    });
+                    requestAnimationFrame(() => {
+                      autoScrollRef.current = true;
+                      scrollToEnd();
+                      const textarea = document.querySelector<HTMLTextAreaElement>('.chat-input-textarea');
+                      textarea?.focus();
+                    });
+                  } : undefined}
+                />
                 {isLastAssistant && parsed && parsed.replies.length > 0 && (
                   <QuickReplies replies={parsed.replies} onSelect={onSend} />
                 )}
               </div>
             );
           })}
-          {/* Context divider for the latest segment (when no messages sent in it yet) */}
-          {segments.length > 1 && (() => {
+          {/* Branch-ready separator — shown when at a branch point waiting for new input */}
+          {branchPointInfo && !isLoading && (
+            <div className="flex items-center gap-2.5 py-3 px-1">
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+                <GitBranch className="h-3.5 w-3.5" strokeWidth={1.5} />
+                <span className="font-medium">{branchPointInfo.branchCount} branches</span>
+              </span>
+              <div className="flex-1 border-t border-border" />
+            </div>
+          )}
+          {/* Context divider for the latest segment — only if the segment start message
+              is on the current thread (not on a sibling branch) */}
+          {segments.length > 1 && !branchPointInfo && (() => {
             const lastSeg = segments[segments.length - 1];
             if (lastSeg.startMessageIndex >= messages.length && !pendingProjectSwitch) {
+              // Verify the segment's start message is a descendant of the current thread's leaf
+              const segStartMsg = allMessages[lastSeg.startMessageIndex];
+              if (segStartMsg?.parentId) {
+                const parentInThread = messages.some((m) => m.id === segStartMsg.parentId);
+                if (!parentInThread) return null;
+              }
               return <ContextDivider segment={lastSeg} previousSegment={segments[segments.length - 2]} />;
             }
             return null;

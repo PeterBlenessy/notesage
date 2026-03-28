@@ -30,8 +30,9 @@ Collapsible right sidebar (Cmd+Shift+C) with streaming AI responses.
 - Custom prompts/templates for AI actions
 - Project-scoped AI context (provider, agent, and context overrides per project)
 - Multi-select project selector in chat footer
-- Chat/History tab view: Chat tab for active conversation, History tab for past conversations sorted by date with metadata (time, message count)
-- Conversation export: export as Markdown or JSON via native save dialog, with Reveal in Finder option
+- Chat/History tab view: Chat tab for active conversation, History tab for past conversations sorted by date with metadata (time, message count, branch count)
+- Conversation branching: branch from any message to explore alternative responses. Branch indicator pills show at branch points with a popover to switch between branches. "Branch from here" action on all messages via GitBranch icon.
+- Conversation export: export active thread as Markdown, all branches as Markdown (separated by horizontal rules with "Branch N" headers), or full tree as JSON with `id`/`parentId` fields. Native save dialog with Reveal in Finder option.
 - Tool calling: models can autonomously call tools (web search, read/write files, execute skills) with results shown as collapsible activity blocks in assistant messages
 - Tool call permission cards appear inline when write/execute tools need approval
 - Tool call deny messages: when a tool call is denied, a chat message is shown ("Tool call X was denied")
@@ -184,7 +185,9 @@ On-device speech-to-text powered by whisper-rs with Metal GPU acceleration — f
 | `src/hooks/useRecording.ts` | Audio recording lifecycle |
 | `src/hooks/useTranscription.ts` | Whisper transcription with progress |
 | `src/hooks/useSpeechRecognition.ts` | Live dictation |
-| `src/stores/chat-store.ts` | Chat conversation state |
+| `src/stores/chat-store.ts` | Chat conversation state (branching actions, tree selectors) |
+| `src/lib/chat-tree.ts` | Tree traversal utilities (getThread, getChildren, getBranches, getLeaves) |
+| `src/components/chat/BranchSwitcher.tsx` | Branch switcher popover at branch points |
 | `src/stores/skill-store.ts` | Skills registry, agents, instructions |
 | `src/stores/comment-store.ts` | Comments, replies, delegation |
 | `src/stores/activity-store.ts` | Agent task registry |
@@ -195,6 +198,5 @@ On-device speech-to-text powered by whisper-rs with Metal GPU acceleration — f
 
 ## Future Enhancements
 
-- Conversation branching/forking in chat
 - Comment assignment to specific agents (currently always uses `agent_tasks` slot)
 - Workflows & Automation: user-defined YAML workflows as skills

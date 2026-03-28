@@ -198,7 +198,7 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
           placeholder={isDictating && interimText ? interimText : placeholder}
           disabled={disabled}
           rows={1}
-          className="flex-1 bg-transparent text-sm resize-none outline-none placeholder:text-muted-foreground/50 max-h-[120px] py-0.5 leading-relaxed overflow-y-auto text-foreground"
+          className="chat-input-textarea flex-1 bg-transparent text-sm resize-none outline-none placeholder:text-muted-foreground/50 max-h-[120px] py-0.5 leading-relaxed overflow-y-auto text-foreground"
         />
       </div>
       {footer && (

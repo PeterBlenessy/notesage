@@ -64,6 +64,8 @@ vi.mock('@/lib/tauri-storage', () => {
 import {
   useChatStore,
   selectMessages,
+  selectAllMessages,
+  selectActiveLeafId,
   selectProjectPaths,
   selectPendingProjectSwitch,
   selectPendingAgentSwitch,
@@ -775,5 +777,211 @@ describe('Edge cases', () => {
     useChatStore.getState().deleteConversation(id1);
     expect(useChatStore.getState().activeConversationId).toBe(id2);
     expect(useChatStore.getState().conversations).toHaveLength(1);
+  });
+});
+
+// ===========================================================================
+// Branching
+// ===========================================================================
+
+describe('Branching', () => {
+  beforeEach(() => reset());
+
+  it('addMessage assigns id and parentId automatically', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'first', timestamp: 1 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'reply', timestamp: 2 });
+
+    const msgs = activeConv()!.messages;
+    expect(msgs[0].id).toBeDefined();
+    expect(msgs[0].parentId).toBeNull(); // first message has no parent
+    expect(msgs[1].id).toBeDefined();
+    expect(msgs[1].parentId).toBe(msgs[0].id); // chains to previous
+  });
+
+  it('activeLeafId tracks the most recent message', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'a', timestamp: 1 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'b', timestamp: 2 });
+
+    const conv = activeConv()!;
+    expect(conv.activeLeafId).toBe(conv.messages[1].id);
+  });
+
+  it('branchFromMessage sets activeLeafId to the branch point', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'a', timestamp: 1 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'b', timestamp: 2 });
+    useChatStore.getState().addMessage({ role: 'user', content: 'c', timestamp: 3 });
+
+    const branchPointId = activeConv()!.messages[1].id; // "b"
+    useChatStore.getState().branchFromMessage(2); // branch from message at ts=2
+
+    expect(activeConv()!.activeLeafId).toBe(branchPointId);
+  });
+
+  it('addMessage after branchFromMessage creates a new branch', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'a', timestamp: 1 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'b', timestamp: 2 });
+    useChatStore.getState().addMessage({ role: 'user', content: 'c-original', timestamp: 3 });
+
+    const branchPointId = activeConv()!.messages[1].id;
+    useChatStore.getState().branchFromMessage(2);
+    useChatStore.getState().addMessage({ role: 'user', content: 'c-branch', timestamp: 4 });
+
+    const msgs = activeConv()!.messages;
+    expect(msgs).toHaveLength(4);
+    // The branched message should have the same parent as the original
+    const branchMsg = msgs.find((m) => m.content === 'c-branch')!;
+    expect(branchMsg.parentId).toBe(branchPointId);
+  });
+
+  it('selectMessages returns only the active thread', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'a', timestamp: 1 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'b', timestamp: 2 });
+    useChatStore.getState().addMessage({ role: 'user', content: 'c-original', timestamp: 3 });
+
+    // Branch from "b" and add a different follow-up
+    useChatStore.getState().branchFromMessage(2);
+    useChatStore.getState().addMessage({ role: 'user', content: 'c-branch', timestamp: 4 });
+
+    const thread = selectMessages(useChatStore.getState());
+    expect(thread.map((m) => m.content)).toEqual(['a', 'b', 'c-branch']);
+  });
+
+  it('selectMessages truncates after branchFromMessage (before new message)', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'a', timestamp: 1 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'b', timestamp: 2 });
+    useChatStore.getState().addMessage({ role: 'user', content: 'c', timestamp: 3 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'd', timestamp: 4 });
+    useChatStore.getState().addMessage({ role: 'user', content: 'e', timestamp: 5 });
+
+    // Branch from "b" — should truncate to [a, b]
+    useChatStore.getState().branchFromMessage(2);
+
+    const thread = selectMessages(useChatStore.getState());
+    expect(thread.map((m) => m.content)).toEqual(['a', 'b']);
+  });
+
+  it('selectAllMessages returns all messages including both branches', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'a', timestamp: 1 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'b', timestamp: 2 });
+    useChatStore.getState().addMessage({ role: 'user', content: 'c-original', timestamp: 3 });
+
+    useChatStore.getState().branchFromMessage(2);
+    useChatStore.getState().addMessage({ role: 'user', content: 'c-branch', timestamp: 4 });
+
+    const all = selectAllMessages(useChatStore.getState());
+    expect(all).toHaveLength(4);
+  });
+
+  it('switchBranch changes the active thread', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'a', timestamp: 1 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'b', timestamp: 2 });
+    useChatStore.getState().addMessage({ role: 'user', content: 'c-original', timestamp: 3 });
+
+    const originalLeaf = activeConv()!.messages[2].id!;
+
+    useChatStore.getState().branchFromMessage(2);
+    useChatStore.getState().addMessage({ role: 'user', content: 'c-branch', timestamp: 4 });
+
+    // Switch back to original branch
+    useChatStore.getState().switchBranch(originalLeaf);
+    const thread = selectMessages(useChatStore.getState());
+    expect(thread.map((m) => m.content)).toEqual(['a', 'b', 'c-original']);
+  });
+
+  it('switchBranch to nonexistent leaf is a no-op', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'a', timestamp: 1 });
+    const leafBefore = activeConv()!.activeLeafId;
+    useChatStore.getState().switchBranch('nonexistent');
+    expect(activeConv()!.activeLeafId).toBe(leafBefore);
+  });
+
+  it('selectActiveLeafId returns the active leaf', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'a', timestamp: 1 });
+    const leafId = selectActiveLeafId(useChatStore.getState());
+    expect(leafId).toBe(activeConv()!.messages[0].id);
+  });
+});
+
+// ===========================================================================
+// Migration v3 → v4
+// ===========================================================================
+
+describe('Migration v3 → v4', () => {
+  it('assigns id and parentId to existing linear messages', () => {
+    // Simulate a v3 persisted state
+    const v3State = {
+      conversations: [{
+        id: 'conv-1',
+        title: 'Test',
+        messages: [
+          { role: 'user', content: 'first', timestamp: 1 },
+          { role: 'assistant', content: 'second', timestamp: 2 },
+          { role: 'user', content: 'third', timestamp: 3 },
+        ],
+        createdAt: 1,
+        updatedAt: 3,
+        projectPaths: [],
+        segments: [{ projectPaths: [], sessionId: null, startMessageIndex: 0, historyIncluded: false }],
+        activeSegmentIndex: 0,
+        pendingProjectSwitch: null,
+      }],
+      activeConversationId: 'conv-1',
+      webSearchEnabled: false,
+    };
+
+    // Access the migrate function via the persist config
+    const storeConfig = (useChatStore as unknown as { persist: { getOptions: () => { migrate: (s: unknown, v: number) => unknown } } }).persist.getOptions();
+    const migrated = storeConfig.migrate(v3State, 3) as { conversations: Conversation[] };
+
+    const conv = migrated.conversations[0];
+    expect(conv.activeLeafId).toBeDefined();
+
+    // All messages should have ids
+    for (const msg of conv.messages) {
+      expect(msg.id).toBeDefined();
+    }
+
+    // First message has null parentId
+    expect(conv.messages[0].parentId).toBeNull();
+    // Second chains to first
+    expect(conv.messages[1].parentId).toBe(conv.messages[0].id);
+    // Third chains to second
+    expect(conv.messages[2].parentId).toBe(conv.messages[1].id);
+    // activeLeafId is the last message
+    expect(conv.activeLeafId).toBe(conv.messages[2].id);
+  });
+
+  it('handles empty conversations gracefully', () => {
+    const v3State = {
+      conversations: [{
+        id: 'conv-1',
+        title: '',
+        messages: [],
+        createdAt: 1,
+        updatedAt: 1,
+        projectPaths: [],
+        segments: [{ projectPaths: [], sessionId: null, startMessageIndex: 0, historyIncluded: false }],
+        activeSegmentIndex: 0,
+        pendingProjectSwitch: null,
+      }],
+      activeConversationId: 'conv-1',
+      webSearchEnabled: false,
+    };
+
+    const storeConfig = (useChatStore as unknown as { persist: { getOptions: () => { migrate: (s: unknown, v: number) => unknown } } }).persist.getOptions();
+    const migrated = storeConfig.migrate(v3State, 3) as { conversations: Conversation[] };
+
+    expect(migrated.conversations[0].activeLeafId).toBeNull();
+    expect(migrated.conversations[0].messages).toHaveLength(0);
   });
 });

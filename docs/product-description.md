@@ -15,7 +15,7 @@ Notesage is a rich text markdown editor with AI collaboration capabilities, pack
 | Editor | Tiptap rich text editor with markdown round-tripping, find & replace, inline tag badges | features/editor.md |
 | Document Index | SQLite-backed index with AST-parsed tags, mentions, tasks, goals, and FTS5 content search | prds/2026-03-14-sqlite-document-index.md |
 | AI Providers | Multi-provider architecture (Anthropic, OpenAI, Ollama, Local AI, ACP agents, Copilot LSP), tool calling, network sandboxing | features/ai-providers.md |
-| AI Workflows | Chat with history/export, agents, skills, MCP, tool calling, provider context isolation, comment delegation, research, voice transcription | features/ai-workflows.md |
+| AI Workflows | Chat with history/export/branching, agents, skills, MCP, tool calling, provider context isolation, comment delegation, research, voice transcription | features/ai-workflows.md |
 | Document Formats | EPUB viewer, PDF export, DOCX/PDF/plain text viewers | features/document-formats.md |
 | Workspace | Projects, file tree, iCloud sync, git integration, external change detection | features/workspace.md |
 

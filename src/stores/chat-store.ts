@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ChatMessage, Citation, AgentActivity, ToolCall, ToolCallActivity } from '@/lib/ai/types';
 import { createTauriStorage } from '@/lib/tauri-storage';
+import { getThread } from '@/lib/chat-tree';
 
 /** Tracks a project context boundary within a conversation */
 export interface ConversationSegment {
@@ -32,6 +33,8 @@ export interface Conversation {
   } | null;
   sourceCommentId?: string;
   sourceDocumentId?: string;
+  /** ID of the leaf message in the currently active branch (null = no messages yet) */
+  activeLeafId?: string | null;
 }
 
 interface ChatStore {
@@ -79,6 +82,15 @@ interface ChatStore {
   addToolCallsToMessage: (messageTimestamp: number, toolCalls: ToolCall[]) => void;
   addToolCallActivity: (messageTimestamp: number, activity: ToolCallActivity) => void;
   updateToolCallActivity: (messageTimestamp: number, toolCallId: string, updates: Partial<ToolCallActivity>) => void;
+
+  // ---------------------------------------------------------------------------
+  // Branching
+  // ---------------------------------------------------------------------------
+
+  /** Create a branch starting after the message with the given timestamp */
+  branchFromMessage: (messageTimestamp: number) => void;
+  /** Switch to a different branch by setting the active leaf */
+  switchBranch: (leafId: string) => void;
 
   // ---------------------------------------------------------------------------
   // Segment management (context isolation)
@@ -234,7 +246,10 @@ export const useChatStore = create<ChatStore>()(
         set((s) => {
           const conversations = s.conversations.map((c) => {
             if (c.id !== activeId) return c;
-            const msg = { ...message, timestamp: message.timestamp || Date.now() };
+            const msgId = message.id ?? crypto.randomUUID();
+            // parentId: use message's parentId if explicitly set, otherwise chain to current activeLeafId
+            const parentId = message.parentId !== undefined ? message.parentId : (c.activeLeafId ?? null);
+            const msg: ChatMessage = { ...message, id: msgId, parentId, timestamp: message.timestamp || Date.now() };
             // Auto-title on first user message
             const title = c.title || (message.role === 'user' ? autoTitle(message.content) : c.title);
             let messages = [...c.messages, msg];
@@ -242,7 +257,7 @@ export const useChatStore = create<ChatStore>()(
             if (messages.length > MAX_MESSAGES_PER_CONVERSATION) {
               messages = messages.slice(messages.length - MAX_MESSAGES_PER_CONVERSATION);
             }
-            return { ...c, messages, updatedAt: Date.now(), title };
+            return { ...c, messages, updatedAt: Date.now(), title, activeLeafId: msgId };
           });
           return { conversations: pruneConversations(conversations, activeId) };
         });
@@ -386,6 +401,23 @@ export const useChatStore = create<ChatStore>()(
           }),
         }))),
 
+      // ----- Branching -----
+
+      branchFromMessage: (messageTimestamp) =>
+        set((state) => updateActiveConv(state, (c) => {
+          const branchPoint = c.messages.find((m) => m.timestamp === messageTimestamp);
+          if (!branchPoint?.id) return c;
+          // Set activeLeafId to the branch point — the next addMessage will chain from here
+          return { ...c, activeLeafId: branchPoint.id };
+        })),
+
+      switchBranch: (leafId) =>
+        set((state) => updateActiveConv(state, (c) => {
+          // Verify the leaf exists in this conversation
+          if (!c.messages.some((m) => m.id === leafId)) return c;
+          return { ...c, activeLeafId: leafId };
+        })),
+
       // ----- Segment management -----
 
       setPendingProjectSwitch: (newPaths, previousPaths) =>
@@ -466,7 +498,7 @@ export const useChatStore = create<ChatStore>()(
     {
       name: 'notesage-chat-history',
       storage: createTauriStorage(),
-      version: 3,
+      version: 4,
       // Exclude transient UI state from persistence to avoid excessive
       // writes during streaming (isLoading/activeTool toggle rapidly).
       partialize: (state) => ({
@@ -475,27 +507,11 @@ export const useChatStore = create<ChatStore>()(
         webSearchEnabled: state.webSearchEnabled,
       }),
       migrate: (persisted: unknown, version: number) => {
-        // v2 → v3: add segments to conversations
-        if (version === 2) {
-          const old = persisted as { conversations?: Conversation[]; [key: string]: unknown };
-          if (old.conversations) {
-            old.conversations = old.conversations.map((c) => ({
-              ...c,
-              segments: c.segments ?? [{
-                projectPaths: c.projectPaths ?? [],
-                sessionId: null,
-                startMessageIndex: 0,
-                historyIncluded: false,
-              }],
-              activeSegmentIndex: c.activeSegmentIndex ?? 0,
-              pendingProjectSwitch: null,
-            }));
-          }
-          return old;
-        }
+        let data = persisted as Record<string, unknown>;
+
+        // v1 → v2: wrap flat messages into a conversation
         if (version < 2) {
-          // v1 → v2: wrap flat messages into a conversation
-          const old = persisted as {
+          const old = data as {
             messages?: ChatMessage[];
             selectedProjectPaths?: string[];
             webSearchEnabled?: boolean;
@@ -521,7 +537,7 @@ export const useChatStore = create<ChatStore>()(
             activeConversationId = id;
           }
 
-          return {
+          data = {
             conversations,
             activeConversationId,
             isLoading: false,
@@ -529,8 +545,48 @@ export const useChatStore = create<ChatStore>()(
             activeTool: null,
             webSearchEnabled: old.webSearchEnabled ?? false,
           };
+          version = 2;
         }
-        return persisted;
+
+        // v2 → v3: add segments to conversations
+        if (version === 2) {
+          const old = data as { conversations?: Conversation[]; [key: string]: unknown };
+          if (old.conversations) {
+            old.conversations = old.conversations.map((c) => ({
+              ...c,
+              segments: c.segments ?? [{
+                projectPaths: c.projectPaths ?? [],
+                sessionId: null,
+                startMessageIndex: 0,
+                historyIncluded: false,
+              }],
+              activeSegmentIndex: c.activeSegmentIndex ?? 0,
+              pendingProjectSwitch: null,
+            }));
+          }
+          data = old;
+          version = 3;
+        }
+
+        // v3 → v4: add branching data (id, parentId, activeLeafId) to messages
+        if (version === 3) {
+          const old = data as { conversations?: Conversation[]; [key: string]: unknown };
+          if (old.conversations) {
+            old.conversations = old.conversations.map((c) => {
+              let prevId: string | null = null;
+              const messages = c.messages.map((m) => {
+                const id = crypto.randomUUID();
+                const updated = { ...m, id, parentId: prevId };
+                prevId = id;
+                return updated;
+              });
+              return { ...c, messages, activeLeafId: prevId };
+            });
+          }
+          data = old;
+        }
+
+        return data;
       },
     },
   ),
@@ -540,10 +596,55 @@ export const useChatStore = create<ChatStore>()(
 // Selectors — derive per-conversation values reactively
 // ---------------------------------------------------------------------------
 
-/** Messages from the active conversation. Use: `useChatStore(selectMessages)` */
-export function selectMessages(state: Pick<ChatStore, 'conversations' | 'activeConversationId'>): ChatMessage[] {
+// Stable empty arrays to avoid unnecessary re-renders
+const EMPTY_MESSAGES: ChatMessage[] = [];
+const EMPTY_PATHS: string[] = [];
+const EMPTY_SEGMENTS: ConversationSegment[] = [];
+
+/**
+ * Messages from the active branch of the active conversation.
+ * Returns only the linear thread from root to activeLeafId.
+ * Falls back to all messages for legacy conversations without branching data.
+ *
+ * IMPORTANT: Must return a stable reference when the result hasn't changed,
+ * otherwise Zustand triggers infinite re-renders (new array !== old array).
+ */
+export const selectMessages = (() => {
+  // Closure-scoped cache for thread memoization
+  let cachedThread: ChatMessage[] = EMPTY_MESSAGES;
+  let cachedKey = '';
+
+  return (state: Pick<ChatStore, 'conversations' | 'activeConversationId'>): ChatMessage[] => {
+    if (!state.activeConversationId) return EMPTY_MESSAGES;
+    const conv = state.conversations.find((c) => c.id === state.activeConversationId);
+    if (!conv) return EMPTY_MESSAGES;
+
+    // If conversation has branching data, return only the active thread
+    if (conv.activeLeafId) {
+      // Cache key: conversation id + leaf id + message count to detect changes
+      const key = `${conv.id}:${conv.activeLeafId}:${conv.messages.length}`;
+      if (key !== cachedKey) {
+        const thread = getThread(conv.messages, conv.activeLeafId);
+        cachedThread = thread.length > 0 ? thread : conv.messages;
+        cachedKey = key;
+      }
+      return cachedThread;
+    }
+    // Legacy conversations without activeLeafId: return all messages
+    return conv.messages;
+  };
+})();
+
+/** All messages from the active conversation (full tree, not just active branch). */
+export function selectAllMessages(state: Pick<ChatStore, 'conversations' | 'activeConversationId'>): ChatMessage[] {
   if (!state.activeConversationId) return EMPTY_MESSAGES;
   return state.conversations.find((c) => c.id === state.activeConversationId)?.messages ?? EMPTY_MESSAGES;
+}
+
+/** Active leaf ID from the active conversation. */
+export function selectActiveLeafId(state: Pick<ChatStore, 'conversations' | 'activeConversationId'>): string | null {
+  if (!state.activeConversationId) return null;
+  return state.conversations.find((c) => c.id === state.activeConversationId)?.activeLeafId ?? null;
 }
 
 /** Project paths from the active conversation. Use: `useChatStore(selectProjectPaths)` */
@@ -576,7 +677,4 @@ export function selectActiveSegmentIndex(state: Pick<ChatStore, 'conversations' 
   return state.conversations.find((c) => c.id === state.activeConversationId)?.activeSegmentIndex ?? 0;
 }
 
-// Stable empty arrays to avoid unnecessary re-renders
-const EMPTY_MESSAGES: ChatMessage[] = [];
-const EMPTY_PATHS: string[] = [];
-const EMPTY_SEGMENTS: ConversationSegment[] = [];
+// (empty constants moved above selectors)
