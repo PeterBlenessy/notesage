@@ -37,11 +37,11 @@ export async function scanICloudForProjects(
         syncStore.addSyncedProject(entry.path);
         discovered = true;
       } catch {
-        // Individual project check failed — skip it
+        // Expected: individual project check may fail (iCloud sync in progress, permissions)
       }
     }
   } catch {
-    // iCloud folder doesn't exist yet or can't be listed — that's fine
+    // Expected: iCloud Notesage folder may not exist yet or is inaccessible
   }
 
   return discovered;

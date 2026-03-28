@@ -123,7 +123,7 @@ export function useFileWatcher() {
                     await syncStore.saveSettings(notesRoot);
                   }
                 } catch {
-                  // Discovery failed for this path — non-critical
+                  // Expected: iCloud project discovery may fail for partially synced directories
                 }
               }, 1000);
             }

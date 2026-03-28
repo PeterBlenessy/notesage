@@ -154,7 +154,7 @@ function parseMarkdownToDoc(editor: Editor, markdown: string): PMNode | null {
       return PMDOMParser.fromSchema(editor.schema).parse(wrapper);
     }
   } catch {
-    // Fall through to null
+    // Expected: markdown parser may be unavailable or fail on malformed content
   }
   return null;
 }

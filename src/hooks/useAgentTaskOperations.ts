@@ -49,7 +49,7 @@ let taskSpawnPromise: Promise<string> | null = null;
 
 export function stopTaskAgent(): void {
   if (taskAgent) {
-    tauriApi.acpAgentStop(taskAgent.instanceId).catch(() => {});
+    tauriApi.acpAgentStop(taskAgent.instanceId).catch(() => {}); // Expected: best-effort cleanup, agent may already be stopped
     taskAgent = null;
   }
   taskSpawnPromise = null;
@@ -61,7 +61,7 @@ async function ensureTaskAgent(connection: Connection, cwd: string, sandboxPaths
     try {
       await tauriApi.acpAgentStop(taskAgent.instanceId);
     } catch {
-      // Agent may already be stopped
+      // Expected: agent may already be stopped or crashed
     }
     taskAgent = null;
     taskSpawnPromise = null;
@@ -379,14 +379,14 @@ async function startAcpTask(
             timestamp: Date.now(),
           });
         }
-        tauriApi.acpPermissionRespond(instanceId, payload.requestId, null).catch(() => {});
+        tauriApi.acpPermissionRespond(instanceId, payload.requestId, null).catch(() => {}); // Expected: fire-and-forget permission deny
         return;
       }
     }
 
     // Auto-approve — sandbox is the enforcement layer
     onActivity?.({ kind: 'permission', label: `Auto-approved: ${toolLabel}`, event: 'permission_auto_approved' });
-    tauriApi.acpPermissionRespond(instanceId, payload.requestId, firstOptionId).catch(() => {});
+    tauriApi.acpPermissionRespond(instanceId, payload.requestId, firstOptionId).catch(() => {}); // Expected: fire-and-forget permission approve
   });
 
   const cleanup = () => { unlisten(); unlistenPermission(); };
@@ -589,7 +589,7 @@ export function useAgentTaskOperations() {
           await tauriApi.acpSessionCancel(task.instanceId, task.sessionId);
           cancelled = true;
         } catch {
-          // Agent may have already completed
+          // Expected: agent session may have already completed or agent crashed
         }
       }
 

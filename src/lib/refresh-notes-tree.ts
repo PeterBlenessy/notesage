@@ -19,7 +19,7 @@ async function listNotesFiles(path: string): Promise<FileEntry[]> {
   try {
     return await tauriApi.listFilesShallow(path);
   } catch {
-    // Fallback: use recursive listing, keep only top-level files
+    // Expected: listFilesShallow command may not exist (backend not rebuilt) — fallback to recursive listing
     const tree = await tauriApi.listDirectory(path);
     return tree.filter((e) => !e.is_directory);
   }

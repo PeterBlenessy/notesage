@@ -73,7 +73,7 @@ export function useAppLifecycle({ onOpenPalette }: UseAppLifecycleOptions) {
     const handleBeforeUnload = () => {
       stopAcpAgent();
       stopTaskAgent();
-      tauriApi.stopLocalServer().catch(() => {});
+      tauriApi.stopLocalServer().catch(() => {}); // Expected: best-effort cleanup on window close
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {
@@ -103,6 +103,7 @@ export function useAppLifecycle({ onOpenPalette }: UseAppLifecycleOptions) {
           ),
         ]);
       } catch {
+        // Expected: backend may be unresponsive after sleep/wake — reload recovers
         log.info("lifecycle", "Ping failed or timed out, reloading WebView");
         window.location.reload();
         return;
@@ -197,6 +198,7 @@ async function reloadTrees() {
       notesRoot = notesRoot.replace("~", homeDir);
       settings.setNotesRootPath(notesRoot);
     } catch {
+      // Expected: home directory resolution may fail in sandboxed environments
       log.error("startup", "Failed to resolve home directory");
     }
   }
@@ -213,7 +215,7 @@ async function reloadTrees() {
       ws.updateExplorerTree(folder.path, tree);
       validFolders.push(folder.path);
     } catch {
-      // Folder no longer exists — will be removed below
+      // Expected: folder no longer exists — will be removed below
     }
   }
   for (const folder of ws.explorerFolders) {
@@ -228,6 +230,7 @@ async function reloadTrees() {
       const tree = await tauriApi.listDirectory(project.path);
       ws.updateProjectTree(project.path, tree);
     } catch {
+      // Expected: project directory may have been deleted or moved
       const projectName = project.path.split('/').pop() || project.path;
       ws.removeProject(project.path);
       toast.warning(`Project "${projectName}" was removed — directory no longer exists`);
@@ -247,7 +250,7 @@ async function reloadTrees() {
         await tauriApi.createDirectory(metaDir);
       }
     } catch {
-      // Notes root creation failed, that's fine on first launch
+      // Expected: notes root creation may fail on first launch (permissions, path issues)
     }
   }
 
@@ -265,7 +268,7 @@ async function reloadTrees() {
       settings.setICloudNotesagePath(icloudNotesagePath);
     }
   } catch {
-    // iCloud detection failed, that's fine
+    // Expected: iCloud path unavailable on non-Apple systems or when iCloud is not set up
   }
 
   // Load sync settings from disk
@@ -285,6 +288,7 @@ async function reloadTrees() {
             const tree = await tauriApi.listDirectory(syncedPath);
             ws.addProject(syncedPath, tree);
           } catch {
+            // Expected: synced project directory may have been removed from iCloud
             syncStore.removeSyncedProject(syncedPath);
           }
         }
@@ -295,7 +299,7 @@ async function reloadTrees() {
             await syncStore.saveSettings(notesRoot);
           }
         } catch {
-          // iCloud scan failed, non-critical
+          // Expected: iCloud scan may fail if cloud storage is temporarily unavailable
         }
 
         await syncStore.saveSettings(notesRoot);
@@ -374,7 +378,7 @@ async function restorePersistedTabs() {
           }
         }
       } catch {
-        // Active tab failed to load — user will see empty state
+        // Expected: active tab file may have been deleted since last session — user sees empty state
       }
     }
   }

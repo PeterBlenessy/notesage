@@ -63,6 +63,7 @@ export function extractPathsFromStructuredInput(rawInput: string): string[] {
   try {
     parsed = JSON.parse(rawInput);
   } catch {
+    // Expected: rawInput may not be JSON (e.g., plain command string)
     return [];
   }
 
@@ -188,7 +189,7 @@ export function isToolCallAllowed(
         command = (parsed as Record<string, unknown>).command as string ?? rawInput;
       }
     } catch {
-      // rawInput is the command string itself
+      // Expected: rawInput is the command string itself, not JSON
     }
     paths = extractAbsolutePathsFromCommand(command);
   } else if (STRUCTURED_TOOLS.includes(kind)) {

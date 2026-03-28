@@ -47,7 +47,7 @@ export async function buildDocumentIndex(projectRoot: string): Promise<DocumentI
             return { id: frontmatter.id, filePath };
           }
         } catch {
-          // Skip files that can't be read
+          // Expected: file may be unreadable (permissions, binary, encoding)
         }
         return null;
       })
@@ -114,6 +114,7 @@ export async function loadDocumentIndex(projectRoot: string): Promise<DocumentIn
     const raw = await tauriApi.readFile(filePath);
     return JSON.parse(raw) as DocumentIndex;
   } catch {
+    // Expected: index file may not exist yet or contain invalid JSON
     return { entries: {} };
   }
 }

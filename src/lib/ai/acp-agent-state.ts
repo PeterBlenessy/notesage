@@ -34,7 +34,9 @@ function getAcpAgent(): AcpAgentState | null {
 /** Stop any running ACP agent and clear state. Called on disconnect. */
 export function stopAcpAgent(): void {
   if (acpAgent) {
-    invoke('acp_agent_stop', { instanceId: acpAgent.instanceId }).catch(() => {});
+    invoke('acp_agent_stop', { instanceId: acpAgent.instanceId }).catch(() => {
+      // Expected: fire-and-forget cleanup — agent may already be stopped or crashed
+    });
     acpAgent = null;
   }
   acpSpawnPromise = null;
@@ -56,7 +58,7 @@ export async function ensureAcpAgent(connection: Connection, cwd: string, sandbo
     try {
       await invoke('acp_agent_stop', { instanceId: acpAgent.instanceId });
     } catch {
-      // Agent may already be stopped
+      // Expected: agent may already be stopped or crashed — proceed with cleanup
     }
     acpAgent = null;
     acpSpawnPromise = null;

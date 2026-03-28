@@ -94,7 +94,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             instanceId,
             requestId: payload.requestId,
             optionId: firstOptionId,
-          }).catch(() => {});
+          }).catch(() => {}); // Expected: fire-and-forget permission response, agent may have exited
         });
 
         try {
@@ -348,14 +348,14 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           instanceId: acpAgent!.instanceId,
           requestId: req.requestId,
           optionId: null,
-        }).catch(() => {});
+        }).catch(() => {}); // Expected: fire-and-forget deny during cancel
       }
       usePermissionStore.getState().clearRequestsForInstance(acpAgent!.instanceId);
 
       invoke('acp_session_cancel', {
         instanceId: acpAgent.instanceId,
         sessionId: acpAgent.chatSessionId,
-      }).catch(() => {});
+      }).catch(() => {}); // Expected: session may already be complete
 
       // Clear the session so the next message creates a fresh one
       acpAgent.chatSessionId = null;

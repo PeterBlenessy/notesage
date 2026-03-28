@@ -144,7 +144,10 @@ export const useLocalAIStore = create<LocalAIStore>()(
                     scheduleProgressFlush();
                   }
                 },
-              );
+              ).catch((e) => {
+                console.warn('[LocalAI] Failed to register listener for local-model-download-progress', e);
+                return () => {}; // no-op unlisten
+              });
 
               await tauriApi.downloadLocalModel(modelId);
               toast.success(`Model downloaded`);

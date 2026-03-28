@@ -179,7 +179,7 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
         setIsDictating(true);
         storeStartDictating();
       } catch {
-        // Constructor exists but start() threw — fall back to whisper-rs
+        // Expected: Web Speech API start() throws in WKWebView — fall back to whisper-rs
         log.info('transcription', 'Web Speech API start() threw, falling back to Whisper');
         setWebSpeechWorks(false);
         await startWhisperDictation();

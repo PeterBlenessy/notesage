@@ -149,7 +149,9 @@ function App() {
             toast.error(`Failed to open file: ${error}`);
           }
         }
-      }).then((fn) => { unlisten = fn; });
+      }).then((fn) => { unlisten = fn; }).catch((e) => {
+        log.warn("lifecycle", "Failed to register listener for open-files", e);
+      });
     }).catch((e) => log.warn("lifecycle", "Failed to set up file-open listener", e));
     return () => { unlisten?.(); };
   }, [openFile, addExplorerFolder]);

@@ -96,7 +96,7 @@ function createRawTauriStorage(): StateStorage {
               enqueueFileWrite(key, localValue);
             }
           } catch {
-            // If file read fails, the localStorage value will be picked up below
+            // Expected: file store may not exist yet on first launch — localStorage value used as fallback
           }
           // Clean up localStorage — file is the source of truth for these stores
           localStorage.removeItem(key);

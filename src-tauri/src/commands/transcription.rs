@@ -332,7 +332,9 @@ fn start_mic_on_thread(
         // Signal success with actual format info
         let _ = tx.send(Ok((actual_rate, actual_channels)));
 
-        // Keep thread alive, emitting audio levels at ~10 Hz
+        // Keep thread alive, emitting audio levels at ~10 Hz.
+        // NOTE: std::thread::sleep is intentional here — this runs on a dedicated OS thread
+        // (not the Tokio runtime) because cpal::Stream is !Send and requires a real thread.
         let mut last_len = 0usize;
         while !stop.load(Ordering::Relaxed) {
             std::thread::sleep(std::time::Duration::from_millis(100));
@@ -782,6 +784,9 @@ pub async fn start_dictation(
         const SILENCE_RMS_THRESHOLD: f32 = 0.005;
 
         while !cancel.load(Ordering::Relaxed) {
+            // NOTE: std::thread::sleep is intentional here — this runs on a dedicated OS thread
+            // (not the Tokio runtime) because whisper-rs inference is CPU-bound and would
+            // block async tasks. The 3s sleep accumulates audio for the next transcription chunk.
             std::thread::sleep(std::time::Duration::from_secs(3));
 
             if cancel.load(Ordering::Relaxed) {

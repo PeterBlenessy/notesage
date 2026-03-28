@@ -30,6 +30,7 @@ export function useActivityNavigation() {
         try {
           await openFile(task.sourceFile, fileName);
         } catch {
+          // Expected: file may have been deleted or moved since task was created
           toast.error('Failed to open file');
           return;
         }

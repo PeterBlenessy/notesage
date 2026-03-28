@@ -39,6 +39,7 @@ export function parseMarkdownToHtml(
 
     return firstP.innerHTML;
   } catch {
+    // Expected: markdown parser may be unavailable or fail on malformed input
     return null;
   }
 }
@@ -63,6 +64,7 @@ export function parseMarkdownToHtmlFull(
 
     return html;
   } catch {
+    // Expected: markdown parser may be unavailable or fail on malformed input
     return null;
   }
 }

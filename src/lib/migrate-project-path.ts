@@ -29,7 +29,7 @@ export async function migrateProjectPath(oldPath: string, newPath: string): Prom
     try {
       await tauriApi.writeFile(metaFilePath, JSON.stringify(updatedMeta, null, 2));
     } catch {
-      // Non-fatal — in-memory state is already correct
+      // Expected: non-fatal — .notesage dir may not exist yet; in-memory state is already correct
     }
   }
 

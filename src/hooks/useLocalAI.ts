@@ -172,7 +172,7 @@ export function useLocalAI() {
   useEffect(() => {
     if (!hasLocalAIConnection && useLocalAIStore.getState().serverStatus === 'running') {
       log.info('local-ai', 'Connection removed, stopping server');
-      tauriApi.stopLocalServer().catch(() => {});
+      tauriApi.stopLocalServer().catch(() => {}); // Expected: best-effort stop, server may not be running
       useLocalAIStore.getState().setServerStatus('stopped');
       useLocalAIStore.getState().setServerPort(null);
       useLocalAIStore.getState().setServerStatusReason(null);
@@ -196,7 +196,7 @@ export function useLocalAI() {
           updateConnectionStatus('connected');
           // Fetch runtime model metadata for tooltip enrichment
           if (port) {
-            tauriApi.getRuntimeModelMetadata(port).catch(() => {});
+            tauriApi.getRuntimeModelMetadata(port).catch(() => {}); // Expected: metadata fetch is best-effort enrichment
           }
         } else {
           store.setServerStatus('stopped');
@@ -242,7 +242,7 @@ export function useLocalAI() {
           }
         }
       } catch {
-        // Ignore transient health check errors
+        // Expected: transient health check errors during server startup/shutdown
       }
     }, 30_000);
 
@@ -258,7 +258,7 @@ export function useLocalAI() {
   useEffect(() => {
     return () => {
       if (useLocalAIStore.getState().serverStatus === 'running') {
-        tauriApi.stopLocalServer().catch(() => {});
+        tauriApi.stopLocalServer().catch(() => {}); // Expected: best-effort cleanup on unmount
       }
     };
   }, []);

@@ -38,6 +38,9 @@ export function useCopilotCompletionCM(cmView: EditorView | null) {
 
   // -------------------------------------------------------------------------
   // Document sync: didOpen / didClose on tab or mode changes
+  // All LSP invoke().catch(() => {}) calls below are fire-and-forget
+  // notifications — failures are expected when LSP is not running or
+  // shutting down, and are harmless (no data loss, no user impact).
   // -------------------------------------------------------------------------
 
   useEffect(() => {
@@ -126,7 +129,7 @@ export function useCopilotCompletionCM(cmView: EditorView | null) {
           }
         }
       } catch {
-        // Silently ignore completion errors
+        // Expected: completion requests may fail when LSP is restarting or document changed
       }
     },
     [cmView, isActive, useSettingsStore.getState().inlineCompletionsDisabled],

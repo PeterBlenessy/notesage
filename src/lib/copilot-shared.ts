@@ -66,7 +66,9 @@ export async function requestCopilotCompletion(
       range: item.range,
       command: item.command,
     },
-  }).catch(() => {});
+  }).catch(() => {
+    // Expected: fire-and-forget LSP notification — LSP may be shutting down
+  });
 
   return {
     text,
@@ -84,5 +86,7 @@ export function notifyCompletionAccepted(command: CompletionCommand): void {
   invoke('copilot_lsp_accept_completion', {
     command: command.command,
     arguments: command.arguments ?? [],
-  }).catch(() => {});
+  }).catch(() => {
+    // Expected: fire-and-forget LSP telemetry — LSP may be shutting down
+  });
 }

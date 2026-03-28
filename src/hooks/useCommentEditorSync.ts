@@ -93,7 +93,7 @@ export function useCommentEditorSync(editor: TiptapEditor | null) {
       const dom = editor.view.domAtPos(comment.from);
       const node = dom.node instanceof HTMLElement ? dom.node : dom.node.parentElement;
       node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    } catch { /* position may be invalid */ }
+    } catch { /* Expected: domAtPos may throw if comment position is outside current document */ }
     // Delay activation so scroll completes and coordsAtPos returns correct position
     setTimeout(() => commentOps.setActiveComment(scrollToCommentId), 300);
   }, [scrollToCommentId, editor, commentOps]);

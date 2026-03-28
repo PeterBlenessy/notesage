@@ -108,7 +108,7 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
           content: `Tool call denied: **${toolInfo.title}** \u2014 targets path outside project scope (\`${filterResult.deniedPath}\`)`,
           timestamp: Date.now(),
         });
-        invoke('acp_permission_respond', { instanceId: deps.instanceId, requestId: payload.requestId, optionId: null }).catch(() => {});
+        invoke('acp_permission_respond', { instanceId: deps.instanceId, requestId: payload.requestId, optionId: null }).catch(() => {}); // Expected: fire-and-forget deny
         return;
       }
     }
@@ -119,7 +119,7 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
         instanceId: deps.instanceId,
         requestId: payload.requestId,
         optionId: firstOptionId,
-      }).catch(() => {});
+      }).catch(() => {}); // Expected: fire-and-forget auto-approve
     } else {
       // Write tools: add to permission store, let PermissionCard UI handle response
       const options = Array.isArray(rawOptions)
@@ -184,7 +184,7 @@ export function buildAcpChatCleanup(
         instanceId,
         requestId: req.requestId,
         optionId: null,
-      }).catch(() => {});
+      }).catch(() => {}); // Expected: fire-and-forget deny during cleanup
     }
     usePermissionStore.getState().clearRequestsForInstance(instanceId);
     setLoading(false);

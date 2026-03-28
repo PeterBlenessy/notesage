@@ -36,7 +36,7 @@ export function useAIContext() {
     let cancelled = false;
     invoke<{ name: string; body: string; path: string }>('read_agent_content', { agentPath: activeAgent.path })
       .then((content) => { if (!cancelled) setAgentBody({ name: agentName, body: content.body }); })
-      .catch(() => { if (!cancelled) setAgentBody({ name: agentName, body: '' }); });
+      .catch(() => { if (!cancelled) setAgentBody({ name: agentName, body: '' }); }); // Expected: agent file may not exist or be unreadable — fall back to empty body
     return () => { cancelled = true; };
   }, [activeAgent?.name, activeAgent?.path, agentBody.name]);
 

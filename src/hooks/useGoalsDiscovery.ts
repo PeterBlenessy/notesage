@@ -47,7 +47,7 @@ export function useGoalsDiscovery(projectPath: string | null): {
           const name = goal.path.split('/').pop() || goal.path;
           goals.push({ path: goal.path, name, content });
         } catch {
-          // Skip files that can't be read
+          // Expected: goal file may have been deleted between index query and read
         }
       }
 

@@ -45,6 +45,9 @@ export function useCopilotCompletion(editor: Editor | null) {
 
   // -------------------------------------------------------------------------
   // LSP lifecycle: start/stop based on connection + working directory
+  // All LSP invoke().catch(() => {}) calls below are fire-and-forget
+  // notifications — failures are expected when LSP is not running or
+  // shutting down, and are harmless (no data loss, no user impact).
   // -------------------------------------------------------------------------
 
   useEffect(() => {
@@ -197,7 +200,7 @@ export function useCopilotCompletion(editor: Editor | null) {
           }
         }
       } catch {
-        // Silently ignore completion errors
+        // Expected: completion requests may fail when LSP is restarting or document changed
       }
     },
     [editor, lspReady, useSettingsStore.getState().inlineCompletionsDisabled]

@@ -53,7 +53,7 @@ export function useChangelog() {
           if (!cancelled) setChangelog(data);
         }
       } catch {
-        // No bundled changelog
+        // Expected: bundled changelog.json may not exist in dev builds
       }
 
       // Then try remote for potentially newer data (via Tauri HTTP plugin to avoid CORS)
@@ -67,7 +67,7 @@ export function useChangelog() {
           if (!cancelled) setChangelog(data);
         }
       } catch {
-        // Remote unavailable — bundled data already loaded
+        // Expected: remote changelog unavailable (offline, timeout) — bundled data already loaded
       }
 
       if (!cancelled) setLoading(false);

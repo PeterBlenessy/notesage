@@ -77,11 +77,11 @@ async function detectRenamedProject(
         const exists = await tauriApi.pathExists(metaPath);
         if (exists) return entry.path;
       } catch {
-        // Skip this candidate
+        // Expected: pathExists may fail for inaccessible directories — skip this candidate
       }
     }
   } catch {
-    // Parent directory scan failed
+    // Expected: parent directory may not exist or be inaccessible after rename
   }
   return null;
 }
@@ -150,7 +150,7 @@ export function useFileOperations() {
         const tree = await tauriApi.listDirectory(project.path);
         ws.updateProjectTree(project.path, tree);
       } catch {
-        // Project path no longer exists — check if it was renamed
+        // Expected: project path no longer exists — check if it was renamed
         // by scanning the parent directory for a folder with matching .notesage metadata
         const parentDir = project.path.substring(0, project.path.lastIndexOf('/'));
         const renamed = await detectRenamedProject(parentDir);
@@ -243,7 +243,7 @@ export function useFileOperations() {
         });
         return true;
       } catch (error) {
-        await tauriApi.clearSelfWrite(filePath).catch(() => {});
+        await tauriApi.clearSelfWrite(filePath).catch(() => {}); // Expected: best-effort cleanup, write already failed
         console.error("Failed to save file:", error);
         throw error;
       }

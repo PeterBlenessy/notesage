@@ -17,6 +17,7 @@ export function parseNotesageDrop(e: React.DragEvent): NotesageDragPayload | nul
     if (!parsed._notesage) return null;
     return parsed as NotesageDragPayload;
   } catch {
+    // Expected: dataTransfer may contain non-JSON text from external drag sources
     return null;
   }
 }

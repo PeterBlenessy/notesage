@@ -154,11 +154,11 @@ export function friendlyAIError(error: unknown, provider?: string, connectionId?
           const inner = JSON.parse(msg);
           msg = inner?.detail || inner?.message || inner?.error?.message || msg;
         } catch {
-          // Not nested JSON, use as-is
+          // Expected: message field is not nested JSON — use as-is
         }
       }
     } catch {
-      // Not valid JSON, fall through
+      // Expected: error string may not contain valid JSON — fall through to string cleanup
     }
   }
 

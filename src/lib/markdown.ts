@@ -121,7 +121,7 @@ export function injectAnnotationsIntoMarkdown(
           icon = (parsed as { icon: string }).icon;
         }
       } catch {
-        // ignore
+        // Expected: annotation attr may contain invalid JSON from corrupted state
       }
     }
     icons.push(icon);

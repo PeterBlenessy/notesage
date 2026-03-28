@@ -89,6 +89,7 @@ export function parseFrontmatter(raw: string): ParseResult {
   try {
     parsed = parse(yamlString);
   } catch {
+    // Expected: invalid YAML in frontmatter block — treat as no frontmatter
     return { frontmatter: null, content: raw };
   }
 

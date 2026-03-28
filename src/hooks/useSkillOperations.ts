@@ -105,7 +105,7 @@ async function migratePersonasToAgents(home: string) {
         try {
           const exists = await tauriApi.pathExists(filePath);
           if (!exists) { allExist = false; break; }
-        } catch { allExist = false; break; }
+        } catch { allExist = false; break; } // Expected: pathExists may fail for inaccessible paths
       }
       if (allExist) return; // All files present, nothing to do
     }
@@ -114,7 +114,7 @@ async function migratePersonasToAgents(home: string) {
     try {
       await tauriApi.createDirectory(agentsDir);
     } catch {
-      // Directory may already exist
+      // Expected: createDirectory fails if directory already exists
     }
 
     let migratedCount = 0;

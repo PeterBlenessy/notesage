@@ -4,7 +4,8 @@
 
 | Stage | Link | Status |
 | --- | --- | --- |
-| PRD | — | Pending implementation decisions |
+| PRD | [security-hardening](../prds/2026-03-28-security-hardening.md) | Draft |
+| Tasks | [security-hardening-tasks](../tasks/2026-03-28-security-hardening-tasks.md) | Not started |
 | Tasks | [codebase-audit-tasks](../tasks/2026-03-17-codebase-audit-tasks.md) | Partial |
 
 **Codebase version:** v0.22.3
