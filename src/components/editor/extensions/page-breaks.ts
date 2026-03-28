@@ -89,14 +89,22 @@ export const PageBreaks = Extension.create({
                   contentHeight -= nodes[i - 1].height
                 }
 
+                // Remaining whitespace on the current page before the break
+                const usedOnPage = contentHeight - (pageNumber - 1) * usablePerPage
+                const pageRemainder = usablePerPage - usedOnPage
+
                 decorations.push(
                   Decoration.widget(breakOffset, () => {
                     const gap = document.createElement('div')
                     gap.className = 'page-break-gap'
                     gap.setAttribute('contenteditable', 'false')
+                    // Tell CSS how much space remains so each page card is full height
+                    gap.style.setProperty('--page-remainder', `${Math.max(0, pageRemainder)}px`)
                     return gap
                   }, { side: -1, key: `page-break-${breakKey}` })
                 )
+                // Reset content height to start of next page
+                contentHeight = pageNumber * usablePerPage
                 pageNumber++
               }
 

@@ -48,17 +48,20 @@
   width: calc(var(--editor-padding-right, 6rem) - 8px);
 }
 
-/* Visible mode: full gap between pages */
+/* Visible mode: full gap between pages.
+   --page-remainder is set per-element by the page-breaks plugin to fill
+   the rest of the current page, so every page card has the same height. */
 [data-page-breaks="visible"] .page-break-gap {
   --gap-strip: 32px;
-  height: calc(var(--editor-padding-bottom, 2rem) + var(--gap-strip) + var(--editor-padding-top, 2rem));
+  --remainder: var(--page-remainder, 0px);
+  height: calc(var(--remainder) + var(--editor-padding-bottom, 2rem) + var(--gap-strip) + var(--editor-padding-top, 2rem));
   background: linear-gradient(
     to bottom,
     var(--color-background) 0,
-    var(--color-background) var(--editor-padding-bottom, 2rem),
-    var(--color-muted) var(--editor-padding-bottom, 2rem),
-    var(--color-muted) calc(var(--editor-padding-bottom, 2rem) + var(--gap-strip)),
-    var(--color-background) calc(var(--editor-padding-bottom, 2rem) + var(--gap-strip)),
+    var(--color-background) calc(var(--remainder) + var(--editor-padding-bottom, 2rem)),
+    var(--color-muted) calc(var(--remainder) + var(--editor-padding-bottom, 2rem)),
+    var(--color-muted) calc(var(--remainder) + var(--editor-padding-bottom, 2rem) + var(--gap-strip)),
+    var(--color-background) calc(var(--remainder) + var(--editor-padding-bottom, 2rem) + var(--gap-strip)),
     var(--color-background) 100%
   );
 }
@@ -69,9 +72,9 @@
   display: none;
 }
 
-/* Continuous mode: no gap, ticks only */
+/* Continuous mode: no visible gap, ticks mark the boundary */
 [data-page-breaks="continuous"] .page-break-gap {
-  height: 0;
+  height: var(--page-remainder, 0px);
   background: none;
 }
 
