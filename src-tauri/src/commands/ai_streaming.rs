@@ -1163,6 +1163,7 @@ pub async fn openai_compatible_chat_stream(
 
 /// Extract tool calls from an Anthropic `content_block_start` event with type `tool_use`.
 /// Returns `(id, name)` if this is a tool use block start.
+#[allow(dead_code)]
 pub(crate) fn parse_anthropic_tool_use_block_start(json: &serde_json::Value) -> Option<(String, String)> {
     let block = &json["content_block"];
     if block["type"].as_str() != Some("tool_use") {
@@ -1174,6 +1175,7 @@ pub(crate) fn parse_anthropic_tool_use_block_start(json: &serde_json::Value) -> 
 }
 
 /// Extract partial JSON from an Anthropic `content_block_delta` with type `input_json_delta`.
+#[allow(dead_code)]
 pub(crate) fn parse_anthropic_input_json_delta(json: &serde_json::Value) -> Option<String> {
     let delta = &json["delta"];
     if delta["type"].as_str() != Some("input_json_delta") {
@@ -1184,6 +1186,7 @@ pub(crate) fn parse_anthropic_input_json_delta(json: &serde_json::Value) -> Opti
 
 /// Extract tool calls from an Ollama streaming JSON line.
 /// Returns a vec of `(name, arguments_value)` pairs.
+#[allow(dead_code)]
 pub(crate) fn parse_ollama_tool_calls(json: &serde_json::Value) -> Vec<(String, serde_json::Value)> {
     let mut results = Vec::new();
     if let Some(tool_calls) = json["message"]["tool_calls"].as_array() {
@@ -1201,6 +1204,7 @@ pub(crate) fn parse_ollama_tool_calls(json: &serde_json::Value) -> Vec<(String, 
 
 /// Parse an OpenAI Chat Completions SSE chunk for incremental tool call data.
 /// Returns a vec of `(index, id_opt, name_opt, args_opt)` tuples.
+#[allow(dead_code)]
 pub(crate) fn parse_chat_completions_tool_call_delta(
     json: &serde_json::Value,
 ) -> Vec<(usize, Option<String>, Option<String>, Option<String>)> {
@@ -1219,6 +1223,7 @@ pub(crate) fn parse_chat_completions_tool_call_delta(
 
 /// Parse an OpenAI Responses API `response.output_item.added` event for function_call items.
 /// Returns `Some((call_id, name))` if this is a function_call item.
+#[allow(dead_code)]
 pub(crate) fn parse_openai_responses_function_call_item(json: &serde_json::Value) -> Option<(String, String)> {
     let item = &json["item"];
     if item["type"].as_str() != Some("function_call") {

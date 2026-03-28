@@ -895,6 +895,7 @@ pub async fn local_bundled_fim(
 
 /// Build the llama-server command arguments for a given model entry.
 /// Used by `start_local_server` and extracted here for testability.
+#[allow(dead_code)]
 pub fn build_server_args(
     model_path: &str,
     port: u16,

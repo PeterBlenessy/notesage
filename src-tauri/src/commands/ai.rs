@@ -92,6 +92,7 @@ pub struct ToolCall {
 }
 
 /// The result of executing a tool call, sent back to the model.
+#[allow(dead_code)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ToolResult {
     pub tool_call_id: String,
