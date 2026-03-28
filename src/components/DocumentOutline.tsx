@@ -35,18 +35,26 @@ export function DocumentOutline({ open, onOpenChange, editor }: DocumentOutlineP
     if (!editor) return;
     const pos = Number(e.currentTarget.dataset.pos);
     if (Number.isNaN(pos)) return;
-    editor.commands.setTextSelection(pos + 1);
     onOpenChange(false);
+    // Use double-RAF to ensure dialog close re-render has settled
     requestAnimationFrame(() => {
-      editor.commands.focus();
-      // Scroll the heading to the top of the visible editor area
-      const coords = editor.view.coordsAtPos(pos + 1);
-      const editorEl = editor.view.dom.closest(".overflow-y-auto") ?? editor.view.dom.parentElement;
-      if (editorEl) {
-        const editorRect = editorEl.getBoundingClientRect();
-        const scrollOffset = coords.top - editorRect.top - 80;
-        editorEl.scrollBy({ top: scrollOffset, behavior: "smooth" });
-      }
+      requestAnimationFrame(() => {
+        try {
+          // Get the DOM element at the heading position
+          const domInfo = editor.view.domAtPos(pos + 1);
+          const el: Element | null = domInfo.node instanceof Element
+            ? domInfo.node
+            : domInfo.node.parentElement;
+          if (el) {
+            el.scrollIntoView({ block: "center", behavior: "instant" });
+          }
+        } catch {
+          // Position not in DOM
+        }
+        // Set selection after scroll so the browser doesn't fight us
+        editor.commands.setTextSelection(pos + 1);
+        editor.commands.focus();
+      });
     });
   }, [editor, onOpenChange]);
 
