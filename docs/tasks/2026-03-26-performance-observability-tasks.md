@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-26 |
-| **Status** | In progress |
+| **Status** | Complete |
 | **PRD** | [performance-observability](../prds/2026-03-26-performance-observability.md) |
 | **Total** | 16 tasks: 6S, 6M, 4L |
 | **Suggested order** | Instrumentation (#1-#9) → Benchmark infra (#10-#11) → Benchmark tests (#12-#14) → Baseline (#15) → CI (#16) |
@@ -110,7 +110,7 @@
 
 ## Phase 2: Benchmark Infrastructure
 
-### #10 — Create benchmark harness and synthetic document generator
+### #10 — Create benchmark harness and synthetic document generator ✅
 
 **Description:** Create `src/perf/harness.ts` with: (a) `benchmark(name, fn, budgetMs)` — runs function, asserts `elapsed < budget`, logs result as structured output. (b) `generateMarkdown(sizeKB)` — generates synthetic markdown with realistic content (headings, paragraphs, bold/italic, lists, code blocks, tables, `#tags`, `@mentions`) at approximately the target size. (c) `DOC_SIZES` constant: `{ small: 1, medium: 10, large: 50, extraLarge: 100 }`. (d) `createTestEditor(content)` — creates a Tiptap editor with the same extensions as the real app (reuse the pattern from `markdown-roundtrip.test.ts`). Add `"test:perf": "vitest run src/perf/"` to `package.json`.
 
@@ -120,7 +120,7 @@
 
 ---
 
-### #11 — Create synthetic document fixtures
+### #11 — Create synthetic document fixtures ✅
 
 **Description:** Using the `generateMarkdown()` function from #10, create 4 fixture files in `tests/fixtures/perf/`: `perf-1kb.md`, `perf-10kb.md`, `perf-50kb.md`, `perf-100kb.md`. These serve as reproducible inputs for benchmarks. Verify actual sizes are within 10% of target. Include a mix of all supported syntax: headings (H1-H4), paragraphs, bold, italic, inline code, bullet lists, ordered lists, task lists, blockquotes, code blocks with language, tables, horizontal rules, links, `#tags`, `@mentions`.
 
@@ -132,7 +132,7 @@
 
 ## Phase 3: Benchmark Tests
 
-### #12 — Benchmark: markdown parse and serialize
+### #12 — Benchmark: markdown parse and serialize ✅
 
 **Description:** Create `src/perf/markdown.perf.ts`. For each fixture size: (a) parse markdown → ProseMirror doc, assert under budget. (b) serialize ProseMirror doc → markdown, assert under budget. Use `createTestEditor(content)` from harness. Initial budgets (generous, tighten from baseline): parse 1KB/10ms, 10KB/50ms, 50KB/200ms, 100KB/500ms. Serialize: same budgets. Run each 3 times, use median.
 
@@ -142,7 +142,7 @@
 
 ---
 
-### #13 — Benchmark: search and decoration rebuild
+### #13 — Benchmark: search and decoration rebuild ✅
 
 **Description:** Create `src/perf/decorations.perf.ts`. For each fixture size: (a) search decoration rebuild: call `findMatches(doc, "the")` and `buildDecorations()`, assert under budget. (b) tag decoration rebuild: dispatch a doc-change transaction on a doc with `#tag` patterns, measure `TagHighlight` plugin rebuild time. Initial budgets: search 1KB/5ms, 10KB/20ms, 50KB/80ms, 100KB/200ms. Tag: same or slightly less.
 
@@ -152,7 +152,7 @@
 
 ---
 
-### #14 — Benchmark: store operations and command palette filtering
+### #14 — Benchmark: store operations and command palette filtering ✅
 
 **Description:** Create `src/perf/stores.perf.ts`. Tests: (a) Zustand `editor-store.updateTabContent()` with varying tab counts (10, 50, 100 tabs), assert &lt;5ms. (b) Workspace store `listDirectory` result processing with varying file counts (100, 500, 1000 entries), assert &lt;10ms. (c) Command palette filtering: generate 500 file entries, filter with a 3-char query, assert &lt;20ms. No Tauri IPC needed — test pure JS logic.
 
@@ -164,7 +164,7 @@
 
 ## Phase 4: Baseline and CI
 
-### #15 — Record performance baseline
+### #15 — Record performance baseline ✅
 
 **Description:** Run `pnpm test:perf` 10 times on the development machine. Record median values for all benchmarks. Create `docs/performance-baseline.md` with: machine specs (chip, RAM, macOS version, Node version), date, table of results per operation per size, and derived budgets (2x median for dev, 3x median for CI). Update the benchmark budgets in the test files to match the 2x-median values.
 
@@ -174,7 +174,7 @@
 
 ---
 
-### #16 — Add performance tests to CI
+### #16 — Add performance tests to CI ✅
 
 **Description:** Add `pnpm test:perf` step to the CI workflow (`.github/workflows/test.yml` if it exists from test-infrastructure tasks, otherwise create it). Run after unit tests pass. Use CI budgets (3x baseline). On failure, output a clear table showing which operation exceeded its budget and by how much. Upload benchmark results as a CI artifact for trend tracking.
 

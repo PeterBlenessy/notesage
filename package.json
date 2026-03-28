@@ -20,6 +20,7 @@
     "typecheck": "tsc --noEmit",
     "coverage:check": "bash scripts/coverage-check.sh",
     "coverage:update-baseline": "vitest run --coverage && node scripts/update-coverage-baseline.js",
+    "test:perf": "vitest run --config vitest.perf.config.ts",
     "test:e2e-real-full": "./scripts/run-real-e2e.sh"
   },
   "dependencies": {

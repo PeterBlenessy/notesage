@@ -199,14 +199,17 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `pnpm test:e2e` | Playwright end-to-end tests | Chromium, Tauri IPC mocked, starts Vite dev server |
 | `pnpm test:e2e-real` | Real E2E tests (WebDriverIO) | Requires running app (`pnpm tauri:test`) + `tauri-webdriver` |
 | `pnpm test:e2e-real-full` | Real E2E full lifecycle | Starts app + driver, runs tests, cleans up |
-| `pnpm test:all` | All of the above (excludes real E2E) | Full suite |
+| `pnpm test:perf` | Performance benchmarks | Markdown parse/serialize, decorations, stores — uses `vitest.perf.config.ts` |
+| `pnpm test:all` | All of the above (excludes real E2E and perf) | Full suite |
 | `pnpm typecheck` | TypeScript type checking | `tsc --noEmit` |
 
 **Frontend coverage** uses `@vitest/coverage-istanbul` and requires Node 22 (pinned in `.nvmrc`). Coverage output lands in `./coverage/` (gitignored). Current coverage (2026-03-28): 70.25% lines overall, 84.09% stores, 86.95% hooks, 89.91% markdown.ts. Coverage baseline tracked in `coverage-baseline.json` with regression detection via `pnpm coverage:check`.
 
 **Rust coverage** uses `cargo-tarpaulin` or `cargo-llvm-cov` in CI. Neither is required locally — contributors run `cargo test` directly.
 
-**CI pipeline** (`.github/workflows/test.yml`) runs on push to `main` and PRs: frontend tests with coverage, coverage regression check, Playwright E2E, and Rust backend tests. Coverage summary posted as PR comment via `vitest-coverage-report-action`. All jobs must pass for merge.
+**Performance benchmarks** (`src/perf/`) measure markdown parse/serialize, decoration rebuilds, and store operations against budget thresholds. Excluded from default `pnpm test` runs via vitest exclude pattern. Uses `PERF_BUDGET_MULTIPLIER` env var for CI (1.5x) vs dev (1x) budgets. Baseline recorded in `docs/performance-baseline.md`.
+
+**CI pipeline** (`.github/workflows/test.yml`) runs on push to `main` and PRs: frontend tests with coverage, performance benchmarks, coverage regression check, Playwright E2E, and Rust backend tests. Coverage summary posted as PR comment via `vitest-coverage-report-action`. All jobs must pass for merge.
 
 ### Security Model
 
