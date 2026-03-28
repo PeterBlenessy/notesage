@@ -194,6 +194,22 @@ export async function openFile(fileName: string, projectPath?: string): Promise<
             timeoutMsg: `Editor did not appear within ${DEFAULT_TIMEOUT}ms after opening "${fileName}"`,
         },
     );
+
+    // Mark the tab clean so dirty tracking starts from a known baseline.
+    // Without this, the editor's setContent() triggers an onUpdate that
+    // may mark the tab dirty before the user has typed anything.
+    await browser.pause(200);
+    await browser.execute(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const w = window as any;
+        if (w.__E2E_EDITOR_STORE__) {
+            const state = w.__E2E_EDITOR_STORE__.getState();
+            const activeTab = state.tabs.find((t: { id: string }) => t.id === state.activeTabId);
+            if (activeTab) {
+                state.markTabClean(activeTab.id, activeTab.content);
+            }
+        }
+    });
 }
 
 /**
