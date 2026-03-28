@@ -19,6 +19,7 @@ import { Markdown } from "tiptap-markdown";
 import { SlashCommand } from "@/components/editor/extensions/slash-command";
 import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSuggestion, MentionHighlight, MentionSuggestion, DateHighlight, DateSuggestion, SearchHighlight } from "@/components/editor/extensions";
 import { PageBreaks } from "@/components/editor/extensions/page-breaks";
+import { LinkClick } from "@/components/editor/extensions/link-click";
 import { getMarkdownFromEditor } from "@/lib/markdown";
 import { getEditorStorage, type EditorStorageImage } from "@/lib/editor-storage";
 
@@ -136,12 +137,21 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       MentionHighlight,
       MentionSuggestion,
       SearchHighlight,
+      LinkClick,
     ],
     content,
     editable,
     editorProps: {
       attributes: {
         class: "prose prose-slate dark:prose-invert max-w-none focus:outline-none",
+      },
+      handleKeyDown: (_view, event) => {
+        // Prevent ProseMirror/Tiptap from handling Cmd+K (link toggle) —
+        // Cmd+K is reserved for the command palette at the app level.
+        if ((event.metaKey || event.ctrlKey) && event.key === "k") {
+          return true; // Returning true tells PM to NOT handle the event
+        }
+        return false;
       },
     },
     onUpdate: ({ editor }) => {

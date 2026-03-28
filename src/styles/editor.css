@@ -274,7 +274,7 @@
   margin: 2em 0;
 }
 
-/* Links */
+/* Links — external */
 .ProseMirror a {
   color: var(--color-primary);
   text-decoration: none;
@@ -284,6 +284,16 @@
 }
 
 .ProseMirror a:hover {
+  border-bottom-color: var(--color-primary);
+}
+
+/* Links — internal document (href doesn't start with http/mailto/tel/#) */
+.ProseMirror a:not([href^="http"]):not([href^="mailto"]):not([href^="tel"]):not([href^="#"]) {
+  border-bottom-style: dashed;
+  border-bottom-color: var(--color-border);
+}
+
+.ProseMirror a:not([href^="http"]):not([href^="mailto"]):not([href^="tel"]):not([href^="#"]):hover {
   border-bottom-color: var(--color-primary);
 }
 

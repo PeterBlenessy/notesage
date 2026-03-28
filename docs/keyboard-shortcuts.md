@@ -22,7 +22,6 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | Underline | `Cmd+U` | Toggle underline on selection |
 | Strikethrough | `Cmd+Shift+X` | Toggle strikethrough on selection |
 | Code | `Cmd+E` | Toggle inline code on selection |
-| Link | `Cmd+K` | Insert/edit link (when text is selected) |
 | Indent list item | `Tab` | Nest list item deeper (also available via toolbar button) |
 | Outdent list item | `Shift+Tab` | Lift list item one level (also available via toolbar button) |
 

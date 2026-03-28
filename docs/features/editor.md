@@ -9,7 +9,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 - Bullet lists, ordered lists, task lists (checkboxes)
 - Blockquotes, horizontal rules
 - Code blocks with syntax highlighting (lowlight)
-- Links (rendered inline, clickable), images (via URL prompt)
+- Links (rendered inline, clickable — internal document links and external URLs), images (via URL prompt)
 - Tables (insert, add/remove rows/columns, merge/split cells, toggle headers)
 - Text color (8-color palette) and background highlights (6-color palette)
 - Text alignment (left, center, right)
@@ -74,6 +74,39 @@ In-document search across all supported file types, with replace for editable do
 - **EPUB:** Uses foliate-js `view.search()` async generator for CFI collection, `view.select()` for native text selection highlighting
 - **DOCX:** DOM-based search via shared `dom-search.ts` utility (walk text nodes, wrap matches in `<mark>` elements)
 - **Plain text:** Same DOM-based search via `dom-search.ts` operating on `<pre>` element
+
+## Internal Document Linking
+
+Link to other documents in your workspace using standard markdown link syntax.
+
+**Creating internal links:**
+
+- Use the link button in the toolbar (or type markdown link syntax directly)
+- The link popover supports both document search and external URL entry
+- Type a filename to search across all open projects and explorer folders
+- Selecting a search result inserts a relative path link with the file name as display text
+- External URLs (starting with `http`, `mailto`, etc.) behave as before
+
+**Clicking internal links:**
+
+- Clicking a link in the editor navigates to the target: internal file links open as tabs, external URLs open in the system browser
+- Relative paths (e.g., `./readme.md`, `../docs/file.md`) are resolved from the active file's directory
+- Absolute paths (starting with `/`) are opened directly
+- If resolution fails, workspace roots are searched as a fallback
+- Toast error shown if the file cannot be found
+
+**Visual distinction:**
+
+- Internal document links display with a dashed underline to distinguish them from external URLs
+- External links use a solid underline on hover
+
+**Key files:**
+
+| File | Purpose |
+| --- | --- |
+| `src/lib/link-utils.ts` | Shared link detection, search, and navigation utilities |
+| `src/components/editor/extensions/link-click.ts` | ProseMirror click handler for link navigation |
+| `src/components/editor/toolbar/LinkButton.tsx` | Link popover with document search |
 
 ## Inline Tag Badges & Search
 

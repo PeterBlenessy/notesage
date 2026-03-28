@@ -53,17 +53,8 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         return;
       }
 
-      // Cmd+K — command palette (only when no text selected in editor)
+      // Cmd+K — command palette (always, regardless of selection)
       if (isMod && e.key === "k") {
-        const active = document.activeElement;
-        const pmView = active?.closest(".ProseMirror");
-        if (pmView) {
-          const sel = window.getSelection();
-          if (sel && sel.toString().length > 0) {
-            // Let Tiptap handle Cmd+K for link insertion
-            return;
-          }
-        }
         e.preventDefault();
         callbacks.onPaletteOpen("default");
         return;

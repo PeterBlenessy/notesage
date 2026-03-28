@@ -36,7 +36,6 @@ const categories: ShortcutCategory[] = [
       { action: "Underline", keys: [["⌘", "U"]] },
       { action: "Strikethrough", keys: [["⌘", "⇧", "X"]] },
       { action: "Code", keys: [["⌘", "E"]] },
-      { action: "Link", keys: [["⌘", "K"]] },
       { action: "Undo", keys: [["⌘", "Z"]] },
       { action: "Redo", keys: [["⌘", "⇧", "Z"]] },
     ],

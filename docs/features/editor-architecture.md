@@ -38,6 +38,7 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | PageBreaks | `page-breaks.ts` | Plugin + Decoration | Calculates and renders CSS-based page break indicators in the editor |
 | TableMarkdown | `table-markdown.ts` | Utility | Custom table markdown serializer for GFM round-tripping |
 | ThemedHighlight | `themed-highlight.ts` | Mark Extension | Extends Tiptap Highlight with semantic color names for light/dark mode |
+| LinkClick | `link-click.ts` | Plugin | Click handler for link navigation (internal files → open as tab, external → system browser) |
 | ~~ItemAnnotation~~ | ~~`item-annotation.ts`~~ | ~~Plugin + Decoration~~ | ~~Emoji annotations on list items (deferred — needs unified gutter design)~~ |
 | ~~DragHandle~~ | ~~`drag-handle.ts`~~ | ~~Plugin + DOM~~ | ~~Block drag handles (deferred — needs unified gutter design)~~ |
 
