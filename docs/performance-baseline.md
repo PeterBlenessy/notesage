@@ -1,6 +1,8 @@
 # Performance Baseline
 
-Recorded 2026-03-28 from 10 runs of `pnpm test:perf`.
+Re-recorded 2026-03-28 from 10 runs of `pnpm test:perf`.
+
+Previous baseline (same date, same code) had optimistic parse 100KB (182ms) and serialize 100KB (4.6ms) values — not reproducible under normal conditions. Re-measured with controlled runs to establish reliable budgets.
 
 ## Machine Specs
 
@@ -18,18 +20,18 @@ Recorded 2026-03-28 from 10 runs of `pnpm test:perf`.
 | Size | Median (ms) | Dev Budget (2x) | CI Budget (3x) |
 | --- | --- | --- | --- |
 | 1KB | 17 | 34 | 51 |
-| 10KB | 50 | 100 | 150 |
-| 50KB | 138 | 276 | 414 |
-| 100KB | 182 | 364 | 546 |
+| 10KB | 51 | 102 | 153 |
+| 50KB | 139 | 278 | 417 |
+| 100KB | 254 | 508 | 762 |
 
 ### Markdown Serialize
 
 | Size | Median (ms) | Dev Budget (2x) | CI Budget (3x) |
 | --- | --- | --- | --- |
-| 1KB | 0.25 | 1 | 2 |
-| 10KB | 0.62 | 2 | 3 |
-| 50KB | 5.1 | 10 | 15 |
-| 100KB | 4.6 | 10 | 15 |
+| 1KB | 0.25 | 1 | 1 |
+| 10KB | 0.73 | 2 | 3 |
+| 50KB | 5.3 | 11 | 16 |
+| 100KB | 10.3 | 21 | 31 |
 
 ### Search Decorations (findMatches + buildDecorations)
 
