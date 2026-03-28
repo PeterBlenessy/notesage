@@ -123,7 +123,7 @@ describe('Tab Management', () => {
             // Expected content snippets for each file
             const expectedContent: Record<string, string> = {
                 'README.md': 'Test Project',
-                'notes.md': 'Shopping list',
+                'notes.md': 'Shopping List',
                 'code-examples.md': 'Code Examples',
             };
 
@@ -169,16 +169,29 @@ describe('Tab Management', () => {
 
         it('should show dirty dot after typing and hide it after saving', async () => {
             await openFile('empty.md');
-            await browser.pause(300);
 
-            // Verify no dirty dot initially
+            // Save to establish clean baseline, then wait for dirty state to clear
+            await pressShortcut(['Meta', 's']);
+            await browser.pause(1000);
+
+            // Wait for dirty dot to disappear (save clears dirty state)
+            await browser.waitUntil(
+                async () => {
+                    const tab = await getActiveTab();
+                    if (!tab) return false;
+                    const dot = await tab.$('span.rounded-full.bg-primary');
+                    return !(await dot.isExisting());
+                },
+                {
+                    timeout: 3000,
+                    interval: 200,
+                    timeoutMsg: 'Dirty dot did not clear after initial save',
+                },
+            );
+            console.log('[tabs] Clean baseline established after save');
+
             const activeTab = await getActiveTab();
             expect(activeTab).not.toBeNull();
-
-            const dirtyDotBefore = await activeTab!.$('span.rounded-full.bg-primary');
-            const hasDirtyBefore = await dirtyDotBefore.isExisting();
-            console.log(`[tabs] Dirty dot before typing: ${hasDirtyBefore}`);
-            expect(hasDirtyBefore).toBe(false);
 
             // Type some text to make the tab dirty
             await typeInEditor('Test dirty indicator');

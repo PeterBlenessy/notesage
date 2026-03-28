@@ -16,7 +16,7 @@
  */
 
 import * as path from 'path';
-import { waitForElement, openFile, typeInEditor, getEditorText } from '../helpers/actions';
+import { waitForElement, openFile, typeInEditor, getEditorText, tauriInvoke } from '../helpers/actions';
 import { ensureCleanState, ensureProjectOpen } from '../helpers/setup';
 import { measureAction } from '../helpers/timing';
 
@@ -31,6 +31,10 @@ describe('External Change Detection', () => {
         const root = await browser.$('#root');
         await root.waitForExist({ timeout: 5000, timeoutMsg: 'App root not found within 5s' });
         await ensureProjectOpen(FIXTURE_PROJECT);
+
+        // Ensure the filesystem watcher is active on the test project
+        await tauriInvoke('watch_directory', { path: FIXTURE_PROJECT });
+        console.log(`[ext-change] Watcher started on: ${FIXTURE_PROJECT}`);
     });
 
     beforeEach(async () => {
