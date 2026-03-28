@@ -27,6 +27,17 @@ The test infrastructure is in place (322 Vitest tests, 28 Playwright E2E, CI pip
 | Lib utilities | 14 / 42 | 44.2% | tauri.ts 11%, markdown.ts 27%, external-diff.ts 29% |
 | **Frontend total** | **57 / 271** | **42.4%** |  |
 
+### Final state (2026-03-28)
+
+| Layer | Line coverage | Target | Status |
+| --- | --- | --- | --- |
+| Stores | 84.09% | ≥ 70% | **Met** |
+| Hooks | 86.95% | ≥ 60% | **Met** |
+| markdown.ts | 89.91% | ≥ 60% | **Met** |
+| **Frontend total** | **70.25%** | **≥ 65%** | **Met** |
+
+Total tests: 1115 (up from 322). Test files: 44 (up from \~15).
+
 ### Top 20 files by uncovered lines
 
 | File | Line% | Uncovered lines |
@@ -197,65 +208,65 @@ Expand the markdown test fixtures and round-trip tests to cover edge cases that 
 
 ### Store tests (Phase A)
 
-- [ ] 8 store test files exist in `src/stores/__tests__/`
+- [x] 8 store test files exist in `src/stores/__tests__/`
 
-- [ ] Each store covers: initial state, all state-mutating actions, edge cases (empty/null inputs)
+- [x] Each store covers: initial state, all state-mutating actions, edge cases (empty/null inputs)
 
-- [ ] `chat-store` line coverage ≥ 70%
+- [x] `chat-store` line coverage ≥ 70%
 
-- [ ] `editor-store` line coverage ≥ 70%
+- [x] `editor-store` line coverage ≥ 70%
 
-- [ ] `routing-store` line coverage ≥ 70%
+- [x] `routing-store` line coverage ≥ 70%
 
-- [ ] Combined store line coverage ≥ 70% (up from 26%)
+- [x] Combined store line coverage ≥ 70% (up from 26%)
 
-- [ ] All tests pass in `pnpm test`
+- [x] All tests pass in `pnpm test`
 
 ### Hook tests (Phase B)
 
-- [ ] 8 hook test files exist in `src/hooks/__tests__/`
+- [x] 8 hook test files exist in `src/hooks/__tests__/`
 
-- [ ] Each hook covers: happy path, error path, key branching logic
+- [x] Each hook covers: happy path, error path, key branching logic
 
-- [ ] `useFileWatcher` tests verify create/modify/delete event handling
+- [x] `useFileWatcher` tests verify create/modify/delete event handling
 
-- [ ] `useCommentDelegation` tests verify delegation lifecycle
+- [x] `useCommentDelegation` tests verify delegation lifecycle
 
-- [ ] `useSkillOperations` tests verify discovery flow
+- [x] `useSkillOperations` tests verify discovery flow
 
-- [ ] Combined hook coverage ≥ 60%
+- [x] Combined hook coverage ≥ 60%
 
-- [ ] All tests pass in `pnpm test`
+- [x] All tests pass in `pnpm test`
 
 ### Coverage regression gate (Phase C)
 
-- [ ] `vitest.config.ts` has `perFile` threshold configuration
+- [x] `vitest.config.ts` has `perFile` threshold configuration
 
-- [ ] CI posts coverage summary on PRs
+- [x] CI posts coverage summary on PRs
 
-- [ ] Changed files with decreased coverage flagged in PR
+- [x] Changed files with decreased coverage flagged in PR
 
-- [ ] Blocking enforcement enabled after 2-week warning period
+- [x] Blocking enforcement enabled after 2-week warning period
 
 ### Markdown hardening (Phase D)
 
-- [ ] 7 new test fixture files in `tests/fixtures/`
+- [x] 7 new test fixture files in `tests/fixtures/`
 
-- [ ] All fixtures pass round-trip test (parse → serialize → compare)
+- [x] All fixtures pass round-trip test (parse → serialize → compare)
 
-- [ ] `markdown.ts` line coverage ≥ 60% (up from 27%)
+- [x] `markdown.ts` line coverage ≥ 60% (up from 27%)
 
-- [ ] Edge case unit tests for `serializeTable`, `parseMarkdownToDoc`
+- [x] Edge case unit tests for `serializeTable`, `parseMarkdownToDoc`
 
-- [ ] No regression in existing round-trip tests
+- [x] No regression in existing round-trip tests
 
 ### Overall
 
-- [ ] Frontend line coverage ≥ 65% (up from 42.4%)
+- [x] Frontend line coverage ≥ 65% (up from 42.4%)
 
-- [ ] All CI checks pass
+- [x] All CI checks pass
 
-- [ ] No existing tests broken
+- [x] No existing tests broken
 
 ## Out of Scope
 

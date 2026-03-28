@@ -238,7 +238,7 @@ All 19 tasks complete. The test infrastructure is fully operational.
 | Hooks & utilities | 15 test files (markdown round-trip, frontmatter, persistence, stores) | Markdown conversion, store hydration, AI context |
 | Playwright E2E | 28 tests across 5 spec files (`e2e/tests/`) | App load, file operations, editor interactions, navigation, chat panel |
 | Rust backend | 186 tests (`cargo test`) | Parsers, index, export, commands |
-| **Total frontend** | **322 Vitest + 28 Playwright** | |
+| **Total frontend** | **322 Vitest + 28 Playwright** |  |
 
 ### Frontend coverage (`pnpm test:coverage`)
 
@@ -266,12 +266,14 @@ All 19 tasks complete. The test infrastructure is fully operational.
 | `cd src-tauri && cargo test` | Rust backend tests |
 
 **CI pipeline** (`.github/workflows/test.yml`):
+
 - Triggers on PRs to `main` and manual dispatch
 - Three parallel jobs: frontend tests + coverage, Playwright E2E, Rust backend (all on `macos-latest`)
 - Release workflow (`.github/workflows/release.yml`) runs the full test suite as a prerequisite before building
 - Coverage report uploaded as artifact; Playwright report uploaded on failure
 
 **Infrastructure:**
+
 - Node 22 LTS pinned via `.nvmrc` (required for Istanbul coverage)
 - Tauri IPC fully mocked for both Vitest (`src/test/tauri-mock.ts`) and Playwright (`e2e/fixtures/tauri-mock.ts`)
 - Component test harness with `renderWithProviders()`, mock data factories, and mock editor

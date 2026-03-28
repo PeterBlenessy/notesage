@@ -10,7 +10,7 @@
 
 **Risks:**
 
-- `tauri-plugin-webdriver` is very new (Feb 2026, ~4K downloads). The spike (#1-#4) exists specifically to validate it works before investing further. If the spike fails, stop and document findings.
+- `tauri-plugin-webdriver` is very new (Feb 2026, \~4K downloads). The spike (#1-#4) exists specifically to validate it works before investing further. If the spike fails, stop and document findings.
 - The `CARGO_FEATURES` env var approach for `tauri dev` may not work — Tauri CLI may need `--features` passed differently. Research during #2.
 - `tauri-wd` (the WebDriver CLI companion) may have its own install requirements or version compatibility issues. Validate in #3.
 - WebDriver interaction with WKWebView may have quirks (shadow DOM, event handling, element finding) that don't exist in standard browsers. The spike will surface these.
@@ -88,7 +88,7 @@
 
 ### #7 — Real E2E tests: editor typing and save ✅
 
-**Description:** Write `e2e-real/tests/editor.test.ts`. Tests: (1) Type in editor — type 100 characters, total time < 2s, no dropped characters. (2) Save file (Cmd+S) — save and verify file on disk matches editor content (read file via `browser.execute` or WebDriver file access). (3) Save doesn't trigger false watcher reload — after save, verify no external change toast/banner appears. (4) Slash command — type `/`, verify menu appears within 150ms, select heading, verify heading inserted. (5) Find in document — Cmd+F, type query, verify matches highlighted within 200ms, Escape closes find bar.
+**Description:** Write `e2e-real/tests/editor.test.ts`. Tests: (1) Type in editor — type 100 characters, total time &lt; 2s, no dropped characters. (2) Save file (Cmd+S) — save and verify file on disk matches editor content (read file via `browser.execute` or WebDriver file access). (3) Save doesn't trigger false watcher reload — after save, verify no external change toast/banner appears. (4) Slash command — type `/`, verify menu appears within 150ms, select heading, verify heading inserted. (5) Find in document — Cmd+F, type query, verify matches highlighted within 200ms, Escape closes find bar.
 
 **Complexity:** L | **Category:** frontend | **Dependencies:** #5, #6
 
@@ -128,7 +128,7 @@
 
 ### #11 — Real E2E tests: large document and resize ✅
 
-**Description:** Write `e2e-real/tests/performance.test.ts`. Tests: (1) Large document — open a 1000+ line markdown file (create `e2e-real/fixtures/test-project/large-doc.md`), verify it loads within 2s, scroll to bottom, type at end — no perceptible lag (< 100ms per keystroke measured via `performance.now()`). (2) Editor resize — resize the browser window, verify editor content reflows without content jumps (check scroll position stability). (3) Multiple projects — open 3 projects, switch between them, verify tree updates within 500ms each.
+**Description:** Write `e2e-real/tests/performance.test.ts`. Tests: (1) Large document — open a 1000+ line markdown file (create `e2e-real/fixtures/test-project/large-doc.md`), verify it loads within 2s, scroll to bottom, type at end — no perceptible lag (&lt; 100ms per keystroke measured via `performance.now()`). (2) Editor resize — resize the browser window, verify editor content reflows without content jumps (check scroll position stability). (3) Multiple projects — open 3 projects, switch between them, verify tree updates within 500ms each.
 
 **Complexity:** L | **Category:** frontend | **Dependencies:** #5, #6
 

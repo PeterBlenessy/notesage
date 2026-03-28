@@ -202,11 +202,11 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `pnpm test:all` | All of the above (excludes real E2E) | Full suite |
 | `pnpm typecheck` | TypeScript type checking | `tsc --noEmit` |
 
-**Frontend coverage** uses `@vitest/coverage-istanbul` and requires Node 22 (pinned in `.nvmrc`). Coverage output lands in `./coverage/` (gitignored).
+**Frontend coverage** uses `@vitest/coverage-istanbul` and requires Node 22 (pinned in `.nvmrc`). Coverage output lands in `./coverage/` (gitignored). Current coverage (2026-03-28): 70.25% lines overall, 84.09% stores, 86.95% hooks, 89.91% markdown.ts. Coverage baseline tracked in `coverage-baseline.json` with regression detection via `pnpm coverage:check`.
 
 **Rust coverage** uses `cargo-tarpaulin` or `cargo-llvm-cov` in CI. Neither is required locally — contributors run `cargo test` directly.
 
-**CI pipeline** (`.github/workflows/test.yml`) runs on push to `main` and PRs: frontend tests with coverage, Playwright E2E, and Rust backend tests. All jobs must pass for merge.
+**CI pipeline** (`.github/workflows/test.yml`) runs on push to `main` and PRs: frontend tests with coverage, coverage regression check, Playwright E2E, and Rust backend tests. Coverage summary posted as PR comment via `vitest-coverage-report-action`. All jobs must pass for merge.
 
 ### Security Model
 

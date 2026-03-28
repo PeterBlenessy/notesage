@@ -249,7 +249,7 @@ Create `scripts/run-real-e2e.sh`, add to `/test` skill documentation, document t
 
 - `cargo install tauri-webdriver --locked` (one-time CLI install)
 - Three-terminal setup: (1) `pnpm tauri:test`, (2) `tauri-webdriver`, (3) `pnpm test:e2e-real`
-- First build with `e2e-testing` feature takes ~36s (subsequent builds are incremental)
+- First build with `e2e-testing` feature takes \~36s (subsequent builds are incremental)
 
 ### WKWebView quirks observed
 
