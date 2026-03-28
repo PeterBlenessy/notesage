@@ -88,6 +88,21 @@ export const PageBreaks = Extension.create({
               contentHeight += nodeHeight
             })
 
+            // Pad the last page to full height so it renders as a complete page
+            const lastPageUsed = contentHeight - (pageNumber - 1) * usablePerPage
+            const remaining = usablePerPage - lastPageUsed
+            if (remaining > 1) {
+              decorations.push(
+                Decoration.widget(doc.content.size, () => {
+                  const pad = document.createElement('div')
+                  pad.style.height = `${remaining}px`
+                  pad.style.pointerEvents = 'none'
+                  pad.setAttribute('contenteditable', 'false')
+                  return pad
+                }, { side: 1, key: 'page-pad-last' })
+              )
+            }
+
             const newSet = DecorationSet.create(doc, decorations)
             editorView.dispatch(
               editorView.state.tr.setMeta(pageBreaksKey, newSet)

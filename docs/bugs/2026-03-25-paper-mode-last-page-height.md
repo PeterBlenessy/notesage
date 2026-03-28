@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date observed** | 2026-03-25 |
-| **Status** | Open |
+| **Status** | Fixed |
 | **Severity** | Low |
 | **Impact** | Visual — last page in paper mode appears truncated |
 | **Versions affected** | v0.23.0 |
