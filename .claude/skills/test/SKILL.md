@@ -71,7 +71,64 @@ Runs end-to-end tests in Chromium via Playwright:
 
 **CI configuration:** `playwright.config.ts` sets `forbidOnly: true`, single worker, 2 retries in CI.
 
-### 4. Rust Backend Tests
+### 4. Real E2E Tests (WebDriverIO + Tauri WebDriver)
+
+```bash
+pnpm test:e2e-real-full
+```
+
+Tests the **real running app** via WebDriverIO and `tauri-plugin-webdriver` — real Rust backend, real IPC, real filesystem watcher, real editor.
+
+**What it tests:**
+
+- App startup and project open (file tree renders, files open in editor)
+- Editor typing, save (Cmd+S), slash commands, find in document
+- Tab switching, dirty indicator, close tab, undo/redo across tabs
+- External file changes (watcher detects modify/create/delete on disk)
+- Navigation: theme toggle, chat panel, sidebar toggle, focus mode
+- Performance: large document load, keystroke latency, resize, rapid tab switching
+
+**Full lifecycle (recommended):**
+
+```bash
+pnpm test:e2e-real-full          # Starts app + driver, runs tests, cleans up
+pnpm test:e2e-real-full --no-build  # Skip app start (if already running)
+```
+
+**Manual 3-terminal setup (for debugging):**
+
+```bash
+# Terminal 1: Start app with WebDriver plugin
+pnpm tauri:test
+
+# Terminal 2: Start WebDriver bridge
+tauri-webdriver
+
+# Terminal 3: Run tests
+pnpm test:e2e-real
+```
+
+**Prerequisites:**
+
+- `cargo install tauri-webdriver --locked` (one-time)
+- First build with `e2e-testing` feature takes ~36s (subsequent builds are incremental)
+
+**When to run:**
+
+- Before releases — catches integration bugs that mocked tests miss
+- After major editor, watcher, or IPC changes
+- NOT on every PR — these are slower than mocked tests
+
+**Troubleshooting:**
+
+- **App won't start:** Check `/tmp/notesage-e2e-tauri.log` for build errors
+- **Driver connection refused:** Ensure `tauri-webdriver` is installed and the app started with `pnpm tauri:test` (not `pnpm tauri dev`)
+- **Timing flakes:** Thresholds are generous but hardware-dependent. If a timing test fails occasionally, increase the threshold in the test file.
+- **Tests can't find elements:** The app must have at least one explorer folder open for sidebar tests. The test fixtures at `e2e-real/fixtures/test-project/` are used automatically.
+
+**Test files:** `e2e-real/tests/*.test.ts` | **Helpers:** `e2e-real/helpers/*.ts` | **Fixtures:** `e2e-real/fixtures/test-project/`
+
+### 5. Rust Backend Tests
 
 ```bash
 cd src-tauri && cargo test
@@ -82,7 +139,7 @@ Runs:
 - Integration tests for Tauri commands
 - Parser tests (GGUF, markdown-to-typst, frontmatter, etc.)
 
-### 5. Full Suite
+### 6. Full Suite
 
 ```bash
 pnpm typecheck && pnpm test:coverage && pnpm test:e2e && cd src-tauri && cargo test
@@ -92,6 +149,12 @@ Or for a quick pass without coverage:
 
 ```bash
 pnpm test:all && cd src-tauri && cargo test
+```
+
+For a complete pass including real E2E:
+
+```bash
+pnpm test:all && pnpm test:e2e-real-full && cd src-tauri && cargo test
 ```
 
 ## When Tests Fail

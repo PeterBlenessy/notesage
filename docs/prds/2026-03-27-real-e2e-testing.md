@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-27 |
-| **Status** | In progress — Phase 1 (Spike) complete |
+| **Status** | Complete — all phases implemented |
 | **Priority** | Medium |
 | **Impact** | Eliminates manual testing of integration issues (latency, editor behavior, IPC round-trips, watcher interactions) |
 | **Depends on** | [test-infrastructure](2026-03-26-test-infrastructure.md) (complete), [test-coverage-expansion](2026-03-27-test-coverage-expansion.md) (independent) |
@@ -209,21 +209,21 @@ Create `scripts/run-real-e2e.sh`, add to `/test` skill documentation, document t
 
 ### Core suite (Phase 2)
 
-- [ ] 15 test flows implemented and passing
+- [x] 15 test flows implemented and passing
 
-- [ ] Timing assertions calibrated (not flaky on dev hardware)
+- [x] Timing assertions calibrated (not flaky on dev hardware)
 
-- [ ] Tests complete in &lt; 3 minutes total
+- [x] Tests complete in &lt; 3 minutes total
 
-- [ ] Tests are independent (no ordering dependency)
+- [x] Tests are independent (no ordering dependency)
 
 ### Runner (Phase 3)
 
-- [ ] `scripts/run-real-e2e.sh` handles full lifecycle (start, run, cleanup)
+- [x] `scripts/run-real-e2e.sh` handles full lifecycle (start, run, cleanup)
 
-- [ ] Clean exit on Ctrl+C (no orphan processes)
+- [x] Clean exit on Ctrl+C (no orphan processes)
 
-- [ ] Results printed with pass/fail summary and timing
+- [x] Results printed with pass/fail summary and timing
 
 ## Spike Findings (2026-03-27)
 

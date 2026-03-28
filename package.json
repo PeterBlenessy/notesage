@@ -19,7 +19,8 @@
     "test:all": "vitest run && playwright test",
     "typecheck": "tsc --noEmit",
     "coverage:check": "bash scripts/coverage-check.sh",
-    "coverage:update-baseline": "vitest run --coverage && node scripts/update-coverage-baseline.js"
+    "coverage:update-baseline": "vitest run --coverage && node scripts/update-coverage-baseline.js",
+    "test:e2e-real-full": "./scripts/run-real-e2e.sh"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.2",

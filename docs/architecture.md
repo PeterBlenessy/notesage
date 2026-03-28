@@ -197,7 +197,9 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `pnpm test:coverage` | Unit tests + Istanbul coverage | Reports: text (console), JSON summary, HTML in `./coverage/` |
 | `cd src-tauri && cargo test` | Rust backend tests | Runs all `#[test]` functions in the Tauri crate |
 | `pnpm test:e2e` | Playwright end-to-end tests | Chromium, Tauri IPC mocked, starts Vite dev server |
-| `pnpm test:all` | All of the above | Full suite |
+| `pnpm test:e2e-real` | Real E2E tests (WebDriverIO) | Requires running app (`pnpm tauri:test`) + `tauri-webdriver` |
+| `pnpm test:e2e-real-full` | Real E2E full lifecycle | Starts app + driver, runs tests, cleans up |
+| `pnpm test:all` | All of the above (excludes real E2E) | Full suite |
 | `pnpm typecheck` | TypeScript type checking | `tsc --noEmit` |
 
 **Frontend coverage** uses `@vitest/coverage-istanbul` and requires Node 22 (pinned in `.nvmrc`). Coverage output lands in `./coverage/` (gitignored).

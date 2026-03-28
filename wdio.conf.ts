@@ -14,8 +14,9 @@ export const config: Options.Testrunner = {
 
     capabilities: [{
         browserName: 'webview',
+        // Single session — all test files share one app instance
+        maxInstances: 1,
         'webdriver:newSessionParameters': {
-            // Attach to existing app instead of launching a new one
             alwaysMatch: {}
         }
     }],

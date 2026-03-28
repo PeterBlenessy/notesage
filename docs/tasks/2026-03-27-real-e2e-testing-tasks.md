@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-27 |
-| **Status** | In progress — Phase 1 complete (4/13 tasks) |
+| **Status** | Complete (13/13 tasks) |
 | **PRD** | [real-e2e-testing](../prds/2026-03-27-real-e2e-testing.md) |
 | **Total** | 13 tasks: 4S, 5M, 4L |
 | **Suggested order** | Spike (#1-#4) → decision gate → Helpers (#5) → Core tests (#6-#11) → Runner script (#12) → Docs (#13) |
@@ -66,7 +66,7 @@
 
 ## Phase 2: Core Test Suite
 
-### #5 — Create shared test helpers and timing utility
+### #5 — Create shared test helpers and timing utility ✅
 
 **Description:** Create `e2e-real/helpers/actions.ts` with reusable helpers: `openProject(path)` — triggers folder open and waits for file tree to populate, `openFile(name)` — clicks file in sidebar and waits for editor content, `typeInEditor(text)` — focuses editor, types text, returns duration, `pressShortcut(keys)` — sends keyboard shortcut (e.g., `Meta+s`), `waitForElement(selector, timeout)` — waits for element with configurable timeout. Create `e2e-real/helpers/timing.ts` with `measureAction(fn)` — executes an action and returns wall-clock duration in ms using `browser.execute(() => performance.now())` before and after. Create `e2e-real/helpers/setup.ts` with `ensureCleanState()` — closes all tabs, resets to known state before each test.
 
@@ -76,7 +76,7 @@
 
 ---
 
-### #6 — Real E2E tests: app startup and project open
+### #6 — Real E2E tests: app startup and project open ✅
 
 **Description:** Write `e2e-real/tests/startup.test.ts`. Tests: (1) App startup — app reaches interactive state with sidebar visible within 3s, editor area rendered. (2) Open project folder — trigger folder open (may need to pre-configure a test project path since native dialogs can't be automated), verify file tree populates within 1s, correct file count rendered. (3) Open markdown file — click a file in the sidebar, editor content appears within 500ms, content matches file on disk. Use `measureAction()` for all timing assertions. Create a `e2e-real/fixtures/` directory with a small test project (3-5 .md files) that tests operate against.
 
@@ -86,7 +86,7 @@
 
 ---
 
-### #7 — Real E2E tests: editor typing and save
+### #7 — Real E2E tests: editor typing and save ✅
 
 **Description:** Write `e2e-real/tests/editor.test.ts`. Tests: (1) Type in editor — type 100 characters, total time < 2s, no dropped characters. (2) Save file (Cmd+S) — save and verify file on disk matches editor content (read file via `browser.execute` or WebDriver file access). (3) Save doesn't trigger false watcher reload — after save, verify no external change toast/banner appears. (4) Slash command — type `/`, verify menu appears within 150ms, select heading, verify heading inserted. (5) Find in document — Cmd+F, type query, verify matches highlighted within 200ms, Escape closes find bar.
 
@@ -96,7 +96,7 @@
 
 ---
 
-### #8 — Real E2E tests: tab switching and undo/redo
+### #8 — Real E2E tests: tab switching and undo/redo ✅
 
 **Description:** Write `e2e-real/tests/tabs.test.ts`. Tests: (1) Open 5 files, verify 5 tabs rendered. (2) Switch between tabs — click each tab, verify content changes within 300ms, correct content displayed. (3) Dirty indicator — edit a tab, verify dirty dot appears, save, verify dot disappears. (4) Close tab — close middle tab, verify remaining tabs correct. (5) Undo/redo across tabs — edit tab A, switch to tab B, switch back to A, undo — verify original content restored.
 
@@ -106,7 +106,7 @@
 
 ---
 
-### #9 — Real E2E tests: external file changes
+### #9 — Real E2E tests: external file changes ✅
 
 **Description:** Write `e2e-real/tests/external-changes.test.ts`. Tests: (1) Modify file on disk while it's open in a clean tab — write new content to the test fixture file using Node.js `fs` (via WebDriver `execute` or a helper script), verify editor updates within 2s. (2) Modify file on disk while tab is dirty — verify reload prompt appears (not auto-reload). (3) Create new file on disk — verify file tree updates. (4) Delete file on disk — verify file tree updates, tab shows deleted state. This test exercises the real filesystem watcher round-trip.
 
@@ -116,7 +116,7 @@
 
 ---
 
-### #10 — Real E2E tests: navigation and UI
+### #10 — Real E2E tests: navigation and UI ✅
 
 **Description:** Write `e2e-real/tests/navigation.test.ts`. Tests: (1) Theme toggle — Cmd+T, verify CSS class change on `<html>` within 300ms, colors transition (check a computed style). (2) Chat panel — Cmd+Shift+C, verify panel visible within 200ms, type message in input, send button present. (3) Sidebar toggle — Cmd+Shift+L, verify sidebar hidden/shown. (4) Focus mode — Cmd+., verify sidebar and tabs hidden, Escape exits.
 
@@ -126,7 +126,7 @@
 
 ---
 
-### #11 — Real E2E tests: large document and resize
+### #11 — Real E2E tests: large document and resize ✅
 
 **Description:** Write `e2e-real/tests/performance.test.ts`. Tests: (1) Large document — open a 1000+ line markdown file (create `e2e-real/fixtures/test-project/large-doc.md`), verify it loads within 2s, scroll to bottom, type at end — no perceptible lag (< 100ms per keystroke measured via `performance.now()`). (2) Editor resize — resize the browser window, verify editor content reflows without content jumps (check scroll position stability). (3) Multiple projects — open 3 projects, switch between them, verify tree updates within 500ms each.
 
@@ -138,7 +138,7 @@
 
 ## Phase 3: Runner Script and Docs
 
-### #12 — Create runner script for one-command execution
+### #12 — Create runner script for one-command execution ✅
 
 **Description:** Create `scripts/run-real-e2e.sh` that handles the full lifecycle: (1) starts `pnpm tauri:test` in the background, (2) waits for the app to be ready (poll WebDriver health endpoint or check for plugin port in stdout), (3) starts `tauri-wd` in the background, (4) runs `pnpm test:e2e-real`, (5) captures exit code, (6) kills app + driver processes on completion, (7) traps SIGINT/SIGTERM for clean Ctrl+C exit (no orphan processes), (8) prints pass/fail summary with total timing. Add `"test:e2e-real-full": "./scripts/run-real-e2e.sh"` to `package.json`.
 
@@ -148,7 +148,7 @@
 
 ---
 
-### #13 — Update /test skill and documentation
+### #13 — Update /test skill and documentation ✅
 
 **Description:** Update `.claude/skills/test/SKILL.md` to include the real E2E test section: commands (`pnpm test:e2e-real-full` for full lifecycle, or manual 3-terminal setup), when to run (before releases, after major changes), what it tests vs what mocked Playwright tests test, troubleshooting (app won't start, driver connection refused, timing flakes). Update `docs/architecture.md` testing table with the new `test:e2e-real` command. Mark PRD quality gates as complete.
 
