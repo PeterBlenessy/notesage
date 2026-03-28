@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from 'react';
-import { ChevronUp, FolderOpen, Check, Globe, Target } from 'lucide-react';
+import { ChevronUp, FolderOpen, Check, Target } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentIcon } from '@/components/AgentIcon';
 import { ProviderLogo } from '@/components/ProviderLogo';
@@ -35,8 +35,6 @@ interface ChatFooterProps {
 
 export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPaths, hasAIProvider, chatPlaceholder }: ChatFooterProps) {
   const isLoading = useChatStore((s) => s.isLoading);
-  const webSearchEnabled = useChatStore((s) => s.webSearchEnabled);
-  const setWebSearchEnabled = useChatStore((s) => s.setWebSearchEnabled);
   const pendingProjectSwitch = useChatStore(selectPendingProjectSwitch);
   const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
   const setSelectedProjectPaths = useChatStore((s) => s.setSelectedProjectPaths);
@@ -271,45 +269,6 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
                 )}
               </PopoverContent>
             </Popover>
-            {!isAcpConnection && (
-              <TooltipProvider delayDuration={200}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!hasAIProvider) return;
-                        if (effectiveProviderType === 'ollama') {
-                          toast.info('Web search is not yet available for Ollama. Please use Anthropic or OpenAI for search.');
-                          return;
-                        }
-                        setWebSearchEnabled(!webSearchEnabled);
-                      }}
-                      disabled={!hasAIProvider}
-                      className={`flex items-center gap-1 text-xs transition-colors rounded px-1 py-0.5 hover:bg-accent/50 active:opacity-75 disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                        webSearchEnabled && hasAIProvider && effectiveProviderType !== 'ollama'
-                          ? 'text-foreground'
-                          : 'text-muted-foreground'
-                      }`}
-                    >
-                      <Globe className="h-3 w-3" strokeWidth={1.5} />
-                      <span>Search</span>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-64">
-                    <p className="text-xs">
-                      {!hasAIProvider
-                        ? 'Configure an AI provider to use search'
-                        : effectiveProviderType === 'ollama'
-                          ? 'Web search is not available for Ollama'
-                          : webSearchEnabled
-                            ? 'Web search enabled — AI can search the internet'
-                            : 'Click to enable web search'}
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
             {goalFiles.length > 0 && (
               <TooltipProvider delayDuration={200}>
                 <Tooltip>

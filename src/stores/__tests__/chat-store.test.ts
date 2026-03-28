@@ -71,7 +71,7 @@ import {
   selectActiveSegmentIndex,
 } from '../chat-store';
 import type { Conversation } from '../chat-store';
-import type { ChatMessage, AgentActivity } from '@/lib/ai/types';
+import type { ChatMessage, AgentActivity, ToolCall, ToolCallActivity } from '@/lib/ai/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -560,6 +560,149 @@ describe('Selectors', () => {
     it('selectActiveSegmentIndex returns 0', () => {
       expect(selectActiveSegmentIndex(useChatStore.getState())).toBe(0);
     });
+  });
+});
+
+// ===========================================================================
+// Tool calls
+// ===========================================================================
+
+describe('Tool calls', () => {
+  beforeEach(() => {
+    useChatStore.getState().createConversation();
+  });
+
+  it('addToolCallsToMessage attaches toolCalls to the correct message', () => {
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'thinking...', timestamp: 100 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'other', timestamp: 200 });
+
+    const toolCalls: ToolCall[] = [
+      { id: 'tc-1', name: 'read_file', arguments: { path: '/foo.md' } },
+      { id: 'tc-2', name: 'write_file', arguments: { path: '/bar.md', content: 'hi' } },
+    ];
+    useChatStore.getState().addToolCallsToMessage(100, toolCalls);
+
+    const msgs = activeConv()!.messages;
+    expect(msgs[0].toolCalls).toHaveLength(2);
+    expect(msgs[0].toolCalls![0].id).toBe('tc-1');
+    expect(msgs[0].toolCalls![1].name).toBe('write_file');
+    // Other message untouched
+    expect(msgs[1].toolCalls).toBeUndefined();
+  });
+
+  it('addToolCallsToMessage appends to existing toolCalls', () => {
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'resp', timestamp: 100 });
+    useChatStore.getState().addToolCallsToMessage(100, [{ id: 'tc-1', name: 'a', arguments: {} }]);
+    useChatStore.getState().addToolCallsToMessage(100, [{ id: 'tc-2', name: 'b', arguments: {} }]);
+
+    expect(activeConv()!.messages[0].toolCalls).toHaveLength(2);
+    expect(activeConv()!.messages[0].toolCalls![1].id).toBe('tc-2');
+  });
+
+  it('addToolCallActivity adds activity to the correct message', () => {
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'resp', timestamp: 100 });
+
+    const activity: ToolCallActivity = {
+      id: 'tc-1',
+      name: 'read_file',
+      arguments: { path: '/foo.md' },
+      status: 'running',
+      startedAt: Date.now(),
+    };
+    useChatStore.getState().addToolCallActivity(100, activity);
+
+    const msg = activeConv()!.messages[0];
+    expect(msg.toolCallActivities).toHaveLength(1);
+    expect(msg.toolCallActivities![0].id).toBe('tc-1');
+    expect(msg.toolCallActivities![0].status).toBe('running');
+  });
+
+  it('addToolCallActivity appends to existing activities', () => {
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'resp', timestamp: 100 });
+    useChatStore.getState().addToolCallActivity(100, {
+      id: 'tc-1', name: 'a', status: 'complete', startedAt: 1,
+    });
+    useChatStore.getState().addToolCallActivity(100, {
+      id: 'tc-2', name: 'b', status: 'running', startedAt: 2,
+    });
+
+    expect(activeConv()!.messages[0].toolCallActivities).toHaveLength(2);
+  });
+
+  it('updateToolCallActivity updates the right activity by toolCallId', () => {
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'resp', timestamp: 100 });
+    useChatStore.getState().addToolCallActivity(100, {
+      id: 'tc-1', name: 'read_file', status: 'running', startedAt: 1,
+    });
+    useChatStore.getState().addToolCallActivity(100, {
+      id: 'tc-2', name: 'write_file', status: 'running', startedAt: 2,
+    });
+
+    useChatStore.getState().updateToolCallActivity(100, 'tc-1', {
+      status: 'complete',
+      result: 'file contents here',
+    });
+
+    const acts = activeConv()!.messages[0].toolCallActivities!;
+    expect(acts[0].status).toBe('complete');
+    expect(acts[0].result).toBe('file contents here');
+    // tc-2 unchanged
+    expect(acts[1].status).toBe('running');
+  });
+
+  it('updateToolCallActivity can set error status', () => {
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'resp', timestamp: 100 });
+    useChatStore.getState().addToolCallActivity(100, {
+      id: 'tc-1', name: 'read_file', status: 'running', startedAt: 1,
+    });
+
+    useChatStore.getState().updateToolCallActivity(100, 'tc-1', {
+      status: 'error',
+      error: 'File not found',
+    });
+
+    const act = activeConv()!.messages[0].toolCallActivities![0];
+    expect(act.status).toBe('error');
+    expect(act.error).toBe('File not found');
+  });
+
+  it('messages with role "tool" are stored correctly', () => {
+    useChatStore.getState().addMessage({
+      role: 'tool',
+      content: '{"result": "success"}',
+      toolCallId: 'tc-1',
+      timestamp: 300,
+    });
+
+    const msgs = activeConv()!.messages;
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].role).toBe('tool');
+    expect(msgs[0].toolCallId).toBe('tc-1');
+    expect(msgs[0].content).toBe('{"result": "success"}');
+  });
+
+  it('tool messages do not auto-title the conversation', () => {
+    useChatStore.getState().addMessage({
+      role: 'tool',
+      content: 'some result',
+      toolCallId: 'tc-1',
+      timestamp: 300,
+    });
+
+    expect(activeConv()!.title).toBe('');
+  });
+
+  it('tool call methods are no-ops when no active conversation', () => {
+    reset();
+    expect(() => useChatStore.getState().addToolCallsToMessage(100, [{ id: 'tc-1', name: 'a', arguments: {} }])).not.toThrow();
+    expect(() => useChatStore.getState().addToolCallActivity(100, { id: 'tc-1', name: 'a', status: 'running', startedAt: 1 })).not.toThrow();
+    expect(() => useChatStore.getState().updateToolCallActivity(100, 'tc-1', { status: 'complete' })).not.toThrow();
+  });
+
+  it('updateToolCallActivity on message without toolCallActivities is a no-op', () => {
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'resp', timestamp: 100 });
+    expect(() => useChatStore.getState().updateToolCallActivity(100, 'tc-1', { status: 'complete' })).not.toThrow();
+    expect(activeConv()!.messages[0].toolCallActivities).toBeUndefined();
   });
 });
 

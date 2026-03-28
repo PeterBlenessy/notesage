@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { ChatMessage, Citation, AgentActivity } from '@/lib/ai/types';
+import type { ChatMessage, Citation, AgentActivity, ToolCall, ToolCallActivity } from '@/lib/ai/types';
 import { createTauriStorage } from '@/lib/tauri-storage';
 
 /** Tracks a project context boundary within a conversation */
@@ -76,6 +76,9 @@ interface ChatStore {
   addActivity: (messageTimestamp: number, activity: AgentActivity) => void;
   completeLastActivity: (messageTimestamp: number) => void;
   completeAllActivities: (messageTimestamp: number) => void;
+  addToolCallsToMessage: (messageTimestamp: number, toolCalls: ToolCall[]) => void;
+  addToolCallActivity: (messageTimestamp: number, activity: ToolCallActivity) => void;
+  updateToolCallActivity: (messageTimestamp: number, toolCallId: string, updates: Partial<ToolCallActivity>) => void;
 
   // ---------------------------------------------------------------------------
   // Segment management (context isolation)
@@ -346,6 +349,40 @@ export const useChatStore = create<ChatStore>()(
               a.status === 'running' ? { ...a, status: 'done' as const } : a
             );
             return { ...msg, activities };
+          }),
+        }))),
+
+      addToolCallsToMessage: (messageTimestamp, toolCalls) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          messages: c.messages.map((msg) =>
+            msg.timestamp === messageTimestamp
+              ? { ...msg, toolCalls: [...(msg.toolCalls || []), ...toolCalls] }
+              : msg
+          ),
+        }))),
+
+      addToolCallActivity: (messageTimestamp, activity) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          messages: c.messages.map((msg) =>
+            msg.timestamp === messageTimestamp
+              ? { ...msg, toolCallActivities: [...(msg.toolCallActivities || []), activity] }
+              : msg
+          ),
+        }))),
+
+      updateToolCallActivity: (messageTimestamp, toolCallId, updates) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          messages: c.messages.map((msg) => {
+            if (msg.timestamp !== messageTimestamp || !msg.toolCallActivities) return msg;
+            return {
+              ...msg,
+              toolCallActivities: msg.toolCallActivities.map((a) =>
+                a.id === toolCallId ? { ...a, ...updates } : a
+              ),
+            };
           }),
         }))),
 

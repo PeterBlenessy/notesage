@@ -917,4 +917,74 @@ mod tests {
 
         assert_eq!(dir_total_size(tmp.path()), 15);
     }
+
+    #[test]
+    fn test_jinja_flag_added_when_tool_calling_supported() {
+        let args = super::super::local_inference::build_server_args(
+            "/path/to/model.gguf", 8090, 4096, -1, true,
+        );
+        assert!(
+            args.contains(&"--jinja".to_string()),
+            "Args should contain --jinja when supports_tool_calling is true"
+        );
+    }
+
+    #[test]
+    fn test_jinja_flag_omitted_when_tool_calling_not_supported() {
+        let args = super::super::local_inference::build_server_args(
+            "/path/to/model.gguf", 8090, 4096, -1, false,
+        );
+        assert!(
+            !args.contains(&"--jinja".to_string()),
+            "Args should NOT contain --jinja when supports_tool_calling is false"
+        );
+    }
+
+    #[test]
+    fn test_build_server_args_base_always_present() {
+        for supports_tc in [true, false] {
+            let args = super::super::local_inference::build_server_args(
+                "/model.gguf", 8091, 2048, 32, supports_tc,
+            );
+            assert!(args.contains(&"--model".to_string()));
+            assert!(args.contains(&"/model.gguf".to_string()));
+            assert!(args.contains(&"--port".to_string()));
+            assert!(args.contains(&"8091".to_string()));
+            assert!(args.contains(&"--ctx-size".to_string()));
+            assert!(args.contains(&"2048".to_string()));
+            assert!(args.contains(&"--n-gpu-layers".to_string()));
+            assert!(args.contains(&"32".to_string()));
+            assert!(args.contains(&"--host".to_string()));
+            assert!(args.contains(&"127.0.0.1".to_string()));
+        }
+    }
+
+    #[test]
+    fn test_catalog_entry_supports_tool_calling_field() {
+        // Verify that CatalogEntry correctly deserializes supports_tool_calling
+        let json_with = r#"{
+            "id": "test-model",
+            "name": "Test Model",
+            "filename": "test.gguf",
+            "size_bytes": 1000,
+            "ram_required_bytes": 2000,
+            "description": "A test model",
+            "huggingface_url": "https://example.com/test.gguf",
+            "supports_tool_calling": true
+        }"#;
+        let entry: CatalogEntry = serde_json::from_str(json_with).unwrap();
+        assert!(entry.supports_tool_calling);
+
+        let json_without = r#"{
+            "id": "test-model",
+            "name": "Test Model",
+            "filename": "test.gguf",
+            "size_bytes": 1000,
+            "ram_required_bytes": 2000,
+            "description": "A test model",
+            "huggingface_url": "https://example.com/test.gguf"
+        }"#;
+        let entry: CatalogEntry = serde_json::from_str(json_without).unwrap();
+        assert!(!entry.supports_tool_calling, "supports_tool_calling should default to false");
+    }
 }

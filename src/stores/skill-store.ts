@@ -2,11 +2,87 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { tauriApi } from '@/lib/tauri';
 import type { SkillEntry, AgentInstruction, AgentEntry } from '@/lib/tauri';
+import type { ToolDefinition } from '@/lib/ai/types';
 import { log } from '@/lib/logger';
 
 
 // Re-export types from tauri.ts for consumers that import from skill-store
 export type { SkillEntry, SkillContent, ScriptResult, AgentInstruction, AgentEntry, AgentContent } from '@/lib/tauri';
+export type { ToolDefinition } from '@/lib/ai/types';
+
+// --- Built-in tools for local AI tool calling ---
+
+export const BUILT_IN_TOOLS: ToolDefinition[] = [
+  {
+    name: 'web_search',
+    description: 'Search the web for current information. Returns titles, URLs, and snippets from search results.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The search query' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'read_skill_content',
+    description: 'Load the full instructions and file listing of a skill. Call this when you need detailed instructions for using a skill.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        skill_name: { type: 'string', description: 'Name of the skill to load' },
+      },
+      required: ['skill_name'],
+    },
+  },
+  {
+    name: 'execute_skill_script',
+    description: 'Execute a script from a skill directory. Returns stdout, stderr, and exit code.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        skill_name: { type: 'string', description: 'Name of the skill' },
+        script: { type: 'string', description: 'Relative path to script (e.g., "scripts/download.py")' },
+        args: { type: 'array', items: { type: 'string' }, description: 'Arguments for the script' },
+      },
+      required: ['skill_name', 'script'],
+    },
+  },
+  {
+    name: 'list_directory',
+    description: 'List files and folders in a directory. Use this to discover what files exist before reading them. Returns names with "/" suffix for directories.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to the directory to list' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'read_file',
+    description: 'Read a file from the filesystem. Returns file contents as text.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to the file' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'write_file',
+    description: 'Write content to a file. Creates the file if it does not exist.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Absolute path to the file' },
+        content: { type: 'string', description: 'Content to write' },
+      },
+      required: ['path', 'content'],
+    },
+  },
+];
 
 // --- Store ---
 
@@ -97,6 +173,9 @@ interface SkillStore {
 
   /** Request a rescan of skills/agents (bumps counter, observed by useSkillDiscovery). */
   requestRescan: () => void;
+
+  /** Get tool definitions for local AI tool calling, optionally filtered by allowed tool names. */
+  getToolDefinitions: (allowedTools?: string[]) => ToolDefinition[];
 }
 
 /** Known skill source labels. Must match Rust `determine_source` / `determine_agent_source` in commands/skills.rs. */
@@ -283,6 +362,11 @@ export const useSkillStore = create<SkillStore>()(
         })),
 
       requestRescan: () => set((state) => ({ rescanCounter: state.rescanCounter + 1 })),
+
+      getToolDefinitions: (allowedTools?: string[]) => {
+        if (!allowedTools) return BUILT_IN_TOOLS;
+        return BUILT_IN_TOOLS.filter((tool) => allowedTools.includes(tool.name));
+      },
     }),
     {
       name: 'notesage-skills',

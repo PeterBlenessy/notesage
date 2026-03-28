@@ -146,6 +146,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
     gitEnabled, setGitEnabled,
     pageBreaks, setPageBreaks,
     chatHistoryLimit, setChatHistoryLimit,
+    toolCallingEnabled, setToolCallingEnabled,
     skillManagement, setSkillManagement,
     logLevel, setLogLevel,
     autoCheckUpdates, setAutoCheckUpdates,
@@ -784,6 +785,35 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         Save backend and frontend state to a JSON file for bug reports. No API keys are included.
+                      </p>
+                    </div>
+
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label
+                          htmlFor="tool-calling"
+                          className="text-sm font-medium cursor-pointer"
+                        >
+                          Tool Calling
+                        </Label>
+                        <Switch
+                          id="tool-calling"
+                          checked={toolCallingEnabled}
+                          onCheckedChange={setToolCallingEnabled}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Enable tool calling in chat for local AI and API key connections. When on, AI can search the web, read files, and execute skills during conversations — safe tools run automatically, others require your approval. When off, chat is text-only.
+                      </p>
+                    </div>
+
+                    <div className="px-4 py-3 rounded-lg border border-border">
+                      <div className="flex items-start justify-between gap-3">
+                        <Label className="text-sm font-medium">Web Search</Label>
+                        <span className="text-[11px] font-medium text-muted-foreground shrink-0 rounded-full bg-muted px-2.5 py-0.5 mt-0.5">DuckDuckGo</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Search provider used by AI tool calling. DuckDuckGo works without an API key.
                       </p>
                     </div>
 

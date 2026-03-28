@@ -91,6 +91,9 @@ uuid = { version = "1", features = ["v4"] }
 # Secure credential storage (OS keychain)
 keyring = { version = "3", features = ["apple-native"] }
 
+# URL encoding/decoding (web search)
+urlencoding = "2"
+
 # Voice transcription
 whisper-rs = "0.15"
 cpal = "0.15"

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useSkillStore, SkillEntry, AgentInstruction } from '../skill-store';
+import { useSkillStore, SkillEntry, AgentInstruction, BUILT_IN_TOOLS } from '../skill-store';
 
 // Helper to create a SkillEntry
 function skill(overrides: Partial<SkillEntry> & { name: string; source: string }): SkillEntry {
@@ -222,6 +222,60 @@ describe('skill-store', () => {
       });
       useSkillStore.getState().resetOverrides();
       expect(useSkillStore.getState().enabledOverrides).toEqual({});
+    });
+  });
+
+  describe('BUILT_IN_TOOLS', () => {
+    it('contains contains all built-in tools', () => {
+      expect(BUILT_IN_TOOLS).toHaveLength(6);
+    });
+
+    it('has correct tool names', () => {
+      const names = BUILT_IN_TOOLS.map((t) => t.name);
+      expect(names).toEqual(['web_search', 'read_skill_content', 'execute_skill_script', 'list_directory', 'read_file', 'write_file']);
+    });
+
+    it('each tool has name, description, and input_schema', () => {
+      for (const tool of BUILT_IN_TOOLS) {
+        expect(typeof tool.name).toBe('string');
+        expect(tool.name.length).toBeGreaterThan(0);
+        expect(typeof tool.description).toBe('string');
+        expect(tool.description.length).toBeGreaterThan(0);
+        expect(tool.input_schema).toBeDefined();
+        expect(tool.input_schema.type).toBe('object');
+        expect(tool.input_schema.properties).toBeDefined();
+        expect(Array.isArray(tool.input_schema.required)).toBe(true);
+      }
+    });
+  });
+
+  describe('getToolDefinitions', () => {
+    it('returns all built-in tools when no filter provided', () => {
+      const tools = useSkillStore.getState().getToolDefinitions();
+      expect(tools).toHaveLength(6);
+      expect(tools).toEqual(BUILT_IN_TOOLS);
+    });
+
+    it('filters by allowedTools list', () => {
+      const tools = useSkillStore.getState().getToolDefinitions(['read_file']);
+      expect(tools).toHaveLength(1);
+      expect(tools[0].name).toBe('read_file');
+    });
+
+    it('filters multiple allowed tools', () => {
+      const tools = useSkillStore.getState().getToolDefinitions(['read_file', 'write_file']);
+      expect(tools).toHaveLength(2);
+      expect(tools.map((t) => t.name)).toEqual(['read_file', 'write_file']);
+    });
+
+    it('returns empty array when no tools match', () => {
+      const tools = useSkillStore.getState().getToolDefinitions(['nonexistent_tool']);
+      expect(tools).toHaveLength(0);
+    });
+
+    it('returns empty array for empty allowedTools list', () => {
+      const tools = useSkillStore.getState().getToolDefinitions([]);
+      expect(tools).toHaveLength(0);
     });
   });
 });

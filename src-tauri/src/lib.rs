@@ -238,6 +238,8 @@ pub fn run() {
             get_credential,
             delete_credential,
             migrate_credentials,
+            // Web search
+            web_search,
         ])
         .setup(|app| {
             // Log startup at Info before restricting to Warn — this line always appears.

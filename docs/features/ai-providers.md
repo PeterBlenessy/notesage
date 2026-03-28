@@ -164,14 +164,58 @@ Two-layer network filtering for agent subprocesses: kernel-level enforcement via
 - Connection cards show Sandbox / Network / Managed badges
 - Network restriction toggle enables/disables the proxy for each connection
 
+## Tool Calling
+
+Client-side tool calling for all direct API providers (Anthropic, OpenAI, Ollama, local bundled). Models can autonomously call tools and receive results in a multi-turn execution loop.
+
+**Built-in tools (6):**
+
+| Tool | Description | Permission |
+| --- | --- | --- |
+| `web_search` | Search the web via DuckDuckGo | Auto-allowed |
+| `read_skill_content` | Load full SKILL.md body and file listing | Auto-allowed |
+| `read_file` | Read a file from the filesystem | Auto-allowed |
+| `list_directory` | List files and folders in a directory | Auto-allowed |
+| `execute_skill_script` | Run a skill script (bash, python, node) | Requires approval |
+| `write_file` | Create or overwrite a file | Requires approval |
+
+Active skills are also converted to tool definitions automatically, filtered by the active agent's `allowed-tools` frontmatter.
+
+**Execution loop:**
+
+1. Frontend sends messages + tool definitions to `ai_chat_stream`
+2. Model streams response; if it requests a tool call, an `ai-tool-call` event is emitted
+3. Frontend checks permission: auto-allowed tools execute immediately, others show `ToolCallPermissionCard`
+4. Tool is executed via the appropriate Tauri command
+5. Result is fed back as a `role: "tool"` message and the model continues generating
+6. Loop repeats until the model responds with text only or the 20-call-per-turn limit is reached
+
+**Provider-specific format handling:**
+
+- **Anthropic:** Tools sent as `tools` array with `input_schema`. Tool use detected via `content_block_start` with `type: "tool_use"` in SSE stream.
+- **OpenAI:** Tools wrapped in `{ type: "function", function: { ... } }`. Tool calls detected via `delta.tool_calls` in streamed chunks.
+- **Ollama:** Same format as OpenAI. Requires models with function calling support (Qwen3, Llama 3.1+, Mistral).
+- **Local bundled:** Same format as OpenAI via `/v1/chat/completions`. Requires `--jinja` flag on llama-server (added automatically when `supports_tool_calling` is true in model catalog). Uses non-streaming fallback when tools are present due to llama-server streaming limitations with tool calls.
+
+**Permission model:**
+
+- Read-only tools (`read_file`, `read_skill_content`, `list_directory`, `web_search`) are auto-allowed
+- Write/execute tools (`write_file`, `execute_skill_script`) require user approval
+- `ToolCallPermissionCard` with tiered approval: allow once, allow for session, allow always
+- 30-second auto-deny timeout for unanswered permission requests
+- Permissions stored in `permission-store` (`toolCallSession` non-persisted, `toolCallAlways` persisted)
+
+**Settings:**
+
+- `toolCallingEnabled` toggle in Settings > Advanced (default: enabled)
+- `searchProvider` setting for web search backend (DuckDuckGo)
+- Tools indicator badge in chat footer showing count of available tools
+
 ## Web Search
 
-When web search is enabled (toggle in chat footer — only visible for direct API connections):
+Web search is implemented as a client-side tool (`web_search`) available to all providers when tool calling is enabled. The backend `web_search` Tauri command queries DuckDuckGo's HTML endpoint — no API key needed. Results are returned to the model as tool call results with title, URL, and snippet for each hit.
 
-- **Anthropic:** `web_search_20250305` server tool added to request
-- **OpenAI:** `web_search_preview` tool added to Responses API request
-- **Ollama:** Search toggle disabled in UI (toast notification)
-- Citations extracted from provider-specific response formats, displayed as numbered "Sources" section
+For providers that also support server-side web search (Anthropic `web_search_20250305`, OpenAI `web_search_preview`), the client-side tool provides a unified cross-provider experience. Citations extracted from responses are displayed as numbered "Sources" section.
 
 ## Key Files
 
@@ -199,8 +243,10 @@ When web search is enabled (toggle in chat footer — only visible for direct AP
 | `src/stores/routing-store.ts` | Per-use-case provider routing |
 | `src/components/chat/DomainApprovalCard.tsx` | Network domain approval UI |
 | `src/components/chat/AgentSwitchCard.tsx` | Provider context isolation prompt |
-| `src/stores/permission-store.ts` | ACP tool call permissions + domain allowlists |
+| `src/stores/permission-store.ts` | ACP tool call permissions, domain allowlists, tool call permissions |
 | `src/stores/local-ai-store.ts` | Local AI server state |
+| `src/components/chat/ToolCallPermissionCard.tsx` | Tool call permission approval UI |
+| `src/hooks/useDirectApiChat.ts` | Direct API chat with tool execution loop |
 
 ## Future Enhancements
 

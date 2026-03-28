@@ -134,6 +134,7 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   inlineCompletionsDisabled: false,
   chatHistoryLimit: 0,
   skillManagement: false,
+  toolCallingEnabled: true,
   logLevel: 'warn',
   autoCheckUpdates: true,
   lastUpdateCheck: null,
@@ -195,6 +196,7 @@ describe('initial state defaults', () => {
     expect(s.inlineCompletionsDisabled).toBe(false);
     expect(s.chatHistoryLimit).toBe(0);
     expect(s.skillManagement).toBe(false);
+    expect(s.toolCallingEnabled).toBe(true);
     expect(s.logLevel).toBe('warn');
     expect(s.autoCheckUpdates).toBe(true);
     expect(s.lastUpdateCheck).toBeNull();
@@ -313,6 +315,14 @@ describe('boolean setters', () => {
   it('setSkillManagement', () => {
     useSettingsStore.getState().setSkillManagement(true);
     expect(useSettingsStore.getState().skillManagement).toBe(true);
+  });
+
+  it('setToolCallingEnabled defaults to true and can be toggled off and on', () => {
+    expect(useSettingsStore.getState().toolCallingEnabled).toBe(true);
+    useSettingsStore.getState().setToolCallingEnabled(false);
+    expect(useSettingsStore.getState().toolCallingEnabled).toBe(false);
+    useSettingsStore.getState().setToolCallingEnabled(true);
+    expect(useSettingsStore.getState().toolCallingEnabled).toBe(true);
   });
 
   it('setAutoCheckUpdates', () => {

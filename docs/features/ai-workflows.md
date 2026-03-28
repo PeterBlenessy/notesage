@@ -10,10 +10,11 @@ Collapsible right sidebar (Cmd+Shift+C) with streaming AI responses.
 
 1. User types message in ChatInput
 2. Frontend calls `useChatStore.addMessage(userMessage)`
-3. Hook calls Tauri command `ai_chat_stream(messages, provider, apiKey, webSearchEnabled)`
+3. Hook calls Tauri command `ai_chat_stream(messages, provider, apiKey, tools)`
 4. Rust makes streaming HTTP request (SSE)
-5. Frontend accumulates tokens (50ms throttled flush) and updates assistant message
-6. Citations attached on stream completion
+5. If model requests tool calls: permission check → execute → feed result back → model continues (see [Tool Calling](ai-providers.md#tool-calling))
+6. Frontend accumulates tokens (50ms throttled flush) and updates assistant message
+7. Citations attached on stream completion
 
 **ACP path:**
 
@@ -31,6 +32,8 @@ Collapsible right sidebar (Cmd+Shift+C) with streaming AI responses.
 - Multi-select project selector in chat footer
 - Chat/History tab view: Chat tab for active conversation, History tab for past conversations sorted by date with metadata (time, message count)
 - Conversation export: export as Markdown or JSON via native save dialog, with Reveal in Finder option
+- Tool calling: models can autonomously call tools (web search, read/write files, execute skills) with results shown as collapsible activity blocks in assistant messages
+- Tool call permission cards appear inline when write/execute tools need approval
 - Tool call deny messages: when a tool call is denied, a chat message is shown ("Tool call X was denied")
 - Domain deny/timeout messages: blocked or timed-out domain requests shown as chat messages
 - Chat panel resizable up to 50% of the content area
@@ -172,6 +175,7 @@ On-device speech-to-text powered by whisper-rs with Metal GPU acceleration — f
 | `src/components/chat/ChatPanel.tsx` | AI chat sidebar |
 | `src/components/chat/ChatInput.tsx` | Message input (/ for skills, @ for agents) |
 | `src/components/chat/PermissionCard.tsx` | ACP tool call approval |
+| `src/components/chat/ToolCallPermissionCard.tsx` | Direct API tool call approval |
 | `src/components/editor/CommentPopover.tsx` | Comment create/view/delegate |
 | `src/components/activity/ActivityStrip.tsx` | Agent activity strip + panel |
 | `src/hooks/useCommentDelegation.ts` | Comment → agent delegation flow |

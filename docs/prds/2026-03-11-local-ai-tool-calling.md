@@ -1,6 +1,6 @@
 # PRD: Local AI Tool Calling & Skills Execution
 
-**Date:** 2026-03-11 **Phase:** 11 **Status:** Draft
+**Date:** 2026-03-11 **Phase:** 11 **Status:** Complete
 
 ---
 
@@ -486,39 +486,39 @@ interface PermissionStore {
 
 ### Functional
 
-- [ ] Anthropic tool calling works (model calls execute_skill_script, gets result, continues)
+- [x] Anthropic tool calling works (model calls execute_skill_script, gets result, continues)
 
-- [ ] OpenAI tool calling works (same flow)
+- [x] OpenAI tool calling works (same flow)
 
-- [ ] Ollama tool calling works with Qwen3 and Llama 3.1
+- [x] Ollama tool calling works with Qwen3 and Llama 3.1
 
-- [ ] Local bundled tool calling works with Qwen3-4B
+- [x] Local bundled tool calling works with Qwen3-4B
 
-- [ ] Models without tool calling support get text-based tool descriptions (graceful degradation)
+- [x] Models without tool calling support get text-based tool descriptions (graceful degradation)
 
-- [ ] Permission prompt appears for write/execute tools
+- [x] Permission prompt appears for write/execute tools
 
-- [ ] Auto-allow works for read-only tools
+- [x] Auto-allow works for read-only tools
 
-- [ ] Session and always permission tiers persist correctly
+- [x] Session and always permission tiers persist correctly
 
-- [ ] Agent `allowed-tools` restricts available tools per agent
+- [x] Agent `allowed-tools` restricts available tools per agent
 
-- [ ] Tool call limit (20) prevents runaway loops
+- [x] Tool call limit (20) prevents runaway loops
 
-- [ ] Tool errors are handled gracefully (model receives error, continues)
+- [x] Tool errors are handled gracefully (model receives error, continues)
 
-- [ ] read_file tool returns file contents correctly
+- [x] read_file tool returns file contents correctly
 
-- [ ] write_file tool creates/overwrites files correctly
+- [x] write_file tool creates/overwrites files correctly
 
-- [ ] read_skill_content tool returns full skill body
+- [x] read_skill_content tool returns full skill body
 
-- [ ] execute_skill_script tool runs scripts and returns results
+- [x] execute_skill_script tool runs scripts and returns results
 
-- [ ] Multi-turn tool chains work (model calls tool A → result → calls tool B → result → final response)
+- [x] Multi-turn tool chains work (model calls tool A → result → calls tool B → result → final response)
 
-- [ ] Tool calling can be disabled globally in Settings
+- [x] Tool calling can be disabled globally in Settings
 
 ### Performance
 

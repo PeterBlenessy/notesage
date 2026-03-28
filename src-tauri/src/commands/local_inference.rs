@@ -168,8 +168,17 @@ pub async fn start_local_server(
         "--ctx-size", &ctx_len.to_string(),
         "--n-gpu-layers", &gpu.to_string(),
         "--host", "127.0.0.1",
-    ])
-    .stdin(std::process::Stdio::null())
+    ]);
+
+    // Enable Jinja2 template engine for models that support tool calling.
+    // Required for llama-server to process tool definitions in chat requests.
+    // NOT added unconditionally because --jinja breaks the /infill FIM endpoint.
+    if entry.supports_tool_calling {
+        cmd.arg("--jinja");
+        log::debug!(target: "notesage::local_ai", "Enabling --jinja for model '{}' (supports tool calling)", model_id);
+    }
+
+    cmd.stdin(std::process::Stdio::null())
     .stdout(std::process::Stdio::piped())
     .stderr(std::process::Stdio::piped())
     .kill_on_drop(true);
@@ -363,16 +372,19 @@ pub fn kill_orphaned_servers() {
 
 /// Stream chat completions through the local llama-server.
 /// Uses the OpenAI-compatible `/v1/chat/completions` endpoint with SSE.
+///
+/// **llama-server limitation:** streaming + tools cannot be used together.
+/// When tools are provided, falls back to a non-streaming request and emits
+/// the response as events to maintain the same frontend interface.
 pub async fn local_bundled_chat_stream(
     window: &tauri::Window,
     messages: &[super::ChatMessage],
     state: &LocalInferenceState,
+    tools: &Option<Vec<super::ai::ToolDefinition>>,
     model: &Option<String>,
     temperature: Option<f64>,
     max_tokens: Option<u32>,
 ) -> Result<(), String> {
-    use futures::StreamExt;
-
     let port = state.port.lock().await
         .ok_or("Local AI server is not running. Start it from Settings → Local AI.")?;
 
@@ -383,18 +395,76 @@ pub async fn local_bundled_chat_stream(
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
-    let api_messages: Vec<serde_json::Value> = messages
-        .iter()
-        .map(|m| serde_json::json!({ "role": m.role, "content": m.content }))
-        .collect();
-
     let active_model = state.active_model.lock().await.clone().unwrap_or_default();
     let model_name = model.as_deref().unwrap_or(&active_model);
+
+    let has_tools = tools.as_ref().map_or(false, |t| !t.is_empty());
+
+    // Check if the model's template supports native tool calling.
+    // Models with supports_tool_calling in the catalog can receive tool_calls/tool
+    // messages in OpenAI format. Others need tool messages flattened to text.
+    let catalog_entry = find_model_entry(&state.models_dir, &active_model);
+    let model_supports_tools = catalog_entry.as_ref().map_or(false, |e| e.supports_tool_calling);
+
+    let api_messages: Vec<serde_json::Value> = if model_supports_tools {
+        // Native tool calling: send tool_calls and tool role as-is.
+        // Key detail: assistant messages with tool_calls must have `content: null`
+        // (not empty string) — Qwen3/Llama templates check `content is string` and
+        // crash if it's "" when tool_calls are present.
+        messages.iter().map(|m| {
+            let has_tool_calls = m.tool_calls.as_ref().map_or(false, |tc| !tc.is_empty());
+            let content_value = if has_tool_calls && m.content.is_empty() {
+                serde_json::Value::Null
+            } else {
+                serde_json::json!(m.content)
+            };
+            let mut msg = serde_json::json!({ "role": m.role, "content": content_value });
+            if let Some(ref tc) = m.tool_calls {
+                msg["tool_calls"] = serde_json::json!(tc.iter().map(|t| {
+                    serde_json::json!({
+                        "id": t.id,
+                        "type": "function",
+                        "function": { "name": t.name, "arguments": t.arguments.to_string() }
+                    })
+                }).collect::<Vec<_>>());
+            }
+            if let Some(ref id) = m.tool_call_id {
+                msg["tool_call_id"] = serde_json::json!(id);
+            }
+            msg
+        }).collect()
+    } else {
+        // Flatten tool messages to text for models without native tool support.
+        // - Assistant messages with tool_calls → append "[Called tool: name(args)]"
+        // - Tool result messages (role: "tool") → convert to user message with result text
+        messages.iter().filter_map(|m| {
+            if m.role == "tool" {
+                // Convert tool result to a user message
+                let tool_id = m.tool_call_id.as_deref().unwrap_or("unknown");
+                let content = format!("[Tool result for {}]:\n{}", tool_id, m.content);
+                Some(serde_json::json!({ "role": "user", "content": content }))
+            } else if m.role == "assistant" {
+                let mut content = m.content.clone();
+                if let Some(ref tc) = m.tool_calls {
+                    for t in tc {
+                        content.push_str(&format!(
+                            "\n[Calling tool: {}({})]",
+                            t.name,
+                            serde_json::to_string(&t.arguments).unwrap_or_default()
+                        ));
+                    }
+                }
+                Some(serde_json::json!({ "role": "assistant", "content": content }))
+            } else {
+                Some(serde_json::json!({ "role": m.role, "content": m.content }))
+            }
+        }).collect()
+    };
 
     let mut body = serde_json::json!({
         "model": model_name,
         "messages": api_messages,
-        "stream": true,
+        "stream": !has_tools,
         "repeat_penalty": constants::REPEAT_PENALTY,
         "frequency_penalty": 0.1
     });
@@ -404,6 +474,15 @@ pub async fn local_bundled_chat_stream(
     }
     if let Some(max) = max_tokens {
         body["max_tokens"] = serde_json::json!(max);
+    }
+
+    // Add tools in OpenAI function-calling format
+    if let Some(ref tool_defs) = tools {
+        if !tool_defs.is_empty() {
+            body["tools"] = serde_json::Value::Array(
+                super::ai_streaming::tools_to_openai_format(tool_defs)
+            );
+        }
     }
 
     let response = client
@@ -418,6 +497,56 @@ pub async fn local_bundled_chat_stream(
         let error_text = response.text().await.unwrap_or_default();
         return Err(format!("Local AI error: {}", error_text));
     }
+
+    // --- Non-streaming path: tools present, parse full JSON response ---
+    if has_tools {
+        let json: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse local AI response: {}", e))?;
+
+        // Extract text content
+        if let Some(content) = json["choices"][0]["message"]["content"].as_str() {
+            if !content.is_empty() {
+                window.emit("ai-stream-chunk", content)
+                    .map_err(|e| format!("Failed to emit chunk: {}", e))?;
+            }
+        }
+
+        // Extract tool calls
+        let mut has_tool_calls = false;
+        if let Some(tool_calls) = json["choices"][0]["message"]["tool_calls"].as_array() {
+            for tc in tool_calls {
+                has_tool_calls = true;
+                let id = tc["id"].as_str().unwrap_or("").to_string();
+                let name = tc["function"]["name"].as_str().unwrap_or("").to_string();
+                let args_str = tc["function"]["arguments"].as_str().unwrap_or("{}");
+                let arguments: serde_json::Value = serde_json::from_str(args_str)
+                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+                if !name.is_empty() {
+                    window.emit("ai-tool-call", serde_json::json!({
+                        "id": id,
+                        "name": name,
+                        "arguments": arguments
+                    })).map_err(|e| format!("Failed to emit tool call: {}", e))?;
+                }
+            }
+        }
+
+        if has_tool_calls {
+            window.emit("ai-tool-calls-done", ())
+                .map_err(|e| format!("Failed to emit tool calls done: {}", e))?;
+        } else {
+            window.emit("ai-stream-done", ())
+                .map_err(|e| format!("Failed to emit done: {}", e))?;
+        }
+
+        return Ok(());
+    }
+
+    // --- Streaming path: no tools, use SSE ---
+    use futures::StreamExt;
 
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
@@ -652,6 +781,8 @@ pub async fn local_bundled_generate(
     let messages = vec![super::ChatMessage {
         role: "user".to_string(),
         content: prompt.to_string(),
+        tool_calls: None,
+        tool_call_id: None,
     }];
     local_bundled_chat(&messages, state, model, temperature, max_tokens).await
 }
@@ -687,66 +818,99 @@ pub async fn local_bundled_fim(
         "stop": ["\n\n", "\n"],
     });
 
-    let infill_resp = client
+    // Try /infill — may fail at connection level when --jinja is enabled (breaks /infill endpoint).
+    // On any failure (connection error OR non-success status), fall back to chat-based completion.
+    let infill_result = client
         .post(format!("{}/infill", base))
         .header("content-type", "application/json")
         .json(&infill_body)
         .send()
-        .await
-        .map_err(|e| format!("FIM request failed: {}", e))?;
+        .await;
 
-    if infill_resp.status().is_success() {
-        let json: serde_json::Value = infill_resp.json().await
-            .map_err(|e| format!("Failed to parse FIM response: {}", e))?;
-        return Ok(json["content"].as_str().unwrap_or("").to_string());
-    }
-
-    // If 501 (model doesn't support FIM), fall back to chat-based completion.
-    // Chat models need an instruction to complete text rather than respond conversationally.
-    let status = infill_resp.status().as_u16();
-    if status == 501 {
-        let chat_body = serde_json::json!({
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a text completion engine. Complete the user's text naturally. Output ONLY the continuation — no explanations, no quotes, no markdown formatting. Just the next few words or sentence fragment that logically follows."
-                },
-                {
-                    "role": "user",
-                    "content": format!("Continue this text:\n{}", prefix)
-                }
-            ],
-            "max_tokens": max_tok,
-            "temperature": constants::FIM_TEMPERATURE,
-            "stop": ["\n\n"],
-            "repeat_penalty": constants::REPEAT_PENALTY,
-        });
-
-        let chat_resp = client
-            .post(format!("{}/v1/chat/completions", base))
-            .header("content-type", "application/json")
-            .json(&chat_body)
-            .send()
-            .await
-            .map_err(|e| format!("Chat completion fallback failed: {}", e))?;
-
-        if !chat_resp.status().is_success() {
-            let error_text = chat_resp.text().await.unwrap_or_default();
-            return Err(format!("Completion error: {}", error_text));
+    let should_fallback = match infill_result {
+        Ok(resp) if resp.status().is_success() => {
+            let json: serde_json::Value = resp.json().await
+                .map_err(|e| format!("Failed to parse FIM response: {}", e))?;
+            return Ok(json["content"].as_str().unwrap_or("").to_string());
         }
+        Ok(resp) => {
+            let status = resp.status().as_u16();
+            // 501 = model doesn't support FIM, other errors = server issue
+            // Both should fall back to chat-based completion
+            log::debug!(target: "notesage::local_ai", "FIM /infill returned {}, falling back to chat", status);
+            true
+        }
+        Err(e) => {
+            // Connection error (e.g., --jinja breaks /infill endpoint)
+            log::debug!(target: "notesage::local_ai", "FIM /infill connection error: {}, falling back to chat", e);
+            true
+        }
+    };
 
-        let json: serde_json::Value = chat_resp.json().await
-            .map_err(|e| format!("Failed to parse chat completion response: {}", e))?;
-
-        let content = json["choices"][0]["message"]["content"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
-
-        return Ok(content);
+    if !should_fallback {
+        return Err("FIM: unexpected state".to_string());
     }
 
-    // Other errors (503 loading, etc.)
-    let error_text = infill_resp.text().await.unwrap_or_default();
-    Err(format!("FIM error: {}", error_text))
+    // Fall back to chat-based completion
+    let chat_body = serde_json::json!({
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a text completion engine. Complete the user's text naturally. Output ONLY the continuation — no explanations, no quotes, no markdown formatting. Just the next few words or sentence fragment that logically follows."
+            },
+            {
+                "role": "user",
+                "content": format!("Continue this text:\n{}", prefix)
+            }
+        ],
+        "max_tokens": max_tok,
+        "temperature": constants::FIM_TEMPERATURE,
+        "stop": ["\n\n"],
+        "repeat_penalty": constants::REPEAT_PENALTY,
+    });
+
+    let chat_resp = client
+        .post(format!("{}/v1/chat/completions", base))
+        .header("content-type", "application/json")
+        .json(&chat_body)
+        .send()
+        .await
+        .map_err(|e| format!("Chat completion fallback failed: {}", e))?;
+
+    if !chat_resp.status().is_success() {
+        let error_text = chat_resp.text().await.unwrap_or_default();
+        return Err(format!("Completion error: {}", error_text));
+    }
+
+    let json: serde_json::Value = chat_resp.json().await
+        .map_err(|e| format!("Failed to parse chat completion response: {}", e))?;
+
+    let content = json["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    Ok(content)
+}
+
+/// Build the llama-server command arguments for a given model entry.
+/// Used by `start_local_server` and extracted here for testability.
+pub fn build_server_args(
+    model_path: &str,
+    port: u16,
+    ctx_len: u32,
+    gpu_layers: i32,
+    supports_tool_calling: bool,
+) -> Vec<String> {
+    let mut args = vec![
+        "--model".to_string(), model_path.to_string(),
+        "--port".to_string(), port.to_string(),
+        "--ctx-size".to_string(), ctx_len.to_string(),
+        "--n-gpu-layers".to_string(), gpu_layers.to_string(),
+        "--host".to_string(), "127.0.0.1".to_string(),
+    ];
+    if supports_tool_calling {
+        args.push("--jinja".to_string());
+    }
+    args
 }

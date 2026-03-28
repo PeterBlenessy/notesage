@@ -37,6 +37,10 @@ interface SettingsStore {
   inlineCompletionsDisabled: boolean;
   chatHistoryLimit: number;
   skillManagement: boolean;
+  /** Global toggle — controls whether tools are sent with direct API chat requests */
+  toolCallingEnabled: boolean;
+  /** Web search provider for client-side search tool */
+  searchProvider: 'duckduckgo';
   /** @deprecated Use logLevel instead. Kept for migration. */
   debugLogging?: boolean;
   logLevel: LogLevel;
@@ -78,6 +82,7 @@ interface SettingsStore {
   setInlineCompletionsDisabled: (disabled: boolean) => void;
   setChatHistoryLimit: (limit: number) => void;
   setSkillManagement: (enabled: boolean) => void;
+  setToolCallingEnabled: (enabled: boolean) => void;
   setLogLevel: (level: LogLevel) => void;
   setAutoCheckUpdates: (enabled: boolean) => void;
   setLastUpdateCheck: (timestamp: string | null) => void;
@@ -124,6 +129,8 @@ export const useSettingsStore = create<SettingsStore>()(
       inlineCompletionsDisabled: false,
       chatHistoryLimit: 0,
       skillManagement: false,
+      toolCallingEnabled: true,
+      searchProvider: 'duckduckgo' as const,
       logLevel: 'warn',
       autoCheckUpdates: true,
       lastUpdateCheck: null,
@@ -231,6 +238,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setSkillManagement: (enabled: boolean) => {
         set({ skillManagement: enabled });
+      },
+
+      setToolCallingEnabled: (enabled: boolean) => {
+        set({ toolCallingEnabled: enabled });
       },
 
       setLogLevel: (level: LogLevel) => {

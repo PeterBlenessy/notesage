@@ -14,8 +14,39 @@ export interface AgentActivity {
   timestamp: number;
 }
 
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+}
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface ToolResult {
+  tool_call_id: string;
+  content: string;
+  is_error: boolean;
+}
+
+export type ToolCallStatus = 'pending' | 'running' | 'complete' | 'error' | 'denied';
+
+export interface ToolCallActivity {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+  status: ToolCallStatus;
+  result?: string;
+  error?: string;
+  startedAt: number;
+  completedAt?: number;
+}
+
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   timestamp?: number;
   citations?: Citation[];
@@ -34,6 +65,12 @@ export interface ChatMessage {
   displayContent?: string;
   /** Skill name used in this message (for collapsible indicator) */
   skillName?: string;
+  /** Tool calls requested by the assistant in this message */
+  toolCalls?: ToolCall[];
+  /** Tool call ID this message is a response to (for role: 'tool') */
+  toolCallId?: string;
+  /** Tool call execution activities for UI tracking */
+  toolCallActivities?: ToolCallActivity[];
 }
 
 export interface GenerateOptions {

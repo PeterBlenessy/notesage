@@ -191,12 +191,12 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `editor-store` | Open tabs, active tab, per-tab flags | Full |
 | `workspace-store` | Explorer folders, projects, notes tree | Full |
 | `project-metadata-store` | Project metadata from `.notesage/project.json` | Full |
-| `settings-store` | Theme, soft contrast mode, UI preferences, `startupReady` flag | Full (except `startupReady`) |
+| `settings-store` | Theme, soft contrast mode, UI preferences, `startupReady` flag, `toolCallingEnabled`, `searchProvider` | Full (except `startupReady`) |
 | `ai-store` | AI provider config (legacy, fallback) | Full |
 | `skill-store` | Skills registry, agents, instructions, active agent | Partial (overrides + active agent) |
 | `connections-store` | Multi-provider connections, sandbox/network config, kernel enforcement, writable paths | Full |
 | `routing-store` | Per-use-case provider routing | Full |
-| `permission-store` | ACP tool call permissions, domain allowlists, session domains | Partial (`alwaysAllowed`, `alwaysAllowedDomains` only) |
+| `permission-store` | ACP tool call permissions, domain allowlists, session domains, tool call permissions (`toolCallSession`, `toolCallAlways`) | Partial (`alwaysAllowed`, `alwaysAllowedDomains`, `toolCallAlways` only) |
 | `chat-store` | Chat conversation messages | Full |
 | `comment-store` | Comments, replies, delegation | JSON sidecar files |
 | `mcp-store` | MCP server registry | Partial (enabled overrides) |
@@ -212,6 +212,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `git-store` | Git repo state per path (branch, file statuses, loading) | None |
 | `pdf-store` | PDF viewer preferences (zoom, fit mode, bookmarks) | Full |
 | `sync-store` | iCloud sync settings (enabled flag, synced projects) | Disk file (settings JSON) |
+| `tool-permission-store` | Pending tool call permission requests for direct API tool calling | None |
 
 ### Styling
 

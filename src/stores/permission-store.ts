@@ -87,6 +87,27 @@ interface PermissionStore {
 
   /** Clear session domains for a connection (e.g., when network sandbox is toggled off). */
   clearDomainSession: (connectionId: string) => void;
+
+  /** Tool names allowed for the current session (non-persisted). */
+  toolCallSession: Set<string>;
+
+  /** Tool names always allowed (persisted across restarts). */
+  toolCallAlways: string[];
+
+  /** Check if a tool is auto-allowed (read-only tools). */
+  isToolAutoAllowed: (toolName: string) => boolean;
+
+  /** Allow a tool for this session. */
+  allowToolSession: (toolName: string) => void;
+
+  /** Always allow a tool (persisted). */
+  allowToolAlways: (toolName: string) => void;
+
+  /** Remove a tool from always-allowed list. */
+  removeToolAlways: (toolName: string) => void;
+
+  /** Check if a tool is allowed (auto → always → session → 'none'). */
+  isToolAllowed: (toolName: string) => PermissionTier;
 }
 
 export const usePermissionStore = create<PermissionStore>()(
@@ -99,6 +120,8 @@ export const usePermissionStore = create<PermissionStore>()(
       skillScriptAlways: [],
       domainSessionAllowed: {},
       domainAlwaysAllowed: {},
+      toolCallSession: new Set<string>(),
+      toolCallAlways: [],
 
       addRequest: (request) =>
         set((state) => ({
@@ -250,6 +273,36 @@ export const usePermissionStore = create<PermissionStore>()(
           delete next[connectionId];
           return { domainSessionAllowed: next };
         }),
+
+      isToolAutoAllowed: (toolName) => {
+        return toolName === 'read_file' || toolName === 'read_skill_content' || toolName === 'list_directory' || toolName === 'web_search';
+      },
+
+      allowToolSession: (toolName) =>
+        set((state) => {
+          const next = new Set(state.toolCallSession);
+          next.add(toolName);
+          return { toolCallSession: next };
+        }),
+
+      allowToolAlways: (toolName) =>
+        set((state) => {
+          if (state.toolCallAlways.includes(toolName)) return state;
+          return { toolCallAlways: [...state.toolCallAlways, toolName] };
+        }),
+
+      removeToolAlways: (toolName) =>
+        set((state) => ({
+          toolCallAlways: state.toolCallAlways.filter((n) => n !== toolName),
+        })),
+
+      isToolAllowed: (toolName) => {
+        const state = get();
+        if (state.isToolAutoAllowed(toolName)) return 'always';
+        if (state.toolCallAlways.includes(toolName)) return 'always';
+        if (state.toolCallSession.has(toolName)) return 'session';
+        return 'none';
+      },
     }),
     {
       name: 'notesage-permissions',
@@ -258,6 +311,7 @@ export const usePermissionStore = create<PermissionStore>()(
         alwaysAllowed: state.alwaysAllowed,
         skillScriptAlways: state.skillScriptAlways,
         domainAlwaysAllowed: state.domainAlwaysAllowed,
+        toolCallAlways: state.toolCallAlways,
       }),
     }
   )

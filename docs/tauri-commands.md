@@ -445,7 +445,7 @@ pub async fn ai_chat(
 
 ### ai_chat_stream
 
-Streaming multi-turn chat with an AI provider. Emits events: `ai-stream-chunk` (text delta), `ai-stream-thinking-chunk` (thinking/reasoning delta), `ai-stream-done` (completion), `ai-tool-use` (tool status), `ai-citation` (web search citations).
+Streaming multi-turn chat with an AI provider. Emits events: `ai-stream-chunk` (text delta), `ai-stream-thinking-chunk` (thinking/reasoning delta), `ai-stream-done` (completion), `ai-tool-call` (tool call request), `ai-tool-use` (tool status), `ai-citation` (web search citations).
 
 ```rust
 #[tauri::command]
@@ -456,6 +456,7 @@ pub async fn ai_chat_stream(
     api_key: Option<String>,
     ollama_url: Option<String>,
     web_search_enabled: Option<bool>,
+    tools: Option<Vec<ToolDefinition>>,
 ) -> Result<(), String>
 ```
 
@@ -467,6 +468,7 @@ pub async fn ai_chat_stream(
 - `api_key`: API key for Anthropic/OpenAI (None for Ollama)
 - `ollama_url`: Ollama server URL (None for Anthropic/OpenAI)
 - `web_search_enabled`: Enable server-side web search (Anthropic/OpenAI only, ignored for Ollama)
+- `tools`: Optional array of tool definitions for client-side tool calling
 
 **Returns:**
 
@@ -478,6 +480,7 @@ pub async fn ai_chat_stream(
 - `ai-stream-chunk` (String): Text delta to append
 - `ai-stream-thinking-chunk` (String): Thinking/reasoning delta (for Ollama thinking models). Emitted when the model produces reasoning traces — either via native `message.thinking` field (`think: true`) or via tag-based parsing (`<think>...</think>` and similar tags detected from the model template at runtime)
 - `ai-stream-done` (()): Stream completed
+- `ai-tool-call` ({ id: string, name: string, arguments: object }): Model requests a tool call — frontend handles execution and continuation
 - `ai-tool-use` ({ tool: string, status: string }): Tool usage (e.g., web_search started)
 - `ai-citation` ({ url: string, title: string, cited_text: string }): Citation from web search
 
@@ -509,9 +512,79 @@ pub struct AIRequest {
 ```rust
 #[derive(Serialize, Deserialize)]
 pub struct ChatMessage {
-    pub role: String,    // "user" | "assistant" | "system"
+    pub role: String,                       // "user" | "assistant" | "system" | "tool"
     pub content: String,
+    pub tool_calls: Option<Vec<ToolCall>>,  // For assistant messages with tool use
+    pub tool_call_id: Option<String>,       // For tool result messages (role: "tool")
 }
+```
+
+### ToolDefinition Struct
+
+```rust
+#[derive(Serialize, Deserialize)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_json::Value,
+}
+```
+
+### ToolCall Struct
+
+```rust
+#[derive(Serialize, Deserialize)]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: serde_json::Value,
+}
+```
+
+## Web Search Operations
+
+Located in `src-tauri/src/commands/ai.rs`
+
+### web_search
+
+Searches the web using DuckDuckGo's HTML endpoint. No API key required. Used by the client-side `web_search` tool during AI tool calling.
+
+```rust
+#[tauri::command]
+pub async fn web_search(
+    query: String,
+    max_results: Option<usize>,
+) -> Result<Vec<SearchResult>, String>
+```
+
+**Parameters:**
+
+- `query`: Search query string
+- `max_results`: Maximum number of results to return (default: 5)
+
+**Returns:**
+
+- `Ok(Vec<SearchResult>)`: Array of search results
+- `Err(String)`: Error message if search fails
+
+**SearchResult struct:**
+
+```rust
+#[derive(Serialize, Deserialize)]
+pub struct SearchResult {
+    pub title: String,
+    pub url: String,
+    pub snippet: String,
+}
+```
+
+**Frontend usage:**
+
+```typescript
+const results = await invoke<SearchResult[]>('web_search', {
+  query: 'rust async programming',
+  maxResults: 5,
+});
 ```
 
 ## Export Operations

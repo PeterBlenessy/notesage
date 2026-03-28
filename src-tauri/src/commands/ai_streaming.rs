@@ -3,7 +3,34 @@ use serde_json;
 use tauri::Emitter;
 use futures::StreamExt;
 use super::ChatMessage;
+use super::ai::ToolDefinition;
 use super::constants;
+
+/// Convert tool definitions to Anthropic's native format (name, description, input_schema).
+fn tools_to_anthropic_format(tools: &[ToolDefinition]) -> Vec<serde_json::Value> {
+    tools.iter().map(|t| {
+        serde_json::json!({
+            "name": t.name,
+            "description": t.description,
+            "input_schema": t.input_schema
+        })
+    }).collect()
+}
+
+/// Convert tool definitions to OpenAI function-calling format
+/// (used by OpenAI, Ollama, OpenAI-compatible, and local bundled providers).
+pub fn tools_to_openai_format(tools: &[ToolDefinition]) -> Vec<serde_json::Value> {
+    tools.iter().map(|t| {
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": t.name,
+                "description": t.description,
+                "parameters": t.input_schema
+            }
+        })
+    }).collect()
+}
 
 /// Citation data emitted to the frontend via the `ai-citation` event.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -11,6 +38,34 @@ pub struct Citation {
     pub url: String,
     pub title: String,
     pub cited_text: String,
+}
+
+/// Generate a simple UUID v4-like string for tool call IDs when the provider
+/// doesn't supply one (e.g., Ollama). Not cryptographically secure — just unique enough.
+fn uuid_v4() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("{:032x}", t)
+}
+
+/// Accumulator for OpenAI Responses API function call arguments streamed incrementally.
+#[derive(Debug, Clone)]
+struct OpenAIToolCallAccumulator {
+    call_id: String,
+    name: String,
+    arguments: String,
+}
+
+/// Accumulator for OpenAI Chat Completions API tool calls streamed incrementally.
+/// Used by Ollama and OpenAI-compatible providers which use the standard chat completions format.
+#[derive(Debug, Clone)]
+struct ChatCompletionsToolCallAccumulator {
+    id: String,
+    name: String,
+    arguments: String,
 }
 
 /// Thinking tag pair inferred from a model's capabilities or template.
@@ -196,6 +251,7 @@ pub async fn anthropic_chat_stream(
     messages: &[ChatMessage],
     api_key: &Option<String>,
     web_search_enabled: bool,
+    tools: &Option<Vec<ToolDefinition>>,
     model: &Option<String>,
     temperature: Option<f64>,
     max_tokens: Option<u32>,
@@ -242,13 +298,22 @@ pub async fn anthropic_chat_stream(
         body["temperature"] = serde_json::json!(temp);
     }
 
-    // Add web search tool when enabled
-    if web_search_enabled {
-        body["tools"] = serde_json::json!([{
-            "type": constants::ANTHROPIC_WEB_SEARCH_TOOL,
-            "name": "web_search",
-            "max_uses": constants::ANTHROPIC_WEB_SEARCH_MAX_USES
-        }]);
+    // Build tools array: merge web search tool (if enabled) with skill tools (if provided)
+    {
+        let mut all_tools: Vec<serde_json::Value> = Vec::new();
+        if web_search_enabled {
+            all_tools.push(serde_json::json!({
+                "type": constants::ANTHROPIC_WEB_SEARCH_TOOL,
+                "name": "web_search",
+                "max_uses": constants::ANTHROPIC_WEB_SEARCH_MAX_USES
+            }));
+        }
+        if let Some(ref tool_defs) = tools {
+            all_tools.extend(tools_to_anthropic_format(tool_defs));
+        }
+        if !all_tools.is_empty() {
+            body["tools"] = serde_json::Value::Array(all_tools);
+        }
     }
 
     let response = client
@@ -270,6 +335,13 @@ pub async fn anthropic_chat_stream(
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
     let mut citations: Vec<Citation> = Vec::new();
+
+    // Tool call accumulation state
+    let mut current_tool_id = String::new();
+    let mut current_tool_name = String::new();
+    let mut current_tool_input = String::new();
+    let mut in_tool_use_block = false;
+    let mut stop_reason = String::new();
 
     while let Some(chunk) = stream.next().await {
         match chunk {
@@ -293,6 +365,12 @@ pub async fn anthropic_chat_stream(
                             let block_type = block["type"].as_str().unwrap_or("");
 
                             match block_type {
+                                "tool_use" => {
+                                    current_tool_id = block["id"].as_str().unwrap_or("").to_string();
+                                    current_tool_name = block["name"].as_str().unwrap_or("").to_string();
+                                    current_tool_input.clear();
+                                    in_tool_use_block = true;
+                                }
                                 "server_tool_use" => {
                                     let tool_name = block["name"].as_str().unwrap_or("web_search");
                                     window
@@ -349,13 +427,34 @@ pub async fn anthropic_chat_stream(
                                         }
                                     }
                                 }
+                            } else if delta_type == "input_json_delta" {
+                                // Accumulate tool call arguments (streamed as partial JSON)
+                                if let Some(partial) = delta["partial_json"].as_str() {
+                                    current_tool_input.push_str(partial);
+                                }
+                            }
+                        }
+
+                        "content_block_stop" => {
+                            if in_tool_use_block {
+                                let arguments: serde_json::Value = serde_json::from_str(&current_tool_input)
+                                    .unwrap_or(serde_json::Value::Null);
+                                window
+                                    .emit("ai-tool-call", serde_json::json!({
+                                        "id": current_tool_id,
+                                        "name": current_tool_name,
+                                        "arguments": arguments
+                                    }))
+                                    .map_err(|e| format!("Failed to emit tool call: {}", e))?;
+                                in_tool_use_block = false;
+                                current_tool_input.clear();
                             }
                         }
 
                         "message_delta" => {
-                            // Check for pause_turn stop reason
-                            if let Some(stop_reason) = json["delta"]["stop_reason"].as_str() {
-                                if stop_reason == "pause_turn" {
+                            if let Some(reason) = json["delta"]["stop_reason"].as_str() {
+                                stop_reason = reason.to_string();
+                                if reason == "pause_turn" {
                                     log::warn!(target: "notesage::ai", "Anthropic returned pause_turn — response may be incomplete");
                                 }
                             }
@@ -394,9 +493,17 @@ pub async fn anthropic_chat_stream(
         }
     }
 
-    window
-        .emit("ai-stream-done", ())
-        .map_err(|e| format!("Failed to emit done event: {}", e))?;
+    // If the model stopped because it wants tool results, signal the frontend
+    // to execute tools and continue. Do NOT emit ai-stream-done in this case.
+    if stop_reason == "tool_use" {
+        window
+            .emit("ai-tool-calls-done", ())
+            .map_err(|e| format!("Failed to emit tool calls done: {}", e))?;
+    } else {
+        window
+            .emit("ai-stream-done", ())
+            .map_err(|e| format!("Failed to emit done event: {}", e))?;
+    }
 
     Ok(())
 }
@@ -407,6 +514,7 @@ pub async fn openai_chat_stream(
     messages: &[ChatMessage],
     api_key: &Option<String>,
     web_search_enabled: bool,
+    tools: &Option<Vec<ToolDefinition>>,
     model: &Option<String>,
     temperature: Option<f64>,
     max_tokens: Option<u32>,
@@ -469,11 +577,20 @@ pub async fn openai_chat_stream(
         body["max_output_tokens"] = serde_json::json!(max);
     }
 
-    if web_search_enabled {
-        body["tools"] = serde_json::json!([{
-            "type": constants::OPENAI_WEB_SEARCH_TOOL,
-            "search_context_size": "medium"
-        }]);
+    {
+        let mut all_tools: Vec<serde_json::Value> = Vec::new();
+        if web_search_enabled {
+            all_tools.push(serde_json::json!({
+                "type": constants::OPENAI_WEB_SEARCH_TOOL,
+                "search_context_size": "medium"
+            }));
+        }
+        if let Some(ref tool_defs) = tools {
+            all_tools.extend(tools_to_openai_format(tool_defs));
+        }
+        if !all_tools.is_empty() {
+            body["tools"] = serde_json::Value::Array(all_tools);
+        }
     }
 
     let response = client
@@ -493,6 +610,11 @@ pub async fn openai_chat_stream(
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
     let mut citations: Vec<Citation> = Vec::new();
+
+    // Tool call accumulation state for OpenAI Responses API
+    // Each function_call output item has: call_id, name, arguments (streamed)
+    let mut openai_tool_calls: Vec<OpenAIToolCallAccumulator> = Vec::new();
+    let mut has_tool_calls = false;
 
     while let Some(chunk) = stream.next().await {
         match chunk {
@@ -514,6 +636,45 @@ pub async fn openai_chat_stream(
                                 window
                                     .emit("ai-stream-chunk", delta)
                                     .map_err(|e| format!("Failed to emit chunk: {}", e))?;
+                            }
+                        }
+
+                        "response.output_item.added" => {
+                            // A new output item was added — check if it's a function_call
+                            let item = &json["item"];
+                            if item["type"].as_str() == Some("function_call") {
+                                let call_id = item["call_id"].as_str().unwrap_or("").to_string();
+                                let name = item["name"].as_str().unwrap_or("").to_string();
+                                openai_tool_calls.push(OpenAIToolCallAccumulator {
+                                    call_id,
+                                    name,
+                                    arguments: String::new(),
+                                });
+                                has_tool_calls = true;
+                            }
+                        }
+
+                        "response.function_call_arguments.delta" => {
+                            // Accumulate partial arguments for the current function call
+                            if let Some(delta) = json["delta"].as_str() {
+                                if let Some(last) = openai_tool_calls.last_mut() {
+                                    last.arguments.push_str(delta);
+                                }
+                            }
+                        }
+
+                        "response.function_call_arguments.done" => {
+                            // Function call arguments are complete — emit the tool call event
+                            if let Some(tool_call) = openai_tool_calls.last() {
+                                let arguments: serde_json::Value = serde_json::from_str(&tool_call.arguments)
+                                    .unwrap_or(serde_json::Value::Null);
+                                window
+                                    .emit("ai-tool-call", serde_json::json!({
+                                        "id": tool_call.call_id,
+                                        "name": tool_call.name,
+                                        "arguments": arguments
+                                    }))
+                                    .map_err(|e| format!("Failed to emit tool call: {}", e))?;
                             }
                         }
 
@@ -542,7 +703,11 @@ pub async fn openai_chat_stream(
                         }
 
                         "response.completed" => {
-                            // Stream done — break out
+                            // Check if the response ended due to tool use
+                            let status = json["response"]["status"].as_str().unwrap_or("");
+                            if status == "requires_action" || has_tool_calls {
+                                // Model wants tool results — will be signaled after the loop
+                            }
                         }
 
                         "response.failed" => {
@@ -571,9 +736,17 @@ pub async fn openai_chat_stream(
         }
     }
 
-    window
-        .emit("ai-stream-done", ())
-        .map_err(|e| format!("Failed to emit done event: {}", e))?;
+    // If tool calls were made, signal the frontend to execute them and continue.
+    // Do NOT emit ai-stream-done in this case.
+    if has_tool_calls {
+        window
+            .emit("ai-tool-calls-done", ())
+            .map_err(|e| format!("Failed to emit tool calls done: {}", e))?;
+    } else {
+        window
+            .emit("ai-stream-done", ())
+            .map_err(|e| format!("Failed to emit done event: {}", e))?;
+    }
 
     Ok(())
 }
@@ -583,6 +756,7 @@ pub async fn ollama_chat_stream(
     window: &tauri::Window,
     messages: &[ChatMessage],
     ollama_url: &Option<String>,
+    tools: &Option<Vec<ToolDefinition>>,
     model: &Option<String>,
     temperature: Option<f64>,
     _max_tokens: Option<u32>,
@@ -626,6 +800,13 @@ pub async fn ollama_chat_stream(
         body["think"] = serde_json::json!(true);
     }
 
+    // Add tools in OpenAI function-calling format
+    if let Some(ref tool_defs) = tools {
+        if !tool_defs.is_empty() {
+            body["tools"] = serde_json::Value::Array(tools_to_openai_format(tool_defs));
+        }
+    }
+
     if let Some(temp) = temperature {
         body["options"] = serde_json::json!({ "temperature": temp });
     }
@@ -652,6 +833,7 @@ pub async fn ollama_chat_stream(
 
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
+    let mut has_tool_calls = false;
 
     while let Some(chunk) = stream.next().await {
         match chunk {
@@ -672,6 +854,27 @@ pub async fn ollama_chat_stream(
                                     window
                                         .emit("ai-stream-thinking-chunk", thinking)
                                         .map_err(|e| format!("Failed to emit thinking event: {}", e))?;
+                                }
+                            }
+                        }
+
+                        // Check for tool calls in Ollama's response format.
+                        // Tool calls appear in the `message.tool_calls` array, typically
+                        // in the final chunk (when `done: true`).
+                        if let Some(tool_calls) = json["message"]["tool_calls"].as_array() {
+                            for tool_call in tool_calls {
+                                let function = &tool_call["function"];
+                                let name = function["name"].as_str().unwrap_or("").to_string();
+                                let arguments = &function["arguments"];
+                                if !name.is_empty() {
+                                    has_tool_calls = true;
+                                    window
+                                        .emit("ai-tool-call", serde_json::json!({
+                                            "id": format!("ollama-{}", uuid_v4()),
+                                            "name": name,
+                                            "arguments": arguments
+                                        }))
+                                        .map_err(|e| format!("Failed to emit tool call: {}", e))?;
                                 }
                             }
                         }
@@ -764,9 +967,16 @@ pub async fn ollama_chat_stream(
         }
     }
 
-    window
-        .emit("ai-stream-done", ())
-        .map_err(|e| format!("Failed to emit done event: {}", e))?;
+    // If tool calls were detected, signal the frontend to execute them.
+    if has_tool_calls {
+        window
+            .emit("ai-tool-calls-done", ())
+            .map_err(|e| format!("Failed to emit tool calls done: {}", e))?;
+    } else {
+        window
+            .emit("ai-stream-done", ())
+            .map_err(|e| format!("Failed to emit done event: {}", e))?;
+    }
 
     Ok(())
 }
@@ -776,6 +986,7 @@ pub async fn openai_compatible_chat_stream(
     window: &tauri::Window,
     messages: &[ChatMessage],
     api_key: &Option<String>,
+    tools: &Option<Vec<ToolDefinition>>,
     model: &Option<String>,
     temperature: Option<f64>,
     max_tokens: Option<u32>,
@@ -810,6 +1021,13 @@ pub async fn openai_compatible_chat_stream(
         body["max_tokens"] = serde_json::json!(max);
     }
 
+    // Add tools in OpenAI function-calling format
+    if let Some(ref tool_defs) = tools {
+        if !tool_defs.is_empty() {
+            body["tools"] = serde_json::Value::Array(tools_to_openai_format(tool_defs));
+        }
+    }
+
     let response = client
         .post(format!("{}/v1/chat/completions", super::ai::normalize_base_url(base_url)))
         .header("Authorization", format!("Bearer {}", api_key))
@@ -826,6 +1044,13 @@ pub async fn openai_compatible_chat_stream(
 
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
+
+    // Tool call accumulation state for Chat Completions format.
+    // Tool calls arrive incrementally across multiple SSE chunks:
+    //   delta.tool_calls[i].id, delta.tool_calls[i].function.name (first chunk)
+    //   delta.tool_calls[i].function.arguments (subsequent chunks, accumulated)
+    let mut tool_calls: Vec<ChatCompletionsToolCallAccumulator> = Vec::new();
+    let mut finish_reason = String::new();
 
     while let Some(chunk) = stream.next().await {
         match chunk {
@@ -849,11 +1074,47 @@ pub async fn openai_compatible_chat_stream(
                         }
 
                         if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                            if let Some(content) = json["choices"][0]["delta"]["content"].as_str() {
+                            let choice = &json["choices"][0];
+
+                            // Track finish reason
+                            if let Some(reason) = choice["finish_reason"].as_str() {
+                                finish_reason = reason.to_string();
+                            }
+
+                            // Handle text content
+                            if let Some(content) = choice["delta"]["content"].as_str() {
                                 if !content.is_empty() {
                                     window
                                         .emit("ai-stream-chunk", content)
                                         .map_err(|e| format!("Failed to emit chunk: {}", e))?;
+                                }
+                            }
+
+                            // Handle tool calls streamed incrementally
+                            if let Some(tc_array) = choice["delta"]["tool_calls"].as_array() {
+                                for tc in tc_array {
+                                    let index = tc["index"].as_u64().unwrap_or(0) as usize;
+
+                                    // Grow the accumulator vec to fit this index
+                                    while tool_calls.len() <= index {
+                                        tool_calls.push(ChatCompletionsToolCallAccumulator {
+                                            id: String::new(),
+                                            name: String::new(),
+                                            arguments: String::new(),
+                                        });
+                                    }
+
+                                    // First chunk for this tool call carries id and function name
+                                    if let Some(id) = tc["id"].as_str() {
+                                        tool_calls[index].id = id.to_string();
+                                    }
+                                    if let Some(name) = tc["function"]["name"].as_str() {
+                                        tool_calls[index].name = name.to_string();
+                                    }
+                                    // Arguments are accumulated across chunks
+                                    if let Some(args) = tc["function"]["arguments"].as_str() {
+                                        tool_calls[index].arguments.push_str(args);
+                                    }
                                 }
                             }
                         }
@@ -866,9 +1127,472 @@ pub async fn openai_compatible_chat_stream(
         }
     }
 
-    window
-        .emit("ai-stream-done", ())
-        .map_err(|e| format!("Failed to emit done event: {}", e))?;
+    // Emit any accumulated tool calls
+    let has_tool_calls = !tool_calls.is_empty() && tool_calls.iter().any(|tc| !tc.name.is_empty());
+    if has_tool_calls {
+        for tc in &tool_calls {
+            if tc.name.is_empty() {
+                continue;
+            }
+            let arguments: serde_json::Value = serde_json::from_str(&tc.arguments)
+                .unwrap_or(serde_json::Value::Null);
+            window
+                .emit("ai-tool-call", serde_json::json!({
+                    "id": if tc.id.is_empty() { format!("compat-{}", uuid_v4()) } else { tc.id.clone() },
+                    "name": tc.name,
+                    "arguments": arguments
+                }))
+                .map_err(|e| format!("Failed to emit tool call: {}", e))?;
+        }
+    }
+
+    // If tool calls are present (finish_reason "tool_calls" or accumulated calls),
+    // signal the frontend to execute them instead of emitting stream-done.
+    if has_tool_calls || finish_reason == "tool_calls" {
+        window
+            .emit("ai-tool-calls-done", ())
+            .map_err(|e| format!("Failed to emit tool calls done: {}", e))?;
+    } else {
+        window
+            .emit("ai-stream-done", ())
+            .map_err(|e| format!("Failed to emit done event: {}", e))?;
+    }
 
     Ok(())
+}
+
+/// Extract tool calls from an Anthropic `content_block_start` event with type `tool_use`.
+/// Returns `(id, name)` if this is a tool use block start.
+pub(crate) fn parse_anthropic_tool_use_block_start(json: &serde_json::Value) -> Option<(String, String)> {
+    let block = &json["content_block"];
+    if block["type"].as_str() != Some("tool_use") {
+        return None;
+    }
+    let id = block["id"].as_str().unwrap_or("").to_string();
+    let name = block["name"].as_str().unwrap_or("").to_string();
+    Some((id, name))
+}
+
+/// Extract partial JSON from an Anthropic `content_block_delta` with type `input_json_delta`.
+pub(crate) fn parse_anthropic_input_json_delta(json: &serde_json::Value) -> Option<String> {
+    let delta = &json["delta"];
+    if delta["type"].as_str() != Some("input_json_delta") {
+        return None;
+    }
+    delta["partial_json"].as_str().map(|s| s.to_string())
+}
+
+/// Extract tool calls from an Ollama streaming JSON line.
+/// Returns a vec of `(name, arguments_value)` pairs.
+pub(crate) fn parse_ollama_tool_calls(json: &serde_json::Value) -> Vec<(String, serde_json::Value)> {
+    let mut results = Vec::new();
+    if let Some(tool_calls) = json["message"]["tool_calls"].as_array() {
+        for tool_call in tool_calls {
+            let function = &tool_call["function"];
+            let name = function["name"].as_str().unwrap_or("").to_string();
+            let arguments = function["arguments"].clone();
+            if !name.is_empty() {
+                results.push((name, arguments));
+            }
+        }
+    }
+    results
+}
+
+/// Parse an OpenAI Chat Completions SSE chunk for incremental tool call data.
+/// Returns a vec of `(index, id_opt, name_opt, args_opt)` tuples.
+pub(crate) fn parse_chat_completions_tool_call_delta(
+    json: &serde_json::Value,
+) -> Vec<(usize, Option<String>, Option<String>, Option<String>)> {
+    let mut results = Vec::new();
+    if let Some(tc_array) = json["choices"][0]["delta"]["tool_calls"].as_array() {
+        for tc in tc_array {
+            let index = tc["index"].as_u64().unwrap_or(0) as usize;
+            let id = tc["id"].as_str().map(|s| s.to_string());
+            let name = tc["function"]["name"].as_str().map(|s| s.to_string());
+            let args = tc["function"]["arguments"].as_str().map(|s| s.to_string());
+            results.push((index, id, name, args));
+        }
+    }
+    results
+}
+
+/// Parse an OpenAI Responses API `response.output_item.added` event for function_call items.
+/// Returns `Some((call_id, name))` if this is a function_call item.
+pub(crate) fn parse_openai_responses_function_call_item(json: &serde_json::Value) -> Option<(String, String)> {
+    let item = &json["item"];
+    if item["type"].as_str() != Some("function_call") {
+        return None;
+    }
+    let call_id = item["call_id"].as_str().unwrap_or("").to_string();
+    let name = item["name"].as_str().unwrap_or("").to_string();
+    Some((call_id, name))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- Anthropic tool call parsing tests ---
+
+    #[test]
+    fn test_anthropic_tool_use_block_start() {
+        let json = serde_json::json!({
+            "type": "content_block_start",
+            "index": 1,
+            "content_block": {
+                "type": "tool_use",
+                "id": "toolu_01abc123",
+                "name": "get_weather",
+                "input": {}
+            }
+        });
+        let result = parse_anthropic_tool_use_block_start(&json);
+        assert_eq!(result, Some(("toolu_01abc123".to_string(), "get_weather".to_string())));
+    }
+
+    #[test]
+    fn test_anthropic_tool_use_block_start_text_block() {
+        let json = serde_json::json!({
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {
+                "type": "text",
+                "text": ""
+            }
+        });
+        assert_eq!(parse_anthropic_tool_use_block_start(&json), None);
+    }
+
+    #[test]
+    fn test_anthropic_input_json_delta() {
+        let json = serde_json::json!({
+            "type": "content_block_delta",
+            "index": 1,
+            "delta": {
+                "type": "input_json_delta",
+                "partial_json": "{\"location\":"
+            }
+        });
+        let result = parse_anthropic_input_json_delta(&json);
+        assert_eq!(result, Some("{\"location\":".to_string()));
+    }
+
+    #[test]
+    fn test_anthropic_input_json_delta_text_delta() {
+        let json = serde_json::json!({
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {
+                "type": "text_delta",
+                "text": "hello"
+            }
+        });
+        assert_eq!(parse_anthropic_input_json_delta(&json), None);
+    }
+
+    #[test]
+    fn test_anthropic_tool_input_accumulation() {
+        let chunks = vec![
+            "{\"loc",
+            "ation\": \"San ",
+            "Francisco\"}",
+        ];
+        let mut accumulated = String::new();
+        for chunk in chunks {
+            accumulated.push_str(chunk);
+        }
+        let parsed: serde_json::Value = serde_json::from_str(&accumulated).unwrap();
+        assert_eq!(parsed["location"], "San Francisco");
+    }
+
+    // --- Ollama tool call parsing tests ---
+
+    #[test]
+    fn test_ollama_tool_calls_present() {
+        let json = serde_json::json!({
+            "model": "llama3.1",
+            "message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": { "city": "Tokyo" }
+                        }
+                    },
+                    {
+                        "function": {
+                            "name": "get_time",
+                            "arguments": { "timezone": "JST" }
+                        }
+                    }
+                ]
+            },
+            "done": true
+        });
+        let calls = parse_ollama_tool_calls(&json);
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].0, "get_weather");
+        assert_eq!(calls[0].1["city"], "Tokyo");
+        assert_eq!(calls[1].0, "get_time");
+        assert_eq!(calls[1].1["timezone"], "JST");
+    }
+
+    #[test]
+    fn test_ollama_tool_calls_absent() {
+        let json = serde_json::json!({
+            "model": "llama3.1",
+            "message": {
+                "role": "assistant",
+                "content": "Hello!"
+            },
+            "done": false
+        });
+        let calls = parse_ollama_tool_calls(&json);
+        assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn test_ollama_tool_calls_empty_name_skipped() {
+        let json = serde_json::json!({
+            "message": {
+                "tool_calls": [
+                    { "function": { "name": "", "arguments": {} } }
+                ]
+            }
+        });
+        let calls = parse_ollama_tool_calls(&json);
+        assert!(calls.is_empty());
+    }
+
+    // --- OpenAI Chat Completions tool call delta tests ---
+
+    #[test]
+    fn test_chat_completions_tool_call_delta_first_chunk() {
+        let json = serde_json::json!({
+            "choices": [{
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": "call_abc123",
+                        "function": {
+                            "name": "search",
+                            "arguments": ""
+                        }
+                    }]
+                }
+            }]
+        });
+        let results = parse_chat_completions_tool_call_delta(&json);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, 0);
+        assert_eq!(results[0].1, Some("call_abc123".to_string()));
+        assert_eq!(results[0].2, Some("search".to_string()));
+        assert_eq!(results[0].3, Some("".to_string()));
+    }
+
+    #[test]
+    fn test_chat_completions_tool_call_delta_args_chunk() {
+        let json = serde_json::json!({
+            "choices": [{
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "function": {
+                            "arguments": "{\"query\":"
+                        }
+                    }]
+                }
+            }]
+        });
+        let results = parse_chat_completions_tool_call_delta(&json);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, 0);
+        assert_eq!(results[0].1, None);
+        assert_eq!(results[0].2, None);
+        assert_eq!(results[0].3, Some("{\"query\":".to_string()));
+    }
+
+    #[test]
+    fn test_chat_completions_tool_call_accumulation() {
+        let mut tool_calls: Vec<ChatCompletionsToolCallAccumulator> = Vec::new();
+
+        let chunks = vec![
+            serde_json::json!({
+                "choices": [{ "delta": { "tool_calls": [{
+                    "index": 0, "id": "call_1",
+                    "function": { "name": "read_file", "arguments": "" }
+                }]}}]
+            }),
+            serde_json::json!({
+                "choices": [{ "delta": { "tool_calls": [{
+                    "index": 0,
+                    "function": { "arguments": "{\"path\":" }
+                }]}}]
+            }),
+            serde_json::json!({
+                "choices": [{ "delta": { "tool_calls": [{
+                    "index": 0,
+                    "function": { "arguments": " \"/tmp/test.txt\"}" }
+                }]}}]
+            }),
+        ];
+
+        for chunk in &chunks {
+            let deltas = parse_chat_completions_tool_call_delta(chunk);
+            for (index, id, name, args) in deltas {
+                while tool_calls.len() <= index {
+                    tool_calls.push(ChatCompletionsToolCallAccumulator {
+                        id: String::new(),
+                        name: String::new(),
+                        arguments: String::new(),
+                    });
+                }
+                if let Some(id) = id {
+                    tool_calls[index].id = id;
+                }
+                if let Some(name) = name {
+                    tool_calls[index].name = name;
+                }
+                if let Some(args) = args {
+                    tool_calls[index].arguments.push_str(&args);
+                }
+            }
+        }
+
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].id, "call_1");
+        assert_eq!(tool_calls[0].name, "read_file");
+        let parsed: serde_json::Value = serde_json::from_str(&tool_calls[0].arguments).unwrap();
+        assert_eq!(parsed["path"], "/tmp/test.txt");
+    }
+
+    #[test]
+    fn test_chat_completions_no_tool_calls() {
+        let json = serde_json::json!({
+            "choices": [{
+                "delta": {
+                    "content": "Hello world"
+                }
+            }]
+        });
+        let results = parse_chat_completions_tool_call_delta(&json);
+        assert!(results.is_empty());
+    }
+
+    // --- OpenAI Responses API tests ---
+
+    #[test]
+    fn test_openai_responses_function_call_item() {
+        let json = serde_json::json!({
+            "type": "response.output_item.added",
+            "item": {
+                "type": "function_call",
+                "call_id": "fc_abc123",
+                "name": "calculate"
+            }
+        });
+        let result = parse_openai_responses_function_call_item(&json);
+        assert_eq!(result, Some(("fc_abc123".to_string(), "calculate".to_string())));
+    }
+
+    #[test]
+    fn test_openai_responses_text_item_ignored() {
+        let json = serde_json::json!({
+            "type": "response.output_item.added",
+            "item": {
+                "type": "message",
+                "role": "assistant"
+            }
+        });
+        assert_eq!(parse_openai_responses_function_call_item(&json), None);
+    }
+
+    // --- UUID generation test ---
+
+    #[test]
+    fn test_uuid_v4_format() {
+        let id = uuid_v4();
+        assert_eq!(id.len(), 32);
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    // --- SSE parsing tests ---
+
+    #[test]
+    fn test_parse_sse_events_tool_use() {
+        let mut buffer = "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"search\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"q\\\": \\\"rust\\\"}\"}}\n\n".to_string();
+        let events = parse_sse_events(&mut buffer);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].0, "content_block_start");
+        assert_eq!(events[1].0, "content_block_delta");
+
+        let start_json: serde_json::Value = serde_json::from_str(&events[0].1).unwrap();
+        assert_eq!(start_json["content_block"]["type"], "tool_use");
+        assert_eq!(start_json["content_block"]["name"], "search");
+
+        let delta_json: serde_json::Value = serde_json::from_str(&events[1].1).unwrap();
+        assert_eq!(delta_json["delta"]["type"], "input_json_delta");
+    }
+
+    // --- Anthropic stop_reason tracking ---
+
+    #[test]
+    fn test_anthropic_message_delta_tool_use_stop() {
+        let json = serde_json::json!({
+            "type": "message_delta",
+            "delta": {
+                "stop_reason": "tool_use",
+                "stop_sequence": null
+            },
+            "usage": { "output_tokens": 42 }
+        });
+        let stop_reason = json["delta"]["stop_reason"].as_str().unwrap_or("");
+        assert_eq!(stop_reason, "tool_use");
+    }
+
+    #[test]
+    fn test_anthropic_message_delta_end_turn_stop() {
+        let json = serde_json::json!({
+            "type": "message_delta",
+            "delta": {
+                "stop_reason": "end_turn",
+                "stop_sequence": null
+            }
+        });
+        let stop_reason = json["delta"]["stop_reason"].as_str().unwrap_or("");
+        assert_eq!(stop_reason, "end_turn");
+    }
+
+    // --- Multiple tool calls in one response ---
+
+    #[test]
+    fn test_chat_completions_multiple_tool_calls() {
+        let json = serde_json::json!({
+            "choices": [{
+                "delta": {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call_1",
+                            "function": { "name": "search", "arguments": "{\"q\": \"rust\"}" }
+                        },
+                        {
+                            "index": 1,
+                            "id": "call_2",
+                            "function": { "name": "read_file", "arguments": "{\"path\": \"/tmp\"}" }
+                        }
+                    ]
+                }
+            }]
+        });
+        let results = parse_chat_completions_tool_call_delta(&json);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].0, 0);
+        assert_eq!(results[0].2, Some("search".to_string()));
+        assert_eq!(results[1].0, 1);
+        assert_eq!(results[1].2, Some("read_file".to_string()));
+    }
 }

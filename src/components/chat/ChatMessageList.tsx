@@ -12,6 +12,8 @@ import { ChatMessage } from './ChatMessage';
 import { LocalAISetupCard } from './LocalAISetupCard';
 import { PermissionCard } from './PermissionCard';
 import { DomainApprovalCard, type DomainApprovalRequest } from './DomainApprovalCard';
+import { ToolCallPermissionCard } from './ToolCallPermissionCard';
+import { useToolPermissionStore } from '@/stores/tool-permission-store';
 import { ProjectSwitchCard } from './ProjectSwitchCard';
 import { AgentSwitchCard } from './AgentSwitchCard';
 import { ContextDivider } from './ContextDivider';
@@ -31,6 +33,7 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
   const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
   const segments = useChatStore(selectSegments);
   const permissionRequests = usePermissionStore((s) => s.requests);
+  const toolPermission = useToolPermissionStore((s) => s.pending);
 
   const [domainRequests, setDomainRequests] = useState<DomainApprovalRequest[]>([]);
 
@@ -202,7 +205,7 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
               </span>
             </div>
           )}
-          {(permissionRequests.length > 0 || domainRequests.length > 0) && (
+          {(permissionRequests.length > 0 || domainRequests.length > 0 || toolPermission) && (
             <div className="flex flex-col gap-2 mt-2">
               {permissionRequests.map((req) => (
                 <PermissionCard key={req.id} request={req} />
@@ -214,6 +217,9 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
                   onResolved={handleDomainResolved}
                 />
               ))}
+              {toolPermission && (
+                <ToolCallPermissionCard key={toolPermission.id} request={toolPermission} />
+              )}
             </div>
           )}
         </>

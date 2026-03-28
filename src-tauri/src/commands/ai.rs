@@ -69,6 +69,34 @@ fn resolve_api_key(api_key: &Option<String>, connection_id: &Option<String>) -> 
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+}
+
+/// Definition of a tool that can be passed to an AI provider for function calling.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_json::Value,
+}
+
+/// A tool call request returned by the AI model in an assistant message.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: serde_json::Value,
+}
+
+/// The result of executing a tool call, sent back to the model.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ToolResult {
+    pub tool_call_id: String,
+    pub content: String,
+    pub is_error: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -142,6 +170,7 @@ pub async fn ai_chat_stream(
     connection_id: Option<String>,
     ollama_url: Option<String>,
     web_search_enabled: Option<bool>,
+    tools: Option<Vec<ToolDefinition>>,
     model: Option<String>,
     temperature: Option<f64>,
     max_tokens: Option<u32>,
@@ -154,12 +183,12 @@ pub async fn ai_chat_stream(
     let resolved_key = resolve_api_key(&api_key, &connection_id)?;
 
     match provider {
-        AIProviderType::Anthropic => anthropic_chat_stream(&window, &messages, &resolved_key, search, &model, temperature, max_tokens, &base_url).await,
-        AIProviderType::OpenAI => openai_chat_stream(&window, &messages, &resolved_key, search, &model, temperature, max_tokens, &base_url).await,
-        AIProviderType::Ollama => ollama_chat_stream(&window, &messages, &ollama_url, &model, temperature, max_tokens, &base_url).await,
-        AIProviderType::OpenAICompatible => openai_compatible_chat_stream(&window, &messages, &resolved_key, &model, temperature, max_tokens, &base_url).await,
+        AIProviderType::Anthropic => anthropic_chat_stream(&window, &messages, &resolved_key, search, &tools, &model, temperature, max_tokens, &base_url).await,
+        AIProviderType::OpenAI => openai_chat_stream(&window, &messages, &resolved_key, search, &tools, &model, temperature, max_tokens, &base_url).await,
+        AIProviderType::Ollama => ollama_chat_stream(&window, &messages, &ollama_url, &tools, &model, temperature, max_tokens, &base_url).await,
+        AIProviderType::OpenAICompatible => openai_compatible_chat_stream(&window, &messages, &resolved_key, &tools, &model, temperature, max_tokens, &base_url).await,
         AIProviderType::LocalBundled => {
-            super::local_inference::local_bundled_chat_stream(&window, &messages, &state, &model, temperature, max_tokens).await
+            super::local_inference::local_bundled_chat_stream(&window, &messages, &state, &tools, &model, temperature, max_tokens).await
         }
     }
 }
@@ -946,4 +975,190 @@ async fn openai_compatible_chat(
         .to_string();
 
     Ok(content)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_chat_message_basic_serialization() {
+        let msg = ChatMessage {
+            role: "user".to_string(),
+            content: "Hello".to_string(),
+            tool_calls: None,
+            tool_call_id: None,
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["role"], "user");
+        assert_eq!(json["content"], "Hello");
+        // Optional fields should be absent (skip_serializing_if)
+        assert!(json.get("tool_calls").is_none());
+        assert!(json.get("tool_call_id").is_none());
+    }
+
+    #[test]
+    fn test_chat_message_with_tool_calls() {
+        let msg = ChatMessage {
+            role: "assistant".to_string(),
+            content: "".to_string(),
+            tool_calls: Some(vec![ToolCall {
+                id: "call_123".to_string(),
+                name: "read_file".to_string(),
+                arguments: json!({"path": "/tmp/test.md"}),
+            }]),
+            tool_call_id: None,
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["tool_calls"][0]["id"], "call_123");
+        assert_eq!(json["tool_calls"][0]["name"], "read_file");
+        assert_eq!(json["tool_calls"][0]["arguments"]["path"], "/tmp/test.md");
+        assert!(json.get("tool_call_id").is_none());
+    }
+
+    #[test]
+    fn test_chat_message_tool_role() {
+        let msg = ChatMessage {
+            role: "tool".to_string(),
+            content: "file contents here".to_string(),
+            tool_calls: None,
+            tool_call_id: Some("call_123".to_string()),
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["role"], "tool");
+        assert_eq!(json["tool_call_id"], "call_123");
+        assert!(json.get("tool_calls").is_none());
+    }
+
+    #[test]
+    fn test_chat_message_deserialization_without_optional_fields() {
+        let json_str = r#"{"role": "user", "content": "Hi"}"#;
+        let msg: ChatMessage = serde_json::from_str(json_str).unwrap();
+        assert_eq!(msg.role, "user");
+        assert_eq!(msg.content, "Hi");
+        assert!(msg.tool_calls.is_none());
+        assert!(msg.tool_call_id.is_none());
+    }
+
+    #[test]
+    fn test_chat_message_deserialization_with_tool_calls() {
+        let json_str = r#"{
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "tc_1", "name": "search", "arguments": {"query": "rust"}}
+            ]
+        }"#;
+        let msg: ChatMessage = serde_json::from_str(json_str).unwrap();
+        assert_eq!(msg.role, "assistant");
+        let calls = msg.tool_calls.unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "tc_1");
+        assert_eq!(calls[0].name, "search");
+        assert_eq!(calls[0].arguments["query"], "rust");
+    }
+
+    #[test]
+    fn test_tool_definition_serialization_roundtrip() {
+        let def = ToolDefinition {
+            name: "read_file".to_string(),
+            description: "Read a file from disk".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Absolute file path"}
+                },
+                "required": ["path"]
+            }),
+        };
+        let serialized = serde_json::to_string(&def).unwrap();
+        let deserialized: ToolDefinition = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.name, "read_file");
+        assert_eq!(deserialized.description, "Read a file from disk");
+        assert_eq!(deserialized.input_schema["properties"]["path"]["type"], "string");
+    }
+
+    #[test]
+    fn test_tool_call_serialization_roundtrip() {
+        let call = ToolCall {
+            id: "call_abc".to_string(),
+            name: "write_file".to_string(),
+            arguments: json!({"path": "/tmp/out.txt", "content": "hello"}),
+        };
+        let serialized = serde_json::to_string(&call).unwrap();
+        let deserialized: ToolCall = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.id, "call_abc");
+        assert_eq!(deserialized.name, "write_file");
+        assert_eq!(deserialized.arguments["content"], "hello");
+    }
+
+    #[test]
+    fn test_tool_result_serialization_roundtrip() {
+        let result = ToolResult {
+            tool_call_id: "call_abc".to_string(),
+            content: "File written successfully".to_string(),
+            is_error: false,
+        };
+        let serialized = serde_json::to_string(&result).unwrap();
+        let deserialized: ToolResult = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.tool_call_id, "call_abc");
+        assert_eq!(deserialized.content, "File written successfully");
+        assert!(!deserialized.is_error);
+    }
+
+    #[test]
+    fn test_tool_result_error_case() {
+        let result = ToolResult {
+            tool_call_id: "call_xyz".to_string(),
+            content: "Permission denied".to_string(),
+            is_error: true,
+        };
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["is_error"], true);
+        assert_eq!(json["content"], "Permission denied");
+    }
+
+    #[test]
+    fn test_tool_call_with_complex_arguments() {
+        let call = ToolCall {
+            id: "call_complex".to_string(),
+            name: "search".to_string(),
+            arguments: json!({
+                "query": "test",
+                "filters": ["markdown", "code"],
+                "options": {"case_sensitive": false, "max_results": 10}
+            }),
+        };
+        let serialized = serde_json::to_string(&call).unwrap();
+        let deserialized: ToolCall = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.arguments["filters"][0], "markdown");
+        assert_eq!(deserialized.arguments["options"]["max_results"], 10);
+    }
+
+    #[test]
+    fn test_multiple_tool_calls_in_message() {
+        let msg = ChatMessage {
+            role: "assistant".to_string(),
+            content: "".to_string(),
+            tool_calls: Some(vec![
+                ToolCall {
+                    id: "call_1".to_string(),
+                    name: "read_file".to_string(),
+                    arguments: json!({"path": "/a.md"}),
+                },
+                ToolCall {
+                    id: "call_2".to_string(),
+                    name: "read_file".to_string(),
+                    arguments: json!({"path": "/b.md"}),
+                },
+            ]),
+            tool_call_id: None,
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        let calls = json["tool_calls"].as_array().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0]["id"], "call_1");
+        assert_eq!(calls[1]["id"], "call_2");
+    }
 }

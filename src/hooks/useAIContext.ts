@@ -135,11 +135,38 @@ export function useAIContext() {
   // Memoized version for non-chat callers (generateText, bubble menu actions)
   const composedSystemMessage = useMemo(() => buildComposedSystemMessage(), [buildComposedSystemMessage]);
 
-  // Lightweight system message for local models
+  // System message for local models — minimal context, tools handle discovery.
+  // Only provides the project root and active file. The model uses list_directory
+  // to explore files on demand rather than front-loading the entire tree.
   const localSystemMessage = useMemo(() => {
-    if (agentSystemMessage) return agentSystemMessage;
-    return 'You are a helpful writing assistant. Be concise and focused.';
-  }, [agentSystemMessage]);
+    const parts: string[] = [];
+    parts.push(agentSystemMessage || 'You are a helpful writing assistant. Be concise and focused.');
+
+    // Project root(s) — just the path, no file tree
+    if (selectedProjectPaths.length === 1) {
+      if (singleMetadata) {
+        parts.push(`Project: ${singleMetadata.name}\nProject root: ${singleProjectPath}`);
+      } else if (singleProjectPath) {
+        parts.push(`Project root: ${singleProjectPath}`);
+      }
+    } else if (selectedProjectPaths.length > 1) {
+      const roots = selectedProjectPaths.map((p) => {
+        const meta = metadataMap[p];
+        return meta ? `${meta.name}: ${p}` : p;
+      });
+      parts.push(`Projects:\n${roots.join('\n')}`);
+    }
+
+    // Active file
+    if (activeTab) {
+      parts.push(`Currently editing: ${activeTab.filePath}`);
+    }
+
+    // Tool guidance
+    parts.push('You have tools to read files, write files, and list directories. Use list_directory to discover files before reading them. Always use absolute paths. Start from the project root above.');
+
+    return parts.join('\n\n');
+  }, [agentSystemMessage, selectedProjectPaths, singleProjectPath, singleMetadata, activeTab, metadataMap]);
 
   // ACP-specific system message builder
   const buildAcpSystemMessage = useCallback((attachedFilePaths?: string[]) => {
