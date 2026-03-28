@@ -1,6 +1,441 @@
 {
   "releases": [
     {
+      "version": "0.24.0",
+      "date": "2026-03-28",
+      "previousVersion": "0.23.3",
+      "sections": {
+        "features": [
+          "Conversation branching — branch from any chat message to explore alternative AI responses, with a full-width branch separator and popover to switch between branches",
+          "Tab reordering via drag and drop with visual insertion indicator",
+          "Internal document linking — link to other workspace files with search, click navigation, and dashed-underline styling",
+          "System font enumeration with searchable font picker (14 presets + all installed fonts)",
+          "Continuous contrast slider (0–100) replacing the binary soft contrast toggle",
+          "Client-side tool calling for all AI providers (Anthropic, OpenAI, Ollama, local) with web search, file read/write, and skill execution"
+        ],
+        "fixes": [
+          "Fix paper mode pages not rendering at full page height, including widow heading prevention",
+          "Fix Local AI not auto-starting by using PID-file cleanup instead of pkill",
+          "Fix Document Outline showing blank document after heading navigation",
+          "Fix AI suggestion diff not always visible after Expand/Improve/Summarize",
+          "Fix clipboard copying markdown syntax instead of plain text"
+        ],
+        "improvements": [
+          "Conversation export supports branched conversations — export active thread, all branches (Markdown), or full tree (JSON)",
+          "Branch count shown in conversation history metadata",
+          "Performance benchmark infrastructure with baseline thresholds and CI integration",
+          "Security hardening: TOCTOU fixes, async safety, error handling, listener cleanup",
+          "Test coverage expanded to 1293 tests across 53 test files"
+        ]
+      }
+    },
+    {
+      "version": "0.23.3",
+      "date": "2026-03-26",
+      "previousVersion": "0.23.2",
+      "sections": {
+        "fixes": [
+          "Fix FileTreeItem expand/collapse broken by React.memo wrapper — subscribe to actual boolean state instead of stable function reference",
+          "Fix tab switch performance regression — useFileTreeItemState subscribed to full tabs array causing all tree items to re-render on every tab switch",
+          "Fix tippy.js \"destroy() called on already-destroyed instance\" warning in all 4 suggestion extensions (tag, mention, date, slash)"
+        ],
+        "features": [
+          "Background tab preloading — after active tab loads on startup, remaining placeholder tabs preload from disk sequentially for instant switching",
+          "Structured performance debug logs (`perf:tab-load`, `perf:tab-preload`, `perf:tab-switch`) with file size and timing data, gated behind debug log level"
+        ]
+      }
+    },
+    {
+      "version": "0.23.2",
+      "date": "2025-07-24",
+      "previousVersion": "0.23.1",
+      "sections": {
+        "improvements": [
+          "**Full codebase audit (38 tasks, 43 findings):** Comprehensive audit covering Rust backend, memory leaks, async flows, render performance, and decomposition",
+          "**Rust backend fixes (#1–#5):** Fix double keychain read, replace panic with error return in ACP runtime creation, add warn logging for silent proxy cleanup failures, reuse reqwest::Client for connection pooling, improve error context in Tauri commands",
+          "**Memory leak fixes (#6–#11):** Fix listener leaks on early unmount (useSandboxViolations, useMcpDiscovery), fix double cleanup guard (useAcpLifecycle), fix listener overwrite leak (useSpeechRecognition), add unmount guards for Whisper fallback, audit timeout cleanup (useCopilotCompletion)",
+          "**Async flow fixes (#12–#24):** Add spawn locks to ACP agent singletons, fix stale closure in comment save debounce, add AbortController to useLocalCompletion, fix fetchedRef reset in useModelMetadata, replace Promise.all with Promise.allSettled in useLocalAI, add outer error boundary to useSkillDiscovery, fix stale state in debounced file watcher handlers, add editor null checks after awaits, fix didChange/completion race in useCopilotCompletion, add abort to visibility handlers, fix iCloud discovery stale store snapshot, guard debounce map overflow",
+          "**Render performance (#25–#30):** Add Zustand selectors to Layout, ChatPanel, Sidebar, FileTreeItem, AISettings; fix CommandPalette useMemo defeated by unmemoized callbacks; memoize Layout inline callback props; stabilize ChatPanel selectedProjectPaths array identity; memoize DocumentOutline per-heading callbacks",
+          "**Decomposition (#31–#38):** Decompose Editor.tsx (1822 → 753 lines), extract ConnectAgent/ConnectCopilotLsp from ConnectionsSettings.tsx, decompose useAIOperations.ts (505 → ~130 lines), extract SkillsSettings.tsx inline dialogs (1267 → 665 lines), decompose useAcpLifecycle.ts (823 → 369 lines), decompose local_inference.rs (1769 → 752 lines), deduplicate JSON-RPC transport between copilot_lsp.rs and mcp.rs, decompose acp.rs (1481 → 1016 lines)"
+        ],
+        "fixes": [
+          "Normalize base URLs consistently — handle trailing slashes and /v1"
+        ]
+      }
+    },
+    {
+      "version": "0.23.1",
+      "date": "2026-03-25",
+      "previousVersion": "0.23.0",
+      "sections": {
+        "fixes": [
+          "Fix `list_models` always rejecting OpenAI-compatible connections — the heartbeat test always returned \"Base URL is required\" regardless of whether a base URL was provided, due to a logic error in the let-else fallback pattern",
+          "Fix API key field always empty when editing connections — after keychain migration, the edit dialog now loads the key from the OS keychain instead of reading the empty `credentials.key` field",
+          "Fix TypeScript build error in `action-store.ts` — add missing `_consecutiveFailures` and `_scanDisabled` fields to the `ActionStore` interface (caused v0.23.0 release build failure)"
+        ]
+      }
+    },
+    {
+      "version": "0.23.0",
+      "date": "2026-03-24",
+      "previousVersion": "0.22.10",
+      "sections": {
+        "features": [
+          "**Secure credential storage**: API keys stored in macOS Keychain via `keyring` crate instead of plaintext localStorage. Backend resolves keys directly from keychain — keys never transit through IPC. Transparent one-time migration for existing users.",
+          "**Multiple OpenAI-compatible connections**: Users can now add multiple custom API endpoints (e.g., Groq, Together AI, vLLM) with user-defined labels and inline rename support."
+        ],
+        "fixes": [
+          "**OpenAI-compatible config persistence race**: Merged two-step `addConnection` + `updateConnection` into a single atomic call — eliminates the race that could leave connections without a base URL.",
+          "**OpenAI-compatible dropdown dedup**: Exempted `openai_compatible` from label-based dedup that incorrectly blocked adding more than one custom provider.",
+          "**Startup validation**: `openai_compatible` connections missing `config.baseUrl` are now flagged as `error` on startup instead of silently failing at runtime.",
+          "**Local AI production startup**: Removed legacy binary download path, added diagnostics for sidecar resolution failures.",
+          "**Whisper transcription production fixes**: Entitlements for microphone access, silence detection to skip empty audio, robustness improvements.",
+          "**Production logging gaps**: Log level selector in settings, structured logging, diagnostics export.",
+          "**Index/watcher mutex poisoning**: Switched to `parking_lot::Mutex` for non-poisoning behavior."
+        ],
+        "improvements": [
+          "**Add Connection dropdown**: Denser layout, wider dropdown, removed redundant \"Connected\" labels, count badge for multi-instance providers.",
+          "**Provider logo consistency**: Icon-based logos (Local AI, OpenAI-Compatible) now match the styling of image-based logos."
+        ]
+      }
+    },
+    {
+      "version": "0.22.10",
+      "date": "2026-03-23",
+      "previousVersion": "0.22.9",
+      "sections": {
+        "fixes": [
+          "Open actions comment click now navigates to the document and scrolls to the comment, instead of opening the JSON sidecar file",
+          "Comments with \"done\" status (agent replied, awaiting user review) now appear in the default actions filter",
+          "Orphaned comment cleanup: comment sidecar files are deleted when the referenced document no longer exists",
+          "Stale comment cleanup: individual comments are removed when their anchor text is no longer found in the document"
+        ]
+      }
+    },
+    {
+      "version": "0.22.9",
+      "date": "2026-03-23",
+      "previousVersion": "0.22.8",
+      "sections": {
+        "features": [
+          "**Tool call path filtering for delegation sandbox:** Agents in comment chat and background tasks are now restricted to the document's project folder. Tool calls targeting files in other projects are denied at the ACP permission layer. Structured tools (Read, Write, Glob, etc.) and terminal commands with absolute paths are checked. System paths, agent config dirs, and in-project paths are always allowed. 52 unit tests cover the path filter logic.",
+          "**Per-project task agent respawn:** The task agent tracks which project it was spawned for and respawns when the project changes, ensuring correct sandbox scope per delegation.",
+          "**Comment-to-chat path filtering:** When a comment conversation is moved to the chat panel, path filtering carries over — the chat agent inherits the source project's restriction.",
+          "**Link button in editor toolbar:** New link/unlink button after the Code button. Popover with URL input, auto-prepends `https://` when no protocol specified. Shows Unlink icon when cursor is on a link."
+        ],
+        "fixes": [
+          "**Heading dropdown not updating:** The block type dropdown in the toolbar now reflects the current heading level when the cursor moves. Previously it only updated on re-render, not on selection changes.",
+          "**Comment popover dead state after stopping agent:** Stopping an agent during chat mode set the comment status to \"open\", but the reply input requires \"done\" status. Comments with existing replies had no interactive UI after stopping. Now correctly sets status to \"done\" when replies exist.",
+          "**Comments stuck as \"delegated\" after restart:** Comments with \"delegated\" status persisted to disk but agent sessions don't survive restart. On load, \"delegated\" comments are reset to \"done\" (if replies exist) or \"open\".",
+          "**ACP rawInput serialization:** ACP tool calls send `rawInput` as an object, not a string. Now JSON.stringify'd before path extraction so the filter can parse it.",
+          "**Chat auto-scroll:** Reworked with MutationObserver for reliable scrolling during async content rendering.",
+          "**ACP session recovery:** Added health check, auto-retry on connection errors, and friendly error messages for dead agents."
+        ],
+        "improvements": [
+          "**Chat context pills:** Attached files shown as pills above the chat input for visibility.",
+          "**Domain list UI:** Unified domain allowlist with API/Telemetry/User labels in connection settings.",
+          "**Delegation toast refinement:** \"Agent finished\" toast only in delegate mode, \"Agent stopped\" instead of \"Delegation cancelled\" in chat mode."
+        ]
+      }
+    },
+    {
+      "version": "0.22.8",
+      "date": "2026-03-21",
+      "previousVersion": "0.22.7",
+      "sections": {
+        "fixes": [
+          "Fix Copilot LSP device code never appearing — `execute_embedded_command` was blocking the sign-in return because `finishDeviceFlow` polls GitHub indefinitely; emit device code event before fire-and-forget command execution",
+          "Fix Copilot LSP being assigned to chat/agent routing slots — restrict capabilities to `['inline_completion']` only (LSP does not speak ACP)",
+          "Fix Gemini CLI auth detection — read `security.auth.selectedType` from `~/.gemini/settings.json` instead of wrong field names; check `GEMINI_API_KEY` env var",
+          "Fix skill discovery loop triggering on its own filesystem writes"
+        ],
+        "improvements": [
+          "Copilot LSP: add Protocol A support (`signInInitiate` + `signInConfirm` direct methods) alongside existing Protocol B (`signIn` + workspace command)",
+          "Copilot LSP: defer `finishDeviceFlow` execution until user clicks \"Open GitHub\" — prevents browser from opening before device code is visible",
+          "Copilot LSP: auto-copy device code to clipboard on arrival",
+          "Copilot LSP: comprehensive JSON-RPC message logging at info level + `copilot-lsp-message` Tauri events for browser console debugging",
+          "Gemini CLI: in-app API key input with link to Google AI Studio (free) — no terminal needed; stored as `envVars` in connection credentials",
+          "Gemini CLI: terminal-based Google OAuth as secondary option via `run_in_terminal` command (macOS Terminal.app)",
+          "Agent auth: add stderr logging for agent subprocesses (was piped but never read)",
+          "Agent auth: add `authenticating` phase with \"Waiting for sign-in\" UI feedback",
+          "Agent auth: shorten authenticate timeout from 120s to 30s",
+          "Update and changelog dialogs: improved sizing, render inline markdown in changelog entries",
+          "New Skill wizard: widened dialog for better readability"
+        ]
+      }
+    },
+    {
+      "version": "0.22.7",
+      "date": "2026-03-21",
+      "previousVersion": "0.22.6",
+      "sections": {
+        "features": [
+          "**Kernel-enforced network deny (Seatbelt):** Replace `(allow network*)` with `(deny default)` + proxy-port-only allows. Agents physically cannot bypass the HTTP proxy, even if they ignore `HTTP_PROXY` env vars. Based on Anthropic sandbox-runtime pattern. Configurable per connection via \"Kernel enforcement\" toggle.",
+          "**Seatbelt violation monitoring:** Stream macOS unified log for sandbox deny entries, filter by agent PIDs, deduplicate within 5s windows, surface as error entries in the Activity panel alongside tool calls and domain approvals.",
+          "**Debug-level proxy logging:** CONNECT and HTTP requests logged at debug level with domain, port, and agent ID. Enable via Settings &gt; Advanced &gt; Debug Logging.",
+          "**Ephemeral sandbox profiles:** Profiles written to `$TMPDIR` instead of cached in `~/.notesage/sandbox/profiles/`. Cleaned up on agent exit. Legacy profiles directory removed on startup."
+        ],
+        "fixes": [
+          "**Sandbox toggle ignored for system-installed agents:** `sandboxEnabled` was never passed from frontend to backend for system-installed agents (claude, copilot). The UI toggle was cosmetic — agents ran unsandboxed. Now correctly threaded through both interactive and task spawn paths.",
+          "**Skill discovery infinite loop:** Extraction writes to `~/.notesage/skills/` triggered the file watcher, which triggered a rescan, which extracted again. Fixed with timestamp-based cooldown (2s) + stable dependency keys derived from provider:authMethod instead of full connection array.",
+          "**Debug logging toggle not working:** `tauri-plugin-log` was initialized with `level(Info)` which filtered debug messages inside the plugin. Fixed: plugin accepts Debug, global `log::set_max_level` controls filtering at runtime.",
+          "**Codex hanging after domain approvals:** Codex CLI uses `chatgpt.com` for API calls, not in the built-in allowlist. Added `chatgpt.com` and `*.chatgpt.com` to Codex default domains.",
+          "**Missing** `/dev/null` **write access in sandbox:** Git failed with \"could not open '/dev/null'\" under sandbox. Added `/dev/null`, `/dev/tty`, `/dev/zero`, `/dev/random`, `/dev/urandom` to Seatbelt file-write allows.",
+          "**Indexer processing non-content files:** File watcher sent chat-history.json and index.db to the SQLite indexer on every change. Added `is_indexable()` and `.notesage/` path guards to `reindex_file_in_db`.",
+          "**File tree rename focus and Escape handling**",
+          "**Date picker popover positioning near bottom of window**",
+          "**Suggestion popup positioning, stacking, and Escape dismissal**",
+          "**Full-width selection bars between block elements**",
+          "**Actions dashboard not updating editor and not indexing new tasks**"
+        ],
+        "improvements": [
+          "**Soft contrast theme mode** for reduced eye strain (Settings &gt; Appearance)",
+          "**Per-tab undo/redo preservation** across tab switches via EditorState cache",
+          "**Comment position sync** — positions survive document edits and tab switches",
+          "**Research-to-PRD pipeline tracking** — standardized metadata tables across all 11 research docs",
+          "**PRD and plan-tasks skills** updated to maintain research doc pipeline tables"
+        ]
+      }
+    },
+    {
+      "version": "0.22.6",
+      "date": "2026-03-20",
+      "previousVersion": "0.22.5",
+      "sections": {
+        "fixes": [
+          "Fix suggestion popovers (slash command, date, tag, mention) triggering on arrow-key navigation through pills — now only activate on text input",
+          "Fix bubble menu appearing on horizontal rule node selection during keyboard navigation",
+          "Fix date badge prefix (`//`) causing page scroll jump due to `font-size: 0` collapsing element height",
+          "Fix tab order not preserved across app restarts",
+          "Fix trailing punctuation orphaned after AI suggestion Accept/Reject buttons"
+        ],
+        "improvements": [
+          "Deepen inline diff and AI suggestion highlight colors — richer red/green tones in both light and dark mode",
+          "Restyle Accept/Reject buttons to use neutral monochrome palette (no green/red), matching the design system",
+          "Float AI suggestion Accept/Reject controls in top-right corner on hover instead of inline in text flow",
+          "Add error handling and debug logging to skill/agent pipeline"
+        ]
+      }
+    },
+    {
+      "version": "0.22.5",
+      "date": "2026-03-19",
+      "previousVersion": "0.22.4",
+      "sections": {
+        "fixes": [
+          "Fix ghost task items corrupting bullet lists on round-trip — ProseMirror's \"Bullet List Limbo\" (Tiptap #3128) created invisible empty task items that compounded on each reload, escaping brackets (`\\[ \\]`) and growing the list. New per-block `stripGhostTaskItems` replaces the old document-tail-only cleanup, with 12 vitest cases.",
+          "Fix task list checkbox vertical alignment with text (margin-top 0.25rem → 0.15rem)",
+          "Fix AI suggestion decorations disappearing on tab switch — suggestion state is now saved/restored per tab via a Map ref in Editor.tsx"
+        ],
+        "improvements": [
+          "Restyle AI suggestion diffs: highlight-only (no strikethrough, no colored text), with proper dark mode variants via CSS classes instead of inline styles",
+          "Change Open Actions Dashboard shortcut from Cmd+5 to Cmd+1"
+        ]
+      }
+    },
+    {
+      "version": "0.22.4",
+      "date": "2026-03-18",
+      "previousVersion": "0.22.3",
+      "sections": {
+        "features": [
+          "Instant tab restore on startup: all tab titles appear immediately, active tab content loads eagerly, background tabs load on demand when clicked",
+          "Lazy-load document viewers (PDF, EPUB, DOCX, image) — heavy libraries only fetched when opening those file types"
+        ],
+        "fixes": [
+          "Skip .tmp files in SQLite indexer to eliminate transient \"Cannot read\" warnings from Zustand atomic writes",
+          "Instant tab close: editor content hides via DOM before React unmounts heavy viewers (e.g., 400-page PDFs)"
+        ],
+        "improvements": [
+          "Remove deprecated persona system from ai-store (~100 LOC)",
+          "Delete deferred AnnotationPicker and item-annotation extensions (~375 LOC)",
+          "Add depth limit (50) to recursive list_directory to prevent stack overflow",
+          "Remove TOCTOU pre-checks in file operations, rely on operation error codes",
+          "Add file path context to all file operation error messages",
+          "Log warnings for swallowed directory recursion errors",
+          "Add domain matching security tests for network proxy (suffix bypass, edge cases)",
+          "Tab restoration runs concurrently with tree validation and index init"
+        ]
+      }
+    },
+    {
+      "version": "0.22.3",
+      "date": "2026-03-17",
+      "previousVersion": "0.22.2",
+      "sections": {
+        "fixes": [
+          "Fix dark mode spinner visibility in settings dialogs",
+          "Fix Local AI icon rendering in connection cards",
+          "Fix transcription settings styling inconsistencies",
+          "Fix task list markdown round-trip losing checkbox state",
+          "Fix table serialization dropping cell content",
+          "Fix toolbar icons missing in certain states"
+        ],
+        "improvements": [
+          "Auto-detect FIM support for custom GGUF models by parsing tokenizer token IDs from file headers",
+          "Smart Ollama model fallback: query available models when default `llama3.2` isn't pulled",
+          "Update Whisper model pre-download sizes to exact byte values from HuggingFace"
+        ]
+      }
+    },
+    {
+      "version": "0.22.2",
+      "date": "2026-03-17",
+      "previousVersion": "0.22.1",
+      "sections": {
+        "fixes": [
+          "**Index DB moved to local storage** — per-project index.db relocated from `<project>/.notesage/index.db` to `~/.notesage/indexes/<hash>/index.db`. Prevents iCloud sync corruption from multi-device SQLite writes. Old DB files cleaned up automatically on startup.",
+          "**llama-server sidecar resolution** — Tauri v2 externalBin keeps the target triple suffix at runtime (`llama-server-aarch64-apple-darwin`). The bundled sidecar was invisible in production because the code only looked for the plain name. Now checks both.",
+          "**Index transaction safety** — SAVEPOINT wraps each file's indexing so partial failures (e.g., tag INSERT after file INSERT) roll back cleanly instead of leaving stale hashes that block future re-indexing.",
+          "**Missed INSERT OR REPLACE** — second INSERT for non-markdown files now uses UPSERT, eliminating remaining UNIQUE constraint errors."
+        ],
+        "features": [
+          "**Incremental indexing** — tags, mentions, and FTS updated on every file save and watcher modify event (200ms debounce). Previously only indexed on app startup."
+        ],
+        "improvements": [
+          "**Dictation diagnostic logging** — debug-level logging at each pipeline stage (buffer, RMS, whisper segments, hallucination filter) for diagnosing production failures.",
+          "**Index debug logging** — hash checks, parse results (tag/mention counts), and failure details logged at debug level."
+        ]
+      }
+    },
+    {
+      "version": "0.22.0",
+      "date": "2026-03-16",
+      "previousVersion": "0.21.0",
+      "sections": {
+        "features": [
+          "Network sandboxing proxy for agent subprocesses — per-agent domain allowlists with HTTP CONNECT tunneling on localhost",
+          "Domain approval cards in chat (allow once / allow for session / allow always / deny) with 30-second auto-deny timeout",
+          "Connection config dialog: sandbox toggle, network restriction toggle with domain list, telemetry toggle (claude-agent-acp)",
+          "Thinking effort slider for codex-acp (Default / Low / Medium / High / Extra High) with free account auto-detection",
+          "Provider switch context isolation — \"Start fresh\" / \"Include history\" prompt when switching AI providers mid-conversation",
+          "\"Check for updates\" button in connections settings with force-check (bypasses rate limit)",
+          "Custom writable paths for sandbox (user-configurable per connection)",
+          "Tool call deny now shows chat message (\"Tool call X was denied\")"
+        ],
+        "fixes": [
+          "ACP crate bumped to 0.10/0.11 — resolves `usage_update` decode errors from codex-acp",
+          "Dynamic model list deduplication — strips reasoning effort variants (`/low`, `/medium`, etc.) from ACP model lists",
+          "Domain approval card 30s timeout fixed (useRef for stable timer, no reset on parent re-render)"
+        ],
+        "improvements": [
+          "Connection cards show Sandbox, Network, and Managed badges",
+          "Config dialog reorganized with boxed Security section, explanatory text, and proper visual hierarchy",
+          "Sandbox badges (Shield icon), network restriction (GlobeLock icon), thinking effort (Brain icon)",
+          "Toast feedback for update check results (success/info/error)",
+          "Seatbelt profiles parameterized for network mode (proxy env vars as enforcement, `(allow network*)` kept for compatibility)"
+        ]
+      }
+    },
+    {
+      "version": "0.21.0",
+      "date": "2026-03-15",
+      "previousVersion": "0.20.2",
+      "sections": {
+        "features": [
+          "**Agent managed installation** — Download and install ACP agent binaries (claude-agent-acp, codex-acp, copilot, copilot-language-server) directly from GitHub Releases. One-click install with progress bar, quarantine removal, and version tracking. Manual install guide as fallback.",
+          "**Portable Node.js runtime** — Gemini CLI install flow downloads a standalone Node.js binary to `~/.notesage/runtime/node/` for users without Node.js installed.",
+          "**OS-level filesystem sandboxing** — Managed agent installs run inside a Seatbelt sandbox on macOS. Blocks access to `~/.ssh`, `~/.aws`, `~/.gnupg`, `.env` files. Protects `.git` from writes. Linux bubblewrap support as placeholder.",
+          "**Multi-path sandbox** — Chat agents get access to all workspace folders; delegation and inline actions are restricted to the document's parent project folder only.",
+          "**Chat context isolation** — Project selection in the chat footer is now a data boundary. Changing projects shows an inline prompt: \"Include history\" or \"Start fresh\". New ACP sessions created per segment. Context dividers mark scope changes with collapsible details.",
+          "**Dynamic model picker** — ACP agents report available models via `unstable_session_model` feature. Shown in a Select dropdown in connection config. Hardcoded fallback for agents that don't implement it.",
+          "**Connection health check** — HeartPulse button on each connection card. Tests the actual provider (spawns agent for ACP, checks status for LSP, lists models for API key, verifies server for Local AI).",
+          "**Agent update checking** — Background check against GitHub Releases on settings page open. Update badge on connection cards with one-click update."
+        ],
+        "fixes": [
+          "**Gemini CLI `--acp` flag** — Changed from `--acp` to `--experimental-acp` (confirmed via `--help`).",
+          "**Codex ACP model flag** — Changed from `--model` to `-c model=\"...\"` (codex-acp uses TOML config syntax).",
+          "**ACP stdout corruption** — JSON line filter strips non-JSON output from agent stdout before the ACP parser sees it. Handles agents that write interactive prompts or log messages to stdout in ACP mode.",
+          "**Gemini auth detection** — Checks `~/.gemini/settings.json` for authentication state. Shows auth guide when not signed in.",
+          "**Connection timeout** — Increased from 60s to 120s for slower agent startups.",
+          "**Error display** — Parses doubly-nested JSON from ACP agents. Adds actionable hints for common errors (model not supported, billing, rate limits, auth).",
+          "**Radix dialog warning** — Added `aria-describedby={undefined}` to ConnectionConfigDialog.",
+          "**Local AI health check** — Now actually checks if llama-server is running instead of always returning green."
+        ],
+        "improvements": [
+          "**Pretty model names** — `prettyModelName()` maps model IDs to display names (e.g., `gpt-5.2-codex` → \"GPT-5.2 Codex\").",
+          "**Connection card layout** — Settings dialog widened to 800px. Subscription type next to provider name, model + capabilities on second row, action buttons top-right.",
+          "**Model picker UX** — Simple Select dropdown for agent-managed connections (replacing the search combobox). Shows \"Agent default\" option with current model name.",
+          "**Sandbox profile** — Allows agent config directories (`~/.gemini`, `~/.claude`, `~/.codex`, `~/.copilot`, `~/.notesage`, `~/.config`).",
+          "**Workspace respawn** — Chat agent automatically restarts when workspace folders change (projects/explorer folders added or removed)."
+        ]
+      }
+    },
+    {
+      "version": "0.20.2",
+      "date": "2026-03-15",
+      "previousVersion": "0.20.1",
+      "sections": {
+        "improvements": [
+          "Consolidate hardcoded values into shared `constants.rs` and `constants.ts` — single source of truth for default model names, API versions, thinking tags, tuning parameters, web search tool IDs, and macOS fallback paths",
+          "Add dynamic thinking tag detection from llama-server `/props` chat_template for custom models",
+          "Close comment popover automatically when delegating in background (non-chat) mode",
+          "Show toast notification when clicking a delegated comment (\"An agent is working on this comment\")",
+          "Show toast notification when agent finishes a delegated comment (\"Agent finished working on your comment\")"
+        ],
+        "fixes": [
+          "Fix CVE in quinn-proto — update to 0.11.14 (unauthenticated DoS via peer_uninit_address)",
+          "Fix RUSTSEC-2025-0068 — migrate serde_yml to serde_norway",
+          "Fix comment popover re-opening during delegation due to useEffect dependency on full comment object"
+        ]
+      }
+    },
+    {
+      "version": "0.20.1",
+      "date": "2026-03-15",
+      "previousVersion": "0.20.0",
+      "sections": {
+        "improvements": [
+          "Add React error boundaries around editor, chat panel, and sidebar — prevents white-screen crashes from component errors",
+          "Extract shared JSON-RPC 2.0 module from copilot_lsp.rs and mcp.rs — eliminates duplicated Content-Length framing, types, and pending request logic (18 unit tests)",
+          "Decompose skills.rs into agents.rs + script_exec.rs — skills.rs reduced from 1,643 to 593 lines",
+          "Decompose useAIOperations.ts: extract useAcpLifecycle.ts (ACP agent management), context.ts (prompt building), errors.ts (error formatting)",
+          "Decompose Editor.tsx: extract useScrollPersistence.ts, useEditorResize.ts, TranscriptionOverlay.tsx, SourceModeEditor.tsx",
+          "Decompose CommentPopover.tsx: extract CommentThread.tsx and DelegationPanel.tsx",
+          "Decompose App.tsx: extract useAppLifecycle.ts (startup effects) and Layout.tsx (panel layout)",
+          "Migrate serde_yaml to serde_yml (archived crate replaced with maintained fork)",
+          "Remove unused hound crate (zero imports) and slim tokio features from \"full\" to 7 specific features",
+          "Remove unused next-themes dependency (zero imports, app uses custom ThemeProvider)",
+          "Move @types/diff-match-patch to devDependencies",
+          "Add ACP tool permission unit tests (session/always tiers, independence from skill permissions)",
+          "Update architecture docs to reflect new file structure"
+        ]
+      }
+    },
+    {
+      "version": "0.20.0",
+      "date": "2026-03-14",
+      "previousVersion": "0.19.3",
+      "sections": {
+        "features": [
+          "SQLite document index with AST-parsed tags, mentions, tasks, goals, and FTS5 content search",
+          "Index progress spinner in status bar, clear orphaned localStorage keys",
+          "Actions dashboard: icons, counts, and sub-grouped filter dropdown (Projects/Folders/Notes)",
+          "Actions dashboard: type filter with per-type counts (Tasks, Comments, Agent tasks, Goals)",
+          "Secure credential storage PRD for future macOS Keychain migration"
+        ],
+        "fixes": [
+          "Date pill: fix picker not updating document — use exact ProseMirror positions instead of coordinate-based proximity search",
+          "Date pill: suppress slash command and date suggestion menus inside existing date decorations via allow() filters",
+          "Date pill: fix CSS layout issues — remove display: inline-block from date-badge-prefix",
+          "Actions dashboard: deduplicate items from overlapping project/global DB queries",
+          "Actions dashboard: fix project filter showing 0 items — findProjectRoot() now checks projects, folders, and notes root",
+          "Actions dashboard: fix \"Done\" status filter to include both 'done' and 'completed' statuses",
+          "Actions dashboard: fix status dropdown not reflecting current selection",
+          "Sidebar: show toast errors instead of silent console.error on folder/file open failures"
+        ],
+        "improvements": [
+          "Remove any type casts in Editor.tsx, useEditor.ts, and slash-command.tsx — use PMNode, TiptapEditor, and narrowed Record types",
+          "Type suggestion allow() state parameter as EditorState directly instead of unknown + cast",
+          "Use stable key={item.title} instead of key={index} in slash command list",
+          "Use FolderKanban icon for projects in sidebar and actions dashboard",
+          "Add minimum 600ms spin duration to actions refresh button",
+          "Remove \"Delegated\" status filter — delegated tasks filterable via \"Agent tasks\" type instead",
+          "Add warning for unhandled status filter values"
+        ]
+      }
+    },
+    {
       "version": "0.19.3",
       "date": "2026-03-13",
       "previousVersion": "0.19.2",

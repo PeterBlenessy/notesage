@@ -84,3 +84,4 @@ Chronological log of major implementation milestones and changes.
 | 078 | [Release v0.23.1](078-release-v0.23.1.md) | Fix OpenAI-compatible heartbeat, API key visibility, action-store build error |
 | 079 | [Release v0.23.2](079-release-v0.23.2.md) | Full codebase audit: 38 tasks fixing memory leaks, async races, render perf, decomposition |
 | 080 | [Release v0.23.3](080-release-v0.23.3.md) | Test infrastructure (426 tests), perf fixes, tab preloading, audit v2 complete |
+| 081 | [Release v0.24.0](081-release-v0.24.0.md) | Conversation branching, tab drag-and-drop, internal links, font picker, contrast slider, tool calling |
