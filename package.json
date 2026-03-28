@@ -114,7 +114,8 @@
   "pnpm": {
     "overrides": {
       "yaml": ">=2.8.3",
-      "picomatch": ">=4.0.4"
+      "picomatch": ">=4.0.4",
+      "serialize-javascript": ">=7.0.5"
     }
   }
 }
