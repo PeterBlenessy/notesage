@@ -1,6 +1,6 @@
 # PRD: Move Files Between Projects and Folders
 
-**Date:** 2026-02-28 **Status:** ✅ Complete **Parent:** File Management
+**Date:** 2026-02-28 **Status:** ✅ Phase 1 Complete **Parent:** File Management
 
 ## Problem
 
@@ -55,9 +55,13 @@ Context menu → handleMoveTo(destPath)
 
 **No new Tauri commands needed** — `rename_path` already handles cross-directory moves via `fs::rename`.
 
-### Phase 2: Drag and Drop (Future)
+### Phase 2: Drag and Drop (Partially Implemented)
 
-Deferred. Will use HTML5 drag-and-drop on `FileTreeItem` components with drop targets on project/folder headers.
+**Internal sidebar DnD is complete** — files/folders can be dragged between projects and explorer folders in the sidebar. Implemented in `FileTreeItem.tsx`, `ExplorerFolderItem.tsx`, `ProjectItem.tsx` using HTML5 DnD with `drag-utils.ts` (custom MIME, conflict detection, auto-expand on hover).
+
+**Tab reordering is complete** — tabs can be reordered via drag and drop with a visual insertion indicator.
+
+**External file drops (editor + sidebar) are deferred** due to a Tauri v2 limitation where `dragDropEnabled` is mutually exclusive with HTML5 DnD. See [drag-and-drop PRD](2026-03-28-drag-and-drop.md) for details and [tauri-apps/tauri#13189](https://github.com/tauri-apps/tauri/issues/13189) for the upstream issue.
 
 ## UI/UX
 
@@ -149,7 +153,7 @@ None. All required infrastructure exists.
 
 ## Out of Scope
 
-- Drag-and-drop file moving (Phase 2)
+- Drag-and-drop tab reordering, external file drops (see [drag-and-drop PRD](2026-03-28-drag-and-drop.md))
 - Moving to subfolders within a destination
 - Multi-file selection and batch move
 - Move undo/history

@@ -13,7 +13,7 @@
 Notesage has partial drag-and-drop support: files can be dragged between folders in the sidebar (implemented via `drag-utils.ts`, `FileTreeItem.tsx`, `ExplorerFolderItem.tsx`, `ProjectItem.tsx`). But three common DnD interactions are missing:
 
 1. **Tabs can't be reordered** — users must close and re-open files to change tab order
-2. **External files can't be dropped onto the editor** — users must use File > Open or the sidebar to open files from Finder
+2. **External files can't be dropped onto the editor** — users must use File &gt; Open or the sidebar to open files from Finder
 3. **External files can't be dropped onto sidebar folders** — users must use Finder to copy/move files into project folders, then refresh
 
 These are standard desktop app interactions (VS Code, Sublime, Bear all support them). Their absence makes Notesage feel less native.
@@ -66,48 +66,57 @@ All internal drops call `renamePath()` from `useFileOperations` which handles ta
 **State update:** Add `reorderTab(fromIndex: number, toIndex: number)` to `editor-store.ts`. This splices the `tabs` array and persists the new order.
 
 **Edge cases:**
+
 - Dragging a tab to its current position is a no-op
 - Only internal tab drags accepted (check MIME type)
 - External file drops on the tab bar should be ignored (or open as new tab — defer to Feature 2)
 
-### Feature 2: External File Drop on Editor
+### Feature 2: External File Drop on Editor — DEFERRED
+
+> **Blocked by Tauri limitation (2026-03-28):** Tauri v2's `dragDropEnabled` is mutually exclusive — `true` provides native file paths but breaks all HTML5 DnD (ProseMirror text drag, sidebar internal drag); `false` preserves HTML5 DnD but WKWebView doesn't expose `File.path` on `dataTransfer.files`. An [open feature request](https://github.com/tauri-apps/tauri/issues/13189) to toggle this at runtime would unblock both features. Revisit when available.
 
 **Approach:** HTML5 `dragover`/`drop` event handlers on the editor scroll container in `Editor.tsx`.
 
 **Detection:** External file drops have `e.dataTransfer.types` containing `"Files"`. Internal Notesage drags have `text/plain` with a JSON payload — distinguish by checking for `"Files"` type first.
 
 **Drop handling:**
+
 1. Read file paths from `e.dataTransfer.files` (Tauri maps native file drops to `File` objects with `path` property, or use `e.dataTransfer.getData("text/uri-list")`)
 2. Filter to supported file types using `OPENABLE_EXTENSIONS` regex (shared from `link-utils.ts` or `MarkdownContent.tsx`)
 3. Open each file as a new tab via `openTab()` from `useFileOperations`
-4. Unsupported file types: show toast "Cannot open [filename] — unsupported file type"
+4. Unsupported file types: show toast "Cannot open \[filename\] — unsupported file type"
 
 **Tauri file drop:** Tauri v2 provides `onDragDropEvent` from `@tauri-apps/api/webviewWindow`. This is more reliable than HTML5 for native file drops on macOS. Check if it provides file paths directly. If available, prefer it over HTML5.
 
 **Visual feedback:** When dragging files over the editor, show a full-area overlay with a subtle border and "Drop to open" text. Use the same pattern as VS Code's file drop overlay. The overlay appears on `dragenter`, disappears on `dragleave`/`drop`.
 
 **Edge cases:**
+
 - Multiple files dropped at once: open all as tabs
 - Drop on editor when no project is open: still works (opens standalone file)
 - Ignore internal Notesage drags (sidebar items)
 
-### Feature 3: External File Drop on Sidebar Folders
+### Feature 3: External File Drop on Sidebar Folders — DEFERRED
+
+> **Blocked by same Tauri limitation as Feature 2.** See [tauri-apps/tauri#13189](https://github.com/tauri-apps/tauri/issues/13189).
 
 **Approach:** Extend existing drop handlers in `FileTreeItem.tsx`, `ExplorerFolderItem.tsx`, and `ProjectItem.tsx` to handle external file drops.
 
 **Detection:** When `parseNotesageDrop()` returns `null`, check if `e.dataTransfer.types` contains `"Files"`. If yes, this is an external drop.
 
 **Drop handling:**
+
 1. Extract file paths from the drop event
-2. Show a small dialog/popover near the drop point: "Move to [folder]" / "Copy to [folder]" / Cancel
+2. Show a small dialog/popover near the drop point: "Move to \[folder\]" / "Copy to \[folder\]" / Cancel
 3. **Move:** Use `rename_path` Tauri command (same as internal DnD)
 4. **Copy:** Use `copy_file` for files, `copy_directory` for directories (both exist as Tauri commands)
 5. Conflict check via `pathExists` before the operation
 6. Refresh the target folder's file tree after
 
-**Dialog design:** Use a minimal `AlertDialog` (shadcn/ui) — not a popover, since the drop target might be small. Title: "Import [filename]". Body: "Choose how to add this file to [folder name]". Two buttons: "Move here" (primary) and "Copy here" (secondary). Cancel via Escape or clicking outside.
+**Dialog design:** Use a minimal `AlertDialog` (shadcn/ui) — not a popover, since the drop target might be small. Title: "Import \[filename\]". Body: "Choose how to add this file to \[folder name\]". Two buttons: "Move here" (primary) and "Copy here" (secondary). Cancel via Escape or clicking outside.
 
 **Edge cases:**
+
 - Multiple files: show dialog once with "Import N files" title, apply chosen action to all
 - File already exists at destination: show conflict toast, skip that file, continue with others
 - Dropping onto a file (not a folder): drop onto the file's parent directory
@@ -144,6 +153,7 @@ reorderTab: (fromIndex: number, toIndex: number) => void;
 ```
 
 No new stores, interfaces, or Tauri commands required. All filesystem operations exist:
+
 - `rename_path` — move files
 - `copy_file` — copy single files (exists in `file.rs`)
 - `copy_directory` — copy directories (exists in `file.rs`)
@@ -158,23 +168,36 @@ No new libraries. Uses HTML5 Drag and Drop API exclusively. Tauri's `onDragDropE
 ### Functional
 
 - [x] Tabs can be reordered by dragging
+
 - [x] Tab order persists across app restarts (via Zustand persist)
-- [ ] Dropping a file from Finder onto the editor opens it as a new tab
-- [ ] Dropping an unsupported file type shows an error toast
-- [ ] Dropping a file from Finder onto a sidebar folder shows Move/Copy dialog
-- [ ] Move operation relocates the file and refreshes the tree
-- [ ] Copy operation duplicates the file and refreshes the tree
-- [ ] Conflict detection works for external drops (same-name file at destination)
-- [ ] Multiple file drops work for both editor and sidebar targets
-- [ ] Internal sidebar DnD still works correctly (no regression)
+
+- [ ] ~~Dropping a file from Finder onto the editor opens it as a new tab~~ — deferred (Tauri limitation)
+
+- [ ] ~~Dropping an unsupported file type shows an error toast~~ — deferred
+
+- [ ] ~~Dropping a file from Finder onto a sidebar folder shows Move/Copy dialog~~ — deferred
+
+- [ ] ~~Move operation relocates the file and refreshes the tree~~ — deferred
+
+- [ ] ~~Copy operation duplicates the file and refreshes the tree~~ — deferred
+
+- [ ] ~~Conflict detection works for external drops (same-name file at destination)~~ — deferred
+
+- [ ] ~~Multiple file drops work for both editor and sidebar targets~~ — deferred
+
+- [x] Internal sidebar DnD still works correctly (no regression)
 
 ### Design
 
 - [x] Tab drag shows insertion indicator at correct position
-- [ ] Editor drop overlay appears only for external file drags
-- [ ] All DnD feedback works in both light and dark mode
-- [ ] Transitions are smooth (no jarring state changes)
-- [ ] Move/Copy dialog follows existing AlertDialog styling
+
+- [ ] ~~Editor drop overlay appears only for external file drags~~ — deferred
+
+- [x] All DnD feedback works in both light and dark mode
+
+- [x] Transitions are smooth (no jarring state changes)
+
+- [ ] ~~Move/Copy dialog follows existing AlertDialog styling~~ — deferred
 
 ## Out of Scope
 
