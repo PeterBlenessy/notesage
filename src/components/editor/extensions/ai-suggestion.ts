@@ -285,9 +285,6 @@ export function setSuggestion(
       suggestion: { from, to: adjustedTo, originalText, suggestedText },
     })
   );
-
-  console.log('Suggestion set, forcing update');
-  editor.view.updateState(editor.state);
 }
 
 // Helper to clear suggestion
