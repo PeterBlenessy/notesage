@@ -24,6 +24,7 @@ import {
   IndentIncrease,
   IndentDecrease,
   Pencil,
+  BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -317,6 +318,13 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
             title="Insert Drawing"
           >
             <Pencil className="size-4" strokeWidth={1.5} />
+          </ToolbarButton>
+
+          <ToolbarButton
+            onClick={() => editor.chain().focus().insertChart().run()}
+            title="Insert Chart"
+          >
+            <BarChart3 className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarSeparator />

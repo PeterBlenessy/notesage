@@ -349,6 +349,26 @@ export function convertDrawingsToHtml(markdown: string): string {
   );
 }
 
+/**
+ * Convert chart JSON image references to Chart node HTML elements
+ * before tiptap-markdown parses the content.
+ *
+ * Matches: ![chart](/.notesage/charts/abc123.json)
+ * Outputs: <div data-chart-id="abc123" data-type="chart" class="chart-block"></div>
+ *
+ * Regular images and other paths are left unchanged.
+ */
+export function convertChartsToHtml(markdown: string): string {
+  return markdown.replace(
+    /!\[([^\]]*)\]\(([^)]*\/\.notesage\/charts\/[^)]+\.json)\)/g,
+    (_match, _alt: string, src: string) => {
+      const filename = src.split("/").pop() || "";
+      const chartId = filename.replace(".json", "");
+      return `<div data-chart-id="${chartId}" data-type="chart" class="chart-block"></div>`;
+    },
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Image path space encoding
 // ---------------------------------------------------------------------------
@@ -446,7 +466,7 @@ export function getMarkdownFromEditor(editor: Editor): string {
 }
 
 export function setMarkdownInEditor(editor: Editor, markdown: string): void {
-  setContentWithoutHistory(editor, encodeImagePathSpaces(convertDrawingsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(markdown))))));
+  setContentWithoutHistory(editor, encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(markdown)))))));
 }
 
 /**
@@ -476,7 +496,7 @@ export function loadRawMarkdownIntoEditor(
   rawMarkdown: string
 ): void {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
-  const encoded = encodeImagePathSpaces(convertDrawingsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned)))));
+  const encoded = encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned))))));
   editor.chain().setMeta("addToHistory", false).setContent(encoded).run();
 
   // Clear undo/redo history — the loaded content is a fresh baseline.
@@ -506,5 +526,5 @@ export function prepareInitialContent(rawMarkdown: string): {
   annotations: Map<number, string>;
 } {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
-  return { content: encodeImagePathSpaces(convertDrawingsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned))))), annotations };
+  return { content: encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned)))))), annotations };
 }

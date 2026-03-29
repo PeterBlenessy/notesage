@@ -144,8 +144,11 @@ impl Converter {
                 let alt = self.collect_text(node);
 
                 // Drawing files: reference the SVG preview instead of .excalidraw
+                // Chart files: reference the cached SVG preview instead of .json
                 let resolved_url = if url.ends_with(".excalidraw") {
                     format!("{}.svg", url.trim_end_matches(".excalidraw"))
+                } else if url.contains("/.notesage/charts/") && url.ends_with(".json") {
+                    format!("{}.svg", url.trim_end_matches(".json"))
                 } else {
                     url.to_string()
                 };

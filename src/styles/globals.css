@@ -59,6 +59,13 @@
   --color-highlight-pink: #fbcfe8;
   --color-highlight-orange: #fed7aa;
   --color-highlight-grey: #e5e7eb;
+
+  /* Chart palette: neutral (default) */
+  --color-chart-1: oklch(45% 0.02 250);
+  --color-chart-2: oklch(60% 0.02 250);
+  --color-chart-3: oklch(50% 0.02 30);
+  --color-chart-4: oklch(55% 0.02 150);
+  --color-chart-5: oklch(65% 0.02 80);
 }
 
 /* Soft mode — easy on the eyes (light) */
@@ -146,6 +153,13 @@
   --color-callout-warning-bg: oklch(25% 0.02 75);
   --color-callout-important: oklch(65% 0.1 25);
   --color-callout-important-bg: oklch(25% 0.02 25);
+
+  /* Chart palette: neutral (default) — dark mode */
+  --color-chart-1: oklch(70% 0.02 250);
+  --color-chart-2: oklch(55% 0.02 250);
+  --color-chart-3: oklch(65% 0.02 30);
+  --color-chart-4: oklch(60% 0.02 150);
+  --color-chart-5: oklch(75% 0.02 80);
 }
 
 /* Soft mode — easy on the eyes (dark) */

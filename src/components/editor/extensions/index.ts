@@ -41,6 +41,7 @@ export { DateHighlight } from './date-highlight';
 export { DateSuggestion } from './date-suggestion';
 export { Callout } from './callout';
 export { Drawing } from './drawing';
+export { Chart } from './chart';
 export type { CalloutType } from './callout';
 export { CALLOUT_TYPES, CALLOUT_LABELS, CALLOUT_ICONS, isValidCalloutType } from './callout';
 export {

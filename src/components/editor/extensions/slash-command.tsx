@@ -26,6 +26,7 @@ import {
   TriangleAlert,
   CircleAlert,
   Pencil,
+  BarChart3,
 } from "lucide-react";
 
 interface CommandItem {
@@ -188,6 +189,14 @@ const commands: CommandItem[] = [
     icon: Pencil,
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).insertDrawing().run();
+    },
+  },
+  {
+    title: "Chart",
+    description: "Insert an inline chart",
+    icon: BarChart3,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).insertChart().run();
     },
   },
 ];
