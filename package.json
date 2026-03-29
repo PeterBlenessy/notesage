@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npx tsx scripts/generate-changelog.ts && tsc && vite build",
+    "build": "pnpm dlx tsx scripts/generate-changelog.ts && tsc && vite build",
     "generate-changelog": "pnpm dlx tsx scripts/generate-changelog.ts",
     "preview": "vite preview",
     "tauri": "tauri",
