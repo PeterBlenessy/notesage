@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Pencil } from "lucide-react";
 import { loadSvgPreview } from "@/lib/drawing-storage";
 import { useActiveProject } from "@/hooks/useActiveProject";
+import { useSettingsStore } from "@/stores/settings-store";
 import { cn } from "@/lib/utils";
 import { DrawingEditor } from "./DrawingEditor";
 
@@ -15,13 +16,29 @@ export function DrawingPreview({ node, selected }: NodeViewProps) {
 
   const { projectPath } = useActiveProject();
 
+  // Resolve theme to load correct SVG variant
+  const theme = useSettingsStore((s) => s.theme);
+  const isDark =
+    theme === "system"
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+      : theme === "dark";
+
+  // Load the theme-appropriate SVG variant
   useEffect(() => {
     if (!drawingId || !projectPath) return;
-    loadSvgPreview(drawingId, projectPath).then(setSvgContent);
-  }, [drawingId, projectPath]);
+    const svgId = isDark ? drawingId + "-dark" : drawingId;
+    loadSvgPreview(svgId, projectPath).then((svg) => {
+      // Fall back to the base SVG if the themed variant doesn't exist
+      if (svg) {
+        setSvgContent(svg);
+      } else {
+        loadSvgPreview(drawingId, projectPath).then(setSvgContent);
+      }
+    });
+  }, [drawingId, projectPath, isDark]);
 
   return (
-    <NodeViewWrapper className="drawing-node-view" data-drawing-id={drawingId}>
+    <NodeViewWrapper className="drawing-node-view" data-drawing-id={drawingId} contentEditable={false}>
       {isEditing && drawingId && projectPath ? (
         <DrawingEditor
           drawingId={drawingId}
@@ -38,7 +55,7 @@ export function DrawingPreview({ node, selected }: NodeViewProps) {
             "drawing-preview",
             selected && "drawing-preview-selected",
           )}
-          style={{ minHeight: 200, height }}
+          style={{ minHeight: svgContent ? undefined : 200 }}
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
           onClick={() => {

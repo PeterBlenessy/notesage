@@ -88,6 +88,7 @@ note-sage/
 │   │   │   ├── BubbleMenu.tsx, CommentPopover.tsx, CommentListPopover.tsx
 │   │   │   ├── CommentThread.tsx, DelegationPanel.tsx
 │   │   │   ├── TranscriptionOverlay.tsx, SourceModeEditor.tsx
+│   │   │   ├── DrawingPreview.tsx, DrawingEditor.tsx
 │   │   │   ├── ChangeListPopover.tsx, FindBar.tsx, StatusBar.tsx
 │   │   │   └── extensions/ # Custom Tiptap extensions (see editor-architecture.md)
 │   │   ├── sidebar/        # Sidebar.tsx, FileTree.tsx, FileTreeItem.tsx, ExplorerFolderItem.tsx

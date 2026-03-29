@@ -33,6 +33,7 @@ Export notes to professionally typeset PDFs using the embedded Typst engine.
 - Bundled fonts: Inter (sans-serif), Source Serif 4 (serif), JetBrains Mono (code) — all OFL-licensed, ~2.7MB total
 - Template `.typ` files loaded via `include_str!` with parameterized `#show` rules
 - Tauri commands: `export_pdf` (compile), `save_binary_file` (write to disk)
+- Drawing blocks: `.excalidraw` image references rewritten to `.svg` paths; SVG files resolved from project root via `project_root` parameter
 
 ## EPUB Viewer
 

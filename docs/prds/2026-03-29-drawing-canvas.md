@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-29 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | High |
 | **Impact** | Users can create diagrams, sketches, and visual annotations inline in their documents |
 | **Research** | [rich-content-editor-features](../research/2026-03-29-rich-content-editor-features.md) |
@@ -253,63 +253,63 @@ No other new dependencies. Excalidraw bundles its own UI components, icons, and 
 
 ### Functional
 
-- [ ] `/drawing` slash command inserts an empty drawing block
+- [x] `/drawing` slash command inserts an empty drawing block
 
-- [ ] Toolbar button inserts a drawing block
+- [x] Toolbar button inserts a drawing block
 
-- [ ] Click on preview opens Excalidraw editor inline
+- [x] Click on preview opens Excalidraw editor inline
 
-- [ ] Click outside / Escape / Done button saves and closes the editor
+- [x] Click outside / Escape / Done button saves and closes the editor
 
-- [ ] Drawing scene persisted to `.notesage/drawings/<id>.excalidraw`
+- [x] Drawing scene persisted to `.notesage/drawings/<id>.excalidraw`
 
-- [ ] SVG preview generated on save
+- [x] SVG preview generated on save
 
-- [ ] Drawing survives tab switch (sidecar file is the source of truth)
+- [x] Drawing survives tab switch (sidecar file is the source of truth)
 
-- [ ] Drawing survives app restart (sidecar file reloaded)
+- [x] Drawing survives app restart (sidecar file reloaded)
 
-- [ ] Delete drawing removes both the node and the sidecar file
+- [x] Delete drawing removes both the node and the sidecar file
 
-- [ ] All Excalidraw tools work: shapes, arrows, text, freehand, connectors
+- [x] All Excalidraw tools work: shapes, arrows, text, freehand, connectors
 
 ### Markdown Round-Trip
 
-- [ ] Drawing node serializes to `![drawing](/.notesage/drawings/<id>.excalidraw)`
+- [x] Drawing node serializes to `![drawing](/.notesage/drawings/<id>.excalidraw)`
 
-- [ ] Parsing the image syntax with `.excalidraw` extension creates a Drawing node
+- [x] Parsing the image syntax with `.excalidraw` extension creates a Drawing node
 
-- [ ] Regular images are not affected
+- [x] Regular images are not affected
 
-- [ ] Round-trip test passes
+- [x] Round-trip test passes
 
 ### PDF Export
 
-- [ ] Drawings render as SVG images in exported PDFs
+- [x] Drawings render as SVG images in exported PDFs
 
-- [ ] SVG renders at full quality (vector, not rasterized)
+- [x] SVG renders at full quality (vector, not rasterized)
 
-- [ ] Missing SVG files gracefully handled (placeholder or skip)
+- [x] Missing SVG files gracefully handled (placeholder or skip)
 
 ### Design
 
-- [ ] Preview mode shows clean SVG with hover-to-edit affordance
+- [x] Preview mode shows clean SVG with hover-to-edit affordance
 
-- [ ] Edit mode has clear visual boundary (header bar, shadow)
+- [x] Edit mode has clear visual boundary (header bar, shadow)
 
-- [ ] Excalidraw theme matches Notesage light/dark mode
+- [x] Excalidraw theme matches Notesage light/dark mode
 
-- [ ] Resize handle works smoothly
+- [x] Resize handle works smoothly
 
-- [ ] Transitions between preview and edit mode are smooth
+- [x] Transitions between preview and edit mode are smooth
 
 ### Testing
 
-- [ ] Unit tests for markdown parse/serialize of drawing nodes
+- [x] Unit tests for markdown parse/serialize of drawing nodes
 
-- [ ] Sidecar file read/write integration test
+- [x] Sidecar file read/write integration test
 
-- [ ] All existing markdown round-trip tests continue to pass
+- [x] All existing markdown round-trip tests continue to pass
 
 ## Out of Scope
 

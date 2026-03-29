@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
+import "@excalidraw/excalidraw/index.css";
 import { useSettingsStore } from "@/stores/settings-store";
 import { saveDrawing, saveSvgPreview, loadDrawing } from "@/lib/drawing-storage";
 
@@ -68,20 +69,36 @@ export function DrawingEditor({
     };
     await saveDrawing(drawingId, projectRoot, sceneData);
 
-    // Export SVG preview
+    // Export two SVG previews — one for light, one for dark theme
     try {
       const { exportToSvg } = await import("@excalidraw/excalidraw");
-      const svg = await exportToSvg({
-        elements,
-        appState: {
-          ...appState,
-          exportWithDarkMode: resolvedTheme === "dark",
-        },
-        files,
-      });
-      const svgString = svg.outerHTML;
-      await saveSvgPreview(drawingId, projectRoot, svgString);
-      onDone(svgString);
+
+      const exportSvg = async (darkMode: boolean) => {
+        const svg = await exportToSvg({
+          elements,
+          appState: {
+            ...appState,
+            exportWithDarkMode: darkMode,
+            exportBackground: false,
+          },
+          files,
+        });
+        svg.removeAttribute("width");
+        svg.removeAttribute("height");
+        svg.style.width = "100%";
+        svg.style.height = "auto";
+        return svg.outerHTML;
+      };
+
+      const lightSvg = await exportSvg(false);
+      const darkSvg = await exportSvg(true);
+
+      // Save both variants — dark gets a "-dark" suffix
+      await saveSvgPreview(drawingId, projectRoot, lightSvg);
+      await saveSvgPreview(drawingId + "-dark", projectRoot, darkSvg);
+
+      // Return the one matching current theme
+      onDone(resolvedTheme === "dark" ? darkSvg : lightSvg);
     } catch {
       onDone(null);
     }
@@ -123,8 +140,19 @@ export function DrawingEditor({
     [height],
   );
 
+  // Stop event propagation so ProseMirror doesn't intercept
+  // clicks, keypresses, and pointer events meant for Excalidraw
+  const stopPropagation = useCallback((e: React.SyntheticEvent) => {
+    e.stopPropagation();
+  }, []);
+
   return (
-    <div className="drawing-editor">
+    <div
+      className="drawing-editor"
+      onMouseDown={stopPropagation}
+      onPointerDown={stopPropagation}
+      onKeyDown={stopPropagation}
+    >
       <div className="drawing-editor-header">
         <span className="text-sm font-medium text-muted-foreground">
           Drawing

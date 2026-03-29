@@ -1104,12 +1104,20 @@ mark.dom-find-highlight-active {
 }
 
 /* Drawing node (preview mode) */
+/* NodeViewWrapper for drawing blocks — must be full width */
 .drawing-node-view {
   margin: 1rem 0;
+  width: 100%;
+}
+
+/* Tiptap wraps ReactNodeViewRenderer in a div — ensure it's full width too */
+[data-node-view-wrapper]:has(.drawing-node-view) {
+  width: 100% !important;
 }
 
 .drawing-preview {
   position: relative;
+  width: 100%;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow: hidden;
@@ -1129,15 +1137,15 @@ mark.dom-find-highlight-active {
 
 .drawing-svg-container {
   width: 100%;
-  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 1rem;
 }
 
 .drawing-svg-container svg {
   width: 100%;
-  height: 100%;
+  height: auto;
 }
 
 .drawing-empty-placeholder {
@@ -1167,6 +1175,7 @@ mark.dom-find-highlight-active {
 
 /* Drawing editor (edit mode) */
 .drawing-editor {
+  width: 100%;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow: hidden;
@@ -1203,21 +1212,19 @@ mark.dom-find-highlight-active {
   width: 100%;
 }
 
-/* Excalidraw requires its wrapper to have explicit dimensions.
-   The .excalidraw-wrapper is the outermost div Excalidraw renders. */
-.drawing-editor-canvas .excalidraw-wrapper,
-.drawing-editor-canvas .excalidraw-container {
+/* Excalidraw container sizing — parent must have explicit dimensions */
+.drawing-editor-canvas .excalidraw-wrapper {
   width: 100% !important;
   height: 100% !important;
 }
 
-.drawing-editor-canvas .excalidraw {
-  width: 100% !important;
-  height: 100% !important;
+/* Prevent Tailwind prose from scaling Excalidraw's inline SVG icons */
+.drawing-editor-canvas .excalidraw svg:not([class*="drawing-"]) {
+  max-width: unset;
 }
 
-/* Hide the default Excalidraw welcome screen — we handle our own placeholder */
-.drawing-editor-canvas .excalidraw .welcome-screen-center {
+/* Hide welcome screen — new drawings open directly to canvas */
+.drawing-editor-canvas .welcome-screen-center {
   display: none !important;
 }
 

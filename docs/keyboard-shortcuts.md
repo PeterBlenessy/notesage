@@ -88,6 +88,7 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | `/table` | Table | Insert table |
 | `/hr` | Horizontal rule | Insert horizontal divider |
 | `/image` | Image | Insert image |
+| `/drawing` | Drawing | Insert Excalidraw drawing |
 
 ## App Navigation
 

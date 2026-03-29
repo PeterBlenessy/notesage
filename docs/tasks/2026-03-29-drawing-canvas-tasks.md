@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-29 |
-| **Status** | In progress |
+| **Status** | Complete |
 | **PRD** | [drawing-canvas](../prds/2026-03-29-drawing-canvas.md) |
 | **Research** | [rich-content-editor-features](../research/2026-03-29-rich-content-editor-features.md) |
 | **Total** | 14 tasks: 4S, 6M, 4L |
@@ -237,7 +237,7 @@ Verify all existing round-trip tests still pass.
 
 ---
 
-### #14 — Polish and visual QA
+### #14 — Polish and visual QA ✅
 
 **Description:** Final polish pass:
 
