@@ -72,8 +72,11 @@ fn parse_duckduckgo_html(html: &str, max: usize) -> Vec<SearchResult> {
             .or_else(|| extract_between(block, "class='result__a' href='", "'"))
             .unwrap_or_default();
 
-        // Skip DuckDuckGo internal links
-        if url.is_empty() || url.starts_with('/') || url.contains("duckduckgo.com") {
+        // Skip empty or DuckDuckGo internal links (but keep uddg redirect URLs)
+        if url.is_empty() || (url.starts_with('/') && !url.contains("uddg=")) {
+            continue;
+        }
+        if url.contains("duckduckgo.com") && !url.contains("uddg=") {
             continue;
         }
 

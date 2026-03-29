@@ -49,6 +49,10 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   timestamp?: number;
+  /** Unique message identifier for tree-based branching */
+  id?: string;
+  /** Parent message ID (null = root message, undefined = legacy linear message) */
+  parentId?: string | null;
   citations?: Citation[];
   activities?: AgentActivity[];
   /** Connection ID at the time of generation (for lookup) */
