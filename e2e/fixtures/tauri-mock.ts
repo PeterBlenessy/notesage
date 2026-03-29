@@ -126,6 +126,7 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
 
         // Skills / Agents
         discover_skills: () => [],
+        extract_skill_tools: () => [],
         discover_agents: () => [],
         scan_agent_instructions: () => [],
         read_agent_instructions: () => [],
