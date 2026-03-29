@@ -90,6 +90,11 @@ export function emitMockEvent(eventName: string, payload: unknown): void {
   }
 }
 
+/** Returns the number of listeners registered for a given event name. */
+export function getListenerCount(eventName: string): number {
+  return eventListeners.get(eventName)?.size ?? 0;
+}
+
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(async (event: string, handler: (event: unknown) => void) => {
     if (!eventListeners.has(event)) {

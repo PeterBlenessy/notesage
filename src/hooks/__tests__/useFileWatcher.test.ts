@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@/test/tauri-mock';
-import { setMockInvokeHandler, emitMockEvent } from '@/test/tauri-mock';
+import { setMockInvokeHandler, emitMockEvent, getListenerCount } from '@/test/tauri-mock';
 import { renderHook } from '@testing-library/react';
 import { useEditorStore } from '@/stores/editor-store';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -103,7 +103,7 @@ function resetStores() {
 }
 
 function emitFileChanged(path: string, kind: 'create' | 'modify' | 'delete') {
-  emitMockEvent('file-changed', { path, kind });
+  emitMockEvent('file-changed-batch', [{ path, kind }]);
 }
 
 function emitFileChangedBatch(events: Array<{ path: string; kind: 'create' | 'modify' | 'delete' }>) {
@@ -178,16 +178,15 @@ describe('useFileWatcher', () => {
       expect(mockRefreshFileTree).toHaveBeenCalledTimes(1);
     });
 
-    it('calls tauriApi.indexFile for created files', async () => {
+    it('does not call tauriApi.indexFile (Rust backend handles reindexing)', async () => {
       const indexFileSpy = vi.fn();
       setMockInvokeHandler('index_file', indexFileSpy);
 
       renderHook(() => useFileWatcher());
       emitFileChanged('/project/notes/new-file.md', 'create');
 
-      // indexFile is called directly (not debounced on the same timer)
-      await vi.advanceTimersByTimeAsync(50);
-      expect(indexFileSpy).toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(indexFileSpy).not.toHaveBeenCalled();
     });
 
     it('triggers debounced git refresh on create', () => {
@@ -215,7 +214,7 @@ describe('useFileWatcher', () => {
       expect(mockRefreshFileTree).toHaveBeenCalledTimes(1);
     });
 
-    it('does NOT call indexFile for delete events', async () => {
+    it('does not call indexFile for delete events (Rust backend handles it)', async () => {
       const indexFileSpy = vi.fn();
       setMockInvokeHandler('index_file', indexFileSpy);
 
@@ -223,7 +222,6 @@ describe('useFileWatcher', () => {
       emitFileChanged('/project/notes/deleted.md', 'delete');
 
       await vi.advanceTimersByTimeAsync(500);
-      // indexFile is only called for create and modify, not delete
       expect(indexFileSpy).not.toHaveBeenCalled();
     });
 
@@ -777,35 +775,13 @@ describe('useFileWatcher', () => {
       expect(Object.keys(changes)).toHaveLength(0);
     });
 
-    it('handles indexFile errors gracefully for create events', async () => {
-      setMockInvokeHandler('index_file', () => {
-        throw new Error('Index failed');
-      });
-
+    it('refreshFileTree still fires for create events', async () => {
       renderHook(() => useFileWatcher());
       emitFileChanged('/project/notes/new.md', 'create');
 
-      // Should not throw -- error is caught in .catch()
       await vi.advanceTimersByTimeAsync(300);
 
-      // refreshFileTree still fires despite indexFile error
       expect(mockRefreshFileTree).toHaveBeenCalledTimes(1);
-    });
-
-    it('handles indexFile errors gracefully for modify events', async () => {
-      const tab = makeTab({ content: '# Old' });
-      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
-
-      setMockInvokeHandler('read_file', () => '# New');
-      setMockInvokeHandler('index_file', () => {
-        throw new Error('Index failed');
-      });
-
-      renderHook(() => useFileWatcher());
-      emitFileChanged('/project/notes/test.md', 'modify');
-
-      // Should not crash
-      await vi.advanceTimersByTimeAsync(300);
     });
   });
 
@@ -843,11 +819,11 @@ describe('useFileWatcher', () => {
   });
 
   // ==========================================================================
-  // Modify event -- reindex
+  // Modify event -- reindex handled by Rust backend
   // ==========================================================================
 
-  describe('modify events call indexFile', () => {
-    it('calls indexFile for modified files after debounce', async () => {
+  describe('modify events do not call indexFile (Rust backend handles it)', () => {
+    it('does not call indexFile from frontend for modified files', async () => {
       const tab = makeTab({ content: '# Old' });
       useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
       setMockInvokeHandler('read_file', () => '# New');
@@ -860,7 +836,68 @@ describe('useFileWatcher', () => {
 
       await vi.advanceTimersByTimeAsync(300);
 
-      expect(indexFileSpy).toHaveBeenCalled();
+      expect(indexFileSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // ==========================================================================
+  // Regression guards
+  // ==========================================================================
+
+  describe('regression: single event processing', () => {
+    it('registers exactly one listener for file-changed-batch (no duplicate per-event listener)', () => {
+      // This test catches the bug where both file-changed and file-changed-batch
+      // were listened to, causing every event to be processed twice.
+      renderHook(() => useFileWatcher());
+
+      expect(getListenerCount('file-changed-batch')).toBe(1);
+      // Must NOT listen to per-event file-changed — batch handles everything
+      expect(getListenerCount('file-changed')).toBe(0);
+    });
+
+    it('calls readFile exactly once per modified file (not twice from duplicate listeners)', async () => {
+      const tab = makeTab({ content: '# Old' });
+      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+
+      let readCount = 0;
+      setMockInvokeHandler('read_file', () => {
+        readCount++;
+        return '# New';
+      });
+
+      renderHook(() => useFileWatcher());
+
+      // Simulate a single batch with one modify event
+      emitFileChangedBatch([{ path: '/project/notes/test.md', kind: 'modify' }]);
+
+      await vi.advanceTimersByTimeAsync(300);
+
+      // Must read exactly once — if events are double-processed, this would be 2
+      expect(readCount).toBe(1);
+    });
+
+    it('never calls indexFile from frontend for any event type', async () => {
+      const tab = makeTab({ content: '# Old' });
+      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      setMockInvokeHandler('read_file', () => '# New');
+
+      const indexFileSpy = vi.fn();
+      setMockInvokeHandler('index_file', indexFileSpy);
+
+      renderHook(() => useFileWatcher());
+
+      // Fire all event types in a single batch
+      emitFileChangedBatch([
+        { path: '/project/notes/created.md', kind: 'create' },
+        { path: '/project/notes/test.md', kind: 'modify' },
+        { path: '/project/notes/deleted.md', kind: 'delete' },
+      ]);
+
+      await vi.advanceTimersByTimeAsync(500);
+
+      // Reindexing is handled entirely by the Rust watcher callback.
+      // Frontend must NEVER call indexFile — doing so creates SQLite lock contention.
+      expect(indexFileSpy).not.toHaveBeenCalled();
     });
   });
 });

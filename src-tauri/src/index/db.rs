@@ -1,5 +1,6 @@
 use rusqlite::{Connection, Result as SqlResult};
 use std::path::Path;
+use std::time::Duration;
 
 /// Current schema version — bump when adding migrations.
 const SCHEMA_VERSION: i32 = 1;
@@ -15,6 +16,12 @@ pub fn open_or_create(db_path: &Path) -> Result<Connection, String> {
 
     let conn = Connection::open(db_path)
         .map_err(|e| format!("Failed to open index DB at {}: {}", db_path.display(), e))?;
+
+    // Retry for up to 5 seconds when the database is busy (concurrent writes).
+    // Without this, rapid watcher-triggered reindex calls fail immediately with
+    // "database is locked" when they contend on the write lock.
+    conn.busy_timeout(Duration::from_millis(5000))
+        .map_err(|e| format!("Failed to set busy timeout: {}", e))?;
 
     // Enable WAL mode for concurrent reads during writes
     conn.pragma_update(None, "journal_mode", "WAL")
@@ -105,6 +112,68 @@ pub fn remove_file(conn: &Connection, path: &str) -> SqlResult<()> {
         conn.execute("DELETE FROM files WHERE id = ?1", [id])?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn busy_timeout_is_configured() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let conn = open_or_create(&db_path).expect("Failed to open DB");
+
+        let timeout_ms: i64 = conn
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .expect("Failed to read busy_timeout");
+
+        assert_eq!(timeout_ms, 5000, "busy_timeout must be 5000ms to prevent 'database is locked' errors");
+    }
+
+    #[test]
+    fn wal_mode_is_enabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let conn = open_or_create(&db_path).expect("Failed to open DB");
+
+        let mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .expect("Failed to read journal_mode");
+
+        assert_eq!(mode.to_lowercase(), "wal", "WAL mode must be enabled for concurrent read safety");
+    }
+
+    #[test]
+    fn foreign_keys_are_enabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let conn = open_or_create(&db_path).expect("Failed to open DB");
+
+        let fk: i64 = conn
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .expect("Failed to read foreign_keys");
+
+        assert_eq!(fk, 1, "Foreign keys must be enabled for CASCADE deletes");
+    }
+
+    #[test]
+    fn schema_is_created_on_first_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let conn = open_or_create(&db_path).expect("Failed to open DB");
+
+        // Verify core tables exist
+        let table_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('files', 'tags', 'mentions', 'tasks')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("Failed to query tables");
+
+        assert_eq!(table_count, 4, "Core tables (files, tags, mentions, tasks) must exist after open_or_create");
+    }
 }
 
 const SCHEMA_SQL: &str = "

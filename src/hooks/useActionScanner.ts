@@ -27,14 +27,17 @@ export function useActionScanner() {
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const pendingPaths = new Set<string>();
 
-    const unlisten = listen<{ path: string; kind: string }>('file-changed', (event) => {
-      const { path } = event.payload;
+    const unlisten = listen<{ path: string; kind: string }[]>('file-changed-batch', (event) => {
+      const batch = event.payload;
+      if (!batch || batch.length === 0) return;
 
-      // Only care about markdown files and comment files
-      if (!path.endsWith('.md') && !path.endsWith('.json')) return;
-      // Skip if it's a delete (file no longer exists to scan)
-      // But we still want to refresh to remove stale actions
-      pendingPaths.add(path);
+      for (const { path } of batch) {
+        // Only care about markdown files and comment files
+        if (!path.endsWith('.md') && !path.endsWith('.json')) continue;
+        pendingPaths.add(path);
+      }
+
+      if (pendingPaths.size === 0) return;
 
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {

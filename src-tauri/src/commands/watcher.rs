@@ -199,17 +199,10 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
                         continue;
                     }
 
-                    let payload = FileChangedEvent {
+                    batch.push(FileChangedEvent {
                         path: path.to_string_lossy().to_string(),
                         kind: effective_kind.to_string(),
-                    };
-
-                    // Emit per-event for backward compatibility
-                    if let Err(e) = app_handle.emit("file-changed", payload.clone()) {
-                        log::error!(target: "notesage::watcher", "Failed to emit file-changed event: {:?}", e);
-                    }
-
-                    batch.push(payload);
+                    });
                 }
             }
 
