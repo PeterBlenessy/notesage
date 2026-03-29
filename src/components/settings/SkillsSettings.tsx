@@ -62,8 +62,16 @@ function SkillCard({ skill, allSkills, onDelete, onMove, onEdit }: {
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium truncate">{skill.name}</span>
           {skill.has_scripts && (
-            <span className="text-xs text-muted-foreground">scripts</span>
+            <span className="inline-flex items-center px-1.5 py-px rounded-full text-[10px] font-medium bg-muted text-muted-foreground">scripts</span>
           )}
+          {(() => {
+            const toolCount = useSkillStore.getState().skillTools.filter((t) => t.skill_name === skill.name).length;
+            return toolCount > 0 ? (
+              <span className="inline-flex items-center px-1.5 py-px rounded-full text-[10px] font-medium bg-foreground/10 text-foreground/70">
+                {toolCount} {toolCount === 1 ? 'tool' : 'tools'}
+              </span>
+            ) : null;
+          })()}
         </div>
         {skill.description && (
           <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">

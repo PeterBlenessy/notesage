@@ -278,6 +278,18 @@ export function useSkillDiscovery() {
       log.info('skills', `Discovered ${skillCount} skills`);
       console.log('[perf:skills]', { step: 'skill-scan', ms: Math.round(performance.now() - stepStart) });
 
+      // Extract tool definitions from script-bearing skills
+      stepStart = performance.now();
+      try {
+        const activeSkills = useSkillStore.getState().getActiveSkills();
+        const skillTools = await tauriApi.extractSkillTools(activeSkills);
+        useSkillStore.getState().setSkillTools(skillTools);
+        log.info('skills', `Extracted ${skillTools.length} skill tool definitions`);
+        console.log('[perf:skills]', { step: 'skill-tool-extract', count: skillTools.length, ms: Math.round(performance.now() - stepStart) });
+      } catch (e) {
+        log.error('skills', 'Skill tool extraction failed', e);
+      }
+
       // Build agent base dirs
       const agentBaseDirs: string[] = [];
       agentBaseDirs.push(`${home}/.notesage/agents`);

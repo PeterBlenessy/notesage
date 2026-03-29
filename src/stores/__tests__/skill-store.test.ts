@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useSkillStore, SkillEntry, AgentInstruction, BUILT_IN_TOOLS } from '../skill-store';
+import { useSkillStore, SkillEntry, SkillToolEntry, AgentInstruction, BUILT_IN_TOOLS } from '../skill-store';
 
 // Helper to create a SkillEntry
 function skill(overrides: Partial<SkillEntry> & { name: string; source: string }): SkillEntry {
@@ -30,6 +30,7 @@ describe('skill-store', () => {
       lastScanTimestamp: 0,
       isScanning: false,
       rescanCounter: 0,
+      skillTools: [],
       agents: [],
       activeAgentName: 'general-assistant',
       agentEnabledOverrides: {},
@@ -250,10 +251,19 @@ describe('skill-store', () => {
   });
 
   describe('getToolDefinitions', () => {
-    it('returns all built-in tools when no filter provided', () => {
+    it('returns all built-in tools when no filter and no skill tools', () => {
       const tools = useSkillStore.getState().getToolDefinitions();
       expect(tools).toHaveLength(6);
-      expect(tools).toEqual(BUILT_IN_TOOLS);
+    });
+
+    it('includes skill tools alongside built-in tools', () => {
+      useSkillStore.setState({
+        skillTools: [makeSkillTool({ tool_name: 'skill__download_webpage' })],
+      });
+
+      const tools = useSkillStore.getState().getToolDefinitions();
+      expect(tools).toHaveLength(7);
+      expect(tools.map((t) => t.name)).toContain('skill__download_webpage');
     });
 
     it('filters by allowedTools list', () => {
@@ -268,6 +278,36 @@ describe('skill-store', () => {
       expect(tools.map((t) => t.name)).toEqual(['read_file', 'write_file']);
     });
 
+    it('filters skill tools by exact name', () => {
+      useSkillStore.setState({
+        skillTools: [
+          makeSkillTool({ tool_name: 'skill__download_webpage' }),
+          makeSkillTool({ tool_name: 'skill__create_skill__scaffold' }),
+        ],
+      });
+
+      const tools = useSkillStore.getState().getToolDefinitions(['skill__download_webpage']);
+      expect(tools).toHaveLength(1);
+      expect(tools[0].name).toBe('skill__download_webpage');
+    });
+
+    it('filters skill tools by skill name prefix', () => {
+      useSkillStore.setState({
+        skillTools: [
+          makeSkillTool({ tool_name: 'skill__create_skill__scaffold', skill_name: 'create-skill' }),
+          makeSkillTool({ tool_name: 'skill__create_skill__validate', skill_name: 'create-skill' }),
+          makeSkillTool({ tool_name: 'skill__download_webpage', skill_name: 'download-webpage' }),
+        ],
+      });
+
+      const tools = useSkillStore.getState().getToolDefinitions(['skill__create_skill']);
+      expect(tools).toHaveLength(2);
+      expect(tools.map((t) => t.name)).toEqual([
+        'skill__create_skill__scaffold',
+        'skill__create_skill__validate',
+      ]);
+    });
+
     it('returns empty array when no tools match', () => {
       const tools = useSkillStore.getState().getToolDefinitions(['nonexistent_tool']);
       expect(tools).toHaveLength(0);
@@ -278,4 +318,58 @@ describe('skill-store', () => {
       expect(tools).toHaveLength(0);
     });
   });
+
+  describe('setSkillTools and getSkillToolByName', () => {
+    it('stores and retrieves skill tools', () => {
+      const tool = makeSkillTool({ tool_name: 'skill__my_tool' });
+      useSkillStore.getState().setSkillTools([tool]);
+
+      expect(useSkillStore.getState().skillTools).toHaveLength(1);
+      expect(useSkillStore.getState().getSkillToolByName('skill__my_tool')).toBeDefined();
+      expect(useSkillStore.getState().getSkillToolByName('nonexistent')).toBeUndefined();
+    });
+  });
+
+  describe('getSkillDescriptionsForPrompt excludes tool-converted skills', () => {
+    it('excludes skills that have tool definitions', () => {
+      useSkillStore.setState({
+        skills: [
+          skill({ name: 'download-webpage', source: 'notesage-global', description: 'Download pages', has_scripts: true }),
+          skill({ name: 'knowledge-only', source: 'notesage-global', description: 'Just instructions' }),
+        ],
+        skillTools: [makeSkillTool({ skill_name: 'download-webpage' })],
+      });
+
+      const prompt = useSkillStore.getState().getSkillDescriptionsForPrompt();
+      expect(prompt).not.toContain('download-webpage');
+      expect(prompt).toContain('knowledge-only');
+    });
+
+    it('returns empty when all skills are tool-converted', () => {
+      useSkillStore.setState({
+        skills: [
+          skill({ name: 'download-webpage', source: 'notesage-global', has_scripts: true }),
+        ],
+        skillTools: [makeSkillTool({ skill_name: 'download-webpage' })],
+      });
+
+      const prompt = useSkillStore.getState().getSkillDescriptionsForPrompt();
+      expect(prompt).toBe('');
+    });
+  });
 });
+
+// --- Test helpers ---
+
+function makeSkillTool(overrides: Partial<SkillToolEntry> & { tool_name?: string }): SkillToolEntry {
+  return {
+    tool_name: overrides.tool_name ?? 'skill__test',
+    description: 'A test tool',
+    skill_name: 'test-skill',
+    script_path: 'scripts/run.sh',
+    parameters: { type: 'object', properties: {}, required: [] },
+    arg_mapping: [],
+    explicit_schema: false,
+    ...overrides,
+  };
+}

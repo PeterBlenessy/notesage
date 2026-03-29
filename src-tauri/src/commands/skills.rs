@@ -48,6 +48,54 @@ pub fn parse_frontmatter_raw(content: &str) -> (Option<&str>, &str) {
     }
 }
 
+// --- Skill-to-Tool glue layer types ---
+
+/// A tool definition extracted from a skill script.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SkillToolEntry {
+    /// Tool name: skill__{skill}__{script}
+    pub tool_name: String,
+    /// Human-readable description for the LLM
+    pub description: String,
+    /// Parent skill name (for routing back to execute_skill_script)
+    pub skill_name: String,
+    /// Relative script path within the skill directory (e.g., "scripts/download.mjs")
+    pub script_path: String,
+    /// JSON Schema for tool parameters
+    pub parameters: serde_json::Value,
+    /// Mapping metadata: how to convert JSON args back to string[]
+    pub arg_mapping: Vec<ArgMapping>,
+    /// Whether this tool used an explicit frontmatter schema (vs auto-extracted)
+    pub explicit_schema: bool,
+}
+
+/// Describes how a single JSON parameter maps to a CLI argument.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ArgMapping {
+    /// Parameter name in the JSON Schema
+    pub param_name: String,
+    /// How this parameter maps to CLI args
+    pub mapping_type: ArgMappingType,
+    /// Position in the args array (for positional params)
+    pub position: Option<usize>,
+}
+
+/// The type of CLI argument mapping for a parameter.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(tag = "type", content = "value")]
+pub enum ArgMappingType {
+    /// Positional argument: value added at position
+    Positional,
+    /// Flag: --name value
+    Flag { flag: String },
+    /// Boolean flag: --name (present if true)
+    BoolFlag { flag: String },
+    /// Spread: array values added as consecutive positional args
+    Spread,
+}
+
+// --- SKILL.md frontmatter ---
+
 /// YAML frontmatter shape for SKILL.md files
 #[derive(Deserialize, Debug, Default)]
 struct SkillFrontmatter {
@@ -62,6 +110,17 @@ struct SkillFrontmatter {
     user_invocable: Option<bool>,
     #[serde(rename = "disable-model-invocation")]
     disable_model_invocation: Option<bool>,
+    /// Optional explicit tool definitions for the glue layer
+    tools: Option<Vec<ToolFrontmatter>>,
+}
+
+/// Explicit tool definition in SKILL.md frontmatter.
+#[derive(Deserialize, Debug, Clone)]
+struct ToolFrontmatter {
+    name: String,
+    description: String,
+    script: String,
+    parameters: serde_json::Value,
 }
 
 /// Parse YAML frontmatter from a SKILL.md file.
@@ -250,6 +309,364 @@ pub async fn read_skill_content(
         references,
         assets,
     })
+}
+
+// --- Skill-to-Tool extraction pipeline ---
+
+/// Convert a name to snake_case (lowercase, hyphens → underscores).
+fn to_snake_case(name: &str) -> String {
+    name.to_lowercase().replace('-', "_")
+}
+
+/// Parse a Usage comment from the first 10 lines of a script file.
+///
+/// Looks for patterns like:
+///   // Usage: node script.mjs <url> <output_dir> [--force]
+///   # Usage: script.sh <name> [--tag "value"]
+///
+/// Returns (JSON Schema value, Vec<ArgMapping>) or None if no Usage line found.
+fn parse_usage_comment(script_content: &str) -> Option<(serde_json::Value, Vec<ArgMapping>)> {
+    // Find the Usage: line in the first 10 lines
+    let usage_line = script_content
+        .lines()
+        .take(10)
+        .find(|line| {
+            let trimmed = line.trim().trim_start_matches("//").trim_start_matches('#').trim();
+            trimmed.starts_with("Usage:")
+        })?;
+
+    // Extract the part after the command name: "Usage: node script.mjs <url> [--force]" → "<url> [--force]"
+    let trimmed = usage_line.trim().trim_start_matches("//").trim_start_matches('#').trim();
+    let after_usage = trimmed.strip_prefix("Usage:")?;
+    let after_usage = after_usage.trim();
+
+    // Skip the command portion (e.g., "node script.mjs" or "script.sh")
+    // Find the first token that starts with < or [ or -- which indicates params start
+    let tokens: Vec<&str> = after_usage.split_whitespace().collect();
+    let param_start = tokens.iter().position(|t| {
+        t.starts_with('<') || t.starts_with('[')
+    });
+
+    let param_tokens = match param_start {
+        Some(idx) => &tokens[idx..],
+        None => return None, // No parameters found
+    };
+
+    if param_tokens.is_empty() {
+        return None;
+    }
+
+    let mut properties = serde_json::Map::new();
+    let mut required = Vec::new();
+    let mut mappings = Vec::new();
+    let mut position: usize = 0;
+
+    let mut i = 0;
+    while i < param_tokens.len() {
+        let token = param_tokens[i];
+
+        if token.starts_with('<') && token.ends_with('>') {
+            // Required positional: <name>
+            let name = &token[1..token.len() - 1];
+            // Handle variadic: <name...>
+            let (clean_name, is_spread) = if name.ends_with("...") {
+                (&name[..name.len() - 3], true)
+            } else {
+                (name, false)
+            };
+            let snake_name = to_snake_case(clean_name);
+
+            if is_spread {
+                properties.insert(
+                    snake_name.clone(),
+                    serde_json::json!({
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": clean_name
+                    }),
+                );
+                required.push(serde_json::Value::String(snake_name.clone()));
+                mappings.push(ArgMapping {
+                    param_name: snake_name,
+                    mapping_type: ArgMappingType::Spread,
+                    position: Some(position),
+                });
+            } else {
+                properties.insert(
+                    snake_name.clone(),
+                    serde_json::json!({ "type": "string", "description": clean_name }),
+                );
+                required.push(serde_json::Value::String(snake_name.clone()));
+                mappings.push(ArgMapping {
+                    param_name: snake_name,
+                    mapping_type: ArgMappingType::Positional,
+                    position: Some(position),
+                });
+            }
+            position += 1;
+        } else if token.starts_with('[') {
+            // Optional parameter or flag
+            // Collect all tokens until we find the closing ]
+            let mut combined = token.to_string();
+            if !token.ends_with(']') {
+                // Multi-token optional: [--flag "value"]
+                while i + 1 < param_tokens.len() {
+                    i += 1;
+                    combined.push(' ');
+                    combined.push_str(param_tokens[i]);
+                    if param_tokens[i].ends_with(']') {
+                        break;
+                    }
+                }
+            }
+
+            let inner = &combined[1..combined.len() - 1]; // strip [ ]
+
+            if inner.starts_with("--") {
+                // Flag parameter
+                let parts: Vec<&str> = inner.splitn(2, ' ').collect();
+                let flag_name = parts[0]; // e.g., "--force"
+                let param_name = to_snake_case(&flag_name[2..]); // strip --
+
+                if parts.len() > 1 {
+                    // [--flag "value"] → optional string with flag
+                    properties.insert(
+                        param_name.clone(),
+                        serde_json::json!({ "type": "string", "description": param_name }),
+                    );
+                    mappings.push(ArgMapping {
+                        param_name: param_name,
+                        mapping_type: ArgMappingType::Flag {
+                            flag: flag_name.to_string(),
+                        },
+                        position: None,
+                    });
+                } else {
+                    // [--flag] → optional boolean
+                    properties.insert(
+                        param_name.clone(),
+                        serde_json::json!({ "type": "boolean", "description": param_name }),
+                    );
+                    mappings.push(ArgMapping {
+                        param_name: param_name,
+                        mapping_type: ArgMappingType::BoolFlag {
+                            flag: flag_name.to_string(),
+                        },
+                        position: None,
+                    });
+                }
+            } else {
+                // [name] or [name...] → optional positional
+                let (clean_name, is_spread) = if inner.ends_with("...") {
+                    (&inner[..inner.len() - 3], true)
+                } else {
+                    (inner, false)
+                };
+                let snake_name = to_snake_case(clean_name);
+
+                if is_spread {
+                    properties.insert(
+                        snake_name.clone(),
+                        serde_json::json!({
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": clean_name
+                        }),
+                    );
+                    mappings.push(ArgMapping {
+                        param_name: snake_name,
+                        mapping_type: ArgMappingType::Spread,
+                        position: Some(position),
+                    });
+                } else {
+                    properties.insert(
+                        snake_name.clone(),
+                        serde_json::json!({ "type": "string", "description": clean_name }),
+                    );
+                    mappings.push(ArgMapping {
+                        param_name: snake_name,
+                        mapping_type: ArgMappingType::Positional,
+                        position: Some(position),
+                    });
+                }
+                position += 1;
+            }
+        }
+
+        i += 1;
+    }
+
+    if properties.is_empty() {
+        return None;
+    }
+
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": properties,
+        "required": required,
+    });
+
+    Some((schema, mappings))
+}
+
+/// Build a fallback generic schema for skills with scripts but no parseable interface.
+fn fallback_generic_schema() -> (serde_json::Value, Vec<ArgMapping>) {
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "args": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Arguments for the script"
+            }
+        },
+        "required": ["args"]
+    });
+    let mapping = vec![ArgMapping {
+        param_name: "args".to_string(),
+        mapping_type: ArgMappingType::Spread,
+        position: Some(0),
+    }];
+    (schema, mapping)
+}
+
+/// Extract tool definitions from discovered skills.
+///
+/// For each tool-eligible skill (has_scripts=true, disable_model_invocation!=true),
+/// the extraction pipeline tries in order:
+/// 1. Explicit `tools:` frontmatter field → use as-is
+/// 2. Parse Usage: comments from script files → extract schema
+/// 3. Fallback to generic { args: string[] }
+#[tauri::command]
+pub async fn extract_skill_tools(
+    skill_entries: Vec<SkillEntry>,
+) -> Result<Vec<SkillToolEntry>, String> {
+    let mut tools = Vec::new();
+
+    for entry in &skill_entries {
+        // Skip non-tool-eligible skills
+        if !entry.has_scripts {
+            continue;
+        }
+        if entry.disable_model_invocation == Some(true) {
+            continue;
+        }
+
+        let skill_path = Path::new(&entry.path);
+        let skill_md = skill_path.join("SKILL.md");
+
+        // Read frontmatter to check for explicit tools
+        let content = match fs::read_to_string(&skill_md) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let (frontmatter, _body) = parse_frontmatter(&content);
+        let fm = frontmatter.unwrap_or_default();
+
+        // Priority 1: Explicit tools in frontmatter
+        if let Some(tool_defs) = &fm.tools {
+            let skill_snake = to_snake_case(&entry.name);
+            let multi_script = tool_defs.len() > 1;
+
+            for tool_def in tool_defs {
+                let script_stem = Path::new(&tool_def.script)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let script_snake = to_snake_case(&script_stem);
+
+                let tool_name = if multi_script {
+                    format!("skill__{}__{}", skill_snake, script_snake)
+                } else {
+                    format!("skill__{}", skill_snake)
+                };
+
+                tools.push(SkillToolEntry {
+                    tool_name,
+                    description: tool_def.description.clone(),
+                    skill_name: entry.name.clone(),
+                    script_path: tool_def.script.clone(),
+                    parameters: tool_def.parameters.clone(),
+                    arg_mapping: Vec::new(), // Explicit schemas bypass arg mapping
+                    explicit_schema: true,
+                });
+            }
+            continue;
+        }
+
+        // List script files
+        let scripts = list_subdir_files(skill_path, "scripts");
+        if scripts.is_empty() {
+            continue;
+        }
+
+        // Filter to executable scripts (skip package.json, config files, etc.)
+        let script_files: Vec<&String> = scripts
+            .iter()
+            .filter(|s| {
+                let ext = Path::new(s).extension().and_then(|e| e.to_str()).unwrap_or("");
+                matches!(ext, "sh" | "bash" | "py" | "mjs" | "js" | "ts" | "rb")
+            })
+            .collect();
+
+        let skill_snake = to_snake_case(&entry.name);
+        let multi_script = script_files.len() > 1;
+
+        for script_rel in &script_files {
+            let script_full_path = skill_path.join(script_rel);
+            let script_content = match fs::read_to_string(&script_full_path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            let script_stem = Path::new(script_rel)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let script_snake = to_snake_case(&script_stem);
+
+            let tool_name = if multi_script {
+                format!("skill__{}__{}", skill_snake, script_snake)
+            } else {
+                format!("skill__{}", skill_snake)
+            };
+
+            // Priority 2: Parse Usage comment
+            let (parameters, arg_mapping, explicit) =
+                if let Some((schema, mapping)) = parse_usage_comment(&script_content) {
+                    (schema, mapping, false)
+                } else {
+                    // Priority 3: Fallback generic schema
+                    let (schema, mapping) = fallback_generic_schema();
+                    (schema, mapping, false)
+                };
+
+            // Build description from skill description + script name context
+            let description = if multi_script {
+                format!("{} ({})", entry.description, script_stem)
+            } else {
+                entry.description.clone()
+            };
+
+            tools.push(SkillToolEntry {
+                tool_name,
+                description,
+                skill_name: entry.name.clone(),
+                script_path: script_rel.to_string(),
+                parameters,
+                arg_mapping,
+                explicit_schema: explicit,
+            });
+        }
+    }
+
+    info!(
+        "Extracted {} tool definitions from {} skills",
+        tools.len(),
+        skill_entries.len()
+    );
+
+    Ok(tools)
 }
 
 /// Bundled file content embedded at compile time.
@@ -597,6 +1014,377 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(read_skill_content("/nonexistent/skill".to_string()));
         assert!(result.is_err());
+    }
+
+    // --- parse_usage_comment tests ---
+
+    #[test]
+    fn parse_usage_positional_args() {
+        let script = "#!/usr/bin/env node\n// Usage: node script.mjs <url> <output_dir>\n";
+        let (schema, mappings) = parse_usage_comment(script).unwrap();
+        let props = schema["properties"].as_object().unwrap();
+        assert_eq!(props.len(), 2);
+        assert!(props.contains_key("url"));
+        assert!(props.contains_key("output_dir"));
+        let required: Vec<String> = schema["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(required, vec!["url", "output_dir"]);
+        assert_eq!(mappings.len(), 2);
+        assert_eq!(mappings[0].mapping_type, ArgMappingType::Positional);
+        assert_eq!(mappings[0].position, Some(0));
+        assert_eq!(mappings[1].position, Some(1));
+    }
+
+    #[test]
+    fn parse_usage_optional_positional() {
+        let script = "# Usage: script.sh <name> [description]\n";
+        let (schema, mappings) = parse_usage_comment(script).unwrap();
+        let props = schema["properties"].as_object().unwrap();
+        assert_eq!(props.len(), 2);
+        let required: Vec<String> = schema["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(required, vec!["name"]); // description is optional
+        assert_eq!(mappings.len(), 2);
+    }
+
+    #[test]
+    fn parse_usage_boolean_flag() {
+        let script = "// Usage: node script.mjs <url> <dir> [--force]\n";
+        let (schema, mappings) = parse_usage_comment(script).unwrap();
+        let props = schema["properties"].as_object().unwrap();
+        assert_eq!(props.len(), 3);
+        assert_eq!(props["force"]["type"], "boolean");
+        let force_mapping = mappings.iter().find(|m| m.param_name == "force").unwrap();
+        assert_eq!(
+            force_mapping.mapping_type,
+            ArgMappingType::BoolFlag { flag: "--force".to_string() }
+        );
+    }
+
+    #[test]
+    fn parse_usage_flag_with_value() {
+        let script = "// Usage: node script.mjs <query> [--tag \"tagname\"] [--limit 20]\n";
+        let (schema, mappings) = parse_usage_comment(script).unwrap();
+        let props = schema["properties"].as_object().unwrap();
+        assert_eq!(props.len(), 3);
+        assert_eq!(props["tag"]["type"], "string");
+        assert_eq!(props["limit"]["type"], "string");
+        let tag_mapping = mappings.iter().find(|m| m.param_name == "tag").unwrap();
+        assert_eq!(
+            tag_mapping.mapping_type,
+            ArgMappingType::Flag { flag: "--tag".to_string() }
+        );
+    }
+
+    #[test]
+    fn parse_usage_variadic_spread() {
+        let script = "// Usage: node script.mjs <query> <dirs...>\n";
+        let (schema, mappings) = parse_usage_comment(script).unwrap();
+        let props = schema["properties"].as_object().unwrap();
+        assert_eq!(props["dirs"]["type"], "array");
+        let dirs_mapping = mappings.iter().find(|m| m.param_name == "dirs").unwrap();
+        assert_eq!(dirs_mapping.mapping_type, ArgMappingType::Spread);
+    }
+
+    #[test]
+    fn parse_usage_no_usage_line() {
+        let script = "#!/bin/bash\necho hello\n";
+        assert!(parse_usage_comment(script).is_none());
+    }
+
+    #[test]
+    fn parse_usage_no_params() {
+        let script = "// Usage: node script.mjs\n";
+        assert!(parse_usage_comment(script).is_none());
+    }
+
+    #[test]
+    fn parse_usage_bash_comment_style() {
+        let script = "#!/usr/bin/env bash\n# Usage: scaffold.sh <skill-name> <target-directory>\n";
+        let (schema, mappings) = parse_usage_comment(script).unwrap();
+        let props = schema["properties"].as_object().unwrap();
+        assert_eq!(props.len(), 2);
+        assert!(props.contains_key("skill_name")); // hyphen → underscore
+        assert!(props.contains_key("target_directory"));
+        assert_eq!(mappings.len(), 2);
+    }
+
+    #[test]
+    fn parse_usage_real_download_skill() {
+        let script = "#!/usr/bin/env node\n// download.mjs — Fetch a web page\n// Usage: node download.mjs <url> <output_dir> [--force]\n";
+        let (schema, mappings) = parse_usage_comment(script).unwrap();
+        let props = schema["properties"].as_object().unwrap();
+        assert_eq!(props.len(), 3);
+        assert!(props.contains_key("url"));
+        assert!(props.contains_key("output_dir"));
+        assert!(props.contains_key("force"));
+        assert_eq!(props["force"]["type"], "boolean");
+        assert_eq!(mappings.len(), 3);
+    }
+
+    #[test]
+    fn parse_usage_real_save_research() {
+        let script = "#!/usr/bin/env node\n// save.mjs — Save research\n// Usage: node save.mjs <content_or_path> <output_dir> [--title \"...\"] [--tags \"tag1,tag2\"] [--url \"...\"] [--author \"...\"] [--force]\n";
+        let (schema, mappings) = parse_usage_comment(script).unwrap();
+        let props = schema["properties"].as_object().unwrap();
+        assert_eq!(props.len(), 7);
+        assert_eq!(props["content_or_path"]["type"], "string");
+        assert_eq!(props["title"]["type"], "string");
+        assert_eq!(props["tags"]["type"], "string");
+        assert_eq!(props["force"]["type"], "boolean");
+    }
+
+    // --- to_snake_case tests ---
+
+    #[test]
+    fn snake_case_conversion() {
+        assert_eq!(to_snake_case("download-webpage"), "download_webpage");
+        assert_eq!(to_snake_case("create-skill"), "create_skill");
+        assert_eq!(to_snake_case("MySkill"), "myskill");
+        assert_eq!(to_snake_case("already_snake"), "already_snake");
+    }
+
+    // --- extract_skill_tools tests ---
+
+    #[test]
+    fn extract_tools_skips_no_scripts() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let entries = vec![SkillEntry {
+            name: "knowledge-only".into(),
+            description: "No scripts".into(),
+            path: "/fake/path".into(),
+            source: "notesage-global".into(),
+            license: None,
+            compatibility: None,
+            metadata: None,
+            allowed_tools: None,
+            user_invocable: None,
+            disable_model_invocation: None,
+            has_scripts: false,
+            has_references: false,
+        }];
+        let result = rt.block_on(extract_skill_tools(entries)).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_tools_skips_disabled_model_invocation() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let entries = vec![SkillEntry {
+            name: "private-skill".into(),
+            description: "Disabled".into(),
+            path: "/fake/path".into(),
+            source: "notesage-global".into(),
+            license: None,
+            compatibility: None,
+            metadata: None,
+            allowed_tools: None,
+            user_invocable: None,
+            disable_model_invocation: Some(true),
+            has_scripts: true,
+            has_references: false,
+        }];
+        let result = rt.block_on(extract_skill_tools(entries)).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_tools_explicit_frontmatter() {
+        let tmp = create_temp_dir();
+        let skill_dir = tmp.path().join("my-tool");
+        fs::create_dir(&skill_dir).unwrap();
+        fs::create_dir(skill_dir.join("scripts")).unwrap();
+        fs::write(skill_dir.join("scripts/run.sh"), "#!/bin/bash\necho hi").unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: my-tool\ndescription: A tool\ntools:\n  - name: run\n    description: Run the thing\n    script: scripts/run.sh\n    parameters:\n      type: object\n      properties:\n        input:\n          type: string\n          description: The input\n      required:\n        - input\n---\nBody",
+        )
+        .unwrap();
+
+        let entries = vec![SkillEntry {
+            name: "my-tool".into(),
+            description: "A tool".into(),
+            path: skill_dir.to_string_lossy().into(),
+            source: "notesage-global".into(),
+            license: None,
+            compatibility: None,
+            metadata: None,
+            allowed_tools: None,
+            user_invocable: None,
+            disable_model_invocation: None,
+            has_scripts: true,
+            has_references: false,
+        }];
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(extract_skill_tools(entries)).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].tool_name, "skill__my_tool");
+        assert_eq!(result[0].description, "Run the thing");
+        assert!(result[0].explicit_schema);
+        assert_eq!(result[0].parameters["properties"]["input"]["type"], "string");
+    }
+
+    #[test]
+    fn extract_tools_usage_comment_parsing() {
+        let tmp = create_temp_dir();
+        let skill_dir = tmp.path().join("download-webpage");
+        fs::create_dir(&skill_dir).unwrap();
+        let scripts_dir = skill_dir.join("scripts");
+        fs::create_dir(&scripts_dir).unwrap();
+        fs::write(
+            scripts_dir.join("download.mjs"),
+            "#!/usr/bin/env node\n// Usage: node download.mjs <url> <output_dir> [--force]\n",
+        )
+        .unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: download-webpage\ndescription: Download a web page\n---\nBody",
+        )
+        .unwrap();
+
+        let entries = vec![SkillEntry {
+            name: "download-webpage".into(),
+            description: "Download a web page".into(),
+            path: skill_dir.to_string_lossy().into(),
+            source: "notesage-global".into(),
+            license: None,
+            compatibility: None,
+            metadata: None,
+            allowed_tools: None,
+            user_invocable: None,
+            disable_model_invocation: None,
+            has_scripts: true,
+            has_references: false,
+        }];
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(extract_skill_tools(entries)).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].tool_name, "skill__download_webpage");
+        assert!(!result[0].explicit_schema);
+        assert_eq!(result[0].parameters["properties"]["url"]["type"], "string");
+        assert_eq!(result[0].parameters["properties"]["force"]["type"], "boolean");
+    }
+
+    #[test]
+    fn extract_tools_fallback_generic() {
+        let tmp = create_temp_dir();
+        let skill_dir = tmp.path().join("no-usage");
+        fs::create_dir(&skill_dir).unwrap();
+        let scripts_dir = skill_dir.join("scripts");
+        fs::create_dir(&scripts_dir).unwrap();
+        fs::write(scripts_dir.join("run.sh"), "#!/bin/bash\necho hi").unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: no-usage\ndescription: No usage comment\n---\nBody",
+        )
+        .unwrap();
+
+        let entries = vec![SkillEntry {
+            name: "no-usage".into(),
+            description: "No usage comment".into(),
+            path: skill_dir.to_string_lossy().into(),
+            source: "notesage-global".into(),
+            license: None,
+            compatibility: None,
+            metadata: None,
+            allowed_tools: None,
+            user_invocable: None,
+            disable_model_invocation: None,
+            has_scripts: true,
+            has_references: false,
+        }];
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(extract_skill_tools(entries)).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].tool_name, "skill__no_usage");
+        assert_eq!(result[0].parameters["properties"]["args"]["type"], "array");
+    }
+
+    #[test]
+    fn extract_tools_multi_script_naming() {
+        let tmp = create_temp_dir();
+        let skill_dir = tmp.path().join("multi-script");
+        fs::create_dir(&skill_dir).unwrap();
+        let scripts_dir = skill_dir.join("scripts");
+        fs::create_dir(&scripts_dir).unwrap();
+        fs::write(scripts_dir.join("scaffold.sh"), "#!/bin/bash\n# Usage: scaffold.sh <name>\n").unwrap();
+        fs::write(scripts_dir.join("validate.sh"), "#!/bin/bash\n# Usage: validate.sh <path>\n").unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: multi-script\ndescription: Has two scripts\n---\nBody",
+        )
+        .unwrap();
+
+        let entries = vec![SkillEntry {
+            name: "multi-script".into(),
+            description: "Has two scripts".into(),
+            path: skill_dir.to_string_lossy().into(),
+            source: "notesage-global".into(),
+            license: None,
+            compatibility: None,
+            metadata: None,
+            allowed_tools: None,
+            user_invocable: None,
+            disable_model_invocation: None,
+            has_scripts: true,
+            has_references: false,
+        }];
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(extract_skill_tools(entries)).unwrap();
+        assert_eq!(result.len(), 2);
+        // Multi-script → skill__{skill}__{script}
+        let names: Vec<&str> = result.iter().map(|t| t.tool_name.as_str()).collect();
+        assert!(names.contains(&"skill__multi_script__scaffold"));
+        assert!(names.contains(&"skill__multi_script__validate"));
+    }
+
+    #[test]
+    fn extract_tools_skips_non_script_files() {
+        let tmp = create_temp_dir();
+        let skill_dir = tmp.path().join("with-config");
+        fs::create_dir(&skill_dir).unwrap();
+        let scripts_dir = skill_dir.join("scripts");
+        fs::create_dir(&scripts_dir).unwrap();
+        fs::write(scripts_dir.join("run.mjs"), "// Usage: node run.mjs <input>\n").unwrap();
+        fs::write(scripts_dir.join("package.json"), "{}").unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: with-config\ndescription: Has config files\n---\nBody",
+        )
+        .unwrap();
+
+        let entries = vec![SkillEntry {
+            name: "with-config".into(),
+            description: "Has config files".into(),
+            path: skill_dir.to_string_lossy().into(),
+            source: "notesage-global".into(),
+            license: None,
+            compatibility: None,
+            metadata: None,
+            allowed_tools: None,
+            user_invocable: None,
+            disable_model_invocation: None,
+            has_scripts: true,
+            has_references: false,
+        }];
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(extract_skill_tools(entries)).unwrap();
+        // Should only produce 1 tool (run.mjs), not package.json
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].tool_name, "skill__with_config");
     }
 
 }

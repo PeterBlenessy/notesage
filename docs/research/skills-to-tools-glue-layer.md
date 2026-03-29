@@ -4,8 +4,8 @@
 
 | Stage | Link | Status |
 | --- | --- | --- |
-| PRD | [skills-to-tools-glue-layer](../prds/2026-03-29-skills-to-tools-glue-layer.md) | Draft |
-| Tasks | — | Not planned |
+| PRD | [skills-to-tools-glue-layer](../prds/2026-03-29-skills-to-tools-glue-layer.md) | Complete |
+| Tasks | [skills-to-tools-glue-layer-tasks](../tasks/2026-03-29-skills-to-tools-glue-layer-tasks.md) | Complete |
 
 **Context:** Notesage supports AI skills (SKILL.md files with optional scripts) and tool calling (6 hardcoded built-in tools). Currently, skills are injected as text descriptions in the system prompt — the model must reason through a multi-step chain (read system prompt, call `read_skill_content`, parse instructions, call `execute_skill_script`) to use them. This works for large models (Claude, GPT-4o) but fails for smaller local models that can handle basic tool calling but not multi-step meta-reasoning.
 

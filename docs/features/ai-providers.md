@@ -179,7 +179,9 @@ Client-side tool calling for all direct API providers (Anthropic, OpenAI, Ollama
 | `execute_skill_script` | Run a skill script (bash, python, node) | Requires approval |
 | `write_file` | Create or overwrite a file | Requires approval |
 
-Active skills are also converted to tool definitions automatically, filtered by the active agent's `allowed-tools` frontmatter.
+**Skill-to-tool glue layer:**
+
+Script-bearing skills are automatically converted to first-class tool definitions via the `extract_skill_tools` Tauri command, so even small local models can discover and call skills without multi-step meta-reasoning. The extraction pipeline tries three sources in priority order: explicit `tools:` frontmatter in SKILL.md, `Usage:` comment parsing from script headers, or a fallback generic `{ args: string[] }` schema. Tool names follow the `skill__{skill}__{script}` convention (or `skill__{skill}` for single-script skills). Knowledge-only skills (no scripts) remain as system prompt injections. Skill tools are filtered by the active agent's `allowed-tools` frontmatter. Skills that become tools are excluded from the system prompt text injection to avoid duplicate exposure.
 
 **Execution loop:**
 
@@ -247,11 +249,13 @@ For providers that also support server-side web search (Anthropic `web_search_20
 | `src/stores/local-ai-store.ts` | Local AI server state |
 | `src/components/chat/ToolCallPermissionCard.tsx` | Tool call permission approval UI |
 | `src/hooks/useDirectApiChat.ts` | Direct API chat with tool execution loop |
+| `src/lib/tool-executor.ts` | Tool call routing (built-in + `skill__` prefix routing with arg mapping) |
+| `src/stores/skill-store.ts` | Skills registry, agents, skill tool definitions, `getToolDefinitions()` |
 
 ## Future Enhancements
 
-- Agent binary auto-install wizard (PRD: `docs/prds/2026-02-21-agent-install-wizard.md`)
-- ACP agent binary bundling as Tauri sidecar
+- ~~Agent binary auto-install wizard~~ — Complete (Phase 10): managed install to `~/.notesage/agents/bin/` with PATH fallback
+- ~~ACP agent binary bundling as Tauri sidecar~~ — Superseded by managed install system; explicitly a non-goal in the install wizard PRD to avoid app bundle bloat
 - Multi-line panel completions (`copilotPanelCompletion`)
 - Inline edits / next edit suggestions (`copilotInlineEdit`)
 - Partial acceptance (accept word-by-word)

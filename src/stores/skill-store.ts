@@ -1,13 +1,14 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { tauriApi } from '@/lib/tauri';
-import type { SkillEntry, AgentInstruction, AgentEntry } from '@/lib/tauri';
+import type { SkillEntry, SkillToolEntry, AgentInstruction, AgentEntry } from '@/lib/tauri';
 import type { ToolDefinition } from '@/lib/ai/types';
 import { log } from '@/lib/logger';
 
 
 // Re-export types from tauri.ts for consumers that import from skill-store
-export type { SkillEntry, SkillContent, ScriptResult, AgentInstruction, AgentEntry, AgentContent } from '@/lib/tauri';
+export type { SkillEntry, SkillToolEntry, SkillContent, ScriptResult, AgentInstruction, AgentEntry, AgentContent } from '@/lib/tauri';
+export type { ArgMapping, ArgMappingType } from '@/lib/tauri';
 export type { ToolDefinition } from '@/lib/ai/types';
 
 // --- Built-in tools for local AI tool calling ---
@@ -105,6 +106,9 @@ interface SkillStore {
   /** Counter bumped to trigger a rescan from external events (e.g. file watcher). */
   rescanCounter: number;
 
+  /** Tool definitions extracted from script-bearing skills (rebuilt from scan, not persisted). */
+  skillTools: SkillToolEntry[];
+
   // --- Agent state ---
 
   /** All discovered addressable agents (rebuilt from scan, not persisted). */
@@ -174,6 +178,12 @@ interface SkillStore {
   /** Request a rescan of skills/agents (bumps counter, observed by useSkillDiscovery). */
   requestRescan: () => void;
 
+  /** Update skill tools (called after skill extraction). */
+  setSkillTools: (tools: SkillToolEntry[]) => void;
+
+  /** Get a skill tool entry by tool name. */
+  getSkillToolByName: (toolName: string) => SkillToolEntry | undefined;
+
   /** Get tool definitions for local AI tool calling, optionally filtered by allowed tool names. */
   getToolDefinitions: (allowedTools?: string[]) => ToolDefinition[];
 }
@@ -206,6 +216,7 @@ export const useSkillStore = create<SkillStore>()(
       lastScanTimestamp: 0,
       isScanning: false,
       rescanCounter: 0,
+      skillTools: [],
       agents: [],
       activeAgentName: 'general-assistant',
       agentEnabledOverrides: {},
@@ -238,7 +249,13 @@ export const useSkillStore = create<SkillStore>()(
         const active = get().getActiveSkills();
         if (active.length === 0) return '';
 
-        const lines = active.map(
+        // Exclude skills that have been converted to tools (they're in the tools array now)
+        const toolSkillNames = new Set(get().skillTools.map((t) => t.skill_name));
+        const instructionOnly = active.filter((s) => !toolSkillNames.has(s.name));
+
+        if (instructionOnly.length === 0) return '';
+
+        const lines = instructionOnly.map(
           (s) => `- **${s.name}**: ${s.description}${s.has_scripts ? ' (has scripts)' : ''}`
         );
         return `\n\nAvailable skills:\n${lines.join('\n')}`;
@@ -363,9 +380,35 @@ export const useSkillStore = create<SkillStore>()(
 
       requestRescan: () => set((state) => ({ rescanCounter: state.rescanCounter + 1 })),
 
+      setSkillTools: (tools) => set({ skillTools: tools }),
+
+      getSkillToolByName: (toolName) => {
+        return get().skillTools.find((t) => t.tool_name === toolName);
+      },
+
       getToolDefinitions: (allowedTools?: string[]) => {
-        if (!allowedTools) return BUILT_IN_TOOLS;
-        return BUILT_IN_TOOLS.filter((tool) => allowedTools.includes(tool.name));
+        // Convert skill tools to ToolDefinition format
+        const skillToolDefs: ToolDefinition[] = get().skillTools.map((st) => ({
+          name: st.tool_name,
+          description: st.description,
+          input_schema: st.parameters as Record<string, unknown>,
+        }));
+
+        const allTools = [...BUILT_IN_TOOLS, ...skillToolDefs];
+
+        if (!allowedTools) return allTools;
+
+        return allTools.filter((tool) => {
+          // Match on exact tool name
+          if (allowedTools.includes(tool.name)) return true;
+          // For skill tools, also match on the skill name prefix (e.g., "skill__download_webpage")
+          if (tool.name.startsWith('skill__')) {
+            const parts = tool.name.split('__');
+            const skillPrefix = parts.length >= 2 ? `skill__${parts[1]}` : '';
+            return allowedTools.includes(skillPrefix);
+          }
+          return false;
+        });
       },
     }),
     {

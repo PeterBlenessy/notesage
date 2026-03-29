@@ -72,6 +72,28 @@ export interface ScriptResult {
   timed_out: boolean;
 }
 
+export interface SkillToolEntry {
+  tool_name: string;
+  description: string;
+  skill_name: string;
+  script_path: string;
+  parameters: Record<string, unknown>;
+  arg_mapping: ArgMapping[];
+  explicit_schema: boolean;
+}
+
+export interface ArgMapping {
+  param_name: string;
+  mapping_type: ArgMappingType;
+  position?: number;
+}
+
+export type ArgMappingType =
+  | { type: 'Positional' }
+  | { type: 'Flag'; value: { flag: string } }
+  | { type: 'BoolFlag'; value: { flag: string } }
+  | { type: 'Spread' };
+
 export interface AgentEntry {
   name: string;
   description: string;
@@ -730,6 +752,10 @@ export const tauriApi = {
   // Skill & agent operations
   async discoverSkills(baseDirs: string[]): Promise<SkillEntry[]> {
     return await invoke<SkillEntry[]>("discover_skills", { baseDirs });
+  },
+
+  async extractSkillTools(skillEntries: SkillEntry[]): Promise<SkillToolEntry[]> {
+    return await invoke<SkillToolEntry[]>("extract_skill_tools", { skillEntries });
   },
 
   async readSkillContent(skillPath: string): Promise<SkillContent> {

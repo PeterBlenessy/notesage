@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-29 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | High |
 | **Impact** | Any LLM with tool-calling support can discover and use skills — not just large frontier models |
 | **Research** | [skills-to-tools-glue-layer](../research/skills-to-tools-glue-layer.md) |
@@ -26,7 +26,7 @@ Meanwhile, the same models handle built-in tools like `web_search({ query })` an
 ## Goals
 
 1. **Script-bearing skills automatically appear as tool definitions** alongside built-in tools — no SKILL.md changes required
-2. **Any model that can call `web_search({ query })` can also call `download_webpage({ url, output_dir })`** — same abstraction level, same discovery mechanism
+2. **Any model that can call** `web_search({ query })` **can also call** `download_webpage({ url, output_dir })` — same abstraction level, same discovery mechanism
 3. **Knowledge-only skills continue working as system prompt injections** — the glue layer only targets skills with scripts
 4. **Existing skill format is fully backward compatible** — no breaking changes to SKILL.md spec
 5. **Optional explicit schemas** supported for skill authors who want precise control
@@ -97,6 +97,7 @@ Parse the first 10 lines of each script file for `Usage:` patterns:
 ```
 
 Extraction rules:
+
 - `<name>` → required string parameter
 - `[name]` → optional string parameter
 - `[--flag]` → optional boolean parameter
@@ -131,11 +132,13 @@ Each tool-eligible script produces one `ToolDefinition`:
 ```
 
 **Naming convention:** `skill__{skill_name}__{script_name}` where:
+
 - `skill__` prefix identifies skill-generated tools (for routing)
 - Skill name and script name are snake_cased from their original names
 - Script name derived from filename without extension (`download.mjs` → `download`)
 
 For skills with a single script, the script name portion can be omitted for brevity:
+
 - `skill__download_webpage` (single script)
 - `skill__create_skill__scaffold`, `skill__create_skill__validate` (multiple scripts)
 
@@ -152,7 +155,7 @@ if (name.startsWith('skill__')) {
 }
 ```
 
-**Argument mapping (JSON → string[]):**
+**Argument mapping (JSON → string\[\]):**
 
 The executor converts the structured JSON arguments from the tool call into the `string[]` that `execute_skill_script` expects:
 
@@ -328,7 +331,7 @@ This runs the extraction pipeline on the provided skill entries and returns tool
 
 ## UI/UX
 
-### Settings > Skills & Agents
+### Settings &gt; Skills & Agents
 
 - Skill cards that have generated tools show a "Tools" badge with count (e.g., "2 tools")
 - Expanding a skill card shows the generated tool names and their extracted parameters
@@ -356,37 +359,55 @@ The existing tools count badge in the chat footer already shows the number of av
 
 ### Functional
 
-- [ ] Skills with scripts are automatically exposed as tool definitions
+- [x] Skills with scripts are automatically exposed as tool definitions
+
 - [ ] A local model (e.g., Qwen3 8B via Ollama) can discover and call `skill__download_webpage` without ever seeing the SKILL.md body
+
 - [ ] The same skill works via both paths: tool call (small model) and read_skill_content chain (large model)
-- [ ] Skills without scripts remain as system prompt injections only
-- [ ] Explicit `tools:` frontmatter schemas are used when present
-- [ ] Usage comment parsing extracts correct parameters for all bundled skills
-- [ ] Fallback generic schema works for skills with no parseable interface
-- [ ] Agent `allowed-tools` filtering applies to skill-generated tools
-- [ ] Tool execution correctly maps JSON arguments to string[] for execute_skill_script
-- [ ] Boolean flags, positional args, and optional flags all map correctly
+
+- [x] Skills without scripts remain as system prompt injections only
+
+- [x] Explicit `tools:` frontmatter schemas are used when present
+
+- [x] Usage comment parsing extracts correct parameters for all bundled skills
+
+- [x] Fallback generic schema works for skills with no parseable interface
+
+- [x] Agent `allowed-tools` filtering applies to skill-generated tools
+
+- [x] Tool execution correctly maps JSON arguments to string\[\] for execute_skill_script
+
+- [x] Boolean flags, positional args, and optional flags all map correctly
 
 ### Backward Compatibility
 
-- [ ] Existing skills with no changes continue to work identically
-- [ ] `read_skill_content` and `execute_skill_script` built-in tools remain available
-- [ ] Skills with `disable_model_invocation: true` are not converted to tools
-- [ ] No changes to SKILL.md spec are required (new fields are optional)
+- [x] Existing skills with no changes continue to work identically
+
+- [x] `read_skill_content` and `execute_skill_script` built-in tools remain available
+
+- [x] Skills with `disable_model_invocation: true` are not converted to tools
+
+- [x] No changes to SKILL.md spec are required (new fields are optional)
 
 ### Testing
 
-- [ ] Unit tests for Usage comment parser (various formats: positional, flags, optional, spread)
-- [ ] Unit tests for JSON → string[] argument mapping
-- [ ] Unit tests for tool name generation (snake_case, dedup, prefix)
-- [ ] Integration test: skill scan → tool extraction → tool definition assembly
-- [ ] Rust tests for `extract_skill_tools` command
-- [ ] All existing skill tests continue to pass
+- [x] Unit tests for Usage comment parser (various formats: positional, flags, optional, spread)
+
+- [x] Unit tests for JSON → string\[\] argument mapping
+
+- [x] Unit tests for tool name generation (snake_case, dedup, prefix)
+
+- [x] Integration test: skill scan → tool extraction → tool definition assembly
+
+- [x] Rust tests for `extract_skill_tools` command
+
+- [x] All existing skill tests continue to pass
 
 ### Performance
 
-- [ ] Skill tool extraction adds < 50ms to skill discovery time
-- [ ] Tool definitions for skills don't significantly increase token usage (< 500 tokens per skill tool)
+- [x] Skill tool extraction adds &lt; 50ms to skill discovery time
+
+- [x] Tool definitions for skills don't significantly increase token usage (&lt; 500 tokens per skill tool)
 
 ## Out of Scope
 

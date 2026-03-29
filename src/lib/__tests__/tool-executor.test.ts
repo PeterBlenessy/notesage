@@ -4,7 +4,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import '@/test/tauri-mock';
 import { setMockInvokeHandler } from '@/test/tauri-mock';
 import { useSkillStore } from '@/stores/skill-store';
-import { executeToolCall } from '@/lib/tool-executor';
+import { executeToolCall, mapArgsToStringArray } from '@/lib/tool-executor';
+import type { ArgMapping } from '@/lib/tauri';
 
 describe('executeToolCall', () => {
   beforeEach(() => {
@@ -283,6 +284,90 @@ describe('executeToolCall', () => {
   // Unknown tool
   // ---------------------------------------------------------------------------
 
+  // ---------------------------------------------------------------------------
+  // Skill tool routing (skill__ prefix)
+  // ---------------------------------------------------------------------------
+
+  describe('skill tool routing', () => {
+    beforeEach(() => {
+      useSkillStore.setState({
+        skills: [
+          {
+            name: 'download-webpage',
+            description: 'Download a web page',
+            path: '/skills/download-webpage',
+            source: 'notesage-global',
+            has_scripts: true,
+            has_references: false,
+          },
+        ],
+        skillTools: [
+          {
+            tool_name: 'skill__download_webpage',
+            description: 'Download a web page',
+            skill_name: 'download-webpage',
+            script_path: 'scripts/download.mjs',
+            parameters: {},
+            arg_mapping: [
+              { param_name: 'url', mapping_type: { type: 'Positional' }, position: 0 },
+              { param_name: 'output_dir', mapping_type: { type: 'Positional' }, position: 1 },
+              {
+                param_name: 'force',
+                mapping_type: { type: 'BoolFlag', value: { flag: '--force' } },
+              },
+            ],
+            explicit_schema: false,
+          },
+        ],
+      });
+    });
+
+    it('routes skill__ tool calls through execute_skill_script', async () => {
+      let capturedArgs: Record<string, unknown> = {};
+      setMockInvokeHandler('execute_skill_script', (_args) => {
+        capturedArgs = _args as Record<string, unknown>;
+        return { stdout: '{"status":"ok"}', stderr: '', exit_code: 0, timed_out: false };
+      });
+
+      const result = await executeToolCall('call-s1', 'skill__download_webpage', {
+        url: 'https://example.com',
+        output_dir: './articles',
+        force: true,
+      });
+
+      expect(result.is_error).toBe(false);
+      expect(result.content).toContain('{"status":"ok"}');
+      expect(capturedArgs.skillPath).toBe('/skills/download-webpage');
+      expect(capturedArgs.script).toBe('scripts/download.mjs');
+      expect(capturedArgs.args).toEqual(['https://example.com', './articles', '--force']);
+    });
+
+    it('omits boolean flags when false', async () => {
+      let capturedArgs: Record<string, unknown> = {};
+      setMockInvokeHandler('execute_skill_script', (_args) => {
+        capturedArgs = _args as Record<string, unknown>;
+        return { stdout: 'ok', stderr: '', exit_code: 0, timed_out: false };
+      });
+
+      await executeToolCall('call-s2', 'skill__download_webpage', {
+        url: 'https://example.com',
+        output_dir: './out',
+      });
+
+      expect(capturedArgs.args).toEqual(['https://example.com', './out']);
+    });
+
+    it('returns error when skill tool not found', async () => {
+      const result = await executeToolCall('call-s3', 'skill__nonexistent', { arg: 'val' });
+      expect(result.is_error).toBe(true);
+      expect(result.content).toContain('Skill tool not found');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Unknown tool
+  // ---------------------------------------------------------------------------
+
   describe('unknown tool', () => {
     it('returns error for unknown tool name', async () => {
       const result = await executeToolCall('call-15', 'nonexistent_tool', {
@@ -295,5 +380,96 @@ describe('executeToolCall', () => {
         is_error: true,
       });
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mapArgsToStringArray — standalone unit tests
+// ---------------------------------------------------------------------------
+
+describe('mapArgsToStringArray', () => {
+  it('maps positional args in order', () => {
+    const mappings: ArgMapping[] = [
+      { param_name: 'url', mapping_type: { type: 'Positional' }, position: 0 },
+      { param_name: 'dir', mapping_type: { type: 'Positional' }, position: 1 },
+    ];
+    const result = mapArgsToStringArray(
+      { url: 'https://example.com', dir: '/tmp' },
+      mappings,
+    );
+    expect(result).toEqual(['https://example.com', '/tmp']);
+  });
+
+  it('maps boolean flags when true', () => {
+    const mappings: ArgMapping[] = [
+      { param_name: 'force', mapping_type: { type: 'BoolFlag', value: { flag: '--force' } } },
+    ];
+    expect(mapArgsToStringArray({ force: true }, mappings)).toEqual(['--force']);
+  });
+
+  it('omits boolean flags when false or undefined', () => {
+    const mappings: ArgMapping[] = [
+      { param_name: 'force', mapping_type: { type: 'BoolFlag', value: { flag: '--force' } } },
+    ];
+    expect(mapArgsToStringArray({ force: false }, mappings)).toEqual([]);
+    expect(mapArgsToStringArray({}, mappings)).toEqual([]);
+  });
+
+  it('maps flag with value', () => {
+    const mappings: ArgMapping[] = [
+      { param_name: 'tag', mapping_type: { type: 'Flag', value: { flag: '--tag' } } },
+    ];
+    expect(mapArgsToStringArray({ tag: 'important' }, mappings)).toEqual([
+      '--tag',
+      'important',
+    ]);
+  });
+
+  it('omits flag when value is undefined', () => {
+    const mappings: ArgMapping[] = [
+      { param_name: 'tag', mapping_type: { type: 'Flag', value: { flag: '--tag' } } },
+    ];
+    expect(mapArgsToStringArray({}, mappings)).toEqual([]);
+  });
+
+  it('spreads array values as multiple positional args', () => {
+    const mappings: ArgMapping[] = [
+      { param_name: 'query', mapping_type: { type: 'Positional' }, position: 0 },
+      { param_name: 'dirs', mapping_type: { type: 'Spread' }, position: 1 },
+    ];
+    const result = mapArgsToStringArray(
+      { query: 'test', dirs: ['/dir1', '/dir2', '/dir3'] },
+      mappings,
+    );
+    expect(result).toEqual(['test', '/dir1', '/dir2', '/dir3']);
+  });
+
+  it('handles mixed positional, flags, and boolean flags', () => {
+    const mappings: ArgMapping[] = [
+      { param_name: 'content', mapping_type: { type: 'Positional' }, position: 0 },
+      { param_name: 'output_dir', mapping_type: { type: 'Positional' }, position: 1 },
+      { param_name: 'title', mapping_type: { type: 'Flag', value: { flag: '--title' } } },
+      { param_name: 'tags', mapping_type: { type: 'Flag', value: { flag: '--tags' } } },
+      { param_name: 'force', mapping_type: { type: 'BoolFlag', value: { flag: '--force' } } },
+    ];
+    const result = mapArgsToStringArray(
+      {
+        content: 'My article content',
+        output_dir: './research',
+        title: 'Article Title',
+        tags: 'ai,research',
+        force: true,
+      },
+      mappings,
+    );
+    expect(result).toEqual([
+      'My article content',
+      './research',
+      '--title',
+      'Article Title',
+      '--tags',
+      'ai,research',
+      '--force',
+    ]);
   });
 });

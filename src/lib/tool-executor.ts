@@ -1,7 +1,94 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useSkillStore } from '@/stores/skill-store';
-import type { SkillContent, ScriptResult } from '@/lib/tauri';
+import type { SkillContent, ScriptResult, ArgMapping } from '@/lib/tauri';
 import type { ToolResult } from '@/lib/ai/types';
+
+/**
+ * Convert structured JSON arguments to string[] for execute_skill_script,
+ * using the arg_mapping from the SkillToolEntry.
+ */
+export function mapArgsToStringArray(
+  args: Record<string, unknown>,
+  argMapping: ArgMapping[],
+): string[] {
+  const result: string[] = [];
+
+  // First, collect positional args in order
+  const positionals = argMapping
+    .filter((m) => m.mapping_type.type === 'Positional' || m.mapping_type.type === 'Spread')
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
+  for (const mapping of positionals) {
+    const value = args[mapping.param_name];
+    if (value === undefined || value === null) continue;
+
+    if (mapping.mapping_type.type === 'Spread' && Array.isArray(value)) {
+      result.push(...value.map(String));
+    } else if (mapping.mapping_type.type === 'Positional') {
+      result.push(String(value));
+    }
+  }
+
+  // Then, add flag args
+  const flags = argMapping.filter(
+    (m) => m.mapping_type.type === 'Flag' || m.mapping_type.type === 'BoolFlag',
+  );
+
+  for (const mapping of flags) {
+    const value = args[mapping.param_name];
+    if (value === undefined || value === null) continue;
+
+    if (mapping.mapping_type.type === 'BoolFlag' && value === true) {
+      result.push(mapping.mapping_type.value.flag);
+    } else if (mapping.mapping_type.type === 'Flag' && value) {
+      result.push(mapping.mapping_type.value.flag);
+      result.push(String(value));
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Execute a skill tool call by routing through execute_skill_script.
+ */
+async function executeSkillTool(
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<string> {
+  const store = useSkillStore.getState();
+  const skillTool = store.getSkillToolByName(toolName);
+
+  if (!skillTool) {
+    throw new Error(`Skill tool not found: ${toolName}`);
+  }
+
+  const skill = store.getSkillByName(skillTool.skill_name);
+  if (!skill) {
+    throw new Error(`Skill not found: ${skillTool.skill_name}`);
+  }
+
+  // For explicit schemas with no arg_mapping, pass args directly as string array
+  const scriptArgs =
+    skillTool.arg_mapping.length > 0
+      ? mapArgsToStringArray(args, skillTool.arg_mapping)
+      : // Explicit schema: try to extract args array or convert all values
+        (args.args as string[]) ?? Object.values(args).map(String);
+
+  const result = await invoke<ScriptResult>('execute_skill_script', {
+    skillPath: skill.path,
+    script: skillTool.script_path,
+    args: scriptArgs,
+    workingDir: null,
+    env: null,
+    timeoutMs: null,
+  });
+
+  let content = result.stdout;
+  if (result.stderr) content += `\nSTDERR: ${result.stderr}`;
+  if (result.exit_code !== 0) content += `\nExit code: ${result.exit_code}`;
+  return content;
+}
 
 /**
  * Execute a tool call by name and return the result.
@@ -96,8 +183,14 @@ export async function executeToolCall(
         break;
       }
 
-      default:
+      default: {
+        // Skill tool routing: skill__{skill}__{script}
+        if (name.startsWith('skill__')) {
+          content = await executeSkillTool(name, args);
+          break;
+        }
         throw new Error(`Unknown tool: ${name}`);
+      }
     }
 
     return {

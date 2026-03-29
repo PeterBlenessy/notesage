@@ -166,6 +166,7 @@ pub fn run() {
             index::index_search_content,
             index::index_stats,
             discover_skills,
+            extract_skill_tools,
             read_skill_content,
             execute_skill_script,
             read_agent_instructions,
