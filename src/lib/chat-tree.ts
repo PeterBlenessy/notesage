@@ -78,6 +78,24 @@ export function getBranches(messages: ChatMessage[], messageId: string): ChatMes
 }
 
 /**
+ * Get all descendant IDs of a message (the message itself + all children, grandchildren, etc.).
+ */
+export function getDescendants(messages: ChatMessage[], rootId: string): Set<string> {
+  const ids = new Set<string>();
+  const stack = [rootId];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    ids.add(current);
+    for (const msg of messages) {
+      if (msg.parentId === current && msg.id && !ids.has(msg.id)) {
+        stack.push(msg.id);
+      }
+    }
+  }
+  return ids;
+}
+
+/**
  * Get all leaf messages (messages that have no children).
  */
 export function getLeaves(messages: ChatMessage[]): ChatMessage[] {

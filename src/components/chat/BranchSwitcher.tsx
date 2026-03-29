@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react';
+import { Check, Trash2 } from 'lucide-react';
 import {
   Popover,
   PopoverContent,
@@ -75,8 +75,10 @@ export function BranchSwitcher({ messageId, branchCount, children }: BranchSwitc
   const allMessages = useChatStore(selectAllMessages);
   const activeLeafId = useChatStore(selectActiveLeafId);
   const switchBranch = useChatStore((s) => s.switchBranch);
+  const deleteBranch = useChatStore((s) => s.deleteBranch);
 
   const branches = getBranchInfo(allMessages, messageId, activeLeafId);
+  const canDelete = branches.length > 1;
 
   return (
     <Popover>
@@ -101,37 +103,49 @@ export function BranchSwitcher({ messageId, branchCount, children }: BranchSwitc
             const roleLabel = branch.firstMessage.role === 'user' ? 'You' : 'Assistant';
 
             return (
-              <button
+              <div
                 key={branch.leafId || index}
-                onClick={() => switchBranch(branch.leafId)}
-                className={`w-full text-left px-3 py-2 transition-colors duration-150 hover:bg-accent/50 ${
+                className={`flex items-start gap-1 px-3 py-2 transition-colors duration-150 hover:bg-accent/50 ${
                   branch.isActive ? 'bg-accent/30' : ''
                 }`}
               >
-                <div className="flex items-start gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1">
-                      <span className="text-[10px] text-muted-foreground font-medium">{roleLabel}:</span>
-                      {branch.isActive && (
-                        <Check className="h-2.5 w-2.5 text-foreground shrink-0" strokeWidth={1.5} />
-                      )}
-                    </div>
-                    <p className="text-xs text-foreground truncate mt-0.5">
-                      {truncate(preview, 80)}
-                    </p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[10px] text-muted-foreground">
-                        {branch.messageCount} message{branch.messageCount !== 1 ? 's' : ''}
-                      </span>
-                      {branch.createdAt > 0 && (
-                        <span className="text-[10px] text-muted-foreground">
-                          {new Date(branch.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      )}
-                    </div>
+                <button
+                  onClick={() => switchBranch(branch.leafId)}
+                  className="flex-1 min-w-0 text-left"
+                >
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-muted-foreground font-medium">{roleLabel}:</span>
+                    {branch.isActive && (
+                      <Check className="h-2.5 w-2.5 text-foreground shrink-0" strokeWidth={1.5} />
+                    )}
                   </div>
-                </div>
-              </button>
+                  <p className="text-xs text-foreground truncate mt-0.5">
+                    {truncate(preview, 80)}
+                  </p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[10px] text-muted-foreground">
+                      {branch.messageCount} message{branch.messageCount !== 1 ? 's' : ''}
+                    </span>
+                    {branch.createdAt > 0 && (
+                      <span className="text-[10px] text-muted-foreground">
+                        {new Date(branch.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </div>
+                </button>
+                {canDelete && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteBranch(branch.leafId);
+                    }}
+                    className="shrink-0 mt-1 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    title="Delete branch"
+                  >
+                    <Trash2 className="h-3 w-3" strokeWidth={1.5} />
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ChatMessage, Citation, AgentActivity, ToolCall, ToolCallActivity } from '@/lib/ai/types';
 import { createTauriStorage } from '@/lib/tauri-storage';
-import { getThread } from '@/lib/chat-tree';
+import { getThread, getDescendants, getChildren, getLeaves } from '@/lib/chat-tree';
 
 /** Tracks a project context boundary within a conversation */
 export interface ConversationSegment {
@@ -91,6 +91,8 @@ interface ChatStore {
   branchFromMessage: (messageTimestamp: number) => void;
   /** Switch to a different branch by setting the active leaf */
   switchBranch: (leafId: string) => void;
+  /** Delete a branch by its leaf ID (removes the first diverging message and all its descendants) */
+  deleteBranch: (leafId: string) => void;
 
   // ---------------------------------------------------------------------------
   // Segment management (context isolation)
@@ -417,6 +419,41 @@ export const useChatStore = create<ChatStore>()(
           // Verify the leaf exists in this conversation
           if (!c.messages.some((m) => m.id === leafId)) return c;
           return { ...c, activeLeafId: leafId };
+        })),
+
+      deleteBranch: (leafId) =>
+        set((state) => updateActiveConv(state, (c) => {
+          // Walk from leaf to find the first message that diverges from the trunk
+          const thread = getThread(c.messages, leafId);
+          if (thread.length === 0) return c;
+
+          // Find the branch root: the first message in this thread whose parent has multiple children
+          let branchRootId: string | null = null;
+          for (const msg of thread) {
+            if (!msg.id) continue;
+            const parentId = msg.parentId ?? null;
+            const siblings = getChildren(c.messages, parentId);
+            if (siblings.length > 1) {
+              branchRootId = msg.id;
+              break;
+            }
+          }
+
+          // If no branch point found (single linear thread), don't delete
+          if (!branchRootId) return c;
+
+          // Collect all descendants of the branch root (the entire sub-tree to remove)
+          const toRemove = getDescendants(c.messages, branchRootId);
+          const remaining = c.messages.filter((m) => !m.id || !toRemove.has(m.id));
+
+          // If the active branch was deleted, switch to a sibling
+          let newLeafId = c.activeLeafId;
+          if (newLeafId && toRemove.has(newLeafId)) {
+            const leaves = getLeaves(remaining);
+            newLeafId = leaves.length > 0 ? (leaves[leaves.length - 1].id ?? null) : null;
+          }
+
+          return { ...c, messages: remaining, activeLeafId: newLeafId, updatedAt: Date.now() };
         })),
 
       // ----- Segment management -----

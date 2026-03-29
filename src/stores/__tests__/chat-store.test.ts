@@ -910,6 +910,61 @@ describe('Branching', () => {
     const leafId = selectActiveLeafId(useChatStore.getState());
     expect(leafId).toBe(activeConv()!.messages[0].id);
   });
+
+  it('deleteBranch removes the branch and switches to a sibling', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'a', timestamp: 1 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'b', timestamp: 2 });
+    useChatStore.getState().addMessage({ role: 'user', content: 'c-original', timestamp: 3 });
+    const originalLeaf = activeConv()!.activeLeafId!;
+
+    // Create a branch from "b"
+    useChatStore.getState().branchFromMessage(2);
+    useChatStore.getState().addMessage({ role: 'user', content: 'c-branch', timestamp: 4 });
+    const branchLeaf = activeConv()!.activeLeafId!;
+
+    // Delete the branch
+    useChatStore.getState().deleteBranch(branchLeaf);
+
+    // Branch messages should be removed
+    const conv = activeConv()!;
+    expect(conv.messages.map((m) => m.content)).toEqual(['a', 'b', 'c-original']);
+    // Should have switched to the remaining branch
+    expect(conv.activeLeafId).toBe(originalLeaf);
+  });
+
+  it('deleteBranch is a no-op for a linear conversation', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'a', timestamp: 1 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'b', timestamp: 2 });
+    const before = activeConv()!;
+
+    useChatStore.getState().deleteBranch(before.activeLeafId!);
+
+    // Nothing should change — can't delete the only path
+    expect(activeConv()!.messages.length).toBe(before.messages.length);
+  });
+
+  it('deleteBranch on the inactive branch keeps the active thread', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'a', timestamp: 1 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'b', timestamp: 2 });
+    useChatStore.getState().addMessage({ role: 'user', content: 'c-original', timestamp: 3 });
+    const originalLeaf = activeConv()!.activeLeafId!;
+
+    useChatStore.getState().branchFromMessage(2);
+    useChatStore.getState().addMessage({ role: 'user', content: 'c-branch', timestamp: 4 });
+    const branchLeaf = activeConv()!.activeLeafId!;
+
+    // Switch back to original, then delete the branch
+    useChatStore.getState().switchBranch(originalLeaf);
+    useChatStore.getState().deleteBranch(branchLeaf);
+
+    // Active thread should be unchanged
+    const thread = selectMessages(useChatStore.getState());
+    expect(thread.map((m) => m.content)).toEqual(['a', 'b', 'c-original']);
+    expect(activeConv()!.activeLeafId).toBe(originalLeaf);
+  });
 });
 
 // ===========================================================================

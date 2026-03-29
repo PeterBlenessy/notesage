@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getThread, getChildren, getBranches, getLeaves } from '@/lib/chat-tree';
+import { getThread, getChildren, getBranches, getLeaves, getDescendants } from '@/lib/chat-tree';
 import type { ChatMessage } from '@/lib/ai/types';
 
 function msg(id: string, parentId: string | null, role: 'user' | 'assistant' = 'user', ts?: number): ChatMessage {
@@ -176,6 +176,42 @@ describe('chat-tree', () => {
 
     it('getBranches returns empty for nonexistent message', () => {
       expect(getBranches([], 'nonexistent')).toEqual([]);
+    });
+
+    it('getDescendants returns empty set for nonexistent id', () => {
+      expect(getDescendants([], 'nonexistent').size).toBe(1); // just the root itself
+    });
+  });
+
+  describe('getDescendants', () => {
+    it('collects the entire subtree from a root', () => {
+      const messages: ChatMessage[] = [
+        { role: 'user', content: 'A', id: '1', parentId: null, timestamp: 1 },
+        { role: 'assistant', content: 'B', id: '2', parentId: '1', timestamp: 2 },
+        { role: 'user', content: 'C', id: '3', parentId: '2', timestamp: 3 },
+        { role: 'assistant', content: 'D', id: '4', parentId: '2', timestamp: 4 },
+      ];
+      const desc = getDescendants(messages, '2');
+      expect(desc).toEqual(new Set(['2', '3', '4']));
+    });
+
+    it('returns only the root when it has no children', () => {
+      const messages: ChatMessage[] = [
+        { role: 'user', content: 'A', id: '1', parentId: null, timestamp: 1 },
+      ];
+      expect(getDescendants(messages, '1')).toEqual(new Set(['1']));
+    });
+
+    it('collects deeply nested descendants', () => {
+      const messages: ChatMessage[] = [
+        { role: 'user', content: 'A', id: '1', parentId: null, timestamp: 1 },
+        { role: 'assistant', content: 'B', id: '2', parentId: '1', timestamp: 2 },
+        { role: 'user', content: 'C', id: '3', parentId: '2', timestamp: 3 },
+        { role: 'assistant', content: 'D', id: '4', parentId: '3', timestamp: 4 },
+        { role: 'user', content: 'E', id: '5', parentId: '4', timestamp: 5 },
+      ];
+      const desc = getDescendants(messages, '2');
+      expect(desc).toEqual(new Set(['2', '3', '4', '5']));
     });
   });
 });
