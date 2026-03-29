@@ -34,7 +34,7 @@ export interface Conversation {
   sourceCommentId?: string;
   sourceDocumentId?: string;
   /** ID of the leaf message in the currently active branch (null = no messages yet) */
-  activeLeafId?: string | null;
+  activeLeafId: string | null;
 }
 
 interface ChatStore {
@@ -198,6 +198,7 @@ export const useChatStore = create<ChatStore>()(
           pendingProjectSwitch: null,
           sourceCommentId: opts?.sourceCommentId,
           sourceDocumentId: opts?.sourceDocumentId,
+          activeLeafId: null,
         };
         set((state) => {
           const updated = [conv, ...state.conversations];
@@ -533,6 +534,7 @@ export const useChatStore = create<ChatStore>()(
               segments: [{ projectPaths: paths, sessionId: null, startMessageIndex: 0, historyIncluded: false }],
               activeSegmentIndex: 0,
               pendingProjectSwitch: null,
+              activeLeafId: messages.length > 0 ? (messages[messages.length - 1].id ?? null) : null,
             });
             activeConversationId = id;
           }
@@ -584,6 +586,19 @@ export const useChatStore = create<ChatStore>()(
             });
           }
           data = old;
+        }
+
+        // Fixup: ensure all conversations have activeLeafId set (may be undefined
+        // for conversations created before the field was required)
+        const fixup = data as { conversations?: Conversation[]; [key: string]: unknown };
+        if (fixup.conversations) {
+          fixup.conversations = fixup.conversations.map((c) => {
+            if (c.activeLeafId !== undefined) return c;
+            // Derive from last message in the conversation
+            const lastMsg = c.messages[c.messages.length - 1];
+            return { ...c, activeLeafId: lastMsg?.id ?? null };
+          });
+          data = fixup;
         }
 
         return data;

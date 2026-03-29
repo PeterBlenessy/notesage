@@ -379,6 +379,7 @@ describe('chat-store persistence round-trip', () => {
         }],
         activeSegmentIndex: 0,
         pendingProjectSwitch: null,
+        activeLeafId: null,
       }],
       activeConversationId: 'conv-1',
     });
@@ -467,6 +468,7 @@ describe('chat-store persistence round-trip', () => {
         ],
         activeSegmentIndex: 1,
         pendingProjectSwitch: null,
+        activeLeafId: null,
       }],
       activeConversationId: 'conv-segments',
     });
@@ -506,6 +508,7 @@ describe('chat-store persistence round-trip', () => {
         segments: [{ projectPaths: [], sessionId: null, startMessageIndex: 0, historyIncluded: false }],
         activeSegmentIndex: 0,
         pendingProjectSwitch: null,
+        activeLeafId: null,
       }],
       activeConversationId: 'conv-meta',
     });

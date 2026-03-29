@@ -330,6 +330,7 @@ describe('useAIOperations', () => {
           segments: [{ projectPaths: ['/my-project'], sessionId: null, startMessageIndex: 0, historyIncluded: false }],
           activeSegmentIndex: 0,
           pendingProjectSwitch: null,
+          activeLeafId: null,
         }],
         activeConversationId: 'conv-test',
       });
