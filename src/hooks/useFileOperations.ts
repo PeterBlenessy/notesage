@@ -99,9 +99,6 @@ async function detectRenamedProject(
   return null;
 }
 
-/** Timestamp of the last indexFile failure toast (module-level for dedup across renders). */
-let lastIndexFailureToast = 0;
-
 export function useFileOperations() {
   const { openTab, markTabClean } = useEditorStore();
 
@@ -290,17 +287,11 @@ export function useFileOperations() {
         markTabClean(tabId, content);
         useEditorStore.getState().clearExternalChange(filePath);
         refreshGitForPath(filePath);
-        // Incrementally reindex for tags/mentions/FTS, then refresh actions dashboard
-        tauriApi.indexFile(filePath).then(() => {
-          useActionStore.getState().incrementalUpdate(filePath);
-        }).catch((err) => {
-          console.warn(`Failed to index file ${filePath}:`, err);
-          const now = Date.now();
-          if (now - lastIndexFailureToast > 10_000) {
-            lastIndexFailureToast = now;
-            toast.warning("File indexing failed — search may be incomplete");
-          }
-        });
+        // Refresh the actions dashboard for this file.
+        // Note: SQLite reindexing is handled by the Rust watcher callback
+        // (queue_reindex + process_reindex_queue) — do NOT call tauriApi.indexFile()
+        // here as it creates lock contention with the watcher's reindex.
+        useActionStore.getState().incrementalUpdate(filePath);
         return true;
       } catch (error) {
         await tauriApi.clearSelfWrite(filePath).catch(() => {}); // Expected: best-effort cleanup, write already failed
