@@ -14,7 +14,7 @@
 - **Bundle size:** Excalidraw adds \~500KB gzipped. Acceptable for a desktop Tauri app, but verify the Vite build handles the dynamic import correctly and doesn't break code splitting.
 - **React NodeView precedent:** The codebase has no existing `ReactNodeViewRenderer` usage — all current node views use raw DOM. The Excalidraw editor is a React component, so the Drawing node will be the first to use `ReactNodeViewRenderer` from `@tiptap/react`. This is a new pattern that needs careful integration.
 - **Lazy loading:** Excalidraw should be lazily imported (`React.lazy` + `Suspense`) to avoid loading it until the user actually opens a drawing. The SVG preview doesn't need Excalidraw.
-- **tiptap-markdown image interception:** The Drawing node uses image syntax (`![drawing](path.excalidraw)`) but must intercept the parse before tiptap-markdown creates an `Image` node. May need a markdown preprocessor (like callouts) or a `parseHTML` rule that wins over the default image rule.
+- **tiptap-markdown image interception:** The Drawing node uses image syntax (`<div data-drawing-id="path" data-type="drawing" class="drawing-block"></div>`) but must intercept the parse before tiptap-markdown creates an `Image` node. May need a markdown preprocessor (like callouts) or a `parseHTML` rule that wins over the default image rule.
 - **Sidecar cleanup:** When a drawing block is deleted, the sidecar `.excalidraw` and `.svg` files need to be cleaned up. Need to hook into ProseMirror transactions to detect node removal.
 - **Undo/redo:** Since the drawing state lives in the sidecar file (not in ProseMirror), undo/redo in the main editor only affects the node's presence, not the drawing content. Excalidraw has its own undo/redo while in edit mode.
 
@@ -90,7 +90,7 @@ This task does NOT include the Excalidraw editor — just the static preview and
 
 ---
 
-### #5 — Implement Excalidraw editor overlay
+### #5 — Implement Excalidraw editor overlay ✅
 
 **Description:** Create the edit-mode component that replaces the SVG preview when the user clicks to edit. Lazy-load `@excalidraw/excalidraw` via `React.lazy` + `Suspense` to avoid loading the 500KB bundle until needed.
 
@@ -114,11 +114,11 @@ Features:
 
 ### #6 — Add drawing markdown parsing ✅
 
-**Description:** Intercept markdown image syntax where the src ends with `.excalidraw` and create a `Drawing` node instead of an `Image` node. The PRD specifies the syntax: `![drawing](/.notesage/drawings/abc123.excalidraw)`.
+**Description:** Intercept markdown image syntax where the src ends with `.excalidraw` and create a `Drawing` node instead of an `Image` node. The PRD specifies the syntax: `<div data-drawing-id="abc123" data-type="drawing" class="drawing-block"></div>`.
 
 Two approaches (choose the simpler one that works):
 
-1. **Preprocessor in** `markdown.ts`**:** Convert `![drawing](path.excalidraw)` to a custom HTML element `<div data-drawing-id="abc123"></div>` before tiptap-markdown parses it. The Drawing node's `parseHTML` matches this element.
+1. **Preprocessor in** `markdown.ts`**:** Convert `<div data-drawing-id="path" data-type="drawing" class="drawing-block"></div>` to a custom HTML element `<div data-drawing-id="abc123"></div>` before tiptap-markdown parses it. The Drawing node's `parseHTML` matches this element.
 2. **Parse priority:** Configure the Drawing extension's `parseHTML` to match `<img>` elements whose `src` ends with `.excalidraw` with higher priority than the Image extension.
 
 Extract the `drawingId` from the path (filename without extension).
@@ -137,7 +137,7 @@ Regular images (non-`.excalidraw`) must not be affected.
 **Description:** Serialize the `Drawing` node back to the Obsidian-compatible image syntax:
 
 ```markdown
-![drawing](/.notesage/drawings/<drawingId>.excalidraw)
+<div data-drawing-id="<drawingId>" data-type="drawing" class="drawing-block"></div>
 ```
 
 Use the `addStorage() → markdown.serialize` pattern (same as `Table.extend()` in `useEditor.ts:82-91`). The serializer outputs the image reference syntax with the sidecar path.
@@ -148,7 +148,7 @@ Use the `addStorage() → markdown.serialize` pattern (same as `Table.extend()` 
 
 ---
 
-### #8 — Add drawing slash command
+### #8 — Add drawing slash command ✅
 
 **Description:** Add a `/drawing` entry to the slash command list. Selecting it inserts a new Drawing node with a generated UUID, creates an empty `.excalidraw` sidecar file, and immediately opens the Excalidraw editor.
 
@@ -160,7 +160,7 @@ Follow the existing `CommandItem` pattern in `slash-command.tsx`. Use the `penci
 
 ---
 
-### #9 — Add drawing toolbar button
+### #9 — Add drawing toolbar button ✅
 
 **Description:** Add a drawing button to the top toolbar (after the image button), using the `pencil` Lucide icon. Clicking inserts a new drawing block and opens the editor — same behavior as the slash command.
 
@@ -225,7 +225,7 @@ Verify all existing round-trip tests still pass.
 
 - Drawing node schema (attrs, commands)
 - Markdown preprocessor: `.excalidraw` image syntax → Drawing node, regular images unaffected
-- Markdown serializer: Drawing node → `![drawing](path.excalidraw)` syntax
+- Markdown serializer: Drawing node → `<div data-drawing-id="path" data-type="drawing" class="drawing-block"></div>` syntax
 - Sidecar operations: load, save, delete, existence check (mock tauriApi)
 - SVG preview: renders SVG, shows placeholder for empty drawings
 - Deletion: sidecar cleanup triggered on node removal

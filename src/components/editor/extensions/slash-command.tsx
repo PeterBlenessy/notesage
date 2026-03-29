@@ -25,6 +25,7 @@ import {
   Lightbulb,
   TriangleAlert,
   CircleAlert,
+  Pencil,
 } from "lucide-react";
 
 interface CommandItem {
@@ -179,6 +180,14 @@ const commands: CommandItem[] = [
       if (typeof openDialog === "function") {
         openDialog();
       }
+    },
+  },
+  {
+    title: "Drawing",
+    description: "Insert an Excalidraw drawing",
+    icon: Pencil,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).insertDrawing().run();
     },
   },
 ];

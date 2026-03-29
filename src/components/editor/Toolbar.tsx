@@ -23,6 +23,7 @@ import {
   AlignRight,
   IndentIncrease,
   IndentDecrease,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -309,6 +310,13 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
             title="Insert Image"
           >
             <ImageIcon className="size-4" strokeWidth={1.5} />
+          </ToolbarButton>
+
+          <ToolbarButton
+            onClick={() => editor.chain().focus().insertDrawing().run()}
+            title="Insert Drawing"
+          >
+            <Pencil className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarSeparator />
