@@ -1,9 +1,15 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { useSettingsStore } from "@/stores/settings-store";
 import { saveDrawing, saveSvgPreview, loadDrawing } from "@/lib/drawing-storage";
-import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
-const Excalidraw = lazy(() =>
+// Excalidraw types — use inline type to avoid import issues
+type ExcalidrawAPI = {
+  getSceneElements: () => unknown[];
+  getAppState: () => Record<string, unknown>;
+  getFiles: () => Record<string, unknown>;
+};
+
+const ExcalidrawLazy = lazy(() =>
   import("@excalidraw/excalidraw").then((m) => ({ default: m.Excalidraw }))
 );
 
@@ -23,7 +29,7 @@ export function DrawingEditor({
   const [height, setHeight] = useState(initialHeight);
   const [initialData, setInitialData] = useState<unknown>(null);
   const [dataLoaded, setDataLoaded] = useState(false);
-  const excalidrawRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const excalidrawRef = useRef<ExcalidrawAPI | null>(null);
   const theme = useSettingsStore((s) => s.theme);
   const resolvedTheme =
     theme === "system"
@@ -118,7 +124,7 @@ export function DrawingEditor({
   );
 
   return (
-    <div className="drawing-editor" style={{ height: height + 40 }}>
+    <div className="drawing-editor">
       <div className="drawing-editor-header">
         <span className="text-sm font-medium text-muted-foreground">
           Drawing
@@ -127,21 +133,22 @@ export function DrawingEditor({
           Done
         </button>
       </div>
-      <div className="drawing-editor-canvas" style={{ height }}>
+      <div className="drawing-editor-canvas" style={{ height, width: "100%" }}>
         {dataLoaded && (
           <Suspense
             fallback={
               <div className="drawing-loading">Loading editor...</div>
             }
           >
-            <Excalidraw
-              excalidrawAPI={(api: ExcalidrawImperativeAPI) => {
-                excalidrawRef.current = api;
+            <ExcalidrawLazy
+              excalidrawAPI={(api: unknown) => {
+                excalidrawRef.current = api as ExcalidrawAPI;
               }}
               initialData={initialData as Record<string, unknown> | undefined}
               theme={resolvedTheme}
               UIOptions={{
                 canvasActions: { saveAsImage: false, loadScene: false },
+                welcomeScreen: false,
               }}
             />
           </Suspense>

@@ -202,7 +202,7 @@ If the `.svg` file doesn't exist, emit a placeholder text block or skip graceful
 
 ---
 
-### #12 — Add drawing round-trip test fixtures
+### #12 — Add drawing round-trip test fixtures ✅
 
 **Description:** Create markdown test fixtures for drawings and verify round-trip parsing:
 
@@ -219,7 +219,7 @@ Verify all existing round-trip tests still pass.
 
 ---
 
-### #13 — Add unit and integration tests
+### #13 — Add unit and integration tests ✅
 
 **Description:** Write tests covering:
 

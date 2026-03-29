@@ -32,7 +32,8 @@ import Image from "@tiptap/extension-image";
 import { common, createLowlight } from "lowlight";
 import { Markdown } from "tiptap-markdown";
 import { Callout } from "@/components/editor/extensions/callout";
-import { convertCalloutsToHtml } from "@/lib/markdown";
+import { Drawing } from "@/components/editor/extensions/drawing";
+import { convertCalloutsToHtml, convertDrawingsToHtml } from "@/lib/markdown";
 
 // ---------------------------------------------------------------------------
 // jsdom bootstrap — ProseMirror needs a global DOM
@@ -126,8 +127,9 @@ function createTestEditor(content: string): Editor {
         linkify: false,
       }),
       Callout,
+      Drawing,
     ],
-    content: convertCalloutsToHtml(content),
+    content: convertDrawingsToHtml(convertCalloutsToHtml(content)),
     editable: false,
   });
 }

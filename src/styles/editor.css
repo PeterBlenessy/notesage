@@ -1200,10 +1200,25 @@ mark.dom-find-highlight-active {
 
 .drawing-editor-canvas {
   position: relative;
+  width: 100%;
+}
+
+/* Excalidraw requires its wrapper to have explicit dimensions.
+   The .excalidraw-wrapper is the outermost div Excalidraw renders. */
+.drawing-editor-canvas .excalidraw-wrapper,
+.drawing-editor-canvas .excalidraw-container {
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .drawing-editor-canvas .excalidraw {
+  width: 100% !important;
   height: 100% !important;
+}
+
+/* Hide the default Excalidraw welcome screen — we handle our own placeholder */
+.drawing-editor-canvas .excalidraw .welcome-screen-center {
+  display: none !important;
 }
 
 .drawing-resize-handle {
