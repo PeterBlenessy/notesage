@@ -96,10 +96,10 @@ export const Drawing = Node.create({
         },
       },
       height: {
-        default: 400,
+        default: 600,
         parseHTML: (element: HTMLElement) => {
           const h = element.getAttribute("data-height");
-          return h ? Number(h) : 400;
+          return h ? Number(h) : 600;
         },
         renderHTML: (attributes: Record<string, unknown>) => ({
           "data-height": String(attributes.height),
@@ -142,7 +142,7 @@ export const Drawing = Node.create({
             attrs: {
               drawingId,
               width: attrs?.width ?? null,
-              height: attrs?.height ?? 400,
+              height: attrs?.height ?? 600,
             },
           });
         },

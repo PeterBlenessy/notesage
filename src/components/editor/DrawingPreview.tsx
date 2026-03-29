@@ -9,7 +9,7 @@ import { DrawingEditor } from "./DrawingEditor";
 
 export function DrawingPreview({ node, selected }: NodeViewProps) {
   const drawingId = node.attrs.drawingId as string | null;
-  const height = (node.attrs.height as number) || 400;
+  const height = (node.attrs.height as number) || 600;
   const [svgContent, setSvgContent] = useState<string | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [isEditing, setIsEditing] = useState(false);

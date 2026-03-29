@@ -82,7 +82,7 @@ Drawing data is stored as `.excalidraw` JSON files alongside comments:
 This keeps the markdown file clean — the document only contains a reference:
 
 ```markdown
-![drawing](/.notesage/drawings/abc123.excalidraw)
+<div data-drawing-id="abc123" data-type="drawing" class="drawing-block"></div>
 ```
 
 On parse, the image syntax with `.excalidraw` extension is recognized as a drawing node. On serialize, the drawing node outputs the image reference syntax.
@@ -226,7 +226,7 @@ This is Excalidraw's native format — no custom wrapper needed.
 ### Markdown Serialization
 
 ```markdown
-![drawing](/.notesage/drawings/abc123.excalidraw)
+<div data-drawing-id="abc123" data-type="drawing" class="drawing-block"></div>
 ```
 
 Uses standard image syntax with the `.excalidraw` extension as the discriminator. The parser detects `.excalidraw` in the src and creates a `Drawing` node instead of an `Image` node.
@@ -275,7 +275,7 @@ No other new dependencies. Excalidraw bundles its own UI components, icons, and 
 
 ### Markdown Round-Trip
 
-- [x] Drawing node serializes to `![drawing](/.notesage/drawings/<id>.excalidraw)`
+- [x] Drawing node serializes to `<div data-drawing-id="<id>" data-type="drawing" class="drawing-block"></div>`
 
 - [x] Parsing the image syntax with `.excalidraw` extension creates a Drawing node
 

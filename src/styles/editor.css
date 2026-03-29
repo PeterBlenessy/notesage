@@ -1173,6 +1173,45 @@ mark.dom-find-highlight-active {
   transition: opacity 150ms ease;
 }
 
+/* Excalidraw theme — neutral greyscale to match Notesage design system */
+.drawing-editor-canvas .excalidraw {
+  --color-primary: oklch(45% 0 0);
+  --color-primary-darker: oklch(38% 0 0);
+  --color-primary-darkest: oklch(30% 0 0);
+  --color-primary-light: oklch(92% 0 0);
+  --color-primary-light-darker: oklch(88% 0 0);
+  --color-primary-hover: oklch(40% 0 0);
+  --color-brand-hover: oklch(40% 0 0);
+  --color-brand-active: oklch(35% 0 0);
+  --color-surface-high: oklch(95% 0 0);
+  --color-surface-mid: oklch(96.5% 0 0);
+  --color-surface-low: oklch(93% 0 0);
+  --color-surface-lowest: oklch(100% 0 0);
+  --color-surface-primary-container: oklch(90% 0 0);
+  --color-on-primary-container: oklch(20% 0 0);
+  --color-border-outline: oklch(55% 0 0);
+  --color-border-outline-variant: oklch(80% 0 0);
+}
+
+.drawing-editor-canvas .excalidraw.theme--dark {
+  --color-primary: oklch(75% 0 0);
+  --color-primary-darker: oklch(80% 0 0);
+  --color-primary-darkest: oklch(85% 0 0);
+  --color-primary-light: oklch(30% 0 0);
+  --color-primary-light-darker: oklch(26% 0 0);
+  --color-primary-hover: oklch(82% 0 0);
+  --color-brand-hover: oklch(82% 0 0);
+  --color-brand-active: oklch(88% 0 0);
+  --color-surface-high: oklch(28% 0 0);
+  --color-surface-mid: oklch(22% 0 0);
+  --color-surface-low: oklch(25% 0 0);
+  --color-surface-lowest: oklch(15% 0 0);
+  --color-surface-primary-container: oklch(32% 0 0);
+  --color-on-primary-container: oklch(90% 0 0);
+  --color-border-outline: oklch(55% 0 0);
+  --color-border-outline-variant: oklch(35% 0 0);
+}
+
 /* Drawing editor (edit mode) */
 .drawing-editor {
   width: 100%;

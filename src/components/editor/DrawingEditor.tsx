@@ -177,6 +177,7 @@ export function DrawingEditor({
               UIOptions={{
                 canvasActions: { saveAsImage: false, loadScene: false },
                 welcomeScreen: false,
+                dockedSidebarBreakpoint: 0,
               }}
             />
           </Suspense>
