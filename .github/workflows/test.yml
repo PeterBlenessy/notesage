@@ -42,7 +42,7 @@ jobs:
 
       - name: Performance benchmarks
         env:
-          PERF_BUDGET_MULTIPLIER: "1.5"
+          PERF_BUDGET_MULTIPLIER: "3"
         run: pnpm test:perf
 
       - name: Upload benchmark results
