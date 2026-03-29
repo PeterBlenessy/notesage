@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "vite",
     "build": "npx tsx scripts/generate-changelog.ts && tsc && vite build",
-    "generate-changelog": "npx tsx scripts/generate-changelog.ts",
+    "generate-changelog": "pnpm dlx tsx scripts/generate-changelog.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:test": "tauri dev --features e2e-testing",
