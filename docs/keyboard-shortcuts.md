@@ -82,6 +82,7 @@ All keyboard shortcuts use Cmd (⌘) on macOS.
 | `/ul` | Bullet list | Insert bullet list |
 | `/ol` | Numbered list | Insert numbered list |
 | `/todo` | Task list | Insert task list with checkboxes |
+| `/callout` | Callout | Insert callout block (Note, Tip, Warning, Important) |
 | `/code` | Code block | Insert code block |
 | `/quote` | Blockquote | Insert blockquote |
 | `/table` | Table | Insert table |

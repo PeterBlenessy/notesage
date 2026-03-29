@@ -21,6 +21,10 @@ import {
   Minus,
   Table,
   Image as ImageIcon,
+  Info,
+  Lightbulb,
+  TriangleAlert,
+  CircleAlert,
 } from "lucide-react";
 
 interface CommandItem {
@@ -100,6 +104,38 @@ const commands: CommandItem[] = [
     icon: Quote,
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).toggleBlockquote().run();
+    },
+  },
+  {
+    title: "Note Callout",
+    description: "Informational callout block",
+    icon: Info,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setCallout({ type: "note" }).run();
+    },
+  },
+  {
+    title: "Tip Callout",
+    description: "Helpful tip or suggestion",
+    icon: Lightbulb,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setCallout({ type: "tip" }).run();
+    },
+  },
+  {
+    title: "Warning Callout",
+    description: "Warning or caution notice",
+    icon: TriangleAlert,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setCallout({ type: "warning" }).run();
+    },
+  },
+  {
+    title: "Important Callout",
+    description: "Critical information callout",
+    icon: CircleAlert,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setCallout({ type: "important" }).run();
     },
   },
   {

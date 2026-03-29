@@ -20,6 +20,11 @@ pub fn markdown_to_typst(markdown: &str) -> String {
     converter.finish()
 }
 
+struct CalloutInfo {
+    callout_type: String,
+    title: Option<String>,
+}
+
 struct Converter {
     output: String,
     /// Track list nesting depth for indentation.
@@ -167,11 +172,15 @@ impl Converter {
                 // Handled by convert_task_list — skip if encountered standalone
             }
             NodeValue::BlockQuote => {
-                self.write("#quote(block: true)[");
-                // Collect children as inline content
-                let content = self.collect_block_content(node);
-                self.write(content.trim());
-                self.write("]\n\n");
+                // Check if this is a callout block (> [!type] or > [!type] Title)
+                if let Some(callout) = self.detect_callout(node) {
+                    self.render_callout(node, &callout);
+                } else {
+                    self.write("#quote(block: true)[");
+                    let content = self.collect_block_content(node);
+                    self.write(content.trim());
+                    self.write("]\n\n");
+                }
             }
             NodeValue::ThematicBreak => {
                 self.write("#line(length: 100%)\n\n");
@@ -385,6 +394,116 @@ impl Converter {
             }
         }
         text
+    }
+
+    /// Detect if a blockquote is a callout by checking the first text for `[!type]`.
+    fn detect_callout<'a>(&self, node: &'a comrak::nodes::AstNode<'a>) -> Option<CalloutInfo> {
+        // Get the first text content of the first paragraph
+        let first_child = node.first_child()?;
+        if !matches!(first_child.data.borrow().value, NodeValue::Paragraph) {
+            return None;
+        }
+        let first_text_node = first_child.first_child()?;
+        let text = match &first_text_node.data.borrow().value {
+            NodeValue::Text(t) => t.clone(),
+            _ => return None,
+        };
+
+        // Match [!type] or [!type] Title
+        let re = regex::Regex::new(r"^\[!(\w+)\](?:\s+(.+))?$").ok()?;
+        let line = text.lines().next().unwrap_or(&text);
+        let caps = re.captures(line)?;
+        let callout_type = caps.get(1)?.as_str().to_lowercase();
+
+        // Only match valid types
+        match callout_type.as_str() {
+            "note" | "tip" | "warning" | "important" => {}
+            _ => return None,
+        }
+
+        let title = caps.get(2).map(|m| m.as_str().to_string());
+
+        Some(CalloutInfo {
+            callout_type,
+            title,
+        })
+    }
+
+    /// Render a callout block as a styled Typst block.
+    fn render_callout<'a>(&mut self, node: &'a comrak::nodes::AstNode<'a>, info: &CalloutInfo) {
+        let (stroke_color, fill_color, label) = match info.callout_type.as_str() {
+            "note" => ("rgb(\"#5B7B9E\")", "rgb(\"#5B7B9E\").lighten(92%)", "Note"),
+            "tip" => ("rgb(\"#4A9E6B\")", "rgb(\"#4A9E6B\").lighten(92%)", "Tip"),
+            "warning" => ("rgb(\"#B8860B\")", "rgb(\"#B8860B\").lighten(92%)", "Warning"),
+            "important" => ("rgb(\"#C0392B\")", "rgb(\"#C0392B\").lighten(92%)", "Important"),
+            _ => ("rgb(\"#5B7B9E\")", "rgb(\"#5B7B9E\").lighten(92%)", "Note"),
+        };
+
+        let display_title = info.title.as_deref().unwrap_or(label);
+
+        // Collect content, skipping the first line (the [!type] header)
+        let content = self.collect_callout_body(node);
+
+        self.write(&format!(
+            "#block(stroke: (left: 3pt + {stroke}), fill: {fill}, inset: 10pt, radius: 4pt, width: 100%)[\n",
+            stroke = stroke_color,
+            fill = fill_color,
+        ));
+        self.write(&format!(
+            "  #text(fill: {stroke}, weight: \"bold\", size: 0.9em)[{title}]\n",
+            stroke = stroke_color,
+            title = escape_typst(display_title),
+        ));
+        if !content.trim().is_empty() {
+            self.write("\n");
+            self.write(&content);
+        }
+        self.write("]\n\n");
+    }
+
+    /// Collect callout body content, skipping the `[!type]` header line.
+    fn collect_callout_body<'a>(&mut self, node: &'a comrak::nodes::AstNode<'a>) -> String {
+        let saved = std::mem::take(&mut self.output);
+        let mut first_para = true;
+        for child in node.children() {
+            if first_para {
+                first_para = false;
+                // For the first paragraph, skip the [!type] text and render remaining
+                if matches!(child.data.borrow().value, NodeValue::Paragraph) {
+                    let mut skip_first_text = true;
+                    for inner in child.children() {
+                        if skip_first_text {
+                            skip_first_text = false;
+                            // Skip the [!type] text node but render siblings
+                            if matches!(inner.data.borrow().value, NodeValue::Text(_)) {
+                                // Check if there's remaining text after the [!type] line
+                                if let NodeValue::Text(ref t) = inner.data.borrow().value {
+                                    // Remove the [!type] header from the first line
+                                    let remainder = if let Some(pos) = t.find('\n') {
+                                        t[pos + 1..].to_string()
+                                    } else {
+                                        String::new()
+                                    };
+                                    if !remainder.is_empty() {
+                                        self.write(&escape_typst(&remainder));
+                                    }
+                                }
+                                continue;
+                            }
+                        }
+                        self.convert_node(inner, 0);
+                    }
+                    // Add paragraph break if there was content
+                    if !self.output.trim().is_empty() {
+                        self.write("\n\n");
+                    }
+                    continue;
+                }
+            }
+            self.convert_node(child, 0);
+        }
+        let content = std::mem::replace(&mut self.output, saved);
+        content
     }
 
     /// Render block content to a string (for blockquotes).
@@ -643,6 +762,39 @@ print("hello")
         assert!(output.contains("#link("), "missing link");
         // Frontmatter stripped
         assert!(!output.contains("title: Test Doc"), "frontmatter not stripped");
+    }
+
+    #[test]
+    fn test_callout_note() {
+        let input = "> [!note]\n> This is a note.";
+        let output = markdown_to_typst(input);
+        assert!(output.contains("#block("), "missing block: {}", output);
+        assert!(output.contains("Note"), "missing label: {}", output);
+        assert!(output.contains("This is a note."), "missing content: {}", output);
+    }
+
+    #[test]
+    fn test_callout_with_title() {
+        let input = "> [!tip] Pro Tip\n> This is helpful.";
+        let output = markdown_to_typst(input);
+        assert!(output.contains("Pro Tip"), "missing custom title: {}", output);
+        assert!(output.contains("This is helpful."), "missing content: {}", output);
+    }
+
+    #[test]
+    fn test_callout_all_types() {
+        for callout_type in &["note", "tip", "warning", "important"] {
+            let input = format!("> [!{}]\n> Content here.", callout_type);
+            let output = markdown_to_typst(&input);
+            assert!(output.contains("#block("), "missing block for {}: {}", callout_type, output);
+        }
+    }
+
+    #[test]
+    fn test_invalid_callout_remains_blockquote() {
+        let input = "> [!custom]\n> Some text.";
+        let output = markdown_to_typst(input);
+        assert!(output.contains("#quote(block: true)"), "invalid type should be blockquote: {}", output);
     }
 
     #[test]

@@ -247,6 +247,84 @@ export function stripGhostTaskItems(markdown: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Callout preprocessing
+// ---------------------------------------------------------------------------
+
+/**
+ * Valid callout types (case-insensitive match).
+ */
+const VALID_CALLOUT_TYPES = new Set(["note", "tip", "warning", "important"]);
+
+/**
+ * Convert Obsidian-style callout syntax (`> [!type]`) to HTML `<div>` elements
+ * before tiptap-markdown parses the content. This ensures callout blocks are
+ * recognized as `Callout` nodes instead of plain blockquotes.
+ *
+ * Regular blockquotes starting with `[!` but with an invalid type are left
+ * as plain blockquotes.
+ */
+export function convertCalloutsToHtml(markdown: string): string {
+  const lines = markdown.split("\n");
+  const result: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    // Check for a callout start: `> [!type]` or `> [!type] Title`
+    const headerMatch = lines[i].match(
+      /^>\s*\[!(\w+)\](?:\s+(.+))?$/
+    );
+
+    if (headerMatch) {
+      const type = headerMatch[1].toLowerCase();
+      const title = headerMatch[2]?.trim() || null;
+
+      if (VALID_CALLOUT_TYPES.has(type)) {
+        // Collect all continuation lines (lines starting with `>`)
+        const bodyLines: string[] = [];
+        i++;
+        while (i < lines.length && /^>/.test(lines[i])) {
+          // Strip the leading `> ` or `>` prefix
+          const content = lines[i].replace(/^>\s?/, "");
+          bodyLines.push(content);
+          i++;
+        }
+
+        // Build HTML div for tiptap-markdown to parse
+        const titleAttr = title ? ` data-title="${title.replace(/"/g, "&quot;")}"` : "";
+        const bodyHtml = bodyLines.length > 0
+          ? bodyLines
+              .map((line) => (line.trim() === "" ? "</p><p>" : escapeHtml(line)))
+              .join("\n")
+          : "";
+
+        result.push(
+          `<div class="callout callout-${type}" data-callout-type="${type}"${titleAttr}>`,
+          `<p>${bodyHtml}</p>`,
+          `</div>`,
+          ""
+        );
+        continue;
+      }
+    }
+
+    result.push(lines[i]);
+    i++;
+  }
+
+  return result.join("\n");
+}
+
+/**
+ * Minimal HTML entity escaping for callout body text.
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+// ---------------------------------------------------------------------------
 // Image path space encoding
 // ---------------------------------------------------------------------------
 
@@ -343,7 +421,7 @@ export function getMarkdownFromEditor(editor: Editor): string {
 }
 
 export function setMarkdownInEditor(editor: Editor, markdown: string): void {
-  setContentWithoutHistory(editor, encodeImagePathSpaces(normalizeEmptyTaskItems(stripGhostTaskItems(markdown))));
+  setContentWithoutHistory(editor, encodeImagePathSpaces(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(markdown)))));
 }
 
 /**
@@ -373,7 +451,7 @@ export function loadRawMarkdownIntoEditor(
   rawMarkdown: string
 ): void {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
-  const encoded = encodeImagePathSpaces(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned)));
+  const encoded = encodeImagePathSpaces(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned))));
   editor.chain().setMeta("addToHistory", false).setContent(encoded).run();
 
   // Clear undo/redo history — the loaded content is a fresh baseline.
@@ -403,5 +481,5 @@ export function prepareInitialContent(rawMarkdown: string): {
   annotations: Map<number, string>;
 } {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
-  return { content: encodeImagePathSpaces(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned))), annotations };
+  return { content: encodeImagePathSpaces(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned)))), annotations };
 }

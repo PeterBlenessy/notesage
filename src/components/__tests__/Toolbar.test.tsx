@@ -23,6 +23,7 @@ vi.mock('@/components/editor/toolbar/index', () => ({
   MicButton: () => null,
   TableGridPicker: () => null,
   TableToolsPopover: () => null,
+  CalloutPicker: () => null,
 }));
 
 // ---------------------------------------------------------------------------

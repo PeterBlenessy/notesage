@@ -7,7 +7,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 - Headings (H1-H6), paragraphs
 - Bold, italic, underline, strikethrough, code (inline)
 - Bullet lists, ordered lists, task lists (checkboxes)
-- Blockquotes, horizontal rules
+- Blockquotes, callout blocks (Note, Tip, Warning, Important — Obsidian `> [!type]` syntax), horizontal rules
 - Code blocks with syntax highlighting (lowlight)
 - Links (rendered inline, clickable — internal document links and external URLs), images (via URL prompt)
 - Tables (insert, add/remove rows/columns, merge/split cells, toggle headers)
@@ -16,7 +16,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 
 ## Editing Features
 
-- Top toolbar with formatting controls: heading level picker, undo/redo, bold, italic, underline, strikethrough, code, text color, highlight, bullet list, ordered list, task list, indent/outdent, blockquote, code block, horizontal rule, alignment (left/center/right), table, image, typography settings (searchable font picker with 14 presets + all installed system fonts, font size, line height, paragraph spacing), dictation
+- Top toolbar with formatting controls: heading level picker, undo/redo, bold, italic, underline, strikethrough, code, text color, highlight, bullet list, ordered list, task list, indent/outdent, blockquote, callout picker (4 types), code block, horizontal rule, alignment (left/center/right), table, image, typography settings (searchable font picker with 14 presets + all installed system fonts, font size, line height, paragraph spacing), dictation
 - Bubble menu on text selection with AI actions (Improve, Summarize, Expand) — toggleable in settings
 - Floating table toolbar appears when cursor is inside a table — add/remove rows and columns, merge/split cells, toggle header row, delete table
 - ~~Block drag handles~~ — deferred, needs unified left-gutter design

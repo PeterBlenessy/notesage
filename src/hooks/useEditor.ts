@@ -20,6 +20,7 @@ import { SlashCommand } from "@/components/editor/extensions/slash-command";
 import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSuggestion, MentionHighlight, MentionSuggestion, DateHighlight, DateSuggestion, SearchHighlight } from "@/components/editor/extensions";
 import { PageBreaks } from "@/components/editor/extensions/page-breaks";
 import { LinkClick } from "@/components/editor/extensions/link-click";
+import { Callout } from "@/components/editor/extensions/callout";
 import { getMarkdownFromEditor } from "@/lib/markdown";
 import { getEditorStorage, type EditorStorageImage } from "@/lib/editor-storage";
 
@@ -138,6 +139,7 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       MentionSuggestion,
       SearchHighlight,
       LinkClick,
+      Callout,
     ],
     content,
     editable,

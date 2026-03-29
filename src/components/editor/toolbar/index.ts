@@ -6,3 +6,4 @@ export { TypographyPopover } from "./TypographyPopover";
 export { MicButton } from "./MicButton";
 export { TableGridPicker } from "./TableGridPicker";
 export { TableToolsPopover } from "./TableToolsPopover";
+export { CalloutPicker } from "./CalloutPicker";

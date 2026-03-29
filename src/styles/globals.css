@@ -42,6 +42,16 @@
   --color-find-match-active: oklch(72% 0 0);
   --color-shadow: rgb(0 0 0 / 0.1);
 
+  /* Callout colors — low-chroma tinted neutrals for semantic meaning (same exception as diffs/highlights) */
+  --color-callout-note: oklch(55% 0.05 240);
+  --color-callout-note-bg: oklch(95% 0.01 240);
+  --color-callout-tip: oklch(55% 0.08 145);
+  --color-callout-tip-bg: oklch(95% 0.02 145);
+  --color-callout-warning: oklch(60% 0.08 75);
+  --color-callout-warning-bg: oklch(95% 0.02 75);
+  --color-callout-important: oklch(55% 0.1 25);
+  --color-callout-important-bg: oklch(95% 0.02 25);
+
   /* Highlight mark colors (document content — chromatic by design) */
   --color-highlight-yellow: #fef08a;
   --color-highlight-green: #bbf7d0;
@@ -80,6 +90,10 @@
   --color-find-match: oklch(82% 0 0);
   --color-find-match-active: oklch(70% 0 0);
   --color-shadow: rgb(0 0 0 / 0.07);
+  --color-callout-note-bg: oklch(91% 0.01 240);
+  --color-callout-tip-bg: oklch(91% 0.02 145);
+  --color-callout-warning-bg: oklch(91% 0.02 75);
+  --color-callout-important-bg: oklch(91% 0.02 25);
 }
 
 /* Dark mode colors — neutral palette */
@@ -124,6 +138,14 @@
   --color-highlight-pink: #9d174d;
   --color-highlight-orange: #9a3412;
   --color-highlight-grey: #374151;
+  --color-callout-note: oklch(65% 0.05 240);
+  --color-callout-note-bg: oklch(25% 0.015 240);
+  --color-callout-tip: oklch(65% 0.08 145);
+  --color-callout-tip-bg: oklch(25% 0.02 145);
+  --color-callout-warning: oklch(70% 0.08 75);
+  --color-callout-warning-bg: oklch(25% 0.02 75);
+  --color-callout-important: oklch(65% 0.1 25);
+  --color-callout-important-bg: oklch(25% 0.02 25);
 }
 
 /* Soft mode — easy on the eyes (dark) */
@@ -155,6 +177,10 @@
   --color-find-match: oklch(38% 0 0);
   --color-find-match-active: oklch(48% 0 0);
   --color-shadow: rgb(0 0 0 / 0.2);
+  --color-callout-note-bg: oklch(28% 0.015 240);
+  --color-callout-tip-bg: oklch(28% 0.02 145);
+  --color-callout-warning-bg: oklch(28% 0.02 75);
+  --color-callout-important-bg: oklch(28% 0.02 25);
 }
 
 * {

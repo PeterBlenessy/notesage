@@ -39,6 +39,7 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | TableMarkdown | `table-markdown.ts` | Utility | Custom table markdown serializer for GFM round-tripping |
 | ThemedHighlight | `themed-highlight.ts` | Mark Extension | Extends Tiptap Highlight with semantic color names for light/dark mode |
 | LinkClick | `link-click.ts` | Plugin | Click handler for link navigation (internal files → open as tab, external → system browser) |
+| Callout | `callout.ts` | Node Extension | Callout blocks (Note, Tip, Warning, Important) with Obsidian `> [!type]` markdown round-tripping |
 | ~~ItemAnnotation~~ | ~~`item-annotation.ts`~~ | ~~Plugin + Decoration~~ | ~~Emoji annotations on list items (deferred — needs unified gutter design)~~ |
 | ~~DragHandle~~ | ~~`drag-handle.ts`~~ | ~~Plugin + DOM~~ | ~~Block drag handles (deferred — needs unified gutter design)~~ |
 

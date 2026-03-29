@@ -38,6 +38,7 @@ import {
   MicButton,
   TableGridPicker,
   TableToolsPopover,
+  CalloutPicker,
 } from "./toolbar/index";
 
 interface ToolbarProps {
@@ -249,6 +250,8 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           >
             <Quote className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
+
+          <CalloutPicker editor={editor} />
 
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleCodeBlock().run()}

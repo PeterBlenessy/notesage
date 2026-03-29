@@ -39,6 +39,9 @@ export { MentionHighlight } from './mention-highlight';
 export { MentionSuggestion } from './mention-suggestion';
 export { DateHighlight } from './date-highlight';
 export { DateSuggestion } from './date-suggestion';
+export { Callout } from './callout';
+export type { CalloutType } from './callout';
+export { CALLOUT_TYPES, CALLOUT_LABELS, CALLOUT_ICONS, isValidCalloutType } from './callout';
 export {
   SearchHighlight,
   SearchPluginKey,
