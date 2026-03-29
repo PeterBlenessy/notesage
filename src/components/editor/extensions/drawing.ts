@@ -1,0 +1,230 @@
+import { Node, mergeAttributes } from "@tiptap/core";
+import { ReactNodeViewRenderer } from "@tiptap/react";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { DrawingPreview } from "../DrawingPreview";
+import { deleteDrawing } from "@/lib/drawing-storage";
+import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useEditorStore } from "@/stores/editor-store";
+import { toast } from "sonner";
+
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    drawing: {
+      insertDrawing: (attrs?: {
+        drawingId?: string;
+        width?: number | null;
+        height?: number;
+      }) => ReturnType;
+      deleteDrawing: () => ReturnType;
+    };
+  }
+}
+
+const DrawingCleanupPluginKey = new PluginKey("drawingCleanup");
+
+// Pending deletions with timeout IDs — allows cancellation on undo
+const pendingCleanups = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * Resolve the project root for the currently active file.
+ * Uses the workspace store's findOwningProject to match the
+ * active tab's file path to a project.
+ */
+function resolveProjectRoot(): string | undefined {
+  const { tabs, activeTabId } = useEditorStore.getState();
+  const activeTab = tabs.find((t) => t.id === activeTabId);
+  if (!activeTab) return undefined;
+
+  const ws = useWorkspaceStore.getState();
+  const project = ws.findOwningProject(activeTab.filePath);
+  return project?.path;
+}
+
+function queueDrawingCleanup(drawingId: string) {
+  // Cancel any existing timer for this ID
+  cancelDrawingCleanup(drawingId);
+
+  // Delay deletion by 5 seconds to allow undo
+  const timeoutId = setTimeout(() => {
+    pendingCleanups.delete(drawingId);
+    const projectRoot = resolveProjectRoot();
+    if (projectRoot) {
+      deleteDrawing(drawingId, projectRoot);
+    }
+  }, 5000);
+
+  pendingCleanups.set(drawingId, timeoutId);
+
+  toast("Drawing deleted", {
+    description: "Undo to restore",
+    duration: 5000,
+  });
+}
+
+function cancelDrawingCleanup(drawingId: string) {
+  const timeoutId = pendingCleanups.get(drawingId);
+  if (timeoutId) {
+    clearTimeout(timeoutId);
+    pendingCleanups.delete(drawingId);
+  }
+}
+
+export const Drawing = Node.create({
+  name: "drawing",
+  group: "block",
+  atom: true,
+
+  addAttributes() {
+    return {
+      drawingId: {
+        default: null as string | null,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute("data-drawing-id") || null,
+        renderHTML: (attributes: Record<string, unknown>) => ({
+          "data-drawing-id": attributes.drawingId as string,
+        }),
+      },
+      width: {
+        default: null as number | null,
+        parseHTML: (element: HTMLElement) => {
+          const w = element.getAttribute("data-width");
+          return w ? Number(w) : null;
+        },
+        renderHTML: (attributes: Record<string, unknown>) => {
+          if (attributes.width == null) return {};
+          return { "data-width": String(attributes.width) };
+        },
+      },
+      height: {
+        default: 400,
+        parseHTML: (element: HTMLElement) => {
+          const h = element.getAttribute("data-height");
+          return h ? Number(h) : 400;
+        },
+        renderHTML: (attributes: Record<string, unknown>) => ({
+          "data-height": String(attributes.height),
+        }),
+      },
+    };
+  },
+
+  parseHTML() {
+    return [
+      {
+        tag: "div[data-drawing-id]",
+      },
+    ];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return [
+      "div",
+      mergeAttributes(HTMLAttributes, {
+        class: "drawing-block",
+        "data-type": "drawing",
+      }),
+      ["div", { class: "drawing-placeholder" }, "Drawing"],
+    ];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(DrawingPreview);
+  },
+
+  addCommands() {
+    return {
+      insertDrawing:
+        (attrs) =>
+        ({ commands }) => {
+          const drawingId = attrs?.drawingId || crypto.randomUUID();
+          return commands.insertContent({
+            type: this.name,
+            attrs: {
+              drawingId,
+              width: attrs?.width ?? null,
+              height: attrs?.height ?? 400,
+            },
+          });
+        },
+      deleteDrawing:
+        () =>
+        ({ commands }) => {
+          return commands.deleteSelection();
+        },
+    };
+  },
+
+  addStorage() {
+    return {
+      markdown: {
+        serialize(state: unknown, node: unknown) {
+          const s = state as {
+            write: (text: string) => void;
+          };
+          const n = node as {
+            attrs: {
+              drawingId: string | null;
+              width: number | null;
+              height: number;
+            };
+          };
+
+          const drawingId = n.attrs.drawingId;
+          if (!drawingId) return;
+
+          s.write(
+            `![drawing](/.notesage/drawings/${drawingId}.excalidraw)\n\n`
+          );
+        },
+        parse: {
+          // Parsing is handled by the preprocessor in markdown.ts
+        },
+      },
+    };
+  },
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: DrawingCleanupPluginKey,
+        appendTransaction(transactions, oldState, newState) {
+          // Only check when document content changed
+          const docChanged = transactions.some((tr) => tr.docChanged);
+          if (!docChanged) return null;
+
+          // Collect drawingIds in old and new state
+          const oldIds = new Set<string>();
+          const newIds = new Set<string>();
+
+          oldState.doc.descendants((node) => {
+            if (node.type.name === "drawing" && node.attrs.drawingId) {
+              oldIds.add(node.attrs.drawingId as string);
+            }
+          });
+
+          newState.doc.descendants((node) => {
+            if (node.type.name === "drawing" && node.attrs.drawingId) {
+              newIds.add(node.attrs.drawingId as string);
+            }
+          });
+
+          // Find removed drawings — queue sidecar cleanup
+          for (const id of oldIds) {
+            if (!newIds.has(id)) {
+              queueDrawingCleanup(id);
+            }
+          }
+
+          // Find re-added drawings (undo) — cancel pending cleanup
+          for (const id of newIds) {
+            if (!oldIds.has(id)) {
+              cancelDrawingCleanup(id);
+            }
+          }
+
+          return null;
+        },
+      }),
+    ];
+  },
+});

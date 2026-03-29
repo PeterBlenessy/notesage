@@ -142,12 +142,23 @@ impl Converter {
                 let NodeLink { ref url, .. } = **link;
                 // Collect alt text from children
                 let alt = self.collect_text(node);
+
+                // Drawing files: reference the SVG preview instead of .excalidraw
+                let resolved_url = if url.ends_with(".excalidraw") {
+                    format!("{}.svg", url.trim_end_matches(".excalidraw"))
+                } else {
+                    url.to_string()
+                };
+
                 if alt.is_empty() {
-                    self.write(&format!("#image(\"{}\")", escape_typst_string(url)));
+                    self.write(&format!(
+                        "#image(\"{}\")",
+                        escape_typst_string(&resolved_url)
+                    ));
                 } else {
                     self.write(&format!(
                         "#image(\"{}\", alt: \"{}\")",
-                        escape_typst_string(url),
+                        escape_typst_string(&resolved_url),
                         escape_typst_string(&alt)
                     ));
                 }
@@ -795,6 +806,54 @@ print("hello")
         let input = "> [!custom]\n> Some text.";
         let output = markdown_to_typst(input);
         assert!(output.contains("#quote(block: true)"), "invalid type should be blockquote: {}", output);
+    }
+
+    #[test]
+    fn test_drawing_image_to_svg() {
+        let input = "![drawing](/.notesage/drawings/abc123.excalidraw)";
+        let output = markdown_to_typst(input);
+        assert!(
+            output.contains("/.notesage/drawings/abc123.svg"),
+            "should reference SVG: {}",
+            output
+        );
+        assert!(
+            !output.contains(".excalidraw"),
+            "should not reference .excalidraw: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_drawing_image_to_svg_with_alt() {
+        let input = "![My Drawing](/.notesage/drawings/sketch.excalidraw)";
+        let output = markdown_to_typst(input);
+        assert!(
+            output.contains("/.notesage/drawings/sketch.svg"),
+            "should reference SVG: {}",
+            output
+        );
+        assert!(
+            output.contains("My Drawing"),
+            "should preserve alt text: {}",
+            output
+        );
+        assert!(
+            !output.contains(".excalidraw"),
+            "should not reference .excalidraw: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_regular_image_unchanged() {
+        let input = "![photo](images/photo.png)";
+        let output = markdown_to_typst(input);
+        assert!(
+            output.contains("images/photo.png"),
+            "regular image should be unchanged: {}",
+            output
+        );
     }
 
     #[test]

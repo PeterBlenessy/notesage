@@ -13,6 +13,8 @@ const pkg = JSON.parse(readFileSync("package.json", "utf-8"));
 export default defineConfig(async () => ({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
+    // Excalidraw checks this at runtime
+    "process.env.IS_PREACT": JSON.stringify("false"),
   },
   plugins: [react(), tailwindcss()],
 
@@ -20,6 +22,12 @@ export default defineConfig(async () => ({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+  },
+
+  // Pre-bundle Excalidraw for dev server (large dep with many sub-chunks)
+  optimizeDeps: {
+    include: ["@excalidraw/excalidraw"],
+    exclude: [],
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

@@ -325,6 +325,31 @@ function escapeHtml(text: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Drawing (Excalidraw) preprocessing
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert Excalidraw image references to Drawing node HTML elements
+ * before tiptap-markdown parses the content.
+ *
+ * Matches: ![drawing](/.notesage/drawings/abc123.excalidraw)
+ * Outputs: <div data-drawing-id="abc123" data-type="drawing" class="drawing-block"></div>
+ *
+ * Regular images (non-.excalidraw) are left unchanged.
+ */
+export function convertDrawingsToHtml(markdown: string): string {
+  return markdown.replace(
+    /!\[([^\]]*)\]\(([^)]+\.excalidraw)\)/g,
+    (_match, _alt: string, src: string) => {
+      // Extract drawingId from path: /.notesage/drawings/abc123.excalidraw → abc123
+      const filename = src.split("/").pop() || "";
+      const drawingId = filename.replace(".excalidraw", "");
+      return `<div data-drawing-id="${drawingId}" data-type="drawing" class="drawing-block"></div>`;
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Image path space encoding
 // ---------------------------------------------------------------------------
 
@@ -421,7 +446,7 @@ export function getMarkdownFromEditor(editor: Editor): string {
 }
 
 export function setMarkdownInEditor(editor: Editor, markdown: string): void {
-  setContentWithoutHistory(editor, encodeImagePathSpaces(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(markdown)))));
+  setContentWithoutHistory(editor, encodeImagePathSpaces(convertDrawingsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(markdown))))));
 }
 
 /**
@@ -451,7 +476,7 @@ export function loadRawMarkdownIntoEditor(
   rawMarkdown: string
 ): void {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
-  const encoded = encodeImagePathSpaces(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned))));
+  const encoded = encodeImagePathSpaces(convertDrawingsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned)))));
   editor.chain().setMeta("addToHistory", false).setContent(encoded).run();
 
   // Clear undo/redo history — the loaded content is a fresh baseline.
@@ -481,5 +506,5 @@ export function prepareInitialContent(rawMarkdown: string): {
   annotations: Map<number, string>;
 } {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
-  return { content: encodeImagePathSpaces(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned)))), annotations };
+  return { content: encodeImagePathSpaces(convertDrawingsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned))))), annotations };
 }
