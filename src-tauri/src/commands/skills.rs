@@ -117,6 +117,7 @@ struct SkillFrontmatter {
 /// Explicit tool definition in SKILL.md frontmatter.
 #[derive(Deserialize, Debug, Clone)]
 struct ToolFrontmatter {
+    #[allow(dead_code)]
     name: String,
     description: String,
     script: String,
