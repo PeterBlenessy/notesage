@@ -86,3 +86,4 @@ Chronological log of major implementation milestones and changes.
 | 080 | [Release v0.23.3](080-release-v0.23.3.md) | Test infrastructure (426 tests), perf fixes, tab preloading, audit v2 complete |
 | 081 | [Release v0.24.0](081-release-v0.24.0.md) | Conversation branching, tab drag-and-drop, internal links, font picker, contrast slider, tool calling |
 | 082 | [Release v0.25.0](082-release-v0.25.0.md) | Skills-to-tools glue layer, branch deletion, branch persistence fix |
+| 083 | [Release v0.26.0](083-release-v0.26.0.md) | Inline charts, drawing canvas, callout blocks, external change fixes |
