@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, memo } from "react";
-import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown } from "lucide-react";
+import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown, Eye } from "lucide-react";
 import { SyncedIcon } from "./SyncedIcon";
 import { FolderPickerItem } from "./FolderPickerItem";
 import { NewFolderDialog } from "./NewFolderDialog";
@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { FileEntry, tauriApi } from "@/lib/tauri";
 import { NOTESAGE_DRAG_MIME, parseNotesageDrop } from "@/lib/drag-utils";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useEditorStore } from "@/stores/editor-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
@@ -49,7 +50,7 @@ interface FileTreeItemProps {
   expandKeyPrefix?: string;
   gitRepoRoot?: string;
   onCommitFile?: (filePath: string) => void;
-  onExportFile?: (filePath: string, fileName: string, format?: 'pdf' | 'pptx') => void;
+  onExportFile?: (filePath: string, fileName: string, format?: 'pdf' | 'pptx' | 'html') => void;
 }
 
 const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProject, expandKeyPrefix = "", gitRepoRoot, onCommitFile, onExportFile }: FileTreeItemProps) {
@@ -405,12 +406,12 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
         </ContextMenuTrigger>
         <ContextMenuContent>
           <ContextMenuItem onClick={handleNewFile}>
-            <FilePlus className="mr-2 h-4 w-4" strokeWidth={1.5} />
+            <FilePlus className="h-4 w-4" strokeWidth={1.5} />
             New File
           </ContextMenuItem>
           {entry.is_directory && (
             <ContextMenuItem onClick={handleNewFolder}>
-              <FolderPlus className="mr-2 h-4 w-4" strokeWidth={1.5} />
+              <FolderPlus className="h-4 w-4" strokeWidth={1.5} />
               New Folder
             </ContextMenuItem>
           )}
@@ -418,7 +419,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
             <>
               <ContextMenuSeparator />
               <ContextMenuItem onClick={() => onMakeProject(entry.path)}>
-                <FolderDot className="mr-2 h-4 w-4" strokeWidth={1.5} />
+                <FolderDot className="h-4 w-4" strokeWidth={1.5} />
                 {isProjectFolder ? "Open as Project" : "Make Project"}
               </ContextMenuItem>
             </>
@@ -532,19 +533,39 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
           })()}
           <ContextMenuSeparator />
           <ContextMenuItem onClick={handleRevealInFinder}>
-            <ExternalLink className="mr-2 h-4 w-4" strokeWidth={1.5} />
+            <ExternalLink className="h-4 w-4" strokeWidth={1.5} />
             Reveal in Finder
           </ContextMenuItem>
           {!entry.is_directory && entry.name.endsWith(".md") && onExportFile && (
             <>
               <ContextMenuSeparator />
-              <ContextMenuItem onClick={() => onExportFile(entry.path, entry.name, 'pdf')}>
-                <FileDown className="mr-2 h-4 w-4" strokeWidth={1.5} />
-                Export as PDF
-              </ContextMenuItem>
-              <ContextMenuItem onClick={() => onExportFile(entry.path, entry.name, 'pptx')}>
-                <FileDown className="mr-2 h-4 w-4" strokeWidth={1.5} />
-                Export as PowerPoint
+              <ContextMenuSub>
+                <ContextMenuSubTrigger>
+                  <FileDown className="mr-2 h-4 w-4" strokeWidth={1.5} />
+                  Export as...
+                </ContextMenuSubTrigger>
+                <ContextMenuSubContent>
+                  <ContextMenuItem onClick={() => onExportFile(entry.path, entry.name, 'pdf')}>
+                    PDF
+                  </ContextMenuItem>
+                  <ContextMenuItem onClick={() => onExportFile(entry.path, entry.name, 'pptx')}>
+                    PowerPoint
+                  </ContextMenuItem>
+                  <ContextMenuItem onClick={() => onExportFile(entry.path, entry.name, 'html')}>
+                    HTML
+                  </ContextMenuItem>
+                </ContextMenuSubContent>
+              </ContextMenuSub>
+              <ContextMenuItem onClick={() => {
+                onFileClick(entry.path, entry.name);
+                setTimeout(() => {
+                  const { tabs, setViewMode } = useEditorStore.getState();
+                  const tab = tabs.find((t) => t.filePath === entry.path);
+                  if (tab) setViewMode(tab.id, "html-preview");
+                }, 100);
+              }}>
+                <Eye className="h-4 w-4" strokeWidth={1.5} />
+                Preview as HTML
               </ContextMenuItem>
             </>
           )}
@@ -552,18 +573,18 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
             <>
               <ContextMenuSeparator />
               <ContextMenuItem onClick={() => onCommitFile(entry.path)}>
-                <GitCommitVertical className="mr-2 h-4 w-4" strokeWidth={1.5} />
+                <GitCommitVertical className="h-4 w-4" strokeWidth={1.5} />
                 Commit...
               </ContextMenuItem>
             </>
           )}
           <ContextMenuSeparator />
           <ContextMenuItem onClick={startRename}>
-            <Pencil className="mr-2 h-4 w-4" strokeWidth={1.5} />
+            <Pencil className="h-4 w-4" strokeWidth={1.5} />
             Rename
           </ContextMenuItem>
           <ContextMenuItem onClick={() => setDeleteDialogOpen(true)}>
-            <Trash2 className="mr-2 h-4 w-4 text-destructive" strokeWidth={1.5} />
+            <Trash2 className="h-4 w-4 text-destructive" strokeWidth={1.5} />
             Delete
           </ContextMenuItem>
         </ContextMenuContent>

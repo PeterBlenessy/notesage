@@ -636,6 +636,58 @@ const pdfBytes = await invoke<number[]>('export_pdf', {
 });
 ```
 
+### render_html
+
+Renders markdown to a complete HTML document or body-only fragment.
+
+```rust
+#[tauri::command]
+pub async fn render_html(
+    markdown: String,
+    title: String,
+    theme: String,
+    include_styles: bool,
+    project_root: Option<String>,
+) -> Result<String, String>
+```
+
+**Parameters:**
+
+- `markdown`: Full markdown content (including frontmatter if present)
+- `title`: Document title (used in `<title>` tag)
+- `theme`: `"light"` or `"dark"` — controls syntax highlighting theme and CSS
+- `include_styles`: `true` for standalone HTML document, `false` for clipboard body fragment
+- `project_root`: Optional project root path for resolving drawing SVG sidecar files
+
+**Returns:**
+
+- `Ok(String)`: Complete HTML document (when `include_styles` is true) or body fragment (when false)
+- `Err(String)`: Error message if rendering fails
+
+**Pipeline:** markdown → pre-process (extract table metadata, resolve drawings) → comrak parse (GFM + syntect highlighting) → post-process (callouts, link previews, sparklines, table footers) → wrap in HTML document with embedded CSS.
+
+**Frontend usage:**
+
+```typescript
+// Full standalone document
+const htmlDoc = await invoke<string>('render_html', {
+  markdown: '# Hello\n\nWorld',
+  title: 'Hello',
+  theme: 'light',
+  includeStyles: true,
+  projectRoot: null,
+});
+
+// Body fragment for clipboard
+const bodyHtml = await invoke<string>('render_html', {
+  markdown: '# Hello',
+  title: 'Hello',
+  theme: 'light',
+  includeStyles: false,
+  projectRoot: null,
+});
+```
+
 ### save_binary_file
 
 Writes raw bytes to a file on disk. Used for saving generated PDFs (the existing `write_file` command only handles UTF-8 strings).

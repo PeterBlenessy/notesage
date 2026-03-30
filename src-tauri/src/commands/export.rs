@@ -1,3 +1,5 @@
+use crate::export::html_styles::{html_css, wrap_html_document};
+use crate::export::markdown_to_html::markdown_to_html;
 use crate::export::markdown_to_pptx::markdown_to_pptx;
 use crate::export::markdown_to_typst::markdown_to_typst;
 use crate::export::templates::{apply_template, PageSize, Template, TemplateOptions};
@@ -59,6 +61,26 @@ pub async fn export_pptx(
         &template,
         project_root.as_deref(),
     )
+}
+
+/// Render markdown to a complete HTML document or body fragment.
+#[tauri::command]
+pub async fn render_html(
+    markdown: String,
+    title: String,
+    theme: String,
+    include_styles: bool,
+    project_root: Option<String>,
+) -> Result<String, String> {
+    let body = markdown_to_html(&markdown, &theme, project_root.as_deref());
+
+    if include_styles {
+        let css = html_css(&theme);
+        Ok(wrap_html_document(&body, &title, &theme, css))
+    } else {
+        // Clipboard mode: return body fragment only
+        Ok(body)
+    }
 }
 
 /// Scan markdown for `.excalidraw` image references and add corresponding SVG files

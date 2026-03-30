@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-30 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | Medium |
 | **Impact** | Users can preview documents as standalone HTML pages and export for web sharing |
 | **Research** | [document-format-enhancements](../research/2026-03-30-document-format-enhancements.md) |
@@ -173,13 +173,13 @@ Every Notesage markdown extension must render correctly in HTML output:
 | Callout (Warning) | `> [!warning]\n> Content` | `<div class="callout callout-warning">` with alert icon, amber-grey border |
 | Callout (Important) | `> [!important]\n> Content` | `<div class="callout callout-important">` with exclamation icon, red-grey border |
 | Table metadata | `<!-- type:currency,summary:sum -->` | Metadata stripped from display; footer `<tfoot>` row with computed aggregation |
-| Sparkline | `{{spark:12,15,9,22,18}}` | Inline `<svg>` polyline (~60x20px) with muted stroke color |
-| Drawing | `![drawing](path.excalidraw)` | `<img>` with embedded SVG (base64 data URI from `.svg` sidecar) |
+| Sparkline | `{{spark:12,15,9,22,18}}` | Inline `<svg>` polyline (\~60x20px) with muted stroke color |
+| Drawing | `<div data-drawing-id="path" data-type="drawing" class="drawing-block"></div>` | `<img>` with embedded SVG (base64 data URI from `.svg` sidecar) |
 | Link preview | `> [!link](url)` | Styled `<a>` card with title, description, favicon placeholder |
 | Text color | Tiptap marks | `<span style="color: ...">` |
 | Highlight | Tiptap marks | `<mark>` with background color |
 | Task list | `- [x] Done` | `<input type="checkbox" disabled checked>` (comrak default) |
-| Code block | ` ```lang ``` ` | `<pre><code>` with syntect inline syntax highlighting |
+| Code block | ```` ```lang ``` ```` | `<pre><code>` with syntect inline syntax highlighting |
 | Footnotes | `[^1]` | `<sup>` links with `<section class="footnotes">` at document end |
 
 ## CSS Theme Mapping
@@ -335,65 +335,103 @@ The toolbar gains a small segmented control or dropdown for view modes:
 
 ### Functional
 
-- [ ] `render_html` Tauri command returns valid HTML for all markdown features
-- [ ] Callout blocks render with correct icon, border color, and background
-- [ ] Table metadata comments stripped from rendered output
-- [ ] Table aggregation footers computed and rendered as `<tfoot>`
-- [ ] Sparklines render as inline SVG with correct polyline path
-- [ ] Drawing blocks embed SVG from sidecar files
-- [ ] Link preview cards render with title and URL
-- [ ] Code blocks have syntax highlighting via syntect
-- [ ] Task list checkboxes render as disabled checkboxes
-- [ ] Footnotes render with superscript links and footnote section
+- [x] `render_html` Tauri command returns valid HTML for all markdown features
+
+- [x] Callout blocks render with correct icon, border color, and background
+
+- [x] Table metadata comments stripped from rendered output
+
+- [x] Table aggregation footers computed and rendered as `<tfoot>`
+
+- [x] Sparklines render as inline SVG with correct polyline path
+
+- [x] Drawing blocks embed SVG from sidecar files
+
+- [x] Link preview cards render with title and URL
+
+- [x] Code blocks have syntax highlighting via syntect
+
+- [x] Task list checkboxes render as disabled checkboxes
+
+- [x] Footnotes render with superscript links and footnote section
+
 - [ ] Text colors and highlights preserved in output
+
 - [ ] Standalone HTML opens correctly in Safari, Chrome, and Firefox
-- [ ] Exported HTML has no external dependencies (fully self-contained)
-- [ ] Preview iframe updates when theme is toggled (light ↔ dark)
+
+- [x] Exported HTML has no external dependencies (fully self-contained)
+
+- [x] Preview iframe updates when theme is toggled (light ↔ dark)
 
 ### Security
 
-- [ ] Raw HTML in markdown is escaped (comrak `unsafe_` not enabled)
-- [ ] Iframe uses `sandbox` attribute — no script execution
-- [ ] Exported HTML contains no `<script>` tags
-- [ ] CSP meta tag prevents script injection when file is served
-- [ ] No user input passed through as raw HTML
+- [x] Raw HTML in markdown is escaped (comrak `unsafe_` not enabled)
+
+- [x] Iframe uses `sandbox` attribute — no script execution
+
+- [x] Exported HTML contains no `<script>` tags
+
+- [x] CSP meta tag prevents script injection when file is served
+
+- [x] No user input passed through as raw HTML
 
 ### Clipboard
 
-- [ ] "Copy HTML" puts `text/html` on clipboard
+- [x] "Copy HTML" puts `text/html` on clipboard
+
 - [ ] Pasting into Gmail preserves headings, lists, code blocks, and tables
+
 - [ ] Pasting into Google Docs preserves basic formatting
-- [ ] `text/plain` fallback contains the raw markdown
+
+- [x] `text/plain` fallback contains the raw markdown
 
 ### Integration
 
-- [ ] Context menu "Preview as HTML" opens file in preview mode
-- [ ] Context menu "Export as HTML" saves without opening preview
-- [ ] Cmd+Shift+P toggles HTML preview mode
-- [ ] Command palette includes "Preview as HTML" action
-- [ ] Find in document (Cmd+F) works in HTML preview via dom-search
+- [x] Context menu "Preview as HTML" opens file in preview mode
+
+- [x] Context menu "Export as HTML" saves without opening preview
+
+- [x] Cmd+Shift+P toggles HTML preview mode
+
+- [x] Command palette includes "Preview as HTML" action
+
+- [x] Find in document (Cmd+F) works in HTML preview via dom-search
 
 ### Design
 
-- [ ] Preview matches editor theme (light/dark)
-- [ ] Content width capped at 720px, centered
-- [ ] Typography matches editor feel (system font stack, proper hierarchy)
-- [ ] Callout styling is visually consistent with editor rendering
-- [ ] Sparklines use muted stroke color matching the theme
-- [ ] Code blocks have tasteful syntax highlighting
-- [ ] Works in both light and dark mode
-- [ ] Print from browser produces clean output
+- [x] Preview matches editor theme (light/dark)
+
+- [x] Content width capped at 720px, centered
+
+- [x] Typography matches editor feel (system font stack, proper hierarchy)
+
+- [x] Callout styling is visually consistent with editor rendering
+
+- [x] Sparklines use muted stroke color matching the theme
+
+- [x] Code blocks have tasteful syntax highlighting
+
+- [x] Works in both light and dark mode
+
+- [x] Print from browser produces clean output
 
 ### Testing
 
-- [ ] Rust unit tests for `markdown_to_html` covering all GFM features
-- [ ] Rust unit tests for callout, sparkline, link preview, and drawing rendering
-- [ ] Rust unit tests for table metadata stripping and footer computation
-- [ ] Rust unit tests for XSS prevention (HTML escaping of user content)
-- [ ] Rust unit tests for theme CSS injection (light and dark)
-- [ ] Frontend unit tests for `HtmlViewer` component rendering
+- [x] Rust unit tests for `markdown_to_html` covering all GFM features
+
+- [x] Rust unit tests for callout, sparkline, link preview, and drawing rendering
+
+- [x] Rust unit tests for table metadata stripping and footer computation
+
+- [x] Rust unit tests for XSS prevention (HTML escaping of user content)
+
+- [x] Rust unit tests for theme CSS injection (light and dark)
+
+- [x] Frontend unit tests for `HtmlViewer` component rendering
+
 - [ ] Frontend unit tests for clipboard copy (text/html MIME type)
-- [ ] Existing markdown round-trip tests continue to pass
+
+- [x] Existing markdown round-trip tests continue to pass
 
 ## Out of Scope
 

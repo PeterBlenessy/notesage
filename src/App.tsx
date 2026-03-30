@@ -303,7 +303,42 @@ function App() {
     setNewProjectOpen(true);
   }, []);
 
-  const handleExportFile = useCallback(async (filePath: string, fileName: string, format?: 'pdf' | 'pptx') => {
+  const handleExportFile = useCallback(async (filePath: string, fileName: string, format?: 'pdf' | 'pptx' | 'html') => {
+    if (format === 'html') {
+      // Direct HTML export without opening the export dialog
+      try {
+        const content = await tauriApi.readFile(filePath);
+        const theme = useSettingsStore.getState().theme;
+        const resolvedTheme = theme === "system"
+          ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+          : theme;
+        const title = fileName.replace(/\.[^.]+$/, "");
+
+        const { save } = await import("@tauri-apps/plugin-dialog");
+        const defaultName = fileName.replace(/\.[^.]+$/, ".html");
+        const savePath = await save({
+          defaultPath: defaultName,
+          filters: [{ name: "HTML", extensions: ["html", "htm"] }],
+        });
+
+        if (savePath) {
+          const { invoke } = await import("@tauri-apps/api/core");
+          const htmlDoc = await invoke<string>("render_html", {
+            markdown: content,
+            title,
+            theme: resolvedTheme,
+            includeStyles: true,
+            projectRoot: null,
+          });
+          await tauriApi.writeFile(savePath, htmlDoc);
+          toast.success("HTML exported");
+        }
+      } catch (err) {
+        toast.error(`Failed to export HTML: ${err}`);
+      }
+      return;
+    }
+
     const { tabs, activeTabId } = useEditorStore.getState();
     const activeTab = tabs.find((t) => t.id === activeTabId);
     if (!activeTab || activeTab.filePath !== filePath) {
@@ -461,6 +496,13 @@ function App() {
           onOpenFolder={handleOpenFolder}
           onOpenSettings={() => setSettingsOpen(true)}
           onExportPdf={() => setExportOpen(true)}
+          onToggleHtmlPreview={() => {
+            const { tabs, activeTabId, setViewMode } = useEditorStore.getState();
+            const tab = tabs.find((t) => t.id === activeTabId);
+            if (tab && tab.fileType === "markdown") {
+              setViewMode(tab.id, tab.viewMode === "html-preview" ? "wysiwyg" : "html-preview");
+            }
+          }}
           onToggleFocusMode={() => setFocusMode((prev) => !prev)}
           onOpenActions={() => setActionsDialogOpen(true)}
         />

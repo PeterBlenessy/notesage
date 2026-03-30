@@ -9,8 +9,8 @@
 | PRD | [pptx-export](../prds/2026-03-30-pptx-export.md) | Complete |
 | Tasks | [pptx-export-tasks](../tasks/2026-03-30-pptx-export-tasks.md) | Complete |
 | PRD | [custom-templates](../prds/2026-03-30-custom-templates.md) | Draft |
-| PRD | [html-preview](../prds/2026-03-30-html-preview.md) | Draft |
-| Tasks | [html-preview-tasks](../tasks/2026-03-30-html-preview-tasks.md) | Not started |
+| PRD | [html-preview](../prds/2026-03-30-html-preview.md) | Complete |
+| Tasks | [html-preview-tasks](../tasks/2026-03-30-html-preview-tasks.md) | Complete |
 | PRD | [code-file-highlighting](../prds/2026-03-30-code-file-highlighting.md) | Draft |
 | PRD | [pptx-viewer](../prds/2026-03-30-pptx-viewer.md) | Draft |
 | Tasks | [pptx-viewer-tasks](../tasks/2026-03-30-pptx-viewer-tasks.md) | Not started |

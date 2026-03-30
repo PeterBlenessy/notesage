@@ -136,16 +136,65 @@ Export notes to presentation slides using the ppt-rs crate.
 - Template config applied via font sizes and colors on SlideContent
 - Tauri commands: `export_pptx` (generate), `import_pptx_template`, `list_pptx_templates`, `delete_pptx_template`
 
+## HTML Preview & Export
+
+Preview and export markdown documents as self-contained HTML files with full feature parity.
+
+**Preview triggers:**
+
+- Cmd+Shift+P keyboard shortcut
+- Eye icon in editor toolbar
+- Command palette: "Preview as HTML"
+- Right-click sidebar context menu on .md files: "Preview as HTML"
+
+**Export triggers:**
+
+- "Export" button in HTML preview toolbar
+- Right-click sidebar context menu: Export as... > HTML
+
+**Features:**
+
+- Rendered in a sandboxed `<iframe>` with `sandbox="allow-same-origin"` (no script execution)
+- Theme-reactive: re-renders when light/dark mode changes
+- "Copy HTML" button copies `text/html` + `text/plain` (raw markdown) to clipboard for pasting into rich text editors
+- Find in document (Cmd+F) via shared `dom-search.ts` utility
+- Self-contained output: no external stylesheets, fonts, or scripts
+- CSP meta tag prevents script injection when served from a web server
+
+**Rendered feature mapping:**
+
+| Feature | HTML Output |
+| --- | --- |
+| Callout blocks | Styled `<div class="callout callout-{type}">` with SVG icon |
+| Table metadata | Footer `<tfoot>` row with computed aggregation |
+| Sparklines | Inline `<svg>` polyline charts |
+| Drawing blocks | Embedded SVG as data URI from `.svg` sidecar files |
+| Link preview cards | Styled `<a>` cards with title and URL |
+| Code blocks | Syntax highlighting via syntect with inline styles |
+| Task lists | Custom checkbox styling |
+| Footnotes | Superscript links with footnote section |
+
+**Architecture:**
+
+- `comrak` (v0.50.0 with `syntect`) for markdown parsing and syntax highlighting
+- Pre-processing: table metadata extraction, drawing block resolution
+- Post-processing: callout blocks, link previews, sparklines, table aggregation footers
+- Embedded CSS with light and dark themes (static oklch approximations)
+- Tauri command: `render_html` (full document or body-only fragment for clipboard)
+
 ## Key Files
 
 | File | Purpose |
 | --- | --- |
-| `src-tauri/src/commands/export.rs` | PDF + PPTX export commands, template management |
-| `src-tauri/src/export/` | Typst engine + PPTX converter |
+| `src-tauri/src/commands/export.rs` | PDF + PPTX + HTML export commands, template management |
+| `src-tauri/src/export/` | Typst engine + PPTX converter + HTML renderer |
+| `src-tauri/src/export/markdown_to_html.rs` | Markdown → HTML with Notesage extensions |
+| `src-tauri/src/export/html_styles.rs` | Embedded CSS templates (light + dark themes) |
 | `src-tauri/src/export/markdown_to_pptx.rs` | Markdown → ppt-rs slide model converter |
 | `src-tauri/src/export/templates.rs` | PDF + PPTX template configurations |
 | `src-tauri/fonts/` | Bundled fonts |
 | `src-tauri/templates/` | Typst template presets |
+| `src/components/editor/viewers/HtmlViewer.tsx` | Sandboxed iframe HTML preview with toolbar |
 | `src/components/editor/viewers/EpubViewer.tsx` | EPUB reader |
 | `src/components/editor/viewers/PdfViewer.tsx` | PDF viewer |
 | `src/components/editor/viewers/DocxViewer.tsx` | DOCX viewer |
@@ -159,5 +208,4 @@ Export notes to presentation slides using the ppt-rs crate.
 
 - DOCX export (preserve formatting, embedded images, Word styles mapping)
 - Custom template editor and template marketplace
-- HTML rendering and preview
 - Code file syntax highlighting

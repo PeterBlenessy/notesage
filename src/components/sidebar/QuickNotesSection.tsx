@@ -9,7 +9,7 @@ import { FileTree } from "./FileTree";
 interface QuickNotesSectionProps {
   onFileClick: (filePath: string, fileName: string) => void;
   onNewNote?: (parentPath?: string) => void;
-  onExportFile?: (filePath: string, fileName: string, format?: 'pdf' | 'pptx') => void;
+  onExportFile?: (filePath: string, fileName: string, format?: 'pdf' | 'pptx' | 'html') => void;
   panelCollapsed?: boolean;
 }
 

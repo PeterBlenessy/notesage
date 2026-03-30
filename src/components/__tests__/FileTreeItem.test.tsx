@@ -329,7 +329,7 @@ describe('FileTreeItem', () => {
     expect(itemEl.getAttribute('aria-current')).toBeNull();
   });
 
-  it('shows "Export as PDF" context menu item for .md files when onExportFile is provided', () => {
+  it('shows "Export as..." context menu item for .md files when onExportFile is provided', () => {
     const onExportFile = vi.fn();
     const entry = createMockFileEntry({ name: 'document.md', path: '/test/document.md' });
 
@@ -339,10 +339,10 @@ describe('FileTreeItem', () => {
 
     fireEvent.contextMenu(screen.getByText('document.md'));
 
-    expect(screen.getByText('Export as PDF')).toBeTruthy();
+    expect(screen.getByText('Export as...')).toBeTruthy();
   });
 
-  it('does not show "Export as PDF" for non-.md files', () => {
+  it('does not show "Export as..." for non-.md files', () => {
     const onExportFile = vi.fn();
     const entry = createMockFileEntry({ name: 'image.png', path: '/test/image.png' });
 
@@ -352,7 +352,7 @@ describe('FileTreeItem', () => {
 
     fireEvent.contextMenu(screen.getByText('image.png'));
 
-    expect(screen.queryByText('Export as PDF')).toBeNull();
+    expect(screen.queryByText('Export as...')).toBeNull();
   });
 
   it('uses expandKeyPrefix in folder toggle key', () => {

@@ -111,6 +111,7 @@ pub fn run() {
             git_worktree_list,
             export_pdf,
             export_pptx,
+            render_html,
             save_binary_file,
             import_pptx_template,
             list_pptx_templates,

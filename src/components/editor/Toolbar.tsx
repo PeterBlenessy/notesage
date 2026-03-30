@@ -25,6 +25,7 @@ import {
   IndentDecrease,
   Pencil,
   BarChart3,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -48,6 +49,7 @@ interface ToolbarProps {
   onImageInsert?: () => void;
   viewMode?: ViewMode;
   onToggleViewMode?: () => void;
+  onToggleHtmlPreview?: () => void;
   sourceWordWrap?: boolean;
   onToggleWordWrap?: () => void;
 }
@@ -96,8 +98,9 @@ function ToolbarSeparator() {
 
 // --- Main Toolbar ---
 
-export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleViewMode, sourceWordWrap, onToggleWordWrap }: ToolbarProps) {
+export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleViewMode, onToggleHtmlPreview, sourceWordWrap, onToggleWordWrap }: ToolbarProps) {
   const isSource = viewMode === "source";
+  const isPreview = viewMode === "html-preview";
 
   // Force re-render on editor transactions so active state (heading level, bold, etc.) stays current
   const [, setTick] = useState(0);
@@ -360,6 +363,28 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
 
       {/* Spacer pushes toggle to the right */}
       <span className="flex-1" />
+
+      {/* HTML preview toggle */}
+      {onToggleHtmlPreview && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={onToggleHtmlPreview}
+              className={cn(
+                "text-muted-foreground hover:text-foreground",
+                isPreview && "bg-accent text-foreground"
+              )}
+            >
+              <Eye className="size-4" strokeWidth={1.5} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            {isPreview ? "Exit Preview (Cmd+Shift+P)" : "Preview as HTML (Cmd+Shift+P)"}
+          </TooltipContent>
+        </Tooltip>
+      )}
 
       {/* View mode toggle */}
       {onToggleViewMode && (

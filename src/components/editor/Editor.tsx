@@ -36,6 +36,7 @@ import { useGitStore } from "@/stores/git-store";
 const ExportDialog = lazy(() => import("@/components/ExportDialog").then(m => ({ default: m.ExportDialog })));
 import { Toolbar } from "./Toolbar";
 import { SourceModeEditor } from "./SourceModeEditor";
+import { HtmlViewer } from "./viewers/HtmlViewer";
 import { ImageInsertDialog } from "./ImageInsertDialog";
 import { TableHeaderMenu } from "./TableHeaderMenu";
 import { tauriApi } from "@/lib/tauri";
@@ -79,7 +80,7 @@ interface EditorProps {
 }
 
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick, onShortcutsOpen, onOpenActions }: EditorProps) {
-  const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, externalChanges, clearExternalChange, toggleViewMode } = useEditorStore();
+  const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, externalChanges, clearExternalChange, toggleViewMode, setViewMode } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
   const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, pageBreaks, notesRootPath, sourceWordWrap, setSourceWordWrap } = useSettingsStore();
   const editorStyles = useEditorStylesStore();
@@ -253,12 +254,14 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     handleFindReplaceAll,
     handleFindClose,
     handleToggleViewMode,
+    handleToggleHtmlPreview,
   } = useEditorKeyBindings({
     editor,
     activeTab: activeTab ?? null,
     saveFile,
     updateTabContent,
     toggleViewMode,
+    setViewMode,
   });
 
   // Comments
@@ -404,6 +407,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             onImageInsert={() => setImageDialogOpen(true)}
             viewMode={activeTab?.viewMode}
             onToggleViewMode={activeTab?.fileType === "markdown" ? handleToggleViewMode : undefined}
+            onToggleHtmlPreview={activeTab?.fileType === "markdown" ? handleToggleHtmlPreview : undefined}
             sourceWordWrap={sourceWordWrap}
             onToggleWordWrap={() => setSourceWordWrap(!sourceWordWrap)}
           />
@@ -422,7 +426,14 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           onRejectAll={handleRejectAll}
         />
       )}
-      {activeTab?.viewMode === "source" ? (
+      {activeTab?.viewMode === "html-preview" ? (
+        <HtmlViewer
+          content={activeTab.content}
+          filePath={activeTab.filePath}
+          fileName={activeTab.fileName}
+          projectRoot={projectPath ?? undefined}
+        />
+      ) : activeTab?.viewMode === "source" ? (
         <SourceModeEditor
           tabId={activeTab.id}
           content={activeTab.content}
