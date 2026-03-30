@@ -4,7 +4,12 @@
 
 | Stage | Link | Status |
 | --- | --- | --- |
-| PRD | --- | Not yet planned |
+| PRD | [docx-export](../prds/2026-03-30-docx-export.md) | Draft |
+| PRD | [pptx-export](../prds/2026-03-30-pptx-export.md) | Draft |
+| PRD | [custom-templates](../prds/2026-03-30-custom-templates.md) | Draft |
+| PRD | [html-preview](../prds/2026-03-30-html-preview.md) | Draft |
+| PRD | [code-file-highlighting](../prds/2026-03-30-code-file-highlighting.md) | Draft |
+| PRD | [pptx-viewer](../prds/2026-03-30-pptx-viewer.md) | Draft |
 
 Notesage currently exports to PDF (via Typst) and views EPUB, DOCX, PDF, and plain text files. The [document-formats feature doc](../features/document-formats.md) lists five future enhancements: DOCX export, PPTX export, custom template editor, HTML preview, and code file syntax highlighting. This research evaluates the best solutions for each.
 
@@ -18,9 +23,9 @@ A custom template editor for PDF export can build on Typst Universe's template f
 
 HTML preview is straightforward: the markdown is already parsed for the Tiptap editor, so rendering it to a styled HTML document for preview/export requires only a serialization pass with a CSS stylesheet. The `comrak` crate (already a dependency) can render markdown to HTML on the backend.
 
-Code file syntax highlighting for the plain text viewer has two strong options: extend the existing CodeMirror 6 setup (already used for source mode) to support read-only code viewing with ~30 language packages, or use the existing lowlight/highlight.js library (192 languages, already used for code blocks) for static rendering. CodeMirror is recommended for its superior UX (line numbers, folding, selection).
+Code file syntax highlighting for the plain text viewer has two strong options: extend the existing CodeMirror 6 setup (already used for source mode) to support read-only code viewing with \~30 language packages, or use the existing lowlight/highlight.js library (192 languages, already used for code blocks) for static rendering. CodeMirror is recommended for its superior UX (line numbers, folding, selection).
 
-**Recommended priority:** DOCX export (highest user value) > Code file highlighting (low effort) > HTML preview (low effort) > Custom templates (medium effort) > PPTX export (niche use case).
+**Recommended priority:** DOCX export (highest user value) &gt; Code file highlighting (low effort) &gt; HTML preview (low effort) &gt; Custom templates (medium effort) &gt; PPTX export (niche use case).
 
 ---
 
@@ -30,7 +35,7 @@ Code file syntax highlighting for the plain text viewer has two strong options: 
 
 | Attribute | Details |
 | --- | --- |
-| **Crate** | [`docx-rs`](https://crates.io/crates/docx-rs) (bokuweb) |
+| **Crate** | `docx-rs` (bokuweb) |
 | **Stars / Downloads** | 500+ stars, 1M+ downloads |
 | **Version** | 0.4.19 (active maintenance) |
 | **API** | Builder pattern: `Docx::new().add_paragraph(...)` |
@@ -44,7 +49,7 @@ The most mature Rust DOCX writer. The API maps well to Notesage's needs: walk th
 
 | Attribute | Details |
 | --- | --- |
-| **Crate** | [`rdocx`](https://lib.rs/crates/rdocx) |
+| **Crate** | `rdocx` |
 | **API** | python-docx-inspired high-level API |
 | **Features** | Read/write DOCX, paragraphs, tables, images, headers/footers, styles, lists, **built-in layout engine** (PDF, HTML, Markdown output) |
 | **Advantages** | Multi-format output from a single document model; font subsetting; WASM compatible |
@@ -60,7 +65,7 @@ More ambitious — includes a layout engine that can render the same document to
 | **Integration** | Shell-out via Tauri command: `pandoc input.md -o output.docx` |
 | **Features** | Comprehensive markdown-to-DOCX with styles, equations, tables, images, TOC, custom reference templates |
 | **Advantages** | Best formatting fidelity; supports custom `.docx` reference templates for styling |
-| **Limitations** | External dependency (~100MB binary); requires installation; not embeddable in the app bundle easily |
+| **Limitations** | External dependency (\~100MB binary); requires installation; not embeddable in the app bundle easily |
 
 The gold standard for markdown-to-DOCX conversion. Formatting fidelity is unmatched. However, requiring users to install Pandoc separately is a significant UX barrier for a desktop app that targets zero-dependency setup.
 
@@ -78,7 +83,7 @@ Monitor **rdocx** for future consolidation if its community grows.
 
 | Attribute | Details |
 | --- | --- |
-| **Crate** | [`ppt-rs`](https://crates.io/crates/ppt-rs) |
+| **Crate** | `ppt-rs` |
 | **API** | Builder pattern (Rust port of python-pptx) |
 | **Features** | Slides, text boxes, images, tables, charts (bar/line/pie/area/scatter/doughnut/radar), shapes (100+ types), animations (50+ effects), gradient fills, connectors, **markdown-to-PPTX** built-in |
 | **Templates** | Built-in business/report/simple templates |
@@ -90,7 +95,7 @@ Surprisingly feature-rich. The built-in markdown-to-PPTX conversion is directly 
 
 | Attribute | Details |
 | --- | --- |
-| **Crate** | [`pptx`](https://crates.io/crates/pptx) |
+| **Crate** | `pptx` |
 | **Features** | Read/write PPTX, animations, 3D effects, SmartArt, freeform shapes |
 | **Advantages** | Broader parsing support (SmartArt, 3D) |
 | **Limitations** | Higher Rust version requirement (1.85+); less focused on generation |
@@ -169,7 +174,7 @@ For the preview, render the HTML in a sandboxed `<iframe>` with a stylesheet tha
 
 ### Current State
 
-- **Code blocks in the editor**: lowlight (highlight.js wrapper) via `@tiptap/extension-code-block-lowlight` with `common` language set (~40 languages)
+- **Code blocks in the editor**: lowlight (highlight.js wrapper) via `@tiptap/extension-code-block-lowlight` with `common` language set (\~40 languages)
 - **Source mode**: CodeMirror 6 with language-specific extensions
 - **Plain text viewer**: `<pre>` element with no syntax highlighting — all code files (`.js`, `.py`, `.rs`, etc.) render as unstyled monospace text
 
@@ -178,7 +183,7 @@ For the preview, render the HTML in a sandboxed `<iframe>` with a stylesheet tha
 | Attribute | Details |
 | --- | --- |
 | **Already in the app** | Yes — used for source mode editing |
-| **Languages** | ~30 official packages (`@codemirror/lang-javascript`, `lang-python`, `lang-rust`, `lang-html`, `lang-css`, `lang-json`, `lang-markdown`, etc.) |
+| **Languages** | \~30 official packages (`@codemirror/lang-javascript`, `lang-python`, `lang-rust`, `lang-html`, `lang-css`, `lang-json`, `lang-markdown`, etc.) |
 | **Features** | Line numbers, code folding, bracket matching, selection, search (Cmd+F already delegated) |
 | **Read-only mode** | `EditorState.readOnly.of(true)` — single config flag |
 | **Integration** | Replace the `<pre>` element in `PlainTextViewer.tsx` with a read-only CodeMirror instance, detect language from file extension |
@@ -210,7 +215,7 @@ Over-engineered for a viewer. The frontend already has the tools needed.
 
 ### Recommendation
 
-**CodeMirror 6 in read-only mode** — leverage the existing dependency for a superior UX with line numbers, folding, and search. Lazy-load language packages based on file extension. Bundle the ~15 most common languages, load others on demand.
+**CodeMirror 6 in read-only mode** — leverage the existing dependency for a superior UX with line numbers, folding, and search. Lazy-load language packages based on file extension. Bundle the \~15 most common languages, load others on demand.
 
 ---
 
@@ -222,19 +227,22 @@ Over-engineered for a viewer. The frontend already has the tools needed.
 | **PPTX export** | `ppt-rs` (Rust crate) | Large | New Cargo dependency | Low |
 | **Custom templates** | Typst `.typ` files + CodeMirror editor + live preview | Medium | None (existing stack) | Medium |
 | **HTML preview** | `comrak` HTML rendering (already a dep) + themed iframe | Small | None | Medium |
-| **Code highlighting** | CodeMirror 6 read-only (already bundled) | Small | ~15 `@codemirror/lang-*` packages | High |
+| **Code highlighting** | CodeMirror 6 read-only (already bundled) | Small | \~15 `@codemirror/lang-*` packages | High |
 
 ## Recommendation
 
 ### Phase 1 (Quick Wins)
+
 1. **Code file syntax highlighting** — Replace `PlainTextViewer` with read-only CodeMirror. Small effort, immediate value for developers.
 2. **HTML preview & export** — Add `render_html` Tauri command using comrak, themed iframe viewer, and file export. Small effort, useful for sharing.
 
 ### Phase 2 (Export Formats)
+
 3. **DOCX export** — `docx-rs` crate, new `markdown_to_docx.rs` converter, export dialog integration. High user demand — "export to Word" is the #1 missing format.
 4. **Custom template editor** — Template directory scanning, CodeMirror-based editor with live Typst preview. Unlocks user customization without a marketplace.
 
 ### Phase 3 (Nice to Have)
+
 5. **PPTX export** — `ppt-rs` crate with markdown-to-slides. Niche use case but the library makes it straightforward.
 
 ## Open Questions
