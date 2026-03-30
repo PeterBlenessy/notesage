@@ -1308,6 +1308,138 @@ mark.dom-find-highlight-active {
   border-radius: 0.5rem;
 }
 
+/* Table aggregation footer */
+.table-aggregation-footer {
+  user-select: none;
+  pointer-events: none;
+}
+
+.table-aggregation-footer td {
+  padding: 0.15rem 0.75rem;
+  font-size: 0.85em;
+  color: var(--color-muted-foreground);
+  background: var(--color-muted);
+  border: 1px solid var(--color-border);
+  border-top: 2px solid var(--color-border);
+}
+
+/* Keep table header content on one line (badges + sort indicators stay inline) */
+.ProseMirror table th p {
+  display: inline;
+}
+
+.ProseMirror table th {
+  white-space: nowrap;
+}
+
+/* Sort indicators on table header cells — always present to reserve space */
+.table-sort-indicator {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  font-size: 10px;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  user-select: none;
+  opacity: 0;
+  transition: opacity 150ms ease, color 150ms ease;
+}
+
+/* Active sort direction — always visible */
+.table-sort-indicator[data-direction="asc"],
+.table-sort-indicator[data-direction="desc"] {
+  opacity: 1;
+}
+
+/* Reveal placeholder arrow when hovering the header cell */
+.ProseMirror table th:hover .table-sort-indicator[data-direction="placeholder"] {
+  opacity: 0.3;
+}
+
+.table-sort-indicator:hover {
+  opacity: 1;
+  color: var(--color-foreground);
+}
+
+/* Table filter row */
+.table-filter-row {
+  display: flex;
+  padding: 0.25rem 0.75rem;
+  background: var(--color-muted);
+  border: 1px solid var(--color-border);
+  border-top: none;
+}
+
+.table-filter-input {
+  width: 100%;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.85em;
+  color: var(--color-foreground);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.table-filter-input::placeholder {
+  color: var(--color-muted-foreground);
+}
+
+.table-filter-input:focus {
+  border-color: var(--color-ring);
+  box-shadow: 0 0 0 1px var(--color-ring);
+}
+
+/* Sparkline inline widget */
+.sparkline-widget {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  cursor: default;
+}
+
+.sparkline-widget svg {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Hide raw text when sparkline decoration is active */
+.sparkline-raw-text {
+  font-size: 0;
+  line-height: 0;
+  color: transparent;
+}
+
+/* Column type badge in table header cells */
+.th-type-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  padding: 0.05em 0.35em;
+  font-size: 0.8em;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--color-muted-foreground);
+  background: oklch(from var(--color-border) l c h / 0.6);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  vertical-align: middle;
+  user-select: none;
+  pointer-events: none;
+  opacity: 0.7;
+  transition: opacity 150ms ease;
+}
+
+.ProseMirror table th:hover .th-type-badge {
+  opacity: 1;
+}
+
+.th-type-badge[data-col-type="date"] {
+  font-size: 0.7em;
+}
+
 /* line-clamp utility for descriptions (Tailwind v4 may not include this) */
 .line-clamp-2 {
   display: -webkit-box;

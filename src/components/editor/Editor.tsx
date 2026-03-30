@@ -23,6 +23,7 @@ import { useEditorTabSwitch } from "@/hooks/useEditorTabSwitch";
 import type { EditorView as CMEditorView } from "@codemirror/view";
 import { useCommentStore } from "@/stores/comment-store";
 import { useChatStore } from "@/stores/chat-store";
+import { getThread } from "@/lib/chat-tree";
 import {
   setPendingCommentRange as setPendingRangeDecoration,
   getInlineDiffHunks,
@@ -36,6 +37,7 @@ const ExportDialog = lazy(() => import("@/components/ExportDialog").then(m => ({
 import { Toolbar } from "./Toolbar";
 import { SourceModeEditor } from "./SourceModeEditor";
 import { ImageInsertDialog } from "./ImageInsertDialog";
+import { TableHeaderMenu } from "./TableHeaderMenu";
 import { tauriApi } from "@/lib/tauri";
 import { isBinaryFileType } from "@/lib/file-utils";
 import { log } from "@/lib/logger";
@@ -485,7 +487,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             </div>
           </div>
           {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}
-
+          {editor && <TableHeaderMenu editor={editor} />}
         </div>
         </div>
       )}
@@ -707,7 +709,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             const conv = chatStore.conversations.find((c) => c.id === freshComment.linkedConversationId);
             if (conv) {
               chatStore.setActiveConversation(conv.id);
-              await sendChatMessage(text, conv.messages);
+              const threadMessages = getThread(conv.messages, conv.activeLeafId) || conv.messages;
+              await sendChatMessage(text, threadMessages);
               useSettingsStore.getState().setChatPanelOpen(true);
               return;
             }

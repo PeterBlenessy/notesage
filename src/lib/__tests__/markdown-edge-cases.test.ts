@@ -16,7 +16,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableCell } from "@tiptap/extension-table-cell";
-import { TableHeader } from "@tiptap/extension-table-header";
+import { TableHeaderWithAttrs } from "@/components/editor/extensions/table-header-attrs";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import TextAlign from "@tiptap/extension-text-align";
@@ -38,7 +38,10 @@ import {
   setContentWithoutHistory,
   loadRawMarkdownIntoEditor,
   injectAnnotationsIntoMarkdown,
+  extractTableColumnMetadata,
+  applyTableColumnMetadata,
 } from "../markdown";
+import { serializeTable, buildColumnMetadataComment, parseColumnMetadataComment } from "@/components/editor/extensions/table-markdown";
 
 // ---------------------------------------------------------------------------
 // jsdom bootstrap
@@ -85,10 +88,20 @@ function createTestEditor(content: string): Editor {
         HTMLAttributes: { class: "rounded-lg max-w-full" },
       }),
       CodeBlockLowlight.configure({ lowlight }),
-      Table.configure({ resizable: false }),
+      Table.extend({
+        addStorage() {
+          return {
+            ...this.parent?.(),
+            markdown: {
+              serialize: serializeTable,
+              parse: {},
+            },
+          };
+        },
+      }).configure({ resizable: false }),
       TableRow,
       TableCell,
-      TableHeader,
+      TableHeaderWithAttrs,
       TaskList,
       TaskItem.configure({ nested: true }),
       Markdown.configure({
@@ -870,6 +883,146 @@ describe("injectAnnotationsIntoMarkdown", () => {
     const md = "- item 1\n- item 2";
     const result = injectAnnotationsIntoMarkdown(md, editor);
     expect(result).toBe(md);
+    editor.destroy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Table column metadata serialization/parsing
+// ---------------------------------------------------------------------------
+
+describe("buildColumnMetadataComment", () => {
+  it("returns empty string for default attrs", () => {
+    // Simulate a node with default attrs
+    const fakeNode = { attrs: { colType: "text", colCurrency: null, colAggregation: null } };
+    const result = buildColumnMetadataComment(fakeNode as unknown as import("@tiptap/pm/model").Node);
+    expect(result).toBe("");
+  });
+
+  it("emits type for non-text colType", () => {
+    const fakeNode = { attrs: { colType: "number", colCurrency: null, colAggregation: null } };
+    const result = buildColumnMetadataComment(fakeNode as unknown as import("@tiptap/pm/model").Node);
+    expect(result).toBe(" <!-- type:number -->");
+  });
+
+  it("emits multiple keys when set", () => {
+    const fakeNode = { attrs: { colType: "currency", colCurrency: "USD", colAggregation: "sum" } };
+    const result = buildColumnMetadataComment(fakeNode as unknown as import("@tiptap/pm/model").Node);
+    expect(result).toBe(" <!-- type:currency,currency:USD,summary:sum -->");
+  });
+
+  it("does not include text type (default)", () => {
+    const fakeNode = { attrs: { colType: "text", colCurrency: null, colAggregation: "count" } };
+    const result = buildColumnMetadataComment(fakeNode as unknown as import("@tiptap/pm/model").Node);
+    expect(result).toBe(" <!-- summary:count -->");
+  });
+});
+
+describe("parseColumnMetadataComment", () => {
+  it("parses single key", () => {
+    expect(parseColumnMetadataComment("type:number")).toEqual({ colType: "number" });
+  });
+
+  it("parses multiple keys", () => {
+    expect(parseColumnMetadataComment("type:currency,currency:EUR,summary:avg")).toEqual({
+      colType: "currency",
+      colCurrency: "EUR",
+      colAggregation: "avg",
+    });
+  });
+
+  it("ignores unknown keys", () => {
+    expect(parseColumnMetadataComment("type:number,unknown:value")).toEqual({ colType: "number" });
+  });
+});
+
+describe("extractTableColumnMetadata", () => {
+  it("returns unchanged markdown and empty metadata for tables without comments", () => {
+    const md = "| A | B |\n| --- | --- |\n| 1 | 2 |";
+    const { cleaned, metadata } = extractTableColumnMetadata(md);
+    expect(cleaned).toBe(md);
+    expect(metadata.size).toBe(0);
+  });
+
+  it("extracts metadata from header cells and strips comments", () => {
+    const md = "| Name | Price <!-- type:number,currency:USD --> |\n| --- | --- |\n| Apple | 1.50 |";
+    const { cleaned, metadata } = extractTableColumnMetadata(md);
+    expect(cleaned).toContain("| Name | Price |");
+    expect(cleaned).not.toContain("<!--");
+    expect(metadata.size).toBe(1);
+    const tableMeta = metadata.get(0);
+    expect(tableMeta).toBeDefined();
+    expect(tableMeta!.get(1)).toEqual({ colType: "number", colCurrency: "USD" });
+    expect(tableMeta!.has(0)).toBe(false); // Name column has no metadata
+  });
+
+  it("handles multiple tables", () => {
+    const md = [
+      "| A <!-- type:number --> | B |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+      "",
+      "Some text",
+      "",
+      "| C | D <!-- summary:sum --> |",
+      "| --- | --- |",
+      "| 3 | 4 |",
+    ].join("\n");
+    const { metadata } = extractTableColumnMetadata(md);
+    expect(metadata.size).toBe(2);
+    expect(metadata.get(0)!.get(0)).toEqual({ colType: "number" });
+    expect(metadata.get(1)!.get(1)).toEqual({ colAggregation: "sum" });
+  });
+
+  it("preserves non-table content unchanged", () => {
+    const md = "# Title\n\nSome text\n\n| A | B |\n| --- | --- |\n| 1 | 2 |";
+    const { cleaned } = extractTableColumnMetadata(md);
+    expect(cleaned).toBe(md);
+  });
+});
+
+describe("table column metadata round-trip (serialize + parse)", () => {
+  it("round-trips a table with column metadata through editor", () => {
+    const md = [
+      "| Name | Amount <!-- type:number,summary:sum --> |",
+      "| --- | --- |",
+      "| Alice | 100 |",
+      "| Bob | 200 |",
+    ].join("\n");
+
+    // Parse: extract metadata, load into editor
+    const { cleaned, metadata } = extractTableColumnMetadata(md);
+    expect(metadata.size).toBe(1);
+
+    const editor = createTestEditor(cleaned);
+    editor.setEditable(true);
+    applyTableColumnMetadata(editor, metadata);
+
+    // Verify metadata was applied to ProseMirror nodes
+    let foundMeta = false;
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === "tableHeader" && node.textContent.trim() === "Amount") {
+        expect(node.attrs.colType).toBe("number");
+        expect(node.attrs.colAggregation).toBe("sum");
+        foundMeta = true;
+      }
+    });
+    expect(foundMeta).toBe(true);
+
+    // Serialize: get markdown back
+    const output = getMarkdownFromEditor(editor);
+    expect(output).toContain("<!-- type:number,summary:sum -->");
+    expect(output).toContain("Amount");
+
+    editor.destroy();
+  });
+
+  it("does not add comments for tables without metadata", () => {
+    const md = "| A | B |\n| --- | --- |\n| 1 | 2 |";
+    const editor = createTestEditor(md);
+    editor.setEditable(true);
+    const output = getMarkdownFromEditor(editor);
+    expect(output).not.toContain("<!--");
     editor.destroy();
   });
 });

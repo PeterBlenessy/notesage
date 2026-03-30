@@ -10,11 +10,13 @@ import {
   BetweenHorizontalEnd,
   TableRowsSplit,
   TableColumnsSplit,
+  Filter,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { toggleTableFilter, getTableFilterState } from "@/components/editor/extensions/table-filter";
 
 interface TableToolbarContentProps {
   editor: Editor;
@@ -26,12 +28,14 @@ function TableButton({
   disabled,
   title,
   destructive,
+  active,
   children,
 }: {
   onClick: () => void;
   disabled?: boolean;
   title: string;
   destructive?: boolean;
+  active?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -46,7 +50,9 @@ function TableButton({
             "disabled:opacity-30 active:scale-90",
             destructive
               ? "text-destructive hover:text-destructive hover:bg-destructive/10"
-              : "text-muted-foreground"
+              : active
+                ? "text-foreground bg-muted"
+                : "text-muted-foreground"
           )}
         >
           {children}
@@ -132,6 +138,15 @@ export function TableToolbarContent({ editor, onClose }: TableToolbarContentProp
         title="Toggle header row"
       >
         <TableProperties className="size-3.5" strokeWidth={1.5} />
+      </TableButton>
+
+      {/* Filter toggle */}
+      <TableButton
+        onClick={() => run(() => toggleTableFilter(editor))}
+        title="Filter rows"
+        active={getTableFilterState(editor.state)?.active === true}
+      >
+        <Filter className="size-3.5" strokeWidth={1.5} />
       </TableButton>
 
       <TableSeparator />

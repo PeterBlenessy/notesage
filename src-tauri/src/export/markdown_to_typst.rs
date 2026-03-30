@@ -2,6 +2,8 @@ use comrak::nodes::{
     ListType, NodeCode, NodeHeading, NodeLink, NodeList, NodeValue, TableAlignment,
 };
 use comrak::{parse_document, Arena, Options};
+use regex::Regex;
+use std::collections::HashMap;
 
 /// Convert a markdown string to Typst markup.
 pub fn markdown_to_typst(markdown: &str) -> String {
@@ -18,6 +20,115 @@ pub fn markdown_to_typst(markdown: &str) -> String {
     let mut converter = Converter::new();
     converter.convert_node(root, 0);
     converter.finish()
+}
+
+/// Column metadata extracted from HTML comments in table header cells.
+/// E.g., `<!-- type:number,currency:USD,summary:sum -->`
+#[derive(Default, Clone)]
+struct ColumnMeta {
+    props: HashMap<String, String>,
+}
+
+impl ColumnMeta {
+    fn col_type(&self) -> Option<&str> {
+        self.props.get("type").map(|s| s.as_str())
+    }
+    fn currency(&self) -> Option<&str> {
+        self.props.get("currency").map(|s| s.as_str())
+    }
+    fn summary(&self) -> Option<&str> {
+        self.props.get("summary").map(|s| s.as_str())
+    }
+}
+
+/// Parse column metadata from an HTML comment in a header cell.
+/// Returns (clean_text, metadata) where metadata contains key:value pairs.
+fn parse_column_metadata(cell_text: &str) -> (String, ColumnMeta) {
+    let re = Regex::new(r"<!--\s*([\w:,\s]+)\s*-->").unwrap();
+    if let Some(caps) = re.captures(cell_text) {
+        let comment = caps.get(1).unwrap().as_str();
+        let clean = re.replace(cell_text, "").trim().to_string();
+        let mut props = HashMap::new();
+        for pair in comment.split(',') {
+            if let Some((key, value)) = pair.trim().split_once(':') {
+                props.insert(key.trim().to_string(), value.trim().to_string());
+            }
+        }
+        (clean, ColumnMeta { props })
+    } else {
+        (cell_text.to_string(), ColumnMeta::default())
+    }
+}
+
+/// Compute an aggregation over a slice of numeric values.
+fn compute_aggregation(values: &[f64], agg_type: &str) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    match agg_type {
+        "sum" => Some(values.iter().sum()),
+        "avg" => Some(values.iter().sum::<f64>() / values.len() as f64),
+        "count" => Some(values.len() as f64),
+        "min" => values.iter().cloned().reduce(f64::min),
+        "max" => values.iter().cloned().reduce(f64::max),
+        _ => None,
+    }
+}
+
+/// Format a numeric value for PDF output based on column type and currency.
+fn format_value_for_pdf(value: f64, col_type: &str, currency: Option<&str>) -> String {
+    match col_type {
+        "currency" => {
+            let symbol = match currency.unwrap_or("USD") {
+                "USD" => "$",
+                "EUR" => "\u{20AC}",
+                "GBP" => "\u{00A3}",
+                "SEK" => "kr ",
+                "JPY" => "\u{00A5}",
+                "CNY" => "\u{00A5}",
+                _ => "$",
+            };
+            format!("{}{:.2}", symbol, value)
+        }
+        "percentage" => format!("{:.1}%", value * 100.0),
+        "number" => {
+            if value == value.floor() && value.abs() < 1e15 {
+                format!("{}", value as i64)
+            } else {
+                format!("{:.2}", value)
+            }
+        }
+        _ => format!("{}", value),
+    }
+}
+
+/// Replace `{{spark:1,2,3}}` patterns with plain comma-separated numbers.
+fn strip_sparkline_syntax(text: &str) -> String {
+    let re = Regex::new(r"\{\{spark:([\d.,\s-]+)\}\}").unwrap();
+    re.replace_all(text, |caps: &regex::Captures| {
+        let nums = caps.get(1).map_or("", |m| m.as_str());
+        // Normalize spacing: ensure single space after each comma
+        nums.split(',')
+            .map(|s| s.trim())
+            .collect::<Vec<_>>()
+            .join(", ")
+    })
+    .to_string()
+}
+
+/// Try to parse a numeric value from cell text, stripping currency symbols and percent signs.
+fn parse_numeric_value(text: &str) -> Option<f64> {
+    let cleaned = text
+        .trim()
+        .replace(',', "")
+        .replace('$', "")
+        .replace('\u{20AC}', "")
+        .replace('\u{00A3}', "")
+        .replace('\u{00A5}', "")
+        .replace("kr ", "")
+        .replace("kr", "")
+        .replace('%', "");
+    cleaned.trim().parse::<f64>().ok()
 }
 
 struct CalloutInfo {
@@ -217,8 +328,16 @@ impl Converter {
             NodeValue::LineBreak => {
                 self.write("\\\n");
             }
-            NodeValue::HtmlInline(_) | NodeValue::HtmlBlock(_) => {
-                // Skip raw HTML — not representable in Typst
+            NodeValue::HtmlInline(ref html) => {
+                // When inside a table cell, pass HTML comments through to the cell buffer
+                // so column metadata can be extracted by parse_column_metadata.
+                if self.cell_buffer.is_some() && html.trim().starts_with("<!--") {
+                    self.write(html);
+                }
+                // Otherwise skip raw HTML — not representable in Typst
+            }
+            NodeValue::HtmlBlock(_) => {
+                // Skip raw HTML blocks — not representable in Typst
             }
             NodeValue::Table(ref table) => {
                 self.table_alignments = table.alignments.clone();
@@ -380,21 +499,113 @@ impl Converter {
             }
         }
 
-        // Write header rows as table.header
-        let mut row_idx = 0;
-        for row in &all_rows {
+        // Parse column metadata from header cells (HTML comments like <!-- type:number,summary:sum -->)
+        let mut col_meta: Vec<ColumnMeta> = vec![ColumnMeta::default(); num_cols];
+        let mut clean_headers: Vec<Vec<String>> = Vec::new();
+
+        for (row_idx, row) in all_rows.iter().enumerate() {
             if row_idx < header_row_count {
-                self.write("  table.header(\n");
-                for cell in row {
-                    self.write(&format!("    [{}],\n", cell.trim()));
+                let mut cleaned_row = Vec::new();
+                for (col_idx, cell) in row.iter().enumerate() {
+                    let (clean, meta) = parse_column_metadata(cell);
+                    if !meta.props.is_empty() && col_idx < num_cols {
+                        col_meta[col_idx] = meta;
+                    }
+                    cleaned_row.push(clean);
                 }
-                self.write("  ),\n");
-            } else {
-                for cell in row {
-                    self.write(&format!("  [{}],\n", cell.trim()));
+                clean_headers.push(cleaned_row);
+            }
+        }
+
+        let has_metadata = col_meta.iter().any(|m| !m.props.is_empty());
+
+        // Write header rows as table.header
+        for cleaned_row in &clean_headers {
+            self.write("  table.header(\n");
+            for cell in cleaned_row {
+                self.write(&format!("    [{}],\n", cell.trim()));
+            }
+            self.write("  ),\n");
+        }
+
+        // Write data rows, applying sparkline stripping and number formatting
+        let data_rows: Vec<&Vec<String>> = all_rows.iter().skip(header_row_count).collect();
+        for row in &data_rows {
+            for (col_idx, cell) in row.iter().enumerate() {
+                let mut text = strip_sparkline_syntax(cell);
+
+                // Apply number formatting if column has type metadata
+                if has_metadata && col_idx < num_cols {
+                    let meta = &col_meta[col_idx];
+                    if let Some(col_type) = meta.col_type() {
+                        if let Some(val) = parse_numeric_value(&text) {
+                            text = escape_typst(&format_value_for_pdf(
+                                val,
+                                col_type,
+                                meta.currency(),
+                            ));
+                        }
+                    }
+                }
+
+                self.write(&format!("  [{}],\n", text.trim()));
+            }
+        }
+
+        // Render aggregation footer row if any columns have summary metadata
+        let has_summary = col_meta.iter().any(|m| m.summary().is_some());
+        if has_summary {
+            // Collect numeric values per column from data rows
+            let mut col_values: Vec<Vec<f64>> = vec![Vec::new(); num_cols];
+            for row in &data_rows {
+                for (col_idx, cell) in row.iter().enumerate() {
+                    if col_idx < num_cols {
+                        if let Some(val) = parse_numeric_value(cell) {
+                            col_values[col_idx].push(val);
+                        }
+                    }
                 }
             }
-            row_idx += 1;
+
+            self.write("  table.hline(stroke: 1.5pt + luma(180)),\n");
+
+            for col_idx in 0..num_cols {
+                let meta = &col_meta[col_idx];
+                if let Some(agg_type) = meta.summary() {
+                    if let Some(result) = compute_aggregation(&col_values[col_idx], agg_type) {
+                        // Format the aggregation result
+                        let formatted = if let Some(col_type) = meta.col_type() {
+                            format_value_for_pdf(result, col_type, meta.currency())
+                        } else {
+                            // Default formatting for untyped columns
+                            if result == result.floor() && result.abs() < 1e15 {
+                                format!("{}", result as i64)
+                            } else {
+                                format!("{:.2}", result)
+                            }
+                        };
+
+                        let label = match agg_type {
+                            "sum" => "Sum",
+                            "avg" => "Avg",
+                            "count" => "Count",
+                            "min" => "Min",
+                            "max" => "Max",
+                            _ => "",
+                        };
+
+                        self.write(&format!(
+                            "  table.cell(fill: luma(240))[#text(size: 9pt, fill: luma(100))[{}: {}]],\n",
+                            label,
+                            escape_typst(&formatted)
+                        ));
+                    } else {
+                        self.write("  table.cell(fill: luma(240))[],\n");
+                    }
+                } else {
+                    self.write("  table.cell(fill: luma(240))[],\n");
+                }
+            }
         }
 
         self.write(")\n\n");
@@ -1143,6 +1354,186 @@ print("hello")
         let input = "> This is a regular quote";
         let output = markdown_to_typst(input);
         assert!(output.contains("#quote(block: true)"), "should be blockquote: {}", output);
+    }
+
+    // --- Enhanced table tests ---
+
+    #[test]
+    fn test_table_without_metadata_unchanged() {
+        // Tables without column metadata should produce identical output to before
+        let input = "| Name | Value |\n|------|-------|\n| Alice | 100 |\n| Bob | 200 |";
+        let output = markdown_to_typst(input);
+        assert!(output.contains("#table("), "output: {}", output);
+        assert!(output.contains("columns: 2"), "output: {}", output);
+        assert!(output.contains("[Name]"), "output: {}", output);
+        assert!(output.contains("[Value]"), "output: {}", output);
+        assert!(output.contains("[Alice]"), "output: {}", output);
+        assert!(output.contains("[100]"), "output: {}", output);
+        // No footer row
+        assert!(!output.contains("table.hline"), "output: {}", output);
+        assert!(!output.contains("table.cell"), "output: {}", output);
+    }
+
+    #[test]
+    fn test_parse_column_metadata() {
+        let (clean, meta) = parse_column_metadata("Amount <!-- type:currency,currency:USD,summary:sum -->");
+        assert_eq!(clean, "Amount");
+        assert_eq!(meta.col_type(), Some("currency"));
+        assert_eq!(meta.currency(), Some("USD"));
+        assert_eq!(meta.summary(), Some("sum"));
+    }
+
+    #[test]
+    fn test_parse_column_metadata_no_comment() {
+        let (clean, meta) = parse_column_metadata("Plain Header");
+        assert_eq!(clean, "Plain Header");
+        assert!(meta.props.is_empty());
+    }
+
+    #[test]
+    fn test_compute_aggregation_sum() {
+        assert_eq!(compute_aggregation(&[10.0, 20.0, 30.0], "sum"), Some(60.0));
+    }
+
+    #[test]
+    fn test_compute_aggregation_avg() {
+        assert_eq!(compute_aggregation(&[10.0, 20.0, 30.0], "avg"), Some(20.0));
+    }
+
+    #[test]
+    fn test_compute_aggregation_count() {
+        assert_eq!(compute_aggregation(&[10.0, 20.0, 30.0], "count"), Some(3.0));
+    }
+
+    #[test]
+    fn test_compute_aggregation_min_max() {
+        assert_eq!(compute_aggregation(&[10.0, 5.0, 30.0], "min"), Some(5.0));
+        assert_eq!(compute_aggregation(&[10.0, 5.0, 30.0], "max"), Some(30.0));
+    }
+
+    #[test]
+    fn test_compute_aggregation_empty() {
+        assert_eq!(compute_aggregation(&[], "sum"), None);
+    }
+
+    #[test]
+    fn test_compute_aggregation_unknown() {
+        assert_eq!(compute_aggregation(&[1.0], "median"), None);
+    }
+
+    #[test]
+    fn test_format_value_currency_usd() {
+        assert_eq!(format_value_for_pdf(42.50, "currency", Some("USD")), "$42.50");
+    }
+
+    #[test]
+    fn test_format_value_currency_eur() {
+        assert_eq!(format_value_for_pdf(42.50, "currency", Some("EUR")), "\u{20AC}42.50");
+    }
+
+    #[test]
+    fn test_format_value_percentage() {
+        assert_eq!(format_value_for_pdf(0.85, "percentage", None), "85.0%");
+    }
+
+    #[test]
+    fn test_format_value_number_integer() {
+        assert_eq!(format_value_for_pdf(42.0, "number", None), "42");
+    }
+
+    #[test]
+    fn test_format_value_number_decimal() {
+        assert_eq!(format_value_for_pdf(42.567, "number", None), "42.57");
+    }
+
+    #[test]
+    fn test_strip_sparkline() {
+        assert_eq!(strip_sparkline_syntax("{{spark:12,15,9,22,18}}"), "12, 15, 9, 22, 18");
+    }
+
+    #[test]
+    fn test_strip_sparkline_with_spaces() {
+        assert_eq!(strip_sparkline_syntax("{{spark:12, 15, 9}}"), "12, 15, 9");
+    }
+
+    #[test]
+    fn test_strip_sparkline_no_match() {
+        assert_eq!(strip_sparkline_syntax("plain text"), "plain text");
+    }
+
+    #[test]
+    fn test_table_with_summary_footer() {
+        let input = "| Item | Amount <!-- type:number,summary:sum --> |\n|------|--------|\n| A | 10 |\n| B | 20 |\n| C | 30 |";
+        let output = markdown_to_typst(input);
+        assert!(output.contains("#table("), "missing table: {}", output);
+        assert!(output.contains("table.hline"), "missing footer hline: {}", output);
+        assert!(output.contains("table.cell(fill: luma(240))"), "missing footer cell: {}", output);
+        assert!(output.contains("Sum: 60"), "missing sum value: {}", output);
+    }
+
+    #[test]
+    fn test_table_with_currency_formatting() {
+        let input = "| Item | Price <!-- type:currency,currency:USD,summary:sum --> |\n|------|-------|\n| A | 10.50 |\n| B | 20.75 |";
+        let output = markdown_to_typst(input);
+        assert!(output.contains("\\$10.50"), "missing formatted price 10.50: {}", output);
+        assert!(output.contains("\\$20.75"), "missing formatted price 20.75: {}", output);
+        assert!(output.contains("Sum: \\$31.25"), "missing sum: {}", output);
+    }
+
+    #[test]
+    fn test_table_with_sparkline_degraded() {
+        let input = "| Item | Trend |\n|------|-------|\n| A | {{spark:12,15,9,22,18}} |";
+        let output = markdown_to_typst(input);
+        assert!(output.contains("12, 15, 9, 22, 18"), "sparkline should degrade to numbers: {}", output);
+        assert!(!output.contains("{{spark"), "sparkline syntax should be stripped: {}", output);
+    }
+
+    #[test]
+    fn test_table_mixed_columns_some_with_metadata() {
+        let input = "| Name | Score <!-- type:number,summary:avg --> |\n|------|-------|\n| Alice | 85 |\n| Bob | 95 |";
+        let output = markdown_to_typst(input);
+        // First column footer should be empty
+        assert!(output.contains("table.cell(fill: luma(240))[]"), "missing empty footer cell: {}", output);
+        // Second column should have avg
+        assert!(output.contains("Avg: 90"), "missing avg: {}", output);
+    }
+
+    #[test]
+    fn test_table_header_comment_stripped() {
+        let input = "| Item | Amount <!-- type:number --> |\n|------|--------|\n| A | 10 |";
+        let output = markdown_to_typst(input);
+        assert!(!output.contains("<!--"), "HTML comment should be stripped: {}", output);
+        assert!(output.contains("[Amount]"), "header text should remain: {}", output);
+    }
+
+    #[test]
+    fn test_table_with_metadata_compiles_to_pdf() {
+        use super::super::typst_world::NotesageWorld;
+
+        let markdown = "# Budget\n\n| Item | Amount <!-- type:currency,currency:USD,summary:sum --> |\n|------|--------|\n| Rent | 1200 |\n| Food | 400 |\n| Utils | 150 |\n";
+        let typst = markdown_to_typst(markdown);
+        let world = NotesageWorld::new(typst);
+        let result = world.export_pdf();
+        assert!(result.is_ok(), "PDF export failed: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_table_with_sparkline_compiles_to_pdf() {
+        use super::super::typst_world::NotesageWorld;
+
+        let markdown = "# Trends\n\n| Item | Trend |\n|------|-------|\n| A | {{spark:1,2,3,4,5}} |\n| B | {{spark:5,4,3,2,1}} |\n";
+        let typst = markdown_to_typst(markdown);
+        let world = NotesageWorld::new(typst);
+        let result = world.export_pdf();
+        assert!(result.is_ok(), "PDF export failed: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_parse_numeric_value() {
+        assert_eq!(parse_numeric_value("42"), Some(42.0));
+        assert_eq!(parse_numeric_value("$1,234.56"), Some(1234.56));
+        assert_eq!(parse_numeric_value("85%"), Some(85.0));
+        assert_eq!(parse_numeric_value("not a number"), None);
     }
 
     #[test]

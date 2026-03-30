@@ -504,6 +504,195 @@ export function decodeImagePathSpaces(markdown: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Table column metadata preprocessing
+// ---------------------------------------------------------------------------
+
+/**
+ * Regex matching an HTML comment with column metadata inside a table cell.
+ * Matches: ` <!-- type:number,currency:USD,summary:sum -->`
+ */
+const TABLE_METADATA_COMMENT_RE = /\s*<!--\s*((?:\w+:\w+)(?:,\s*\w+:\w+)*)\s*-->/g;
+
+/**
+ * Per-column metadata extracted from HTML comments in table header cells.
+ */
+export interface ColumnMetadata {
+  colType?: string;
+  colCurrency?: string;
+  colAggregation?: string;
+}
+
+/**
+ * Metadata for all tables in a markdown document.
+ * Outer key: table occurrence index (0-based).
+ * Inner key: column index (0-based).
+ */
+export type TableColumnMetadataMap = Map<number, Map<number, ColumnMetadata>>;
+
+/**
+ * Parse a `key:value,key:value` metadata string into a ColumnMetadata object.
+ */
+function parseMetadataString(raw: string): ColumnMetadata {
+  const KEY_TO_ATTR: Record<string, keyof ColumnMetadata> = {
+    type: "colType",
+    currency: "colCurrency",
+    summary: "colAggregation",
+  };
+
+  const meta: ColumnMetadata = {};
+  const pairs = raw.split(",");
+
+  for (const pair of pairs) {
+    const colonIdx = pair.indexOf(":");
+    if (colonIdx < 0) continue;
+    const key = pair.slice(0, colonIdx).trim();
+    const value = pair.slice(colonIdx + 1).trim();
+    const attrName = KEY_TO_ATTR[key];
+    if (attrName && value) {
+      meta[attrName] = value;
+    }
+  }
+
+  return meta;
+}
+
+/**
+ * Extract column metadata comments from GFM table header rows and strip
+ * them from the markdown text.
+ *
+ * Scans for GFM table patterns (header row followed by `| --- | --- |`
+ * separator), extracts `<!-- key:value -->` comments from each header cell,
+ * and returns both the cleaned markdown and a metadata map.
+ */
+export function extractTableColumnMetadata(markdown: string): {
+  cleaned: string;
+  metadata: TableColumnMetadataMap;
+} {
+  const metadata: TableColumnMetadataMap = new Map();
+  const lines = markdown.split("\n");
+  let tableIdx = 0;
+
+  for (let i = 0; i < lines.length - 1; i++) {
+    const line = lines[i];
+    const nextLine = lines[i + 1];
+
+    // Check if this looks like a table header row: starts and ends with |
+    // and the next line is a separator row (| --- | --- |)
+    if (
+      !line.trim().startsWith("|") ||
+      !line.trim().endsWith("|") ||
+      !nextLine.trim().startsWith("|") ||
+      !/^\|[\s:]*-{3,}[\s:]*(\|[\s:]*-{3,}[\s:]*)*\|$/.test(nextLine.trim())
+    ) {
+      continue;
+    }
+
+    // This is a table header row. Check if any cells have metadata comments.
+    if (!line.includes("<!--")) {
+      tableIdx++;
+      continue;
+    }
+
+    // Split header cells (remove leading/trailing |)
+    const cellTexts = line
+      .trim()
+      .slice(1, -1)
+      .split("|");
+
+    const columnMetadata = new Map<number, ColumnMetadata>();
+    const cleanedCells: string[] = [];
+    let hasMetadata = false;
+
+    for (let colIdx = 0; colIdx < cellTexts.length; colIdx++) {
+      const cellText = cellTexts[colIdx];
+      TABLE_METADATA_COMMENT_RE.lastIndex = 0;
+      const match = TABLE_METADATA_COMMENT_RE.exec(cellText);
+
+      if (match) {
+        const meta = parseMetadataString(match[1]);
+        if (Object.keys(meta).length > 0) {
+          columnMetadata.set(colIdx, meta);
+          hasMetadata = true;
+        }
+        // Strip the comment from the cell text
+        cleanedCells.push(cellText.replace(TABLE_METADATA_COMMENT_RE, ""));
+      } else {
+        cleanedCells.push(cellText);
+      }
+    }
+
+    if (hasMetadata) {
+      metadata.set(tableIdx, columnMetadata);
+      // Reconstruct the header line without metadata comments
+      lines[i] = `|${cleanedCells.join("|")}|`;
+    }
+
+    tableIdx++;
+  }
+
+  return {
+    cleaned: lines.join("\n"),
+    metadata,
+  };
+}
+
+/**
+ * Apply extracted column metadata to TableHeader nodes in the ProseMirror
+ * document. Dispatches a single transaction with `addToHistory: false`.
+ */
+export function applyTableColumnMetadata(
+  editor: Editor,
+  metadata: TableColumnMetadataMap,
+): void {
+  if (metadata.size === 0) return;
+
+  const { state } = editor;
+  const tr = state.tr.setMeta("addToHistory", false);
+  let tableIdx = 0;
+  let modified = false;
+
+  state.doc.descendants((node, pos) => {
+    if (node.type.name !== "table") return;
+
+    const colMeta = metadata.get(tableIdx);
+    tableIdx++;
+
+    if (!colMeta) return;
+
+    // Walk the first row to find header cells
+    const firstRow = node.firstChild;
+    if (!firstRow) return;
+
+    let colIdx = 0;
+    firstRow.forEach((_cell, cellOffset) => {
+      const meta = colMeta.get(colIdx);
+      colIdx++;
+      if (!meta) return;
+
+      // pos is the table position, +1 for inside table, +cellOffset+1 for inside row
+      const cellPos = pos + 1 + cellOffset + 1;
+
+      if (meta.colType) {
+        tr.setNodeAttribute(cellPos, "colType", meta.colType);
+        modified = true;
+      }
+      if (meta.colCurrency) {
+        tr.setNodeAttribute(cellPos, "colCurrency", meta.colCurrency);
+        modified = true;
+      }
+      if (meta.colAggregation) {
+        tr.setNodeAttribute(cellPos, "colAggregation", meta.colAggregation);
+        modified = true;
+      }
+    });
+  });
+
+  if (modified) {
+    editor.view.dispatch(tr);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Editor ↔ Markdown helpers
 // ---------------------------------------------------------------------------
 
@@ -556,7 +745,13 @@ export function getMarkdownFromEditor(editor: Editor): string {
 }
 
 export function setMarkdownInEditor(editor: Editor, markdown: string): void {
-  setContentWithoutHistory(editor, encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(markdown))))))));
+  const { cleaned: noMeta, metadata } = extractTableColumnMetadata(markdown);
+  const encoded = encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))));
+  setContentWithoutHistory(editor, encoded);
+
+  if (metadata.size > 0) {
+    applyTableColumnMetadata(editor, metadata);
+  }
 }
 
 /**
@@ -586,7 +781,8 @@ export function loadRawMarkdownIntoEditor(
   rawMarkdown: string
 ): void {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
-  const encoded = encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned)))))));
+  const { cleaned: noMeta, metadata } = extractTableColumnMetadata(cleaned);
+  const encoded = encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))));
   editor.chain().setMeta("addToHistory", false).setContent(encoded).run();
 
   // Clear undo/redo history — the loaded content is a fresh baseline.
@@ -597,6 +793,10 @@ export function loadRawMarkdownIntoEditor(
     plugins: editor.state.plugins,
   });
   editor.view.updateState(freshState);
+
+  if (metadata.size > 0) {
+    applyTableColumnMetadata(editor, metadata);
+  }
 
   if (annotations.size > 0) {
     requestAnimationFrame(() => {
@@ -614,7 +814,13 @@ export function loadRawMarkdownIntoEditor(
 export function prepareInitialContent(rawMarkdown: string): {
   content: string;
   annotations: Map<number, string>;
+  tableMetadata: TableColumnMetadataMap;
 } {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
-  return { content: encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned))))))), annotations };
+  const { cleaned: noMeta, metadata } = extractTableColumnMetadata(cleaned);
+  return {
+    content: encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))),
+    annotations,
+    tableMetadata: metadata,
+  };
 }

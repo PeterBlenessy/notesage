@@ -17,7 +17,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableCell } from "@tiptap/extension-table-cell";
-import { TableHeader } from "@tiptap/extension-table-header";
+import { TableHeaderWithAttrs } from "@/components/editor/extensions/table-header-attrs";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import TextAlign from "@tiptap/extension-text-align";
@@ -115,7 +115,7 @@ export function createTestEditor(content: string): Editor {
       }),
       TableRow,
       TableCell,
-      TableHeader,
+      TableHeaderWithAttrs,
       TaskList,
       TaskItem.configure({
         nested: true,

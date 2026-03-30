@@ -6,7 +6,12 @@ import { Table } from "@tiptap/extension-table";
 import { serializeTable } from "@/components/editor/extensions/table-markdown";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableCell } from "@tiptap/extension-table-cell";
-import { TableHeader } from "@tiptap/extension-table-header";
+import { TableHeaderWithAttrs } from "@/components/editor/extensions/table-header-attrs";
+import { TableFilter } from "@/components/editor/extensions/table-filter";
+import { TableAggregation } from "@/components/editor/extensions/table-aggregation";
+import { TableSort } from "@/components/editor/extensions/table-sort";
+import { TableSparkline } from "@/components/editor/extensions/table-sparkline";
+import { TableHeaderMenu } from "@/components/editor/extensions/table-header-menu";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import TextAlign from "@tiptap/extension-text-align";
@@ -102,7 +107,7 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
           class: "border border-border p-2",
         },
       }),
-      TableHeader.configure({
+      TableHeaderWithAttrs.configure({
         HTMLAttributes: {
           class: "border border-border p-2 bg-muted font-semibold",
         },
@@ -143,6 +148,11 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       Drawing,
       Chart,
       LinkPreview,
+      TableFilter,
+      TableAggregation,
+      TableSort,
+      TableSparkline,
+      TableHeaderMenu,
     ],
     content,
     editable,

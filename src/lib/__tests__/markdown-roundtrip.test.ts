@@ -20,7 +20,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableCell } from "@tiptap/extension-table-cell";
-import { TableHeader } from "@tiptap/extension-table-header";
+import { TableHeaderWithAttrs } from "@/components/editor/extensions/table-header-attrs";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import TextAlign from "@tiptap/extension-text-align";
@@ -36,6 +36,7 @@ import { Drawing } from "@/components/editor/extensions/drawing";
 import { Chart } from "@/components/editor/extensions/chart";
 import { LinkPreview } from "@/components/editor/extensions/link-preview";
 import { convertCalloutsToHtml, convertDrawingsToHtml, convertChartsToHtml, convertLinkPreviewsToHtml } from "@/lib/markdown";
+import { serializeTable } from "@/components/editor/extensions/table-markdown";
 
 // ---------------------------------------------------------------------------
 // jsdom bootstrap — ProseMirror needs a global DOM
@@ -112,12 +113,22 @@ function createTestEditor(content: string): Editor {
       CodeBlockLowlight.configure({
         lowlight,
       }),
-      Table.configure({
+      Table.extend({
+        addStorage() {
+          return {
+            ...this.parent?.(),
+            markdown: {
+              serialize: serializeTable,
+              parse: {},
+            },
+          };
+        },
+      }).configure({
         resizable: false,
       }),
       TableRow,
       TableCell,
-      TableHeader,
+      TableHeaderWithAttrs,
       TaskList,
       TaskItem.configure({
         nested: true,

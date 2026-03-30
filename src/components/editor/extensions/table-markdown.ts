@@ -17,6 +17,80 @@
 
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 
+// ---------------------------------------------------------------------------
+// Column metadata serialization
+// ---------------------------------------------------------------------------
+
+/** Attribute name → comment key mapping. */
+const ATTR_TO_KEY: Record<string, string> = {
+  colType: "type",
+  colCurrency: "currency",
+  colAggregation: "summary",
+};
+
+/** Default values for column metadata attrs. */
+const ATTR_DEFAULTS: Record<string, unknown> = {
+  colType: "text",
+  colCurrency: null,
+  colAggregation: null,
+};
+
+/**
+ * Build a `<!-- key:value,key:value -->` comment string for a header cell's
+ * non-default column metadata attributes. Returns an empty string if all
+ * attributes are at their defaults.
+ */
+export function buildColumnMetadataComment(
+  cell: ProseMirrorNode,
+): string {
+  const parts: string[] = [];
+
+  for (const [attr, key] of Object.entries(ATTR_TO_KEY)) {
+    const value = cell.attrs[attr] as unknown;
+    const defaultValue = ATTR_DEFAULTS[attr];
+    if (value !== defaultValue && value !== undefined && value !== null && value !== "") {
+      parts.push(`${key}:${String(value)}`);
+    }
+  }
+
+  if (parts.length === 0) return "";
+  return ` <!-- ${parts.join(",")} -->`;
+}
+
+/**
+ * Parse a `<!-- key:value,key:value -->` comment string into a map of
+ * ProseMirror attribute names to values.
+ */
+export function parseColumnMetadataComment(
+  comment: string,
+): Record<string, string> {
+  const KEY_TO_ATTR: Record<string, string> = {
+    type: "colType",
+    currency: "colCurrency",
+    summary: "colAggregation",
+  };
+
+  const attrs: Record<string, string> = {};
+  const pairs = comment.split(",");
+
+  for (const pair of pairs) {
+    const colonIdx = pair.indexOf(":");
+    if (colonIdx < 0) continue;
+    const key = pair.slice(0, colonIdx).trim();
+    const value = pair.slice(colonIdx + 1).trim();
+    const attrName = KEY_TO_ATTR[key];
+    if (attrName && value) {
+      attrs[attrName] = value;
+    }
+  }
+
+  return attrs;
+}
+
+// ---------------------------------------------------------------------------
+// Cell text collection
+// ---------------------------------------------------------------------------
+
 /**
  * Collect text content from a ProseMirror node, preserving block
  * structure as <br> separators and list items as bullet/numbered prefixes.
@@ -120,6 +194,11 @@ export function serializeTable(
         if (cellContent && cellContent.textContent.trim()) {
           state.renderInline(cellContent);
         }
+        // Append column metadata comment for header cells (first row)
+        if (i === 0 && col.type.name === "tableHeader") {
+          const comment = buildColumnMetadataComment(col);
+          if (comment) state.write(comment);
+        }
       });
       state.write(" |");
       state.ensureNewLine();
@@ -148,6 +227,11 @@ export function serializeTable(
           const text = collectCellText(col);
           // Escape pipe characters within cell content
           state.write(text.replace(/\|/g, "\\|"));
+        }
+        // Append column metadata comment for header cells (first row)
+        if (i === 0 && col.type.name === "tableHeader") {
+          const comment = buildColumnMetadataComment(col);
+          if (comment) state.write(comment);
         }
       });
       state.write(" |");

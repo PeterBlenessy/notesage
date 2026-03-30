@@ -56,3 +56,16 @@ export {
   replaceAllMatches,
   getSearchState,
 } from './search-highlight';
+export {
+  TableFilter,
+  tableFilterPluginKey,
+  toggleTableFilter,
+  clearTableFilter,
+  getTableFilterState,
+} from './table-filter';
+export { TableAggregation, TableAggregationPluginKey, computeAggregations } from './table-aggregation';
+export type { AggregationResult } from './table-aggregation';
+export { TableSort, TableSortPluginKey, sortTableByColumn } from './table-sort';
+export { TableSparkline } from './table-sparkline';
+export { TableHeaderMenu, TableHeaderMenuPluginKey, TABLE_HEADER_MENU_EVENT } from './table-header-menu';
+export type { TableHeaderMenuEventDetail } from './table-header-menu';
