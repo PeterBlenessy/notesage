@@ -90,6 +90,7 @@ note-sage/
 │   │   │   ├── TranscriptionOverlay.tsx, SourceModeEditor.tsx
 │   │   │   ├── DrawingPreview.tsx, DrawingEditor.tsx
 │   │   │   ├── ChangeListPopover.tsx, FindBar.tsx, StatusBar.tsx
+│   │   │   ├── TableHeaderMenu.tsx  # Column type/aggregation context menu
 │   │   │   └── extensions/ # Custom Tiptap extensions (see editor-architecture.md)
 │   │   ├── sidebar/        # Sidebar.tsx, FileTree.tsx, FileTreeItem.tsx, ExplorerFolderItem.tsx
 │   │   ├── tabs/           # TabBar.tsx, Tab.tsx
@@ -240,7 +241,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `pnpm coverage:check` | Coverage regression detection | Compares changed files against `coverage-baseline.json` |
 | `pnpm coverage:update-baseline` | Update coverage baseline | Runs tests + writes `coverage-baseline.json` |
 
-**Test inventory (2026-03-28):** 52 unit test files (18 stores, 10 components, 11 hooks, 8 libraries, 4 perf harness), 5 Playwright E2E specs, 7 real E2E specs. ~1115 total test cases, 70.22% line coverage.
+**Test inventory (2026-03-30):** 65 unit test files (18 stores, 10 components, 11 hooks, 11 libraries, 6 extensions, 4 perf harness), 5 Playwright E2E specs, 7 real E2E specs. ~1537 total test cases.
 
 **Frontend coverage** uses `@vitest/coverage-istanbul` and requires Node 22 (pinned in `.nvmrc`). Coverage output lands in `./coverage/` (gitignored). Coverage baseline tracked in `coverage-baseline.json` with per-file metrics. Regression detection via `scripts/coverage-check.sh`: identifies changed `.ts`/`.tsx` files via git diff, compares per-file coverage against baseline, reports regressions. Currently warning-only (exit 0).
 

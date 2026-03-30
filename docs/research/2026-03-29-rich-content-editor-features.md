@@ -14,8 +14,8 @@
 | [Drawing Canvas — Tasks](../tasks/2026-03-29-drawing-canvas-tasks.md) | 14 tasks: Setup → Extension → Sidecar → NodeView → Markdown → UX → PDF → Tests → Polish | Complete |
 | [Inline Charts](../prds/2026-03-29-inline-charts.md) | Chart blocks (shadcn/ui Charts + Recharts), data editor panel, 6 chart types, PDF export | Complete |
 | [Inline Charts — Tasks](../tasks/2026-03-29-inline-charts-tasks.md) | 15 tasks: Setup → Types → Extension → Sidecar → Theming → Renderers → NodeView → Editor → Markdown → PDF → Tests | Complete |
-| [Dynamic Table Enhancements](../prds/2026-03-29-dynamic-table-enhancements.md) | Column aggregations, typed columns, sort/filter, sparklines | Draft |
-| [Dynamic Table Enhancements — Tasks](../tasks/2026-03-29-dynamic-table-enhancements-tasks.md) | 14 tasks: Metadata → Formatting → Aggregation → Sorting → Filtering → Sparklines → Context menu → PDF → Tests | Not started |
+| [Dynamic Table Enhancements](../prds/2026-03-29-dynamic-table-enhancements.md) | Column aggregations, typed columns, sort/filter, sparklines | Complete |
+| [Dynamic Table Enhancements — Tasks](../tasks/2026-03-29-dynamic-table-enhancements-tasks.md) | 14 tasks: Metadata → Formatting → Aggregation → Sorting → Filtering → Sparklines → Context menu → PDF → Tests | Complete |
 | [Rich Link Preview Cards](../prds/2026-03-29-rich-link-preview-cards.md) | URL embed cards with OpenGraph metadata, cached images | Complete |
 | [Rich Link Preview Cards — Tasks](../tasks/2026-03-29-rich-link-preview-cards-tasks.md) | 13 tasks: Backend → Extension → NodeView → Markdown → Paste/Slash/Context → PDF → Tests → Polish | Complete |
 

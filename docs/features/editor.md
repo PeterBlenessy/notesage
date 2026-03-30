@@ -10,7 +10,14 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 - Blockquotes, callout blocks (Note, Tip, Warning, Important — Obsidian `> [!type]` syntax), horizontal rules
 - Code blocks with syntax highlighting (lowlight)
 - Links (rendered inline, clickable — internal document links and external URLs), images (via URL prompt)
-- Tables (insert, add/remove rows/columns, merge/split cells, toggle headers)
+- Tables (insert, add/remove rows/columns, merge/split cells, toggle headers) with dynamic enhancements:
+  - Column types (text, number, currency, percentage, date) with locale-aware formatting via `Intl`
+  - Column aggregation footer (sum, avg, count, min, max) rendered as ProseMirror decoration
+  - Click-to-sort headers (asc/desc/clear) with visual sort indicators
+  - Row filtering via toolbar toggle (case-insensitive substring match, transient)
+  - Inline sparkline charts (`{{spark:12,15,9,22}}` → tiny SVG line chart)
+  - Right-click column configuration context menu (type, currency, aggregation)
+  - Column metadata persisted as HTML comments in markdown (`<!-- type:currency,currency:USD,summary:sum -->`)
 - Drawing blocks (inline Excalidraw canvas — shapes, arrows, text, freehand, connectors)
 - Link preview cards (rich cards with title, description, favicon, preview image — fetched from OpenGraph metadata, `> [!link](url)` markdown syntax)
 - Text color (8-color palette) and background highlights (6-color palette)
@@ -154,6 +161,15 @@ Hashtag-based tagging system with visual badges, autocomplete, and cross-file se
 | `src/components/editor/FindBar.tsx` | Find and replace bar |
 | `src/components/editor/StatusBar.tsx` | Editor status bar |
 | `src/components/editor/extensions/` | Custom Tiptap extensions |
+| `src/components/editor/TableHeaderMenu.tsx` | Column type/aggregation context menu (React) |
+| `src/components/editor/extensions/table-header-attrs.ts` | TableHeader with column metadata attributes |
+| `src/components/editor/extensions/table-aggregation.ts` | Aggregation engine + footer decoration |
+| `src/components/editor/extensions/table-sort.ts` | Sort command + sort indicator decorations |
+| `src/components/editor/extensions/table-filter.ts` | Row filter plugin with input widget |
+| `src/components/editor/extensions/table-sparkline.ts` | Sparkline inline SVG decorations |
+| `src/components/editor/extensions/table-header-menu.ts` | Context menu event handler + type badge decorations |
+| `src/lib/number-format.ts` | Number parsing and locale-aware formatting |
+| `src/lib/sparkline.ts` | Inline SVG sparkline renderer |
 | `src/hooks/useEditor.ts` | Tiptap editor instance hook |
 | `src/lib/markdown.ts` | Markdown ↔ ProseMirror conversion |
 | `src/stores/editor-store.ts` | Open tabs, active file |

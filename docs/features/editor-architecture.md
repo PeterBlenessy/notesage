@@ -42,6 +42,12 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | Callout | `callout.ts` | Node Extension | Callout blocks (Note, Tip, Warning, Important) with Obsidian `> [!type]` markdown round-tripping |
 | Drawing | `drawing.ts` | Node Extension + ReactNodeViewRenderer + Plugin | Inline Excalidraw canvas (atom node, sidecar `.excalidraw`/`.svg` storage, deletion cleanup plugin with 5s undo, markdown `![drawing](path.excalidraw)` round-tripping) |
 | LinkPreview | `link-preview.ts` | Node Extension + ReactNodeViewRenderer + Plugin | Rich link preview cards (atom node, OG metadata fetch, `> [!link](url)` markdown, paste detection prompt, `/embed` slash command) |
+| TableHeaderAttrs | `table-header-attrs.ts` | Node Extension | Extends TableHeader with `colType`, `colCurrency`, `colAggregation`, `colSortDirection` attributes |
+| TableAggregation | `table-aggregation.ts` | Plugin + Decoration | Computes column aggregations (sum/avg/count/min/max) and renders footer row via widget decoration |
+| TableSort | `table-sort.ts` | Plugin + Decoration + Command | Click-to-sort headers (asc/desc/clear) with sort indicator widget decorations on all header cells |
+| TableFilter | `table-filter.ts` | Plugin + Decoration | Row filtering with text input widget decoration; hides non-matching rows via node decorations |
+| TableSparkline | `table-sparkline.ts` | Plugin + Decoration | Detects `{{spark:...}}` patterns and renders inline SVG sparkline widgets; reveals raw text on focus |
+| TableHeaderMenu | `table-header-menu.ts` | Plugin + Decoration + DOM Event | Right-click context menu handler for column config; type badge widget decorations on header cells |
 | ~~ItemAnnotation~~ | ~~`item-annotation.ts`~~ | ~~Plugin + Decoration~~ | ~~Emoji annotations on list items (deferred — needs unified gutter design)~~ |
 | ~~DragHandle~~ | ~~`drag-handle.ts`~~ | ~~Plugin + DOM~~ | ~~Block drag handles (deferred — needs unified gutter design)~~ |
 

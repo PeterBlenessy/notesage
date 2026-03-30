@@ -34,6 +34,7 @@ Export notes to professionally typeset PDFs using the embedded Typst engine.
 - Template `.typ` files loaded via `include_str!` with parameterized `#show` rules
 - Tauri commands: `export_pdf` (compile), `save_binary_file` (write to disk)
 - Drawing blocks: `.excalidraw` image references rewritten to `.svg` paths; SVG files resolved from project root via `project_root` parameter
+- Dynamic table support: parses `<!-- type:currency,summary:sum -->` HTML comments from header cells, computes aggregation footer rows, applies number/currency/percentage formatting, degrades `{{spark:...}}` to comma-separated text
 
 ## EPUB Viewer
 

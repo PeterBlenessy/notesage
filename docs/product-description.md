@@ -12,7 +12,7 @@ Notesage is a rich text markdown editor with AI collaboration capabilities, pack
 
 | Feature | Summary | Details |
 | --- | --- | --- |
-| Editor | Tiptap rich text editor with markdown round-tripping, find & replace, inline tag badges | features/editor.md |
+| Editor | Tiptap rich text editor with markdown round-tripping, find & replace, inline tag badges, dynamic tables (column types, aggregation, sorting, filtering, sparklines) | features/editor.md |
 | Document Index | SQLite-backed index with AST-parsed tags, mentions, tasks, goals, and FTS5 content search | prds/2026-03-14-sqlite-document-index.md |
 | AI Providers | Multi-provider architecture (Anthropic, OpenAI, Ollama, Local AI, ACP agents, Copilot LSP), tool calling, network sandboxing | features/ai-providers.md |
 | AI Workflows | Chat with history/export/branching, agents, skills, MCP, tool calling, provider context isolation, comment delegation, research, voice transcription | features/ai-workflows.md |
@@ -39,13 +39,24 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 - Thinking effort slider for Codex ACP (Default/Low/Medium/High/Extra High)
 - PRD: `docs/prds/2026-02-21-agent-install-wizard.md`
 
+### Rich Content Blocks (Completed)
+
+**Goal:** Transform the editor from a plain text surface into a rich document authoring tool with embedded drawings, charts, callouts, link previews, and dynamic tables.
+
+- Callout blocks (Note, Tip, Warning, Important) with Obsidian `> [!type]` syntax and Typst PDF export
+- Inline Excalidraw drawing canvas with SVG preview, sidecar storage, and markdown round-tripping
+- Inline charts (6 types: bar, line, area, pie, radar, radial) with visual data editor, sidecar JSON, and PDF export
+- Rich link preview cards with OpenGraph metadata fetch, paste detection, and `> [!link](url)` markdown
+- Dynamic table enhancements: column types (text/number/currency/percentage/date), aggregation footer (sum/avg/count/min/max), click-to-sort, row filtering, inline sparkline charts, right-click column configuration, PDF export with footer rows
+- PRD: `docs/prds/2026-03-29-dynamic-table-enhancements.md`
+
 ### Beyond — Ideas
 
 - **Workflows & Automation:** User-defined YAML workflows as skills
 - **Collaboration:** Real-time collaborative editing (CRDT-based), share notes via link
 - **Mobile apps:** iOS app (Swift + Tauri Mobile), Android, sync across devices
 - **Plugins:** Plugin API (Rust or WASM), community marketplace
-- **Advanced editor:** Canvas mode, Mermaid diagrams, math equations, Excalidraw
+- **Advanced editor:** Canvas mode, Mermaid diagrams, math equations
 - **Knowledge base:** Backlinks, daily notes, graph view of note connections
 - **Advanced AI:** Multi-file context, semantic search, knowledge graph visualization
 

@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-29 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | Medium |
 | **Impact** | Tables become actionable with column summaries, typed data, sorting, and inline sparklines |
 | **Research** | [rich-content-editor-features](../research/2026-03-29-rich-content-editor-features.md) |
@@ -254,75 +254,75 @@ No new libraries required.
 
 ### Functional
 
-- [ ] Right-click column header shows type/aggregation options
+- [x]Right-click column header shows type/aggregation options
 
-- [ ] Setting column type formats cell values on display
+- [x]Setting column type formats cell values on display
 
-- [ ] Currency formatting with correct locale and symbol
+- [x]Currency formatting with correct locale and symbol
 
-- [ ] Percentage formatting (0.85 → 85%)
+- [x]Percentage formatting (0.85 → 85%)
 
-- [ ] Footer row shows computed aggregation for configured columns
+- [x]Footer row shows computed aggregation for configured columns
 
-- [ ] Footer updates live when cell values change
+- [x]Footer updates live when cell values change
 
-- [ ] Click header to sort ascending, again for descending, again for unsorted
+- [x]Click header to sort ascending, again for descending, again for unsorted
 
-- [ ] Sort reorders rows in the document
+- [x]Sort reorders rows in the document
 
-- [ ] Filter row hides non-matching rows without removing them
+- [x]Filter row hides non-matching rows without removing them
 
-- [ ] Sparkline renders as inline SVG from `{{spark:...}}` syntax
+- [x]Sparkline renders as inline SVG from `{{spark:...}}` syntax
 
-- [ ] Sparkline data editable by editing the cell text
+- [x]Sparkline data editable by editing the cell text
 
 ### Markdown Round-Trip
 
-- [ ] Column metadata serializes as HTML comments in header cells
+- [x]Column metadata serializes as HTML comments in header cells
 
-- [ ] `<!-- type:currency,currency:USD,summary:sum -->` parses correctly
+- [x]`<!-- type:currency,currency:USD,summary:sum -->` parses correctly
 
-- [ ] Tables without metadata remain unchanged
+- [x]Tables without metadata remain unchanged
 
-- [ ] Sparkline syntax `{{spark:...}}` round-trips as plain text
+- [x]Sparkline syntax `{{spark:...}}` round-trips as plain text
 
-- [ ] Sorting does not corrupt table structure
+- [x]Sorting does not corrupt table structure
 
-- [ ] All existing table round-trip tests continue to pass
+- [x]All existing table round-trip tests continue to pass
 
 ### PDF Export
 
-- [ ] Footer row renders in PDF with aggregation values
+- [x]Footer row renders in PDF with aggregation values
 
-- [ ] Number formatting preserved in PDF
+- [x]Number formatting preserved in PDF
 
-- [ ] Sparklines render as inline SVG in PDF (or gracefully degrade to text)
+- [x]Sparklines render as inline SVG in PDF (or gracefully degrade to text)
 
 ### Design
 
-- [ ] Footer row is visually distinct but not distracting
+- [x]Footer row is visually distinct but not distracting
 
-- [ ] Sort indicators are subtle and consistent
+- [x]Sort indicators are subtle and consistent
 
-- [ ] Column type badges are unobtrusive
+- [x]Column type badges are unobtrusive
 
-- [ ] Sparklines match the neutral aesthetic (muted stroke, no fill by default)
+- [x]Sparklines match the neutral aesthetic (muted stroke, no fill by default)
 
-- [ ] All enhancements work in both light and dark mode
+- [x]All enhancements work in both light and dark mode
 
 ### Testing
 
-- [ ] Unit tests for aggregation computation (sum, avg, count, min, max)
+- [x]Unit tests for aggregation computation (sum, avg, count, min, max)
 
-- [ ] Unit tests for number parsing (strip currency, commas, percentages)
+- [x]Unit tests for number parsing (strip currency, commas, percentages)
 
-- [ ] Unit tests for HTML comment metadata parsing and serialization
+- [x]Unit tests for HTML comment metadata parsing and serialization
 
-- [ ] Unit tests for sparkline SVG generation
+- [x]Unit tests for sparkline SVG generation
 
-- [ ] Unit tests for sort transaction correctness
+- [x]Unit tests for sort transaction correctness
 
-- [ ] All existing markdown round-trip tests continue to pass
+- [x]All existing markdown round-trip tests continue to pass
 
 ## Out of Scope
 
