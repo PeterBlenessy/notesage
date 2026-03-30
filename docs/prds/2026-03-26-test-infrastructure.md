@@ -186,45 +186,45 @@ playwright.config.ts
 
 ### Coverage tooling (Phase A)
 
-- [ ] `pnpm test:coverage` prints a text table with Stmts/Branch/Func/Lines percentages
+- [x]`pnpm test:coverage` prints a text table with Stmts/Branch/Func/Lines percentages
 
-- [ ] `coverage/` directory contains JSON summary and HTML report
+- [x]`coverage/` directory contains JSON summary and HTML report
 
-- [ ] Coverage report works in CI (GitHub Actions or equivalent)
+- [x]Coverage report works in CI (GitHub Actions or equivalent)
 
-- [ ] `.nvmrc` or volta pin ensures correct Node version
+- [x]`.nvmrc` or volta pin ensures correct Node version
 
 ### Component tests (Phase B)
 
-- [ ] 10 component test files exist in `src/components/__tests__/`
+- [x]10 component test files exist in `src/components/__tests__/`
 
-- [ ] Each component mounts without crash in both light and dark theme
+- [x]Each component mounts without crash in both light and dark theme
 
-- [ ] Key interactions tested (click, keyboard, open/close)
+- [x]Key interactions tested (click, keyboard, open/close)
 
-- [ ] Total component test count: 30+ assertions across 10 files
+- [x]Total component test count: 30+ assertions across 10 files
 
-- [ ] All tests pass in `pnpm test`
+- [x]All tests pass in `pnpm test`
 
 ### Playwright E2E (Phase C)
 
-- [ ] `pnpm test:e2e` runs 10+ E2E tests against dev server
+- [x]`pnpm test:e2e` runs 10+ E2E tests against dev server
 
-- [ ] Tauri IPC mock allows app to load and function without Rust backend
+- [x]Tauri IPC mock allows app to load and function without Rust backend
 
-- [ ] Tests cover: app load, file open, edit, save, tabs, slash commands, find, palette, theme, chat
+- [x]Tests cover: app load, file open, edit, save, tabs, slash commands, find, palette, theme, chat
 
-- [ ] Tests complete in &lt;60s total
+- [x]Tests complete in &lt;60s total
 
-- [ ] Playwright HTML report generated on failure
+- [x]Playwright HTML report generated on failure
 
 ### CI integration (Phase D)
 
-- [ ] CI runs `pnpm test:coverage` and `pnpm test:e2e` on every PR
+- [x]CI runs `pnpm test:coverage` and `pnpm test:e2e` on every PR
 
-- [ ] Failed tests block merge
+- [x]Failed tests block merge
 
-- [ ] Coverage report accessible as artifact or PR comment
+- [x]Coverage report accessible as artifact or PR comment
 
 ## Current State (2026-03-27)
 
