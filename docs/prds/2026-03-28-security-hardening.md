@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-28 |
-| **Status** | Complete (pending manual smoke test) |
+| **Status** | Complete |
 | **Priority** | High |
 | **Impact** | Eliminates UI freeze risk, removes data race conditions, improves error diagnostics, reduces dead code surface area |
 | **Depends on** | [codebase-audit-2026-03-17](../research/codebase-audit-2026-03-17.md) |
@@ -188,7 +188,7 @@ Wrap in `<Suspense fallback={<Skeleton />}>`.
 
 - [x] No new security warnings from `cargo clippy`
 - [x] App starts and runs normally — no regressions in test suite
-- [ ] Manual smoke test (requires human verification)
+- [x] Manual smoke test (requires human verification)
 
 ## Out of Scope
 
