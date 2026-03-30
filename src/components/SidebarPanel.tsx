@@ -18,7 +18,7 @@ interface SidebarPanelProps {
   onOpenExistingProject?: () => void;
   onOpenProjectSettings?: (projectPath: string) => void;
   onMakeProject?: (path: string) => void;
-  onExportFile?: (filePath: string, fileName: string) => void;
+  onExportFile?: (filePath: string, fileName: string, format?: 'pdf' | 'pptx') => void;
 }
 
 export function SidebarPanel({

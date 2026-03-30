@@ -1,5 +1,6 @@
+use super::markdown_to_pptx::markdown_to_pptx;
 use super::markdown_to_typst::markdown_to_typst;
-use super::templates::{apply_template, PageSize, Template, TemplateOptions};
+use super::templates::{apply_template, PageSize, PptxTemplate, Template, TemplateOptions};
 use super::typst_world::NotesageWorld;
 use std::time::Instant;
 
@@ -735,4 +736,241 @@ fn test_a5_page_size_all_templates() {
         );
         assert!(result.is_ok(), "A5 {:?} failed: {:?}", template, result.err());
     }
+}
+
+// ===========================================================================
+// PPTX Integration Tests
+// ===========================================================================
+
+/// Helper: generate PPTX and verify it's a valid ZIP with expected entries.
+fn pptx_pipeline(markdown: &str, title: &str, template: &str) -> Vec<u8> {
+    let result = markdown_to_pptx(markdown, title, template, None);
+    assert!(result.is_ok(), "PPTX export failed: {:?}", result.err());
+    let bytes = result.unwrap();
+    assert!(bytes.len() > 100, "PPTX too small: {} bytes", bytes.len());
+    assert_eq!(&bytes[0..4], b"PK\x03\x04", "Not a valid ZIP/PPTX");
+    bytes
+}
+
+/// Verify that the PPTX ZIP contains expected Office Open XML entries.
+fn assert_pptx_has_entries(bytes: &[u8], expected: &[&str]) {
+    let reader = std::io::Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(reader).expect("Failed to open PPTX as ZIP");
+    let names: Vec<String> = (0..archive.len())
+        .map(|i| archive.by_index(i).unwrap().name().to_string())
+        .collect();
+
+    for entry in expected {
+        assert!(
+            names.iter().any(|n| n.contains(entry)),
+            "Missing expected PPTX entry '{}'. Found: {:?}",
+            entry,
+            names
+        );
+    }
+}
+
+#[test]
+fn test_pptx_simple_document() {
+    let bytes = pptx_pipeline(SIMPLE_DOC, "Meeting Notes", "simple");
+    assert_pptx_has_entries(&bytes, &[
+        "[Content_Types].xml",
+        "ppt/presentation.xml",
+        "ppt/slides/slide1.xml",
+    ]);
+}
+
+#[test]
+fn test_pptx_complex_document() {
+    let bytes = pptx_pipeline(COMPLEX_DOC, "API Design Guide", "business");
+    // Complex doc has multiple H1s and tables — should produce multiple slides
+    assert_pptx_has_entries(&bytes, &[
+        "ppt/slides/slide1.xml",
+        "ppt/slides/slide2.xml",
+    ]);
+}
+
+#[test]
+fn test_pptx_all_templates_produce_valid_output() {
+    for template in ["simple", "business", "report"] {
+        let bytes = pptx_pipeline(SIMPLE_DOC, "Template Test", template);
+        assert_pptx_has_entries(&bytes, &["ppt/presentation.xml"]);
+    }
+}
+
+#[test]
+fn test_pptx_long_document_creates_multiple_slides() {
+    let bytes = pptx_pipeline(LONG_DOC, "Long Report", "report");
+    // Long doc has many H1/H2 sections — should produce many slides
+    let reader = std::io::Cursor::new(&bytes);
+    let archive = zip::ZipArchive::new(reader).expect("Failed to open PPTX");
+    let slide_count = (0..archive.len())
+        .filter(|&i| {
+            let name = archive.name_for_index(i).unwrap_or_default();
+            name.starts_with("ppt/slides/slide") && name.ends_with(".xml")
+        })
+        .count();
+    assert!(
+        slide_count >= 5,
+        "Long document should produce at least 5 slides, got {}",
+        slide_count
+    );
+}
+
+#[test]
+fn test_pptx_empty_document() {
+    let bytes = pptx_pipeline(EMPTY_DOC, "Empty", "simple");
+    // Should still produce at least a title slide
+    assert_pptx_has_entries(&bytes, &["ppt/slides/slide1.xml"]);
+}
+
+#[test]
+fn test_pptx_no_headings_document() {
+    let bytes = pptx_pipeline(NO_HEADINGS_DOC, "No Headings", "simple");
+    assert_pptx_has_entries(&bytes, &["ppt/slides/slide1.xml"]);
+}
+
+#[test]
+fn test_pptx_unicode_content() {
+    let markdown = "# Übersicht\n\n日本語のテキスト\n\n## Résumé\n\nCafé, naïve, über\n";
+    let bytes = pptx_pipeline(markdown, "Unicode", "simple");
+    assert_pptx_has_entries(&bytes, &["ppt/slides/slide1.xml"]);
+}
+
+#[test]
+fn test_pptx_special_characters_in_title() {
+    let titles = [
+        "Hello \"World\"",
+        "Report — Q4 2025",
+        "Notes: Important & Urgent",
+        "Price $100 @company",
+    ];
+    for title in &titles {
+        let result = markdown_to_pptx("# Test\n\nContent.", title, "simple", None);
+        assert!(result.is_ok(), "Title '{}' failed: {:?}", title, result.err());
+    }
+}
+
+#[test]
+fn test_pptx_performance_long_document() {
+    let start = Instant::now();
+    let _ = pptx_pipeline(LONG_DOC, "Perf Test", "report");
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed.as_secs() < 3,
+        "PPTX export took too long: {:?} (budget: 3s)",
+        elapsed
+    );
+}
+
+#[test]
+fn test_pptx_with_tables_and_code() {
+    let markdown = r#"# Data Review
+
+| Metric | Q1 | Q2 | Q3 |
+|--------|-----|-----|-----|
+| Revenue | 100 | 120 | 150 |
+| Users | 500 | 650 | 800 |
+
+## Implementation
+
+```rust
+fn calculate_growth(prev: f64, curr: f64) -> f64 {
+    (curr - prev) / prev * 100.0
+}
+```
+
+---
+
+# Summary
+
+- Growth is on track
+- Revenue exceeds projections
+"#;
+    let bytes = pptx_pipeline(markdown, "Data Review", "business");
+    assert_pptx_has_entries(&bytes, &[
+        "ppt/slides/slide1.xml",
+        "ppt/slides/slide2.xml",
+    ]);
+}
+
+#[test]
+fn test_pptx_with_speaker_notes() {
+    let markdown = r#"# Opening
+
+Welcome everyone.
+
+> [!notes]
+> Remember to introduce the team members.
+> Mention the agenda.
+
+# Agenda
+
+- Item 1
+- Item 2
+
+> [!notes]
+> Keep this section brief — 5 minutes max.
+"#;
+    let bytes = pptx_pipeline(markdown, "With Notes", "simple");
+    assert_pptx_has_entries(&bytes, &["ppt/slides/slide1.xml"]);
+    // Notes are embedded in the slide XML — verify the file is non-trivially sized
+    assert!(bytes.len() > 500);
+}
+
+#[test]
+fn test_pptx_with_callouts() {
+    let markdown = r#"# Guidelines
+
+> [!note]
+> Follow the coding standards.
+
+> [!warning]
+> Breaking changes require a migration guide.
+
+> [!tip]
+> Use automated testing.
+
+> [!important]
+> All PRs need two reviewers.
+"#;
+    let bytes = pptx_pipeline(markdown, "With Callouts", "simple");
+    assert_pptx_has_entries(&bytes, &["ppt/slides/slide1.xml"]);
+}
+
+#[test]
+fn test_pptx_overflow_produces_continuation_slides() {
+    // Create a slide with many bullet points to trigger continuation
+    let mut markdown = String::from("# Dense Slide\n\n");
+    for i in 1..=15 {
+        markdown.push_str(&format!("- Bullet point number {}\n", i));
+    }
+    let bytes = pptx_pipeline(&markdown, "Overflow Test", "simple");
+    let reader = std::io::Cursor::new(&bytes);
+    let archive = zip::ZipArchive::new(reader).expect("Failed to open PPTX");
+    let slide_count = (0..archive.len())
+        .filter(|&i| {
+            let name = archive.name_for_index(i).unwrap_or_default();
+            name.starts_with("ppt/slides/slide") && name.ends_with(".xml")
+        })
+        .count();
+    // Title slide + original slide + at least one continuation = 3+
+    assert!(
+        slide_count >= 3,
+        "15 bullets should produce continuation slides, got {} slides",
+        slide_count
+    );
+}
+
+#[test]
+fn test_pptx_task_lists() {
+    let markdown = r#"# Sprint Review
+
+- [x] Complete API design
+- [x] Write integration tests
+- [ ] Deploy to staging
+- [ ] Update documentation
+"#;
+    let bytes = pptx_pipeline(markdown, "Sprint Review", "simple");
+    assert_pptx_has_entries(&bytes, &["ppt/slides/slide1.xml"]);
 }

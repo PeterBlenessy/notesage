@@ -8,6 +8,8 @@ export type ContentWidth = "full" | "auto" | "a4" | "a5" | "letter";
 export type MeasurementUnit = "cm" | "inch";
 export type ExportTemplate = "clean" | "academic" | "report";
 export type ExportPageSize = "a4" | "letter" | "a5";
+export type ExportFormat = "pdf" | "pptx";
+export type PptxTemplate = "simple" | "business" | "report";
 export type PageBreaks = "continuous" | "visible";
 
 interface SettingsStore {
@@ -51,6 +53,8 @@ interface SettingsStore {
   lastExportPageSize: ExportPageSize;
   lastExportIncludeToC: boolean;
   lastExportIncludePageNumbers: boolean;
+  lastExportFormat: ExportFormat;
+  lastPptxTemplate: string;
   /** Whether custom personas have been migrated to agent files. Persisted. */
   personasMigrated: boolean;
   // Runtime-only (not persisted) — detected on startup
@@ -91,6 +95,8 @@ interface SettingsStore {
   setLastExportPageSize: (pageSize: ExportPageSize) => void;
   setLastExportIncludeToC: (include: boolean) => void;
   setLastExportIncludePageNumbers: (include: boolean) => void;
+  setLastExportFormat: (format: ExportFormat) => void;
+  setLastPptxTemplate: (template: string) => void;
   setStartupReady: (ready: boolean) => void;
   setICloudAvailable: (available: boolean) => void;
   setICloudNotesagePath: (path: string | null) => void;
@@ -139,6 +145,8 @@ export const useSettingsStore = create<SettingsStore>()(
       lastExportPageSize: "a4",
       lastExportIncludeToC: false,
       lastExportIncludePageNumbers: false,
+      lastExportFormat: "pdf",
+      lastPptxTemplate: "simple",
 
       setTheme: (theme: Theme) => {
         set({ theme });
@@ -274,6 +282,14 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setLastExportIncludePageNumbers: (include: boolean) => {
         set({ lastExportIncludePageNumbers: include });
+      },
+
+      setLastExportFormat: (format: ExportFormat) => {
+        set({ lastExportFormat: format });
+      },
+
+      setLastPptxTemplate: (template: string) => {
+        set({ lastPptxTemplate: template });
       },
 
       setStartupReady: (ready: boolean) => {

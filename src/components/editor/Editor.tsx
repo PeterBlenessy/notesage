@@ -231,7 +231,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     documentDir: activeTab ? getDocumentDir(activeTab.filePath) : undefined,
   });
 
-  const { exportPdf, isExporting } = useExportOperations(editor);
+  const { exportPdf, exportPptx, isExporting } = useExportOperations(editor);
   const { reviewActive, compareBranch, handleAcceptAll, handleRejectAll } = useDiffReview(editor);
   useFileWatcher();
   useCopilotCompletion(editor);
@@ -607,7 +607,11 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           open={exportOpen ?? false}
           onOpenChange={(open) => onExportOpenChange?.(open)}
           onExport={async (options) => {
-            await exportPdf(options);
+            if (options.format === 'pptx') {
+              await exportPptx(options);
+            } else {
+              await exportPdf(options);
+            }
             onExportOpenChange?.(false);
           }}
           isExporting={isExporting}

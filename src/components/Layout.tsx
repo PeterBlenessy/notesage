@@ -133,7 +133,7 @@ export interface LayoutProps {
   onBrowseForProject: () => void;
   onOpenProjectSettings: (path: string) => void;
   onMakeProject: (path: string) => void;
-  onExportFile: (filePath: string, fileName: string) => void;
+  onExportFile: (filePath: string, fileName: string, format?: 'pdf' | 'pptx') => void;
   // Activity
   onCancelTask: (taskId: string) => Promise<void>;
   onClickTask: (task: import("@/stores/activity-store").AgentTask) => void;

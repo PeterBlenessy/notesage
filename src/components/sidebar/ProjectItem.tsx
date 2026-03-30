@@ -30,7 +30,7 @@ interface ProjectItemProps {
   onNewNote?: (parentPath?: string) => void;
   onOpenProjectSettings?: (projectPath: string) => void;
   onCloseProject?: (projectPath: string) => void;
-  onExportFile?: (filePath: string, fileName: string) => void;
+  onExportFile?: (filePath: string, fileName: string, format?: 'pdf' | 'pptx') => void;
 }
 
 export function ProjectItem({

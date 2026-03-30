@@ -5,11 +5,15 @@
 | Stage | Link | Status |
 | --- | --- | --- |
 | PRD | [docx-export](../prds/2026-03-30-docx-export.md) | Draft |
-| PRD | [pptx-export](../prds/2026-03-30-pptx-export.md) | Draft |
+| Tasks | [docx-export-tasks](../tasks/2026-03-30-docx-export-tasks.md) | Not started |
+| PRD | [pptx-export](../prds/2026-03-30-pptx-export.md) | Complete |
+| Tasks | [pptx-export-tasks](../tasks/2026-03-30-pptx-export-tasks.md) | Complete |
 | PRD | [custom-templates](../prds/2026-03-30-custom-templates.md) | Draft |
 | PRD | [html-preview](../prds/2026-03-30-html-preview.md) | Draft |
+| Tasks | [html-preview-tasks](../tasks/2026-03-30-html-preview-tasks.md) | Not started |
 | PRD | [code-file-highlighting](../prds/2026-03-30-code-file-highlighting.md) | Draft |
 | PRD | [pptx-viewer](../prds/2026-03-30-pptx-viewer.md) | Draft |
+| Tasks | [pptx-viewer-tasks](../tasks/2026-03-30-pptx-viewer-tasks.md) | Not started |
 
 Notesage currently exports to PDF (via Typst) and views EPUB, DOCX, PDF, and plain text files. The [document-formats feature doc](../features/document-formats.md) lists five future enhancements: DOCX export, PPTX export, custom template editor, HTML preview, and code file syntax highlighting. This research evaluates the best solutions for each.
 

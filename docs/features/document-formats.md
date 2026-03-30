@@ -30,7 +30,7 @@ Export notes to professionally typeset PDFs using the embedded Typst engine.
 
 - Typst 0.14 embedded compiler with custom `World` trait implementation (`NotesageWorld`)
 - Markdown → Typst markup conversion via comrak GFM parser (`markdown_to_typst`)
-- Bundled fonts: Inter (sans-serif), Source Serif 4 (serif), JetBrains Mono (code) — all OFL-licensed, ~2.7MB total
+- Bundled fonts: Inter (sans-serif), Source Serif 4 (serif), JetBrains Mono (code) — all OFL-licensed, \~2.7MB total
 - Template `.typ` files loaded via `include_str!` with parameterized `#show` rules
 - Tauri commands: `export_pdf` (compile), `save_binary_file` (write to disk)
 - Drawing blocks: `.excalidraw` image references rewritten to `.svg` paths; SVG files resolved from project root via `project_root` parameter
@@ -83,26 +83,81 @@ Read EPUB ebooks directly in Notesage with paginated or scrollable rendering.
 - Text layer search with `highlightTextLayerMatches` utility
 - In-document search (Cmd+F)
 
+## PPTX Export
+
+Export notes to presentation slides using the ppt-rs crate.
+
+**Export triggers:**
+
+- Cmd+Shift+E keyboard shortcut (opens export dialog, select PowerPoint format)
+- Right-click sidebar context menu on .md files → "Export as PowerPoint"
+
+**Slide splitting:**
+
+- H1 headings create new slides with the heading as title
+- H2 appears as subtitle on the same slide
+- H3-H6 rendered as bold body text
+- `---` horizontal rules force explicit slide breaks
+- First slide is always a title slide with document title and date
+- Content before first heading becomes title slide subtitle
+- Slides with >8 bullets or >300 words split into continuation slides with "(cont.)" suffix
+
+**Content type mapping:**
+
+- Bullet lists → PowerPoint bullet points with nesting levels
+- Numbered lists → numbered points
+- Task lists → checkbox symbols (☐/☑)
+- GFM tables → native PowerPoint tables via QuickTable
+- Code blocks → monospace-styled text (14pt, no bullet marker)
+- Images → embedded in PPTX (resolved from project root)
+- Excalidraw drawings → resolved to .svg counterparts
+- Inline charts → native PowerPoint charts (bar, line, area, pie, donut)
+- `> [!notes]` callouts → speaker notes pane (not on slide)
+- Other callouts (note, tip, warning, important) → styled text with label prefix
+- `> [!link](url)` → text with URL
+
+**Templates (built-in):**
+
+- **Simple** — 44pt titles, neutral colors, no slide numbers
+- **Business** — 40pt titles, header line, slide numbers
+- **Report** — 44pt titles, white-on-dark title color, slide numbers
+
+**User-uploaded templates:**
+
+- Import `.pptx`/`.potx` files via "Add Template" button in export dialog
+- Templates stored in `~/.notesage/pptx-templates/` (global) and `<project>/.notesage/pptx-templates/` (project)
+- Per-project templates override global templates with the same name
+- Delete on hover in template picker
+
+**Architecture:**
+
+- `ppt-rs` v0.2 crate for PPTX generation (ECMA-376 Office Open XML)
+- Markdown parsed with `comrak` (already a dependency) into intermediate slide model
+- Template config applied via font sizes and colors on SlideContent
+- Tauri commands: `export_pptx` (generate), `import_pptx_template`, `list_pptx_templates`, `delete_pptx_template`
+
 ## Key Files
 
 | File | Purpose |
 | --- | --- |
-| `src-tauri/src/commands/export.rs` | PDF export commands |
-| `src-tauri/src/export/` | Typst engine (world, converter, templates) |
+| `src-tauri/src/commands/export.rs` | PDF + PPTX export commands, template management |
+| `src-tauri/src/export/` | Typst engine + PPTX converter |
+| `src-tauri/src/export/markdown_to_pptx.rs` | Markdown → ppt-rs slide model converter |
+| `src-tauri/src/export/templates.rs` | PDF + PPTX template configurations |
 | `src-tauri/fonts/` | Bundled fonts |
 | `src-tauri/templates/` | Typst template presets |
 | `src/components/editor/viewers/EpubViewer.tsx` | EPUB reader |
 | `src/components/editor/viewers/PdfViewer.tsx` | PDF viewer |
 | `src/components/editor/viewers/DocxViewer.tsx` | DOCX viewer |
 | `src/components/editor/viewers/PlainTextViewer.tsx` | Plain text viewer |
-| `src/components/ExportDialog.tsx` | PDF export options dialog |
+| `src/components/ExportDialog.tsx` | Export options dialog (PDF + PowerPoint) |
+| `src/hooks/useExportOperations.ts` | Export operations hook (PDF + PPTX routing) |
 | `src/stores/epub-store.ts` | EPUB viewer preferences and bookmarks |
 | `public/foliate-js/` | Vendored EPUB renderer |
 
 ## Future Enhancements
 
 - DOCX export (preserve formatting, embedded images, Word styles mapping)
-- PPTX export (headings → slides, lists → bullet points)
 - Custom template editor and template marketplace
 - HTML rendering and preview
 - Code file syntax highlighting

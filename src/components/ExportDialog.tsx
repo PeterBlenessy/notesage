@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { FileDown, Loader2 } from "lucide-react";
+import { FileDown, Loader2, Plus } from "lucide-react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +23,10 @@ import {
   useSettingsStore,
   type ExportTemplate,
   type ExportPageSize,
+  type ExportFormat,
+  type PptxTemplate,
 } from "@/stores/settings-store";
+import { tauriApi, type PptxTemplateInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 interface ExportDialogProps {
@@ -32,13 +37,15 @@ interface ExportDialogProps {
 }
 
 export interface ExportOptions {
+  format: ExportFormat;
   template: ExportTemplate;
   includeToc: boolean;
   includePageNumbers: boolean;
   pageSize: ExportPageSize;
+  pptxTemplate: string;
 }
 
-const TEMPLATES: {
+const PDF_TEMPLATES: {
   id: ExportTemplate;
   label: string;
   description: string;
@@ -68,8 +75,30 @@ const TEMPLATES: {
   },
 ];
 
+const PPTX_TEMPLATES: {
+  id: PptxTemplate;
+  label: string;
+  description: string;
+}[] = [
+  {
+    id: "simple",
+    label: "Simple",
+    description: "Clean, minimal slides",
+  },
+  {
+    id: "business",
+    label: "Business",
+    description: "Professional layout",
+  },
+  {
+    id: "report",
+    label: "Report",
+    description: "Detailed, structured",
+  },
+];
+
 export function ExportDialog({
-  open,
+  open: isOpen,
   onOpenChange,
   onExport,
   isExporting,
@@ -79,35 +108,58 @@ export function ExportDialog({
     lastExportPageSize,
     lastExportIncludeToC,
     lastExportIncludePageNumbers,
+    lastExportFormat,
+    lastPptxTemplate,
   } = useSettingsStore();
 
+  const [format, setFormat] = useState<ExportFormat>(lastExportFormat);
   const [template, setTemplate] = useState<ExportTemplate>(lastExportTemplate);
   const [includeToc, setIncludeToc] = useState(lastExportIncludeToC);
   const [includePageNumbers, setIncludePageNumbers] = useState(
     lastExportIncludePageNumbers
   );
   const [pageSize, setPageSize] = useState<ExportPageSize>(lastExportPageSize);
+  const [pptxTemplate, setPptxTemplate] = useState<string>(lastPptxTemplate);
+  const [userTemplates, setUserTemplates] = useState<PptxTemplateInfo[]>([]);
 
   // Reset to last-used settings when dialog opens
   useEffect(() => {
-    if (open) {
+    if (isOpen) {
+      setFormat(lastExportFormat);
       setTemplate(lastExportTemplate);
       setIncludeToc(lastExportIncludeToC);
       setIncludePageNumbers(lastExportIncludePageNumbers);
       setPageSize(lastExportPageSize);
+      setPptxTemplate(lastPptxTemplate);
     }
   }, [
-    open,
+    isOpen,
+    lastExportFormat,
     lastExportTemplate,
     lastExportPageSize,
     lastExportIncludeToC,
     lastExportIncludePageNumbers,
+    lastPptxTemplate,
   ]);
+
+  // Load user PPTX templates when dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      tauriApi
+        .listPptxTemplates()
+        .then((templates) => {
+          setUserTemplates(templates.filter((t) => t.scope !== "builtin"));
+        })
+        .catch(() => {
+          // Backend command may not exist yet — silently ignore
+        });
+    }
+  }, [isOpen]);
 
   const handleTemplateChange = (id: ExportTemplate) => {
     setTemplate(id);
     // Apply template defaults when switching
-    const tmpl = TEMPLATES.find((t) => t.id === id);
+    const tmpl = PDF_TEMPLATES.find((t) => t.id === id);
     if (tmpl) {
       setIncludeToc(tmpl.defaultToc);
       setIncludePageNumbers(tmpl.defaultPageNumbers);
@@ -115,93 +167,239 @@ export function ExportDialog({
   };
 
   const handleExport = () => {
-    onExport({ template, includeToc, includePageNumbers, pageSize });
+    onExport({
+      format,
+      template,
+      includeToc,
+      includePageNumbers,
+      pageSize,
+      pptxTemplate,
+    });
+  };
+
+  const handleImportTemplate = async () => {
+    try {
+      const selected = await open({
+        title: "Import PPTX Template",
+        filters: [{ name: "PowerPoint", extensions: ["pptx", "potx"] }],
+      });
+      if (selected) {
+        const info = await tauriApi.importPptxTemplate({
+          sourcePath: selected as string,
+          scope: "global",
+        });
+        setUserTemplates((prev) => [...prev, info]);
+        setPptxTemplate(info.id);
+        toast.success(`Template "${info.name}" imported`);
+      }
+    } catch (err) {
+      toast.error(`Failed to import template: ${err}`);
+    }
+  };
+
+  const handleDeleteTemplate = async (tmpl: PptxTemplateInfo) => {
+    try {
+      await tauriApi.deletePptxTemplate({
+        templateId: tmpl.id,
+        scope: tmpl.scope,
+      });
+      setUserTemplates((prev) => prev.filter((t) => t.id !== tmpl.id));
+      if (pptxTemplate === tmpl.id) setPptxTemplate("simple");
+      toast.success("Template removed");
+    } catch (err) {
+      toast.error(`Failed to remove template: ${err}`);
+    }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[420px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileDown className="h-4 w-4" strokeWidth={1.5} />
-            Export as PDF
+            Export
           </DialogTitle>
-          <DialogDescription className="sr-only">Configure PDF export options</DialogDescription>
+          <DialogDescription className="sr-only">
+            Configure export options
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5">
-          {/* Template selector */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Style</label>
-            <div className="grid grid-cols-3 gap-2">
-              {TEMPLATES.map((tmpl) => (
-                <button
-                  key={tmpl.id}
-                  onClick={() => handleTemplateChange(tmpl.id)}
-                  className={cn(
-                    "flex flex-col items-center gap-1 rounded-md border p-3 text-center transition-colors",
-                    template === tmpl.id
-                      ? "border-foreground/30 bg-accent"
-                      : "border-border hover:bg-accent/50"
-                  )}
-                >
-                  <span className="text-sm font-medium">{tmpl.label}</span>
-                  <span className="text-[11px] leading-tight text-muted-foreground">
-                    {tmpl.description}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Options */}
-          <div className="space-y-3">
-            <label
-              className="flex cursor-pointer items-center gap-2.5"
-              htmlFor="export-toc"
-            >
-              <Checkbox
-                id="export-toc"
-                checked={includeToc}
-                onCheckedChange={(checked) =>
-                  setIncludeToc(checked === true)
-                }
-              />
-              <span className="text-sm">Include table of contents</span>
-            </label>
-
-            <label
-              className="flex cursor-pointer items-center gap-2.5"
-              htmlFor="export-page-numbers"
-            >
-              <Checkbox
-                id="export-page-numbers"
-                checked={includePageNumbers}
-                onCheckedChange={(checked) =>
-                  setIncludePageNumbers(checked === true)
-                }
-              />
-              <span className="text-sm">Include page numbers</span>
-            </label>
-          </div>
-
-          {/* Page size */}
+          {/* Format selector */}
           <div className="flex items-center justify-between">
-            <label className="text-sm font-medium">Page size</label>
+            <label className="text-sm font-medium">Format</label>
             <Select
-              value={pageSize}
-              onValueChange={(v) => setPageSize(v as ExportPageSize)}
+              value={format}
+              onValueChange={(v) => setFormat(v as ExportFormat)}
             >
-              <SelectTrigger className="w-32">
+              <SelectTrigger className="w-40">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="a4">A4</SelectItem>
-                <SelectItem value="letter">Letter</SelectItem>
-                <SelectItem value="a5">A5</SelectItem>
+                <SelectItem value="pdf">PDF</SelectItem>
+                <SelectItem value="pptx">PowerPoint</SelectItem>
               </SelectContent>
             </Select>
           </div>
+
+          {format === "pdf" && (
+            <>
+              {/* PDF Template selector */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Style</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {PDF_TEMPLATES.map((tmpl) => (
+                    <button
+                      key={tmpl.id}
+                      onClick={() => handleTemplateChange(tmpl.id)}
+                      className={cn(
+                        "flex flex-col items-center gap-1 rounded-md border p-3 text-center transition-colors",
+                        template === tmpl.id
+                          ? "border-foreground/30 bg-accent"
+                          : "border-border hover:bg-accent/50"
+                      )}
+                    >
+                      <span className="text-sm font-medium">{tmpl.label}</span>
+                      <span className="text-[11px] leading-tight text-muted-foreground">
+                        {tmpl.description}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* PDF Options */}
+              <div className="space-y-3">
+                <label
+                  className="flex cursor-pointer items-center gap-2.5"
+                  htmlFor="export-toc"
+                >
+                  <Checkbox
+                    id="export-toc"
+                    checked={includeToc}
+                    onCheckedChange={(checked) =>
+                      setIncludeToc(checked === true)
+                    }
+                  />
+                  <span className="text-sm">Include table of contents</span>
+                </label>
+
+                <label
+                  className="flex cursor-pointer items-center gap-2.5"
+                  htmlFor="export-page-numbers"
+                >
+                  <Checkbox
+                    id="export-page-numbers"
+                    checked={includePageNumbers}
+                    onCheckedChange={(checked) =>
+                      setIncludePageNumbers(checked === true)
+                    }
+                  />
+                  <span className="text-sm">Include page numbers</span>
+                </label>
+              </div>
+
+              {/* Page size */}
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Page size</label>
+                <Select
+                  value={pageSize}
+                  onValueChange={(v) => setPageSize(v as ExportPageSize)}
+                >
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="a4">A4</SelectItem>
+                    <SelectItem value="letter">Letter</SelectItem>
+                    <SelectItem value="a5">A5</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          )}
+
+          {format === "pptx" && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Style</label>
+
+              {/* Built-in PPTX templates */}
+              <div className="grid grid-cols-3 gap-2">
+                {PPTX_TEMPLATES.map((tmpl) => (
+                  <button
+                    key={tmpl.id}
+                    onClick={() => setPptxTemplate(tmpl.id)}
+                    className={cn(
+                      "flex flex-col items-center gap-1 rounded-md border p-3 text-center transition-colors",
+                      pptxTemplate === tmpl.id
+                        ? "border-foreground/30 bg-accent"
+                        : "border-border hover:bg-accent/50"
+                    )}
+                  >
+                    <span className="text-sm font-medium">{tmpl.label}</span>
+                    <span className="text-[11px] leading-tight text-muted-foreground">
+                      {tmpl.description}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* User templates */}
+              {userTemplates.length > 0 && (
+                <>
+                  <div className="flex items-center gap-2 pt-2">
+                    <div className="h-px flex-1 bg-border" />
+                    <span className="text-xs text-muted-foreground">
+                      Custom
+                    </span>
+                    <div className="h-px flex-1 bg-border" />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {userTemplates.map((tmpl) => (
+                      <div key={tmpl.id} className="relative group">
+                        <button
+                          onClick={() => setPptxTemplate(tmpl.id)}
+                          className={cn(
+                            "flex w-full flex-col items-center gap-1 rounded-md border p-3 text-center transition-colors",
+                            pptxTemplate === tmpl.id
+                              ? "border-foreground/30 bg-accent"
+                              : "border-border hover:bg-accent/50"
+                          )}
+                        >
+                          <span className="text-sm font-medium truncate w-full">
+                            {tmpl.name}
+                          </span>
+                          <span className="text-[11px] leading-tight text-muted-foreground">
+                            {tmpl.scope === "project" ? "Project" : "Global"}
+                          </span>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteTemplate(tmpl);
+                          }}
+                          className="absolute -top-1.5 -right-1.5 hidden group-hover:flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground text-xs transition-opacity"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* Add Template button */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-2"
+                onClick={handleImportTemplate}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+                Add Template
+              </Button>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -214,8 +412,10 @@ export function ExportDialog({
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Exporting...
               </>
-            ) : (
+            ) : format === "pdf" ? (
               "Export PDF"
+            ) : (
+              "Export PPTX"
             )}
           </Button>
         </DialogFooter>

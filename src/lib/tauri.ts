@@ -38,6 +38,14 @@ export interface SyncSettings {
   syncedProjects: string[];
 }
 
+export interface PptxTemplateInfo {
+  id: string;
+  name: string;
+  scope: string;  // "builtin" | "global" | "project"
+  path: string;
+  date_added: string;
+}
+
 // ---------------------------------------------------------------------------
 // Skill & Agent types
 // ---------------------------------------------------------------------------
@@ -497,6 +505,34 @@ export const tauriApi = {
 
   async saveBinaryFile(path: string, data: number[]): Promise<void> {
     await invoke("save_binary_file", { path, data });
+  },
+
+  async exportPptx(options: {
+    markdown: string;
+    title: string;
+    template: string;
+  }): Promise<number[]> {
+    return await invoke<number[]>("export_pptx", options);
+  },
+
+  async importPptxTemplate(options: {
+    sourcePath: string;
+    scope: string;
+    projectRoot?: string;
+  }): Promise<PptxTemplateInfo> {
+    return await invoke<PptxTemplateInfo>("import_pptx_template", options);
+  },
+
+  async listPptxTemplates(projectRoot?: string): Promise<PptxTemplateInfo[]> {
+    return await invoke<PptxTemplateInfo[]>("list_pptx_templates", { projectRoot });
+  },
+
+  async deletePptxTemplate(options: {
+    templateId: string;
+    scope: string;
+    projectRoot?: string;
+  }): Promise<void> {
+    await invoke("delete_pptx_template", options);
   },
 
   // iCloud sync operations

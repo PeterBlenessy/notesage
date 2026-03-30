@@ -303,11 +303,14 @@ function App() {
     setNewProjectOpen(true);
   }, []);
 
-  const handleExportFile = useCallback(async (filePath: string, fileName: string) => {
+  const handleExportFile = useCallback(async (filePath: string, fileName: string, format?: 'pdf' | 'pptx') => {
     const { tabs, activeTabId } = useEditorStore.getState();
     const activeTab = tabs.find((t) => t.id === activeTabId);
     if (!activeTab || activeTab.filePath !== filePath) {
       await openFile(filePath, fileName);
+    }
+    if (format) {
+      useSettingsStore.getState().setLastExportFormat(format);
     }
     setExportOpen(true);
   }, [openFile]);

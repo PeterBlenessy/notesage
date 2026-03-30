@@ -12,7 +12,7 @@ import type { ExportOptions } from "@/components/ExportDialog";
 export function useExportOperations(editor: Editor | null) {
   const [isExporting, setIsExporting] = useState(false);
 
-  const exportPdf = useCallback(
+  const handleExport = useCallback(
     async (options: ExportOptions) => {
       if (!editor) return;
 
@@ -33,48 +33,87 @@ export function useExportOperations(editor: Editor | null) {
       setIsExporting(true);
 
       try {
-        // Generate PDF via Tauri backend
-        const pdfBytes = await tauriApi.exportPdf({
-          markdown,
-          title,
-          template: options.template,
-          includeToc: options.includeToc,
-          includePageNumbers: options.includePageNumbers,
-          pageSize: options.pageSize,
-        });
+        if (options.format === "pptx") {
+          // Generate PPTX via Tauri backend
+          const pptxBytes = await tauriApi.exportPptx({
+            markdown,
+            title,
+            template: options.pptxTemplate,
+          });
 
-        // Derive default save path from source file
-        const defaultPath = activeTab.filePath.replace(/\.md$/i, ".pdf");
+          // Derive default save path from source file
+          const defaultPath = activeTab.filePath.replace(/\.md$/i, ".pptx");
 
-        // Show native save dialog
-        const savePath = await save({
-          title: "Export PDF",
-          defaultPath,
-          filters: [{ name: "PDF", extensions: ["pdf"] }],
-        });
+          // Show native save dialog
+          const savePath = await save({
+            title: "Export PowerPoint",
+            defaultPath,
+            filters: [{ name: "PowerPoint", extensions: ["pptx"] }],
+          });
 
-        if (!savePath) {
-          // User cancelled
-          setIsExporting(false);
-          return;
+          if (!savePath) {
+            setIsExporting(false);
+            return;
+          }
+
+          // Write PPTX to disk
+          await tauriApi.saveBinaryFile(savePath, pptxBytes);
+
+          // Persist last-used export settings
+          const settings = useSettingsStore.getState();
+          settings.setLastExportFormat("pptx");
+          settings.setLastPptxTemplate(options.pptxTemplate);
+
+          toast.success("PowerPoint exported", {
+            action: {
+              label: "Reveal in Finder",
+              onClick: () => tauriApi.revealInFinder(savePath),
+            },
+          });
+        } else {
+          // Generate PDF via Tauri backend
+          const pdfBytes = await tauriApi.exportPdf({
+            markdown,
+            title,
+            template: options.template,
+            includeToc: options.includeToc,
+            includePageNumbers: options.includePageNumbers,
+            pageSize: options.pageSize,
+          });
+
+          // Derive default save path from source file
+          const defaultPath = activeTab.filePath.replace(/\.md$/i, ".pdf");
+
+          // Show native save dialog
+          const savePath = await save({
+            title: "Export PDF",
+            defaultPath,
+            filters: [{ name: "PDF", extensions: ["pdf"] }],
+          });
+
+          if (!savePath) {
+            setIsExporting(false);
+            return;
+          }
+
+          // Write PDF to disk
+          await tauriApi.saveBinaryFile(savePath, pdfBytes);
+
+          // Persist last-used export settings
+          const settings = useSettingsStore.getState();
+          settings.setLastExportFormat("pdf");
+          settings.setLastExportTemplate(options.template);
+          settings.setLastExportPageSize(options.pageSize);
+          settings.setLastExportIncludeToC(options.includeToc);
+          settings.setLastExportIncludePageNumbers(options.includePageNumbers);
+
+          toast.success("PDF exported", {
+            action: {
+              label: "Reveal in Finder",
+              onClick: () => tauriApi.revealInFinder(savePath),
+            },
+          });
         }
-
-        // Write PDF to disk
-        await tauriApi.saveBinaryFile(savePath, pdfBytes);
-
-        // Persist last-used export settings
-        const settings = useSettingsStore.getState();
-        settings.setLastExportTemplate(options.template);
-        settings.setLastExportPageSize(options.pageSize);
-        settings.setLastExportIncludeToC(options.includeToc);
-        settings.setLastExportIncludePageNumbers(options.includePageNumbers);
-
-        toast.success("PDF exported", {
-          action: {
-            label: "Reveal in Finder",
-            onClick: () => tauriApi.revealInFinder(savePath),
-          },
-        });
       } catch (error) {
         console.error("Export failed:", error);
         toast.error(`Export failed: ${error}`);
@@ -85,5 +124,5 @@ export function useExportOperations(editor: Editor | null) {
     [editor]
   );
 
-  return { exportPdf, isExporting };
+  return { exportPdf: handleExport, exportPptx: handleExport, isExporting };
 }
