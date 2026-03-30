@@ -241,6 +241,8 @@ pub fn run() {
             migrate_credentials,
             // Web search
             web_search,
+            // Link preview metadata
+            fetch_link_metadata,
             // System font enumeration
             list_system_fonts,
         ])

@@ -25,6 +25,15 @@ struct CalloutInfo {
     title: Option<String>,
 }
 
+struct LinkPreviewInfo {
+    url: String,
+    title: Option<String>,
+    description: Option<String>,
+    site_name: Option<String>,
+    #[allow(dead_code)]
+    image_url: Option<String>,
+}
+
 struct Converter {
     output: String,
     /// Track list nesting depth for indentation.
@@ -186,8 +195,11 @@ impl Converter {
                 // Handled by convert_task_list — skip if encountered standalone
             }
             NodeValue::BlockQuote => {
+                // Check if this is a link preview card (> [!link](url))
+                if let Some(link_info) = self.detect_link_preview(node) {
+                    self.render_link_preview(&link_info);
                 // Check if this is a callout block (> [!type] or > [!type] Title)
-                if let Some(callout) = self.detect_callout(node) {
+                } else if let Some(callout) = self.detect_callout(node) {
                     self.render_callout(node, &callout);
                 } else {
                     self.write("#quote(block: true)[");
@@ -443,6 +455,188 @@ impl Converter {
         })
     }
 
+    /// Detect if a blockquote is a link preview card by checking for `[!link](url)`.
+    ///
+    /// Comrak parses `[!link](url)` as a `Link` node with child text "!link",
+    /// so we detect a Link whose text content is exactly "!link".
+    fn detect_link_preview<'a>(
+        &self,
+        node: &'a comrak::nodes::AstNode<'a>,
+    ) -> Option<LinkPreviewInfo> {
+        let first_child = node.first_child()?;
+        if !matches!(first_child.data.borrow().value, NodeValue::Paragraph) {
+            return None;
+        }
+
+        let first_inline = first_child.first_child()?;
+        let url = match &first_inline.data.borrow().value {
+            NodeValue::Link(link) => {
+                let link_text = self.collect_text(first_inline);
+                if link_text != "!link" {
+                    return None;
+                }
+                link.url.clone()
+            }
+            _ => return None,
+        };
+
+        let mut title: Option<String> = None;
+        let mut description: Option<String> = None;
+        let mut site_name: Option<String> = None;
+        let mut image_url: Option<String> = None;
+        let mut lines: Vec<String> = Vec::new();
+        let mut first_para = true;
+
+        // Helper: extract image URL from HTML comment nodes or text
+        let extract_metadata = |text: &str, image_url: &mut Option<String>| {
+            let trimmed = text.trim();
+            if let Some(rest) = trimmed.strip_prefix("<!--image:") {
+                if let Some(url) = rest.strip_suffix("-->") {
+                    *image_url = Some(url.to_string());
+                }
+            }
+        };
+
+        for child in node.children() {
+            if !matches!(child.data.borrow().value, NodeValue::Paragraph) {
+                continue;
+            }
+            if first_para {
+                first_para = false;
+                let mut skip_link = true;
+                for inner in child.children() {
+                    let inner_val = inner.data.borrow().value.clone();
+                    if skip_link {
+                        skip_link = false;
+                        if matches!(inner_val, NodeValue::Link(_)) {
+                            continue;
+                        }
+                    }
+                    match inner_val {
+                        NodeValue::Strong => {
+                            let bold_text = self.collect_text(inner);
+                            if !bold_text.is_empty() {
+                                title = Some(bold_text);
+                            }
+                        }
+                        NodeValue::Text(ref t) => {
+                            for line in t.lines() {
+                                let trimmed = line.trim();
+                                if trimmed.starts_with("<!--") {
+                                    extract_metadata(trimmed, &mut image_url);
+                                    continue;
+                                }
+                                if !trimmed.is_empty() {
+                                    lines.push(trimmed.to_string());
+                                }
+                            }
+                        }
+                        NodeValue::HtmlInline(ref html) => {
+                            extract_metadata(html, &mut image_url);
+                        }
+                        NodeValue::HtmlBlock(ref hb) => {
+                            extract_metadata(&hb.literal, &mut image_url);
+                        }
+                        NodeValue::SoftBreak => {}
+                        _ => {}
+                    }
+                }
+            } else {
+                for inner in child.children() {
+                    let inner_val = inner.data.borrow().value.clone();
+                    match inner_val {
+                        NodeValue::Strong => {
+                            let bold_text = self.collect_text(inner);
+                            if title.is_none() && !bold_text.is_empty() {
+                                title = Some(bold_text);
+                            }
+                        }
+                        NodeValue::Text(ref t) => {
+                            for line in t.lines() {
+                                let trimmed = line.trim();
+                                if trimmed.starts_with("<!--") {
+                                    extract_metadata(trimmed, &mut image_url);
+                                    continue;
+                                }
+                                if !trimmed.is_empty() {
+                                    lines.push(trimmed.to_string());
+                                }
+                            }
+                        }
+                        NodeValue::HtmlInline(ref html) => {
+                            extract_metadata(html, &mut image_url);
+                        }
+                        NodeValue::HtmlBlock(ref hb) => {
+                            extract_metadata(&hb.literal, &mut image_url);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        for line in &lines {
+            if description.is_none() {
+                description = Some(line.clone());
+            } else if site_name.is_none() {
+                site_name = Some(line.clone());
+            } else {
+                let prev_site = site_name.take().unwrap();
+                let d = description.as_mut().unwrap();
+                d.push(' ');
+                d.push_str(&prev_site);
+                site_name = Some(line.clone());
+            }
+        }
+
+        Some(LinkPreviewInfo {
+            url,
+            title,
+            description,
+            site_name,
+            image_url,
+        })
+    }
+
+    /// Render a link preview card as a styled Typst block.
+    /// Render a link preview card as a styled Typst block (text only, no images).
+    fn render_link_preview(&mut self, info: &LinkPreviewInfo) {
+        self.write("#block(stroke: 1pt + rgb(\"#E0E0E0\"), fill: rgb(\"#FAFAFA\"), inset: 12pt, radius: 6pt, width: 100%)[\n");
+
+        if let Some(ref site) = info.site_name {
+            self.write(&format!(
+                "  #text(fill: rgb(\"#888888\"), size: 0.8em)[{}]\n",
+                escape_typst(site)
+            ));
+        }
+
+        if let Some(ref title) = info.title {
+            if info.site_name.is_some() {
+                self.write("\n");
+            }
+            self.write(&format!(
+                "  #text(weight: \"semibold\")[{}]\n",
+                escape_typst(title)
+            ));
+        }
+
+        if let Some(ref desc) = info.description {
+            self.write("\n");
+            self.write(&format!(
+                "  #text(fill: rgb(\"#666666\"), size: 0.9em)[{}]\n",
+                escape_typst(desc)
+            ));
+        }
+
+        self.write("\n");
+        self.write(&format!(
+            "  #text(fill: rgb(\"#999999\"), size: 0.8em)[{}]\n",
+            escape_typst(&info.url)
+        ));
+
+        self.write("]\n\n");
+    }
+
     /// Render a callout block as a styled Typst block.
     fn render_callout<'a>(&mut self, node: &'a comrak::nodes::AstNode<'a>, info: &CalloutInfo) {
         let (stroke_color, fill_color, label) = match info.callout_type.as_str() {
@@ -541,6 +735,7 @@ fn escape_typst(text: &str) -> String {
             '<' => result.push_str("\\<"),
             '>' => result.push_str("\\>"),
             '$' => result.push_str("\\$"),
+            '/' => result.push_str("\\/"),
             '\\' => result.push_str("\\\\"),
             _ => result.push(ch),
         }
@@ -857,6 +1052,97 @@ print("hello")
             "regular image should be unchanged: {}",
             output
         );
+    }
+
+    #[test]
+    fn test_link_preview_basic() {
+        let input = "> [!link](https://example.com)\n> **Example Title**\n> A description of the page\n> example.com";
+        let output = markdown_to_typst(input);
+        assert!(output.contains("#block("), "missing block: {}", output);
+        assert!(output.contains("Example Title"), "missing title: {}", output);
+        assert!(output.contains("A description of the page"), "missing description: {}", output);
+        assert!(output.contains("example.com"), "missing site name: {}", output);
+        assert!(output.contains("https:\\/\\/example.com"), "missing URL: {}", output);
+    }
+
+    #[test]
+    fn test_link_preview_url_only() {
+        let input = "> [!link](https://example.com)";
+        let output = markdown_to_typst(input);
+        assert!(output.contains("#block("), "missing block: {}", output);
+        assert!(output.contains("https:\\/\\/example.com"), "missing URL: {}", output);
+    }
+
+    #[test]
+    fn test_link_preview_does_not_affect_callouts() {
+        let input = "> [!note]\n> This is a note.";
+        let output = markdown_to_typst(input);
+        // Should be a callout, not a link preview
+        assert!(output.contains("Note"), "should be callout: {}", output);
+        assert!(!output.contains("stroke: 1pt"), "should not be link preview card: {}", output);
+    }
+
+    #[test]
+    fn test_link_preview_with_metadata_comments() {
+        let input = "> [!link](https://example.com)\n> **Title**\n> Description\n> example.com\n> <!--image:https://example.com/img.png-->\n> <!--favicon:https://example.com/fav.ico-->";
+        let output = markdown_to_typst(input);
+        let _ = &output; // used below
+        assert!(output.contains("#block("), "missing block: {}", output);
+        assert!(output.contains("Title"), "missing title: {}", output);
+        assert!(!output.contains("<!--"), "metadata comments should be stripped: {}", output);
+        assert!(!output.contains("image:"), "image metadata leaked: {}", output);
+    }
+
+    #[test]
+    fn test_link_preview_with_metadata_compiles_to_pdf() {
+        use super::super::typst_world::NotesageWorld;
+
+        let markdown = "# Test\n\n> [!link](https://example.com)\n> **Example**\n> A description\n> example.com\n> <!--image:https://example.com/img.png-->\n> <!--favicon:https://example.com/fav.ico-->\n";
+        let typst = markdown_to_typst(markdown);
+        let _ = &typst; // used below
+        let world = NotesageWorld::new(typst);
+        let result = world.export_pdf();
+        assert!(result.is_ok(), "PDF export failed: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_link_preview_gmail_compiles_to_pdf() {
+        use super::super::typst_world::NotesageWorld;
+
+        // Simulate what the app actually saves for a gmail.com link preview
+        let markdown = r#"# Test
+
+> [!link](https://gmail.com)
+> **Gmail**
+> Preview unavailable
+> gmail.com
+> <!--image:https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico-->
+> <!--favicon:https://gmail.com/favicon.ico-->
+"#;
+        let typst = markdown_to_typst(markdown);
+        let _ = &typst; // used below
+        let world = NotesageWorld::new(typst);
+        let result = world.export_pdf();
+        assert!(result.is_ok(), "PDF export failed: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_real_document_with_link_previews() {
+        use super::super::typst_world::NotesageWorld;
+
+        let markdown = "## Changes\n\n/\n\n> [!link](https://github.com)\n> **GitHub**\n> Description\n> GitHub\n> <!--image:https://example.com/img.png-->\n> <!--favicon:https://github.com/fav.ico-->\n".to_string();
+        let typst = markdown_to_typst(&markdown);
+        let _ = &typst; // used below
+        let world = NotesageWorld::new(typst);
+        let result = world.export_pdf();
+        assert!(result.is_ok(), "PDF export failed: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_link_preview_does_not_affect_regular_blockquote() {
+        let input = "> This is a regular quote";
+        let output = markdown_to_typst(input);
+        assert!(output.contains("#quote(block: true)"), "should be blockquote: {}", output);
     }
 
     #[test]

@@ -1293,3 +1293,25 @@ mark.dom-find-highlight-active {
   color: var(--color-muted-foreground);
   font-size: 14px;
 }
+
+/* Link preview cards */
+
+.link-preview-wrapper {
+  margin: 0.5rem 0;
+}
+
+/* Strip the default ProseMirror node-view wrapper border/outline */
+[data-node-view-wrapper]:has(.link-preview-wrapper) {
+  margin: 0;
+  border: none !important;
+  outline: none !important;
+  border-radius: 0.5rem;
+}
+
+/* line-clamp utility for descriptions (Tailwind v4 may not include this) */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

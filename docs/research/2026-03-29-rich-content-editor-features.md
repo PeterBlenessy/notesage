@@ -8,16 +8,16 @@
 
 | Stage | Link | Status |
 | --- | --- | --- |
-| [Callout Blocks](../prds/2026-03-29-callout-blocks.md) | Admonition blocks (Note, Tip, Warning, Important) with Obsidian-compatible syntax | Completed |
-| [Callout Blocks — Tasks](../tasks/2026-03-29-callout-blocks-tasks.md) | 10 tasks: CSS → Extension → Markdown → Slash/Toolbar → Typst → Tests → Polish | Completed |
-| [Drawing Canvas](../prds/2026-03-29-drawing-canvas.md) | Inline Excalidraw editor, SVG export, sidecar storage | Draft |
-| [Drawing Canvas — Tasks](../tasks/2026-03-29-drawing-canvas-tasks.md) | 14 tasks: Setup → Extension → Sidecar → NodeView → Markdown → UX → PDF → Tests → Polish | Not started |
-| [Inline Charts](../prds/2026-03-29-inline-charts.md) | Chart blocks (Nivo), data editor panel, 6 chart types, PDF export | Draft |
-| [Inline Charts — Tasks](../tasks/2026-03-29-inline-charts-tasks.md) | 15 tasks: Setup → Types → Extension → Sidecar → Theming → Renderers → NodeView → Editor → Markdown → PDF → Tests | Not started |
+| [Callout Blocks](../prds/2026-03-29-callout-blocks.md) | Admonition blocks (Note, Tip, Warning, Important) with Obsidian-compatible syntax | Complete |
+| [Callout Blocks — Tasks](../tasks/2026-03-29-callout-blocks-tasks.md) | 10 tasks: CSS → Extension → Markdown → Slash/Toolbar → Typst → Tests → Polish | Complete |
+| [Drawing Canvas](../prds/2026-03-29-drawing-canvas.md) | Inline Excalidraw editor, SVG export, sidecar storage | Complete |
+| [Drawing Canvas — Tasks](../tasks/2026-03-29-drawing-canvas-tasks.md) | 14 tasks: Setup → Extension → Sidecar → NodeView → Markdown → UX → PDF → Tests → Polish | Complete |
+| [Inline Charts](../prds/2026-03-29-inline-charts.md) | Chart blocks (shadcn/ui Charts + Recharts), data editor panel, 6 chart types, PDF export | Complete |
+| [Inline Charts — Tasks](../tasks/2026-03-29-inline-charts-tasks.md) | 15 tasks: Setup → Types → Extension → Sidecar → Theming → Renderers → NodeView → Editor → Markdown → PDF → Tests | Complete |
 | [Dynamic Table Enhancements](../prds/2026-03-29-dynamic-table-enhancements.md) | Column aggregations, typed columns, sort/filter, sparklines | Draft |
 | [Dynamic Table Enhancements — Tasks](../tasks/2026-03-29-dynamic-table-enhancements-tasks.md) | 14 tasks: Metadata → Formatting → Aggregation → Sorting → Filtering → Sparklines → Context menu → PDF → Tests | Not started |
-| [Rich Link Preview Cards](../prds/2026-03-29-rich-link-preview-cards.md) | URL embed cards with OpenGraph metadata, cached images | Draft |
-| [Rich Link Preview Cards — Tasks](../tasks/2026-03-29-rich-link-preview-cards-tasks.md) | 13 tasks: Backend → Extension → NodeView → Markdown → Paste/Slash/Context → PDF → Tests → Polish | Not started |
+| [Rich Link Preview Cards](../prds/2026-03-29-rich-link-preview-cards.md) | URL embed cards with OpenGraph metadata, cached images | Complete |
+| [Rich Link Preview Cards — Tasks](../tasks/2026-03-29-rich-link-preview-cards-tasks.md) | 13 tasks: Backend → Extension → NodeView → Markdown → Paste/Slash/Context → PDF → Tests → Polish | Complete |
 
 ## Design Philosophy
 
@@ -95,39 +95,52 @@ Features must be **simple to use and produce beautiful results**. Think designer
 
 ### Libraries Evaluated
 
-**Nivo** (Recommended)
+**shadcn/ui Charts + Recharts** (Selected — 2026-03-29)
 
-- React-native, built on D3, outputs **SVG** (crisp at any scale, PDF-friendly)
-- Beautiful defaults out of the box — charts look premium without customization
-- Comprehensive theming system (can match Notesage's neutral palette)
-- 30+ chart types; we'd curate to the 6-8 most useful
-- Server-side rendering support (useful for PDF export)
+- shadcn/ui already has a [Charts component](https://ui.shadcn.com/charts) built on Recharts — design system mandate says "use shadcn/ui first"
+- Recharts: 31.9M weekly npm downloads, 26.9K GitHub stars, actively maintained (committed 2026-03-29)
+- React 19 compatible (Recharts v3.x)
+- SVG output, PDF-friendly
+- Uses the same CSS variable theming as the rest of Notesage — light/dark/soft-contrast works automatically
+- Composable primitives: `ChartContainer`, `ChartTooltip`, `ChartLegend`, `ChartConfig`
 - MIT license, free
-- \~13K GitHub stars
-- [nivo.rocks](https://nivo.rocks)
+- Only adds `recharts` as a dependency (\~139KB gzipped, tree-shakeable)
 
-**Recharts** (Strong alternative)
+**Nivo** (Rejected — 2026-03-29)
 
-- React components producing SVG, built on D3
-- Clean declarative API — each axis, grid, line is a React component
-- Beautiful output, good defaults
-- MIT license, free
-- \~24K GitHub stars
-- Less customizable than Nivo for advanced theming
+- React-native, built on D3, outputs SVG
+- Beautiful defaults out of the box
+- **Red flags:** Homepage (nivo.rocks) deployment paused, last npm release May 2025 (10 months ago). react-spring dependency adds animation weight. Slower maintenance cadence.
+- \~14K GitHub stars, \~650K weekly downloads (20x less than Recharts)
+- Would introduce a separate theming paradigm (Nivo theme objects) instead of using shadcn/ui's CSS variable system
+
+**Victory** (Rejected)
+
+- 11.3K stars, 408K weekly downloads — declining
+- Formidable → NearForm acquisition slowed development
+- Last commit 3+ months ago, React 19 compatibility unconfirmed
+
+**visx** (Rejected)
+
+- Low-level D3 + React primitives from Airbnb
+- 3-5x implementation effort for equivalent output
+- 20.7K stars but last release Nov 2025
 
 **Chart.js** (Rejected)
 
 - Canvas-based (rasterized), not SVG — blurry when scaled, poor PDF export
 - Functional but not report-quality output
 
-**Observable Plot** (Considered)
+**Observable Plot** (Rejected)
 
-- Modern, declarative, outputs SVG (\~30KB)
-- More statistical/analytical — less suited for simple business charts
+- Not a React library — imperative DOM API clashes with React/ProseMirror declarative model
+- Requires custom wrappers for every chart type
+
+**Other evaluated:** Tremor (222KB, wraps Recharts — use Recharts directly), frappe-charts (React wrapper dead since 2023), uPlot (canvas, no pie charts), lightweight-charts (financial only)
 
 ### Recommendation
 
-**Nivo** for primary chart rendering — SVG output, React-native, beautiful defaults, rich theming. The interactive playground at nivo.rocks lets us prototype chart designs before implementing.
+**shadcn/ui Charts (Recharts)** — follows the design system mandate, uses the same CSS variable theming, most actively maintained SVG chart library in the React ecosystem, and avoids introducing a separate theming paradigm.
 
 ## 3. Dynamic Tables with Computed Summaries
 
@@ -274,7 +287,7 @@ Based on design impact, user simplicity, and report generation value:
 | --- | --- | --- | --- |
 | **1** | **Drawing canvas (Excalidraw)** | High | Most requested. Transforms what's possible in a note. Freehand + shapes + arrows covers diagrams, sketches, annotations. |
 | **2** | **Callout blocks** | Low | Highest visual impact per effort. Makes every document more structured and polished. |
-| **3** | **Charts (Nivo)** | Medium | Core to report generation. Beautiful SVG charts inline in documents. |
+| **3** | **Charts (shadcn/ui + Recharts)** | Medium | Core to report generation. Beautiful SVG charts inline in documents. |
 | **4** | **Dynamic table summaries** | Medium | Computed footer rows make tables actionable. Essential for reports with numbers. |
 | **5** | **Rich link preview cards** | Medium | Turns plain URLs into visual, informative cards. Great for research and references. |
 | **6** | **Table sparklines** | Low | Polish feature — best added after charts and dynamic tables exist. |

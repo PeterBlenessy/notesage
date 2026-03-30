@@ -12,6 +12,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 - Links (rendered inline, clickable — internal document links and external URLs), images (via URL prompt)
 - Tables (insert, add/remove rows/columns, merge/split cells, toggle headers)
 - Drawing blocks (inline Excalidraw canvas — shapes, arrows, text, freehand, connectors)
+- Link preview cards (rich cards with title, description, favicon, preview image — fetched from OpenGraph metadata, `> [!link](url)` markdown syntax)
 - Text color (8-color palette) and background highlights (6-color palette)
 - Text alignment (left, center, right)
 

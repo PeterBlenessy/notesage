@@ -338,6 +338,15 @@ export interface BinaryStatus {
   path: string | null;
 }
 
+export interface LinkMetadata {
+  url: string;
+  title: string | null;
+  description: string | null;
+  site_name: string | null;
+  image_url: string | null;
+  favicon_url: string | null;
+}
+
 export const tauriApi = {
   async readFile(path: string): Promise<string> {
     return await invoke<string>("read_file", { path });
@@ -886,5 +895,10 @@ export const tauriApi = {
 
   async getRuntimeModelMetadata(port: number): Promise<ModelMetadata> {
     return await invoke<ModelMetadata>("get_runtime_model_metadata", { port });
+  },
+
+  // Link preview metadata
+  async fetchLinkMetadata(url: string): Promise<LinkMetadata> {
+    return await invoke<LinkMetadata>("fetch_link_metadata", { url });
   },
 };

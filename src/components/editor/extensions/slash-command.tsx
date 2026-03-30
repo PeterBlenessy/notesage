@@ -27,6 +27,7 @@ import {
   CircleAlert,
   Pencil,
   BarChart3,
+  Link,
 } from "lucide-react";
 
 interface CommandItem {
@@ -197,6 +198,14 @@ const commands: CommandItem[] = [
     icon: BarChart3,
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).insertChart().run();
+    },
+  },
+  {
+    title: "Embed",
+    description: "Embed a link preview card",
+    icon: Link,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).insertLinkPreview({ url: "" }).run();
     },
   },
 ];

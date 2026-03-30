@@ -97,6 +97,9 @@ urlencoding = "2"
 # System font enumeration
 font-kit = "0.14"
 
+# HTML parsing for link preview metadata extraction
+scraper = "0.23"
+
 # Voice transcription
 whisper-rs = "0.15"
 cpal = "0.15"

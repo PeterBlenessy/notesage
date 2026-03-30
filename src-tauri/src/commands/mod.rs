@@ -34,6 +34,7 @@ pub mod constants;
 pub mod credentials;
 pub mod web_search;
 pub mod fonts;
+pub mod link_preview;
 
 pub use file::*;
 pub use dialog::*;
@@ -63,3 +64,4 @@ pub use actions::*;
 pub use credentials::*;
 pub use web_search::*;
 pub use fonts::*;
+pub use link_preview::*;

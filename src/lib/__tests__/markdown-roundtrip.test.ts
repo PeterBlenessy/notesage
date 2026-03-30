@@ -34,7 +34,8 @@ import { Markdown } from "tiptap-markdown";
 import { Callout } from "@/components/editor/extensions/callout";
 import { Drawing } from "@/components/editor/extensions/drawing";
 import { Chart } from "@/components/editor/extensions/chart";
-import { convertCalloutsToHtml, convertDrawingsToHtml, convertChartsToHtml } from "@/lib/markdown";
+import { LinkPreview } from "@/components/editor/extensions/link-preview";
+import { convertCalloutsToHtml, convertDrawingsToHtml, convertChartsToHtml, convertLinkPreviewsToHtml } from "@/lib/markdown";
 
 // ---------------------------------------------------------------------------
 // jsdom bootstrap — ProseMirror needs a global DOM
@@ -130,8 +131,9 @@ function createTestEditor(content: string): Editor {
       Callout,
       Drawing,
       Chart,
+      LinkPreview,
     ],
-    content: convertChartsToHtml(convertDrawingsToHtml(convertCalloutsToHtml(content))),
+    content: convertLinkPreviewsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertCalloutsToHtml(content)))),
     editable: false,
   });
 }

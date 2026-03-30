@@ -325,6 +325,96 @@ function escapeHtml(text: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Link preview preprocessing
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert link preview blockquote syntax (`> [!link](url)`) to HTML
+ * `<div data-link-preview>` elements before tiptap-markdown parses the content.
+ *
+ * Format:
+ * ```
+ * > [!link](https://example.com)
+ * > **Title**
+ * > Description text
+ * > site.com
+ * ```
+ *
+ * The `[!link]` marker distinguishes these from callouts (`[!note]`, etc.)
+ * and regular blockquotes.
+ */
+export function convertLinkPreviewsToHtml(markdown: string): string {
+  const lines = markdown.split("\n");
+  const result: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    // Match: > [!link](url)
+    const headerMatch = lines[i].match(
+      /^>\s*\[!link\]\((.+)\)\s*$/
+    );
+
+    if (headerMatch) {
+      const url = headerMatch[1];
+      let title: string | null = null;
+      let description: string | null = null;
+      let siteName: string | null = null;
+      let imageUrl: string | null = null;
+      let faviconUrl: string | null = null;
+
+      // Collect continuation lines
+      i++;
+      const bodyLines: string[] = [];
+      while (i < lines.length && /^>/.test(lines[i])) {
+        const content = lines[i].replace(/^>\s?/, "").trim();
+        if (content) bodyLines.push(content);
+        i++;
+      }
+
+      // Parse body lines: extract metadata comments, **bold** = title, rest = description/siteName
+      for (const line of bodyLines) {
+        // Hidden metadata: <!--image:url--> and <!--favicon:url-->
+        const imageMatch = line.match(/^<!--image:(.+)-->$/);
+        if (imageMatch) { imageUrl = imageMatch[1]; continue; }
+        const faviconMatch = line.match(/^<!--favicon:(.+)-->$/);
+        if (faviconMatch) { faviconUrl = faviconMatch[1]; continue; }
+
+        const boldMatch = line.match(/^\*\*(.+)\*\*$/);
+        if (boldMatch && !title) {
+          title = boldMatch[1];
+        } else if (siteName === null && description !== null) {
+          siteName = line;
+        } else if (description === null) {
+          description = line;
+        } else {
+          if (siteName) {
+            description += " " + siteName;
+          }
+          siteName = line;
+        }
+      }
+
+      const attrs = [
+        `data-link-preview="${escapeHtml(url)}"`,
+        title ? `data-title="${escapeHtml(title)}"` : "",
+        description ? `data-description="${escapeHtml(description)}"` : "",
+        siteName ? `data-site-name="${escapeHtml(siteName)}"` : "",
+        imageUrl ? `data-image-url="${escapeHtml(imageUrl)}"` : "",
+        faviconUrl ? `data-favicon-url="${escapeHtml(faviconUrl)}"` : "",
+      ].filter(Boolean).join(" ");
+
+      result.push(`<div ${attrs}></div>`, "");
+      continue;
+    }
+
+    result.push(lines[i]);
+    i++;
+  }
+
+  return result.join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Drawing (Excalidraw) preprocessing
 // ---------------------------------------------------------------------------
 
@@ -466,7 +556,7 @@ export function getMarkdownFromEditor(editor: Editor): string {
 }
 
 export function setMarkdownInEditor(editor: Editor, markdown: string): void {
-  setContentWithoutHistory(editor, encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(markdown)))))));
+  setContentWithoutHistory(editor, encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(markdown))))))));
 }
 
 /**
@@ -496,7 +586,7 @@ export function loadRawMarkdownIntoEditor(
   rawMarkdown: string
 ): void {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
-  const encoded = encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned))))));
+  const encoded = encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned)))))));
   editor.chain().setMeta("addToHistory", false).setContent(encoded).run();
 
   // Clear undo/redo history — the loaded content is a fresh baseline.
@@ -526,5 +616,5 @@ export function prepareInitialContent(rawMarkdown: string): {
   annotations: Map<number, string>;
 } {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
-  return { content: encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned)))))), annotations };
+  return { content: encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(cleaned))))))), annotations };
 }

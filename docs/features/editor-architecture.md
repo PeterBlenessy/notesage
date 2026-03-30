@@ -41,6 +41,7 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | LinkClick | `link-click.ts` | Plugin | Click handler for link navigation (internal files → open as tab, external → system browser) |
 | Callout | `callout.ts` | Node Extension | Callout blocks (Note, Tip, Warning, Important) with Obsidian `> [!type]` markdown round-tripping |
 | Drawing | `drawing.ts` | Node Extension + ReactNodeViewRenderer + Plugin | Inline Excalidraw canvas (atom node, sidecar `.excalidraw`/`.svg` storage, deletion cleanup plugin with 5s undo, markdown `![drawing](path.excalidraw)` round-tripping) |
+| LinkPreview | `link-preview.ts` | Node Extension + ReactNodeViewRenderer + Plugin | Rich link preview cards (atom node, OG metadata fetch, `> [!link](url)` markdown, paste detection prompt, `/embed` slash command) |
 | ~~ItemAnnotation~~ | ~~`item-annotation.ts`~~ | ~~Plugin + Decoration~~ | ~~Emoji annotations on list items (deferred — needs unified gutter design)~~ |
 | ~~DragHandle~~ | ~~`drag-handle.ts`~~ | ~~Plugin + DOM~~ | ~~Block drag handles (deferred — needs unified gutter design)~~ |
 
