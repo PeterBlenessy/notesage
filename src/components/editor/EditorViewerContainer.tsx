@@ -3,7 +3,7 @@ import { PlainTextViewer } from "./viewers/PlainTextViewer";
 import { StatusBar } from "./StatusBar";
 import { toast } from "sonner";
 
-// Lazy-load heavy viewers — their libraries (pdfjs-dist, mammoth, foliate-js)
+// Lazy-load heavy viewers — their libraries (pdfjs-dist, docx-preview, foliate-js)
 // are only fetched when the user actually opens that file type.
 const ImageViewer = lazy(() => import("./viewers/ImageViewer").then(m => ({ default: m.ImageViewer })));
 const PdfViewer = lazy(() => import("./viewers/PdfViewer").then(m => ({ default: m.PdfViewer })));
@@ -39,7 +39,7 @@ export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShor
         <DocxViewer
           filePath={activeTab.filePath}
           fileName={activeTab.fileName}
-          onConvertToMarkdown={async (_html, name) => {
+          onConvertToMarkdown={async (name) => {
             try {
               const { docxToMarkdown } = await import("@/lib/import-utils");
               const { getBinaryData } = await import("@/lib/binary-cache");

@@ -112,7 +112,9 @@ Export notes to editable Word documents using the `docx-rs` crate.
 
 ## DOCX Viewer
 
-- Powered by mammoth.js (HTML conversion)
+- Powered by `docx-preview` for high-fidelity OOXML rendering (fonts, colors, table shading, headers/footers)
+- mammoth.js retained solely for "Convert to Markdown" (`docxToMarkdown()` in `import-utils.ts`)
+- White-background island in dark mode (document content stays light, surrounding chrome is dark)
 - In-document search via shared `dom-search.ts` utility
 - Read-only rendering
 

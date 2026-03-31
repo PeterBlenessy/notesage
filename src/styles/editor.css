@@ -1447,3 +1447,34 @@ mark.dom-find-highlight-active {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* DOCX preview (docx-preview library) — page-based rendering matching PDF viewer */
+.docx-preview-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Override docx-preview's built-in wrapper (grey background, padding, shadow) */
+.docx-preview-wrapper .docx-preview-body-wrapper {
+  background: transparent !important;
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 16px !important;
+}
+
+/* Each page section — white card with shadow, matching PDF viewer pages */
+.docx-preview-wrapper .docx-preview-body-wrapper > section.docx-preview-body {
+  background: white !important;
+  color: black;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06) !important;
+  margin-bottom: 0 !important;
+}
+
+.dark .docx-preview-wrapper .docx-preview-body-wrapper > section.docx-preview-body {
+  box-shadow: 0 0 0 1px var(--color-border), 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+}
