@@ -31,6 +31,7 @@ interface SendChatOpts {
   skillName?: string;
   attachedFilePaths?: string[];
   sandboxPaths?: string[];
+  parentId?: string | null;
 }
 
 interface PendingToolCall {
@@ -98,7 +99,7 @@ export function useDirectApiChat({
       setError(null);
 
       const userTimestamp = Date.now();
-      const userMessage: ChatMessage = { role: 'user', content, timestamp: userTimestamp, displayContent: opts?.displayContent, skillName: opts?.skillName };
+      const userMessage: ChatMessage = { role: 'user', content, timestamp: userTimestamp, displayContent: opts?.displayContent, skillName: opts?.skillName, ...(opts?.parentId !== undefined ? { parentId: opts.parentId } : {}) };
       addMessage(userMessage);
 
       const assistantMessageId = userTimestamp + 1;

@@ -1,11 +1,17 @@
-import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2, X, AlertTriangle, Brain, Zap, Wrench, Ban, GitBranch } from 'lucide-react';
-import { useState } from 'react';
+import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2, X, AlertTriangle, Brain, Zap, Wrench, Ban, GitBranch, Pencil, RotateCcw, Ellipsis } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { MarkdownContent } from '@/components/MarkdownContent';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { BranchSwitcher } from './BranchSwitcher';
 import { ReconnectCard } from './ReconnectCard';
 import { useChatStore } from '@/stores/chat-store';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { ChatMessage as ChatMessageType, AgentActivity, ToolCallActivity, ToolCallStatus } from '@/lib/ai/types';
 
 function ActivityIcon({ activity, isActive }: { activity: AgentActivity; isActive: boolean }) {
@@ -176,6 +182,157 @@ function UserContent({ message }: { message: ChatMessageType }) {
   return <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed">{displayText}</p>;
 }
 
+/** Action buttons for messages. For user messages, collapses into a ⋯ menu when buttons overflow the bubble. */
+function UserActionButtons({ isUser, onEdit, onResend, onBranch, onCopy, copied }: {
+  isUser: boolean;
+  onEdit?: () => void;
+  onResend?: () => void;
+  onBranch?: () => void;
+  onCopy: () => void;
+  copied: boolean;
+}) {
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  const [collapsed, setCollapsed] = useState(false);
+
+  // For user messages, check if buttons would overflow the bubble
+  // +1 for the always-present copy button
+  const userButtonCount = [onEdit, onResend, onBranch].filter(Boolean).length + 1;
+
+  useEffect(() => {
+    if (!isUser || userButtonCount === 0) return;
+    const bubble = bubbleRef.current?.parentElement;
+    if (!bubble) return;
+
+    const check = () => {
+      const bubbleWidth = bubble.offsetWidth;
+      if (bubbleWidth === 0) return; // Not yet laid out
+      // Each button is 24px + 4px gap = 28px per button, plus 8px left offset
+      const buttonsWidth = userButtonCount * 28 + 8;
+      setCollapsed(buttonsWidth > bubbleWidth);
+    };
+    check();
+
+    const observer = new ResizeObserver(check);
+    observer.observe(bubble);
+    return () => observer.disconnect();
+  }, [isUser, userButtonCount]);
+
+  if (isUser) {
+
+    if (collapsed) {
+      return (
+        <div ref={bubbleRef} className="absolute -bottom-3 left-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
+                title="Message actions"
+              >
+                <Ellipsis className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" side="bottom" className="min-w-[130px] p-0.5">
+              {onEdit && (
+                <DropdownMenuItem onClick={onEdit} className="text-xs h-7 px-2">
+                  <Pencil className="h-3 w-3 mr-1.5" strokeWidth={1.5} />
+                  Edit
+                </DropdownMenuItem>
+              )}
+              {onResend && (
+                <DropdownMenuItem onClick={onResend} className="text-xs h-7 px-2">
+                  <RotateCcw className="h-3 w-3 mr-1.5" strokeWidth={1.5} />
+                  Resend
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={onCopy} className="text-xs h-7 px-2">
+                {copied
+                  ? <Check className="h-3 w-3 mr-1.5" strokeWidth={1.5} />
+                  : <Copy className="h-3 w-3 mr-1.5" strokeWidth={1.5} />}
+                {copied ? 'Copied' : 'Copy'}
+              </DropdownMenuItem>
+              {onBranch && (
+                <DropdownMenuItem onClick={onBranch} className="text-xs h-7 px-2">
+                  <GitBranch className="h-3 w-3 mr-1.5" strokeWidth={1.5} />
+                  Branch
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      );
+    }
+
+    return (
+      <div ref={bubbleRef} className="absolute -bottom-3 left-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {onEdit && (
+          <button
+            className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
+            onClick={onEdit}
+            title="Edit message"
+          >
+            <Pencil className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+          </button>
+        )}
+        {onResend && (
+          <button
+            className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
+            onClick={onResend}
+            title="Resend message"
+          >
+            <RotateCcw className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+          </button>
+        )}
+        <button
+          className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
+          onClick={onCopy}
+          title="Copy message"
+        >
+          {copied ? (
+            <Check className="h-3 w-3 text-foreground" strokeWidth={1.5} />
+          ) : (
+            <Copy className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+          )}
+        </button>
+        {onBranch && (
+          <button
+            className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
+            onClick={onBranch}
+            title="Branch from here"
+          >
+            <GitBranch className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // Assistant messages — always inline
+  return (
+    <div className="absolute -bottom-3 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      {onBranch && (
+        <button
+          className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
+          onClick={onBranch}
+          title="Branch from here"
+        >
+          <GitBranch className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+        </button>
+      )}
+      <button
+        className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
+        onClick={onCopy}
+        title="Copy message"
+      >
+        {copied ? (
+          <Check className="h-3 w-3 text-foreground" strokeWidth={1.5} />
+        ) : (
+          <Copy className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+        )}
+      </button>
+    </div>
+  );
+}
+
 interface ChatMessageProps {
   message: ChatMessageType;
   /** Whether this is the last message in the list (controls streaming cursor) */
@@ -184,9 +341,13 @@ interface ChatMessageProps {
   branchCount?: number;
   /** Callback to create a branch from this message */
   onBranch?: () => void;
+  /** Callback to resend this user message */
+  onResend?: () => void;
+  /** Callback to edit this user message */
+  onEdit?: () => void;
 }
 
-export function ChatMessage({ message, isLast = false, branchCount, onBranch }: ChatMessageProps) {
+export function ChatMessage({ message, isLast = false, branchCount, onBranch, onResend, onEdit }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const { isLoading, deleteMessage } = useChatStore();
 
@@ -368,30 +529,14 @@ export function ChatMessage({ message, isLast = false, branchCount, onBranch }: 
 
         {/* Action buttons — bottom row */}
         {!isLoading && message.content && (
-          <div className={`absolute -bottom-3 ${isUser ? 'left-2' : 'right-2'} flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
-            {onBranch && (
-              <button
-                className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
-                onClick={onBranch}
-                title="Branch from here"
-              >
-                <GitBranch className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
-              </button>
-            )}
-            {!isUser && (
-              <button
-                className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
-                onClick={handleCopy}
-                title="Copy message"
-              >
-                {copied ? (
-                  <Check className="h-3 w-3 text-foreground" strokeWidth={1.5} />
-                ) : (
-                  <Copy className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
-                )}
-              </button>
-            )}
-          </div>
+          <UserActionButtons
+            isUser={isUser}
+            onEdit={onEdit}
+            onResend={onResend}
+            onBranch={onBranch}
+            onCopy={handleCopy}
+            copied={copied}
+          />
         )}
       </div>
     </div>

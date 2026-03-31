@@ -23,6 +23,11 @@ import {
 
 
 
+export interface EditContext {
+  parentId: string | null;
+  originalContent: string;
+}
+
 export function ChatPanel() {
   const conversations = useChatStore((s) => s.conversations);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
@@ -75,6 +80,13 @@ export function ChatPanel() {
   const { attachedFilePaths } = useChatContext();
 
   const [chatView, setChatView] = useState<'chat' | 'history'>('chat');
+  const [editContext, setEditContext] = useState<EditContext | null>(null);
+  const editContextRef = useRef<EditContext | null>(null);
+  const updateEditContext = useCallback((ctx: EditContext | null) => {
+    editContextRef.current = ctx;
+    setEditContext(ctx);
+  }, []);
+  const clearEditContext = useCallback(() => updateEditContext(null), [updateEditContext]);
 
   // Detect project selection changes → trigger context isolation prompt
   const prevProjectPathsRef = useRef<string[]>(selectedProjectPaths);
@@ -185,8 +197,25 @@ export function ChatPanel() {
       ? activeConv.projectPaths
       : undefined; // undefined = all workspace folders (default)
 
-    await sendChatMessage(expandedContent, messages, { ...(skillName ? { displayContent: content, skillName } : {}), attachedFilePaths, sandboxPaths });
-  }, [hasAIProvider, setActiveAgent, sendChatMessage, messages, attachedFilePaths]);
+    const sendOpts: Record<string, unknown> = { ...(skillName ? { displayContent: content, skillName } : {}), attachedFilePaths, sandboxPaths };
+    if (editContextRef.current) {
+      sendOpts.parentId = editContextRef.current.parentId;
+      clearEditContext();
+    }
+    await sendChatMessage(expandedContent, messages, sendOpts as Parameters<typeof sendChatMessage>[2]);
+  }, [hasAIProvider, setActiveAgent, sendChatMessage, messages, attachedFilePaths, clearEditContext]);
+
+  const handleResend = useCallback((message: { parentId?: string | null; content: string }) => {
+    if (!hasAIProvider) return;
+    const parentId = message.parentId !== undefined ? message.parentId : null;
+    updateEditContext({ parentId, originalContent: message.content });
+    handleSend(message.content);
+  }, [hasAIProvider, handleSend, updateEditContext]);
+
+  const handleEdit = useCallback((message: { parentId?: string | null; content: string }) => {
+    const parentId = message.parentId !== undefined ? message.parentId : null;
+    updateEditContext({ parentId, originalContent: message.content });
+  }, [updateEditContext]);
 
   const handleNewChat = useCallback(() => {
     createConversation();
@@ -264,6 +293,8 @@ export function ChatPanel() {
       <ChatMessageList
         onSend={handleSend}
         selectedProjectPaths={selectedProjectPaths}
+        onResend={handleResend}
+        onEdit={handleEdit}
       />
 
       <ChatFooter
@@ -271,6 +302,8 @@ export function ChatPanel() {
         selectedProjectPaths={selectedProjectPaths}
         hasAIProvider={hasAIProvider}
         chatPlaceholder={chatPlaceholder}
+        editContext={editContext}
+        onCancelEdit={clearEditContext}
       />
       </>
       )}

@@ -26,6 +26,8 @@ Collapsible right sidebar (Cmd+Shift+C) with streaming AI responses.
 
 **Features:**
 
+- Message resend: one-click resend of any user message, creates a new branch from the message's parent with the same content
+- Message edit: click edit on a user message to pre-fill the input, modify and send as a new branch. "Editing message" banner with cancel (X or Escape)
 - Quick reply chips: AI responses can include `<quick-replies>` tags with suggested follow-ups
 - Custom prompts/templates for AI actions
 - Project-scoped AI context (provider, agent, and context overrides per project)

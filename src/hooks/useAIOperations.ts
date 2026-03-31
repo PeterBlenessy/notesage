@@ -122,7 +122,7 @@ export function useAIOperations() {
 
   // Route sendChatMessage based on connection type
   const sendChatMessage = useCallback(
-    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[] }) => {
+    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null }) => {
       if (effectiveConnection?.authMethod === 'agent_managed') {
         return acpSendChatMessage(content, messages, opts);
       }

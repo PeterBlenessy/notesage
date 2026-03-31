@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-31 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | Medium |
 | **Impact** | Users can resend or edit any previous message without copy-pasting, and explore alternative conversation paths |
 | **Related** | [acp-agent-recovery](2026-03-31-acp-agent-recovery.md) — resend supports the "retry after reconnection" use case |
@@ -139,24 +139,24 @@ When a resend or edit creates a sibling at an existing branch point, the `Branch
 
 ## Quality Gates
 
-- [ ] Resend button visible on hover for all user messages
+- [x] Resend button visible on hover for all user messages
 
-- [ ] Clicking resend creates a new branch and triggers AI response
+- [x] Clicking resend creates a new branch and triggers AI response
 
-- [ ] Edit button visible on hover for all user messages
+- [x] Edit button visible on hover for all user messages
 
-- [ ] Clicking edit pre-fills the input with message content and shows "Editing" indicator
+- [x] Clicking edit pre-fills the input with message content and shows "Editing" indicator
 
-- [ ] Sending an edited message creates a new branch from the correct parent
+- [x] Sending an edited message creates a new branch from the correct parent
 
-- [ ] Cancelling edit clears the input and editing state
+- [x] Cancelling edit clears the input and editing state
 
-- [ ] Previous branch preserved and accessible via BranchSwitcher after resend/edit
+- [x] Previous branch preserved and accessible via BranchSwitcher after resend/edit
 
-- [ ] Branch count updates correctly at the fork point
+- [x] Branch count updates correctly at the fork point
 
-- [ ] Resend/edit buttons not shown on assistant or system messages
+- [x] Resend/edit buttons not shown on assistant or system messages
 
-- [ ] Works with both ACP and direct API conversations
+- [x] Works with both ACP and direct API conversations
 
-- [ ] Keyboard shortcut: Escape cancels edit mode
+- [x] Keyboard shortcut: Escape cancels edit mode

@@ -968,6 +968,125 @@ describe('Branching', () => {
 });
 
 // ===========================================================================
+// Resend / Edit (explicit parentId branching)
+// ===========================================================================
+
+describe('Resend / Edit branching', () => {
+  beforeEach(() => reset());
+
+  it('addMessage with explicit parentId creates a sibling (resend)', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'q1', timestamp: 1 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'a1', timestamp: 2 });
+
+    const parentId = activeConv()!.messages[0].parentId; // null (root)
+    const originalUserId = activeConv()!.messages[0].id;
+
+    // Resend: same content, explicit parentId to create sibling
+    useChatStore.getState().addMessage({ role: 'user', content: 'q1', timestamp: 3, parentId });
+
+    const msgs = activeConv()!.messages;
+    expect(msgs).toHaveLength(3);
+    const resent = msgs.find((m) => m.timestamp === 3)!;
+    expect(resent.parentId).toBe(parentId); // same parent as original
+    expect(resent.id).not.toBe(originalUserId); // different message
+    expect(resent.content).toBe('q1');
+    expect(activeConv()!.activeLeafId).toBe(resent.id);
+  });
+
+  it('addMessage with explicit parentId creates a sibling (edit with modified content)', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'original question', timestamp: 1 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'answer', timestamp: 2 });
+
+    const parentId = activeConv()!.messages[0].parentId; // null (root)
+
+    // Edit: different content, same parentId
+    useChatStore.getState().addMessage({ role: 'user', content: 'edited question', timestamp: 3, parentId });
+
+    const msgs = activeConv()!.messages;
+    expect(msgs).toHaveLength(3);
+    const edited = msgs.find((m) => m.content === 'edited question')!;
+    expect(edited.parentId).toBe(parentId);
+  });
+
+  it('getThread returns new branch after resend, not old branch', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'q1', timestamp: 1 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'a1', timestamp: 2 });
+    useChatStore.getState().addMessage({ role: 'user', content: 'q2', timestamp: 3 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'a2', timestamp: 4 });
+
+    // Resend q1 — branch from root (parentId = null)
+    const q1ParentId = activeConv()!.messages[0].parentId; // null
+    useChatStore.getState().addMessage({ role: 'user', content: 'q1-resent', timestamp: 5, parentId: q1ParentId });
+
+    const thread = selectMessages(useChatStore.getState());
+    expect(thread.map((m) => m.content)).toEqual(['q1-resent']);
+    // Old branch should still be accessible via switchBranch
+    const allMsgs = selectAllMessages(useChatStore.getState());
+    expect(allMsgs).toHaveLength(5);
+  });
+
+  it('branch count increments at fork point after resend', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'q1', timestamp: 1 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'a1', timestamp: 2 });
+    useChatStore.getState().addMessage({ role: 'user', content: 'q2-original', timestamp: 3 });
+
+    const a1Id = activeConv()!.messages[1].id!;
+
+    // Resend q2 — creates a sibling of q2-original under a1
+    useChatStore.getState().addMessage({ role: 'user', content: 'q2-resent', timestamp: 4, parentId: a1Id });
+
+    // a1 should now have 2 children (q2-original and q2-resent)
+    const allMsgs = selectAllMessages(useChatStore.getState());
+    const childrenOfA1 = allMsgs.filter((m) => m.parentId === a1Id);
+    expect(childrenOfA1).toHaveLength(2);
+  });
+
+  it('resend mid-conversation creates branch at correct point', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'q1', timestamp: 1 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'a1', timestamp: 2 });
+    useChatStore.getState().addMessage({ role: 'user', content: 'q2', timestamp: 3 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'a2', timestamp: 4 });
+
+    // Resend q2 — parentId should be a1's id (q2's parent)
+    const a1Id = activeConv()!.messages[1].id!;
+    useChatStore.getState().addMessage({ role: 'user', content: 'q2', timestamp: 5, parentId: a1Id });
+
+    // Active thread: q1, a1, q2-resent
+    const thread = selectMessages(useChatStore.getState());
+    expect(thread.map((m) => m.content)).toEqual(['q1', 'a1', 'q2']);
+    expect(thread[2].timestamp).toBe(5); // the new one, not the original
+
+    // a1 should now have 2 children (original q2 and resent q2)
+    const allMsgs = selectAllMessages(useChatStore.getState());
+    const childrenOfA1 = allMsgs.filter((m) => m.parentId === a1Id);
+    expect(childrenOfA1).toHaveLength(2);
+  });
+
+  it('follow-up messages continue on the new branch', () => {
+    useChatStore.getState().createConversation();
+    useChatStore.getState().addMessage({ role: 'user', content: 'q1', timestamp: 1 });
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'a1', timestamp: 2 });
+
+    const a1Id = activeConv()!.messages[1].id!;
+
+    // Resend (branch from a1)
+    useChatStore.getState().addMessage({ role: 'user', content: 'q1-resent', timestamp: 3, parentId: a1Id });
+    // AI replies on the new branch
+    useChatStore.getState().addMessage({ role: 'assistant', content: 'a1-new', timestamp: 4 });
+    // User follows up
+    useChatStore.getState().addMessage({ role: 'user', content: 'q2-new', timestamp: 5 });
+
+    const thread = selectMessages(useChatStore.getState());
+    expect(thread.map((m) => m.content)).toEqual(['q1', 'a1', 'q1-resent', 'a1-new', 'q2-new']);
+  });
+});
+
+// ===========================================================================
 // Migration v3 → v4
 // ===========================================================================
 

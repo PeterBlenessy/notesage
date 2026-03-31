@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ArrowUp, Square, Mic, MicOff } from 'lucide-react';
+import { ArrowUp, Square, Mic, MicOff, X } from 'lucide-react';
+import type { EditContext } from './ChatPanel';
 import { Button } from '@/components/ui/button';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { SkillCommandMenu, type SkillCommandMenuHandle } from './SkillCommandMenu';
@@ -17,9 +18,11 @@ interface ChatInputProps {
   footer?: React.ReactNode;
   contextItems?: ContextItem[];
   onDismissContext?: (id: string) => void;
+  editContext?: EditContext | null;
+  onCancelEdit?: () => void;
 }
 
-export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = 'Ask anything...', footer, contextItems, onDismissContext }: ChatInputProps) {
+export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = 'Ask anything...', footer, contextItems, onDismissContext, editContext, onCancelEdit }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [showSkillMenu, setShowSkillMenu] = useState(false);
   const [skillQuery, setSkillQuery] = useState('');
@@ -36,6 +39,25 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
       setMessage((prev) => (prev ? prev + ' ' + finalText : finalText));
     }
   }, [finalText]);
+
+  // Pre-fill input when entering edit mode
+  const prevEditContextRef = useRef<EditContext | null | undefined>(undefined);
+  useEffect(() => {
+    if (editContext && editContext !== prevEditContextRef.current) {
+      setMessage(editContext.originalContent);
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.selectionStart = el.value.length;
+          el.selectionEnd = el.value.length;
+          el.style.height = 'auto';
+          el.style.height = `${el.scrollHeight}px`;
+        }
+      });
+    }
+    prevEditContextRef.current = editContext;
+  }, [editContext]);
 
   const autoResize = useCallback(() => {
     const el = textareaRef.current;
@@ -93,6 +115,17 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
     textareaRef.current?.focus();
   };
 
+  const handleCancelEdit = useCallback(() => {
+    if (onCancelEdit) {
+      onCancelEdit();
+      setMessage('');
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) el.style.height = 'auto';
+      });
+    }
+  }, [onCancelEdit]);
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Let skill menu handle keys first
     if (showSkillMenu && menuRef.current?.handleKeyDown(e)) {
@@ -100,6 +133,13 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
     }
     // Let agent menu handle keys
     if (showAgentMenu && agentMenuRef.current?.handleKeyDown(e)) {
+      return;
+    }
+
+    // Escape cancels edit mode
+    if (e.key === 'Escape' && editContext) {
+      e.preventDefault();
+      handleCancelEdit();
       return;
     }
 
@@ -178,6 +218,19 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
           onSelect={handleAgentSelect}
           onClose={() => setShowAgentMenu(false)}
         />
+      )}
+      {editContext && (
+        <div className="flex items-center justify-between px-3 pt-2 pb-1">
+          <span className="text-xs text-muted-foreground">Editing message</span>
+          <button
+            type="button"
+            onClick={handleCancelEdit}
+            className="h-4 w-4 rounded flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+            title="Cancel editing"
+          >
+            <X className="h-3 w-3" strokeWidth={1.5} />
+          </button>
+        </div>
       )}
       {contextItems && contextItems.length > 0 && onDismissContext && (
         <div className="flex flex-wrap gap-1.5 px-3 pt-2 pb-1">

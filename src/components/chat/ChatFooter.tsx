@@ -52,14 +52,18 @@ function prettySkillToolName(toolName: string, skillName: string): string {
   return pretty;
 }
 
+import type { EditContext } from './ChatPanel';
+
 interface ChatFooterProps {
   onSend: (content: string) => Promise<void>;
   selectedProjectPaths: string[];
   hasAIProvider: boolean;
   chatPlaceholder: string;
+  editContext?: EditContext | null;
+  onCancelEdit?: () => void;
 }
 
-export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPaths, hasAIProvider, chatPlaceholder }: ChatFooterProps) {
+export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPaths, hasAIProvider, chatPlaceholder, editContext, onCancelEdit }: ChatFooterProps) {
   const isLoading = useChatStore((s) => s.isLoading);
   const pendingProjectSwitch = useChatStore(selectPendingProjectSwitch);
   const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
@@ -171,6 +175,8 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
         isLoading={isLoading}
         disabled={!hasAIProvider || !!pendingProjectSwitch || !!pendingAgentSwitch}
         placeholder={pendingProjectSwitch ? 'Resolve project context change first...' : pendingAgentSwitch ? 'Resolve provider change first...' : chatPlaceholder}
+        editContext={editContext}
+        onCancelEdit={onCancelEdit}
         contextItems={contextItems}
         onDismissContext={dismissItem}
         footer={

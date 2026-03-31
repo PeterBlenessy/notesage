@@ -24,9 +24,11 @@ import { QuickReplies, parseQuickReplies } from './QuickReplies';
 interface ChatMessageListProps {
   onSend: (content: string) => void;
   selectedProjectPaths: string[];
+  onResend?: (message: { parentId?: string | null; content: string }) => void;
+  onEdit?: (message: { parentId?: string | null; content: string }) => void;
 }
 
-export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedProjectPaths }: ChatMessageListProps) {
+export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedProjectPaths, onResend, onEdit }: ChatMessageListProps) {
   const isLoading = useChatStore((s) => s.isLoading);
   const activeTool = useChatStore((s) => s.activeTool);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
@@ -193,6 +195,8 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
                   message={displayMessage}
                   isLast={isLast}
                   branchCount={branchCount}
+                  onResend={onResend && message.role === 'user' ? () => onResend(message) : undefined}
+                  onEdit={onEdit && message.role === 'user' ? () => onEdit(message) : undefined}
                   onBranch={message.timestamp ? () => {
                     branchFromMessage(message.timestamp!);
                     toast('Branched conversation', {

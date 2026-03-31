@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-31 |
-| **Status** | Not started |
+| **Status** | Complete |
 | **PRD** | [chat-message-resend-edit](../prds/2026-03-31-chat-message-resend-edit.md) |
 | **Total** | 7 tasks: 3S, 3M, 1L |
 | **Suggested order** | State (#1) -&gt; UI (#2-#5) -&gt; Integration (#6) -&gt; Tests (#7) |
@@ -15,7 +15,7 @@
 
 ---
 
-### #1 — Add edit context state to ChatPanel
+### #1 — Add edit context state to ChatPanel ✅
 
 **Description:** Add state to `ChatPanel` that tracks when the user is editing/resending a previous message. This state holds the parent message ID to branch from and the original content.
 
@@ -43,7 +43,7 @@ interface EditContext {
 
 ---
 
-### #2 — Add resend and edit buttons to ChatMessage hover actions
+### #2 — Add resend and edit buttons to ChatMessage hover actions ✅
 
 **Description:** Add Edit (Pencil) and Resend (RotateCcw) icon buttons to the hover action row on user messages, alongside existing Copy and Branch buttons.
 
@@ -67,7 +67,7 @@ Currently the hover actions are: delete (top corner), copy (bottom row, assistan
 
 ---
 
-### #3 — Implement resend flow
+### #3 — Implement resend flow ✅
 
 **Description:** Wire up the resend button to create a new branch from the target message's parent and immediately send the same content.
 
@@ -97,7 +97,7 @@ Resend flow:
 
 ---
 
-### #4 — Add editing indicator banner to ChatInput
+### #4 — Add editing indicator banner to ChatInput ✅
 
 **Description:** When edit context is active, show a subtle banner above the input area indicating "Editing message" with an X button to cancel. Pre-fill the input with the original message content.
 
@@ -118,7 +118,7 @@ Resend flow:
 
 ---
 
-### #5 — Implement edit flow
+### #5 — Implement edit flow ✅
 
 **Description:** Wire up the edit button to copy message content into the input with edit context, then send the edited version as a new branch.
 
@@ -148,7 +148,7 @@ Edit flow:
 
 ---
 
-### #6 — Ensure branching sends through the full AI pipeline
+### #6 — Ensure branching sends through the full AI pipeline ✅
 
 **Description:** Verify that resend/edit messages go through the complete `handleSend` flow in `ChatPanel` — including skill expansion, agent addressing, project context, and provider routing. The branch parent override from `editContext` must integrate with the existing `addMessage` + `sendChatMessage` pipeline without bypassing any steps.
 
@@ -171,7 +171,7 @@ This is an integration task to ensure correctness across both ACP and direct API
 
 ---
 
-### #7 — Write tests for resend and edit flows
+### #7 — Write tests for resend and edit flows ✅
 
 **Description:** Add unit and component tests covering the new resend/edit behavior.
 
