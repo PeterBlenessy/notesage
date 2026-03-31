@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-30 |
-| **Status** | Not started |
+| **Status** | Complete |
 | **PRD** | [pptx-viewer](../prds/2026-03-30-pptx-viewer.md) |
 | **Total** | 16 tasks: 4S, 7M, 5L |
 | **Suggested order** | Types (#1) → Parser core (#2-#5) → File routing (#6) → Viewer shell (#7-#9) → Advanced rendering (#10-#12) → Search (#13) → Tests (#14-#15) → Docs (#16) |
@@ -16,7 +16,7 @@
 
 ---
 
-### #1 — Define PPTX TypeScript types
+### #1 — Define PPTX TypeScript types ✅
 
 **Description:** Create the type definitions for the parsed PPTX data model (`PptxPresentation`, `PptxSlide`, `PptxElement`, `PptxTextBox`, `PptxImage`, `PptxShape`, `PptxTable`, `PptxChart`, `PptxGroup`, `PptxBackground`, `PptxTheme`, `PptxFill`, `PptxGradientStop`, `PptxParagraph`, `PptxTextRun`, etc.) as specified in the PRD. These types are the contract between the parser and the viewer.
 
@@ -26,7 +26,7 @@
 
 ---
 
-### #2 — Implement core PPTX parser — ZIP extraction, presentation metadata, and theme
+### #2 — Implement core PPTX parser — ZIP extraction, presentation metadata, and theme ✅
 
 **Description:** Create `src/lib/pptx-parser.ts` with the main `parsePptx(bytes: Uint8Array): Promise<PptxPresentation>` entry point. Implement:
 
@@ -51,7 +51,7 @@ Add JSZip as a direct dependency if not already directly available. Use browser-
 
 ---
 
-### #3 — Implement slide element parsing — text boxes, images, shapes, groups
+### #3 — Implement slide element parsing — text boxes, images, shapes, groups ✅
 
 **Description:** Extend the parser to iterate each slide's XML (`ppt/slides/slideN.xml`) and extract:
 
@@ -76,7 +76,7 @@ Add JSZip as a direct dependency if not already directly available. Use browser-
 
 ---
 
-### #4 — Implement table parsing
+### #4 — Implement table parsing ✅
 
 **Description:** Parse table elements (`p:graphicFrame > a:tbl`) from slide XML:
 
@@ -97,7 +97,7 @@ Add JSZip as a direct dependency if not already directly available. Use browser-
 
 ---
 
-### #5 — Implement chart parsing and gradient fills
+### #5 — Implement chart parsing and gradient fills ✅
 
 **Description:** Extend the parser for:
 
@@ -133,7 +133,7 @@ Add JSZip as a direct dependency if not already directly available. Use browser-
 
 ---
 
-### #6 — Add PPTX file type routing
+### #6 — Add PPTX file type routing ✅
 
 **Description:** Wire up PPTX as a recognized file type:
 
@@ -151,7 +151,7 @@ Follow the exact pattern of the existing DOCX/PDF/EPUB viewers.
 
 ---
 
-### #7 — Implement PptxViewer shell — slide rendering and navigation
+### #7 — Implement PptxViewer shell — slide rendering and navigation ✅
 
 **Description:** Create `PptxViewer.tsx` with:
 
@@ -184,7 +184,7 @@ Follow the existing viewer patterns (PdfViewer, DocxViewer) for component struct
 
 ---
 
-### #8 — Implement zoom controls and fit modes
+### #8 — Implement zoom controls and fit modes ✅
 
 **Description:** Add zoom functionality to PptxViewer:
 
@@ -200,7 +200,7 @@ Follow the existing viewer patterns (PdfViewer, DocxViewer) for component struct
 
 ---
 
-### #9 — Implement speaker notes panel
+### #9 — Implement speaker notes panel ✅
 
 **Description:** Add a toggleable speaker notes panel below the slide:
 
@@ -217,7 +217,7 @@ Follow the existing viewer patterns (PdfViewer, DocxViewer) for component struct
 
 ---
 
-### #10 — Implement shape and line rendering
+### #10 — Implement shape and line rendering ✅
 
 **Description:** Add rendering for basic shapes and lines:
 
@@ -235,7 +235,7 @@ Follow the existing viewer patterns (PdfViewer, DocxViewer) for component struct
 
 ---
 
-### #11 — Implement table rendering
+### #11 — Implement table rendering ✅
 
 **Description:** Render parsed tables within slides:
 
@@ -251,7 +251,7 @@ Follow the existing viewer patterns (PdfViewer, DocxViewer) for component struct
 
 ---
 
-### #12 — Implement chart rendering and unsupported element placeholders
+### #12 — Implement chart rendering and unsupported element placeholders ✅
 
 **Description:**
 
@@ -276,7 +276,7 @@ Follow the existing viewer patterns (PdfViewer, DocxViewer) for component struct
 
 ---
 
-### #13 — Implement find-in-document search
+### #13 — Implement find-in-document search ✅
 
 **Description:** Add Cmd+F search across all slides using the hybrid approach from the PRD:
 
@@ -302,7 +302,7 @@ Follow the existing viewer patterns (PdfViewer, DocxViewer) for component struct
 
 ---
 
-### #14 — Write parser unit tests
+### #14 — Write parser unit tests ✅
 
 **Description:** Create comprehensive unit tests for the PPTX parser:
 
@@ -327,7 +327,7 @@ Follow the existing viewer patterns (PdfViewer, DocxViewer) for component struct
 
 ---
 
-### #15 — Write viewer component tests
+### #15 — Write viewer component tests ✅
 
 **Description:** Create component tests for PptxViewer:
 
@@ -348,7 +348,7 @@ Mock the parser module and Tauri IPC to isolate component behavior.
 
 ---
 
-### #16 — Update documentation
+### #16 — Update documentation ✅
 
 **Description:** Update project docs to reflect the new PPTX viewer:
 

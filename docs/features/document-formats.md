@@ -228,6 +228,73 @@ Preview and export markdown documents as self-contained HTML files with full fea
 - Embedded CSS with light and dark themes (static oklch approximations)
 - Tauri command: `render_html` (full document or body-only fragment for clipboard)
 
+## PPTX Viewer
+
+View PowerPoint presentations directly in Notesage with slide-by-slide navigation, chart rendering, and search.
+
+**Rendering:**
+
+- Powered by JSZip (ZIP extraction) and browser-native DOMParser (XML parsing)
+- Frontend-only — no Rust backend dependency for viewing
+- Each slide rendered as positioned HTML/CSS elements preserving the PPTX coordinate system
+- Aspect ratio detection (16:9 vs 4:3) from PPTX metadata
+
+**Supported elements:**
+
+| PPTX Element | Rendering |
+| --- | --- |
+| Text boxes | Styled `<div>` with paragraph/run formatting (bold, italic, underline, font, size, color, alignment, bullets) |
+| Images | `<img>` with base64 data URLs extracted from ZIP media/ |
+| Shapes (rect, ellipse, roundRect) | `<div>` with CSS border-radius, background, border |
+| Lines and arrows | `<svg>` with `<line>` and arrowhead markers |
+| Tables | HTML `<table>` with cell styling, colspan/rowspan, background colors |
+| Charts (bar, line, pie, area, scatter, doughnut) | recharts components rendered at chart position |
+| Groups | Nested container with offset child elements |
+| Gradient fills (linear, radial) | CSS `linear-gradient()` / `radial-gradient()` from DrawingML `a:gradFill` |
+| SmartArt | Fallback rasterized image, or placeholder if no fallback |
+
+**Navigation:**
+
+- Left/right arrow keys, clickable edge zones (15% width)
+- Slide counter ("Slide N of M") with prev/next buttons
+- Direct slide jump via clickable counter number
+
+**Zoom:**
+
+- Zoom in/out buttons (50%, 75%, 100%, 125%, 150%, 200%)
+- "Fit to width" and "Fit to page" modes
+- Cmd+= / Cmd+- / Cmd+0 keyboard shortcuts
+- Cmd+scroll wheel zoom
+
+**Speaker notes:**
+
+- Toggle button in toolbar (StickyNote icon)
+- Notes panel below the slide (150px)
+- Empty state for slides without notes
+
+**Search (Cmd+F):**
+
+- Hybrid approach: plain text per slide extracted during parsing for total match counting
+- DOM-based highlighting on current slide via shared `dom-search.ts` utility
+- Cross-slide navigation with accurate global match count
+
+**Dark mode:**
+
+- Slide content renders with authored colors (not inverted)
+- Slide sits on `bg-muted` neutral background
+- Toolbar and chrome follow app theme
+
+**Legacy .ppt handling:**
+
+- `.ppt` files show "Legacy format not supported" message with conversion guidance
+
+**Architecture:**
+
+- `pptx-parser.ts` — pure TypeScript module: `parsePptx(Uint8Array) → PptxPresentation`
+- Uses JSZip for ZIP extraction, DOMParser for XML parsing
+- Theme color resolution: `schemeClr` → theme hex values
+- EMU to pixel conversion: 1 pixel = 9525 EMU at 96 DPI
+
 ## Key Files
 
 | File | Purpose |
@@ -246,6 +313,9 @@ Preview and export markdown documents as self-contained HTML files with full fea
 | `src/components/editor/viewers/EpubViewer.tsx` | EPUB reader |
 | `src/components/editor/viewers/PdfViewer.tsx` | PDF viewer |
 | `src/components/editor/viewers/DocxViewer.tsx` | DOCX viewer |
+| `src/components/editor/viewers/PptxViewer.tsx` | PPTX slide viewer |
+| `src/lib/pptx-parser.ts` | PPTX ZIP extraction and XML parsing |
+| `src/lib/pptx-types.ts` | PPTX parsed data model types |
 | `src/components/editor/viewers/PlainTextViewer.tsx` | Plain text viewer |
 | `src/components/ExportDialog.tsx` | Export options dialog (PDF + DOCX + PowerPoint) |
 | `src/hooks/useExportOperations.ts` | Export operations hook (PDF + DOCX + PPTX routing) |

@@ -151,9 +151,15 @@ importers:
       diff-match-patch:
         specifier: ^1.0.5
         version: 1.0.5
+      docx-preview:
+        specifier: ^0.3.7
+        version: 0.3.7
       dompurify:
         specifier: ^3.3.3
         version: 3.3.3
+      jszip:
+        specifier: ^3.10.1
+        version: 3.10.1
       lowlight:
         specifier: ^3.3.0
         version: 3.3.0
@@ -3577,6 +3583,9 @@ packages:
 
   dingbat-to-unicode@1.0.1:
     resolution: {integrity: sha512-98l0sW87ZT58pU4i61wa2OHwxbiYSbuxsCBozaVnYX2iCnr3bLM3fIes1/ej7h1YdOKuKt/MLs706TVnALA65w==}
+
+  docx-preview@0.3.7:
+    resolution: {integrity: sha512-Lav69CTA/IYZPJTsKH7oYeoZjyg96N0wEJMNslGJnZJ+dMUZK85Lt5ASC79yUlD48ecWjuv+rkcmFt6EVPV0Xg==}
 
   dom-accessibility-api@0.5.16:
     resolution: {integrity: sha512-X7BJ2yElsnOJ30pZF4uIIDfBEVgF4XEBxL9Bxhy6dnrm5hkzqmsWHGTiHqRiITNhMyFLyAiWndIJP7Z1NTteDg==}
@@ -9250,6 +9259,10 @@ snapshots:
   diff@8.0.4: {}
 
   dingbat-to-unicode@1.0.1: {}
+
+  docx-preview@0.3.7:
+    dependencies:
+      jszip: 3.10.1
 
   dom-accessibility-api@0.5.16: {}
 

@@ -12,8 +12,8 @@
 | PRD | [html-preview](../prds/2026-03-30-html-preview.md) | Complete |
 | Tasks | [html-preview-tasks](../tasks/2026-03-30-html-preview-tasks.md) | Complete |
 | PRD | [code-file-highlighting](../prds/2026-03-30-code-file-highlighting.md) | Draft |
-| PRD | [pptx-viewer](../prds/2026-03-30-pptx-viewer.md) | Draft |
-| Tasks | [pptx-viewer-tasks](../tasks/2026-03-30-pptx-viewer-tasks.md) | Not started |
+| PRD | [pptx-viewer](../prds/2026-03-30-pptx-viewer.md) | Complete |
+| Tasks | [pptx-viewer-tasks](../tasks/2026-03-30-pptx-viewer-tasks.md) | Complete |
 
 Notesage currently exports to PDF (via Typst) and views EPUB, DOCX, PDF, and plain text files. The [document-formats feature doc](../features/document-formats.md) lists five future enhancements: DOCX export, PPTX export, custom template editor, HTML preview, and code file syntax highlighting. This research evaluates the best solutions for each.
 

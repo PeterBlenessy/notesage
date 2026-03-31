@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-30 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | Medium |
 | **Impact** | Users can view PowerPoint files directly in Notesage without switching to another app |
 | **Research** | [document-format-enhancements](../research/2026-03-30-document-format-enhancements.md) |

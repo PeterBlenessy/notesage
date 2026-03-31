@@ -9,6 +9,7 @@ const ImageViewer = lazy(() => import("./viewers/ImageViewer").then(m => ({ defa
 const PdfViewer = lazy(() => import("./viewers/PdfViewer").then(m => ({ default: m.PdfViewer })));
 const DocxViewer = lazy(() => import("./viewers/DocxViewer").then(m => ({ default: m.DocxViewer })));
 const EpubViewer = lazy(() => import("./viewers/EpubViewer").then(m => ({ default: m.EpubViewer })));
+const PptxViewer = lazy(() => import("./viewers/PptxViewer").then(m => ({ default: m.PptxViewer })));
 
 interface ViewerTab {
   filePath: string;
@@ -62,6 +63,9 @@ export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShor
       break;
     case "epub":
       viewer = <EpubViewer filePath={activeTab.filePath} fileName={activeTab.fileName} />;
+      break;
+    case "pptx":
+      viewer = <PptxViewer filePath={activeTab.filePath} fileName={activeTab.fileName} />;
       break;
     case "other":
       viewer = <PlainTextViewer content={activeTab.content} fileName={activeTab.fileName} />;
