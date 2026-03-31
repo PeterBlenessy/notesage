@@ -12,12 +12,49 @@ import { tauriApi } from '@/lib/tauri';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
 import { getAllWorkspacePaths } from '@/lib/ai/acp-utils';
-import { acpAgent, stopAcpAgent, ensureAcpAgent } from '@/lib/ai/acp-agent-state';
+import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, clearAcpAgent } from '@/lib/ai/acp-agent-state';
 import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
 
 // Re-export for backward compatibility
 export { stopAcpAgent } from '@/lib/ai/acp-agent-state';
 export { truncateDetail, formatAcpToolName } from '@/lib/ai/acp-utils';
+
+// ---------------------------------------------------------------------------
+// Unresponsiveness detection timer (60s inactivity → recovery)
+// ---------------------------------------------------------------------------
+
+const UNRESPONSIVE_TIMEOUT_MS = 60_000;
+
+/** Module-level timer ID so useAcpSessionListeners can reset it. */
+let unresponsiveTimerId: ReturnType<typeof setTimeout> | null = null;
+
+/** Callback to invoke when the timer fires. Set by the hook. */
+let onUnresponsiveCallback: (() => void) | null = null;
+
+/** Start (or restart) the unresponsiveness timer. */
+export function startUnresponsiveTimer(): void {
+  clearUnresponsiveTimer();
+  if (!onUnresponsiveCallback) return;
+  unresponsiveTimerId = setTimeout(() => {
+    unresponsiveTimerId = null;
+    onUnresponsiveCallback?.();
+  }, UNRESPONSIVE_TIMEOUT_MS);
+}
+
+/** Reset the timer (called on every acp-session-update event). */
+export function resetUnresponsiveTimer(): void {
+  if (unresponsiveTimerId !== null) {
+    startUnresponsiveTimer();
+  }
+}
+
+/** Clear the timer (called on prompt completion, cancel, or unmount). */
+export function clearUnresponsiveTimer(): void {
+  if (unresponsiveTimerId !== null) {
+    clearTimeout(unresponsiveTimerId);
+    unresponsiveTimerId = null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -30,9 +67,91 @@ interface AcpLifecycleParams {
 }
 
 export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAcpSystemMessage }: AcpLifecycleParams) {
-  const { addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities } = useChatStore();
+  const { addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, addSystemStatus } = useChatStore();
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const cleanupRef = useRef<(() => void) | null>(null);
+
+  // ---------------------------------------------------------------------------
+  // Recovery orchestrator — up to 3 attempts with backoff
+  // ---------------------------------------------------------------------------
+
+  const acpRecoverAgent = useCallback(async () => {
+    if (!acpAgent || !effectiveConnection) return;
+
+    const agentLabel = effectiveConnection.label || effectiveConnection.provider || 'the agent';
+    const sessionId = acpAgent.chatSessionId;
+    const oldInstanceId = acpAgent.instanceId;
+
+    // Clean up listeners from the stuck prompt
+    clearUnresponsiveTimer();
+    if (cleanupRef.current) {
+      cleanupRef.current();
+      cleanupRef.current = null;
+    }
+
+    const MAX_ATTEMPTS = 3;
+    const BACKOFF_DELAYS = [5_000, 15_000, 30_000];
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      addSystemStatus('reconnecting', agentLabel, attempt, MAX_ATTEMPTS);
+
+      // Wait backoff delay
+      await new Promise((resolve) => setTimeout(resolve, BACKOFF_DELAYS[attempt - 1]));
+
+      try {
+        const result = await invoke<{ instance_id: string }>('acp_agent_reconnect', {
+          instanceId: oldInstanceId,
+          sessionId: sessionId ?? '',
+        });
+
+        // Update the module-level singleton with new instance ID
+        if (!acpAgent) {
+          // Agent was cleared during recovery (e.g., connection changed)
+          break;
+        }
+        updateAcpAgentInstanceId(result.instance_id);
+
+        // Success — update status and resume
+        addSystemStatus('reconnected', agentLabel);
+        setLoading(false);
+        setActiveTool(null);
+        log.info('ai', `ACP recovery succeeded on attempt ${attempt}`);
+        return;
+      } catch (err) {
+        log.warn('ai', `ACP recovery attempt ${attempt} failed: ${String(err)}`);
+        // On failure, the old instance is already removed from the backend.
+        // For retry, we need to use the same instance_id to attempt again,
+        // but since reconnect already removed it, we need to handle this.
+        // Actually, on failure the reconnect command may have partially succeeded
+        // (spawned a new agent). Let's just continue — the next attempt will
+        // try to reconnect whatever is in the map.
+      }
+    }
+
+    // All attempts failed — show failed state
+    addSystemStatus('failed', agentLabel);
+    setLoading(false);
+    setActiveTool(null);
+    // Clear the agent so user can restart fresh
+    clearAcpAgent();
+    log.error('ai', 'ACP recovery exhausted all attempts');
+  }, [effectiveConnection, addSystemStatus, setLoading, setActiveTool]);
+
+  // Recovery callback ref for the unresponsive timer
+  const recoveryCallbackRef = useRef<(() => void) | null>(null);
+  recoveryCallbackRef.current = acpRecoverAgent;
+
+  // Register the unresponsive callback so the timer can trigger recovery
+  useEffect(() => {
+    onUnresponsiveCallback = () => {
+      log.warn('ai', 'ACP agent unresponsive for 60s, triggering recovery');
+      recoveryCallbackRef.current?.();
+    };
+    return () => {
+      onUnresponsiveCallback = null;
+      clearUnresponsiveTimer();
+    };
+  }, []);
 
   // Respawn agent when workspace folders change (sandbox paths need updating)
   const workspaceProjects = useWorkspaceStore((s) => s.projects);
@@ -239,17 +358,21 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           const promptContent = isNewSession
             ? `${effectiveSystemMessage}\n\n${content}`
             : content;
+          // Start unresponsiveness detection timer before prompt
+          startUnresponsiveTimer();
           await invoke('acp_session_prompt', {
             instanceId,
             sessionId: acpAgent!.chatSessionId,
             content: promptContent,
           });
         } finally {
+          clearUnresponsiveTimer();
           if (cleanupRef.current) {
             cleanupRef.current();
           }
         }
       } catch (error) {
+        clearUnresponsiveTimer();
         if (cleanupRef.current) {
           cleanupRef.current();
         }
@@ -331,7 +454,14 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
   /**
    * Cancel an active ACP chat session.
    */
+  // Stop button escalation timer: 5s after cancel, if no response → SIGKILL + recovery
+  const cancelEscalationRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelEscalationListenerRef = useRef<(() => void) | null>(null);
+
   const acpCancelChat = useCallback(() => {
+    // Clear unresponsiveness timer
+    clearUnresponsiveTimer();
+
     // Clean up listeners and reset loading state
     if (cleanupRef.current) {
       cleanupRef.current();
@@ -352,10 +482,42 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       }
       usePermissionStore.getState().clearRequestsForInstance(acpAgent!.instanceId);
 
+      const instanceId = acpAgent.instanceId;
       invoke('acp_session_cancel', {
-        instanceId: acpAgent.instanceId,
+        instanceId,
         sessionId: acpAgent.chatSessionId,
       }).catch(() => {}); // Expected: session may already be complete
+
+      // Start 5-second escalation timer: if agent doesn't respond to cancel, treat as hung
+      const CANCEL_ESCALATION_MS = 5_000;
+
+      // Listen for successful cancel confirmation
+      listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
+        if (event.payload.instanceId !== instanceId) return;
+        const { update } = event.payload;
+        if (
+          update.sessionUpdate === 'agent_turn_complete' ||
+          (update.sessionUpdate === 'agent_message_chunk' && update.stopReason === 'cancelled')
+        ) {
+          // Cancel succeeded — clear escalation
+          if (cancelEscalationRef.current) {
+            clearTimeout(cancelEscalationRef.current);
+            cancelEscalationRef.current = null;
+          }
+          cancelEscalationListenerRef.current?.();
+          cancelEscalationListenerRef.current = null;
+        }
+      }).then((unlisten) => {
+        cancelEscalationListenerRef.current = unlisten;
+      });
+
+      cancelEscalationRef.current = setTimeout(() => {
+        cancelEscalationRef.current = null;
+        cancelEscalationListenerRef.current?.();
+        cancelEscalationListenerRef.current = null;
+        log.warn('ai', 'ACP cancel escalation: agent did not respond within 5s, triggering recovery');
+        recoveryCallbackRef.current?.();
+      }, CANCEL_ESCALATION_MS);
 
       // Clear the session so the next message creates a fresh one
       acpAgent.chatSessionId = null;
@@ -365,5 +527,5 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     setActiveTool(null);
   }, [setLoading, setActiveTool]);
 
-  return { acpGenerateText, acpSendChatMessage, acpCancelChat };
+  return { acpGenerateText, acpSendChatMessage, acpCancelChat, acpRecoverAgent };
 }

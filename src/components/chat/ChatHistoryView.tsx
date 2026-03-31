@@ -20,6 +20,8 @@ interface ChatHistoryViewProps {
 function formatMessagesAsMarkdown(messages: ChatMessage[]): string[] {
   const lines: string[] = [];
   for (const msg of messages) {
+    // Skip system-status messages (reconnection UI) from exports
+    if (msg.role === 'system-status') continue;
     const role = msg.role === 'user' ? 'You' : msg.role === 'system' ? 'System' : 'Assistant';
     const time = msg.timestamp ? new Date(msg.timestamp).toLocaleString() : '';
     lines.push(`## ${role}${time ? ` — ${time}` : ''}`, '', msg.content, '');
@@ -115,7 +117,7 @@ export const ChatHistoryView = memo(function ChatHistoryView({ onSelectConversat
       createdAt: new Date(conv.createdAt).toISOString(),
       updatedAt: new Date(conv.updatedAt).toISOString(),
       activeLeafId: conv.activeLeafId ?? null,
-      messages: conv.messages.map((m) => ({
+      messages: conv.messages.filter((m) => m.role !== 'system-status').map((m) => ({
         id: m.id ?? null,
         parentId: m.parentId ?? null,
         role: m.role,

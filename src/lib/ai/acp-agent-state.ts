@@ -31,6 +31,19 @@ function getAcpAgent(): AcpAgentState | null {
   return acpAgent;
 }
 
+/** Update the instance ID of the current agent (used by recovery). */
+export function updateAcpAgentInstanceId(newInstanceId: string): void {
+  if (acpAgent) {
+    acpAgent.instanceId = newInstanceId;
+  }
+}
+
+/** Clear agent state without sending stop command (used after recovery failure). */
+export function clearAcpAgent(): void {
+  acpAgent = null;
+  acpSpawnPromise = null;
+}
+
 /** Stop any running ACP agent and clear state. Called on disconnect. */
 export function stopAcpAgent(): void {
   if (acpAgent) {

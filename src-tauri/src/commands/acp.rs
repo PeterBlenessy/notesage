@@ -91,11 +91,33 @@ impl AcpState {
 
         for (instance_id, mut handle) in agents.drain() {
             log::info!(target: "notesage::acp", "Stopping agent {} on exit", instance_id);
-            // Drop the channel sender to close the channel
+
+            // SIGKILL the child process directly via PID — don't rely on the
+            // command channel which may be stuck on a blocked prompt.
+            let pid = handle.child_pid.load(std::sync::atomic::Ordering::Relaxed);
+            if pid != 0 {
+                unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
+                log::info!(target: "notesage::acp", "Sent SIGKILL to agent PID {}", pid);
+            }
+
+            // Drop the channel sender to unblock any pending recv()
             drop(handle.cmd_tx);
-            // Wait for the OS thread to finish (child kill_on_drop handles the process)
+
+            // 500ms thread join timeout — if stuck, abandon (OS cleans up on exit)
             if let Some(th) = handle.thread_handle.take() {
-                let _ = th.join();
+                let (done_tx, done_rx) = std::sync::mpsc::channel();
+                let join_thread = std::thread::spawn(move || {
+                    let _ = th.join();
+                    let _ = done_tx.send(());
+                });
+                match done_rx.recv_timeout(std::time::Duration::from_millis(500)) {
+                    Ok(_) => {
+                        let _ = join_thread.join();
+                    }
+                    Err(_) => {
+                        log::warn!(target: "notesage::acp", "Agent thread {} did not exit within 500ms, abandoning", instance_id);
+                    }
+                }
             }
         }
     }
@@ -106,17 +128,16 @@ impl AcpState {
         agents
             .iter()
             .map(|(id, handle)| {
-                // We can't easily try_wait on ACP agents since the child is managed
-                // by the OS thread. Report as alive if the thread is still running.
                 let alive = handle
                     .thread_handle
                     .as_ref()
                     .map(|th| !th.is_finished())
                     .unwrap_or(false);
+                let pid = handle.child_pid.load(std::sync::atomic::Ordering::Relaxed);
                 super::health::ProcessStatus {
                     name: id.clone(),
                     alive,
-                    pid: None,
+                    pid: if pid != 0 { Some(pid) } else { None },
                 }
             })
             .collect()
@@ -128,12 +149,21 @@ impl AcpState {
 struct AgentHandle {
     #[allow(dead_code)]
     role: AgentRole,
-    #[allow(dead_code)]
     agent_binary: String,
-    #[allow(dead_code)]
     working_directory: String,
+    /// Child process PID — written by agent thread after spawn, readable from any thread.
+    /// Used by recovery and shutdown flows to SIGKILL the subprocess directly.
+    child_pid: std::sync::Arc<std::sync::atomic::AtomicU32>,
     cmd_tx: mpsc::Sender<AgentCmd>,
     thread_handle: Option<std::thread::JoinHandle<()>>,
+    // --- Spawn config (stored for reconnection) ---
+    agent_args: Vec<String>,
+    env_vars: HashMap<String, String>,
+    sandbox_enabled: bool,
+    sandbox_writable_paths: Vec<String>,
+    network_sandbox_enabled: bool,
+    network_allowed_domains: Option<Vec<String>>,
+    kernel_network_deny: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -192,6 +222,8 @@ fn run_agent_thread(
     kernel_network_deny: bool,
     mut cmd_rx: mpsc::Receiver<AgentCmd>,
     init_tx: oneshot::Sender<Result<InitInfo, String>>,
+    // Shared PID cell — written after spawn, readable from AgentHandle for SIGKILL
+    captured_pid: std::sync::Arc<std::sync::atomic::AtomicU32>,
 ) {
     use agent_client_protocol::*;
     use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
@@ -201,9 +233,6 @@ fn run_agent_thread(
     let has_network_proxy = network_config.is_some();
     let proxy_cleanup_app = if has_network_proxy { Some(app.clone()) } else { None };
     let monitor_cleanup_app = if sandbox_enabled { Some(app.clone()) } else { None };
-    // Shared cell to capture the agent PID from inside the async block for cleanup outside
-    let captured_pid: std::sync::Arc<std::sync::atomic::AtomicU32> =
-        std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
     let captured_pid_inner = std::sync::Arc::clone(&captured_pid);
 
     let rt = match tokio::runtime::Builder::new_current_thread()
@@ -280,10 +309,12 @@ fn run_agent_thread(
             }
         };
 
-        // Register PID for sandbox violation monitoring (if sandboxed)
-        if sandbox_enabled {
-            if let Some(pid) = child.id() {
-                captured_pid_inner.store(pid, std::sync::atomic::Ordering::Relaxed);
+        // Always capture PID for recovery/shutdown SIGKILL
+        if let Some(pid) = child.id() {
+            captured_pid_inner.store(pid, std::sync::atomic::Ordering::Relaxed);
+
+            // Register PID for sandbox violation monitoring (if sandboxed)
+            if sandbox_enabled {
                 #[cfg(target_os = "macos")]
                 {
                     let monitor_state = client.app.state::<super::sandbox_monitor::SandboxMonitorState>();
@@ -694,6 +725,9 @@ pub async fn acp_agent_spawn(
         &format!("{:x}", ts.wrapping_mul(6364136223846793005).wrapping_add(1))[..8]
     );
 
+    // Save a copy of allowed domains for AgentHandle before they're consumed
+    let saved_network_domains = network_allowed_domains.clone();
+
     // Start network proxy if network sandboxing is enabled (requires filesystem sandbox)
     let network_config = if sandbox && network_sandbox_enabled.unwrap_or(false) {
         let domains = network_allowed_domains
@@ -731,20 +765,26 @@ pub async fn acp_agent_spawn(
     };
 
     let has_network_sandbox = network_config.is_some();
+    let knd = kernel_network_deny.unwrap_or(false);
 
     let (init_tx, init_rx) = oneshot::channel();
     let (cmd_tx, cmd_rx) = mpsc::channel(32);
 
+    // Shared PID cell — thread writes after spawn, AgentHandle reads for SIGKILL
+    let child_pid = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let child_pid_thread = std::sync::Arc::clone(&child_pid);
+
     let binary = resolved_binary;
     let cwd = working_directory.clone();
     let iid = instance_id.clone();
-    let spawn_args = args;
+    let spawn_args = args.clone();
+    let spawn_env = env.clone();
+    let spawn_writable = writable_paths.clone();
 
     let thread_handle = std::thread::Builder::new()
         .name(format!("acp-{}", &binary))
         .spawn(move || {
-            let knd = kernel_network_deny.unwrap_or(false);
-            run_agent_thread(app, iid, binary, spawn_args, cwd, env, sandbox, writable_paths, network_config, knd, cmd_rx, init_tx);
+            run_agent_thread(app, iid, binary, spawn_args, cwd, spawn_env, sandbox, spawn_writable, network_config, knd, cmd_rx, init_tx, child_pid_thread);
         })
         .map_err(|e| format!("Failed to spawn agent thread: {}", e))?;
 
@@ -763,10 +803,22 @@ pub async fn acp_agent_spawn(
 
     let handle = AgentHandle {
         role,
-        agent_binary,
-        working_directory,
+        agent_binary: agent_binary.clone(),
+        working_directory: working_directory.clone(),
+        child_pid,
         cmd_tx,
         thread_handle: Some(thread_handle),
+        agent_args: args,
+        env_vars: env,
+        sandbox_enabled: sandbox,
+        sandbox_writable_paths: writable_paths,
+        network_sandbox_enabled: has_network_sandbox,
+        network_allowed_domains: if has_network_sandbox {
+            saved_network_domains
+        } else {
+            None
+        },
+        kernel_network_deny: knd,
     };
 
     state
@@ -857,6 +909,91 @@ pub async fn acp_agent_stop(
     }
 
     Ok(())
+}
+
+/// Kill a hung agent, respawn with the same config, re-authenticate, and load the session.
+/// Returns a new `SpawnResult` with a fresh `instance_id`.
+#[tauri::command]
+pub async fn acp_agent_reconnect(
+    app: AppHandle,
+    state: State<'_, AcpState>,
+    network_proxy_state: State<'_, super::network_proxy::NetworkProxyState>,
+    instance_id: String,
+    session_id: String,
+) -> Result<SpawnResult, String> {
+    // 1. Remove the old agent from the map and extract its spawn config
+    let old_handle = {
+        let mut agents = state.agents.lock().await;
+        agents.remove(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?
+    };
+
+    // 2. SIGKILL the old subprocess directly via PID
+    let pid = old_handle.child_pid.load(std::sync::atomic::Ordering::Relaxed);
+    if pid != 0 {
+        unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
+        log::info!(target: "notesage::acp", "Reconnect: sent SIGKILL to old agent PID {}", pid);
+    }
+
+    // 3. Drop the command channel and join the thread with 500ms timeout
+    drop(old_handle.cmd_tx);
+    if let Some(th) = old_handle.thread_handle {
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let join_thread = std::thread::spawn(move || {
+            let _ = th.join();
+            let _ = done_tx.send(());
+        });
+        match done_rx.recv_timeout(std::time::Duration::from_millis(500)) {
+            Ok(_) => { let _ = join_thread.join(); }
+            Err(_) => {
+                log::warn!(target: "notesage::acp", "Reconnect: old agent thread did not exit within 500ms, abandoning");
+            }
+        }
+    }
+
+    // 4. Spawn a fresh agent with the same config
+    let working_dir = old_handle.working_directory.clone();
+    let result = acp_agent_spawn(
+        app,
+        state.clone(),
+        network_proxy_state,
+        old_handle.agent_binary,
+        Some(old_handle.agent_args),
+        AgentRole::Interactive,
+        working_dir.clone(),
+        Some(old_handle.env_vars),
+        Some(old_handle.sandbox_enabled),
+        Some(old_handle.sandbox_writable_paths),
+        Some(old_handle.network_sandbox_enabled),
+        old_handle.network_allowed_domains,
+        Some(old_handle.kernel_network_deny),
+    ).await?;
+
+    // 5. Re-authenticate (best-effort, same as initial spawn)
+    if let Err(auth_err) = acp_agent_authenticate(
+        state.clone(),
+        result.instance_id.clone(),
+        None,
+    ).await {
+        let msg = auth_err.to_string();
+        if !msg.to_lowercase().contains("not implemented") {
+            log::warn!(target: "notesage::acp", "Reconnect: auth failed: {}", msg);
+            return Err(format!("Reconnect auth failed: {}", msg));
+        }
+    }
+
+    // 6. Load the existing session
+    let _session = acp_session_load(
+        state,
+        result.instance_id.clone(),
+        session_id,
+        working_dir,
+    ).await
+    .map_err(|e| format!("Reconnect session/load failed: {}", e))?;
+
+    log::info!(target: "notesage::acp", "Reconnect succeeded: old={} new={}", instance_id, result.instance_id);
+
+    Ok(result)
 }
 
 /// Create a new ACP session.

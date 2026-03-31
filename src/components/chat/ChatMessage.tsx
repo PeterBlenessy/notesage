@@ -4,6 +4,7 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import { MarkdownContent } from '@/components/MarkdownContent';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { BranchSwitcher } from './BranchSwitcher';
+import { ReconnectCard } from './ReconnectCard';
 import { useChatStore } from '@/stores/chat-store';
 import type { ChatMessage as ChatMessageType, AgentActivity, ToolCallActivity, ToolCallStatus } from '@/lib/ai/types';
 
@@ -197,6 +198,24 @@ export function ChatMessage({ message, isLast = false, branchCount, onBranch }: 
 
   // Tool messages are not rendered directly — their content is shown via ToolCallLog on the assistant message
   if (message.role === 'tool') return null;
+
+  // System-status messages render as ReconnectCard
+  if (message.role === 'system-status' && message.statusType) {
+    return (
+      <div className="mb-4 px-2">
+        <ReconnectCard
+          statusType={message.statusType}
+          agentName={message.agentName ?? 'the agent'}
+          attempt={message.attempt}
+          maxAttempts={message.maxAttempts}
+          dismissAt={message.dismissAt}
+          messageId={message.id ?? ''}
+          failedProvider={message.connectionProvider}
+          onDismiss={(id) => useChatStore.getState().removeSystemStatus(id)}
+        />
+      </div>
+    );
+  }
 
   const isUser = message.role === 'user';
   const isActivelyStreaming = isLoading && isLast;

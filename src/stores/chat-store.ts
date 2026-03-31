@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { ChatMessage, Citation, AgentActivity, ToolCall, ToolCallActivity } from '@/lib/ai/types';
+import type { ChatMessage, Citation, AgentActivity, ToolCall, ToolCallActivity, SystemStatusType } from '@/lib/ai/types';
 import { createTauriStorage } from '@/lib/tauri-storage';
 import { getThread, getDescendants, getChildren, getLeaves } from '@/lib/chat-tree';
 
@@ -82,6 +82,20 @@ interface ChatStore {
   addToolCallsToMessage: (messageTimestamp: number, toolCalls: ToolCall[]) => void;
   addToolCallActivity: (messageTimestamp: number, activity: ToolCallActivity) => void;
   updateToolCallActivity: (messageTimestamp: number, toolCallId: string, updates: Partial<ToolCallActivity>) => void;
+
+  // ---------------------------------------------------------------------------
+  // System status messages (reconnection flow)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Insert or update a system-status message in the active conversation.
+   * - `reconnecting`: replaced in-place when attempt changes (same ID reused)
+   * - `reconnected`: has `dismissAt` = now + 3s for auto-dismiss
+   * - `failed`: static until user acts
+   */
+  addSystemStatus: (statusType: SystemStatusType, agentName: string, attempt?: number, maxAttempts?: number) => string;
+  /** Remove a system-status message by ID (used for auto-dismiss). */
+  removeSystemStatus: (messageId: string) => void;
 
   // ---------------------------------------------------------------------------
   // Branching
@@ -402,6 +416,80 @@ export const useChatStore = create<ChatStore>()(
               ),
             };
           }),
+        }))),
+
+      // ----- System status messages -----
+
+      addSystemStatus: (statusType, agentName, attempt, maxAttempts) => {
+        const state = get();
+        let activeId = state.activeConversationId;
+        if (!activeId) {
+          activeId = get().createConversation();
+        }
+
+        // For 'reconnecting', reuse the existing system-status message ID
+        const conv = state.conversations.find((c) => c.id === activeId);
+        const existing = conv?.messages.find(
+          (m) => m.role === 'system-status' && m.statusType !== 'reconnected'
+        );
+
+        const msgId = existing?.id ?? crypto.randomUUID();
+        const now = Date.now();
+
+        set((s) => ({
+          conversations: s.conversations.map((c) => {
+            if (c.id !== activeId) return c;
+
+            // If updating an existing reconnecting message, replace in-place
+            if (existing) {
+              return {
+                ...c,
+                messages: c.messages.map((m) =>
+                  m.id === msgId
+                    ? {
+                        ...m,
+                        statusType,
+                        attempt,
+                        maxAttempts,
+                        agentName,
+                        dismissAt: statusType === 'reconnected' ? now + 3000 : undefined,
+                        timestamp: now,
+                      }
+                    : m
+                ),
+                updatedAt: now,
+              };
+            }
+
+            // Insert new system-status message
+            const msg: ChatMessage = {
+              role: 'system-status',
+              content: '',
+              id: msgId,
+              parentId: c.activeLeafId ?? null,
+              timestamp: now,
+              statusType,
+              attempt,
+              maxAttempts,
+              agentName,
+              dismissAt: statusType === 'reconnected' ? now + 3000 : undefined,
+            };
+            return { ...c, messages: [...c.messages, msg], activeLeafId: msgId, updatedAt: now };
+          }),
+        }));
+
+        return msgId;
+      },
+
+      removeSystemStatus: (messageId) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          messages: c.messages.filter((m) => m.id !== messageId),
+          // If we removed the active leaf, fall back to previous
+          activeLeafId: c.activeLeafId === messageId
+            ? (c.messages.find((m) => m.id !== messageId && m.role !== 'system-status')?.id ?? null)
+            : c.activeLeafId,
+          updatedAt: Date.now(),
         }))),
 
       // ----- Branching -----

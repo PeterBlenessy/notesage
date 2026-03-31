@@ -147,7 +147,9 @@ export function useDirectApiChat({
           content: resolved.provider === 'local_bundled' ? localSystemMessage : buildComposedSystemMessage(opts?.attachedFilePaths),
         };
         const historyLimit = useSettingsStore.getState().chatHistoryLimit;
-        const effectiveHistory = historyLimit > 0 ? messages.slice(-historyLimit) : messages;
+        const rawHistory = historyLimit > 0 ? messages.slice(-historyLimit) : messages;
+        // Filter out system-status messages (reconnection UI) — never sent to AI providers
+        const effectiveHistory = rawHistory.filter((m) => m.role !== 'system-status');
         const conversationMessages: ChatMessage[] = [
           systemMessage,
           ...effectiveHistory,

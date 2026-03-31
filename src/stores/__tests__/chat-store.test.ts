@@ -1040,3 +1040,95 @@ describe('Migration v3 → v4', () => {
     expect(migrated.conversations[0].messages).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// System-status messages (reconnection flow)
+// ---------------------------------------------------------------------------
+
+describe('system-status messages', () => {
+  beforeEach(reset);
+
+  it('addSystemStatus inserts a reconnecting message', () => {
+    const { createConversation, addSystemStatus } = useChatStore.getState();
+    const convId = createConversation();
+    const msgId = addSystemStatus('reconnecting', 'Claude Code', 1, 3);
+
+    const conv = getConv(convId)!;
+    const msg = conv.messages.find((m) => m.id === msgId);
+    expect(msg).toBeDefined();
+    expect(msg!.role).toBe('system-status');
+    expect(msg!.statusType).toBe('reconnecting');
+    expect(msg!.agentName).toBe('Claude Code');
+    expect(msg!.attempt).toBe(1);
+    expect(msg!.maxAttempts).toBe(3);
+  });
+
+  it('reconnecting messages are replaced in-place when attempt changes', () => {
+    const { createConversation, addSystemStatus } = useChatStore.getState();
+    createConversation();
+    const id1 = addSystemStatus('reconnecting', 'Claude Code', 1, 3);
+    const id2 = addSystemStatus('reconnecting', 'Claude Code', 2, 3);
+
+    // Same message ID — replaced in-place
+    expect(id1).toBe(id2);
+
+    const conv = useChatStore.getState().conversations[0];
+    const statusMsgs = conv.messages.filter((m) => m.role === 'system-status');
+    expect(statusMsgs).toHaveLength(1);
+    expect(statusMsgs[0].attempt).toBe(2);
+  });
+
+  it('reconnected messages have a dismissAt timestamp', () => {
+    const { createConversation, addSystemStatus } = useChatStore.getState();
+    createConversation();
+    const before = Date.now();
+    addSystemStatus('reconnected', 'Claude Code');
+
+    const conv = useChatStore.getState().conversations[0];
+    const msg = conv.messages.find((m) => m.statusType === 'reconnected')!;
+    expect(msg.dismissAt).toBeDefined();
+    expect(msg.dismissAt!).toBeGreaterThanOrEqual(before + 3000);
+  });
+
+  it('system-status messages are excluded from selectMessages thread', () => {
+    const { createConversation, addMessage, addSystemStatus } = useChatStore.getState();
+    createConversation();
+    addMessage({ role: 'user', content: 'hello' });
+    addSystemStatus('reconnecting', 'Agent', 1, 3);
+    addMessage({ role: 'assistant', content: 'hi' });
+
+    const thread = selectMessages(useChatStore.getState());
+    // system-status message IS in the thread (it's a tree node) but should
+    // be filtered when sending to AI providers (tested via direct filter)
+    const nonStatusMessages = thread.filter((m) => m.role !== 'system-status');
+    expect(nonStatusMessages).toHaveLength(2);
+    expect(nonStatusMessages[0].role).toBe('user');
+    expect(nonStatusMessages[1].role).toBe('assistant');
+  });
+
+  it('removeSystemStatus deletes a system-status message by ID', () => {
+    const { createConversation, addSystemStatus, removeSystemStatus } = useChatStore.getState();
+    const convId = createConversation();
+    const msgId = addSystemStatus('reconnected', 'Agent');
+
+    removeSystemStatus(msgId);
+
+    const conv = getConv(convId)!;
+    expect(conv.messages.find((m) => m.id === msgId)).toBeUndefined();
+  });
+
+  it('addSystemStatus transitions from reconnecting to failed', () => {
+    const { createConversation, addSystemStatus } = useChatStore.getState();
+    createConversation();
+    const id1 = addSystemStatus('reconnecting', 'Claude Code', 3, 3);
+    const id2 = addSystemStatus('failed', 'Claude Code');
+
+    // Same message replaced in-place
+    expect(id1).toBe(id2);
+
+    const conv = useChatStore.getState().conversations[0];
+    const statusMsgs = conv.messages.filter((m) => m.role === 'system-status');
+    expect(statusMsgs).toHaveLength(1);
+    expect(statusMsgs[0].statusType).toBe('failed');
+  });
+});

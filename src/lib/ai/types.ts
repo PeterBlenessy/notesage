@@ -45,8 +45,10 @@ export interface ToolCallActivity {
   completedAt?: number;
 }
 
+export type SystemStatusType = 'reconnecting' | 'reconnected' | 'failed';
+
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system' | 'tool';
+  role: 'user' | 'assistant' | 'system' | 'tool' | 'system-status';
   content: string;
   timestamp?: number;
   /** Unique message identifier for tree-based branching */
@@ -75,6 +77,17 @@ export interface ChatMessage {
   toolCallId?: string;
   /** Tool call execution activities for UI tracking */
   toolCallActivities?: ToolCallActivity[];
+  // --- system-status fields (role: 'system-status') ---
+  /** Status type for reconnection messages */
+  statusType?: SystemStatusType;
+  /** Current reconnection attempt number */
+  attempt?: number;
+  /** Maximum reconnection attempts */
+  maxAttempts?: number;
+  /** Timestamp after which a 'reconnected' message should auto-dismiss */
+  dismissAt?: number;
+  /** Agent name for display in reconnection messages */
+  agentName?: string;
 }
 
 export interface GenerateOptions {

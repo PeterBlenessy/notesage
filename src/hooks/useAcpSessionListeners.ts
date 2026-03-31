@@ -14,6 +14,7 @@ import {
   truncateDetail,
   formatAcpToolName,
 } from '@/lib/ai/acp-utils';
+import { resetUnresponsiveTimer } from '@/hooks/useAcpLifecycle';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,6 +53,8 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
 
   const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
     if (event.payload.instanceId !== deps.instanceId) return;
+    // Reset unresponsiveness timer — agent is still alive
+    resetUnresponsiveTimer();
     const { update } = event.payload;
 
     if (
