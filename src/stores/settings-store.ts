@@ -8,7 +8,7 @@ export type ContentWidth = "full" | "auto" | "a4" | "a5" | "letter";
 export type MeasurementUnit = "cm" | "inch";
 export type ExportTemplate = "clean" | "academic" | "report";
 export type ExportPageSize = "a4" | "letter" | "a5";
-export type ExportFormat = "pdf" | "pptx";
+export type ExportFormat = "pdf" | "pptx" | "docx";
 export type PptxTemplate = "simple" | "business" | "report";
 export type PageBreaks = "continuous" | "visible";
 

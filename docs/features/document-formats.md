@@ -66,6 +66,50 @@ Read EPUB ebooks directly in Notesage with paginated or scrollable rendering.
 - Keyboard event forwarding from EPUB iframes to parent window
 - `epub-store` (Zustand, persisted): view mode preference + per-file bookmarks
 
+## DOCX Export
+
+Export notes to editable Word documents using the `docx-rs` crate.
+
+**Export triggers:**
+
+- Cmd+Shift+E keyboard shortcut (opens export dialog, select Word format)
+- Right-click sidebar context menu on .md files → Export as... → Word (.docx)
+
+**Templates:**
+
+- **Clean** — Inter, 11pt body, 1.15 line spacing, no header/footer
+- **Academic** — Source Serif 4, 12pt body, 1.5 line spacing, header with title + page number
+- **Report** — Inter, 11pt body, title page (title + date), header/footer throughout
+
+**Content mapping:**
+
+| Markdown Element | Word Representation |
+| --- | --- |
+| Headings (H1-H6) | Bold paragraphs with template-appropriate font sizes |
+| Paragraphs | Normal style with template body font |
+| Bold, italic, strikethrough | Run formatting properties |
+| Inline code | Monospace font (JetBrains Mono) with grey shading |
+| Links | Hyperlinks with underline and grey color |
+| Bullet/ordered/task lists | Word numbering with nesting (bullet/decimal) |
+| Blockquotes | Indented paragraphs with grey text |
+| Callout blocks | Single-cell table with colored background and bold label |
+| Code blocks | Monospace text with grey background shading |
+| Tables | Word tables with header row shading and optional aggregation footer |
+| Images | Embedded from local files (resolved from project root) |
+| Drawings (.excalidraw) | Embedded .svg sidecar files |
+| Link preview cards | Styled paragraphs (bold title, description, grey URL) |
+| Sparklines | Degraded to comma-separated text |
+| YAML frontmatter | Stripped (not visible in output) |
+
+**Dynamic table support:** Parses `<!-- type:currency,summary:sum -->` metadata, formats values by type, computes aggregation footers (sum/avg/count/min/max), strips sparkline syntax.
+
+**Architecture:**
+
+- `docx-rs` 0.4 crate for OOXML document generation
+- Markdown parsed with `comrak` (GFM extensions)
+- Shared table utilities in `table_utils.rs` (also used by Typst and HTML exporters)
+- Tauri command: `export_docx`
+
 ## DOCX Viewer
 
 - Powered by mammoth.js (HTML conversion)
@@ -186,8 +230,10 @@ Preview and export markdown documents as self-contained HTML files with full fea
 
 | File | Purpose |
 | --- | --- |
-| `src-tauri/src/commands/export.rs` | PDF + PPTX + HTML export commands, template management |
-| `src-tauri/src/export/` | Typst engine + PPTX converter + HTML renderer |
+| `src-tauri/src/commands/export.rs` | PDF + DOCX + PPTX + HTML export commands, template management |
+| `src-tauri/src/export/` | Typst engine + DOCX converter + PPTX converter + HTML renderer |
+| `src-tauri/src/export/markdown_to_docx.rs` | Markdown → docx-rs document model converter |
+| `src-tauri/src/export/table_utils.rs` | Shared table utilities (column metadata, aggregation, formatting) |
 | `src-tauri/src/export/markdown_to_html.rs` | Markdown → HTML with Notesage extensions |
 | `src-tauri/src/export/html_styles.rs` | Embedded CSS templates (light + dark themes) |
 | `src-tauri/src/export/markdown_to_pptx.rs` | Markdown → ppt-rs slide model converter |
@@ -199,13 +245,13 @@ Preview and export markdown documents as self-contained HTML files with full fea
 | `src/components/editor/viewers/PdfViewer.tsx` | PDF viewer |
 | `src/components/editor/viewers/DocxViewer.tsx` | DOCX viewer |
 | `src/components/editor/viewers/PlainTextViewer.tsx` | Plain text viewer |
-| `src/components/ExportDialog.tsx` | Export options dialog (PDF + PowerPoint) |
-| `src/hooks/useExportOperations.ts` | Export operations hook (PDF + PPTX routing) |
+| `src/components/ExportDialog.tsx` | Export options dialog (PDF + DOCX + PowerPoint) |
+| `src/hooks/useExportOperations.ts` | Export operations hook (PDF + DOCX + PPTX routing) |
 | `src/stores/epub-store.ts` | EPUB viewer preferences and bookmarks |
 | `public/foliate-js/` | Vendored EPUB renderer |
 
 ## Future Enhancements
 
-- DOCX export (preserve formatting, embedded images, Word styles mapping)
+- ~~DOCX export~~ — Complete: full content mapping, three templates, dynamic tables
 - Custom template editor and template marketplace
 - Code file syntax highlighting

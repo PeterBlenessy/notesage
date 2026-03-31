@@ -515,6 +515,18 @@ export const tauriApi = {
     return await invoke<number[]>("export_pptx", options);
   },
 
+  async exportDocx(options: {
+    markdown: string;
+    title: string;
+    template: string;
+    includeToc: boolean;
+    includePageNumbers: boolean;
+    pageSize: string;
+    projectRoot?: string;
+  }): Promise<number[]> {
+    return await invoke<number[]>("export_docx", options);
+  },
+
   async importPptxTemplate(options: {
     sourcePath: string;
     scope: string;

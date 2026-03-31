@@ -7,6 +7,7 @@ import { getMarkdownFromEditor } from "@/lib/markdown";
 import { serializeFrontmatter } from "@/lib/frontmatter";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import type { ExportOptions } from "@/components/ExportDialog";
 
 export function useExportOperations(editor: Editor | null) {
@@ -32,8 +33,57 @@ export function useExportOperations(editor: Editor | null) {
 
       setIsExporting(true);
 
+      // Resolve project root for image/drawing path resolution
+      const projectRoot = useWorkspaceStore
+        .getState()
+        .projects.find((p) => activeTab.filePath.startsWith(p.path + "/"))?.path;
+
       try {
-        if (options.format === "pptx") {
+        if (options.format === "docx") {
+          // Generate DOCX via Tauri backend
+          const docxBytes = await tauriApi.exportDocx({
+            markdown,
+            title,
+            template: options.template,
+            includeToc: options.includeToc,
+            includePageNumbers: options.includePageNumbers,
+            pageSize: options.pageSize,
+            projectRoot: projectRoot ?? undefined,
+          });
+
+          // Derive default save path from source file
+          const defaultPath = activeTab.filePath.replace(/\.md$/i, ".docx");
+
+          // Show native save dialog
+          const savePath = await save({
+            title: "Export Word Document",
+            defaultPath,
+            filters: [{ name: "Word Document", extensions: ["docx"] }],
+          });
+
+          if (!savePath) {
+            setIsExporting(false);
+            return;
+          }
+
+          // Write DOCX to disk
+          await tauriApi.saveBinaryFile(savePath, docxBytes);
+
+          // Persist last-used export settings
+          const settings = useSettingsStore.getState();
+          settings.setLastExportFormat("docx");
+          settings.setLastExportTemplate(options.template);
+          settings.setLastExportPageSize(options.pageSize);
+          settings.setLastExportIncludeToC(options.includeToc);
+          settings.setLastExportIncludePageNumbers(options.includePageNumbers);
+
+          toast.success("Word document exported", {
+            action: {
+              label: "Reveal in Finder",
+              onClick: () => tauriApi.revealInFinder(savePath),
+            },
+          });
+        } else if (options.format === "pptx") {
           // Generate PPTX via Tauri backend
           const pptxBytes = await tauriApi.exportPptx({
             markdown,

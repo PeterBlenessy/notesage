@@ -50,7 +50,7 @@ interface FileTreeItemProps {
   expandKeyPrefix?: string;
   gitRepoRoot?: string;
   onCommitFile?: (filePath: string) => void;
-  onExportFile?: (filePath: string, fileName: string, format?: 'pdf' | 'pptx' | 'html') => void;
+  onExportFile?: (filePath: string, fileName: string, format?: 'pdf' | 'docx' | 'pptx' | 'html') => void;
 }
 
 const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick, onNewNote, onMakeProject, expandKeyPrefix = "", gitRepoRoot, onCommitFile, onExportFile }: FileTreeItemProps) {
@@ -547,6 +547,9 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
                 <ContextMenuSubContent>
                   <ContextMenuItem onClick={() => onExportFile(entry.path, entry.name, 'pdf')}>
                     PDF
+                  </ContextMenuItem>
+                  <ContextMenuItem onClick={() => onExportFile(entry.path, entry.name, 'docx')}>
+                    Word (.docx)
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => onExportFile(entry.path, entry.name, 'pptx')}>
                     PowerPoint

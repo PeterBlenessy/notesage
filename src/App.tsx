@@ -303,7 +303,7 @@ function App() {
     setNewProjectOpen(true);
   }, []);
 
-  const handleExportFile = useCallback(async (filePath: string, fileName: string, format?: 'pdf' | 'pptx' | 'html') => {
+  const handleExportFile = useCallback(async (filePath: string, fileName: string, format?: 'pdf' | 'docx' | 'pptx' | 'html') => {
     if (format === 'html') {
       // Direct HTML export without opening the export dialog
       try {

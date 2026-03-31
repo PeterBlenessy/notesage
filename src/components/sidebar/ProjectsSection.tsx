@@ -12,7 +12,7 @@ interface ProjectsSectionProps {
   onNewProject?: () => void;
   onOpenExistingProject?: () => void;
   onOpenProjectSettings?: (projectPath: string) => void;
-  onExportFile?: (filePath: string, fileName: string, format?: 'pdf' | 'pptx' | 'html') => void;
+  onExportFile?: (filePath: string, fileName: string, format?: 'pdf' | 'docx' | 'pptx' | 'html') => void;
   panelCollapsed?: boolean;
 }
 

@@ -237,12 +237,13 @@ export function ExportDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="pdf">PDF</SelectItem>
+                <SelectItem value="docx">Word (.docx)</SelectItem>
                 <SelectItem value="pptx">PowerPoint</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          {format === "pdf" && (
+          {(format === "pdf" || format === "docx") && (
             <>
               {/* PDF Template selector */}
               <div className="space-y-2">
@@ -414,6 +415,8 @@ export function ExportDialog({
               </>
             ) : format === "pdf" ? (
               "Export PDF"
+            ) : format === "docx" ? (
+              "Export DOCX"
             ) : (
               "Export PPTX"
             )}

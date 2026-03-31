@@ -9,7 +9,7 @@ interface FileTreeProps {
   expandKeyPrefix?: string;
   gitRepoRoot?: string;
   onCommitFile?: (filePath: string) => void;
-  onExportFile?: (filePath: string, fileName: string, format?: 'pdf' | 'pptx' | 'html') => void;
+  onExportFile?: (filePath: string, fileName: string, format?: 'pdf' | 'docx' | 'pptx' | 'html') => void;
 }
 
 export function FileTree({ tree, onFileClick, onNewNote, onMakeProject, expandKeyPrefix, gitRepoRoot, onCommitFile, onExportFile }: FileTreeProps) {

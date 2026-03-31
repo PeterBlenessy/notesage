@@ -144,6 +144,9 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   lastExportPageSize: 'a4',
   lastExportIncludeToC: false,
   lastExportIncludePageNumbers: false,
+  lastExportFormat: 'pdf',
+  lastPptxTemplate: 'simple',
+  searchProvider: 'duckduckgo',
 };
 
 // ---------------------------------------------------------------------------
@@ -206,6 +209,8 @@ describe('initial state defaults', () => {
     expect(s.lastExportPageSize).toBe('a4');
     expect(s.lastExportIncludeToC).toBe(false);
     expect(s.lastExportIncludePageNumbers).toBe(false);
+    expect(s.lastExportFormat).toBe('pdf');
+    expect(s.lastPptxTemplate).toBe('simple');
   });
 });
 
@@ -551,6 +556,106 @@ describe('runtime-only setters', () => {
     useSettingsStore.getState().setICloudNotesagePath('/some/path');
     useSettingsStore.getState().setICloudNotesagePath(null);
     expect(useSettingsStore.getState().icloudNotesagePath).toBeNull();
+  });
+});
+
+// ===========================================================================
+// Export format settings
+// ===========================================================================
+
+describe('export format settings', () => {
+  it('lastExportFormat defaults to pdf', () => {
+    const s = useSettingsStore.getState();
+    expect(s.lastExportFormat).toBe('pdf');
+  });
+
+  it('ExportFormat type includes pdf, docx, and pptx', () => {
+    const formats: Array<'pdf' | 'docx' | 'pptx'> = ['pdf', 'docx', 'pptx'];
+    for (const fmt of formats) {
+      useSettingsStore.getState().setLastExportFormat(fmt);
+      expect(useSettingsStore.getState().lastExportFormat).toBe(fmt);
+    }
+  });
+
+  it('setLastExportFormat to docx', () => {
+    useSettingsStore.getState().setLastExportFormat('docx');
+    expect(useSettingsStore.getState().lastExportFormat).toBe('docx');
+  });
+
+  it('setLastExportFormat switches back to pdf', () => {
+    useSettingsStore.getState().setLastExportFormat('docx');
+    expect(useSettingsStore.getState().lastExportFormat).toBe('docx');
+    useSettingsStore.getState().setLastExportFormat('pdf');
+    expect(useSettingsStore.getState().lastExportFormat).toBe('pdf');
+  });
+
+  it('setLastExportFormat to pptx', () => {
+    useSettingsStore.getState().setLastExportFormat('pptx');
+    expect(useSettingsStore.getState().lastExportFormat).toBe('pptx');
+  });
+
+  it('lastExportTemplate defaults to clean', () => {
+    expect(useSettingsStore.getState().lastExportTemplate).toBe('clean');
+  });
+
+  it('lastExportPageSize defaults to a4', () => {
+    expect(useSettingsStore.getState().lastExportPageSize).toBe('a4');
+  });
+
+  it('lastExportIncludeToC defaults to false', () => {
+    expect(useSettingsStore.getState().lastExportIncludeToC).toBe(false);
+  });
+
+  it('lastExportIncludePageNumbers defaults to false', () => {
+    expect(useSettingsStore.getState().lastExportIncludePageNumbers).toBe(false);
+  });
+
+  it('lastPptxTemplate defaults to simple', () => {
+    expect(useSettingsStore.getState().lastPptxTemplate).toBe('simple');
+  });
+
+  it('setLastPptxTemplate updates the value', () => {
+    useSettingsStore.getState().setLastPptxTemplate('business');
+    expect(useSettingsStore.getState().lastPptxTemplate).toBe('business');
+  });
+
+  it('setLastPptxTemplate accepts custom template names', () => {
+    useSettingsStore.getState().setLastPptxTemplate('my-custom-template');
+    expect(useSettingsStore.getState().lastPptxTemplate).toBe('my-custom-template');
+  });
+
+  it('export format persists across restart', async () => {
+    useSettingsStore.getState().setLastExportFormat('docx');
+    useSettingsStore.getState().setLastPptxTemplate('report');
+    await waitForPersist();
+
+    await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
+
+    const s = useSettingsStore.getState();
+    expect(s.lastExportFormat).toBe('docx');
+    expect(s.lastPptxTemplate).toBe('report');
+  });
+
+  it('all export settings persist together', async () => {
+    useSettingsStore.setState({
+      lastExportFormat: 'pptx',
+      lastExportTemplate: 'report',
+      lastExportPageSize: 'letter',
+      lastExportIncludeToC: true,
+      lastExportIncludePageNumbers: true,
+      lastPptxTemplate: 'business',
+    });
+    await waitForPersist();
+
+    await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
+
+    const s = useSettingsStore.getState();
+    expect(s.lastExportFormat).toBe('pptx');
+    expect(s.lastExportTemplate).toBe('report');
+    expect(s.lastExportPageSize).toBe('letter');
+    expect(s.lastExportIncludeToC).toBe(true);
+    expect(s.lastExportIncludePageNumbers).toBe(true);
+    expect(s.lastPptxTemplate).toBe('business');
   });
 });
 

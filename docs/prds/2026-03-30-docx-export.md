@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-30 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | High |
 | **Impact** | Users can export notes as Word documents for sharing with collaborators who don't use markdown tools |
 | **Research** | [document-format-enhancements](../research/2026-03-30-document-format-enhancements.md) |

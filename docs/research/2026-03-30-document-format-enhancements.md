@@ -4,8 +4,8 @@
 
 | Stage | Link | Status |
 | --- | --- | --- |
-| PRD | [docx-export](../prds/2026-03-30-docx-export.md) | Draft |
-| Tasks | [docx-export-tasks](../tasks/2026-03-30-docx-export-tasks.md) | Not started |
+| PRD | [docx-export](../prds/2026-03-30-docx-export.md) | Complete |
+| Tasks | [docx-export-tasks](../tasks/2026-03-30-docx-export-tasks.md) | Complete |
 | PRD | [pptx-export](../prds/2026-03-30-pptx-export.md) | Complete |
 | Tasks | [pptx-export-tasks](../tasks/2026-03-30-pptx-export-tasks.md) | Complete |
 | PRD | [custom-templates](../prds/2026-03-30-custom-templates.md) | Draft |

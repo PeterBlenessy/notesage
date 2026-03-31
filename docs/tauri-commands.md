@@ -636,6 +636,52 @@ const pdfBytes = await invoke<number[]>('export_pdf', {
 });
 ```
 
+### export_docx
+
+Converts markdown to a styled DOCX file using the `docx-rs` crate.
+
+```rust
+#[tauri::command]
+pub async fn export_docx(
+    markdown: String,
+    title: String,
+    template: String,
+    include_toc: bool,
+    include_page_numbers: bool,
+    page_size: String,
+    project_root: Option<String>,
+) -> Result<Vec<u8>, String>
+```
+
+**Parameters:**
+
+- `markdown`: Full markdown content (including frontmatter if present)
+- `title`: Document title (used in headers/footers and title pages)
+- `template`: Template preset — `"clean"`, `"academic"`, or `"report"`
+- `include_toc`: Whether to generate a Word TOC field
+- `include_page_numbers`: Whether to show page numbers in the footer
+- `page_size`: Page dimensions — `"a4"`, `"letter"`, or `"a5"`
+- `project_root`: Optional project root path for resolving images and drawing SVGs
+
+**Returns:**
+
+- `Ok(Vec<u8>)`: DOCX file as raw bytes
+- `Err(String)`: Error message if generation fails
+
+**Frontend usage:**
+
+```typescript
+const docxBytes = await invoke<number[]>('export_docx', {
+  markdown: '# Hello\n\nWorld',
+  title: 'Hello',
+  template: 'clean',
+  includeToc: false,
+  includePageNumbers: false,
+  pageSize: 'a4',
+  projectRoot: null,
+});
+```
+
 ### render_html
 
 Renders markdown to a complete HTML document or body-only fragment.

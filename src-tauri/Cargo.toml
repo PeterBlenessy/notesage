@@ -103,6 +103,9 @@ scraper = "0.23"
 # PPTX export
 ppt-rs = "0.2"
 
+# DOCX export
+docx-rs = "0.4"
+
 # Voice transcription
 whisper-rs = "0.15"
 cpal = "0.15"

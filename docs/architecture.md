@@ -65,10 +65,12 @@ note-sage/
 │   │   │   ├── queries.rs  # SQL query builders for all search operations
 │   │   │   ├── tasks.rs    # Task toggle via context-based matching
 │   │   │   └── icloud.rs   # iCloud exclusion (xattr on macOS)
-│   │   └── export/         # PDF export engine
+│   │   └── export/         # Document export engines (PDF, DOCX, PPTX, HTML)
 │   │       ├── mod.rs
 │   │       ├── typst_world.rs      # Typst World trait implementation
 │   │       ├── markdown_to_typst.rs # Markdown → Typst markup converter
+│   │       ├── markdown_to_docx.rs  # Markdown → DOCX converter (docx-rs)
+│   │       ├── table_utils.rs       # Shared table utilities (metadata, aggregation, formatting)
 │   │       └── templates.rs        # Template loading and parameterization
 │   ├── binaries/           # Bundled sidecar binaries (llama-server + dylibs)
 │   ├── model-catalog.json  # Curated LLM model catalog (embedded at compile time)

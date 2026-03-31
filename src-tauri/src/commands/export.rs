@@ -1,4 +1,5 @@
 use crate::export::html_styles::{html_css, wrap_html_document};
+use crate::export::markdown_to_docx::{markdown_to_docx, DocxOptions};
 use crate::export::markdown_to_html::markdown_to_html;
 use crate::export::markdown_to_pptx::markdown_to_pptx;
 use crate::export::markdown_to_typst::markdown_to_typst;
@@ -61,6 +62,26 @@ pub async fn export_pptx(
         &template,
         project_root.as_deref(),
     )
+}
+
+/// Convert markdown to DOCX bytes.
+#[tauri::command]
+pub async fn export_docx(
+    markdown: String,
+    title: String,
+    template: String,
+    include_toc: bool,
+    include_page_numbers: bool,
+    page_size: String,
+    project_root: Option<String>,
+) -> Result<Vec<u8>, String> {
+    let options = DocxOptions {
+        include_toc,
+        include_page_numbers,
+        page_size,
+        project_root,
+    };
+    markdown_to_docx(&markdown, &title, &template, &options)
 }
 
 /// Render markdown to a complete HTML document or body fragment.
