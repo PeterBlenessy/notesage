@@ -346,15 +346,15 @@ No dynamic alternative exists — providers don't expose tool catalogs via API. 
 
 ### High Priority — ALL DONE
 
-1. ~~**Thinking tags** → Parse from llama-server `/props` `chat_template` dynamically; deduplicate shared constant as immediate fix~~ ✅
-2. ~~**Default model names** → Consolidate to single constants file, remove duplication between `ai.rs` and `ai_streaming.rs`~~ ✅
-3. ~~**NPM binary paths** → Use `which`/`PATH` instead of hardcoded macOS paths; extract shared utility~~ ✅
+1. **~~Thinking tags~~** ~~→ Parse from llama-server~~ `/props` `chat_template` ~~dynamically; deduplicate shared constant as immediate fix~~ ✅
+2. **~~Default model names~~** ~~→ Consolidate to single constants file, remove duplication between~~ `ai.rs` ~~and~~ `ai_streaming.rs` ✅
+3. **~~NPM binary paths~~** ~~→ Use~~ `which`~~/~~`PATH` ~~instead of hardcoded macOS paths; extract shared utility~~ ✅
 
 ### Medium Priority — ALL DONE
 
-4. ~~**Model catalog FIM/context** → Read from GGUF file headers instead of static JSON~~ ✅ (catalog expansion + metadata enrichment PRDs + GGUF FIM token detection)
-5. ~~**Anthropic API version** → Move to shared constant~~ ✅ (centralized; `2023-06-01` confirmed as latest stable)
-6. ~~**Model metadata caching** → Parse GGUF headers on download, cache as `.meta.json`~~ ✅ (metadata enrichment PRD)
+4. **~~Model catalog FIM/context~~** ~~→ Read from GGUF file headers instead of static JSON~~ ✅ (catalog expansion + metadata enrichment PRDs + GGUF FIM token detection)
+5. **~~Anthropic API version~~** ~~→ Move to shared constant~~ ✅ (centralized; `2023-06-01` confirmed as latest stable)
+6. **~~Model metadata caching~~** ~~→ Parse GGUF headers on download, cache as~~ `.meta.json` ✅ (metadata enrichment PRD)
 
 ### Low Priority — ALL DONE
 

@@ -109,7 +109,7 @@ pub mod markdown_to_docx;
 | ~~Strikethrough~~ | Run with `strike: true` |
 | `inline code` | Run with monospace font (JetBrains Mono or Consolas) and light grey background shading |
 | [Link](url) | Hyperlink run with underline and grey color (matching design system — no blue) |
-| ![Image](path) | Inline image embedded in the document; local paths resolved from `project_root` |
+|  | Inline image embedded in the document; local paths resolved from `project_root` |
 | Bullet list | Word bullet list with proper nesting (indent levels) |
 | Ordered list | Word numbered list with proper nesting |
 | Task list | Bullet list with checkbox Unicode characters (☐ / ☑) — Word doesn't have native task lists |
@@ -326,63 +326,101 @@ Both `markdown_to_typst.rs` and `markdown_to_docx.rs` import from `table_utils.r
 ### Functional
 
 - [ ] Export produces a valid `.docx` file that opens without errors in Microsoft Word, Google Docs, and LibreOffice Writer
+
 - [ ] Headings use built-in Word heading styles (`Heading1` through `Heading6`) and appear in Word's navigation pane
+
 - [ ] Bold, italic, strikethrough, and inline code render with correct formatting
+
 - [ ] Links are clickable hyperlinks in the exported document
+
 - [ ] Bullet lists, ordered lists, and task lists render with correct indentation and markers
+
 - [ ] Nested lists (2+ levels) render with appropriate indent levels
+
 - [ ] Tables render with header row styling, column alignment, and borders
+
 - [ ] Dynamic table columns with `<!-- type:currency -->` metadata display formatted numbers
+
 - [ ] Aggregation footer rows (SUM, AVG, etc.) compute correctly and appear as bold summary rows
+
 - [ ] Sparkline `{{spark:...}}` patterns degrade to comma-separated text
+
 - [ ] Code blocks render with monospace font and background shading
+
 - [ ] Blockquotes render with left indent and border
+
 - [ ] Callout blocks render with colored border, background tint, and type label
+
 - [ ] Images (both local and remote URLs) embed correctly in the document
+
 - [ ] Drawing blocks (`.excalidraw`) embed the SVG preview as an image
+
 - [ ] Link preview cards render as styled paragraphs (title, description, URL)
+
 - [ ] Horizontal rules render as visible dividers
+
 - [ ] Text colors and highlights transfer to the Word document
+
 - [ ] YAML frontmatter is stripped and not visible in the exported document
 
 ### Templates
 
 - [ ] Clean template uses sans-serif font, minimal styling, no header/footer
+
 - [ ] Academic template uses serif font, includes header with title and page numbers
+
 - [ ] Report template includes a title page with document title and date
+
 - [ ] Table of contents option generates a Word TOC field (updatable in Word)
+
 - [ ] Page numbers option adds page numbers in the footer
+
 - [ ] Page size setting correctly applies A4, Letter, or A5 dimensions
 
 ### Source Document Integrity
 
 - [ ] Exporting does not modify the source markdown file
+
 - [ ] Exporting does not modify the editor state or undo history
+
 - [ ] Export can be triggered on unsaved documents (uses editor content, not disk content)
 
 ### UI/UX
 
 - [ ] Format picker appears in the Export Dialog with PDF and DOCX options
+
 - [ ] Last-used export format is persisted and restored on next open
+
 - [ ] Cmd+Shift+E opens the Export Dialog (unchanged shortcut)
+
 - [ ] Save dialog suggests `.docx` extension and correct file filter
+
 - [ ] "Reveal in Finder" toast action works after successful export
+
 - [ ] Exporting shows a loading state on the Export button
+
 - [ ] Export errors display a clear toast message
 
 ### Testing
 
 - [ ] Rust unit tests for `markdown_to_docx` converter covering all node types
+
 - [ ] Rust unit tests for shared `table_utils` functions (extracted from typst converter)
+
 - [ ] Existing `markdown_to_typst` tests still pass after the `table_utils` refactor
+
 - [ ] Frontend unit test for `useExportOperations` covering DOCX export path
+
 - [ ] TypeScript type check passes (`pnpm typecheck`)
+
 - [ ] All existing tests pass (`pnpm test`, `cargo test`)
 
 ### Performance
 
 - [ ] Export of a 50-page document completes in under 3 seconds
+
 - [ ] Export of a document with 10+ images completes without memory issues
+
 - [ ] No UI freeze during export (async operation)
 
 ## Out of Scope

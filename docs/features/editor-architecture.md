@@ -13,6 +13,7 @@ Deep technical reference for the editor subsystem. For feature overview, see [ed
 ## Tiptap Extension Model
 
 Tiptap v2 wraps ProseMirror with a composable extension system. Each extension can define:
+
 - Schema nodes/marks (document model)
 - ProseMirror plugins (state, decorations, key bindings)
 - Commands (imperative operations)
@@ -40,7 +41,7 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | ThemedHighlight | `themed-highlight.ts` | Mark Extension | Extends Tiptap Highlight with semantic color names for light/dark mode |
 | LinkClick | `link-click.ts` | Plugin | Click handler for link navigation (internal files → open as tab, external → system browser) |
 | Callout | `callout.ts` | Node Extension | Callout blocks (Note, Tip, Warning, Important) with Obsidian `> [!type]` markdown round-tripping |
-| Drawing | `drawing.ts` | Node Extension + ReactNodeViewRenderer + Plugin | Inline Excalidraw canvas (atom node, sidecar `.excalidraw`/`.svg` storage, deletion cleanup plugin with 5s undo, markdown `![drawing](path.excalidraw)` round-tripping) |
+| Drawing | `drawing.ts` | Node Extension + ReactNodeViewRenderer + Plugin | Inline Excalidraw canvas (atom node, sidecar `.excalidraw`/`.svg` storage, deletion cleanup plugin with 5s undo, markdown `<div data-drawing-id="path" data-type="drawing" class="drawing-block"></div>` round-tripping) |
 | LinkPreview | `link-preview.ts` | Node Extension + ReactNodeViewRenderer + Plugin | Rich link preview cards (atom node, OG metadata fetch, `> [!link](url)` markdown, paste detection prompt, `/embed` slash command) |
 | TableHeaderAttrs | `table-header-attrs.ts` | Node Extension | Extends TableHeader with `colType`, `colCurrency`, `colAggregation`, `colSortDirection` attributes |
 | TableAggregation | `table-aggregation.ts` | Plugin + Decoration | Computes column aggregations (sum/avg/count/min/max) and renders footer row via widget decoration |
@@ -48,8 +49,8 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | TableFilter | `table-filter.ts` | Plugin + Decoration | Row filtering with text input widget decoration; hides non-matching rows via node decorations |
 | TableSparkline | `table-sparkline.ts` | Plugin + Decoration | Detects `{{spark:...}}` patterns and renders inline SVG sparkline widgets; reveals raw text on focus |
 | TableHeaderMenu | `table-header-menu.ts` | Plugin + Decoration + DOM Event | Right-click context menu handler for column config; type badge widget decorations on header cells |
-| ~~ItemAnnotation~~ | ~~`item-annotation.ts`~~ | ~~Plugin + Decoration~~ | ~~Emoji annotations on list items (deferred — needs unified gutter design)~~ |
-| ~~DragHandle~~ | ~~`drag-handle.ts`~~ | ~~Plugin + DOM~~ | ~~Block drag handles (deferred — needs unified gutter design)~~ |
+| ~~ItemAnnotation~~ | `item-annotation.ts` | ~~Plugin + Decoration~~ | ~~Emoji annotations on list items (deferred — needs unified gutter design)~~ |
+| ~~DragHandle~~ | `drag-handle.ts` | ~~Plugin + DOM~~ | ~~Block drag handles (deferred — needs unified gutter design)~~ |
 
 ## Decoration System
 
@@ -60,6 +61,7 @@ ProseMirror decorations are the mechanism for visual overlays that don't modify 
 - **Node decorations** (`Decoration.node()`): Style entire nodes. Not currently used.
 
 Each decoration-based extension follows a pattern:
+
 1. Define a `PluginKey` for the plugin state
 2. Store decoration state in the plugin's `DecorationSet`
 3. Update decorations via transactions (either document changes or external dispatch)
@@ -70,11 +72,13 @@ Each decoration-based extension follows a pattern:
 A single Tiptap editor instance is shared across all tabs. To preserve undo/redo history, selection, and decoration state across tab switches, the full ProseMirror `EditorState` is cached in memory per tab.
 
 **Save/restore flow:**
+
 1. On tab switch away: `editor.state` saved to `cachedEditorStatesRef` (keyed by tab ID)
 2. On tab switch back: if cached state exists, `editor.view.updateState(cachedState)` restores it — undo/redo, cursor position, and all plugin states come back intact
 3. On fresh load (no cache): `loadRawMarkdownIntoEditor()` parses markdown and clears history via `EditorState.create()` to prevent stale undo entries
 
 **Cache invalidation:**
+
 - External file changes (auto-reload or manual reload from disk)
 - Source→WYSIWYG view mode switch
 - After successful restore (one-time use, deleted from cache)
@@ -87,6 +91,7 @@ A single Tiptap editor instance is shared across all tabs. To preserve undo/redo
 ## Plugin State Patterns
 
 ### CommentMark (`CommentMarkPluginKey`)
+
 - Decorations rebuilt when comments change (dispatched from `useCommentOperations`)
 - Tracks anchor positions through document edits via ProseMirror mapping
 - **Position sync:** On every `docChanged` transaction, remapped positions are synced back to the Zustand store and debounce-saved to disk (2s). This ensures comment positions survive tab switches and app restarts.
@@ -94,17 +99,20 @@ A single Tiptap editor instance is shared across all tabs. To preserve undo/redo
 - Primary source for `resolveAnchorRange()` when applying agent replies
 
 ### SearchHighlight
+
 - Decorations rebuilt on search query change or document change
 - Two decoration classes: `search-match-current` and `search-match-other`
 - Integrates with FindBar for navigation (next/previous match)
 
 ### InlineDiff
+
 - Singleton decoration layer shared by two features (external changes + git diff)
 - Red strikethrough for deletions, green for insertions
 - Per-hunk accept/reject via inline click controls or keyboard shortcuts
 - Built from `diff-match-patch` output mapped to ProseMirror positions via `buildTextWithPositions`
 
 ### GhostText
+
 - Single widget decoration at cursor position
 - Cleared on any transaction with `docChanged` (auto-dismiss on type)
 - Tab key handler for acceptance, Escape for dismissal

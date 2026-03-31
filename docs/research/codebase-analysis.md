@@ -251,33 +251,33 @@ The current single-package structure with path aliases (`@/`) is appropriate for
 
 ### High Priority (improves reliability) — ALL DONE
 
-1. ~~**Add React Error Boundaries**~~ ✅ — `ErrorBoundary.tsx` wraps Editor, ChatPanel, and Sidebar in `Layout.tsx`
+1. **~~Add React Error Boundaries~~** ✅ — `ErrorBoundary.tsx` wraps Editor, ChatPanel, and Sidebar in `Layout.tsx`
 
-2. ~~**Extract shared JSON-RPC transport**~~ ✅ — `json_rpc.rs` shared module; `copilot_lsp.rs` and `mcp.rs` refactored
+2. **~~Extract shared JSON-RPC transport~~** ✅ — `json_rpc.rs` shared module; `copilot_lsp.rs` and `mcp.rs` refactored
 
-3. ~~**Decompose `useAIOperations.ts`**~~ ✅ — Split into `useAcpLifecycle.ts`, `lib/ai/context.ts`, `lib/ai/errors.ts` (at 499 lines, down from 1,022)
+3. **~~Decompose~~** `useAIOperations.ts` ✅ — Split into `useAcpLifecycle.ts`, `lib/ai/context.ts`, `lib/ai/errors.ts` (at 499 lines, down from 1,022)
 
 ### Medium Priority (improves maintainability) — ALL DONE
 
-4. ~~**Decompose `Editor.tsx`**~~ ✅ — Extracted `useScrollPersistence.ts`, `useEditorResize.ts`, `TranscriptionOverlay.tsx`, `SourceModeEditor.tsx` (line count target not fully met but all components extracted)
+4. **~~Decompose~~** `Editor.tsx` ✅ — Extracted `useScrollPersistence.ts`, `useEditorResize.ts`, `TranscriptionOverlay.tsx`, `SourceModeEditor.tsx` (line count target not fully met but all components extracted)
 
-5. ~~**Migrate `serde_yaml` to `serde_yml`**~~ ✅ — Drop-in replacement completed
+5. **~~Migrate~~** `serde_yaml` **~~to~~** `serde_yml` ✅ — Drop-in replacement completed
 
-6. ~~**Replace `next-themes`**~~ ✅ — Removed (was already unused; app uses custom ThemeProvider)
+6. **~~Replace~~** `next-themes` ✅ — Removed (was already unused; app uses custom ThemeProvider)
 
-7. ~~**Add unit tests for permission tier logic**~~ ✅ — `permission-store-acp.test.ts` added
+7. **~~Add unit tests for permission tier logic~~** ✅ — `permission-store-acp.test.ts` added
 
 ### Low Priority (nice to have) — ALL DONE
 
- 8. ~~**Audit `hound` crate usage**~~ ✅ — Removed (zero imports found)
+ 8. **~~Audit~~** `hound` **~~crate usage~~** ✅ — Removed (zero imports found)
 
- 9. ~~**Slim `tokio` features**~~ ✅ — Replaced `"full"` with specific features
+ 9. **~~Slim~~** `tokio` **~~features~~** ✅ — Replaced `"full"` with specific features
 
-10. **Consider `gray-matter` over `yaml`** — Deferred (current approach works, low value)
+10. **Consider** `gray-matter` **over** `yaml` — Deferred (current approach works, low value)
 
 11. **Group settings store** — Deferred (no settings refactor planned yet)
 
-12. ~~**Move `@types/diff-match-patch` to devDependencies**~~ ✅
+12. **~~Move~~** `@types/diff-match-patch` **~~to devDependencies~~** ✅
 
 ---
 
@@ -286,6 +286,7 @@ The current single-package structure with path aliases (`@/`) is appropriate for
 Notesage's dependency choices are overwhelmingly sound. The core stack (Tauri + React + Tiptap + ProseMirror + Zustand + shadcn/ui) is well-matched to the product requirements. The Rust backend's use of Typst, whisper-rs, and the ACP/MCP protocol implementations demonstrates good judgment in choosing embedded libraries over external service dependencies.
 
 **Post-implementation update (2026-03-15):** All 12 recommendations were addressed via the [Codebase Health Improvements PRD](../prds/2026-03-10-codebase-health-improvements.md). Key outcomes:
+
 - React Error Boundaries prevent white-screen crashes
 - JSON-RPC transport deduplicated into shared `json_rpc.rs`
 - Large files decomposed (`useAIOperations`, `Editor.tsx`, `App.tsx`, `skills.rs`, `CommentPopover.tsx`)

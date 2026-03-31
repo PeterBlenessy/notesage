@@ -136,13 +136,13 @@ Hashtag-based tagging system with visual badges, autocomplete, and cross-file se
 - Keyboard navigation (arrow keys, Enter to select, Escape to dismiss)
 - Suppressed inside code blocks and existing tag decorations
 
-**Tag search (Cmd+3 or type `#` in palette):**
+**Tag search (Cmd+3 or type** `#` **in palette):**
 
 - Opens the command palette in tag search mode (prefix `#` pre-filled)
 - Type a tag name → shows matching tags across all files
 - Select a tag to drill into occurrences; select an occurrence to jump directly to it
 
-**Mention search (Cmd+2 or type `@` in palette):**
+**Mention search (Cmd+2 or type** `@` **in palette):**
 
 - Opens the command palette in mention search mode (prefix `@` pre-filled)
 - Same two-level list→drilldown pattern as tag search
@@ -157,7 +157,7 @@ Hashtag-based tagging system with visual badges, autocomplete, and cross-file se
 | `src/components/editor/SlashCommand.tsx` | Slash command menu |
 | `src/components/editor/BubbleMenu.tsx` | Selection bubble menu |
 | `src/components/editor/TableToolbar.tsx` | Floating table editing toolbar |
-| ~~`src/components/editor/AnnotationPicker.tsx`~~ | ~~Item annotation emoji picker (deferred)~~ |
+| `src/components/editor/AnnotationPicker.tsx` | ~~Item annotation emoji picker (deferred)~~ |
 | `src/components/editor/FindBar.tsx` | Find and replace bar |
 | `src/components/editor/StatusBar.tsx` | Editor status bar |
 | `src/components/editor/extensions/` | Custom Tiptap extensions |

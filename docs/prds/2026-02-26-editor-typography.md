@@ -70,7 +70,7 @@ Users have different reading/writing preferences. A writer may prefer serif at 1
 
 ### Future
 
-- ~~**System font enumeration**~~: ✅ Implemented — `font-kit` crate enumerates all installed system fonts via `list_system_fonts` Tauri command. Font picker redesigned as searchable combobox (cmdk) with preset and system font sections, categorized by sans/serif/mono/other. System fonts use family name directly as CSS `font-family` value. Font preview ("The quick brown fox...") shown beneath each font name.
+- **~~System font enumeration~~**: ✅ Implemented — `font-kit` crate enumerates all installed system fonts via `list_system_fonts` Tauri command. Font picker redesigned as searchable combobox (cmdk) with preset and system font sections, categorized by sans/serif/mono/other. System fonts use family name directly as CSS `font-family` value. Font preview ("The quick brown fox...") shown beneath each font name.
 - Project-level typography overrides (global -&gt; project -&gt; document cascade)
 - Document-level typography via frontmatter
 - Custom font loading (user-provided fonts / Google Fonts)

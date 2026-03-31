@@ -17,19 +17,23 @@ PowerPoint is the most common presentation format in professional and academic s
 
 ## Goals
 
-1. **Slide-by-slide viewer** — navigate a PPTX presentation one slide at a time with left/right controls, rendering text, images, shapes, and tables
+1. **Slide-by-slide viewer** — navigate a PPTX presentation one slide at a time with left/right controls, rendering text, images, shapes, tables, charts, and gradient fills
 2. **Slide counter** — "Slide 3 of 12" indicator with direct navigation
 3. **Speaker notes** — toggle a panel showing the presenter notes for the current slide
 4. **Find in document** — Cmd+F to search text across all slides, with match count and prev/next navigation
-5. **Theme-adaptive** — presentation renders correctly in both light and dark mode
-6. **Aspect ratio detection** — detect 16:9 vs 4:3 from PPTX metadata and render at the correct ratio
-7. **Zoom controls** — zoom in/out for detailed viewing
+5. **Chart rendering** — parse chart XML and render bar, line, pie, area, scatter, and doughnut charts using a JS charting library
+6. **Gradient fills** — render linear and radial gradient fills from DrawingML `a:gradFill` elements via CSS gradients
+7. **Theme-adaptive** — presentation renders correctly in both light and dark mode
+8. **Aspect ratio detection** — detect 16:9 vs 4:3 from PPTX metadata and render at the correct ratio
+9. **Zoom controls** — zoom in/out for detailed viewing
 
 ## Non-Goals
 
 - Editing PPTX files (view only — same as PDF and DOCX viewers)
 - Animations, transitions, or timing playback — static rendering only
-- SmartArt, 3D objects, embedded video/audio playback — display placeholder or skip
+- Full SmartArt layout rendering (extract fallback image instead — see Unsupported Element Handling)
+- 3D objects, embedded video/audio playback — display placeholder or skip
+- Pattern fills (render as foreground color solid fill fallback)
 - Slide overview thumbnail sidebar (v1 — can be added later)
 - Presenter view (current slide + next slide + notes in split layout)
 - `.ppt` (legacy binary format) support — show a "Format not supported" message suggesting conversion to `.pptx`
@@ -129,6 +133,7 @@ type PptxElement =
   | PptxImage
   | PptxShape
   | PptxTable
+  | PptxChart
   | PptxGroup;
 
 interface PptxTextBox {
@@ -176,10 +181,38 @@ interface PptxShape {
   width: number;
   height: number;
   rotation: number;
-  fill: string | null;   // Hex color or null for no fill
+  fill: PptxFill | null;
   stroke: string | null;  // Hex color
   strokeWidth: number;
   text: PptxParagraph[];  // Shapes can contain text
+}
+
+type PptxFill =
+  | { type: 'solid'; color: string }                          // Hex color
+  | { type: 'linear'; angle: number; stops: PptxGradientStop[] }
+  | { type: 'radial'; stops: PptxGradientStop[] }
+  | { type: 'pattern'; foreground: string };                  // Fallback to solid
+
+interface PptxGradientStop {
+  position: number;  // 0–100
+  color: string;     // Hex color
+}
+
+interface PptxChart {
+  type: 'chart';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  chartType: 'bar' | 'line' | 'pie' | 'area' | 'scatter' | 'doughnut' | 'other';
+  series: PptxChartSeries[];
+  categories: string[];
+}
+
+interface PptxChartSeries {
+  name: string;
+  values: number[];
+  color: string | null;
 }
 
 interface PptxTable {
@@ -214,7 +247,7 @@ interface PptxGroup {
 }
 
 interface PptxBackground {
-  color: string | null;
+  fill: PptxFill | null;
   imageDataUrl: string | null;
 }
 
@@ -230,11 +263,7 @@ interface PptxTheme {
 2. Parse `ppt/presentation.xml` — extract `sldSz` (slide dimensions), slide `rId` list
 3. Parse `ppt/_rels/presentation.xml.rels` — map `rId` → slide file paths
 4. Parse `ppt/theme/theme1.xml` — extract color scheme (`a:clrScheme`) and font scheme (`a:fontScheme`)
-5. For each slide:
-   a. Parse `ppt/slides/slideN.xml` — iterate `p:sp` (shapes), `p:pic` (pictures), `p:graphicFrame` (tables), `p:grpSp` (groups)
-   b. Parse `ppt/slides/_rels/slideN.xml.rels` — resolve image `rId` references to `ppt/media/` files
-   c. Extract images as base64 data URLs from the ZIP
-   d. Parse `ppt/notesSlides/notesSlideN.xml` — extract speaker notes text
+5. For each slide: a. Parse `ppt/slides/slideN.xml` — iterate `p:sp` (shapes), `p:pic` (pictures), `p:graphicFrame` (tables, charts, SmartArt), `p:grpSp` (groups) b. Parse `ppt/slides/_rels/slideN.xml.rels` — resolve image `rId` references to `ppt/media/` files, chart `rId` references to `ppt/charts/` files c. Extract images as base64 data URLs from the ZIP d. For charts: parse `ppt/charts/chartN.xml` — extract chart type, series data, categories, colors e. For SmartArt: look for fallback image in relationships; extract if present f. For gradient fills: parse `a:gradFill` elements — extract stops (position + color), type (linear with angle, radial), convert to CSS gradient values g. Parse `ppt/notesSlides/notesSlideN.xml` — extract speaker notes text
 6. Resolve theme colors: DrawingML uses scheme references (`schemeClr val="dk1"`) that map to theme colors
 
 **EMU to pixel conversion:** 1 inch = 914400 EMU. At 96 DPI, 1 pixel = 9525 EMU. The renderer scales the slide to fit the viewer container while preserving aspect ratio.
@@ -266,10 +295,12 @@ Each slide is rendered as a positioned container (`position: relative`) with chi
 | --- | --- |
 | Text box (`p:sp` with `p:txBody`) | `<div>` with positioned text, styled per run (font, size, color, bold/italic) |
 | Image (`p:pic`) | `<img>` with base64 data URL, positioned and sized |
-| Rectangle/ellipse (`p:sp` with preset geometry) | `<div>` with CSS border-radius, background, border |
+| Rectangle/ellipse (`p:sp` with preset geometry) | `<div>` with CSS border-radius, background (solid or gradient), border |
 | Line/arrow | `<svg>` element with `<line>` or `<polyline>` |
 | Table (`p:graphicFrame > a:tbl`) | HTML `<table>` with cell styles, positioned on the slide |
+| Chart (`p:graphicFrame > c:chart`) | Charting component (recharts/nivo) rendered at the chart's position and size |
 | Group (`p:grpSp`) | Nested container with child elements offset by group origin |
+| SmartArt (`p:graphicFrame > dgm:*`) | Fallback image from `ppt/media/`, or placeholder if no fallback exists |
 
 **Navigation:**
 
@@ -314,7 +345,7 @@ Follow the same pattern as the DOCX viewer — DOM-based search using the shared
 
 ### File Type Routing
 
-**`src/lib/file-utils.ts`:**
+`src/lib/file-utils.ts`**:**
 
 ```typescript
 // Add to FileType union
@@ -329,7 +360,7 @@ export function isBinaryFileType(fileType: FileType): boolean {
 }
 ```
 
-**`src/components/editor/EditorViewerContainer.tsx`:**
+`src/components/editor/EditorViewerContainer.tsx`**:**
 
 ```typescript
 const PptxViewer = lazy(() => import("./viewers/PptxViewer").then(m => ({ default: m.PptxViewer })));
@@ -340,25 +371,74 @@ case "pptx":
   break;
 ```
 
-**`.ppt` handling:** When `getFileType()` returns `"pptx"` for a `.ppt` file (mapped in EXTENSION_MAP as `ppt: "pptx"`), the PptxViewer detects the `.ppt` extension and shows an unsupported format message: "Legacy .ppt format is not supported. Please convert to .pptx using PowerPoint, LibreOffice, or Google Slides."
+`.ppt` **handling:** When `getFileType()` returns `"pptx"` for a `.ppt` file (mapped in EXTENSION_MAP as `ppt: "pptx"`), the PptxViewer detects the `.ppt` extension and shows an unsupported format message: "Legacy .ppt format is not supported. Please convert to .pptx using PowerPoint, LibreOffice, or Google Slides."
 
 ### Unsupported Element Handling
 
-For elements the parser cannot render:
+For elements the parser cannot fully render:
 
-- **Charts:** Show a placeholder rectangle with "Chart" label and a chart icon
-- **SmartArt:** Show a placeholder with "SmartArt" label
+- **SmartArt:** Extract the fallback rasterized image stored in the PPTX (most SmartArt shapes include a pre-rendered PNG/EMF fallback in `ppt/media/`). If no fallback image exists, show a placeholder with "SmartArt" label.
 - **Embedded OLE objects:** Show a placeholder with "Embedded Object" label
 - **Video/audio:** Show a placeholder with a play icon and "Media" label
 - **3D effects, shadows, reflections:** Ignored — render the base shape without effects
-- **Gradients:** Render as the gradient's first color (solid fill fallback)
 - **Pattern fills:** Render as the pattern's foreground color (solid fill fallback)
 
 All placeholders use a dashed border, muted text, and a centered icon — styled consistently.
 
+### Chart Rendering
+
+Charts are parsed from the PPTX chart XML (`c:chartSpace` in `ppt/charts/chartN.xml`) and rendered using a lightweight JS charting library.
+
+**Parsing:**
+
+1. Detect chart elements in slide XML (`p:graphicFrame` containing `c:chart` references)
+2. Resolve chart relationship ID → `ppt/charts/chartN.xml`
+3. Parse chart XML to extract: chart type (`c:barChart`, `c:lineChart`, `c:pieChart`, `c:areaChart`, `c:scatterChart`, `c:doughnutChart`), series data (`c:ser` → `c:cat` categories + `c:val` values), series labels, and colors
+4. Map to a normalized chart data structure
+
+**Rendering:**
+
+Render charts as inline SVG or via a lightweight charting component positioned within the slide. Use the same chart rendering approach as the editor's inline charts (nivo or recharts — whichever is already a dependency). Charts are read-only but visually match the original data.
+
+| PPTX chart type | Rendered as |
+| --- | --- |
+| `c:barChart` | Bar chart |
+| `c:lineChart` | Line chart |
+| `c:pieChart` | Pie chart |
+| `c:areaChart` | Area chart |
+| `c:scatterChart` | Scatter plot |
+| `c:doughnutChart` | Doughnut chart |
+| Other chart types | Placeholder with "Chart" label |
+
+**Fallback:** If chart XML parsing fails or the chart type is unsupported, show a placeholder rectangle with "Chart" label and chart icon.
+
+### Gradient Fills
+
+DrawingML gradient fills (`a:gradFill`) are mapped to CSS gradients.
+
+**Parsing:**
+
+1. Detect `a:gradFill` elements on shapes, backgrounds, and table cells
+2. Extract gradient stops (`a:gs` — position as percentage + color)
+3. Detect gradient type: linear (`a:lin` with `ang` attribute) or path/radial (`a:path`)
+4. For linear: convert the DrawingML angle (60000ths of a degree) to CSS degrees
+5. For radial: map to `radial-gradient()` with center position from `a:path` `fillToRect`
+
+**Rendering:**
+
+```css
+/* Linear gradient example */
+background: linear-gradient(135deg, #1a2b5c 0%, #3d6cb9 50%, #7eb8da 100%);
+
+/* Radial gradient example */
+background: radial-gradient(ellipse at center, #ffffff 0%, #e0e0e0 100%);
+```
+
+**Fallback:** If gradient parsing fails, fall back to the first stop color as a solid fill.
+
 ### Dependencies
 
-- **JSZip** — already a transitive dependency (mammoth.js uses it). May need to add as a direct dependency if mammoth.js doesn't re-export it. ~45KB gzipped.
+- **JSZip** — already a transitive dependency (mammoth.js uses it). May need to add as a direct dependency if mammoth.js doesn't re-export it. \~45KB gzipped.
 - **DOMParser** — browser native, no dependency
 - **No new npm packages required** for the core implementation
 
@@ -415,18 +495,23 @@ All placeholders use a dashed border, muted text, and a centered icon — styled
 
 ### Unit Tests
 
-- **`src/lib/pptx-parser.test.ts`:**
+- `src/lib/pptx-parser.test.ts`**:**
+
   - Parse a minimal PPTX fixture (text box + image on one slide)
   - Verify slide dimensions extracted correctly
   - Verify text run properties (bold, italic, font size, color)
   - Verify image data URL extraction
+  - Verify chart XML parsing (type, series, categories)
+  - Verify gradient fill parsing (linear angle, radial, stops)
+  - Verify SmartArt fallback image extraction
   - Verify speaker notes extraction
   - Verify theme color resolution
   - Handle corrupted/invalid ZIP gracefully (error, not crash)
   - Handle PPTX with 0 slides
   - Handle PPTX with missing relationships file
 
-- **`src/components/editor/viewers/PptxViewer.test.tsx`:**
+- `src/components/editor/viewers/PptxViewer.test.tsx`**:**
+
   - Renders slide content
   - Navigation updates current slide index
   - Keyboard arrow navigation works
@@ -444,7 +529,7 @@ All placeholders use a dashed border, muted text, and a centered icon — styled
 
 ### Test Fixtures
 
-- `tests/fixtures/test-presentation.pptx` — 3 slides with text boxes, one image, one table, speaker notes on slide 2
+- `tests/fixtures/test-presentation.pptx` — 5 slides with text boxes, one image, one table, one bar chart, one gradient background, speaker notes on slide 2
 - Generated programmatically or committed as a binary fixture
 
 ## Quality Gates
@@ -452,58 +537,95 @@ All placeholders use a dashed border, muted text, and a centered icon — styled
 ### Rendering Fidelity
 
 - [ ] Text boxes render with correct font, size, color, bold/italic/underline
+
 - [ ] Text alignment (left, center, right, justify) renders correctly
+
 - [ ] Bullet lists render with correct indentation and bullet characters
+
 - [ ] Images display at correct position and size
+
 - [ ] Basic shapes (rectangles, ellipses, rounded rectangles) render with fill and stroke
+
 - [ ] Lines and arrows render between correct coordinates
+
 - [ ] Tables render with cell text, borders, and background colors
+
 - [ ] Grouped elements render at correct relative positions
-- [ ] Slide background color/image renders correctly
+
+- [ ] Slide background color/image/gradient renders correctly
+
+- [ ] Linear and radial gradient fills render on shapes and backgrounds
+
+- [ ] Charts render with correct type, data, and labels (bar, line, pie, area, scatter, doughnut)
+
+- [ ] Unsupported chart types show a labeled placeholder
+
+- [ ] SmartArt elements display fallback image when available, placeholder when not
+
 - [ ] Aspect ratio (16:9 vs 4:3) detected and rendered correctly
 
 ### Navigation
 
 - [ ] Arrow keys navigate between slides
+
 - [ ] Click on slide edges navigates prev/next
+
 - [ ] Slide counter displays "Slide N of M" correctly
+
 - [ ] Direct slide number input works
+
 - [ ] First/last slide boundary behavior correct (no navigation past ends)
 
 ### Search
 
 - [ ] Cmd+F opens find bar
+
 - [ ] Search finds text across all slides
+
 - [ ] Match count is correct
+
 - [ ] Navigating to a match switches to the slide containing it
+
 - [ ] Current match is visually highlighted
 
 ### Theme Support
 
 - [ ] Slide content renders with its authored colors (not inverted in dark mode)
+
 - [ ] Slide sits on a theme-appropriate neutral background
+
 - [ ] Toolbar and chrome follow the app theme
+
 - [ ] Notes panel follows the app theme
 
 ### Performance
 
 - [ ] 20-slide presentation parses in under 500ms
+
 - [ ] Slide navigation is instant (no visible delay)
+
 - [ ] Image-heavy presentations don't freeze the UI during parse
+
 - [ ] 100+ slide presentations display a loading indicator and remain responsive
 
 ### Graceful Degradation
 
 - [ ] Unsupported elements show labeled placeholders (not blank space, not crashes)
+
 - [ ] Corrupted PPTX files show an error message
+
 - [ ] `.ppt` files show an unsupported format message with conversion guidance
+
 - [ ] Missing images in the ZIP show a broken-image placeholder
 
 ### Accessibility
 
 - [ ] Keyboard navigation works (arrow keys for slides, Tab for toolbar controls)
+
 - [ ] Slide content is in the DOM for screen readers
+
 - [ ] Zoom controls are keyboard accessible
+
 - [ ] Focus management: opening find bar focuses the search input
 
 ## Files to Create
@@ -531,6 +653,7 @@ All placeholders use a dashed border, muted text, and a centered icon — styled
 - Presenter view (current slide + next slide + notes in a split layout)
 - PPTX-to-Markdown conversion (extract text as structured markdown with headings per slide)
 - Animation timeline scrubbing (render animation steps as discrete frames)
-- Chart rendering (parse chart XML, render with a charting library like nivo)
+- Pattern fill rendering (hatching, crosshatch, etc. via SVG patterns)
+- Full SmartArt layout rendering (currently uses fallback images)
 - Slide comparison (diff two versions of a presentation)
 - Print/export current slide as PNG

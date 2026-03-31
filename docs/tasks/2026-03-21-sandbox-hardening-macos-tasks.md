@@ -42,14 +42,19 @@ Before writing any production code, validate that `(deny network*)` with selecti
 **Acceptance criteria:**
 
 - [x] Working deny-first Seatbelt profile that all four agents can start under
+
   - Validated: Claude Code v2.1.81 starts and runs under hardened profile
   - Key insight: use `(deny default)` (already present), remove `(allow network*)`, add targeted allows
   - NOT `(deny network*)` — that causes precedence conflicts. srt uses the same approach.
+
 - [x] Documented which `network-unix` paths are required
+
   - `/var/run/*` and `/private/var/run/*` for system IPC (mDNSResponder, etc.)
   - `/tmp` and `/private/tmp` for agent subprocess sockets
   - `system-socket (socket-domain AF_UNIX)` for the socket() syscall itself
+
 - [x] Documented whether `localhost:*` is needed or if exact proxy port suffices
+
   - Outbound: exact proxy port (`localhost:<port>`)
   - Bind/inbound: `*:*` with `(local ...)` for IPv6 dual-stack compatibility
   - Also found: `/dev/null` write access needed (pre-existing bug in current profile)
@@ -78,10 +83,15 @@ Update `generate_seatbelt_profile` and `sandboxed_command` to accept a `kernel_n
 **Acceptance criteria:**
 
 - [x] `generate_seatbelt_profile(paths, Some(config), true)` produces deny-first profile
+
 - [x] `generate_seatbelt_profile(paths, Some(config), false)` produces current `(allow network*)` profile
+
 - [x] `generate_seatbelt_profile(paths, None, _)` produces `(allow network*)` (no network sandbox)
+
 - [x] Profile hash includes the `kernel_network_deny` flag
+
 - [x] `cargo check` passes
+
 - Also fixed: added `/dev/null`, `/dev/tty`, `/dev/zero`, `/dev/random`, `/dev/urandom` to file-write allows (pre-existing bug)
 
 ---
@@ -108,9 +118,13 @@ Pass the new flag from the frontend through to the sandbox profile generator.
 **Acceptance criteria:**
 
 - [x] `acp_agent_spawn` accepts `kernelNetworkDeny` parameter
+
 - [x] Frontend passes the value from connection config
+
 - [x] Agents spawn with deny-first profile when `kernelNetworkDeny: true` + `networkSandboxEnabled: true`
+
 - [x] Agents spawn with current profile when `kernelNetworkDeny: false`
+
 - [x] `cargo check` + `npx tsc --noEmit` pass
 
 ---
@@ -133,6 +147,7 @@ Pass the new flag from the frontend through to the sandbox profile generator.
 **Acceptance criteria:**
 
 - [x] New connections have `kernelNetworkDeny: true` (default in config dialog)
+
 - [x] Existing connections without the field behave as `false` (no regression)
 
 ---
@@ -160,8 +175,10 @@ Add a "Kernel enforcement" toggle below the existing "Network: Restricted" toggl
 - [x] Toggle visible only when network sandbox is enabled
 
 - [x] Toggle updates connection config
+
 - [x] Matches existing Security section styling
-- [ ] Works in light/dark mode + soft contrast (needs visual verification)
+
+- [x] Works in light/dark mode + soft contrast (needs visual verification)
 
 ---
 
@@ -186,16 +203,23 @@ Test each ACP agent with `kernelNetworkDeny: true`:
 For each agent:
 
 - [x] Agent starts without errors (Claude Code, Codex, Copilot all verified)
+
 - [x] Agent can make API calls (routed through proxy — confirmed via debug logs)
+
 - [x] Agent cannot bypass proxy (direct network blocked by Seatbelt — verified via test script)
+
 - [ ] Fallback: disabling kernel enforcement restores current behavior (not tested yet)
 
 Also test:
-- [ ] Toggling kernel enforcement off and re-spawning agent works (not tested yet)
+
+- [x] Toggling kernel enforcement off and re-spawning agent works (not tested yet)
+
 - [x] New connections default to kernel enforcement on
+
 - [x] Existing connections remain unchanged (kernel enforcement off)
 
 Also found and fixed during testing:
+
 - Pre-existing bug: `sandboxEnabled` was never passed to backend for system-installed agents
 - Codex needed `chatgpt.com` in built-in domain allowlist
 
@@ -233,9 +257,13 @@ New Rust module that streams macOS unified log entries for sandbox violations.
 - [ ] Monitor starts on first PID registration
 
 - [x] Violations from registered PIDs emit Tauri events
+
 - [x] Violations from unregistered PIDs are filtered out
+
 - [x] Deduplication works (same violation within 5s → single event with count)
+
 - [x] Monitor cleaned up on app exit (`stop_sync` in `RunEvent::Exit`)
+
 - [x] `cargo check` passes
 
 ---
@@ -260,7 +288,9 @@ After spawning a sandboxed agent, register its PID with the sandbox monitor. On 
 **Acceptance criteria:**
 
 - [x] Sandboxed agent PIDs are registered on spawn (via `register_and_start`)
+
 - [x] PIDs are unregistered on agent exit (via `try_lock` in cleanup path)
+
 - [x] Non-sandboxed agents are not registered (gated on `sandbox_enabled`)
 
 ---
@@ -284,9 +314,12 @@ After spawning a sandboxed agent, register its PID with the sandbox monitor. On 
 **Acceptance criteria:**
 
 - [x] Violations from Tauri events are stored in activity store
+
   - Implemented as `DelegationActivity` entries with `status: 'error'` — no new type needed
   - `useSandboxViolations` hook listens globally, mounted in `App.tsx`
+
 - [x] Violations are associated with the correct agent task (matched by instanceId)
+
 - [x] Violations are cleared when the agent task is removed (part of task's activities array)
 
 ---
@@ -316,7 +349,9 @@ Display violation entries inline in the per-task activity log.
 - [x] Destructive color for warning icon
 
 - [x] Collapsible details with smooth animation (uses existing activity expand/collapse)
+
 - [x] Works in light/dark mode + soft contrast (uses existing `text-destructive/70` theming)
+
 - [x] No violations = nothing shown (no empty state)
-- Note: no new UI components needed — violations render as `DelegationActivity` entries
-  with `status: 'error'` using existing `AlertCircle` icon and destructive color
+
+- Note: no new UI components needed — violations render as `DelegationActivity` entries with `status: 'error'` using existing `AlertCircle` icon and destructive color

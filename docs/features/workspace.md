@@ -29,7 +29,7 @@ Projects, file tree, iCloud sync, git integration, and external change detection
 
 **iCloud sync:**
 
-- Selective iCloud sync per project (not all-or-nothing) via Settings > Sync tab
+- Selective iCloud sync per project (not all-or-nothing) via Settings &gt; Sync tab
 - iCloud sync toggle in per-project settings (sidebar cog icon)
 - When enabled, project folders move to `~/Library/Mobile Documents/com~apple~CloudDocs/Notesage/`
 - Quick Notes sync to iCloud with file merge across local and cloud
@@ -63,7 +63,7 @@ Projects, file tree, iCloud sync, git integration, and external change detection
 
 Detects external file changes (from other editors, AI agents, terminal commands) and updates the sidebar tree and editor content.
 
-**Rust backend (`watcher.rs`):**
+**Rust backend (**`watcher.rs`**):**
 
 1. `watch_directory(path)` starts recursive watching via `notify` crate with `notify_debouncer_full` (500ms debounce)
 2. Self-write filter: `mark_self_write(path)` records a timestamp; events suppressed for 5 seconds
@@ -71,7 +71,7 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 4. macOS FSEvents quirk: file deletions often arrive as `Modify` events — reclassified as `delete`
 5. Surviving events emitted as `file-changed` Tauri events with `{ path, kind }` payload
 
-**Frontend event handler (`useFileWatcher.ts`):**
+**Frontend event handler (**`useFileWatcher.ts`**):**
 
 6. Create/delete: debounced `refreshFileTree()` + git status refresh
 7. Modify: content guard reads file from disk, compares against tab content — skips if identical
@@ -86,7 +86,7 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 - **Self-write TTL (5s)**: Covers debounce + macOS FSEvents re-reporting + iCloud sync latency
 - **Path normalization**: macOS FSEvents canonicalizes `/var` → `/private/var`; frontend strips `/private/` prefix
 - **Toast dedup**: Stable `id: "external-change"` prevents duplicate notifications
-- **Startup gating (`startupReady`)**: Watchers wait for startup validation to complete
+- **Startup gating (**`startupReady`**)**: Watchers wait for startup validation to complete
 
 ## Key Files
 
