@@ -49,6 +49,7 @@ interface SettingsStore {
   autoCheckUpdates: boolean;
   lastUpdateCheck: string | null;
   dismissedVersion: string | null;
+  /** @deprecated PDF/DOCX now always use "clean". Kept for backwards compatibility. */
   lastExportTemplate: ExportTemplate;
   lastExportPageSize: ExportPageSize;
   lastExportIncludeToC: boolean;
@@ -91,6 +92,7 @@ interface SettingsStore {
   setAutoCheckUpdates: (enabled: boolean) => void;
   setLastUpdateCheck: (timestamp: string | null) => void;
   setDismissedVersion: (version: string | null) => void;
+  /** @deprecated PDF/DOCX now always use "clean". Kept for backwards compatibility. */
   setLastExportTemplate: (template: ExportTemplate) => void;
   setLastExportPageSize: (pageSize: ExportPageSize) => void;
   setLastExportIncludeToC: (include: boolean) => void;

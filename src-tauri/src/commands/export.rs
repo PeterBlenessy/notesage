@@ -3,7 +3,8 @@ use crate::export::markdown_to_docx::{markdown_to_docx, DocxOptions};
 use crate::export::markdown_to_html::markdown_to_html;
 use crate::export::markdown_to_pptx::markdown_to_pptx;
 use crate::export::markdown_to_typst::markdown_to_typst;
-use crate::export::templates::{apply_template, PageSize, Template, TemplateOptions};
+use crate::export::templates::{generate_typst_styles, PageSize, Template, TemplateOptions};
+use crate::export::typography::TypographyPresets;
 use crate::export::typst_world::NotesageWorld;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -18,18 +19,20 @@ pub async fn export_pdf(
     include_page_numbers: bool,
     page_size: String,
     project_root: Option<String>,
+    typography: Option<TypographyPresets>,
 ) -> Result<Vec<u8>, String> {
-    let template = Template::from_str(&template)?;
     let page_size = PageSize::from_str(&page_size)?;
 
     // Convert markdown to Typst markup
     let typst_content = markdown_to_typst(&markdown);
 
-    // Apply template
-    let source = apply_template(
+    // Generate source: use typography presets if provided, else fall back to template
+    let presets = typography.unwrap_or_default();
+    let source = generate_typst_styles(
         &typst_content,
+        &presets,
         &TemplateOptions {
-            template,
+            template: Template::from_str(&template).unwrap_or(Template::Clean),
             title,
             include_toc,
             include_page_numbers,
@@ -74,6 +77,7 @@ pub async fn export_docx(
     include_page_numbers: bool,
     page_size: String,
     project_root: Option<String>,
+    typography: Option<TypographyPresets>,
 ) -> Result<Vec<u8>, String> {
     let options = DocxOptions {
         include_toc,
@@ -81,7 +85,7 @@ pub async fn export_docx(
         page_size,
         project_root,
     };
-    markdown_to_docx(&markdown, &title, &template, &options)
+    markdown_to_docx(&markdown, &title, &template, &options, typography.as_ref())
 }
 
 /// Render markdown to a complete HTML document or body fragment.
@@ -92,16 +96,56 @@ pub async fn render_html(
     theme: String,
     include_styles: bool,
     project_root: Option<String>,
+    typography: Option<TypographyPresets>,
 ) -> Result<String, String> {
     let body = markdown_to_html(&markdown, &theme, project_root.as_deref());
 
     if include_styles {
-        let css = html_css(&theme);
-        Ok(wrap_html_document(&body, &title, &theme, css))
+        let base_css = html_css(&theme);
+        // Generate typography override CSS if presets are provided
+        let presets = typography.unwrap_or_default();
+        let typography_css = generate_html_typography_css(&presets);
+        let css = format!("{}\n{}", base_css, typography_css);
+        Ok(wrap_html_document(&body, &title, &theme, &css))
     } else {
         // Clipboard mode: return body fragment only
         Ok(body)
     }
+}
+
+/// Generate CSS overrides from typography presets for HTML export.
+fn generate_html_typography_css(presets: &TypographyPresets) -> String {
+    use crate::export::typography::{resolve_font_family, ExportFormat};
+
+    let p = &presets.paragraph;
+    let body_font = resolve_font_family(&p.font_family, ExportFormat::Html);
+    let code_font = resolve_font_family(&presets.code_font_family, ExportFormat::Html);
+
+    let mut css = String::new();
+    css.push_str(&format!(
+        "body {{ font-family: \"{}\", system-ui, sans-serif; font-size: {}px; line-height: {}; }}\n",
+        body_font, p.font_size, p.line_height
+    ));
+    css.push_str(&format!(
+        "p {{ margin-bottom: {}em; }}\n",
+        p.paragraph_spacing
+    ));
+
+    for level in 1..=6u8 {
+        let h = presets.heading(level);
+        let font = resolve_font_family(&h.font_family, ExportFormat::Html);
+        css.push_str(&format!(
+            "h{} {{ font-family: \"{}\", system-ui, sans-serif; font-size: {}px; font-weight: {}; line-height: {}; }}\n",
+            level, font, h.font_size, h.font_weight, h.line_height
+        ));
+    }
+
+    css.push_str(&format!(
+        "pre, code {{ font-family: \"{}\", monospace; }}\n",
+        code_font
+    ));
+
+    css
 }
 
 /// Scan markdown for `.excalidraw` image references and add corresponding SVG files
@@ -572,5 +616,80 @@ mod tests {
         .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Cannot delete built-in"));
+    }
+
+    #[test]
+    fn test_generate_html_typography_css_default_presets() {
+        let presets = TypographyPresets::default();
+        let css = generate_html_typography_css(&presets);
+
+        // Body style
+        assert!(css.contains("font-family:"), "should set body font-family");
+        assert!(css.contains("Inter"), "should reference Inter font");
+        assert!(css.contains("font-size: 16px"), "should set 16px body size");
+        assert!(css.contains("line-height: 1.7"), "should set 1.7 line-height");
+
+        // Paragraph spacing
+        assert!(css.contains("margin-bottom: 0.75em"), "should set paragraph spacing");
+
+        // All 6 heading levels
+        for level in 1..=6 {
+            assert!(
+                css.contains(&format!("h{} {{", level)),
+                "should contain h{} rule",
+                level
+            );
+        }
+
+        // Code font
+        assert!(css.contains("JetBrains Mono"), "should reference code font");
+        assert!(css.contains("pre, code"), "should style pre and code elements");
+    }
+
+    #[test]
+    fn test_generate_html_typography_css_custom_presets() {
+        use crate::export::typography::TextStyle;
+
+        let presets = TypographyPresets {
+            paragraph: TextStyle {
+                font_family: "Source Serif 4".to_string(),
+                font_size: 18.0,
+                font_weight: 400,
+                line_height: 1.8,
+                paragraph_spacing: 1.2,
+            },
+            heading1: TextStyle {
+                font_family: "Source Serif 4".to_string(),
+                font_size: 36.0,
+                font_weight: 700,
+                line_height: 1.2,
+                paragraph_spacing: 0.5,
+            },
+            code_font_family: "Fira Code".to_string(),
+            ..TypographyPresets::default()
+        };
+        let css = generate_html_typography_css(&presets);
+
+        assert!(css.contains("Source Serif 4"), "should use custom body font");
+        assert!(css.contains("font-size: 18px"), "should use custom body size");
+        assert!(css.contains("line-height: 1.8"), "should use custom line-height");
+        assert!(css.contains("margin-bottom: 1.2em"), "should use custom paragraph spacing");
+        assert!(css.contains("font-size: 36px"), "should use custom h1 size");
+        assert!(css.contains("Fira Code"), "should use custom code font");
+    }
+
+    #[test]
+    fn test_generate_html_typography_css_heading_properties() {
+        let presets = TypographyPresets::default();
+        let css = generate_html_typography_css(&presets);
+
+        // h1 should have weight 700 (bold)
+        assert!(css.contains("font-weight: 700"), "h1 should be bold");
+        // h2 should have weight 600
+        assert!(css.contains("font-weight: 600"), "h2+ should be semibold");
+        // h1 font-size should be 32px
+        assert!(css.contains("font-size: 32px"), "h1 should be 32px");
+        // h6 font-size should be 14px
+        assert!(css.contains("font-size: 14px"), "h6 should be 14px");
     }
 }

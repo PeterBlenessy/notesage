@@ -5,6 +5,8 @@ import { Copy, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FindBar } from "@/components/editor/FindBar";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
+import { presetsForBackend } from "@/lib/typography-presets";
+import { useEditorStylesStore } from "@/stores/editor-styles-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { toast } from "sonner";
 
@@ -43,12 +45,14 @@ export function HtmlViewer({ content, filePath, fileName, projectRoot }: HtmlVie
           : theme;
 
         const title = fileName.replace(/\.[^.]+$/, "");
+        const typography = presetsForBackend(useEditorStylesStore.getState().presets);
         const result = await invoke<string>("render_html", {
           markdown: content,
           title,
           theme: resolvedTheme,
           includeStyles: true,
           projectRoot: projectRoot ?? null,
+          typography,
         });
 
         if (!cancelled) {
@@ -75,12 +79,14 @@ export function HtmlViewer({ content, filePath, fileName, projectRoot }: HtmlVie
         : theme;
 
       // Get body-only fragment for clipboard
+      const typography = presetsForBackend(useEditorStylesStore.getState().presets);
       const bodyHtml = await invoke<string>("render_html", {
         markdown: content,
         title: fileName.replace(/\.[^.]+$/, ""),
         theme: resolvedTheme,
         includeStyles: false,
         projectRoot: projectRoot ?? null,
+        typography,
       });
 
       // Write both text/html and text/plain to clipboard

@@ -5,6 +5,7 @@ pub mod markdown_to_pptx;
 pub mod markdown_to_typst;
 pub mod table_utils;
 pub mod templates;
+pub mod typography;
 pub mod typst_world;
 
 #[cfg(test)]

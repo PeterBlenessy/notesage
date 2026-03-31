@@ -693,6 +693,35 @@ export function applyTableColumnMetadata(
 }
 
 // ---------------------------------------------------------------------------
+// Page break preprocessing
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert `<!-- pagebreak -->` HTML comments to a `<div>` element that
+ * tiptap-markdown can parse and preserve as an HTML block in ProseMirror.
+ *
+ * On serialization, `getMarkdownFromEditor` converts these back to the
+ * comment form via `restorePageBreaks`.
+ */
+export function convertPageBreaksToHtml(markdown: string): string {
+  return markdown.replace(
+    /^<!-- pagebreak -->$/gm,
+    '<div data-page-break="true" style="page-break-before: always"></div>',
+  );
+}
+
+/**
+ * Restore `<!-- pagebreak -->` comments from the serialized HTML div form.
+ * Called during `getMarkdownFromEditor` to produce clean markdown.
+ */
+export function restorePageBreaks(markdown: string): string {
+  return markdown.replace(
+    /^<div data-page-break[^>]*><\/div>$/gm,
+    '<!-- pagebreak -->',
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Editor ↔ Markdown helpers
 // ---------------------------------------------------------------------------
 
@@ -740,13 +769,16 @@ export function getMarkdownFromEditor(editor: Editor): string {
   // Strip ghost empty task items and fix corrupted bracket escaping
   markdown = stripGhostTaskItems(markdown);
 
+  // Restore page break comments from HTML div form
+  markdown = restorePageBreaks(markdown);
+
   // Inject {emoji} prefixes from the current ProseMirror document annotations
   return injectAnnotationsIntoMarkdown(markdown, editor);
 }
 
 export function setMarkdownInEditor(editor: Editor, markdown: string): void {
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(markdown);
-  const encoded = encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))));
+  const encoded = encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))));
   setContentWithoutHistory(editor, encoded);
 
   if (metadata.size > 0) {
@@ -782,7 +814,7 @@ export function loadRawMarkdownIntoEditor(
 ): void {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(cleaned);
-  const encoded = encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))));
+  const encoded = encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))));
   editor.chain().setMeta("addToHistory", false).setContent(encoded).run();
 
   // Clear undo/redo history — the loaded content is a fresh baseline.
@@ -819,7 +851,7 @@ export function prepareInitialContent(rawMarkdown: string): {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(cleaned);
   return {
-    content: encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))),
+    content: encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))),
     annotations,
     tableMetadata: metadata,
   };

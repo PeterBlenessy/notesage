@@ -5,7 +5,9 @@ import { toast } from "sonner";
 import { tauriApi } from "@/lib/tauri";
 import { getMarkdownFromEditor } from "@/lib/markdown";
 import { serializeFrontmatter } from "@/lib/frontmatter";
+import { presetsForBackend } from "@/lib/typography-presets";
 import { useEditorStore } from "@/stores/editor-store";
+import { useEditorStylesStore } from "@/stores/editor-styles-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import type { ExportOptions } from "@/components/ExportDialog";
@@ -38,6 +40,9 @@ export function useExportOperations(editor: Editor | null) {
         .getState()
         .projects.find((p) => activeTab.filePath.startsWith(p.path + "/"))?.path;
 
+      // Read typography presets for export styling (PDF, DOCX, HTML)
+      const typography = presetsForBackend(useEditorStylesStore.getState().presets);
+
       try {
         if (options.format === "docx") {
           // Generate DOCX via Tauri backend
@@ -49,6 +54,7 @@ export function useExportOperations(editor: Editor | null) {
             includePageNumbers: options.includePageNumbers,
             pageSize: options.pageSize,
             projectRoot: projectRoot ?? undefined,
+            typography,
           });
 
           // Derive default save path from source file
@@ -129,6 +135,8 @@ export function useExportOperations(editor: Editor | null) {
             includeToc: options.includeToc,
             includePageNumbers: options.includePageNumbers,
             pageSize: options.pageSize,
+            projectRoot: projectRoot ?? undefined,
+            typography,
           });
 
           // Derive default save path from source file

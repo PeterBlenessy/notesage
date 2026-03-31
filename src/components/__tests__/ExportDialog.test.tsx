@@ -78,11 +78,11 @@ describe('ExportDialog', () => {
   // PDF options
   // ---------------------------------------------------------------------------
 
-  it('shows PDF template cards when PDF is selected', () => {
+  it('does not show template cards for PDF (WYSIWYG styling used instead)', () => {
     renderDialog();
-    expect(screen.getByText('Clean')).toBeTruthy();
-    expect(screen.getByText('Academic')).toBeTruthy();
-    expect(screen.getByText('Report')).toBeTruthy();
+    expect(screen.queryByText('Style')).toBeNull();
+    expect(screen.queryByText('Academic')).toBeNull();
+    expect(screen.queryByText('Report')).toBeNull();
   });
 
   // ---------------------------------------------------------------------------
@@ -103,12 +103,12 @@ describe('ExportDialog', () => {
   // Persisted state
   // ---------------------------------------------------------------------------
 
-  it('restores last-used PDF template from settings store', () => {
+  it('always exports with "clean" template for PDF regardless of store value', () => {
     useSettingsStore.setState({ lastExportTemplate: 'academic' });
     renderDialog();
-    // The academic card should be selected
-    const academicCard = screen.getByText('Serif, numbered headings').closest('button');
-    expect(academicCard?.className).toContain('border-foreground');
+    fireEvent.click(screen.getByText('Export PDF'));
+    const options = onExport.mock.calls[0][0];
+    expect(options.template).toBe('clean');
   });
 
   // ---------------------------------------------------------------------------

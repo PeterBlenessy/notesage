@@ -332,7 +332,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
 
           <ToolbarSeparator />
 
-          <TypographyPopover />
+          <TypographyPopover editor={editor} />
 
           <ToolbarSeparator />
 

@@ -213,8 +213,12 @@ impl Converter {
                 }
                 // Otherwise skip raw HTML — not representable in Typst
             }
-            NodeValue::HtmlBlock(_) => {
-                // Skip raw HTML blocks — not representable in Typst
+            NodeValue::HtmlBlock(ref hb) => {
+                // Handle page break comments
+                if hb.literal.trim() == "<!-- pagebreak -->" {
+                    self.write("#pagebreak()\n");
+                }
+                // Otherwise skip raw HTML blocks — not representable in Typst
             }
             NodeValue::Table(ref table) => {
                 self.table_alignments = table.alignments.clone();

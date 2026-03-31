@@ -26,6 +26,7 @@ import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSugg
 import { PageBreaks } from "@/components/editor/extensions/page-breaks";
 import { LinkClick } from "@/components/editor/extensions/link-click";
 import { Callout } from "@/components/editor/extensions/callout";
+import { HeadingWithOverrides, ParagraphWithOverrides, TypographyOverrides } from "@/components/editor/extensions/typography-overrides";
 import { getMarkdownFromEditor } from "@/lib/markdown";
 import { getEditorStorage, type EditorStorageImage } from "@/lib/editor-storage";
 
@@ -53,9 +54,11 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
     extensions: [
       StarterKit.configure({
         codeBlock: false,
-        heading: {
-          levels: [1, 2, 3, 4, 5, 6],
-        },
+        // Disable built-in heading and paragraph — replaced by extended
+        // versions with typography override attributes (fontFamily, fontSize,
+        // fontWeight, lineHeight, color).
+        heading: false,
+        paragraph: false,
         link: {
           openOnClick: false,
           HTMLAttributes: {
@@ -63,6 +66,11 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
           },
         },
       }),
+      HeadingWithOverrides.configure({
+        levels: [1, 2, 3, 4, 5, 6],
+      }),
+      ParagraphWithOverrides,
+      TypographyOverrides,
       Placeholder.configure({
         placeholder: "Start typing or press '/' for commands...",
       }),

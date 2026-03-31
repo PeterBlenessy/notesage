@@ -323,12 +323,16 @@ function App() {
 
         if (savePath) {
           const { invoke } = await import("@tauri-apps/api/core");
+          const { presetsForBackend } = await import("@/lib/typography-presets");
+          const { useEditorStylesStore } = await import("@/stores/editor-styles-store");
+          const typography = presetsForBackend(useEditorStylesStore.getState().presets);
           const htmlDoc = await invoke<string>("render_html", {
             markdown: content,
             title,
             theme: resolvedTheme,
             includeStyles: true,
             projectRoot: null,
+            typography,
           });
           await tauriApi.writeFile(savePath, htmlDoc);
           toast.success("HTML exported");

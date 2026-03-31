@@ -33,6 +33,7 @@ pub fn markdown_to_docx(
     title: &str,
     template: &str,
     options: &DocxOptions,
+    typography: Option<&super::typography::TypographyPresets>,
 ) -> Result<Vec<u8>, String> {
     let mut opts = Options::default();
     opts.extension.table = true;
@@ -44,7 +45,10 @@ pub fn markdown_to_docx(
     let arena = Arena::new();
     let root = parse_document(&arena, markdown, &opts);
 
-    let template_config = TemplateConfig::from_name(template);
+    let template_config = match typography {
+        Some(presets) => TemplateConfig::from_typography(presets),
+        None => TemplateConfig::from_name(template),
+    };
     let mut converter = DocxConverter::new(title, &template_config, options);
     converter.walk(root);
     converter.finish()
@@ -55,9 +59,9 @@ pub fn markdown_to_docx(
 // ---------------------------------------------------------------------------
 
 struct TemplateConfig {
-    body_font: &'static str,
-    heading_font: &'static str,
-    code_font: &'static str,
+    body_font: String,
+    heading_font: String,
+    code_font: String,
     body_size: usize,      // half-points (Word size units)
     h1_size: usize,
     h2_size: usize,
@@ -74,9 +78,9 @@ impl TemplateConfig {
     fn from_name(name: &str) -> Self {
         match name {
             "academic" => Self {
-                body_font: "Source Serif 4",
-                heading_font: "Source Serif 4",
-                code_font: "JetBrains Mono",
+                body_font: "Source Serif 4".to_string(),
+                heading_font: "Source Serif 4".to_string(),
+                code_font: "JetBrains Mono".to_string(),
                 body_size: 24,   // 12pt
                 h1_size: 44,     // 22pt
                 h2_size: 36,     // 18pt
@@ -89,9 +93,9 @@ impl TemplateConfig {
                 has_header_footer: true,
             },
             "report" => Self {
-                body_font: "Inter",
-                heading_font: "Inter",
-                code_font: "JetBrains Mono",
+                body_font: "Inter".to_string(),
+                heading_font: "Inter".to_string(),
+                code_font: "JetBrains Mono".to_string(),
                 body_size: 22,   // 11pt
                 h1_size: 48,     // 24pt
                 h2_size: 40,     // 20pt
@@ -105,9 +109,9 @@ impl TemplateConfig {
             },
             _ => Self {
                 // "clean" (default)
-                body_font: "Inter",
-                heading_font: "Inter",
-                code_font: "JetBrains Mono",
+                body_font: "Inter".to_string(),
+                heading_font: "Inter".to_string(),
+                code_font: "JetBrains Mono".to_string(),
                 body_size: 22,   // 11pt
                 h1_size: 48,     // 24pt
                 h2_size: 40,     // 20pt
@@ -133,6 +137,39 @@ impl TemplateConfig {
             _ => self.body_size,
         }
     }
+
+    /// Build a TemplateConfig from typography presets.
+    /// Font sizes are converted from CSS px to Word half-points (1pt = 2 half-points).
+    fn from_typography(presets: &super::typography::TypographyPresets) -> Self {
+        use super::typography::{resolve_font_family, ExportFormat};
+
+        let body_font = resolve_font_family(&presets.paragraph.font_family, ExportFormat::Docx).to_string();
+        let heading_font = resolve_font_family(&presets.heading1.font_family, ExportFormat::Docx).to_string();
+        let code_font = resolve_font_family(&presets.code_font_family, ExportFormat::Docx).to_string();
+
+        // Convert px to half-points: 1px ~= 0.75pt, half-points = pt * 2
+        // So half-points = px * 1.5 (roughly)
+        let px_to_half_points = |px: f64| -> usize { (px * 1.5).round() as usize };
+
+        // Convert line-height ratio to Word spacing units (240 = single spacing)
+        let line_spacing = (presets.paragraph.line_height * 240.0).round() as i32;
+
+        Self {
+            body_font,
+            heading_font,
+            code_font,
+            body_size: px_to_half_points(presets.paragraph.font_size),
+            h1_size: px_to_half_points(presets.heading1.font_size),
+            h2_size: px_to_half_points(presets.heading2.font_size),
+            h3_size: px_to_half_points(presets.heading3.font_size),
+            h4_size: px_to_half_points(presets.heading4.font_size),
+            h5_size: px_to_half_points(presets.heading5.font_size),
+            h6_size: px_to_half_points(presets.heading6.font_size),
+            line_spacing,
+            has_title_page: false,
+            has_header_footer: false,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +193,7 @@ struct DocxConverter<'a> {
     strikethrough: bool,
     code_inline: bool,
     /// Current link URL (None when not inside a link).
+    #[allow(dead_code)]
     link_url: Option<String>,
     /// List nesting depth.
     list_depth: usize,
@@ -220,26 +258,26 @@ impl<'a> DocxConverter<'a> {
 
     fn body_fonts(&self) -> RunFonts {
         RunFonts::new()
-            .ascii(self.template.body_font)
-            .hi_ansi(self.template.body_font)
-            .east_asia(self.template.body_font)
-            .cs(self.template.body_font)
+            .ascii(self.template.body_font.clone())
+            .hi_ansi(self.template.body_font.clone())
+            .east_asia(self.template.body_font.clone())
+            .cs(self.template.body_font.clone())
     }
 
     fn heading_fonts(&self) -> RunFonts {
         RunFonts::new()
-            .ascii(self.template.heading_font)
-            .hi_ansi(self.template.heading_font)
-            .east_asia(self.template.heading_font)
-            .cs(self.template.heading_font)
+            .ascii(self.template.heading_font.clone())
+            .hi_ansi(self.template.heading_font.clone())
+            .east_asia(self.template.heading_font.clone())
+            .cs(self.template.heading_font.clone())
     }
 
     fn code_fonts(&self) -> RunFonts {
         RunFonts::new()
-            .ascii(self.template.code_font)
-            .hi_ansi(self.template.code_font)
-            .east_asia(self.template.code_font)
-            .cs(self.template.code_font)
+            .ascii(self.template.code_font.clone())
+            .hi_ansi(self.template.code_font.clone())
+            .east_asia(self.template.code_font.clone())
+            .cs(self.template.code_font.clone())
     }
 
     fn body_line_spacing(&self) -> LineSpacing {
@@ -437,8 +475,15 @@ impl<'a> DocxConverter<'a> {
                     self.add_text(html);
                 }
             }
-            NodeValue::HtmlBlock(_) => {
-                // Skip raw HTML blocks
+            NodeValue::HtmlBlock(ref hb) => {
+                // Handle page break comments
+                if hb.literal.trim() == "<!-- pagebreak -->" {
+                    self.flush_paragraph();
+                    let para = Paragraph::new()
+                        .add_run(Run::new().add_break(BreakType::Page));
+                    self.paragraphs.push(DocxElement::Para(para));
+                }
+                // Otherwise skip raw HTML blocks
             }
             _ => {
                 self.walk_children(node);
@@ -1055,10 +1100,10 @@ impl<'a> DocxConverter<'a> {
         // Default font
         docx = docx.default_fonts(
             RunFonts::new()
-                .ascii(self.template.body_font)
-                .hi_ansi(self.template.body_font)
-                .east_asia(self.template.body_font)
-                .cs(self.template.body_font),
+                .ascii(self.template.body_font.clone())
+                .hi_ansi(self.template.body_font.clone())
+                .east_asia(self.template.body_font.clone())
+                .cs(self.template.body_font.clone()),
         );
         docx = docx.default_size(self.template.body_size);
         docx = docx.default_line_spacing(
@@ -1148,8 +1193,8 @@ impl<'a> DocxConverter<'a> {
                 .bold()
                 .fonts(
                     RunFonts::new()
-                        .ascii(self.template.heading_font)
-                        .hi_ansi(self.template.heading_font),
+                        .ascii(self.template.heading_font.clone())
+                        .hi_ansi(self.template.heading_font.clone()),
                 );
             let title_para = Paragraph::new()
                 .add_run(title_run)
@@ -1166,8 +1211,8 @@ impl<'a> DocxConverter<'a> {
                 .color("888888")
                 .fonts(
                     RunFonts::new()
-                        .ascii(self.template.body_font)
-                        .hi_ansi(self.template.body_font),
+                        .ascii(self.template.body_font.clone())
+                        .hi_ansi(self.template.body_font.clone()),
                 );
             let date_para = Paragraph::new()
                 .add_run(date_run)
@@ -1203,8 +1248,8 @@ impl<'a> DocxConverter<'a> {
                 .color("888888")
                 .fonts(
                     RunFonts::new()
-                        .ascii(self.template.body_font)
-                        .hi_ansi(self.template.body_font),
+                        .ascii(self.template.body_font.clone())
+                        .hi_ansi(self.template.body_font.clone()),
                 );
             let header = Header::new().add_paragraph(
                 Paragraph::new().add_run(header_run),
@@ -1222,8 +1267,8 @@ impl<'a> DocxConverter<'a> {
                 .color("888888")
                 .fonts(
                     RunFonts::new()
-                        .ascii(self.template.body_font)
-                        .hi_ansi(self.template.body_font),
+                        .ascii(self.template.body_font.clone())
+                        .hi_ansi(self.template.body_font.clone()),
                 );
             let footer = Footer::new().add_paragraph(
                 Paragraph::new()
@@ -1292,6 +1337,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
         );
         assert!(result.is_ok());
         let bytes = result.unwrap();
@@ -1313,6 +1359,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
         );
         assert!(result.is_ok());
         assert!(!result.unwrap().is_empty());
@@ -1331,6 +1378,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1348,6 +1396,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1365,6 +1414,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1382,6 +1432,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1399,6 +1450,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1416,6 +1468,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1433,6 +1486,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1450,6 +1504,7 @@ mod tests {
                     page_size: "a4".to_string(),
                     project_root: None,
                 },
+                None,
             );
             assert!(result.is_ok(), "Template {} failed", template);
         }
@@ -1468,6 +1523,7 @@ mod tests {
                     page_size: size.to_string(),
                     project_root: None,
                 },
+                None,
             );
             assert!(result.is_ok(), "Page size {} failed", size);
         }
@@ -1485,6 +1541,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1502,6 +1559,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1519,6 +1577,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1536,7 +1595,112 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
         );
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_template_config_from_typography_default_presets() {
+        let presets = super::super::typography::TypographyPresets::default();
+        let config = TemplateConfig::from_typography(&presets);
+
+        // Default paragraph is 16px → 16 * 1.5 = 24 half-points
+        assert_eq!(config.body_size, 24);
+        // Default h1 is 32px → 32 * 1.5 = 48 half-points
+        assert_eq!(config.h1_size, 48);
+        // Default h2 is 24px → 24 * 1.5 = 36 half-points
+        assert_eq!(config.h2_size, 36);
+        // Default h3 is 20px → 20 * 1.5 = 30 half-points
+        assert_eq!(config.h3_size, 30);
+        // Default h4 is 18px → 18 * 1.5 = 27 half-points
+        assert_eq!(config.h4_size, 27);
+        // Default h5 is 16px → 16 * 1.5 = 24 half-points
+        assert_eq!(config.h5_size, 24);
+        // Default h6 is 14px → 14 * 1.5 = 21 half-points
+        assert_eq!(config.h6_size, 21);
+
+        // Fonts resolved through resolve_font_family
+        assert_eq!(config.body_font, "Inter");
+        assert_eq!(config.heading_font, "Inter");
+        assert_eq!(config.code_font, "JetBrains Mono");
+
+        // Line spacing: 1.7 * 240 = 408
+        assert_eq!(config.line_spacing, 408);
+
+        // Typography presets don't set title page or header/footer
+        assert!(!config.has_title_page);
+        assert!(!config.has_header_footer);
+    }
+
+    #[test]
+    fn test_template_config_from_typography_custom_presets() {
+        use super::super::typography::{TextStyle, TypographyPresets};
+
+        let presets = TypographyPresets {
+            paragraph: TextStyle {
+                font_family: "Source Serif 4".to_string(),
+                font_size: 18.0,
+                font_weight: 400,
+                line_height: 1.5,
+                paragraph_spacing: 1.0,
+            },
+            heading1: TextStyle {
+                font_family: "Source Serif 4".to_string(),
+                font_size: 36.0,
+                font_weight: 700,
+                line_height: 1.2,
+                paragraph_spacing: 0.5,
+            },
+            ..TypographyPresets::default()
+        };
+        let config = TemplateConfig::from_typography(&presets);
+
+        // 18px * 1.5 = 27 half-points
+        assert_eq!(config.body_size, 27);
+        // 36px * 1.5 = 54 half-points
+        assert_eq!(config.h1_size, 54);
+
+        // Font resolved: "Source Serif 4" stays as "Source Serif 4"
+        assert_eq!(config.body_font, "Source Serif 4");
+        assert_eq!(config.heading_font, "Source Serif 4");
+
+        // Line spacing: 1.5 * 240 = 360
+        assert_eq!(config.line_spacing, 360);
+    }
+
+    #[test]
+    fn test_template_config_from_typography_heading_size_accessor() {
+        let presets = super::super::typography::TypographyPresets::default();
+        let config = TemplateConfig::from_typography(&presets);
+
+        assert_eq!(config.heading_size(1), config.h1_size);
+        assert_eq!(config.heading_size(2), config.h2_size);
+        assert_eq!(config.heading_size(3), config.h3_size);
+        assert_eq!(config.heading_size(4), config.h4_size);
+        assert_eq!(config.heading_size(5), config.h5_size);
+        assert_eq!(config.heading_size(6), config.h6_size);
+        assert_eq!(config.heading_size(7), config.body_size);
+    }
+
+    #[test]
+    fn test_docx_with_typography_presets() {
+        let presets = super::super::typography::TypographyPresets::default();
+        let result = markdown_to_docx(
+            "# Hello\n\nWorld",
+            "Test",
+            "clean",
+            &DocxOptions {
+                include_toc: false,
+                include_page_numbers: false,
+                page_size: "a4".to_string(),
+                project_root: None,
+            },
+            Some(&presets),
+        );
+        assert!(result.is_ok());
+        let bytes = result.unwrap();
+        assert!(!bytes.is_empty());
+        assert_eq!(&bytes[0..4], b"PK\x03\x04");
     }
 }

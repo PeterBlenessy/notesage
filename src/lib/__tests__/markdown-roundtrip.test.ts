@@ -35,7 +35,8 @@ import { Callout } from "@/components/editor/extensions/callout";
 import { Drawing } from "@/components/editor/extensions/drawing";
 import { Chart } from "@/components/editor/extensions/chart";
 import { LinkPreview } from "@/components/editor/extensions/link-preview";
-import { convertCalloutsToHtml, convertDrawingsToHtml, convertChartsToHtml, convertLinkPreviewsToHtml } from "@/lib/markdown";
+import { PageBreakNode } from "@/components/editor/extensions/page-break-node";
+import { convertCalloutsToHtml, convertDrawingsToHtml, convertChartsToHtml, convertLinkPreviewsToHtml, convertPageBreaksToHtml, restorePageBreaks } from "@/lib/markdown";
 import { serializeTable } from "@/components/editor/extensions/table-markdown";
 
 // ---------------------------------------------------------------------------
@@ -143,8 +144,9 @@ function createTestEditor(content: string): Editor {
       Drawing,
       Chart,
       LinkPreview,
+      PageBreakNode,
     ],
-    content: convertLinkPreviewsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertCalloutsToHtml(content)))),
+    content: convertPageBreaksToHtml(convertLinkPreviewsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertCalloutsToHtml(content))))),
     editable: false,
   });
 }
@@ -167,7 +169,10 @@ const fixtureFiles = readdirSync(fixturesDir)
  */
 function getMarkdown(editor: Editor): string {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (editor.storage as any).markdown.getMarkdown();
+  let md: string = (editor.storage as any).markdown.getMarkdown();
+  // Restore page break comments from HTML div form (mirrors getMarkdownFromEditor)
+  md = restorePageBreaks(md);
+  return md;
 }
 
 describe("Markdown round-trip", () => {

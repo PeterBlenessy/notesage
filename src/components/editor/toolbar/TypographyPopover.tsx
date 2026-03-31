@@ -1,14 +1,29 @@
 import { useCallback, useMemo, useState } from "react";
 import { Check, RotateCcw, Type } from "lucide-react";
+import type { Editor } from "@tiptap/react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { useEditorStylesStore, EDITOR_STYLES_DEFAULTS, FONT_PRESETS, fontFamilyCSS, type EditorFontFamily, type SystemFont } from "@/stores/editor-styles-store";
-import { useSettingsStore } from "@/stores/settings-store";
+import { Separator } from "@/components/ui/separator";
+import {
+  useEditorStylesStore,
+  FONT_PRESETS,
+  fontFamilyCSS,
+  type EditorFontFamily,
+  type SystemFont,
+  type BlockTypeStyle,
+  type TypographyPresets,
+} from "@/stores/editor-styles-store";
+import { type FullBlockType } from "@/lib/typography-presets";
 import { cn } from "@/lib/utils";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
 const SANS_PRESETS = FONT_PRESETS.filter((f) => f.category === "sans");
 const SERIF_PRESETS = FONT_PRESETS.filter((f) => f.category === "serif");
@@ -21,33 +36,135 @@ const PRESET_FAMILY_SET = new Set(
 
 const MAX_SYSTEM_FONTS = 50;
 
+/** Human-readable labels for block types. */
+const BLOCK_TYPE_LABELS: Record<string, string> = {
+  paragraph: "Paragraph",
+  heading1: "Heading 1",
+  heading2: "Heading 2",
+  heading3: "Heading 3",
+  heading4: "Heading 4",
+  heading5: "Heading 5",
+  heading6: "Heading 6",
+};
+
+/** Font weight options. */
+const FONT_WEIGHTS = [
+  { value: "400", label: "Regular" },
+  { value: "500", label: "Medium" },
+  { value: "600", label: "Semibold" },
+  { value: "700", label: "Bold" },
+] as const;
+
 function isPresetFont(family: string): boolean {
   return PRESET_FAMILY_SET.has(family.toLowerCase());
 }
 
-export function TypographyPopover() {
-  const { fontFamily, fontSize, lineHeight, paragraphSpacing, systemFonts, setFontFamily, setFontSize, setLineHeight, setParagraphSpacing, resetToDefaults, saveSettings } = useEditorStylesStore();
-  const notesRootPath = useSettingsStore((s) => s.notesRootPath);
+// ---------------------------------------------------------------------------
+// Block type & effective style helpers
+// ---------------------------------------------------------------------------
+
+/** Determine the current block type from the editor selection. */
+function getCurrentBlockType(editor: Editor | null): FullBlockType | null {
+  if (!editor) return null;
+  const { $from } = editor.state.selection;
+  const node = $from.parent;
+  if (node.type.name === "heading") {
+    const level = node.attrs.level as number;
+    return `heading${level}` as FullBlockType;
+  }
+  if (node.type.name === "paragraph") {
+    return "paragraph";
+  }
+  return null;
+}
+
+/** Get the effective style for the current block (preset + local overrides). */
+function getEffectiveStyle(
+  editor: Editor | null,
+  presets: TypographyPresets,
+): BlockTypeStyle | null {
+  if (!editor) return null;
+  const { $from } = editor.state.selection;
+  const node = $from.parent;
+  const blockType = getCurrentBlockType(editor);
+  if (!blockType) return null;
+
+  const preset = presets[blockType as keyof TypographyPresets];
+  const baseStyle: BlockTypeStyle = {
+    fontFamily: preset.fontFamily,
+    fontSize: preset.fontSize,
+    fontWeight: "fontWeight" in preset ? (preset as BlockTypeStyle).fontWeight : 400,
+    lineHeight: "lineHeight" in preset ? (preset as BlockTypeStyle).lineHeight : 1.7,
+    spacingBefore: "spacingBefore" in preset ? (preset as BlockTypeStyle).spacingBefore : 0,
+    spacingAfter: "spacingAfter" in preset ? (preset as BlockTypeStyle).spacingAfter : 0,
+  };
+
+  // Overlay local overrides from node attrs
+  return {
+    ...baseStyle,
+    ...(node.attrs.fontFamily != null ? { fontFamily: node.attrs.fontFamily as string } : {}),
+    ...(node.attrs.fontSize != null ? { fontSize: node.attrs.fontSize as number } : {}),
+    ...(node.attrs.fontWeight != null ? { fontWeight: node.attrs.fontWeight as number } : {}),
+    ...(node.attrs.lineHeight != null ? { lineHeight: node.attrs.lineHeight as number } : {}),
+  };
+}
+
+/** Apply a local override to the current node via ProseMirror transaction.
+ *  When `skipHistory` is true, the change is excluded from undo history
+ *  (used for intermediate slider drags — the final value is committed separately). */
+function setOverride(editor: Editor, attr: string, value: unknown, skipHistory = false): void {
+  const { state } = editor.view;
+  const { $from } = state.selection;
+  const node = $from.parent;
+  if (node.type.name !== "heading" && node.type.name !== "paragraph") return;
+  const pos = $from.before($from.depth);
+  let tr = state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, [attr]: value });
+  if (skipHistory) tr = tr.setMeta("addToHistory", false);
+  editor.view.dispatch(tr);
+}
+
+/** Commit the current override value to history (call on slider release). */
+function commitOverride(editor: Editor, attr: string, value: unknown): void {
+  setOverride(editor, attr, value, false);
+}
+
+/** Get appropriate font size range based on block type. */
+function getFontSizeRange(blockType: FullBlockType | null): { min: number; max: number } {
+  if (!blockType) return { min: 10, max: 24 };
+  if (blockType === "paragraph") return { min: 10, max: 24 };
+  // Headings get larger max range
+  if (blockType === "heading1") return { min: 10, max: 48 };
+  if (blockType === "heading2") return { min: 10, max: 40 };
+  if (blockType === "heading3") return { min: 10, max: 36 };
+  return { min: 10, max: 32 };
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+interface TypographyPopoverProps {
+  editor: Editor | null;
+}
+
+export function TypographyPopover({ editor }: TypographyPopoverProps) {
+  const { systemFonts, presets } = useEditorStylesStore();
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
   const [fontSearch, setFontSearch] = useState("");
 
-  const save = useCallback(() => {
-    if (notesRootPath && !notesRootPath.startsWith("~")) {
-      saveSettings(notesRootPath);
-    }
-  }, [notesRootPath, saveSettings]);
+  // Derive block type and effective style from editor selection
+  const blockType = editor ? getCurrentBlockType(editor) : null;
+  const effectiveStyle = editor ? getEffectiveStyle(editor, presets) : null;
+  const blockLabel = blockType ? BLOCK_TYPE_LABELS[blockType] ?? blockType : null;
+  const fontSizeRange = getFontSizeRange(blockType);
 
+  // Font picker callbacks
   const selectFont = useCallback((value: EditorFontFamily) => {
-    setFontFamily(value);
+    if (!editor) return;
+    setOverride(editor, "fontFamily", value);
     setFontPickerOpen(false);
     setFontSearch("");
-    // Save after a tick so state is committed
-    setTimeout(() => {
-      if (notesRootPath && !notesRootPath.startsWith("~")) {
-        saveSettings(notesRootPath);
-      }
-    }, 0);
-  }, [setFontFamily, notesRootPath, saveSettings]);
+  }, [editor]);
 
   // Group system fonts by category, filtering out presets and limiting results
   const filteredSystemFonts = useMemo(() => {
@@ -62,13 +179,31 @@ export function TypographyPopover() {
   const systemMono = useMemo(() => filteredSystemFonts.filter((f) => f.category === "mono"), [filteredSystemFonts]);
   const systemOther = useMemo(() => filteredSystemFonts.filter((f) => f.category === "other"), [filteredSystemFonts]);
 
-  const currentFontLabel = FONT_PRESETS.find((f) => f.value === fontFamily)?.label ?? fontFamily;
+  const currentFontFamily = effectiveStyle?.fontFamily ?? "system";
+  const currentFontLabel = FONT_PRESETS.find((f) => f.value === currentFontFamily)?.label ?? currentFontFamily;
 
-  const isDefault =
-    fontFamily === EDITOR_STYLES_DEFAULTS.fontFamily &&
-    fontSize === EDITOR_STYLES_DEFAULTS.fontSize &&
-    lineHeight === EDITOR_STYLES_DEFAULTS.lineHeight &&
-    paragraphSpacing === EDITOR_STYLES_DEFAULTS.paragraphSpacing;
+  // Check if current block has any local overrides
+  const hasOverrides = useMemo(() => {
+    if (!editor || !blockType) return false;
+    const { $from } = editor.state.selection;
+    const node = $from.parent;
+    return (
+      node.attrs.fontFamily != null ||
+      node.attrs.fontSize != null ||
+      node.attrs.fontWeight != null ||
+      node.attrs.lineHeight != null ||
+      node.attrs.color != null
+    );
+  }, [editor, blockType]);
+
+  // Reset local overrides on the current block
+  const resetOverrides = useCallback(() => {
+    if (!editor) return;
+    editor.commands.clearTypographyOverrides();
+  }, [editor]);
+
+  // If no editor or unsupported block type, show a disabled state
+  const isDisabled = !editor || !blockType || !effectiveStyle;
 
   return (
     <Popover>
@@ -88,127 +223,154 @@ export function TypographyPopover() {
           Typography
         </TooltipContent>
       </Tooltip>
-      <PopoverContent side="bottom" align="start" className="w-72 p-3 space-y-4">
-        {/* Font Family */}
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Font</Label>
-          <Popover open={fontPickerOpen} onOpenChange={setFontPickerOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                role="combobox"
-                aria-expanded={fontPickerOpen}
-                className="w-full h-8 justify-between text-xs font-normal"
-              >
-                <span className="truncate" style={{ fontFamily: fontFamilyCSS(fontFamily) }}>
-                  {currentFontLabel}
+      <PopoverContent side="bottom" align="start" className="w-72 p-3 space-y-3">
+        {isDisabled ? (
+          <p className="text-xs text-muted-foreground text-center py-2">
+            Place cursor in a paragraph or heading to edit typography.
+          </p>
+        ) : (
+          <>
+            {/* Block type label */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-foreground">{blockLabel}</span>
+              {hasOverrides && (
+                <span className="text-[10px] text-muted-foreground/70">Modified</span>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Font Family */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Font</Label>
+              <Popover open={fontPickerOpen} onOpenChange={setFontPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={fontPickerOpen}
+                    className="w-full h-8 justify-between text-xs font-normal"
+                  >
+                    <span className="truncate" style={{ fontFamily: fontFamilyCSS(currentFontFamily) }}>
+                      {currentFontLabel}
+                    </span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64 p-0" align="start" side="bottom">
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      placeholder="Search fonts..."
+                      value={fontSearch}
+                      onValueChange={setFontSearch}
+                      className="h-8 text-xs"
+                    />
+                    <CommandList className="max-h-[60vh]">
+                      <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
+                        No fonts found.
+                      </CommandEmpty>
+
+                      {/* Presets */}
+                      <PresetGroup label="Sans-serif" fonts={SANS_PRESETS} current={currentFontFamily} onSelect={selectFont} search={fontSearch} />
+                      <PresetGroup label="Serif" fonts={SERIF_PRESETS} current={currentFontFamily} onSelect={selectFont} search={fontSearch} />
+                      <PresetGroup label="Monospace" fonts={MONO_PRESETS} current={currentFontFamily} onSelect={selectFont} search={fontSearch} />
+
+                      {/* System fonts */}
+                      {systemSans.length > 0 && (
+                        <SystemFontGroup label="System — Sans" fonts={systemSans} current={currentFontFamily} onSelect={selectFont} />
+                      )}
+                      {systemSerif.length > 0 && (
+                        <SystemFontGroup label="System — Serif" fonts={systemSerif} current={currentFontFamily} onSelect={selectFont} />
+                      )}
+                      {systemMono.length > 0 && (
+                        <SystemFontGroup label="System — Mono" fonts={systemMono} current={currentFontFamily} onSelect={selectFont} />
+                      )}
+                      {systemOther.length > 0 && (
+                        <SystemFontGroup label="System — Other" fonts={systemOther} current={currentFontFamily} onSelect={selectFont} />
+                      )}
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* Font Size */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Size</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {effectiveStyle.fontSize}px
                 </span>
+              </div>
+              <Slider
+                value={[effectiveStyle.fontSize]}
+                min={fontSizeRange.min}
+                max={fontSizeRange.max}
+                step={1}
+                onValueChange={([v]) => setOverride(editor, "fontSize", v, true)}
+                onValueCommit={([v]) => commitOverride(editor, "fontSize", v)}
+              />
+            </div>
+
+            {/* Font Weight */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Weight</Label>
+              <Select
+                value={String(effectiveStyle.fontWeight)}
+                onValueChange={(v) => setOverride(editor, "fontWeight", Number(v))}
+              >
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {FONT_WEIGHTS.map((w) => (
+                    <SelectItem key={w.value} value={w.value} className="text-xs">
+                      {w.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Line Height */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Line height</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {effectiveStyle.lineHeight.toFixed(1)}
+                </span>
+              </div>
+              <Slider
+                value={[effectiveStyle.lineHeight]}
+                min={1.0}
+                max={3.0}
+                step={0.1}
+                onValueChange={([v]) => setOverride(editor, "lineHeight", Math.round(v * 10) / 10, true)}
+                onValueCommit={([v]) => commitOverride(editor, "lineHeight", Math.round(v * 10) / 10)}
+              />
+            </div>
+
+            {/* Reset local overrides */}
+            {hasOverrides && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full h-7 text-xs text-muted-foreground"
+                onClick={resetOverrides}
+              >
+                <RotateCcw className="size-3 mr-1.5" strokeWidth={1.5} />
+                Reset to {blockLabel} style
               </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-64 p-0" align="start" side="bottom">
-              <Command shouldFilter={false}>
-                <CommandInput
-                  placeholder="Search fonts..."
-                  value={fontSearch}
-                  onValueChange={setFontSearch}
-                  className="h-8 text-xs"
-                />
-                <CommandList className="max-h-[60vh]">
-                    <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
-                      No fonts found.
-                    </CommandEmpty>
-
-                    {/* Presets */}
-                    <PresetGroup label="Sans-serif" fonts={SANS_PRESETS} current={fontFamily} onSelect={selectFont} search={fontSearch} />
-                    <PresetGroup label="Serif" fonts={SERIF_PRESETS} current={fontFamily} onSelect={selectFont} search={fontSearch} />
-                    <PresetGroup label="Monospace" fonts={MONO_PRESETS} current={fontFamily} onSelect={selectFont} search={fontSearch} />
-
-                    {/* System fonts */}
-                    {systemSans.length > 0 && (
-                      <SystemFontGroup label="System — Sans" fonts={systemSans} current={fontFamily} onSelect={selectFont} />
-                    )}
-                    {systemSerif.length > 0 && (
-                      <SystemFontGroup label="System — Serif" fonts={systemSerif} current={fontFamily} onSelect={selectFont} />
-                    )}
-                    {systemMono.length > 0 && (
-                      <SystemFontGroup label="System — Mono" fonts={systemMono} current={fontFamily} onSelect={selectFont} />
-                    )}
-                    {systemOther.length > 0 && (
-                      <SystemFontGroup label="System — Other" fonts={systemOther} current={fontFamily} onSelect={selectFont} />
-                    )}
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
-        </div>
-
-        {/* Font Size */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs text-muted-foreground">Size</Label>
-            <span className="text-xs tabular-nums text-muted-foreground">{fontSize}px</span>
-          </div>
-          <Slider
-            value={[fontSize]}
-            min={12}
-            max={24}
-            step={1}
-            onValueChange={([v]) => setFontSize(v)}
-            onValueCommit={() => save()}
-          />
-        </div>
-
-        {/* Line Height */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs text-muted-foreground">Line height</Label>
-            <span className="text-xs tabular-nums text-muted-foreground">{lineHeight.toFixed(1)}</span>
-          </div>
-          <Slider
-            value={[lineHeight]}
-            min={1.2}
-            max={2.2}
-            step={0.1}
-            onValueChange={([v]) => setLineHeight(Math.round(v * 10) / 10)}
-            onValueCommit={() => save()}
-          />
-        </div>
-
-        {/* Paragraph Spacing */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs text-muted-foreground">Paragraph spacing</Label>
-            <span className="text-xs tabular-nums text-muted-foreground">{paragraphSpacing.toFixed(2)}em</span>
-          </div>
-          <Slider
-            value={[paragraphSpacing]}
-            min={0.25}
-            max={1.5}
-            step={0.05}
-            onValueChange={([v]) => setParagraphSpacing(Math.round(v * 100) / 100)}
-            onValueCommit={() => save()}
-          />
-        </div>
-
-        {/* Reset */}
-        {!isDefault && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full h-7 text-xs text-muted-foreground"
-            onClick={() => {
-              resetToDefaults();
-              save();
-            }}
-          >
-            <RotateCcw className="size-3 mr-1.5" strokeWidth={1.5} />
-            Reset to defaults
-          </Button>
+            )}
+          </>
         )}
       </PopoverContent>
     </Popover>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
 
 /** Render a group of preset fonts, filtered by search query. */
 function PresetGroup({

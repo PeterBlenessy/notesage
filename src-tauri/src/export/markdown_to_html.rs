@@ -53,6 +53,7 @@ pub fn markdown_to_html(markdown: &str, theme: &str, project_root: Option<&str>)
     let html = postprocess_sparklines(&html);
     let html = postprocess_drawing_placeholders(&html);
     let html = postprocess_table_footers(&html, &table_metadata);
+    let html = postprocess_task_lists(&html);
 
     html
 }
@@ -101,6 +102,12 @@ fn preprocess_markdown(markdown: &str, project_root: Option<&str>) -> (String, T
 
     for line in markdown.lines() {
         let trimmed = line.trim();
+
+        // Detect page break comments and replace with inline HTML
+        if trimmed == "<!-- pagebreak -->" {
+            result.push_str("<div style=\"page-break-before: always\"></div>\n");
+            continue;
+        }
 
         // Detect drawing blocks and replace with placeholder
         if drawing_re.is_match(trimmed) {
@@ -417,6 +424,20 @@ fn postprocess_drawing_placeholders(html: &str) -> String {
     }).to_string()
 }
 
+/// Replace checkbox `<input>` elements with styled `<span>` elements.
+/// WebKit's internal styles for `<input>` in sandboxed iframes can force
+/// block display that CSS cannot override. Using `<span>` avoids this entirely.
+fn postprocess_task_lists(html: &str) -> String {
+    html.replace(
+        "<li><input type=\"checkbox\" checked=\"\" disabled=\"\" />",
+        "<li class=\"task-item\"><span class=\"checkbox checked\"></span>",
+    )
+    .replace(
+        "<li><input type=\"checkbox\" disabled=\"\" />",
+        "<li class=\"task-item\"><span class=\"checkbox\"></span>",
+    )
+}
+
 /// Compute and append `<tfoot>` rows for tables with aggregation metadata.
 fn postprocess_table_footers(html: &str, table_metadata: &TableMetadata) -> String {
     if table_metadata.is_empty() {
@@ -689,10 +710,11 @@ mod tests {
     #[test]
     fn test_task_list() {
         let html = markdown_to_html("- [x] Done\n- [ ] Not done", "light", None);
-        assert!(html.contains("checked=\"\""));
-        assert!(html.contains("type=\"checkbox\""));
-        assert!(html.contains("disabled=\"\""));
+        assert!(html.contains("checkbox checked"), "checked task should have 'checkbox checked' class");
+        assert!(html.contains("class=\"checkbox\""), "unchecked task should have 'checkbox' class");
+        assert!(html.contains("task-item"), "task list items should have 'task-item' class");
     }
+
 
     #[test]
     fn test_blockquote() {

@@ -1,6 +1,20 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { tauriApi } from "@/lib/tauri";
+import {
+  DEFAULT_PRESETS,
+  TYPOGRAPHY_VERSION,
+  mergePresets,
+  migrateFromLegacy,
+  type BlockType,
+  type BlockTypeStyle,
+  type FullBlockType,
+  type TypographyPresets,
+  type TypographyFile,
+} from "@/lib/typography-presets";
+
+// Re-export types from typography-presets for convenience
+export type { BlockType, BlockTypeStyle, FullBlockType, TypographyPresets };
 
 /** Font family key — either a preset key (e.g. "system") or a system font family name (e.g. "Fira Sans"). */
 export type EditorFontFamily = string;
@@ -46,6 +60,10 @@ export function fontFamilyCSS(key: string): string {
   return FONT_CSS_MAP[key] ?? (key || FONT_CSS_MAP["system"]);
 }
 
+// ---------------------------------------------------------------------------
+// Legacy flat interface (kept for backwards compatibility)
+// ---------------------------------------------------------------------------
+
 export interface EditorStyles {
   fontFamily: EditorFontFamily;
   fontSize: number;
@@ -60,16 +78,32 @@ export const EDITOR_STYLES_DEFAULTS: EditorStyles = {
   paragraphSpacing: 0.75,
 };
 
-const SETTINGS_FILE = "editor-styles.json";
+// ---------------------------------------------------------------------------
+// File names
+// ---------------------------------------------------------------------------
+
+const LEGACY_SETTINGS_FILE = "editor-styles.json";
+const TYPOGRAPHY_FILE = "typography.json";
+
+// ---------------------------------------------------------------------------
+// Store interface
+// ---------------------------------------------------------------------------
 
 interface EditorStylesStore extends EditorStyles {
   loaded: boolean;
   systemFonts: SystemFont[];
+  presets: TypographyPresets;
 
+  // New per-block-type API
+  loadTypography: (notesagePath: string) => Promise<void>;
+  saveTypography: (notesagePath: string) => Promise<void>;
+  updatePreset: (blockType: BlockType, style: Partial<BlockTypeStyle>) => void;
+  getEffectiveStyle: (blockType: BlockType) => BlockTypeStyle;
+
+  // Legacy API (delegates to presets.paragraph)
   loadSettings: (notesagePath: string) => Promise<void>;
   saveSettings: (notesagePath: string) => Promise<void>;
   loadSystemFonts: () => Promise<void>;
-
   setFontFamily: (family: EditorFontFamily) => void;
   setFontSize: (size: number) => void;
   setLineHeight: (height: number) => void;
@@ -77,27 +111,104 @@ interface EditorStylesStore extends EditorStyles {
   resetToDefaults: () => void;
 }
 
+/** Derive legacy flat fields from presets for backwards compatibility. */
+function flatFromPresets(presets: TypographyPresets): EditorStyles {
+  return {
+    fontFamily: presets.paragraph.fontFamily,
+    fontSize: presets.paragraph.fontSize,
+    lineHeight: presets.paragraph.lineHeight,
+    paragraphSpacing: presets.paragraph.spacingAfter,
+  };
+}
+
 export const useEditorStylesStore = create<EditorStylesStore>()((set, get) => ({
   ...EDITOR_STYLES_DEFAULTS,
   loaded: false,
   systemFonts: [],
+  presets: { ...DEFAULT_PRESETS },
+
+  // -----------------------------------------------------------------------
+  // New per-block-type API
+  // -----------------------------------------------------------------------
+
+  loadTypography: async (notesagePath: string) => {
+    const basePath = `${notesagePath}/.notesage`;
+
+    // Try typography.json first
+    try {
+      const content = await tauriApi.readFile(`${basePath}/${TYPOGRAPHY_FILE}`);
+      const file = JSON.parse(content) as TypographyFile;
+      if (file.version === TYPOGRAPHY_VERSION && file.presets) {
+        const presets = mergePresets(file.presets as unknown as Record<string, Partial<BlockTypeStyle>>, DEFAULT_PRESETS);
+        set({ presets, ...flatFromPresets(presets), loaded: true });
+        return;
+      }
+    } catch {
+      // typography.json doesn't exist — try legacy migration
+    }
+
+    // Try legacy editor-styles.json — migrate to typography.json
+    try {
+      const content = await tauriApi.readFile(`${basePath}/${LEGACY_SETTINGS_FILE}`);
+      const legacy = JSON.parse(content) as Partial<EditorStyles>;
+      const presets = migrateFromLegacy(legacy);
+      set({ presets, ...flatFromPresets(presets), loaded: true });
+      // Write new format so subsequent loads use typography.json directly
+      const file: TypographyFile = { version: TYPOGRAPHY_VERSION, presets };
+      tauriApi.writeFile(`${basePath}/${TYPOGRAPHY_FILE}`, JSON.stringify(file, null, 2)).catch(() => {});
+      return;
+    } catch {
+      // No settings files — use defaults
+    }
+
+    set({ presets: { ...DEFAULT_PRESETS }, ...EDITOR_STYLES_DEFAULTS, loaded: true });
+  },
+
+  saveTypography: async (notesagePath: string) => {
+    try {
+      const { presets } = get();
+      const file: TypographyFile = { version: TYPOGRAPHY_VERSION, presets };
+      const filePath = `${notesagePath}/.notesage/${TYPOGRAPHY_FILE}`;
+      await tauriApi.writeFile(filePath, JSON.stringify(file, null, 2));
+    } catch (err) {
+      console.error("Failed to save typography presets:", err);
+    }
+  },
+
+  updatePreset: (blockType, style) => {
+    const { presets } = get();
+    const updated = {
+      ...presets,
+      [blockType]: { ...presets[blockType], ...style },
+    };
+    set({ presets: updated, ...flatFromPresets(updated) });
+  },
+
+  getEffectiveStyle: (blockType) => {
+    const { presets } = get();
+    const preset = presets[blockType];
+    // Return a full BlockTypeStyle — fill in defaults for partial types (codeBlock, blockquote)
+    return {
+      fontFamily: preset.fontFamily,
+      fontSize: preset.fontSize,
+      fontWeight: "fontWeight" in preset ? (preset as BlockTypeStyle).fontWeight : 400,
+      lineHeight: "lineHeight" in preset ? (preset as BlockTypeStyle).lineHeight : DEFAULT_PRESETS.paragraph.lineHeight,
+      spacingBefore: "spacingBefore" in preset ? (preset as BlockTypeStyle).spacingBefore : 0,
+      spacingAfter: "spacingAfter" in preset ? (preset as BlockTypeStyle).spacingAfter : 0,
+      color: "color" in preset ? (preset as BlockTypeStyle).color : undefined,
+    };
+  },
+
+  // -----------------------------------------------------------------------
+  // Legacy API — delegates to presets.paragraph
+  // -----------------------------------------------------------------------
 
   loadSettings: async (notesagePath: string) => {
-    try {
-      const filePath = `${notesagePath}/.notesage/${SETTINGS_FILE}`;
-      const content = await tauriApi.readFile(filePath);
-      const parsed = JSON.parse(content) as Partial<EditorStyles>;
-      set({
-        fontFamily: parsed.fontFamily ?? EDITOR_STYLES_DEFAULTS.fontFamily,
-        fontSize: parsed.fontSize ?? EDITOR_STYLES_DEFAULTS.fontSize,
-        lineHeight: parsed.lineHeight ?? EDITOR_STYLES_DEFAULTS.lineHeight,
-        paragraphSpacing: parsed.paragraphSpacing ?? EDITOR_STYLES_DEFAULTS.paragraphSpacing,
-        loaded: true,
-      });
-    } catch {
-      // File doesn't exist yet or is invalid — use defaults
-      set({ loaded: true });
-    }
+    await get().loadTypography(notesagePath);
+  },
+
+  saveSettings: async (notesagePath: string) => {
+    await get().saveTypography(notesagePath);
   },
 
   loadSystemFonts: async () => {
@@ -109,21 +220,23 @@ export const useEditorStylesStore = create<EditorStylesStore>()((set, get) => ({
     }
   },
 
-  saveSettings: async (notesagePath: string) => {
-    try {
-      const { fontFamily, fontSize, lineHeight, paragraphSpacing } = get();
-      const data: EditorStyles = { fontFamily, fontSize, lineHeight, paragraphSpacing };
-      const filePath = `${notesagePath}/.notesage/${SETTINGS_FILE}`;
-      await tauriApi.writeFile(filePath, JSON.stringify(data, null, 2));
-    } catch (err) {
-      console.error("Failed to save editor styles:", err);
-    }
+  setFontFamily: (family) => {
+    get().updatePreset("paragraph", { fontFamily: family });
   },
 
-  setFontFamily: (family) => set({ fontFamily: family }),
-  setFontSize: (size) => set({ fontSize: size }),
-  setLineHeight: (height) => set({ lineHeight: height }),
-  setParagraphSpacing: (spacing) => set({ paragraphSpacing: spacing }),
+  setFontSize: (size) => {
+    get().updatePreset("paragraph", { fontSize: size });
+  },
 
-  resetToDefaults: () => set({ ...EDITOR_STYLES_DEFAULTS }),
+  setLineHeight: (height) => {
+    get().updatePreset("paragraph", { lineHeight: height });
+  },
+
+  setParagraphSpacing: (spacing) => {
+    get().updatePreset("paragraph", { spacingAfter: spacing });
+  },
+
+  resetToDefaults: () => {
+    set({ presets: { ...DEFAULT_PRESETS }, ...EDITOR_STYLES_DEFAULTS });
+  },
 }));

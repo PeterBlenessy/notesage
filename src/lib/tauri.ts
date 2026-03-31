@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AIProviderType } from './ai/types';
+import type { BackendTypographyPresets } from './typography-presets';
 
 export interface FileEntry {
   name: string;
@@ -499,6 +500,8 @@ export const tauriApi = {
     includeToc: boolean;
     includePageNumbers: boolean;
     pageSize: string;
+    projectRoot?: string;
+    typography?: BackendTypographyPresets;
   }): Promise<number[]> {
     return await invoke<number[]>("export_pdf", options);
   },
@@ -523,8 +526,20 @@ export const tauriApi = {
     includePageNumbers: boolean;
     pageSize: string;
     projectRoot?: string;
+    typography?: BackendTypographyPresets;
   }): Promise<number[]> {
     return await invoke<number[]>("export_docx", options);
+  },
+
+  async renderHtml(options: {
+    markdown: string;
+    title: string;
+    theme: string;
+    includeStyles: boolean;
+    projectRoot?: string;
+    typography?: BackendTypographyPresets;
+  }): Promise<string> {
+    return await invoke<string>("render_html", options);
   },
 
   async importPptxTemplate(options: {

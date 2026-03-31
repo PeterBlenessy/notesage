@@ -21,7 +21,6 @@ import {
 } from "@/components/ui/select";
 import {
   useSettingsStore,
-  type ExportTemplate,
   type ExportPageSize,
   type ExportFormat,
   type PptxTemplate,
@@ -38,42 +37,13 @@ interface ExportDialogProps {
 
 export interface ExportOptions {
   format: ExportFormat;
-  template: ExportTemplate;
+  /** @deprecated PDF/DOCX always use "clean". Only meaningful for PPTX via pptxTemplate. */
+  template: "clean";
   includeToc: boolean;
   includePageNumbers: boolean;
   pageSize: ExportPageSize;
   pptxTemplate: string;
 }
-
-const PDF_TEMPLATES: {
-  id: ExportTemplate;
-  label: string;
-  description: string;
-  defaultToc: boolean;
-  defaultPageNumbers: boolean;
-}[] = [
-  {
-    id: "clean",
-    label: "Clean",
-    description: "Minimal, generous whitespace",
-    defaultToc: false,
-    defaultPageNumbers: false,
-  },
-  {
-    id: "academic",
-    label: "Academic",
-    description: "Serif, numbered headings",
-    defaultToc: true,
-    defaultPageNumbers: true,
-  },
-  {
-    id: "report",
-    label: "Report",
-    description: "Title page, header/footer",
-    defaultToc: true,
-    defaultPageNumbers: true,
-  },
-];
 
 const PPTX_TEMPLATES: {
   id: PptxTemplate;
@@ -104,7 +74,6 @@ export function ExportDialog({
   isExporting,
 }: ExportDialogProps) {
   const {
-    lastExportTemplate,
     lastExportPageSize,
     lastExportIncludeToC,
     lastExportIncludePageNumbers,
@@ -113,7 +82,6 @@ export function ExportDialog({
   } = useSettingsStore();
 
   const [format, setFormat] = useState<ExportFormat>(lastExportFormat);
-  const [template, setTemplate] = useState<ExportTemplate>(lastExportTemplate);
   const [includeToc, setIncludeToc] = useState(lastExportIncludeToC);
   const [includePageNumbers, setIncludePageNumbers] = useState(
     lastExportIncludePageNumbers
@@ -126,7 +94,6 @@ export function ExportDialog({
   useEffect(() => {
     if (isOpen) {
       setFormat(lastExportFormat);
-      setTemplate(lastExportTemplate);
       setIncludeToc(lastExportIncludeToC);
       setIncludePageNumbers(lastExportIncludePageNumbers);
       setPageSize(lastExportPageSize);
@@ -135,7 +102,6 @@ export function ExportDialog({
   }, [
     isOpen,
     lastExportFormat,
-    lastExportTemplate,
     lastExportPageSize,
     lastExportIncludeToC,
     lastExportIncludePageNumbers,
@@ -156,20 +122,10 @@ export function ExportDialog({
     }
   }, [isOpen]);
 
-  const handleTemplateChange = (id: ExportTemplate) => {
-    setTemplate(id);
-    // Apply template defaults when switching
-    const tmpl = PDF_TEMPLATES.find((t) => t.id === id);
-    if (tmpl) {
-      setIncludeToc(tmpl.defaultToc);
-      setIncludePageNumbers(tmpl.defaultPageNumbers);
-    }
-  };
-
   const handleExport = () => {
     onExport({
       format,
-      template,
+      template: "clean",
       includeToc,
       includePageNumbers,
       pageSize,
@@ -245,31 +201,7 @@ export function ExportDialog({
 
           {(format === "pdf" || format === "docx") && (
             <>
-              {/* PDF Template selector */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Style</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {PDF_TEMPLATES.map((tmpl) => (
-                    <button
-                      key={tmpl.id}
-                      onClick={() => handleTemplateChange(tmpl.id)}
-                      className={cn(
-                        "flex flex-col items-center gap-1 rounded-md border p-3 text-center transition-colors",
-                        template === tmpl.id
-                          ? "border-foreground/30 bg-accent"
-                          : "border-border hover:bg-accent/50"
-                      )}
-                    >
-                      <span className="text-sm font-medium">{tmpl.label}</span>
-                      <span className="text-[11px] leading-tight text-muted-foreground">
-                        {tmpl.description}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* PDF Options */}
+              {/* Document options */}
               <div className="space-y-3">
                 <label
                   className="flex cursor-pointer items-center gap-2.5"

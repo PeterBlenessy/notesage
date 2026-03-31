@@ -76,33 +76,27 @@ ul, ol { margin: 0 0 1em; padding-left: 1.5em; }
 li { margin-bottom: 0.25em; }
 li > ul, li > ol { margin-bottom: 0; }
 
-/* Task lists */
-ul.contains-task-list {
+/* Task lists — comrak outputs <li><p><input type="checkbox"> text</p></li> */
+li.task-item {
   list-style: none;
-  padding-left: 0;
+  margin-left: -1.2em;
 }
-li.task-list-item {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-li.task-list-item input[type="checkbox"] {
-  appearance: none;
-  -webkit-appearance: none;
+.checkbox {
+  display: inline-block;
   width: 16px;
   height: 16px;
   border: 1.5px solid var(--border);
   border-radius: 3px;
-  flex-shrink: 0;
+  vertical-align: middle;
+  margin-right: 6px;
   position: relative;
-  top: 2px;
 }
-li.task-list-item input[type="checkbox"]:checked {
+.checkbox.checked {
   background: var(--fg);
   border-color: var(--fg);
 }
-li.task-list-item input[type="checkbox"]:checked::after {
-  content: "✓";
+.checkbox.checked::after {
+  content: "\2713";
   color: var(--bg);
   font-size: 12px;
   position: absolute;
@@ -293,25 +287,28 @@ ul, ol { margin: 0 0 1em; padding-left: 1.5em; }
 li { margin-bottom: 0.25em; }
 li > ul, li > ol { margin-bottom: 0; }
 
-ul.contains-task-list { list-style: none; padding-left: 0; }
-li.task-list-item { display: flex; align-items: baseline; gap: 8px; }
-li.task-list-item input[type="checkbox"] {
-  appearance: none;
+li:has(input[type="checkbox"]) { list-style: none; margin-left: -1.2em; }
+input[type="checkbox"] {
   -webkit-appearance: none;
+  appearance: none;
+  display: inline-block !important;
   width: 16px;
   height: 16px;
+  min-width: 16px;
+  min-height: 16px;
   border: 1.5px solid var(--border);
   border-radius: 3px;
-  flex-shrink: 0;
-  position: relative;
-  top: 2px;
+  vertical-align: middle;
+  margin: 0 6px 0 0;
+  padding: 0;
+  cursor: default;
 }
-li.task-list-item input[type="checkbox"]:checked {
+input[type="checkbox"]:checked {
   background: var(--fg);
   border-color: var(--fg);
 }
-li.task-list-item input[type="checkbox"]:checked::after {
-  content: "✓";
+input[type="checkbox"]:checked::after {
+  content: "\2713";
   color: var(--bg);
   font-size: 12px;
   position: absolute;
