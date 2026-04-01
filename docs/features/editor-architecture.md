@@ -36,7 +36,7 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | LocalImage | `local-image.ts` | Node Extension | Extends Tiptap Image to resolve local file paths via Tauri asset protocol |
 | MentionHighlight | `mention-highlight.ts` | Plugin + Decoration | Decorates `@mention` patterns as styled badge pills |
 | MentionSuggestion | `mention-suggestion.tsx` | Suggestion | Mention autocomplete popup triggered by `@` with cross-file search |
-| PageBreaks | `page-breaks.ts` | Plugin + Decoration | Calculates and renders CSS-based page break indicators in the editor |
+| PageBreaks | `page-breaks.ts` | Plugin + Decoration | Print Layout mode: three widget decorations per page boundary (`page-top-margin` with header zone, `page-gap` separator, `page-bottom-margin` with footer zone). Header/footer zones are clickable for inline editing via React portal. Reads layout state from Zustand stores directly. |
 | TableMarkdown | `table-markdown.ts` | Utility | Custom table markdown serializer for GFM round-tripping |
 | ThemedHighlight | `themed-highlight.ts` | Mark Extension | Extends Tiptap Highlight with semantic color names for light/dark mode |
 | LinkClick | `link-click.ts` | Plugin | Click handler for link navigation (internal files → open as tab, external → system browser) |

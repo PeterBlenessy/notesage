@@ -1,3 +1,29 @@
+---
+page:
+  header:
+    left: Left
+    center: "{page}"
+    right: Right
+    differentFirstPage: true
+    firstPage:
+      left: Left
+      center: "{title}"
+      right: Right
+    differentOddEven: true
+    oddPage:
+      left: Left
+      center: odd page
+      right: Right
+    evenPage:
+      left: Left - 2nd page
+      center: even page
+      right: Right
+  footer:
+    left: left
+    center: center
+    right: right
+---
+
 # Design: Page Headers & Footers — Decoration Architecture
 
 ## Problem
@@ -128,92 +154,83 @@ Actually — the remainder space is the unused content area at the bottom of the
 
 This keeps it to three decorations (not four) and the footer is always at the bottom of the margin area, regardless of how much remainder space there is.
 
-Similarly, the top-margin's zone sits at the top:
+Similarly, the top-margin's zone is vertically centered:
 
 ```css
 .page-top-margin {
-  height: var(--page-top-margin-height); /* just marginTop, no remainder */
+  height: /* marginTop, set inline by JS */;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  pointer-events: none; /* prevent ProseMirror cursor placement */
 }
 ```
 
+Footer zones get an explicit `style.height` matching `marginBottomPx` set in JS, so they fill the margin portion and center text within it. The remainder space above sits empty.
+
 ### Tick marks in continuous mode
 
-Currently, small tick marks show at the left/right margins in continuous mode. With Print Layout OFF, no decorations exist, so no tick marks. This is correct per the spec: continuous mode shows no page boundaries at all.
+With Print Layout OFF, no decorations exist, so no tick marks or page boundaries.
 
-## Implementation Tasks
+## Implementation Status: Complete
 
-### Task 1: Rename toggle (S)
+All tasks have been implemented. Key implementation decisions and lessons:
 
-- `SettingsDialog.tsx`: Change label from "Page Break Gaps" to "Print Layout", update description
-- Optional: rename `pageBreaks` store key to `printLayout` (or just change the label)
+### Settings rename
 
-### Task 2: Rewrite `calculate()` — three decorations (L)
+`pageBreaks: "visible" | "continuous"` replaced with `printLayout: boolean` in `settings-store.ts`. Migration (v2→v3) converts old values. The `data-page-breaks` DOM attribute was removed entirely — the plugin reads state directly from Zustand stores.
 
-- Remove the single gap decoration factory
-- Build three decoration types: `top-margin`, `gap`, `bottom-margin`
-- Page 1: insert `top-margin` at position 0
-- Last page: insert `bottom-margin` at `doc.content.size`
-- Between pages: insert all three at break position
-- Bottom margin height = `remainder + marginBottom` (footer anchored at bottom via CSS)
-- Top margin height = `marginTop` (header anchored at top via CSS)
-- Gap height = 32px
-- In Print Layout OFF: insert nothing, zero-out all decorations
-- Zero `.ProseMirror` `paddingTop`/`paddingBottom` in print layout mode
-- Read margin values from settings store directly (not from CSS computed style)
-- Zone elements created by `createZoneElement()` (existing function, minimal changes)
+### Reading state from stores, not DOM
 
-### Task 3: Rewrite CSS (M)
+The plugin initially read `--page-height` CSS variable and `data-page-breaks` attribute from the DOM. This caused race conditions: the Zustand subscription fired before React committed the new attribute values. Fix: read `contentWidth`, `printLayout`, and margin values directly from `useSettingsStore.getState()`, and compute `pageHeight` from the `CONTENT_HEIGHTS` constant.
 
-- Remove `.page-break-gap` and all its rules (visible/continuous modes, gradients, tick marks)
-- Remove `.page-zone-overlay` and all overlay positioning
-- Add `.page-top-margin`: flex container, `align-items: flex-start`, extends into left/right margins
-- Add `.page-bottom-margin`: flex container, `align-items: flex-end`, extends into left/right margins
-- Add `.page-gap`: simple background color, extends into left/right margins
-- Zone styles (`.page-header-zone`, `.page-footer-zone`): remove `position: absolute`, use normal flow
-- Keep `.page-hf-editing`, `.page-hf-editor`, `.page-hf-input` styles (they work as-is)
+### Decoration key fingerprinting
 
-### Task 4: Update `Editor.tsx` (M)
+ProseMirror reuses widget DOM when the decoration `key` matches. After editing header/footer content, the old key still matched, so the factory function didn't re-run and updated values weren't visible until app restart. Fix: include a `settingsFingerprint()` (JSON of header/footer/title) in each decoration key, so content changes bust the cache.
 
-- Set `paddingTop: 0; paddingBottom: 0` when `isPaperMode && printLayout === 'visible'`
-- Keep existing `paddingTop`/`paddingBottom` when not in print layout
-- Remove the overlay-related code (`__refreshPageZones`)
-- After closing editor, trigger `scheduleCalculation` via a custom event or store change
-- Keep the `createPortal` approach for inline editing
+### Event isolation for inline editing
 
-### Task 5: Verify position 0 widget (S)
+The `PageHeaderFooterEditor` React component is portaled into the zone element (a DOM node inside a ProseMirror widget decoration). Three layers of event isolation were needed:
 
-- Test that `editorView.nodeDOM(0)` returns the correct content node when a widget is inserted at position 0
-- If it breaks, implement fallback: keep `paddingTop` for page 1, don't insert top-margin at position 0, inject header zone as direct DOM child of `.ProseMirror`
+1. **Pointer/clipboard/drag events** — stopped at the zone element (outside React's tree) in bubble phase. This prevents ProseMirror from acting on them while allowing React's capture-phase delegation to fire synthetic events (critical for Radix dropdown menus).
+2. **Keyboard events** — stopped at the container element (`.page-hf-editor`) in bubble phase. Escape closes the editor; all other keys stay in the inputs.
+3. **`pointer-events: none`** on margin containers — prevents ProseMirror from placing a cursor in the margin area. Zones override with `pointer-events: auto`.
 
-### Task 6: Test & fix (M)
+Earlier approaches that stopped propagation on the React container itself killed React synthetic events (React 18 delegates from the root via capture phase — if native bubble propagation is stopped before reaching the root, synthetic events never fire).
 
-- All test plan items from the Verification section
-- Fix any issues with the dropdown chevrons (currently not clickable — may be resolved by removing the overlay)
-- Verify exports still work (they read from frontmatter, not from decorations — should be unaffected)
+### Editor store subscription narrowing
 
-## Files to change
+The full `useEditorStore.subscribe(scheduleCalculation)` fired on every keystroke (via `updateTabContent`), causing unnecessary RAF scheduling. Fixed by tracking `activeTabId` manually and only scheduling when it changes. The `docChanged` path in the plugin's `view.update()` handles content edits.
+
+### Position 0 widget
+
+Inserting a widget at position 0 with `side: -1` works correctly — `editorView.nodeDOM(0)` still returns the first content node, not the widget. No fallback was needed.
+
+## Files changed
 
 | File | Change |
 | --- | --- |
-| `page-breaks.ts` | Rewrite: three decorations per break, margin decorations contain zones, no overlay |
-| `editor.css` | Replace overlay/gap CSS with margin decoration CSS |
-| `Editor.tsx` | Zero padding in print layout, remove overlay code, keep portal |
-| `SettingsDialog.tsx` | Rename "Page Break Gaps" to "Print Layout" |
-| `settings-store.ts` | Optional: rename `pageBreaks` to `printLayout` |
-| `PageHeaderFooterEditor.tsx` | No change (portal target is the zone div, same API) |
+| `page-breaks.ts` | Rewrite: three decorations per break, zones embedded in margin decorations, settings fingerprint keys, store-based state reads |
+| `editor.css` | Replaced overlay/gap CSS with `.page-top-margin`, `.page-bottom-margin`, `.page-gap` |
+| `Editor.tsx` | Zero padding in print layout, `hfEditStateRef` for stable close callback, removed `data-page-breaks` attribute |
+| `SettingsDialog.tsx` | Renamed "Page Break Gaps" to "Print Layout" |
+| `settings-store.ts` | `pageBreaks: "visible"/"continuous"` → `printLayout: boolean` with v3 migration |
+| `PageHeaderFooterEditor.tsx` | Event isolation moved to zone element, added clipboard/drag event blocking |
+| `FrontmatterBlock.tsx` | Fixed `[object Object]` display for nested frontmatter values |
 | `page-settings.ts` | No change |
 
 ## Verification
 
-1. Print Layout ON: every page has header/footer in margin areas, 32px gap strip between pages
-2. Print Layout OFF: continuous flow, no headers/footers, no gaps, no tick marks
-3. Editing: click zone → inputs appear in-place → changes persist on close
-4. All checkboxes, inputs, and dropdowns work without lag or flicker
-5. App restart: zones appear immediately with correct content and positioning
-6. Toggling Print Layout: zones appear/disappear cleanly
-7. Single-page document: header at top, footer at bottom, no gap
-8. Different first page / odd-even / page number start all work correctly
-9. Exports: headers/footers appear in PDF, DOCX, HTML with correct content
-10. Left/right margins consistent in both modes
+All items verified:
+
+ 1. ✅ Print Layout ON: every page has header/footer in margin areas, 32px gap strip between pages
+ 2. ✅ Print Layout OFF: continuous flow, no headers/footers, no gaps
+ 3. ✅ Editing: click zone → inputs appear in-place → changes persist on close
+ 4. ✅ All checkboxes, inputs, and dropdowns work (including variable chevrons)
+ 5. ✅ App restart: zones appear immediately with correct content and positioning
+ 6. ✅ Toggling Print Layout: zones appear/disappear cleanly
+ 7. ✅ Single-page document: header at top, footer at bottom, no gap
+ 8. ✅ Different first page / odd-even / page number start all work correctly
+ 9. ✅ Exports: headers/footers appear in PDF, DOCX, HTML with correct content
+10. ✅ Left/right margins consistent in both modes
+11. ✅ Copy/paste works in header/footer inputs (not intercepted by ProseMirror)
+12. ✅ No stray cursor on margin area clicks
