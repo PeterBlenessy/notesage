@@ -100,17 +100,17 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 2px var(--editor-padding-left, 6rem);
+  padding: 0 var(--editor-padding-left, 6rem);
   font-size: 10px;
   color: var(--color-foreground);
   cursor: pointer;
   user-select: none;
   pointer-events: auto;
   transition: opacity 150ms ease-in-out;
-  min-height: 18px;
   position: absolute;
   left: 0;
   right: 0;
+  /* height and top are set inline by JS — zone fills the entire margin area */
 }
 
 .page-header-zone:hover,
@@ -123,6 +123,18 @@
 .page-hf-left { text-align: left; }
 .page-hf-center { text-align: center; }
 .page-hf-right { text-align: right; }
+
+/* Editing state — hide text spans, editor fills the zone */
+.page-hf-editing .page-hf-col { display: none; }
+.page-hf-editing::after { display: none; }
+.page-hf-editing {
+  padding: 4px var(--editor-padding-left, 6rem);
+  align-items: flex-start;
+  z-index: 2;
+}
+.page-hf-editing .page-hf-editor {
+  width: 100%;
+}
 
 /* Empty state — centered placeholder */
 .page-hf-empty {

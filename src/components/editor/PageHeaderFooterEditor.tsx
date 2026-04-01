@@ -31,7 +31,6 @@ interface PageHeaderFooterEditorProps {
   settings: PageHeaderFooter;
   onUpdate: (updated: PageHeaderFooter) => void;
   onClose: () => void;
-  anchorRect?: DOMRect;
 }
 
 type ColumnKey = 'left' | 'center' | 'right';
@@ -45,7 +44,6 @@ export function PageHeaderFooterEditor({
   settings,
   onUpdate,
   onClose,
-  anchorRect,
 }: PageHeaderFooterEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -129,27 +127,10 @@ export function PageHeaderFooterEditor({
 
   const label = type === 'header' ? 'Header' : 'Footer';
 
-  const positionStyle: React.CSSProperties = anchorRect
-    ? (() => {
-        const editorHeight = settings.differentFirstPage ? 140 : 90;
-        const zoneMidY = anchorRect.top + anchorRect.height / 2;
-        const idealTop = zoneMidY - editorHeight / 2;
-        const clampedTop = Math.max(8, Math.min(idealTop, window.innerHeight - editorHeight - 8));
-        return {
-          position: 'fixed' as const,
-          left: anchorRect.left,
-          top: clampedTop,
-          width: anchorRect.width,
-          zIndex: 50,
-        };
-      })()
-    : {};
-
   return (
     <div
       ref={containerRef}
       className="page-hf-editor"
-      style={positionStyle}
       onClick={(e) => e.stopPropagation()}
     >
       {/* Section label */}

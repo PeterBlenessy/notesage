@@ -13,7 +13,8 @@ export const PAGE_HF_CLICK_EVENT = 'notesage:page-hf-click'
 export interface PageHFClickDetail {
   page: number
   type: 'header' | 'footer'
-  rect: DOMRect
+  /** The zone DOM element that was clicked — used as portal target */
+  zoneElement: HTMLDivElement
 }
 
 // ---------------------------------------------------------------------------
@@ -67,7 +68,7 @@ function createZoneElement(
     e.stopPropagation()
     window.dispatchEvent(
       new CustomEvent<PageHFClickDetail>(PAGE_HF_CLICK_EVENT, {
-        detail: { page, type: zoneType, rect: zone.getBoundingClientRect() },
+        detail: { page, type: zoneType, zoneElement: zone },
       }),
     )
   })
@@ -86,7 +87,6 @@ function resolveDocumentTitle(doc: { firstChild: { type: { name: string }; textC
 // ---------------------------------------------------------------------------
 
 const OVERLAY_CLASS = 'page-zone-overlay'
-const ZONE_HEIGHT = 18 // matches min-height in CSS
 
 function updatePageZones(
   wrapper: HTMLElement | null,
@@ -109,33 +109,56 @@ function updatePageZones(
   overlay.className = OVERLAY_CLASS
   wrapper.appendChild(overlay)
 
-  // Base Y: where .ProseMirror starts within the wrapper
   const editorY = editorDom.offsetTop
+  const gaps = Array.from(editorDom.querySelectorAll<HTMLElement>('.page-break-gap'))
 
-  // Center a zone vertically within a margin area
-  const centerInMargin = (marginStart: number, marginHeight: number) =>
-    Math.round(marginStart + (marginHeight - ZONE_HEIGHT) / 2)
+  // Each zone fills the entire margin area (top margin = header, bottom margin = footer)
+  const addZone = (zoneType: 'header' | 'footer', page: number, marginY: number, marginSize: number) => {
+    const zone = createZoneElement(zoneType, zoneType === 'header' ? pageSettings.header : pageSettings.footer,
+      page, totalPages, docTitle, page === 1)
+    zone.style.top = `${Math.round(marginY)}px`
+    zone.style.height = `${Math.round(marginSize)}px`
+    overlay.appendChild(zone)
+  }
 
-  // Position zones using fixed page geometry — independent of content.
-  // Page N starts at editorY + (N-1) * pageHeight.
-  // Header margin: top of page → top + paddingTop
-  // Footer margin: top + pageHeight - paddingBottom → top + pageHeight
-  for (let p = 1; p <= totalPages; p++) {
-    const pageTop = editorY + (p - 1) * pageHeight
+  // --- Page 1 ---
+  addZone('header', 1, editorY, paddingTop)
 
-    const header = createZoneElement(
-      'header', pageSettings.header,
-      p, totalPages, docTitle, p === 1,
-    )
-    header.style.top = `${centerInMargin(pageTop, paddingTop)}px`
-    overlay.appendChild(header)
+  if (gaps.length === 0) {
+    // Single page: footer at the bottom of the editor
+    addZone('footer', 1, editorY + editorDom.offsetHeight - paddingBottom, paddingBottom)
+    return
+  }
 
-    const footer = createZoneElement(
-      'footer', pageSettings.footer,
-      p, totalPages, docTitle, p === 1,
-    )
-    footer.style.top = `${centerInMargin(pageTop + pageHeight - paddingBottom, paddingBottom)}px`
-    overlay.appendChild(footer)
+  // Footer for page 1: sits in the bottom-margin area before the first gap strip.
+  // The gap includes: remainder + paddingBottom + gapStrip + paddingTop.
+  // The bottom margin of the current page occupies [gapTop, gapTop + remainder + paddingBottom].
+  const gap0 = gaps[0]
+  const gap0Top = editorY + gap0.offsetTop
+  const gap0Remainder = parseFloat(gap0.style.getPropertyValue('--page-remainder')) || 0
+  addZone('footer', 1, gap0Top + gap0Remainder, paddingBottom)
+
+  // --- Interior pages (between gaps) ---
+  for (let g = 0; g < gaps.length; g++) {
+    const gap = gaps[g]
+    const gapTop = editorY + gap.offsetTop
+    const gapH = gap.offsetHeight
+    const pageBelow = g + 2
+
+    // Header for the page below this gap: in the top-margin area after the gap strip.
+    // Top margin starts at gapTop + gapH - paddingTop.
+    addZone('header', pageBelow, gapTop + gapH - paddingTop, paddingTop)
+
+    // Footer for that page: before the NEXT gap, or at the editor bottom for the last page.
+    if (g + 1 < gaps.length) {
+      const nextGap = gaps[g + 1]
+      const nextGapTop = editorY + nextGap.offsetTop
+      const nextRemainder = parseFloat(nextGap.style.getPropertyValue('--page-remainder')) || 0
+      addZone('footer', pageBelow, nextGapTop + nextRemainder, paddingBottom)
+    } else {
+      // Last page footer
+      addZone('footer', pageBelow, editorY + editorDom.offsetHeight - paddingBottom, paddingBottom)
+    }
   }
 }
 

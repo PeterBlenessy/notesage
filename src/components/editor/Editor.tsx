@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useRef, useState, useMemo, lazy, Suspense } from "react";
+import { createPortal } from "react-dom";
 import { useScrollPersistence } from "@/hooks/useScrollPersistence";
 import { useEditorResize } from "@/hooks/useEditorResize";
 import { EditorContent } from "@tiptap/react";
@@ -239,7 +240,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const { exportPdf, exportPptx, isExporting } = useExportOperations(editor);
   const { reviewActive, compareBranch, handleAcceptAll, handleRejectAll } = useDiffReview(editor);
   const { settings: pageSettings, updateSettings: updatePageSettings } = usePageSettings(editor);
-  const [hfEditState, setHfEditState] = useState<{ type: 'header' | 'footer'; rect: DOMRect } | null>(null);
+  const [hfEditState, setHfEditState] = useState<{ type: 'header' | 'footer'; zoneElement: HTMLDivElement } | null>(null);
   useFileWatcher();
   useCopilotCompletion(editor);
   useCopilotCompletionCM(cmView);
@@ -249,14 +250,23 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<PageHFClickDetail>).detail;
-      setHfEditState({ type: detail.type, rect: detail.rect });
+      const zone = detail.zoneElement;
+      zone.classList.add('page-hf-editing');
+      setHfEditState({ type: detail.type, zoneElement: zone });
     };
     window.addEventListener(PAGE_HF_CLICK_EVENT, handler);
     return () => window.removeEventListener(PAGE_HF_CLICK_EVENT, handler);
   }, []);
 
+  const closeHfEditor = useCallback(() => {
+    if (hfEditState?.zoneElement) {
+      hfEditState.zoneElement.classList.remove('page-hf-editing');
+    }
+    setHfEditState(null);
+  }, [hfEditState]);
+
   // Close header/footer editor on tab switch
-  useEffect(() => { setHfEditState(null); }, [activeTabId]);
+  useEffect(() => { closeHfEditor(); }, [activeTabId]);
 
   // Keyboard shortcuts + find bar
   const {
@@ -594,7 +604,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           </div>
           {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}
           {editor && <TableHeaderMenu editor={editor} />}
-          {hfEditState && (
+          {hfEditState && createPortal(
             <PageHeaderFooterEditor
               type={hfEditState.type}
               settings={hfEditState.type === 'header' ? pageSettings.header : pageSettings.footer}
@@ -603,9 +613,9 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
                 newSettings[hfEditState.type] = updated;
                 updatePageSettings(newSettings);
               }}
-              onClose={() => setHfEditState(null)}
-              anchorRect={hfEditState.rect}
-            />
+              onClose={closeHfEditor}
+            />,
+            hfEditState.zoneElement,
           )}
         </div>
         </div>
