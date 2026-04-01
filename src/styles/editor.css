@@ -23,12 +23,15 @@
    top-margin (header zone) + gap (visual separator) + bottom-margin (footer zone)
    ---------------------------------------------------------------- */
 
-/* Top-margin decoration: contains header zone, vertically centered */
+/* Top-margin decoration: contains header zone, vertically centered.
+   pointer-events: none prevents ProseMirror from placing cursor here;
+   zones re-enable pointer-events for click handling. */
 .page-top-margin {
   margin-left: calc(-1 * var(--editor-padding-left, 6rem));
   margin-right: calc(-1 * var(--editor-padding-right, 6rem));
   display: flex;
   align-items: center;
+  pointer-events: none;
   /* height set inline by JS */
 }
 
@@ -40,6 +43,7 @@
   margin-right: calc(-1 * var(--editor-padding-right, 6rem));
   display: flex;
   align-items: flex-end;
+  pointer-events: none;
   /* height set inline by JS */
 }
 
