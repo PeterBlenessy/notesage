@@ -13,8 +13,8 @@
 | Tasks (Phase 2) | [wysiwyg-typography-phase2-tasks](../tasks/2026-03-31-wysiwyg-typography-phase2-tasks.md) | Complete |
 | PRD | [html-preview](../prds/2026-03-30-html-preview.md) | Complete |
 | Tasks | [html-preview-tasks](../tasks/2026-03-30-html-preview-tasks.md) | Complete |
-| PRD | [code-file-highlighting](../prds/2026-03-30-code-file-highlighting.md) | Draft |
-| Tasks | [code-file-highlighting-tasks](../tasks/2026-03-30-code-file-highlighting-tasks.md) | Not started |
+| PRD | [code-file-highlighting](../prds/2026-03-30-code-file-highlighting.md) | Complete |
+| Tasks | [code-file-highlighting-tasks](../tasks/2026-03-30-code-file-highlighting-tasks.md) | Complete |
 | PRD | [pptx-viewer](../prds/2026-03-30-pptx-viewer.md) | Complete |
 | Tasks | [pptx-viewer-tasks](../tasks/2026-03-30-pptx-viewer-tasks.md) | Complete |
 

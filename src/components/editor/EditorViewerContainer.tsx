@@ -12,10 +12,12 @@ const EpubViewer = lazy(() => import("./viewers/EpubViewer").then(m => ({ defaul
 const PptxViewer = lazy(() => import("./viewers/PptxViewer").then(m => ({ default: m.PptxViewer })));
 
 interface ViewerTab {
+  id: string;
   filePath: string;
   fileName: string;
   fileType: string;
   content: string;
+  isDirty: boolean;
 }
 
 interface EditorViewerContainerProps {
@@ -24,9 +26,13 @@ interface EditorViewerContainerProps {
   onOpenFile?: (path: string, name: string) => void;
   onShortcutsOpen?: () => void;
   onOpenActions?: () => void;
+  /** Update tab content (for code file editing) */
+  updateTabContent?: (tabId: string, content: string, isDirty: boolean) => void;
+  /** Save file to disk (for code file editing) */
+  saveFile?: (filePath: string, content: string, tabId: string) => Promise<boolean>;
 }
 
-export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShortcutsOpen, onOpenActions }: EditorViewerContainerProps) {
+export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShortcutsOpen, onOpenActions, updateTabContent, saveFile }: EditorViewerContainerProps) {
   let viewer: React.ReactNode = null;
   switch (activeTab.fileType) {
     case "image":
@@ -68,7 +74,25 @@ export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShor
       viewer = <PptxViewer filePath={activeTab.filePath} fileName={activeTab.fileName} />;
       break;
     case "other":
-      viewer = <PlainTextViewer content={activeTab.content} fileName={activeTab.fileName} />;
+      viewer = (
+        <PlainTextViewer
+          content={activeTab.content}
+          fileName={activeTab.fileName}
+          filePath={activeTab.filePath}
+          tabId={activeTab.id}
+          isDirty={activeTab.isDirty}
+          updateTabContent={
+            updateTabContent
+              ? (content: string) => updateTabContent(activeTab.id, content, true)
+              : undefined
+          }
+          saveFileWithContent={
+            saveFile
+              ? (content: string) => { saveFile(activeTab.filePath, content, activeTab.id); }
+              : undefined
+          }
+        />
+      );
       break;
   }
 

@@ -3,9 +3,9 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-30 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | High |
-| **Impact** | Code files become editable with syntax highlighting, line numbers, and code navigation. WYSIWYG code blocks gain greyscale syntax highlighting. |
+| **Impact** | Code files become editable with syntax highlighting, line numbers, and code navigation. WYSIWYG code blocks gain muted chromatic syntax highlighting. |
 | **Research** | [document-format-enhancements](../research/2026-03-30-document-format-enhancements.md) |
 | **Tasks** | [code-file-highlighting-tasks](../tasks/2026-03-30-code-file-highlighting-tasks.md) |
 
@@ -32,18 +32,17 @@
 
 ### Part B: WYSIWYG Code Block Highlighting
 
-9. **Greyscale syntax highlighting** for code blocks in the Tiptap rich text editor — style the existing lowlight/highlight.js spans with weight, opacity, and neutral tones
-10. **All supported lowlight languages** highlighted automatically (lowlight `common` bundle covers ~37 languages)
-11. **Light and dark mode** support via CSS variables
-12. **Consistent aesthetic** with the CodeMirror greyscale theme used in source mode and code files
+ 9. **Muted chromatic syntax highlighting** for code blocks in the Tiptap rich text editor — style the existing lowlight/highlight.js spans with a tasteful color palette (keywords purple, strings green, comments olive, numbers orange, functions blue, types teal)
+10. **All supported lowlight languages** highlighted automatically (lowlight `common` bundle covers \~37 languages)
+11. **Light and dark mode** support via CSS variables (`--ns-code-*` in `globals.css`)
+12. **Consistent aesthetic** with the CodeMirror code highlight style used in code files — same palette, same CSS variables
 
 ## Non-Goals
 
 - **Running/executing code** — out of scope for a note-taking app
 - **LSP integration for code files** — no autocomplete, go-to-definition, or diagnostics
-- **Custom syntax themes** — uses the existing Notesage greyscale aesthetic; user-configurable themes may come later
+- **Custom syntax themes** — uses a single muted chromatic palette; user-configurable themes may come later
 - **Adding code files to the** `FileType` **enum** — code files remain `"other"` in the type system; the viewer internally detects whether to use CodeMirror or plain `<pre>` based on file extension
-- **Chromatic (colored) syntax highlighting** — all highlight styles use greyscale (weight, opacity, italic) to match the design system
 
 ## User Stories
 
@@ -192,17 +191,16 @@ The `CodeEditor` reuses `notesageExtensions` from `src/components/editor/codemir
 - Styles the search panel, scrollbars, fold gutter, and bracket matching
 - Follows the Notesage greyscale design system
 
-A new code-specific highlight style is needed that goes beyond the existing `notesageHighlightStyle` (which is tuned for markdown source editing). The code highlight style should use weight and subtle neutral tones to differentiate:
+A new code-specific highlight style is needed that goes beyond the existing `notesageHighlightStyle` (which is tuned for markdown source editing). Code content is a semantic exception to the UI-chrome greyscale rule — just like diffs, text highlights, and callout colors. The palette uses muted, desaturated tones (oklch chroma 0.1–0.15) via CSS variables (`--ns-code-*`) that switch automatically between light and dark mode:
 
-- **Keywords:** semibold, foreground color
-- **Strings:** slightly muted (e.g., `oklch(55% 0 0)` light / `oklch(72% 0 0)` dark)
-- **Comments:** muted, italic
-- **Numbers/constants:** regular weight, slightly different grey
-- **Functions/definitions:** semibold
-- **Types:** medium weight
-- **Operators/punctuation:** muted
-
-All highlight colors remain greyscale (zero chroma) to match the design system. No blue, green, or colored syntax highlighting.
+- **Keywords:** muted purple (hue 280), semibold
+- **Strings:** muted green (hue 155)
+- **Comments:** muted olive (hue 110), italic
+- **Numbers/constants:** muted orange (hue 55)
+- **Functions/definitions:** muted blue (hue 250)
+- **Types:** muted teal (hue 195)
+- **HTML tags:** muted red (hue 20)
+- **Operators/punctuation:** subtle blue-grey
 
 #### Status Bar
 
@@ -223,79 +221,36 @@ CodeMirror 6 uses virtual scrolling by default — only visible lines are render
 
 **Benchmarks to validate:**
 
-- 10K-line file: initial render < 100ms, smooth scrolling at 60fps
-- 50K-line file: initial render < 500ms, no visible lag
-- Language package load: < 200ms on first import (varies by language size)
+- 10K-line file: initial render &lt; 100ms, smooth scrolling at 60fps
+- 50K-line file: initial render &lt; 500ms, no visible lag
+- Language package load: &lt; 200ms on first import (varies by language size)
 
 ### Part B: WYSIWYG Code Block Highlighting
 
 #### Problem
 
-The Tiptap editor uses `CodeBlockLowlight` with `lowlight` (highlight.js) and the `common` language bundle (~37 languages). Lowlight correctly parses code and generates semantic `<span>` elements with `.hljs-*` classes (`.hljs-keyword`, `.hljs-string`, `.hljs-comment`, etc.). However, **no CSS rules exist to style these spans**, so all code renders as flat monochrome text.
+The Tiptap editor uses `CodeBlockLowlight` with `lowlight` (highlight.js) and the `common` language bundle (\~37 languages). Lowlight correctly parses code and generates semantic `<span>` elements with `.hljs-*` classes (`.hljs-keyword`, `.hljs-string`, `.hljs-comment`, etc.). However, **no CSS rules exist to style these spans**, so all code renders as flat monochrome text.
 
 #### Solution
 
-Add a highlight.js greyscale theme in `editor.css` that styles the `.hljs-*` classes using the same design language as the CodeMirror code highlight style — weight, opacity, and subtle neutral tones. No new dependencies needed; lowlight is already configured and working.
+Add a highlight.js theme in `editor.css` that styles the `.hljs-*` classes using the same muted chromatic palette as the CodeMirror code highlight style — via `--ns-code-*` CSS variables from `globals.css`. No new dependencies needed; lowlight is already configured and working.
 
 #### Highlight Styles
 
-```css
-/* Code block syntax highlighting — greyscale theme */
-/* Light mode */
-.ProseMirror pre code .hljs-keyword,
-.ProseMirror pre code .hljs-selector-tag,
-.ProseMirror pre code .hljs-built_in { font-weight: 600; }
-
-.ProseMirror pre code .hljs-string,
-.ProseMirror pre code .hljs-attr { color: oklch(45% 0 0); }
-
-.ProseMirror pre code .hljs-comment,
-.ProseMirror pre code .hljs-doctag { color: oklch(55% 0 0); font-style: italic; }
-
-.ProseMirror pre code .hljs-number,
-.ProseMirror pre code .hljs-literal { color: oklch(40% 0 0); }
-
-.ProseMirror pre code .hljs-function,
-.ProseMirror pre code .hljs-title { font-weight: 600; }
-
-.ProseMirror pre code .hljs-type,
-.ProseMirror pre code .hljs-title.class_ { font-weight: 500; }
-
-.ProseMirror pre code .hljs-meta,
-.ProseMirror pre code .hljs-operator,
-.ProseMirror pre code .hljs-punctuation { color: oklch(50% 0 0); }
-
-.ProseMirror pre code .hljs-variable,
-.ProseMirror pre code .hljs-params { color: inherit; }
-
-/* Dark mode */
-:root.dark .ProseMirror pre code .hljs-string,
-:root.dark .ProseMirror pre code .hljs-attr { color: oklch(75% 0 0); }
-
-:root.dark .ProseMirror pre code .hljs-comment,
-:root.dark .ProseMirror pre code .hljs-doctag { color: oklch(55% 0 0); font-style: italic; }
-
-:root.dark .ProseMirror pre code .hljs-number,
-:root.dark .ProseMirror pre code .hljs-literal { color: oklch(70% 0 0); }
-
-:root.dark .ProseMirror pre code .hljs-meta,
-:root.dark .ProseMirror pre code .hljs-operator,
-:root.dark .ProseMirror pre code .hljs-punctuation { color: oklch(60% 0 0); }
-```
-
-This is CSS-only — no JavaScript changes to the editor, no new extensions, no new dependencies. The lowlight integration already generates the right DOM; we just need to style it.
+All `.hljs-*` rules reference `--ns-code-*` CSS variables from `globals.css`, which provide light and dark mode values automatically. This is CSS-only — no JavaScript changes to the editor, no new extensions, no new dependencies. The lowlight integration already generates the right DOM; we just need to style it.
 
 #### Visual Consistency
 
-The greyscale approach matches the existing design system:
-- **Keywords/builtins:** semibold weight (visual emphasis without color)
-- **Strings/attributes:** slightly muted grey
-- **Comments:** muted + italic (clearly secondary)
-- **Functions/definitions:** semibold
-- **Types/classes:** medium weight
-- **Operators/punctuation:** subtle mute
+The muted chromatic palette is a semantic content exception to the UI greyscale rule — the same exception used by diff colors, text highlights, and callout backgrounds. The palette is consistent between WYSIWYG code blocks (`.hljs-*` in `editor.css`) and code file editing (`notesageCodeHighlightStyle` in `codemirror-theme.ts`) because both read the same `--ns-code-*` CSS variables:
 
-This mirrors the CodeMirror code highlight style from Part A, giving a consistent look whether you're editing a `.ts` file or reading a TypeScript code block in a markdown note.
+- **Keywords/builtins:** muted purple, semibold
+- **Strings/attributes:** muted green
+- **Comments:** muted olive, italic
+- **Numbers:** muted orange
+- **Functions/definitions:** muted blue
+- **Types/classes:** muted teal
+- **HTML tags:** muted red
+- **Operators/punctuation:** subtle blue-grey
 
 ### New Dependencies
 
@@ -351,7 +306,7 @@ No new dependencies needed for Part B — lowlight is already configured.
 - Fold markers (`▾`) for foldable blocks (functions, classes, imports)
 - Active line has a subtle background highlight
 - Bracket matching highlighted when cursor is adjacent
-- Greyscale syntax highlighting — keywords bold, comments muted/italic, strings slightly dimmed
+- Muted chromatic syntax highlighting — keywords purple, strings green, comments olive italic, functions blue
 - Dirty indicator (●) in toolbar when file has unsaved changes
 - No max-width constraint — code files use the full available width (unlike the 720px editor)
 - Horizontal scrolling for long lines (no word wrap by default)
@@ -360,7 +315,7 @@ No new dependencies needed for Part B — lowlight is already configured.
 
 ### WYSIWYG Code Block Highlighting
 
-Code blocks in the rich text editor gain greyscale syntax highlighting:
+Code blocks in the rich text editor gain muted chromatic syntax highlighting:
 
 ```
 ┌─ Markdown Note ─────────────────────────────────────┐
@@ -382,13 +337,14 @@ Code blocks in the rich text editor gain greyscale syntax highlighting:
 ```
 
 In the code block above:
-- `function`, `const`, `return` — **semibold** (keywords)
-- `"Hello, ${name}!"` — **muted grey** (strings)
-- `// Log the greeting` — **muted + italic** (comments)
-- `42` — **slightly different grey** (numbers)
-- `greet`, `console.log` — **semibold** (functions)
 
-The highlighting is subtle — it adds structure without competing with the document's content. Consistent with the monochrome design system.
+- `function`, `const`, `return` — **muted purple, semibold** (keywords)
+- `"Hello, ${name}!"` — **muted green** (strings)
+- `// Log the greeting` — **muted olive, italic** (comments)
+- `42` — **muted orange** (numbers)
+- `greet`, `console.log` — **muted blue** (functions)
+
+The colors are deliberately desaturated (oklch chroma 0.1–0.15) to add structure without competing with the document's content.
 
 ### Find in Document (Cmd+F)
 
@@ -437,7 +393,7 @@ No new stores, no persistence changes. The `CodeEditor` uses the existing tab co
 | `src/components/editor/viewers/PlainTextViewer.tsx` | Add `isCodeFile()` check to conditionally render `CodeEditor`; thread save/edit props |
 | `src/components/editor/EditorViewerContainer.tsx` | Pass save/edit props through to `PlainTextViewer` for code file editing |
 | `src/components/editor/codemirror-theme.ts` | Add a code-specific highlight style (the existing one is markdown-tuned) |
-| `src/styles/editor.css` | Add `.hljs-*` greyscale theme rules for WYSIWYG code block highlighting |
+| `src/styles/editor.css` | Add `.hljs-*` muted chromatic theme rules for WYSIWYG code block highlighting |
 | `docs/features/document-formats.md` | Document the code editor feature |
 | `docs/features/editor.md` | Note code file editing and WYSIWYG code block highlighting |
 
@@ -485,7 +441,7 @@ No new stores, no persistence changes. The `CodeEditor` uses the existing tab co
 
 - [ ] **Auto-save on tab switch** works for code files
 
-- [ ] Large files (>10K lines) render without visible lag
+- [ ] Large files (&gt;10K lines) render without visible lag
 
 - [ ] 50K-line files scroll smoothly at 60fps
 
@@ -499,17 +455,17 @@ No new stores, no persistence changes. The `CodeEditor` uses the existing tab co
 
 ### Functional — Part B (WYSIWYG Code Blocks)
 
-- [ ] Code blocks in the rich text editor show greyscale syntax highlighting
+- [x] Code blocks in the rich text editor show muted chromatic syntax highlighting
 
-- [ ] Keywords render as semibold
+- [x] Keywords render in muted purple, semibold
 
-- [ ] Strings render in a muted grey
+- [x] Strings render in muted green
 
-- [ ] Comments render muted + italic
+- [x] Comments render in muted olive, italic
 
-- [ ] Numbers render in a slightly different grey
+- [x] Numbers render in muted orange
 
-- [ ] Functions/definitions render as semibold
+- [x] Functions/definitions render in muted blue
 
 - [ ] Highlighting works for all languages in the lowlight `common` bundle
 
@@ -519,11 +475,11 @@ No new stores, no persistence changes. The `CodeEditor` uses the existing tab co
 
 ### Design
 
-- [ ] Syntax highlighting uses greyscale only — no chromatic colors (both Part A and Part B)
+- [x] Syntax highlighting uses a muted chromatic palette via `--ns-code-*` CSS variables
 
 - [ ] Part A gutter styling matches the existing source mode editor
 
-- [ ] Part B code block highlighting is subtle — doesn't compete with document content
+- [ ] Part B code block highlighting is tasteful — muted colors don't compete with document content
 
 - [ ] Looks polished in both light and dark mode (both parts)
 
@@ -535,7 +491,7 @@ No new stores, no persistence changes. The `CodeEditor` uses the existing tab co
 
 - [ ] Font matches the editor monospace font (JetBrains Mono / SF Mono / Fira Code)
 
-- [ ] Part A and Part B highlighting feel visually consistent (same weight/muting conventions)
+- [x] Part A and Part B highlighting feel visually consistent (same `--ns-code-*` variables)
 
 ### Testing
 
@@ -557,16 +513,15 @@ No new stores, no persistence changes. The `CodeEditor` uses the existing tab co
 
 - [ ] Initial app bundle size does not increase (language packages are separate chunks)
 
-- [ ] 10K-line file renders in < 100ms
+- [ ] 10K-line file renders in &lt; 100ms
 
 - [ ] No memory leaks from CodeMirror view lifecycle (create/destroy on tab switch)
 
 ## Out of Scope
 
 - **LSP features** — no autocomplete, diagnostics, hover tooltips, or go-to-definition for code files
-- **Custom syntax themes** — the greyscale theme is consistent with the design system; user-configurable themes may come later
+- **Custom syntax themes** — uses a single muted chromatic palette; user-configurable themes may come later
 - **Minimap** — adds complexity for minimal benefit
 - **Git blame/annotations in gutter** — future enhancement, not part of this PRD
 - **Word wrap toggle** — code files default to horizontal scrolling; a toggle could be added later
 - **Printing/PDF export of code files** — out of scope
-- **Chromatic highlight themes** — strictly greyscale to match the design system

@@ -8,7 +8,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 - Bold, italic, underline, strikethrough, code (inline)
 - Bullet lists, ordered lists, task lists (checkboxes)
 - Blockquotes, callout blocks (Note, Tip, Warning, Important — Obsidian `> [!type]` syntax), horizontal rules
-- Code blocks with syntax highlighting (lowlight)
+- Code blocks with muted chromatic syntax highlighting (lowlight) — keywords purple, strings green, comments olive italic, numbers orange, functions blue, types teal — via `--ns-code-*` CSS variables
 - Links (rendered inline, clickable — internal document links and external URLs), images (via URL prompt)
 - Tables (insert, add/remove rows/columns, merge/split cells, toggle headers) with dynamic enhancements:
   - Column types (text, number, currency, percentage, date) with locale-aware formatting via `Intl`

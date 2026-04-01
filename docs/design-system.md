@@ -73,7 +73,7 @@ The entire palette is black, white, and greys. No blue, indigo, teal, or any hue
 
 Define the palette using CSS variables in globals.css. All colors must come from this palette — no hardcoded hex values in components. **No color with chroma &gt; 0 except destructive (red) and editor content colors (see below).**
 
-**Editor content color exception:** Text colors, highlight marks, and diff decorations use chromatic colors because they convey semantic meaning in document content (e.g., red/green for diffs, colored highlights for user annotation). These are defined as CSS variables in `globals.css` (e.g., `--color-diff-delete-bg`, `--color-highlight-yellow`) with light/dark variants, and are NOT part of the UI chrome palette. Comment highlights and date badges use neutral greys.
+**Editor content color exception:** Text colors, highlight marks, diff decorations, and syntax highlighting use chromatic colors because they convey semantic meaning in document content (e.g., red/green for diffs, colored highlights for user annotation, muted purple/green/blue for code syntax). These are defined as CSS variables in `globals.css` (e.g., `--color-diff-delete-bg`, `--color-highlight-yellow`, `--ns-code-keyword`) with light/dark variants, and are NOT part of the UI chrome palette. Comment highlights and date badges use neutral greys.
 
 **Light mode:**
 

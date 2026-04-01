@@ -502,6 +502,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         onOpenFile={onOpenFile}
         onShortcutsOpen={onShortcutsOpen}
         onOpenActions={onOpenActions}
+        updateTabContent={updateTabContent}
+        saveFile={saveFile}
       />
     );
   }

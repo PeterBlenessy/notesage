@@ -118,9 +118,24 @@ Export notes to editable Word documents using the `docx-rs` crate.
 - In-document search via shared `dom-search.ts` utility
 - Read-only rendering
 
+## Code File Editor
+
+Editable CodeMirror 6 editor for code files with syntax highlighting, line numbers, and code navigation.
+
+- **22+ languages supported:** JavaScript, TypeScript, Python, Rust, Go, Java, C, C++, HTML, CSS, JSON, YAML, TOML, Markdown, Shell, SQL, XML, Swift, Kotlin, Ruby, PHP, JSX/TSX
+- **Lazy loading:** Language packages loaded on demand via dynamic `import()` — zero initial bundle cost
+- **Full editing:** Type, paste, delete, undo/redo, save (Cmd+S), dirty indicator, auto-save on tab switch
+- **Code navigation:** Line numbers, fold gutter, bracket matching, active line highlight, selection match highlighting
+- **Find in document:** CodeMirror's built-in search panel (Cmd+F) with match highlighting, regex support
+- **Muted chromatic syntax highlighting:** Keywords purple, strings green, comments olive italic, numbers orange, functions blue, types teal — via `--ns-code-*` CSS variables
+- **Toolbar:** File name (left), dirty indicator, language name (right, e.g., "TypeScript")
+- **Full width layout:** No 720px max-width constraint — code files use full available width
+- **Graceful fallback:** Unknown extensions (`.txt`, `.log`, etc.) render as plain `<pre>` text
+- **Theme integration:** Light/dark mode and contrast slider via CSS variables (`--ns-code-*`)
+
 ## Plain Text Viewer
 
-- Simple `<pre>` rendering for non-markdown text files
+- Simple `<pre>` rendering for non-code text files (`.txt`, `.log`, `.csv`, extensionless)
 - In-document search via `dom-search.ts`
 
 ## PDF Viewer
@@ -316,7 +331,9 @@ View PowerPoint presentations directly in Notesage with slide-by-slide navigatio
 | `src/components/editor/viewers/PptxViewer.tsx` | PPTX slide viewer |
 | `src/lib/pptx-parser.ts` | PPTX ZIP extraction and XML parsing |
 | `src/lib/pptx-types.ts` | PPTX parsed data model types |
-| `src/components/editor/viewers/PlainTextViewer.tsx` | Plain text viewer |
+| `src/components/editor/viewers/CodeEditor.tsx` | Editable CodeMirror 6 code file editor |
+| `src/lib/codemirror-languages.ts` | Extension → language mapping, lazy loader, `isCodeFile()` |
+| `src/components/editor/viewers/PlainTextViewer.tsx` | Plain text viewer + code file routing |
 | `src/components/ExportDialog.tsx` | Export options dialog (PDF + DOCX + PowerPoint) |
 | `src/hooks/useExportOperations.ts` | Export operations hook (PDF + DOCX + PPTX routing) |
 | `src/stores/epub-store.ts` | EPUB viewer preferences and bookmarks |

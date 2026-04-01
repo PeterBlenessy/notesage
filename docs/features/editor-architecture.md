@@ -142,4 +142,7 @@ A single Tiptap editor instance is shared across all tabs. To preserve undo/redo
 | `src/lib/dom-search.ts` | Shared DOM text search utility (DOCX, plain text viewers) |
 | `src/components/editor/extensions/ai-suggestion.ts` | `setSuggestion()` / `hasActiveSuggestion()` for inline diff display |
 | `src/lib/pm-replace.ts` | `extractReplacementText()` and `resolveAnchorRange()` |
-| `src/styles/editor.css` | Editor-specific styles (ProseMirror overrides) |
+| `src/styles/editor.css` | Editor-specific styles (ProseMirror overrides, `.hljs-*` code block highlighting) |
+| `src/components/editor/viewers/CodeEditor.tsx` | Editable CodeMirror 6 code file editor (non-Tiptap) |
+| `src/components/editor/codemirror-theme.ts` | CodeMirror themes: `notesageExtensions` (markdown), `notesageCodeExtensions` (code files) |
+| `src/lib/codemirror-languages.ts` | Extension → language mapping, lazy loader, `isCodeFile()`, `getLanguageName()` |

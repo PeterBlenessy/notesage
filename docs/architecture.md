@@ -99,7 +99,7 @@ note-sage/
 │   │   ├── settings/       # SettingsDialog, ConnectionsSettings, LocalAISettings, TranscriptionSettings, etc.
 │   │   ├── chat/           # ChatPanel, ChatMessage, ChatInput, BranchSwitcher, PermissionCard, DomainApprovalCard, AgentSwitchCard, etc.
 │   │   ├── activity/       # ActivityStrip.tsx, ActivityTaskCard.tsx
-│   │   ├── editor/viewers/ # EpubViewer, PdfViewer, DocxViewer, PlainTextViewer
+│   │   ├── editor/viewers/ # EpubViewer, PdfViewer, DocxViewer, PlainTextViewer, CodeEditor
 │   │   └── ui/             # shadcn/ui components (auto-generated)
 │   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, etc.)
 │   ├── stores/             # Zustand stores (editor, workspace, ai, chat, skill, etc.)

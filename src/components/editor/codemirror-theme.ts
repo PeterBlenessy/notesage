@@ -168,6 +168,39 @@ export const notesageHighlightStyle = syntaxHighlighting(
   ]),
 );
 
+/**
+ * Syntax highlight style for code files (non-markdown).
+ * Uses a muted chromatic palette — code content is a semantic exception
+ * to the UI-chrome greyscale rule (same as diff colors, highlights, etc.).
+ *
+ * Colors use CSS custom properties (--ns-code-*) defined in globals.css
+ * so light/dark mode switches automatically.
+ */
+export const notesageCodeHighlightStyle = syntaxHighlighting(
+  HighlightStyle.define([
+    // Keywords — purple
+    { tag: [tags.keyword, tags.operatorKeyword, tags.modifier, tags.controlKeyword], color: "var(--ns-code-keyword)", fontWeight: "600" },
+    // Strings — green
+    { tag: [tags.string, tags.special(tags.string), tags.attributeValue], color: "var(--ns-code-string)" },
+    // Comments — muted olive, italic
+    { tag: [tags.comment, tags.lineComment, tags.blockComment], color: "var(--ns-code-comment)", fontStyle: "italic" },
+    // Numbers, booleans, null — orange
+    { tag: [tags.number, tags.integer, tags.float, tags.bool, tags.null], color: "var(--ns-code-number)" },
+    // Functions, definitions — blue
+    { tag: [tags.function(tags.variableName), tags.function(tags.definition(tags.variableName)), tags.definition(tags.function(tags.variableName))], color: "var(--ns-code-function)" },
+    // Types, class names — teal
+    { tag: [tags.typeName, tags.className, tags.namespace], color: "var(--ns-code-type)" },
+    // Operators, punctuation — subtle
+    { tag: [tags.operator, tags.punctuation, tags.separator], color: "var(--ns-code-operator)" },
+    // Property names
+    { tag: [tags.propertyName, tags.attributeName], color: "inherit" },
+    // Meta, preprocessor
+    { tag: [tags.meta, tags.processingInstruction], color: "var(--ns-code-operator)" },
+    // Tags (HTML/XML) — red
+    { tag: tags.tagName, color: "var(--ns-code-tag)" },
+  ]),
+);
+
 /** Dark mode overrides for selection, search matches, gutters, etc. */
 const darkOverrides = EditorView.theme(
   {
@@ -195,10 +228,20 @@ const darkOverrides = EditorView.theme(
 );
 
 /**
- * Combined extensions for Notesage CodeMirror styling.
+ * Combined extensions for Notesage CodeMirror styling (markdown source mode).
  */
 export const notesageExtensions = [
   notesageTheme,
   notesageHighlightStyle,
+  darkOverrides,
+];
+
+/**
+ * Combined extensions for Notesage CodeMirror code file styling.
+ * Uses code-specific highlight styles instead of markdown ones.
+ */
+export const notesageCodeExtensions = [
+  notesageTheme,
+  notesageCodeHighlightStyle,
   darkOverrides,
 ];

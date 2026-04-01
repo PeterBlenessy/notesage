@@ -66,6 +66,16 @@
   --color-chart-3: oklch(50% 0.02 30);
   --color-chart-4: oklch(55% 0.02 150);
   --color-chart-5: oklch(65% 0.02 80);
+
+  /* Code syntax highlighting — muted chromatic palette (semantic content exception) */
+  --ns-code-keyword: oklch(45% 0.15 280);
+  --ns-code-string: oklch(42% 0.12 155);
+  --ns-code-comment: oklch(52% 0.02 110);
+  --ns-code-number: oklch(48% 0.12 55);
+  --ns-code-function: oklch(45% 0.12 250);
+  --ns-code-type: oklch(45% 0.1 195);
+  --ns-code-operator: oklch(50% 0.04 250);
+  --ns-code-tag: oklch(48% 0.14 20);
 }
 
 /* Soft mode — easy on the eyes (light) */
@@ -160,6 +170,16 @@
   --color-chart-3: oklch(65% 0.02 30);
   --color-chart-4: oklch(60% 0.02 150);
   --color-chart-5: oklch(75% 0.02 80);
+
+  /* Code syntax highlighting — dark mode */
+  --ns-code-keyword: oklch(75% 0.12 280);
+  --ns-code-string: oklch(72% 0.12 155);
+  --ns-code-comment: oklch(55% 0.02 110);
+  --ns-code-number: oklch(75% 0.1 55);
+  --ns-code-function: oklch(72% 0.12 250);
+  --ns-code-type: oklch(72% 0.1 195);
+  --ns-code-operator: oklch(62% 0.04 250);
+  --ns-code-tag: oklch(72% 0.12 20);
 }
 
 /* Soft mode — easy on the eyes (dark) */

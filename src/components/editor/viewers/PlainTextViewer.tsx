@@ -1,13 +1,50 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 import { FindBar } from "@/components/editor/FindBar";
+import { isCodeFile } from "@/lib/codemirror-languages";
+import { CodeEditor } from "./CodeEditor";
 
 interface PlainTextViewerProps {
   content: string;
   fileName: string;
+  /** Props required for code file editing — optional for plain text fallback */
+  filePath?: string;
+  tabId?: string;
+  isDirty?: boolean;
+  updateTabContent?: (content: string) => void;
+  saveFileWithContent?: (content: string) => void;
 }
 
-export function PlainTextViewer({ content, fileName }: PlainTextViewerProps) {
+export function PlainTextViewer({
+  content,
+  fileName,
+  filePath,
+  tabId,
+  isDirty,
+  updateTabContent,
+  saveFileWithContent,
+}: PlainTextViewerProps) {
+  // Route code files to the CodeEditor
+  if (isCodeFile(fileName) && filePath && tabId && updateTabContent && saveFileWithContent) {
+    return (
+      <CodeEditor
+        content={content}
+        fileName={fileName}
+        filePath={filePath}
+        tabId={tabId}
+        isDirty={isDirty ?? false}
+        updateTabContent={updateTabContent}
+        saveFileWithContent={saveFileWithContent}
+      />
+    );
+  }
+
+  // Plain text fallback — existing <pre> rendering
+  return <PlainTextFallback content={content} fileName={fileName} />;
+}
+
+/** Plain text viewer with DOM-based find bar — unchanged from the original. */
+function PlainTextFallback({ content, fileName }: { content: string; fileName: string }) {
   // Search state
   const [findBarOpen, setFindBarOpen] = useState(false);
   const [searchMatches, setSearchMatches] = useState<HTMLElement[]>([]);
