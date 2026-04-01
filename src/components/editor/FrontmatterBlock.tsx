@@ -75,9 +75,12 @@ interface FrontmatterFieldProps {
 }
 
 function FrontmatterField({ fieldKey, value, onChange }: FrontmatterFieldProps) {
+  const isComplex = typeof value === 'object' && value !== null;
   const displayValue = Array.isArray(value)
     ? value.join(", ")
-    : String(value ?? "");
+    : isComplex
+      ? JSON.stringify(value)
+      : String(value ?? "");
 
   return (
     <div className="flex items-center gap-2">
@@ -87,10 +90,11 @@ function FrontmatterField({ fieldKey, value, onChange }: FrontmatterFieldProps) 
       <input
         type="text"
         value={displayValue}
+        readOnly={isComplex}
         onChange={(e) => onChange(fieldKey, e.target.value)}
-        className="flex-1 h-6 px-1.5 rounded text-xs bg-background border border-transparent
+        className={`flex-1 h-6 px-1.5 rounded text-xs bg-background border border-transparent
           focus:border-border focus:outline-none transition-colors duration-150
-          text-foreground placeholder:text-muted-foreground"
+          text-foreground placeholder:text-muted-foreground${isComplex ? ' opacity-60 cursor-default' : ''}`}
       />
     </div>
   );
