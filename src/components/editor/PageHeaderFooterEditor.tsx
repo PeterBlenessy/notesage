@@ -1,13 +1,12 @@
 /**
  * PageHeaderFooterEditor — inline editor for page header/footer zones.
  *
- * Rendered as a floating panel positioned over the clicked header/footer zone
- * within the page break gap. Provides three-column text inputs for left, center,
- * and right content, a "Different first page" checkbox, and a variable insertion
- * dropdown ({page}, {pages}, {title}, {date}).
+ * Rendered as a floating panel positioned over the clicked header/footer zone.
+ * Provides three-column text inputs (left, center, right), each with its own
+ * variable insertion dropdown. Includes a "Different first page" checkbox.
  */
 
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -32,7 +31,6 @@ interface PageHeaderFooterEditorProps {
   settings: PageHeaderFooter;
   onUpdate: (updated: PageHeaderFooter) => void;
   onClose: () => void;
-  /** Bounding rect of the clicked zone element, used for positioning. */
   anchorRect?: DOMRect;
 }
 
@@ -50,8 +48,6 @@ export function PageHeaderFooterEditor({
   anchorRect,
 }: PageHeaderFooterEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const activeInputRef = useRef<HTMLInputElement | null>(null);
-  const [activeField, setActiveField] = useState<{ row: 'main' | 'first'; col: ColumnKey } | null>(null);
 
   // Close on Escape
   useEffect(() => {
@@ -69,11 +65,14 @@ export function PageHeaderFooterEditor({
   // Close on click outside
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      // Don't close if click is inside the editor or a Radix dropdown portal
+      if (containerRef.current && !containerRef.current.contains(target)) {
+        const radixPortal = (target as HTMLElement).closest?.('[data-radix-popper-content-wrapper]');
+        if (radixPortal) return;
         onClose();
       }
     }
-    // Delay attaching so the opening click doesn't immediately close
     const timer = setTimeout(() => {
       window.addEventListener('mousedown', handleClick, true);
     }, 50);
@@ -93,7 +92,6 @@ export function PageHeaderFooterEditor({
         return;
       }
     }
-    // All empty: focus left input
     if (inputs.length > 0) inputs[0].focus();
   }, []);
 
@@ -129,43 +127,11 @@ export function PageHeaderFooterEditor({
     [settings, onUpdate],
   );
 
-  const insertVariable = useCallback(
-    (token: string) => {
-      const input = activeInputRef.current;
-      if (!input || !activeField) return;
-
-      const start = input.selectionStart ?? input.value.length;
-      const end = input.selectionEnd ?? start;
-      const newValue = input.value.slice(0, start) + token + input.value.slice(end);
-
-      handleFieldChange(activeField.row, activeField.col, newValue);
-
-      // Restore cursor position after the inserted token
-      requestAnimationFrame(() => {
-        input.focus();
-        const newPos = start + token.length;
-        input.setSelectionRange(newPos, newPos);
-      });
-    },
-    [activeField, handleFieldChange],
-  );
-
-  const handleInputFocus = useCallback(
-    (row: 'main' | 'first', col: ColumnKey, el: HTMLInputElement) => {
-      activeInputRef.current = el;
-      setActiveField({ row, col });
-    },
-    [],
-  );
-
   const label = type === 'header' ? 'Header' : 'Footer';
 
-  // Position the editor panel centered vertically on the zone.
-  // The zone is the small header/footer bar; the editor is taller,
-  // so we center it on the zone's midpoint and clamp to the viewport.
   const positionStyle: React.CSSProperties = anchorRect
     ? (() => {
-        const editorHeight = settings.differentFirstPage ? 140 : 90; // approximate
+        const editorHeight = settings.differentFirstPage ? 140 : 90;
         const zoneMidY = anchorRect.top + anchorRect.height / 2;
         const idealTop = zoneMidY - editorHeight / 2;
         const clampedTop = Math.max(8, Math.min(idealTop, window.innerHeight - editorHeight - 8));
@@ -187,46 +153,19 @@ export function PageHeaderFooterEditor({
       onClick={(e) => e.stopPropagation()}
     >
       {/* Section label */}
-      <div className="flex items-center justify-between mb-1.5">
+      <div className="mb-1.5">
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           {label}
         </span>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-5 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
-            >
-              Insert variable
-              <ChevronDown className="ml-0.5 size-3" strokeWidth={1.5} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            {PAGE_VARIABLES.map((v) => (
-              <DropdownMenuItem
-                key={v.token}
-                onSelect={() => insertVariable(v.token)}
-                className="flex items-center justify-between"
-              >
-                <span className="text-xs">{v.label}</span>
-                <code className="text-[10px] text-muted-foreground ml-2">
-                  {v.token}
-                </code>
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
 
-      {/* Main row: three column inputs */}
+      {/* Main row */}
       <ColumnInputRow
         row="main"
         left={settings.left}
         center={settings.center}
         right={settings.right}
         onChange={handleFieldChange}
-        onInputFocus={handleInputFocus}
       />
 
       {/* Different first page toggle */}
@@ -257,10 +196,82 @@ export function PageHeaderFooterEditor({
             center={settings.firstPage?.center ?? ''}
             right={settings.firstPage?.right ?? ''}
             onChange={handleFieldChange}
-            onInputFocus={handleInputFocus}
           />
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Input with per-field variable dropdown
+// ---------------------------------------------------------------------------
+
+interface ColumnInputProps {
+  value: string;
+  placeholder: string;
+  align?: string;
+  onChange: (value: string) => void;
+}
+
+function ColumnInput({ value, placeholder, align, onChange }: ColumnInputProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const insertVariable = (token: string) => {
+    const input = inputRef.current;
+    if (!input) {
+      onChange(value + token);
+      return;
+    }
+    const start = input.selectionStart ?? value.length;
+    const end = input.selectionEnd ?? start;
+    const newValue = value.slice(0, start) + token + value.slice(end);
+    onChange(newValue);
+
+    // Restore cursor after the inserted token
+    requestAnimationFrame(() => {
+      input.focus();
+      const newPos = start + token.length;
+      input.setSelectionRange(newPos, newPos);
+    });
+  };
+
+  return (
+    <div className="relative">
+      <Input
+        ref={inputRef}
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className={`page-hf-input pr-6 ${align ?? ''}`}
+      />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="absolute right-0.5 top-1/2 -translate-y-1/2 h-4 w-4 p-0 text-muted-foreground hover:text-foreground"
+            tabIndex={-1}
+          >
+            <ChevronDown className="size-3" strokeWidth={1.5} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-40">
+          {PAGE_VARIABLES.map((v) => (
+            <DropdownMenuItem
+              key={v.token}
+              onSelect={() => insertVariable(v.token)}
+              className="flex items-center justify-between"
+            >
+              <span className="text-xs">{v.label}</span>
+              <code className="text-[10px] text-muted-foreground ml-2">
+                {v.token}
+              </code>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
@@ -275,35 +286,27 @@ interface ColumnInputRowProps {
   center: string;
   right: string;
   onChange: (row: 'main' | 'first', col: ColumnKey, value: string) => void;
-  onInputFocus: (row: 'main' | 'first', col: ColumnKey, el: HTMLInputElement) => void;
 }
 
-function ColumnInputRow({ row, left, center, right, onChange, onInputFocus }: ColumnInputRowProps) {
+function ColumnInputRow({ row, left, center, right, onChange }: ColumnInputRowProps) {
   return (
     <div className="grid grid-cols-3 gap-1">
-      <Input
-        type="text"
+      <ColumnInput
         value={left}
         placeholder="Left"
-        onChange={(e) => onChange(row, 'left', e.target.value)}
-        onFocus={(e) => onInputFocus(row, 'left', e.target as HTMLInputElement)}
-        className="page-hf-input"
+        onChange={(v) => onChange(row, 'left', v)}
       />
-      <Input
-        type="text"
+      <ColumnInput
         value={center}
         placeholder="Center"
-        onChange={(e) => onChange(row, 'center', e.target.value)}
-        onFocus={(e) => onInputFocus(row, 'center', e.target as HTMLInputElement)}
-        className="page-hf-input text-center"
+        align="text-center"
+        onChange={(v) => onChange(row, 'center', v)}
       />
-      <Input
-        type="text"
+      <ColumnInput
         value={right}
         placeholder="Right"
-        onChange={(e) => onChange(row, 'right', e.target.value)}
-        onFocus={(e) => onInputFocus(row, 'right', e.target as HTMLInputElement)}
-        className="page-hf-input text-right"
+        align="text-right"
+        onChange={(v) => onChange(row, 'right', v)}
       />
     </div>
   );
