@@ -23,26 +23,23 @@
    top-margin (header zone) + gap (visual separator) + bottom-margin (footer zone)
    ---------------------------------------------------------------- */
 
-/* Top-margin decoration: contains header zone, anchored at top */
+/* Top-margin decoration: contains header zone, vertically centered */
 .page-top-margin {
   margin-left: calc(-1 * var(--editor-padding-left, 6rem));
   margin-right: calc(-1 * var(--editor-padding-right, 6rem));
   display: flex;
-  align-items: flex-start;
-  user-select: none;
-  pointer-events: none;
+  align-items: center;
   /* height set inline by JS */
 }
 
-/* Bottom-margin decoration: contains footer zone, anchored at bottom.
-   Height = page remainder + marginBottom — footer sits at the bottom. */
+/* Bottom-margin decoration: footer zone anchored at bottom.
+   Height = page remainder + marginBottom. Zone has explicit height
+   matching marginBottom so footer text is centered within it. */
 .page-bottom-margin {
   margin-left: calc(-1 * var(--editor-padding-left, 6rem));
   margin-right: calc(-1 * var(--editor-padding-right, 6rem));
   display: flex;
   align-items: flex-end;
-  user-select: none;
-  pointer-events: none;
   /* height set inline by JS */
 }
 

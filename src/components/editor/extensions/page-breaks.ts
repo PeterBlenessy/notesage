@@ -83,6 +83,11 @@ function createZoneElement(
   return zone
 }
 
+/** Simple fingerprint of settings to bust ProseMirror's decoration key cache. */
+function settingsFingerprint(ps: DocumentPageSettings, title: string): string {
+  return JSON.stringify([ps.header, ps.footer, ps.pageNumberStart, title])
+}
+
 function resolveDocumentTitle(doc: { forEach: (fn: (node: { type: { name: string }; textContent: string }) => boolean | void) => void }): string {
   let title = ''
   doc.forEach((node) => {
@@ -209,6 +214,10 @@ export const PageBreaks = Extension.create({
 
             // --- Build final decorations ---
             const finalDecorations: Decoration[] = []
+            // Include settings fingerprint in keys so ProseMirror recreates
+            // widgets when header/footer content changes (not just position).
+            const fp = settingsFingerprint(pageSettings, docTitle)
+            const marginBottomRound = Math.round(marginBottomPx)
 
             // Page 1 top-margin at position 0
             finalDecorations.push(
@@ -223,7 +232,7 @@ export const PageBreaks = Extension.create({
                 )
                 container.appendChild(zone)
                 return container
-              }, { side: -1, key: 'page-top-margin-1' })
+              }, { side: -1, key: `page-top-margin-1-${fp}` })
             )
 
             // Between pages: bottom-margin + gap + top-margin at each break
@@ -244,9 +253,10 @@ export const PageBreaks = Extension.create({
                     'footer', pageSettings.footer,
                     pageEnding, totalPages, docTitle, pageSettings.pageNumberStart,
                   )
+                  zone.style.height = `${marginBottomRound}px`
                   container.appendChild(zone)
                   return container
-                }, { side: -1, key: `page-bottom-margin-${pageEnding}` })
+                }, { side: -1, key: `page-bottom-margin-${pageEnding}-${fp}` })
               )
 
               // Gap strip (32px visual separator)
@@ -272,7 +282,7 @@ export const PageBreaks = Extension.create({
                   )
                   container.appendChild(zone)
                   return container
-                }, { side: -1, key: `page-top-margin-${pageStarting}` })
+                }, { side: -1, key: `page-top-margin-${pageStarting}-${fp}` })
               )
             }
 
@@ -288,9 +298,10 @@ export const PageBreaks = Extension.create({
                   'footer', pageSettings.footer,
                   totalPages, totalPages, docTitle, pageSettings.pageNumberStart,
                 )
+                zone.style.height = `${marginBottomRound}px`
                 container.appendChild(zone)
                 return container
-              }, { side: 1, key: `page-bottom-margin-${totalPages}` })
+              }, { side: 1, key: `page-bottom-margin-${totalPages}-${fp}` })
             )
 
             const newSet = DecorationSet.create(doc, finalDecorations)

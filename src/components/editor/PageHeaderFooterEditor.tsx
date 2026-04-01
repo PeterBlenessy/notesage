@@ -77,21 +77,26 @@ export function PageHeaderFooterEditor({
     };
   }, [onClose]);
 
-  // Stop mouse events from bubbling up to ProseMirror (bubble phase, not capture)
-  // and close on click outside.
+  // Stop mouse events from reaching ProseMirror while allowing React synthetic
+  // events (used by Radix dropdowns) to work. We stop propagation on the ZONE
+  // element (outside React's tree) rather than on our container, so the native
+  // event still bubbles from our React children to the React root for delegation.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
-    // Bubble-phase: stop events from propagating UP from our container
-    // to ProseMirror, but let them propagate DOWN to children (checkboxes etc.)
-    function stopBubble(e: Event) {
+    // Find the zone element (our portal target) and stop events there.
+    // The zone is the parent of our container in the DOM.
+    const zone = el.parentElement;
+    if (!zone) return;
+
+    function stopAtZone(e: Event) {
       e.stopPropagation();
     }
-    el.addEventListener('mousedown', stopBubble, false);
-    el.addEventListener('mouseup', stopBubble, false);
-    el.addEventListener('pointerdown', stopBubble, false);
-    el.addEventListener('pointerup', stopBubble, false);
+    zone.addEventListener('mousedown', stopAtZone, false);
+    zone.addEventListener('mouseup', stopAtZone, false);
+    zone.addEventListener('pointerdown', stopAtZone, false);
+    zone.addEventListener('pointerup', stopAtZone, false);
 
     // Close on click outside
     function handleOutsideClick(e: MouseEvent) {
@@ -107,10 +112,10 @@ export function PageHeaderFooterEditor({
     }, 50);
     return () => {
       clearTimeout(timer);
-      el.removeEventListener('mousedown', stopBubble, false);
-      el.removeEventListener('mouseup', stopBubble, false);
-      el.removeEventListener('pointerdown', stopBubble, false);
-      el.removeEventListener('pointerup', stopBubble, false);
+      zone.removeEventListener('mousedown', stopAtZone, false);
+      zone.removeEventListener('mouseup', stopAtZone, false);
+      zone.removeEventListener('pointerdown', stopAtZone, false);
+      zone.removeEventListener('pointerup', stopAtZone, false);
       window.removeEventListener('mousedown', handleOutsideClick, true);
     };
   }, [onClose]);
@@ -290,7 +295,6 @@ function ColumnInput({ value, placeholder, align, onChange }: ColumnInputProps) 
             variant="ghost"
             size="sm"
             className="absolute right-0.5 top-1/2 -translate-y-1/2 h-4 w-4 p-0 text-muted-foreground hover:text-foreground"
-            tabIndex={-1}
           >
             <ChevronDown className="size-3" strokeWidth={1.5} />
           </Button>
