@@ -88,3 +88,4 @@ Chronological log of major implementation milestones and changes.
 | 082 | [Release v0.25.0](082-release-v0.25.0.md) | Skills-to-tools glue layer, branch deletion, branch persistence fix |
 | 083 | [Release v0.26.0](083-release-v0.26.0.md) | Inline charts, drawing canvas, callout blocks, external change fixes |
 | 084 | [Release v0.27.0](084-release-v0.27.0.md) | PPTX viewer, DOCX/PPTX/HTML export, chat resend/edit, dynamic tables |
+| 085 | [Release v0.28.0](085-release-v0.28.0.md) | Code file editing, syntax highlighting, WYSIWYG typography, page headers/footers |
