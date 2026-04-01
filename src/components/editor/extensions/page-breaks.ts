@@ -1,8 +1,9 @@
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import type { Node as PMNode } from '@tiptap/pm/model'
 import type { DocumentPageSettings, PageHeaderFooter } from '@/lib/page-settings'
-import { resolveVariables, hasContent, parsePageSettings, getEffectiveColumns } from '@/lib/page-settings'
+import { resolveVariables, parsePageSettings, getEffectiveColumns } from '@/lib/page-settings'
 import { useEditorStore } from '@/stores/editor-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { PX_PER_CM, CONTENT_HEIGHTS } from '@/components/editor/editor-utils'
@@ -63,11 +64,9 @@ function createZoneElement(
   rightSpan.textContent = right
   zone.appendChild(rightSpan)
 
-  if (!hasContent(hf)) {
+  if (!left && !center && !right) {
     zone.classList.add('page-hf-empty')
-    leftSpan.textContent = ''
     centerSpan.textContent = zoneType === 'header' ? 'Click to add header' : 'Click to add footer'
-    rightSpan.textContent = ''
   }
 
   zone.addEventListener('click', (e) => {
@@ -88,7 +87,7 @@ function settingsFingerprint(ps: DocumentPageSettings, title: string): string {
   return JSON.stringify([ps.header, ps.footer, ps.pageNumberStart, title])
 }
 
-function resolveDocumentTitle(doc: { forEach: (fn: (node: { type: { name: string }; textContent: string }) => boolean | void) => void }): string {
+function resolveDocumentTitle(doc: PMNode): string {
   let title = ''
   doc.forEach((node) => {
     if (!title && node.type.name === 'heading') {
@@ -322,7 +321,15 @@ export const PageBreaks = Extension.create({
           })
           resizeObserver.observe(editorView.dom)
 
-          const unsubEditorStore = useEditorStore.subscribe(scheduleCalculation)
+          // Subscribe to activeTabId changes only — docChanged is handled by
+          // view.update() and frontmatter updates trigger PAGE_BREAKS_RECALC_EVENT.
+          let lastActiveTabId = useEditorStore.getState().activeTabId
+          const unsubEditorStore = useEditorStore.subscribe((state) => {
+            if (state.activeTabId !== lastActiveTabId) {
+              lastActiveTabId = state.activeTabId
+              scheduleCalculation()
+            }
+          })
           const unsubSettingsStore = useSettingsStore.subscribe(scheduleCalculation)
 
           // Listen for recalc requests (e.g. after closing the HF editor)

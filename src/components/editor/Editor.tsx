@@ -262,9 +262,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   }, []);
 
   const closeHfEditor = useCallback(() => {
-    if (hfEditState?.zoneElement) {
-      hfEditState.zoneElement.classList.remove('page-hf-editing');
-    }
+    if (!hfEditState) return;
+    hfEditState.zoneElement.classList.remove('page-hf-editing');
     setHfEditState(null);
     // Trigger recalculation to rebuild decorations with updated content
     requestAnimationFrame(() => {
@@ -273,7 +272,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   }, [hfEditState]);
 
   // Close header/footer editor on tab switch
-  useEffect(() => { closeHfEditor(); }, [activeTabId]);
+  useEffect(() => { closeHfEditor(); }, [activeTabId, closeHfEditor]);
 
   // Keyboard shortcuts + find bar
   const {

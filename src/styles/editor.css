@@ -69,11 +69,6 @@
   transition: opacity 150ms ease-in-out;
 }
 
-.page-header-zone:hover,
-.page-footer-zone:hover {
-  color: var(--color-foreground);
-}
-
 /* Three-column layout */
 .page-hf-col { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .page-hf-left { text-align: left; }

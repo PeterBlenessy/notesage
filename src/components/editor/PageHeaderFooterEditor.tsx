@@ -148,7 +148,7 @@ export function PageHeaderFooterEditor({
     : settings;
 
   const handleFieldChange = useCallback(
-    (_row: SlotKey, col: ColumnKey, value: string) => {
+    (col: ColumnKey, value: string) => {
       if (activeSlot === 'main') {
         onUpdate({ ...settings, [col]: value });
       } else if (activeSlot === 'first') {
@@ -201,7 +201,6 @@ export function PageHeaderFooterEditor({
 
       {/* Single input row — binds to the active slot for this page */}
       <ColumnInputRow
-        row={activeSlot}
         left={currentValues.left}
         center={currentValues.center}
         right={currentValues.right}
@@ -323,32 +322,31 @@ function ColumnInput({ value, placeholder, align, onChange }: ColumnInputProps) 
 // ---------------------------------------------------------------------------
 
 interface ColumnInputRowProps {
-  row: SlotKey;
   left: string;
   center: string;
   right: string;
-  onChange: (row: SlotKey, col: ColumnKey, value: string) => void;
+  onChange: (col: ColumnKey, value: string) => void;
 }
 
-function ColumnInputRow({ row, left, center, right, onChange }: ColumnInputRowProps) {
+function ColumnInputRow({ left, center, right, onChange }: ColumnInputRowProps) {
   return (
     <div className="grid grid-cols-3 gap-1">
       <ColumnInput
         value={left}
         placeholder="Left"
-        onChange={(v) => onChange(row, 'left', v)}
+        onChange={(v) => onChange('left', v)}
       />
       <ColumnInput
         value={center}
         placeholder="Center"
         align="text-center"
-        onChange={(v) => onChange(row, 'center', v)}
+        onChange={(v) => onChange('center', v)}
       />
       <ColumnInput
         value={right}
         placeholder="Right"
         align="text-right"
-        onChange={(v) => onChange(row, 'right', v)}
+        onChange={(v) => onChange('right', v)}
       />
     </div>
   );
