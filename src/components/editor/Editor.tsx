@@ -244,6 +244,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const { reviewActive, compareBranch, handleAcceptAll, handleRejectAll } = useDiffReview(editor);
   const { settings: pageSettings, updateSettings: updatePageSettings } = usePageSettings(editor);
   const [hfEditState, setHfEditState] = useState<{ type: 'header' | 'footer'; page: number; zoneElement: HTMLDivElement } | null>(null);
+  const hfEditStateRef = useRef(hfEditState);
+  hfEditStateRef.current = hfEditState;
   useFileWatcher();
   useCopilotCompletion(editor);
   useCopilotCompletionCM(cmView);
@@ -262,17 +264,18 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   }, []);
 
   const closeHfEditor = useCallback(() => {
-    if (!hfEditState) return;
-    hfEditState.zoneElement.classList.remove('page-hf-editing');
+    const state = hfEditStateRef.current;
+    if (!state) return;
+    state.zoneElement.classList.remove('page-hf-editing');
     setHfEditState(null);
     // Trigger recalculation to rebuild decorations with updated content
     requestAnimationFrame(() => {
       window.dispatchEvent(new Event(PAGE_BREAKS_RECALC_EVENT));
     });
-  }, [hfEditState]);
+  }, []);
 
   // Close header/footer editor on tab switch
-  useEffect(() => { closeHfEditor(); }, [activeTabId, closeHfEditor]);
+  useEffect(() => { closeHfEditor(); }, [activeTabId]);
 
   // Keyboard shortcuts + find bar
   const {
