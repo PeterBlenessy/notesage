@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-30 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | High |
 | **Impact** | What users see in the editor is what they get in every export format — fulfills the WYSIWYG promise |
 | **Research** | [document-format-enhancements](../research/2026-03-30-document-format-enhancements.md) |
@@ -192,7 +192,7 @@ Extend the existing `page-breaks.ts` extension:
 
 ### Editable Headers/Footers (Phase 2)
 
-When the document is in paged view (A4/Letter/A5), render clickable header and footer zones.
+When the document is in Print Layout mode (A4/Letter/A5 with the "Print Layout" toggle enabled), render clickable header and footer zones inside ProseMirror widget decorations.
 
 **Header/footer model:**
 
@@ -202,16 +202,16 @@ interface PageHeaderFooter {
   center: string;
   right: string;
   differentFirstPage: boolean;
-  firstPage?: {
-    left: string;
-    center: string;
-    right: string;
-  };
+  differentOddEven: boolean;
+  firstPage?: { left: string; center: string; right: string };
+  oddPage?: { left: string; center: string; right: string };
+  evenPage?: { left: string; center: string; right: string };
 }
 
 interface DocumentPageSettings {
   header: PageHeaderFooter;
   footer: PageHeaderFooter;
+  pageNumberStart: number;
 }
 ```
 
@@ -219,23 +219,38 @@ interface DocumentPageSettings {
 
 | Variable | Rendered As |
 | --- | --- |
-| `{page}` | Current page number |
+| `{page}` | Current page number (respects `pageNumberStart`) |
 | `{pages}` | Total page count |
-| `{title}` | Document title (from frontmatter or filename) |
-| `{date}` | Current date |
+| `{title}` | Document title (from first heading or filename) |
+| `{date}` | Current date (YYYY-MM-DD) |
+
+**Architecture — three decorations per page boundary:**
+
+Instead of an absolute-positioned overlay, headers and footers are rendered as ProseMirror widget decorations in normal document flow:
+
+- `page-top-margin` — contains the header zone, height = margin top
+- `page-gap` — 32px visual separator between pages
+- `page-bottom-margin` — contains the footer zone, height = page remainder + margin bottom
+
+Page 1 gets a `top-margin` at position 0. Last page gets a `bottom-margin` at `doc.content.size`. Between pages: `bottom-margin` + `gap` + `top-margin`. In Print Layout OFF, no decorations are inserted.
 
 **UI:**
 
-- In paged view: translucent header/footer zones at top/bottom of each page
-- Click to enter edit mode — inline editing with variable insertion
-- Three-column layout (left | center | right) via tab stops or segmented input
-- "Different first page" toggle in the header/footer edit UI
-- When not in paged view: accessible via document settings
+- In Print Layout: header/footer zones vertically centered in their margin areas
+- Click to enter edit mode — inline three-column inputs with per-field variable insertion dropdown
+- "Different first page" and "Different odd & even" toggles
+- Page number start input
+- When not in Print Layout: headers/footers not displayed (accessible via document settings)
 
 **Storage:**
 
 - Stored in YAML frontmatter under a `page` key
 - Preserved across save/reload cycles
+
+**Settings:**
+
+- `printLayout: boolean` in settings store (replaces the old `pageBreaks: "visible" | "continuous"`)
+- Print Layout toggle in Settings &gt; Document &gt; Appearance (only shown for paper sizes)
 
 **Export mapping:**
 
@@ -398,12 +413,12 @@ When clicked:
 
 ```
 ┌─────────────────────────────────────────────┐
-│  [My Report     ] [         ] [Page {page}] │
-│  ☐ Different first page    [Insert: {▾}]    │
+│  [My Report   {▾}] [        {▾}] [{page}{▾}] │
+│  ☐ Different first page  ☐ Different odd & even  Page # [1] │
 └─────────────────────────────────────────────┘
 ```
 
-Three-column inline editor with variable insertion dropdown.
+Three-column inline editor with per-field variable insertion dropdowns. Toggles for different first page, different odd/even, and page number start.
 
 ## Data Model
 
@@ -457,7 +472,7 @@ Stored in YAML frontmatter:
 ---
 page:
   header:
-    left: ""
+    left: "{title}"
     center: ""
     right: "Page {page}"
     differentFirstPage: true
@@ -465,10 +480,12 @@ page:
       left: ""
       center: "{title}"
       right: ""
+    differentOddEven: false
   footer:
     left: "{date}"
     center: ""
-    right: ""
+    right: "{page} of {pages}"
+  pageNumberStart: 1
 ---
 ```
 

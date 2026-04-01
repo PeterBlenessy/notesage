@@ -1,7 +1,25 @@
 ---
 page:
   header:
-    left: "{title}"
+    left: "{date}"
+    center: "{date}"
+    right: "{page}"
+    differentFirstPage: true
+    firstPage:
+      left: "{title}"
+      center: "{date}"
+      right: "{page}"
+  footer:
+    left: "{date}"
+    right: "{page}"
+    differentOddEven: true
+    oddPage:
+      left: "{date}"
+      right: "{page}"
+    evenPage:
+      left: "{date}"
+      right: "{page}"
+  pageNumberStart: 5
 ---
 
 # Tasks: WYSIWYG Typography Phase 2 — Page Constructs
@@ -16,7 +34,7 @@ page:
 
 **Risks:**
 
-- ProseMirror decorations for header/footer zones must not interfere with the existing page break gap decorations in `page-breaks.ts`
+- ~~ProseMirror decorations for header/footer zones must not interfere with the existing page break gap decorations in `page-breaks.ts`~~ — Resolved: refactored to three-decoration architecture (top-margin + gap + bottom-margin) replacing the old single-gap + overlay approach
 - Frontmatter round-trip must preserve unknown keys (users may have custom frontmatter fields)
 - Typst page header/footer uses `context` blocks for page counters — syntax is delicate
 - DOCX headers/footers use a separate XML part (`word/header1.xml`) — the `docx-rs` crate's support for headers/footers needs verification
@@ -66,12 +84,13 @@ page:
 
 ### #4 — Render header/footer zones as ProseMirror decorations in paged view ✅
 
-**Description:** Extend the `page-breaks.ts` extension to render header and footer widget decorations at the top and bottom of each page gap. Each zone is a `<div>` with three columns (left, center, right) showing the current header/footer content with variable placeholders resolved where possible. Zones are only rendered when `pageBreaks` setting is not `"continuous"`. The decorations read page settings from the `usePageSettings` hook via a plugin meta dispatch.
+**Description:** Rewrite `page-breaks.ts` to use three widget decorations per page boundary: `page-top-margin` (header zone), `page-gap` (32px visual separator), and `page-bottom-margin` (footer zone). Replaces the previous single-gap decoration + absolute-positioned overlay approach. Each zone is a `<div>` with three columns (left, center, right) showing the current header/footer content with variable placeholders resolved. Zones are only rendered when `printLayout` setting is `true`. Header zones are vertically centered in the top margin; footer zones are anchored at the bottom of the bottom margin (which includes page remainder space above). Decoration keys include a settings fingerprint so ProseMirror recreates widget DOM when content changes. The plugin reads layout state directly from Zustand stores (not DOM attributes) to avoid React render-timing race conditions.
 
 **Complexity:** L **Category:** frontend **Dependencies:** Depends on #1, #2 **Files:**
 
-- `src/components/editor/extensions/page-breaks.ts` — add header/footer widget decorations alongside existing page break gaps
-- `src/styles/editor.css` — header/footer zone styling (translucent background, three-column layout, muted text)
+- `src/components/editor/extensions/page-breaks.ts` — three-decoration architecture with embedded header/footer zones
+- `src/styles/editor.css` — margin decoration and zone styling (`.page-top-margin`, `.page-bottom-margin`, `.page-gap`)
+- `src/stores/settings-store.ts` — renamed `pageBreaks` to `printLayout: boolean` with migration
 
 ---
 
@@ -87,23 +106,25 @@ page:
 
 ### #6 — Build inline header/footer edit UI ✅
 
-**Description:** When a header/footer zone decoration is clicked, replace it with an editable three-column input row. Each column is a small text input (or contenteditable span). Show a "Different first page" checkbox toggle and a variable insertion dropdown button (`{page}`, `{pages}`, `{title}`, `{date}`). Clicking the variable inserts it at the cursor position in the active column input. Changes write back to the page settings via `usePageSettings.updateSettings()`. Clicking outside or pressing Escape closes edit mode.
+**Description:** When a header/footer zone decoration is clicked, render `PageHeaderFooterEditor` via React `createPortal` into the zone element. Three-column text inputs with per-field variable insertion dropdown (Radix DropdownMenu). Changes write back via `usePageSettings.updateSettings()`. Clicking outside or pressing Escape closes edit mode. Event isolation: pointer, clipboard, and drag events are stopped at the zone element boundary (outside React's tree) so ProseMirror doesn't intercept them, while React synthetic events still work for Radix dropdowns. Keyboard events stopped at the container in bubble phase.
 
 **Complexity:** L **Category:** frontend **Dependencies:** Depends on #2, #4 **Files:**
 
-- `src/components/editor/PageHeaderFooterEditor.tsx` — new: React component rendered inside the decoration widget
-- `src/components/editor/extensions/page-breaks.ts` — click handler to toggle edit mode on header/footer zones
+- `src/components/editor/PageHeaderFooterEditor.tsx` — React component portaled into the zone decoration
+- `src/components/editor/extensions/page-breaks.ts` — click handler dispatches `PAGE_HF_CLICK_EVENT`
+- `src/components/editor/Editor.tsx` — listens for click events, manages `hfEditState`, renders portal
 
 ---
 
-### #7 — Support "Different first page" toggle ✅
+### #7 — Support "Different first page", odd/even, and page number start ✅
 
-**Description:** When `differentFirstPage` is true, the first page's header/footer decorations use `firstPage.left/center/right` instead of the main values. The edit UI shows a toggle checkbox; when enabled, additional inputs appear for the first page content. When disabled, `firstPage` is set to `undefined` and the first page uses the same header/footer as all other pages.
+**Description:** Three toggles in the edit UI: `differentFirstPage` (first page uses `firstPage` columns), `differentOddEven` (odd pages use `oddPage`, even pages use `evenPage`), and a `pageNumberStart` input. `getEffectiveColumns()` resolves which column set applies for each page number. The edit UI shows the active slot label (e.g., "first page", "odd pages") and binds inputs to the correct data slot.
 
 **Complexity:** M **Category:** frontend **Dependencies:** Depends on #6 **Files:**
 
-- `src/components/editor/PageHeaderFooterEditor.tsx` — toggle UI + first page inputs
-- `src/components/editor/extensions/page-breaks.ts` — conditional decoration content for first page
+- `src/components/editor/PageHeaderFooterEditor.tsx` — toggle UI, slot-aware inputs, page number start
+- `src/components/editor/extensions/page-breaks.ts` — conditional decoration content per page
+- `src/lib/page-settings.ts` — `getEffectiveColumns()` resolution logic
 
 ---
 
