@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-31 |
-| **Status** | Not started |
+| **Status** | Complete |
 | **PRD** | [wysiwyg-typography](../prds/2026-03-30-wysiwyg-typography.md) |
 | **Total** | 18 tasks: 4S, 9M, 5L |
 | **Suggested order** | Store foundation (#1-#2) → CSS & editor (#3-#5) → Toolbar UI (#6-#8) → Page breaks (#9-#10) → Backend export alignment (#11-#14) → Frontend export (#15-#16) → Migration & presets (#17) → Tests (#18) |
@@ -253,3 +253,5 @@
 - Add toggle to header/footer edit UI
 - First page gets independent header/footer settings (or none)
 - Content on first page styled by user with standard block-type typography
+
+> **Phase 2 task breakdown:** [wysiwyg-typography-phase2-tasks](2026-03-31-wysiwyg-typography-phase2-tasks.md)

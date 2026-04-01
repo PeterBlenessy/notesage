@@ -8,14 +8,17 @@
 | Tasks | [docx-export-tasks](../tasks/2026-03-30-docx-export-tasks.md) | Complete |
 | PRD | [pptx-export](../prds/2026-03-30-pptx-export.md) | Complete |
 | Tasks | [pptx-export-tasks](../tasks/2026-03-30-pptx-export-tasks.md) | Complete |
-| PRD | [custom-templates](../prds/2026-03-30-custom-templates.md) | Draft |
+| PRD | [wysiwyg-typography](../prds/2026-03-30-wysiwyg-typography.md) | Complete |
+| Tasks (Phase 1) | [wysiwyg-typography-tasks](../tasks/2026-03-30-wysiwyg-typography-tasks.md) | Complete |
+| Tasks (Phase 2) | [wysiwyg-typography-phase2-tasks](../tasks/2026-03-31-wysiwyg-typography-phase2-tasks.md) | Complete |
 | PRD | [html-preview](../prds/2026-03-30-html-preview.md) | Complete |
 | Tasks | [html-preview-tasks](../tasks/2026-03-30-html-preview-tasks.md) | Complete |
 | PRD | [code-file-highlighting](../prds/2026-03-30-code-file-highlighting.md) | Draft |
+| Tasks | [code-file-highlighting-tasks](../tasks/2026-03-30-code-file-highlighting-tasks.md) | Not started |
 | PRD | [pptx-viewer](../prds/2026-03-30-pptx-viewer.md) | Complete |
 | Tasks | [pptx-viewer-tasks](../tasks/2026-03-30-pptx-viewer-tasks.md) | Complete |
 
-Notesage currently exports to PDF (via Typst) and views EPUB, DOCX, PDF, and plain text files. The [document-formats feature doc](../features/document-formats.md) lists five future enhancements: DOCX export, PPTX export, custom template editor, HTML preview, and code file syntax highlighting. This research evaluates the best solutions for each.
+Notesage currently exports to PDF (via Typst) and views EPUB, DOCX, PDF, and plain text files. The [document-formats feature doc](../features/document-formats.md) lists five future enhancements: DOCX export, PPTX export, WYSIWYG typography with export alignment, HTML preview, and code file syntax highlighting. This research evaluates the best solutions for each.
 
 ---
 
@@ -23,13 +26,13 @@ Notesage currently exports to PDF (via Typst) and views EPUB, DOCX, PDF, and pla
 
 All five enhancements are feasible with the current stack. DOCX export has the strongest library support in Rust — `docx-rs` (500+ stars, 1M+ downloads) provides a mature API, and `rdocx` offers a newer alternative with a built-in layout engine. PPTX export is viable via `ppt-rs`, a Rust port of python-pptx with markdown-to-slides support, charts, and animations. Both fit cleanly as Tauri commands alongside the existing Typst PDF pipeline.
 
-A custom template editor for PDF export can build on Typst Universe's template format — users edit `.typ` files with a preview panel, and the existing Typst compiler renders them. No new dependencies needed.
+The original plan for a custom Typst template editor is superseded by a WYSIWYG typography approach: per-block-type style presets (H1-H6, paragraph, code, blockquote) with Google Docs-style "Update to match" / "Reset" actions, editable headers/footers in paged view, user-insertable page breaks, and export alignment across all formats. This eliminates the need for export-time template selection — what users see in the editor is what they get in the export.
 
 HTML preview is straightforward: the markdown is already parsed for the Tiptap editor, so rendering it to a styled HTML document for preview/export requires only a serialization pass with a CSS stylesheet. The `comrak` crate (already a dependency) can render markdown to HTML on the backend.
 
 Code file syntax highlighting for the plain text viewer has two strong options: extend the existing CodeMirror 6 setup (already used for source mode) to support read-only code viewing with \~30 language packages, or use the existing lowlight/highlight.js library (192 languages, already used for code blocks) for static rendering. CodeMirror is recommended for its superior UX (line numbers, folding, selection).
 
-**Recommended priority:** DOCX export (highest user value) &gt; Code file highlighting (low effort) &gt; HTML preview (low effort) &gt; Custom templates (medium effort) &gt; PPTX export (niche use case).
+**Recommended priority:** DOCX export (highest user value) &gt; Code file highlighting (low effort) &gt; HTML preview (low effort) &gt; WYSIWYG typography & export alignment (fulfills the WYSIWYG promise) &gt; PPTX export (niche use case).
 
 ---
 
@@ -110,33 +113,99 @@ Surprisingly feature-rich. The built-in markdown-to-PPTX conversion is directly 
 
 ---
 
-## 3. Custom Template Editor
+## 3. WYSIWYG Typography & Export Alignment
 
 ### Current State
 
-Notesage bundles three Typst templates (`clean.typ`, `academic.typ`, `report.typ`) loaded via `include_str!` at compile time. Users select a template at export time but cannot customize or create new ones.
+Notesage has a global typography system (`editor-styles-store`) with font family, font size, line height, and paragraph spacing — applied to the editor via CSS variables. However, these settings are **global** (not per-block-type), and **completely ignored by all export pipelines**. Each export format (PDF, DOCX, PPTX, HTML) uses hardcoded template typography. This breaks the WYSIWYG contract: what users see in the editor is not what they get in exports.
 
-### Approach: User-Editable Typst Templates
+Additionally, Notesage bundles three PDF export templates (Clean, Academic, Report) that users select at export time. The original plan was to build a custom Typst template editor with CodeMirror. However, for a WYSIWYG editor, requiring users to configure export-time templates is unnecessary overhead. The editor already shows the document's visual appearance — exports should simply honor it.
 
-| Attribute | Details |
+### Problem
+
+1. Typography settings (font, size, weight, spacing) are global — headings and paragraphs share the same font family and size
+2. Exports ignore editor typography entirely — each template hardcodes its own fonts and sizes
+3. Users cannot configure individual block types (H1 gets one style, H2 another, paragraph another)
+4. No mechanism to update a block-type preset from the current selection (Google Docs "Update Heading 2 to match" pattern)
+5. No user-insertable page breaks (visual page break indicators exist but are display-only)
+6. No editable headers/footers or title page support in the editor
+
+### Approach: Per-Block-Type Typography with Export Alignment
+
+The solution follows the Google Docs model — the most intuitive typography UX for WYSIWYG document editors.
+
+**Per-block-type style presets:**
+
+| Block Type | Configurable Properties |
 | --- | --- |
-| **Template format** | Typst `.typ` files |
-| **Storage** | `~/.notesage/templates/` (user) and `<project>/.notesage/templates/` (project) |
-| **Discovery** | Same pattern as skills/agents: scan directories, merge with bundled templates |
-| **Editing** | CodeMirror 6 editor panel with Typst syntax highlighting (community grammar exists) |
-| **Preview** | Live preview using the existing embedded Typst compiler — render to PDF on keystroke (debounced) |
-| **Marketplace** | Link to [Typst Universe](https://typst.app/universe/) for community templates; download `.typ` files to the templates directory |
+| Paragraph | Font family, font size, font weight, line height, paragraph spacing, text color |
+| Heading 1-6 | Font family, font size, font weight, line height, spacing before/after, text color |
+| Code block | Font family (monospace), font size |
+| Blockquote | Font family, font size, font style (italic), text color |
 
-### Implementation
+**Google Docs-style update/reset:**
 
-1. **Template directory scanning** — follow the bundled-skills pattern: extract default templates to `~/.notesage/templates/` on first launch, scan for user additions
-2. **Template editor UI** — split-pane: CodeMirror (left) with Typst syntax + live PDF preview (right) using the existing `export_pdf` Tauri command
-3. **Template metadata** — YAML frontmatter in `.typ` files: `name`, `description`, `author`, `page_size`, `variables` (user-configurable parameters)
-4. **Export dialog update** — show user templates alongside bundled ones in the template picker
+1. User places cursor in (or selects) a block
+2. Changes font/size/weight/spacing via toolbar — change applies immediately to that block (local override)
+3. The block-type dropdown gains two actions:
+   - **"Update Heading 2 to match"** — saves current formatting as the H2 preset; all H2s in the document update
+   - **"Reset to Heading 2 style"** — strips local overrides, reverts to the preset
+
+**Preset storage:**
+
+- Per-project (`.notesage/typography.json`) with global fallback (`~/.notesage/typography.json`)
+- New documents inherit whichever presets are in scope
+- "Start from a template" is simply pre-populating the typography presets — a document creation concept, not an export concept
+
+**Export alignment:**
+
+- All export pipelines (PDF/Typst, DOCX, PPTX, HTML) read block-type presets and apply them directly
+- The export dialog shrinks to: page size + TOC + page numbers + headers/footers. No template picker needed.
+- What you see in the editor is what you get in the export
+
+### Page Constructs
+
+**Headers/Footers:**
+
+- In paged view (A4/Letter/A5), render clickable header and footer zones on each page
+- Click to edit — lightweight inline editor with free text and variables (`{page}`, `{pages}`, `{title}`, `{date}`)
+- Left / center / right alignment sections (classic three-column header layout)
+- Stored as document-level metadata (frontmatter or `.notesage/` sidecar)
+- "Different first page" toggle — first page gets its own header/footer or none (same as Google Docs / Word)
+- Hidden when not in paged view; settings entry point available for non-paged editing
+
+**Title pages:**
+
+- Enabled via the "Different first page" toggle
+- User styles the first page content using the same block-level typography tools (large centered title, date, author)
+- No special "title page template" — it's just content + the toggle
+
+**User-insertable page breaks:**
+
+- Slash command: `/pagebreak`
+- Rendered as a visible horizontal divider with a "Page Break" label (like Google Docs)
+- Draggable/deletable like any other block
+- Respected in all exports: Typst `#pagebreak()`, DOCX page break paragraph property, HTML `page-break-before: always`
+
+### Implementation Complexity
+
+| Component | Effort | Dependencies |
+| --- | --- | --- |
+| Per-block-type style presets (store + CSS) | Medium | None — extends existing `editor-styles-store` |
+| Block-type dropdown update/reset actions | Small | None — extends existing heading picker |
+| Toolbar context-awareness (show current block's styles) | Small | None — reads ProseMirror node attrs |
+| Export pipeline alignment (PDF, DOCX, PPTX, HTML) | Medium | None — passes presets to existing converters |
+| User-insertable page breaks | Small | None — extends existing `page-breaks.ts` extension |
+| Editable headers/footers in paged view | Large | ProseMirror decoration or separate editor instances |
+| Title page toggle | Small | Depends on headers/footers |
 
 ### Recommendation
 
-This is a medium-effort feature that requires no new dependencies. The Typst compiler is already embedded, CodeMirror is already in the app. The main work is the editor UI and template discovery logic. Typst Universe provides a natural "marketplace" without building custom infrastructure.
+**Phase 1:** Per-block-type typography presets with Google Docs update/reset + export alignment. This is the highest-value change — it fulfills the WYSIWYG promise and eliminates the need for a template picker at export time. Medium effort, no new dependencies.
+
+**Phase 2:** Page constructs — user-insertable page breaks (small effort), editable headers/footers (large effort), and title page toggle. Page breaks can ship independently; headers/footers are the most complex piece and may warrant a separate PRD.
+
+The original plan for a Typst template editor with CodeMirror is **superseded** by this approach. Templates as a concept shift from "export-time styling" to "document creation presets" — a set of typography presets that can be applied when creating a new document.
 
 ---
 
@@ -229,7 +298,7 @@ Over-engineered for a viewer. The frontend already has the tools needed.
 | --- | --- | --- | --- | --- |
 | **DOCX export** | `docx-rs` (Rust crate) | Large | New Cargo dependency | High |
 | **PPTX export** | `ppt-rs` (Rust crate) | Large | New Cargo dependency | Low |
-| **Custom templates** | Typst `.typ` files + CodeMirror editor + live preview | Medium | None (existing stack) | Medium |
+| **WYSIWYG typography** | Per-block-type presets + export alignment + page constructs | Medium-Large | None (existing stack) | High |
 | **HTML preview** | `comrak` HTML rendering (already a dep) + themed iframe | Small | None | Medium |
 | **Code highlighting** | CodeMirror 6 read-only (already bundled) | Small | \~15 `@codemirror/lang-*` packages | High |
 
@@ -243,7 +312,7 @@ Over-engineered for a viewer. The frontend already has the tools needed.
 ### Phase 2 (Export Formats)
 
 3. **DOCX export** — `docx-rs` crate, new `markdown_to_docx.rs` converter, export dialog integration. High user demand — "export to Word" is the #1 missing format.
-4. **Custom template editor** — Template directory scanning, CodeMirror-based editor with live Typst preview. Unlocks user customization without a marketplace.
+4. **WYSIWYG typography & export alignment** — Per-block-type typography presets with Google Docs-style update/reset, export pipeline alignment across PDF/DOCX/PPTX/HTML, user-insertable page breaks, editable headers/footers, title page toggle. Fulfills the WYSIWYG promise — what you see is what you export.
 
 ### Phase 3 (Nice to Have)
 
@@ -253,7 +322,8 @@ Over-engineered for a viewer. The frontend already has the tools needed.
 
 - **DOCX fidelity**: How well does `docx-rs` handle complex content (Excalidraw SVGs as embedded images, callout blocks, link preview cards)? May need a spike to test edge cases.
 - **PPTX slide splitting**: Should heading levels map to slide breaks automatically, or should users insert explicit slide separators (e.g., `---` horizontal rules)?
-- **Template variables**: Should custom Typst templates support user-configurable variables (author name, company logo, color scheme) editable from the export dialog?
+- **Typography preset scope**: Should per-block-type presets be per-document (frontmatter), per-project (`.notesage/`), or global (`~/.notesage/`)? Recommendation: per-project with global fallback.
+- **Header/footer complexity**: Should headers/footers support rich formatting (bold, images/logos) or plain text + variables only for v1?
 - **Code viewer language detection**: Should we use file extension only, or also attempt content-based detection (e.g., shebang lines, file signatures)?
 
 ## Sources

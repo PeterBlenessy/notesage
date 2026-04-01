@@ -1,55 +1,75 @@
-# PRD: Code File Syntax Highlighting
+# PRD: Code File Editing & Syntax Highlighting
 
 |  |  |
 | --- | --- |
 | **Date** | 2026-03-30 |
 | **Status** | Draft |
 | **Priority** | High |
-| **Impact** | Code files render with syntax highlighting, line numbers, and code navigation — matching developer expectations |
+| **Impact** | Code files become editable with syntax highlighting, line numbers, and code navigation. WYSIWYG code blocks gain greyscale syntax highlighting. |
 | **Research** | [document-format-enhancements](../research/2026-03-30-document-format-enhancements.md) |
 | **Tasks** | [code-file-highlighting-tasks](../tasks/2026-03-30-code-file-highlighting-tasks.md) |
 
 ## Problem
 
-Opening code files (`.js`, `.py`, `.rs`, `.ts`, `.go`, etc.) in Notesage renders them as unstyled monospace text in a `<pre>` element via `PlainTextViewer.tsx`. This is a poor experience for developers who expect syntax highlighting, line numbers, code folding, and bracket matching — features available in every code editor and many note-taking apps. The current plain text rendering makes Notesage feel broken when browsing code files in a project.
+**Two separate but related issues:**
+
+1. **Code files are broken.** Opening code files (`.js`, `.py`, `.rs`, `.ts`, `.go`, etc.) in Notesage renders them as unstyled monospace text in a `<pre>` element via `PlainTextViewer.tsx`. No syntax highlighting, no line numbers, no editing. This makes Notesage feel broken when browsing code files in a project.
+
+2. **WYSIWYG code blocks are unstyled.** Code blocks in the rich text editor (`CodeBlockLowlight`) generate the correct highlight.js semantic spans (`.hljs-keyword`, `.hljs-string`, etc.) but have zero CSS rules styling them — all code renders as flat monochrome text. Every modern editor (Bear, Craft, Obsidian, Notion) highlights code blocks inline.
 
 ## Goals
 
-1. **Syntax highlighting** for 22+ programming languages using CodeMirror 6 in read-only mode
-2. **Code navigation** — line numbers, code folding, bracket matching, active line highlight
-3. **Find in document** via CodeMirror's built-in search (replacing the current DOM-based search for code files)
-4. **Theme integration** — light/dark mode and contrast slider work seamlessly using the existing `notesageExtensions` CodeMirror theme
-5. **Lazy loading** — language packages loaded on demand, not bundled at startup
-6. **Graceful fallback** — unknown file extensions retain the existing plain `<pre>` rendering
-7. **Status bar language indicator** — detected language name shown in the toolbar
+### Part A: Code File Editing
+
+1. **Full editing** of code files using CodeMirror 6 — not a read-only viewer. Save, dirty indicators, auto-save, undo/redo all work like markdown source mode.
+2. **Syntax highlighting** for 22+ programming languages
+3. **Code navigation** — line numbers, code folding, bracket matching, active line highlight
+4. **Find in document** via CodeMirror's built-in search (replacing the current DOM-based search for code files)
+5. **Theme integration** — light/dark mode and contrast slider work seamlessly using the existing `notesageExtensions` CodeMirror theme
+6. **Lazy loading** — language packages loaded on demand, not bundled at startup
+7. **Graceful fallback** — unknown file extensions retain the existing plain `<pre>` rendering
+8. **Status bar language indicator** — detected language name shown in the toolbar
+
+### Part B: WYSIWYG Code Block Highlighting
+
+9. **Greyscale syntax highlighting** for code blocks in the Tiptap rich text editor — style the existing lowlight/highlight.js spans with weight, opacity, and neutral tones
+10. **All supported lowlight languages** highlighted automatically (lowlight `common` bundle covers ~37 languages)
+11. **Light and dark mode** support via CSS variables
+12. **Consistent aesthetic** with the CodeMirror greyscale theme used in source mode and code files
 
 ## Non-Goals
 
-- **Editing code files** — this is a read-only viewer, not a code editor. Source mode editing of markdown files already exists via `SourceEditor.tsx`.
 - **Running/executing code** — out of scope for a note-taking app
 - **LSP integration for code files** — no autocomplete, go-to-definition, or diagnostics
-- **Custom syntax themes** — uses the existing Notesage CodeMirror theme (monochrome greyscale)
-- **Adding code files to the `FileType` enum** — code files remain `"other"` in the type system; the viewer internally detects whether to use CodeMirror or plain `<pre>` based on file extension
+- **Custom syntax themes** — uses the existing Notesage greyscale aesthetic; user-configurable themes may come later
+- **Adding code files to the** `FileType` **enum** — code files remain `"other"` in the type system; the viewer internally detects whether to use CodeMirror or plain `<pre>` based on file extension
+- **Chromatic (colored) syntax highlighting** — all highlight styles use greyscale (weight, opacity, italic) to match the design system
 
 ## User Stories
 
-- As a developer browsing a project in Notesage, I want `.ts` and `.py` files to render with syntax highlighting so I can quickly scan code structure
+- As a developer, I want to **edit** `.ts`, `.py`, and `.rs` files directly in Notesage so I don't need to switch to another editor for quick changes
+- As a developer browsing a project in Notesage, I want code files to render with syntax highlighting so I can quickly scan code structure
 - As a user reviewing code referenced in my notes, I want line numbers and code folding so I can navigate large files efficiently
 - As a user, I want Cmd+F in a code file to work with CodeMirror's search (match highlighting, regex support) rather than the basic DOM search
 - As a user opening a `.txt` or `.log` file, I want the plain text viewer to continue working as before
+- As a writer embedding code snippets in my notes, I want code blocks in the WYSIWYG editor to have syntax highlighting so I can visually distinguish keywords, strings, and comments
 
 ## Technical Approach
 
-### Architecture Overview
+### Part A: Code File Editing
 
-The change is contained within `PlainTextViewer.tsx` and a new utility module. The `PlainTextViewer` component currently handles ALL non-markdown, non-EPUB, non-PDF, non-DOCX text files (the `"other"` file type). The approach:
+#### Architecture Overview
 
-1. Detect if the file has a known code extension → render with CodeMirror in read-only mode
+The existing `SourceModeEditor.tsx` / `SourceEditor.tsx` already implements a full CodeMirror 6 editor for markdown files — with editing, save, dirty tracking, undo/redo, find/replace, Copilot ghost text, and AI bubble menu. The code file editor reuses this proven infrastructure with language-specific configuration instead of markdown.
+
+The change is contained within `PlainTextViewer.tsx` and new utility/component modules. The `PlainTextViewer` component currently handles ALL non-markdown, non-EPUB, non-PDF, non-DOCX text files (the `"other"` file type). The approach:
+
+1. Detect if the file has a known code extension → render with CodeMirror in **editable** mode
 2. Unknown extensions → keep the existing `<pre>` rendering unchanged
 
-No changes to `FileType`, `getFileType()`, `EditorViewerContainer.tsx`, or the editor store are needed. The `PlainTextViewer` component remains the single entry point for `"other"` files.
+No changes to `FileType`, `getFileType()`, or `EditorViewerContainer.tsx` are needed. The `PlainTextViewer` component remains the single entry point for `"other"` files.
 
-### New Module: `src/lib/codemirror-languages.ts`
+#### New Module: `src/lib/codemirror-languages.ts`
 
 A language registry that maps file extensions to CodeMirror language packages with lazy loading.
 
@@ -96,29 +116,43 @@ export async function loadLanguage(extension: string): Promise<LanguageSupport |
 
 **Lazy loading strategy:** Each language import is a dynamic `import()` that Vite splits into separate chunks. The first time a user opens a `.py` file, only the Python language package is fetched. Subsequent `.py` files reuse the cached module. Languages that lack a dedicated `@codemirror/lang-*` package use `@codemirror/legacy-modes` with `StreamLanguage` from `@codemirror/language`.
 
-### New Component: `src/components/editor/viewers/CodeViewer.tsx`
+#### New Component: `src/components/editor/viewers/CodeEditor.tsx`
 
-A read-only CodeMirror 6 instance for code files.
+An editable CodeMirror 6 instance for code files. Follows the same patterns as `SourceEditor.tsx` but without markdown/frontmatter handling.
 
 ```typescript
-interface CodeViewerProps {
+interface CodeEditorProps {
   content: string;
   fileName: string;
+  filePath: string;
+  tabId: string;
+  isDirty: boolean;
+  updateTabContent: (content: string) => void;
+  saveFile: () => void;
 }
 ```
 
 **CodeMirror extensions:**
 
-- `EditorState.readOnly.of(true)` — prevents editing
-- `EditorView.editable.of(false)` — removes cursor and input handling
 - `lineNumbers()` — line number gutter
 - `foldGutter()` — code folding indicators
 - `bracketMatching()` — matching bracket highlight
 - `highlightActiveLine()` — subtle active line background
 - `highlightSelectionMatches()` — highlight other occurrences of selected text
+- `history()` — full undo/redo support
+- `keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap])` — standard keybindings
+- Cmd+S keymap → calls `saveFile()` prop
 - `searchKeymap` — Cmd+F opens CodeMirror's native search panel
 - `notesageExtensions` — the existing Notesage CodeMirror theme (from `codemirror-theme.ts`)
 - Language extension loaded dynamically based on file extension
+
+**Editing & save pipeline:**
+
+- `EditorView.updateListener` dispatches content changes to `updateTabContent()` — same pattern as `SourceEditor.tsx`
+- Cmd+S triggers `saveFile()` which writes via Tauri `write_file` command
+- Tab dirty indicator works automatically (editor-store tracks content vs. disk)
+- Auto-save on tab switch/blur works via the existing `useFileOperations` hook (watches `tab.content` changes)
+- No frontmatter parsing, no Tiptap sync — the CodeMirror document IS the content
 
 **Lifecycle:**
 
@@ -130,28 +164,28 @@ interface CodeViewerProps {
 
 **Find in document:** CodeMirror's built-in search panel activates on Cmd+F. The `notesage:find-open` custom event (dispatched by the global keyboard handler) is intercepted and forwarded to `openSearchPanel()` on the CodeMirror view, same pattern as `SourceModeEditor.tsx`. This replaces the DOM-based `FindBar` + `dom-search.ts` approach used by the plain text viewer.
 
-### Changes to `PlainTextViewer.tsx`
+#### Changes to `PlainTextViewer.tsx`
 
 Minimal changes — the component gains a code file detection check:
 
 ```typescript
 import { isCodeFile } from "@/lib/codemirror-languages";
-import { CodeViewer } from "./CodeViewer";
+import { CodeEditor } from "./CodeEditor";
 
-export function PlainTextViewer({ content, fileName }: PlainTextViewerProps) {
+export function PlainTextViewer({ content, fileName, filePath, tabId, isDirty, updateTabContent, saveFile }: PlainTextViewerProps) {
   if (isCodeFile(fileName)) {
-    return <CodeViewer content={content} fileName={fileName} />;
+    return <CodeEditor content={content} fileName={fileName} filePath={filePath} tabId={tabId} isDirty={isDirty} updateTabContent={updateTabContent} saveFile={saveFile} />;
   }
 
   // ... existing <pre> rendering unchanged ...
 }
 ```
 
-This keeps the change surface minimal and maintains backward compatibility for `.txt`, `.log`, and unknown extensions.
+Props will need to be threaded from `EditorViewerContainer.tsx` through `PlainTextViewer` to `CodeEditor`. The existing save/dirty infrastructure from the editor store and `useFileOperations` handles the rest.
 
-### Theme Integration
+#### Theme Integration
 
-The `CodeViewer` reuses `notesageExtensions` from `src/components/editor/codemirror-theme.ts`, which already:
+The `CodeEditor` reuses `notesageExtensions` from `src/components/editor/codemirror-theme.ts`, which already:
 
 - Reads CSS variables from `globals.css` for background, foreground, gutters, selection
 - Includes dark mode overrides
@@ -170,9 +204,9 @@ A new code-specific highlight style is needed that goes beyond the existing `not
 
 All highlight colors remain greyscale (zero chroma) to match the design system. No blue, green, or colored syntax highlighting.
 
-### Status Bar
+#### Status Bar
 
-The `PlainTextViewer` already renders its own toolbar bar with the file name. For code files, the `CodeViewer` component renders a similar toolbar that additionally shows the detected language name:
+The `PlainTextViewer` already renders its own toolbar bar with the file name. For code files, the `CodeEditor` component renders a similar toolbar that additionally shows the detected language name:
 
 ```
 ┌─ main.ts ────────────────────────── TypeScript ─┐
@@ -183,15 +217,85 @@ The `PlainTextViewer` already renders its own toolbar bar with the file name. Fo
 
 The language name appears right-aligned in the toolbar, styled as `text-xs text-muted-foreground`.
 
-### Performance
+#### Performance
 
-CodeMirror 6 uses virtual scrolling by default — only visible lines are rendered in the DOM. This handles large files (10K+ lines) efficiently without custom optimization. The read-only mode further reduces overhead by disabling input handling, undo history, and change tracking.
+CodeMirror 6 uses virtual scrolling by default — only visible lines are rendered in the DOM. This handles large files (10K+ lines) efficiently without custom optimization.
 
 **Benchmarks to validate:**
 
 - 10K-line file: initial render < 100ms, smooth scrolling at 60fps
 - 50K-line file: initial render < 500ms, no visible lag
 - Language package load: < 200ms on first import (varies by language size)
+
+### Part B: WYSIWYG Code Block Highlighting
+
+#### Problem
+
+The Tiptap editor uses `CodeBlockLowlight` with `lowlight` (highlight.js) and the `common` language bundle (~37 languages). Lowlight correctly parses code and generates semantic `<span>` elements with `.hljs-*` classes (`.hljs-keyword`, `.hljs-string`, `.hljs-comment`, etc.). However, **no CSS rules exist to style these spans**, so all code renders as flat monochrome text.
+
+#### Solution
+
+Add a highlight.js greyscale theme in `editor.css` that styles the `.hljs-*` classes using the same design language as the CodeMirror code highlight style — weight, opacity, and subtle neutral tones. No new dependencies needed; lowlight is already configured and working.
+
+#### Highlight Styles
+
+```css
+/* Code block syntax highlighting — greyscale theme */
+/* Light mode */
+.ProseMirror pre code .hljs-keyword,
+.ProseMirror pre code .hljs-selector-tag,
+.ProseMirror pre code .hljs-built_in { font-weight: 600; }
+
+.ProseMirror pre code .hljs-string,
+.ProseMirror pre code .hljs-attr { color: oklch(45% 0 0); }
+
+.ProseMirror pre code .hljs-comment,
+.ProseMirror pre code .hljs-doctag { color: oklch(55% 0 0); font-style: italic; }
+
+.ProseMirror pre code .hljs-number,
+.ProseMirror pre code .hljs-literal { color: oklch(40% 0 0); }
+
+.ProseMirror pre code .hljs-function,
+.ProseMirror pre code .hljs-title { font-weight: 600; }
+
+.ProseMirror pre code .hljs-type,
+.ProseMirror pre code .hljs-title.class_ { font-weight: 500; }
+
+.ProseMirror pre code .hljs-meta,
+.ProseMirror pre code .hljs-operator,
+.ProseMirror pre code .hljs-punctuation { color: oklch(50% 0 0); }
+
+.ProseMirror pre code .hljs-variable,
+.ProseMirror pre code .hljs-params { color: inherit; }
+
+/* Dark mode */
+:root.dark .ProseMirror pre code .hljs-string,
+:root.dark .ProseMirror pre code .hljs-attr { color: oklch(75% 0 0); }
+
+:root.dark .ProseMirror pre code .hljs-comment,
+:root.dark .ProseMirror pre code .hljs-doctag { color: oklch(55% 0 0); font-style: italic; }
+
+:root.dark .ProseMirror pre code .hljs-number,
+:root.dark .ProseMirror pre code .hljs-literal { color: oklch(70% 0 0); }
+
+:root.dark .ProseMirror pre code .hljs-meta,
+:root.dark .ProseMirror pre code .hljs-operator,
+:root.dark .ProseMirror pre code .hljs-punctuation { color: oklch(60% 0 0); }
+```
+
+This is CSS-only — no JavaScript changes to the editor, no new extensions, no new dependencies. The lowlight integration already generates the right DOM; we just need to style it.
+
+#### Visual Consistency
+
+The greyscale approach matches the existing design system:
+- **Keywords/builtins:** semibold weight (visual emphasis without color)
+- **Strings/attributes:** slightly muted grey
+- **Comments:** muted + italic (clearly secondary)
+- **Functions/definitions:** semibold
+- **Types/classes:** medium weight
+- **Operators/punctuation:** subtle mute
+
+This mirrors the CodeMirror code highlight style from Part A, giving a consistent look whether you're editing a `.ts` file or reading a TypeScript code block in a markdown note.
 
 ### New Dependencies
 
@@ -219,26 +323,28 @@ Already installed (no change needed): `@codemirror/commands`, `@codemirror/lang-
 
 All language packages are tree-shaken by Vite and only loaded via dynamic `import()` — they add zero bytes to the initial bundle.
 
+No new dependencies needed for Part B — lowlight is already configured.
+
 ## UI/UX
 
-### Code File View
+### Code File Editor
 
 ```
-┌─ utils.ts ───────────────────────── TypeScript ─┐
-│ ▾  1  import { invoke } from "@tauri-apps/api";  │
-│    2                                              │
-│ ▾  3  export async function readFile(             │
-│    4    path: string                              │
-│    5  ): Promise<string> {                        │
-│    6    return invoke("read_file", { path });     │
-│    7  }                                           │
-│    8                                              │
-│ ▾  9  export function getExtension(               │
-│   10    fileName: string                          │
-│   11  ): string {                                 │
-│   12    return fileName.split(".").pop() ?? "";   │
-│   13  }                                           │
-└───────────────────────────────────────────────────┘
+┌─ utils.ts ──────────────── ● ─────── TypeScript ─┐
+│ ▾  1  import { invoke } from "@tauri-apps/api";   │
+│    2                                               │
+│ ▾  3  export async function readFile(              │
+│    4    path: string                               │
+│    5  ): Promise<string> {                         │
+│    6    return invoke("read_file", { path });      │
+│    7  }                                            │
+│    8                                               │
+│ ▾  9  export function getExtension(                │
+│   10    fileName: string                           │
+│   11  ): string {                                  │
+│   12    return fileName.split(".").pop() ?? "";    │
+│   13  }                                            │
+└────────────────────────────────────────────────────┘
 ```
 
 - Line numbers in a subtle gutter (matching the existing source editor gutter style)
@@ -246,12 +352,47 @@ All language packages are tree-shaken by Vite and only loaded via dynamic `impor
 - Active line has a subtle background highlight
 - Bracket matching highlighted when cursor is adjacent
 - Greyscale syntax highlighting — keywords bold, comments muted/italic, strings slightly dimmed
+- Dirty indicator (●) in toolbar when file has unsaved changes
 - No max-width constraint — code files use the full available width (unlike the 720px editor)
 - Horizontal scrolling for long lines (no word wrap by default)
+- Full editing: type, paste, undo/redo, select, delete — standard code editor behavior
+- Cmd+S saves to disk
+
+### WYSIWYG Code Block Highlighting
+
+Code blocks in the rich text editor gain greyscale syntax highlighting:
+
+```
+┌─ Markdown Note ─────────────────────────────────────┐
+│                                                      │
+│  Here's an example function:                         │
+│                                                      │
+│  ┌─────────────────────────────────────────────┐     │
+│  │ function greet(name: string) {              │     │
+│  │   const msg = `Hello, ${name}!`;            │     │
+│  │   // Log the greeting                       │     │
+│  │   console.log(msg);                         │     │
+│  │   return 42;                                │     │
+│  │ }                                           │     │
+│  └─────────────────────────────────────────────┘     │
+│                                                      │
+│  The function returns a number.                      │
+│                                                      │
+└──────────────────────────────────────────────────────┘
+```
+
+In the code block above:
+- `function`, `const`, `return` — **semibold** (keywords)
+- `"Hello, ${name}!"` — **muted grey** (strings)
+- `// Log the greeting` — **muted + italic** (comments)
+- `42` — **slightly different grey** (numbers)
+- `greet`, `console.log` — **semibold** (functions)
+
+The highlighting is subtle — it adds structure without competing with the document's content. Consistent with the monochrome design system.
 
 ### Find in Document (Cmd+F)
 
-CodeMirror's native search panel appears at the top of the editor:
+CodeMirror's native search panel appears at the top of the code editor:
 
 - Input field with match count ("3 of 12")
 - Previous/next navigation buttons
@@ -276,95 +417,156 @@ Files without a recognized code extension (`.txt`, `.log`, unknown) render exact
 - Dark mode: dark background, light text, same gutter style
 - Contrast slider: CodeMirror reads CSS variables, so contrast adjustments apply automatically
 - Theme transitions: smooth color transitions via CSS variable changes (already handled by `notesageExtensions`)
+- WYSIWYG code blocks: `.hljs-*` styles use oklch with light/dark mode variants
 
 ## Data Model
 
-No new stores, no persistence changes. The `CodeViewer` is purely a rendering component — it receives `content` and `fileName` as props, creates a local CodeMirror instance, and renders it. No state escapes the component.
+No new stores, no persistence changes. The `CodeEditor` uses the existing tab content and dirty tracking from `editor-store` — same as `SourceModeEditor`. The WYSIWYG highlighting is pure CSS with no state.
 
 ### New Files
 
 | File | Purpose |
 | --- | --- |
 | `src/lib/codemirror-languages.ts` | Extension → language mapping, lazy loader, language name resolver |
-| `src/components/editor/viewers/CodeViewer.tsx` | Read-only CodeMirror 6 viewer component |
+| `src/components/editor/viewers/CodeEditor.tsx` | Editable CodeMirror 6 code editor component |
 
 ### Modified Files
 
 | File | Change |
 | --- | --- |
-| `src/components/editor/viewers/PlainTextViewer.tsx` | Add `isCodeFile()` check to conditionally render `CodeViewer` |
+| `src/components/editor/viewers/PlainTextViewer.tsx` | Add `isCodeFile()` check to conditionally render `CodeEditor`; thread save/edit props |
+| `src/components/editor/EditorViewerContainer.tsx` | Pass save/edit props through to `PlainTextViewer` for code file editing |
 | `src/components/editor/codemirror-theme.ts` | Add a code-specific highlight style (the existing one is markdown-tuned) |
-| `docs/features/document-formats.md` | Document the code viewer feature |
-| `docs/features/editor.md` | Note code file support in the editor features list |
+| `src/styles/editor.css` | Add `.hljs-*` greyscale theme rules for WYSIWYG code block highlighting |
+| `docs/features/document-formats.md` | Document the code editor feature |
+| `docs/features/editor.md` | Note code file editing and WYSIWYG code block highlighting |
 
 ### Unchanged Files
 
 | File | Why unchanged |
 | --- | --- |
 | `src/lib/file-utils.ts` | `FileType` stays the same — code files are still `"other"` |
-| `src/components/editor/EditorViewerContainer.tsx` | Still routes `"other"` to `PlainTextViewer` |
-| `src/stores/editor-store.ts` | No new tab properties needed |
+| `src/stores/editor-store.ts` | No new tab properties needed — existing content/dirty tracking works |
+| `src/hooks/useEditor.ts` | CodeBlockLowlight already configured with lowlight; no JS changes needed |
 | `src/lib/dom-search.ts` | Still used by DOCX viewer and plain text fallback |
 
 ## Dependencies
 
-- **New:** 14 CodeMirror language packages + `@codemirror/legacy-modes` (all lazy-loaded, zero initial bundle impact)
+- **New (Part A):** 14 CodeMirror language packages + `@codemirror/legacy-modes` (all lazy-loaded, zero initial bundle impact)
 - **Existing:** `@codemirror/view`, `@codemirror/state`, `@codemirror/language`, `@codemirror/commands`, `@codemirror/search` (already installed)
 - **Existing:** `codemirror-theme.ts` (reused for styling)
+- **No new deps (Part B):** lowlight + CodeBlockLowlight already installed and configured
 - No new Tauri commands needed
 - No new Rust dependencies
 
 ## Quality Gates
 
-### Functional
+### Functional — Part A (Code File Editing)
 
 - [ ] 22+ languages highlighted correctly (JavaScript, TypeScript, Python, Rust, Go, Java, C, C++, HTML, CSS, JSON, YAML, TOML, Markdown, Shell, SQL, XML, Swift, Kotlin, Ruby, PHP, JSX/TSX)
+
 - [ ] Line numbers visible and correctly numbered
+
 - [ ] Code folding works (collapse/expand functions, classes, blocks)
+
 - [ ] Bracket matching highlights corresponding brackets
+
 - [ ] Active line has subtle background highlight
+
 - [ ] Cmd+F opens CodeMirror search panel with match highlighting
+
 - [ ] Search supports case sensitivity toggle and regex
+
+- [ ] **Editing works** — can type, paste, delete, undo/redo in code files
+
+- [ ] **Cmd+S saves** code files to disk
+
+- [ ] **Dirty indicator** appears when code file has unsaved changes
+
+- [ ] **Auto-save on tab switch** works for code files
+
 - [ ] Large files (>10K lines) render without visible lag
+
 - [ ] 50K-line files scroll smoothly at 60fps
+
 - [ ] Unknown file extensions (`.txt`, `.log`, etc.) still render as plain text with the existing `<pre>` viewer
+
 - [ ] Language name displayed in the toolbar for recognized code files
+
 - [ ] No language indicator shown for plain text fallback files
+
 - [ ] Content updates correctly when switching between tabs with different code files
+
+### Functional — Part B (WYSIWYG Code Blocks)
+
+- [ ] Code blocks in the rich text editor show greyscale syntax highlighting
+
+- [ ] Keywords render as semibold
+
+- [ ] Strings render in a muted grey
+
+- [ ] Comments render muted + italic
+
+- [ ] Numbers render in a slightly different grey
+
+- [ ] Functions/definitions render as semibold
+
+- [ ] Highlighting works for all languages in the lowlight `common` bundle
+
+- [ ] Highlighting persists through edit operations (typing in code block, adding/removing lines)
+
+- [ ] No visual change to code blocks without a language specified (plain code blocks stay unstyled)
 
 ### Design
 
-- [ ] Syntax highlighting uses greyscale only — no chromatic colors
-- [ ] Gutter styling matches the existing source mode editor
-- [ ] Looks polished in both light and dark mode
-- [ ] Contrast slider affects the code viewer correctly
-- [ ] Search panel styling is consistent with the source mode editor
+- [ ] Syntax highlighting uses greyscale only — no chromatic colors (both Part A and Part B)
+
+- [ ] Part A gutter styling matches the existing source mode editor
+
+- [ ] Part B code block highlighting is subtle — doesn't compete with document content
+
+- [ ] Looks polished in both light and dark mode (both parts)
+
+- [ ] Contrast slider affects the code editor correctly
+
 - [ ] Code files use full available width (no 720px max-width constraint)
+
 - [ ] Scrollbars are thin and styled (not browser default)
+
 - [ ] Font matches the editor monospace font (JetBrains Mono / SF Mono / Fira Code)
+
+- [ ] Part A and Part B highlighting feel visually consistent (same weight/muting conventions)
 
 ### Testing
 
 - [ ] Unit tests for `codemirror-languages.ts` — extension mapping, language name resolution, `isCodeFile()` for all supported extensions
+
 - [ ] Unit tests for unknown extensions returning `null` / `false`
-- [ ] Component test for `CodeViewer` — renders with line numbers, applies read-only mode
-- [ ] Component test for `PlainTextViewer` — code files route to `CodeViewer`, plain text files render `<pre>`
+
+- [ ] Component test for `CodeEditor` — renders with line numbers, supports editing
+
+- [ ] Component test for `PlainTextViewer` — code files route to `CodeEditor`, plain text files render `<pre>`
+
 - [ ] All existing tests continue to pass
+
 - [ ] TypeScript type check passes
 
 ### Performance
 
 - [ ] Language packages are lazy-loaded (verified via network tab — no language JS loaded until a code file is opened)
+
 - [ ] Initial app bundle size does not increase (language packages are separate chunks)
+
 - [ ] 10K-line file renders in < 100ms
+
 - [ ] No memory leaks from CodeMirror view lifecycle (create/destroy on tab switch)
 
 ## Out of Scope
 
-- **Code editing** — files opened as `"other"` are read-only; source mode editing is for markdown only
 - **LSP features** — no autocomplete, diagnostics, hover tooltips, or go-to-definition for code files
 - **Custom syntax themes** — the greyscale theme is consistent with the design system; user-configurable themes may come later
-- **Minimap** — adds complexity for minimal benefit in a read-only viewer
+- **Minimap** — adds complexity for minimal benefit
 - **Git blame/annotations in gutter** — future enhancement, not part of this PRD
 - **Word wrap toggle** — code files default to horizontal scrolling; a toggle could be added later
-- **Printing/PDF export of code files** — out of scope for the viewer
+- **Printing/PDF export of code files** — out of scope
+- **Chromatic highlight themes** — strictly greyscale to match the design system
