@@ -18,99 +18,58 @@
   border-radius: var(--radius-sm);
 }
 
-/* Page break base — extends into margins */
-.page-break-gap {
+/* ----------------------------------------------------------------
+   Print Layout — three decorations per page boundary
+   top-margin (header zone) + gap (visual separator) + bottom-margin (footer zone)
+   ---------------------------------------------------------------- */
+
+/* Top-margin decoration: contains header zone, anchored at top */
+.page-top-margin {
   margin-left: calc(-1 * var(--editor-padding-left, 6rem));
   margin-right: calc(-1 * var(--editor-padding-right, 6rem));
-  position: relative;
+  display: flex;
+  align-items: flex-start;
+  user-select: none;
+  pointer-events: none;
+  /* height set inline by JS */
+}
+
+/* Bottom-margin decoration: contains footer zone, anchored at bottom.
+   Height = page remainder + marginBottom — footer sits at the bottom. */
+.page-bottom-margin {
+  margin-left: calc(-1 * var(--editor-padding-left, 6rem));
+  margin-right: calc(-1 * var(--editor-padding-right, 6rem));
+  display: flex;
+  align-items: flex-end;
+  user-select: none;
+  pointer-events: none;
+  /* height set inline by JS */
+}
+
+/* Gap strip: simple visual separator between pages */
+.page-gap {
+  margin-left: calc(-1 * var(--editor-padding-left, 6rem));
+  margin-right: calc(-1 * var(--editor-padding-right, 6rem));
+  height: 32px;
+  background: var(--color-muted);
   user-select: none;
   pointer-events: none;
 }
 
-/* Margin tick marks — shown in both visible and continuous modes */
-.page-break-gap::before,
-.page-break-gap::after {
-  content: '';
-  position: absolute;
-  height: 1px;
-  background: var(--color-border);
-}
-
-/* Left margin tick */
-.page-break-gap::before {
-  left: 0;
-  width: calc(var(--editor-padding-left, 6rem) - 8px);
-}
-
-/* Right margin tick */
-.page-break-gap::after {
-  right: 0;
-  left: auto;
-  width: calc(var(--editor-padding-right, 6rem) - 8px);
-}
-
-/* Visible mode: full gap between pages.
-   --page-remainder is set per-element by the page-breaks plugin to fill
-   the rest of the current page, so every page card has the same height. */
-[data-page-breaks="visible"] .page-break-gap {
-  --gap-strip: 32px;
-  --remainder: var(--page-remainder, 0px);
-  height: calc(var(--remainder) + var(--editor-padding-bottom, 2rem) + var(--gap-strip) + var(--editor-padding-top, 2rem));
-  background: linear-gradient(
-    to bottom,
-    var(--color-background) 0,
-    var(--color-background) calc(var(--remainder) + var(--editor-padding-bottom, 2rem)),
-    var(--color-muted) calc(var(--remainder) + var(--editor-padding-bottom, 2rem)),
-    var(--color-muted) calc(var(--remainder) + var(--editor-padding-bottom, 2rem) + var(--gap-strip)),
-    var(--color-background) calc(var(--remainder) + var(--editor-padding-bottom, 2rem) + var(--gap-strip)),
-    var(--color-background) 100%
-  );
-}
-
-/* Visible mode: gap is sufficient, hide margin ticks */
-[data-page-breaks="visible"] .page-break-gap::before,
-[data-page-breaks="visible"] .page-break-gap::after {
-  display: none;
-}
-
-/* Continuous mode: no visible gap, ticks mark the boundary */
-[data-page-breaks="continuous"] .page-break-gap {
-  height: var(--page-remainder, 0px);
-  background: none;
-}
-
-[data-page-breaks="continuous"] .page-break-gap::before,
-[data-page-breaks="continuous"] .page-break-gap::after {
-  top: -0.5px;
-}
-
-/* ----------------------------------------------------------------
-   Page zone overlay — absolute-positioned header/footer zones,
-   independent of page-break-gap decorations.
-   ---------------------------------------------------------------- */
-.page-zone-overlay {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 1;
-}
-
+/* Header/footer zones — normal flow children of margin decorations */
 .page-header-zone,
 .page-footer-zone {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--editor-padding-left, 6rem);
+  width: 100%;
   font-size: 10px;
   color: var(--color-foreground);
   cursor: pointer;
   user-select: none;
   pointer-events: auto;
   transition: opacity 150ms ease-in-out;
-  position: absolute;
-  left: 0;
-  right: 0;
-  /* height and top are set inline by JS — zone fills the entire margin area */
 }
 
 .page-header-zone:hover,

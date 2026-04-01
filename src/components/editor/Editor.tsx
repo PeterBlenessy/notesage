@@ -31,6 +31,7 @@ import {
   setSuggestion,
   hasActiveSuggestion,
   PAGE_HF_CLICK_EVENT,
+  PAGE_BREAKS_RECALC_EVENT,
 } from "@/components/editor/extensions";
 import type { PageHFClickDetail } from "@/components/editor/extensions";
 import { usePageSettings } from "@/hooks/usePageSettings";
@@ -87,7 +88,7 @@ interface EditorProps {
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick, onShortcutsOpen, onOpenActions }: EditorProps) {
   const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, externalChanges, clearExternalChange, toggleViewMode, setViewMode } = useEditorStore();
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
-  const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, pageBreaks, notesRootPath, sourceWordWrap, setSourceWordWrap } = useSettingsStore();
+  const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, printLayout, notesRootPath, sourceWordWrap, setSourceWordWrap } = useSettingsStore();
   const editorStyles = useEditorStylesStore();
   const { projectPath } = useActiveProject();
   const commentStorageRoot = projectPath ?? (notesRootPath && !notesRootPath.startsWith('~') ? notesRootPath : null);
@@ -213,9 +214,11 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
   const [cmView, setCmView] = useState<CMEditorView | null>(null);
 
-  // Convert cm margins to px
-  const paddingTop = `${marginTop * PX_PER_CM}px`;
-  const paddingBottom = `${marginBottom * PX_PER_CM}px`;
+  // Convert cm margins to px.
+  // In print layout mode, top/bottom padding is 0 — margin decorations handle it.
+  const isPrintLayout = isPaperMode && printLayout;
+  const paddingTop = isPrintLayout ? '0px' : `${marginTop * PX_PER_CM}px`;
+  const paddingBottom = isPrintLayout ? '0px' : `${marginBottom * PX_PER_CM}px`;
   const paddingLeft = `${marginLeft * PX_PER_CM}px`;
   const paddingRight = `${marginRight * PX_PER_CM}px`;
 
@@ -263,6 +266,10 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       hfEditState.zoneElement.classList.remove('page-hf-editing');
     }
     setHfEditState(null);
+    // Trigger recalculation to rebuild decorations with updated content
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new Event(PAGE_BREAKS_RECALC_EVENT));
+    });
   }, [hfEditState]);
 
   // Close header/footer editor on tab switch
@@ -584,7 +591,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
             <div
               ref={contentRef}
               className={`w-full ${isPaperMode ? 'paper-mode' : ''}`}
-              data-page-breaks={isPaperMode ? pageBreaks : undefined}
               style={{
                 position: isPaperMode ? 'relative' as const : undefined,
                 maxWidth: maxWidth ? `${maxWidth}px` : undefined,

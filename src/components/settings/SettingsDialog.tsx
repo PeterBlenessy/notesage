@@ -145,7 +145,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
     marginLeft, setMarginLeft,
     marginRight, setMarginRight,
     gitEnabled, setGitEnabled,
-    pageBreaks, setPageBreaks,
+    printLayout, setPrintLayout,
     chatHistoryLimit, setChatHistoryLimit,
     toolCallingEnabled, setToolCallingEnabled,
     skillManagement, setSkillManagement,
@@ -518,18 +518,18 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                       </Select>
                     </div>
 
-                    {/* Page Breaks — only shown for paper sizes */}
+                    {/* Print Layout — only shown for paper sizes */}
                     {(contentWidth === 'a4' || contentWidth === 'a5' || contentWidth === 'letter') && (
                       <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
                         <div className="flex items-center justify-between gap-3">
-                          <Label className="text-sm font-medium">Page Break Gaps</Label>
+                          <Label className="text-sm font-medium">Print Layout</Label>
                           <Switch
-                            checked={pageBreaks === 'visible'}
-                            onCheckedChange={(checked) => setPageBreaks(checked ? 'visible' : 'continuous')}
+                            checked={printLayout}
+                            onCheckedChange={setPrintLayout}
                           />
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">
-                          Show visible gaps between pages
+                          Show page boundaries with headers and footers
                         </p>
                       </div>
                     )}

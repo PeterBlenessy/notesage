@@ -10,8 +10,6 @@ export type ExportTemplate = "clean" | "academic" | "report";
 export type ExportPageSize = "a4" | "letter" | "a5";
 export type ExportFormat = "pdf" | "pptx" | "docx";
 export type PptxTemplate = "simple" | "business" | "report";
-export type PageBreaks = "continuous" | "visible";
-
 interface SettingsStore {
   theme: Theme;
   contrastLevel: number;
@@ -29,7 +27,7 @@ interface SettingsStore {
   chatPanelOpen: boolean;
   notesRootPath: string;
   gitEnabled: boolean;
-  pageBreaks: PageBreaks;
+  printLayout: boolean;
   typewriterScrolling: boolean;
   externalChangeDiffReview: boolean;
   sourceWordWrap: boolean;
@@ -78,7 +76,7 @@ interface SettingsStore {
   setChatPanelOpen: (open: boolean) => void;
   setNotesRootPath: (path: string) => void;
   setGitEnabled: (enabled: boolean) => void;
-  setPageBreaks: (mode: PageBreaks) => void;
+  setPrintLayout: (enabled: boolean) => void;
   setTypewriterScrolling: (enabled: boolean) => void;
   setExternalChangeDiffReview: (enabled: boolean) => void;
   setSourceWordWrap: (enabled: boolean) => void;
@@ -128,7 +126,7 @@ export const useSettingsStore = create<SettingsStore>()(
       startupReady: false,
       icloudAvailable: false,
       icloudNotesagePath: null,
-      pageBreaks: "continuous",
+      printLayout: false,
       typewriterScrolling: false,
       externalChangeDiffReview: false,
       sourceWordWrap: true,
@@ -214,8 +212,8 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ gitEnabled: enabled });
       },
 
-      setPageBreaks: (mode: PageBreaks) => {
-        set({ pageBreaks: mode });
+      setPrintLayout: (enabled: boolean) => {
+        set({ printLayout: enabled });
       },
 
       setTypewriterScrolling: (enabled: boolean) => {
@@ -312,7 +310,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 2,
+      version: 3,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -331,6 +329,11 @@ export const useSettingsStore = create<SettingsStore>()(
             state.contrastLevel = 0;
           }
           delete state.softMode;
+        }
+        if (version < 3) {
+          // Migrate pageBreaks: "visible"/"continuous" → printLayout: boolean
+          state.printLayout = state.pageBreaks === 'visible';
+          delete state.pageBreaks;
         }
         return state;
       },

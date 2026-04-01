@@ -126,7 +126,7 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   startupReady: false,
   icloudAvailable: false,
   icloudNotesagePath: null,
-  pageBreaks: 'continuous',
+  printLayout: false,
   typewriterScrolling: false,
   externalChangeDiffReview: false,
   sourceWordWrap: true,
@@ -191,7 +191,7 @@ describe('initial state defaults', () => {
     expect(s.startupReady).toBe(false);
     expect(s.icloudAvailable).toBe(false);
     expect(s.icloudNotesagePath).toBeNull();
-    expect(s.pageBreaks).toBe('continuous');
+    expect(s.printLayout).toBe(false);
     expect(s.typewriterScrolling).toBe(false);
     expect(s.externalChangeDiffReview).toBe(false);
     expect(s.sourceWordWrap).toBe(true);
@@ -392,11 +392,11 @@ describe('string/enum setters', () => {
     expect(useSettingsStore.getState().measurementUnit).toBe('cm');
   });
 
-  it('setPageBreaks', () => {
-    useSettingsStore.getState().setPageBreaks('visible');
-    expect(useSettingsStore.getState().pageBreaks).toBe('visible');
-    useSettingsStore.getState().setPageBreaks('continuous');
-    expect(useSettingsStore.getState().pageBreaks).toBe('continuous');
+  it('setPrintLayout', () => {
+    useSettingsStore.getState().setPrintLayout(true);
+    expect(useSettingsStore.getState().printLayout).toBe(true);
+    useSettingsStore.getState().setPrintLayout(false);
+    expect(useSettingsStore.getState().printLayout).toBe(false);
   });
 
   it('setLastExportTemplate', () => {
