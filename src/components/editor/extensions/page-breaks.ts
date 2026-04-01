@@ -56,6 +56,10 @@ function createZoneElement(
 
   if (!hasContent(hf)) {
     zone.classList.add('page-hf-empty')
+    // Clear the three columns and show a centered placeholder instead
+    leftSpan.textContent = ''
+    centerSpan.textContent = zoneType === 'header' ? 'Click to add header' : 'Click to add footer'
+    rightSpan.textContent = ''
   }
 
   zone.addEventListener('click', (e) => {
@@ -76,34 +80,63 @@ function resolveDocumentTitle(doc: { firstChild: { type: { name: string }; textC
   return first && first.type.name === 'heading' ? (first.textContent || '') : ''
 }
 
-/**
- * Update the page-1 header and last-page footer that live as direct DOM
- * children of the editor element (outside ProseMirror's decoration system).
- */
-function updateEdgeZones(
+// ---------------------------------------------------------------------------
+// Overlay: renders all header/footer zones as absolute-positioned elements
+// inside the contentRef wrapper, completely independent of gap decorations.
+// ---------------------------------------------------------------------------
+
+const OVERLAY_CLASS = 'page-zone-overlay'
+const ZONE_HEIGHT = 18 // matches min-height in CSS
+
+function updatePageZones(
+  wrapper: HTMLElement | null,
   editorDom: HTMLElement,
   pageSettings: DocumentPageSettings | null,
   totalPages: number,
   docTitle: string,
+  pageHeight: number,
+  paddingTop: number,
+  paddingBottom: number,
 ) {
-  // Remove previous edge zones
-  editorDom.querySelectorAll(':scope > .page-edge-header, :scope > .page-edge-footer').forEach((el) => el.remove())
+  if (!wrapper) return
 
-  if (!pageSettings) return
+  // Remove previous overlay
+  wrapper.querySelector(`:scope > .${OVERLAY_CLASS}`)?.remove()
 
-  // Page 1 header — sits inside the editor's top padding
-  const headerWrapper = document.createElement('div')
-  headerWrapper.className = 'page-edge-header'
-  headerWrapper.setAttribute('contenteditable', 'false')
-  headerWrapper.appendChild(createZoneElement('header', pageSettings.header, 1, totalPages, docTitle, true))
-  editorDom.insertBefore(headerWrapper, editorDom.firstChild)
+  if (!pageSettings || !totalPages || !pageHeight) return
 
-  // Last page footer — sits inside the editor's bottom padding (before the last-page pad)
-  const footerWrapper = document.createElement('div')
-  footerWrapper.className = 'page-edge-footer'
-  footerWrapper.setAttribute('contenteditable', 'false')
-  footerWrapper.appendChild(createZoneElement('footer', pageSettings.footer, totalPages, totalPages, docTitle, totalPages === 1))
-  editorDom.appendChild(footerWrapper)
+  const overlay = document.createElement('div')
+  overlay.className = OVERLAY_CLASS
+  wrapper.appendChild(overlay)
+
+  // Base Y: where .ProseMirror starts within the wrapper
+  const editorY = editorDom.offsetTop
+
+  // Center a zone vertically within a margin area
+  const centerInMargin = (marginStart: number, marginHeight: number) =>
+    Math.round(marginStart + (marginHeight - ZONE_HEIGHT) / 2)
+
+  // Position zones using fixed page geometry — independent of content.
+  // Page N starts at editorY + (N-1) * pageHeight.
+  // Header margin: top of page → top + paddingTop
+  // Footer margin: top + pageHeight - paddingBottom → top + pageHeight
+  for (let p = 1; p <= totalPages; p++) {
+    const pageTop = editorY + (p - 1) * pageHeight
+
+    const header = createZoneElement(
+      'header', pageSettings.header,
+      p, totalPages, docTitle, p === 1,
+    )
+    header.style.top = `${centerInMargin(pageTop, paddingTop)}px`
+    overlay.appendChild(header)
+
+    const footer = createZoneElement(
+      'footer', pageSettings.footer,
+      p, totalPages, docTitle, p === 1,
+    )
+    footer.style.top = `${centerInMargin(pageTop + pageHeight - paddingBottom, paddingBottom)}px`
+    overlay.appendChild(footer)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -135,17 +168,17 @@ export const PageBreaks = Extension.create({
         },
         view(editorView) {
           let rafId: number | null = null
+          let zoneRafId: number | null = null
 
           const calculate = () => {
             rafId = null
 
-            // Read page settings directly from the Zustand store (no dispatch needed)
+            // Read page settings directly from the Zustand store
             const store = useEditorStore.getState()
             const activeTab = store.tabs.find((t) => t.id === store.activeTabId)
             const pageSettings: DocumentPageSettings = parsePageSettings(activeTab?.frontmatter ?? null)
             const docTitle = resolveDocumentTitle(editorView.state.doc)
 
-            // Read page height from CSS variable on the wrapper element
             const wrapper = editorView.dom.parentElement
             const pageHeightStr = wrapper
               ? getComputedStyle(wrapper).getPropertyValue('--page-height')
@@ -159,17 +192,14 @@ export const PageBreaks = Extension.create({
                   editorView.state.tr.setMeta(pageBreaksKey, DecorationSet.empty)
                 )
               }
-              // Clean up edge zones when not in paged mode
-              updateEdgeZones(editorView.dom, null, 0, '')
+              // Clean up overlay when not in paged mode
+              updatePageZones(wrapper, editorView.dom, null, 0, '', 0, 0, 0)
               return
             }
 
-            // Read top and bottom padding separately from the editor element
             const editorStyle = getComputedStyle(editorView.dom)
             const paddingTop = parseFloat(editorStyle.paddingTop) || 0
             const paddingBottom = parseFloat(editorStyle.paddingBottom) || 0
-
-            // Usable content area per page = page height minus top and bottom margins
             const usablePerPage = pageHeight - paddingTop - paddingBottom
             if (usablePerPage <= 0) return
 
@@ -178,7 +208,7 @@ export const PageBreaks = Extension.create({
             let contentHeight = 0
             let pageNumber = 1
 
-            // Collect node info first so we can look back for widow headings
+            // Collect node info for page break calculation
             const nodes: { node: typeof doc.firstChild; offset: number; height: number }[] = []
             doc.forEach((node, offset) => {
               const dom = editorView.nodeDOM(offset)
@@ -189,14 +219,10 @@ export const PageBreaks = Extension.create({
               nodes.push({ node, offset, height: dom.offsetHeight + marginTop + marginBottom })
             })
 
-            const breakPages: number[] = []
-
             for (let i = 0; i < nodes.length; i++) {
               const { offset, height: nodeHeight } = nodes[i]
 
               if (contentHeight > 0 && contentHeight + nodeHeight > pageNumber * usablePerPage) {
-                // Widow heading prevention: if the previous node is a heading,
-                // move the break before it so it stays with its following content
                 let breakOffset = offset
                 const breakKey = pageNumber
                 if (i > 0 && nodes[i - 1].node?.type.name === 'heading') {
@@ -204,37 +230,16 @@ export const PageBreaks = Extension.create({
                   contentHeight -= nodes[i - 1].height
                 }
 
-                breakPages.push(pageNumber)
-
-                // Remaining whitespace on the current page before the break
                 const usedOnPage = contentHeight - (pageNumber - 1) * usablePerPage
                 const pageRemainder = usablePerPage - usedOnPage
 
-                const currentPageNumber = pageNumber
+                // Gap decoration — purely visual, no header/footer children
                 decorations.push(
                   Decoration.widget(breakOffset, () => {
-                    const totalPages = breakPages.length + 1
                     const gap = document.createElement('div')
                     gap.className = 'page-break-gap'
                     gap.setAttribute('contenteditable', 'false')
                     gap.style.setProperty('--page-remainder', `${Math.max(0, pageRemainder)}px`)
-
-                    // Footer for the page that just ended (inside the gap)
-                    if (pageSettings) {
-                      gap.appendChild(createZoneElement(
-                        'footer', pageSettings.footer,
-                        currentPageNumber, totalPages, docTitle, currentPageNumber === 1,
-                      ))
-                    }
-
-                    // Header for the next page (inside the gap)
-                    if (pageSettings) {
-                      gap.appendChild(createZoneElement(
-                        'header', pageSettings.header,
-                        currentPageNumber + 1, totalPages, docTitle, false,
-                      ))
-                    }
-
                     return gap
                   }, { side: -1, key: `page-break-${breakKey}` })
                 )
@@ -247,7 +252,7 @@ export const PageBreaks = Extension.create({
 
             const totalPages = pageNumber
 
-            // Pad the last page to full height so it renders as a complete page
+            // Pad the last page to full height
             const lastPageUsed = contentHeight - (pageNumber - 1) * usablePerPage
             const remaining = usablePerPage - lastPageUsed
             if (remaining > 1) {
@@ -267,8 +272,16 @@ export const PageBreaks = Extension.create({
               editorView.state.tr.setMeta(pageBreaksKey, newSet)
             )
 
-            // Page 1 header & last page footer — direct DOM, not decorations
-            updateEdgeZones(editorView.dom, pageSettings, totalPages, docTitle)
+            // After the decoration dispatch, wait one frame for the DOM to
+            // update with the new gap elements, then position the overlay zones.
+            if (zoneRafId !== null) cancelAnimationFrame(zoneRafId)
+            zoneRafId = requestAnimationFrame(() => {
+              zoneRafId = null
+              updatePageZones(
+                wrapper, editorView.dom, pageSettings,
+                totalPages, docTitle, pageHeight, paddingTop, paddingBottom,
+              )
+            })
           }
 
           const scheduleCalculation = () => {
@@ -276,17 +289,13 @@ export const PageBreaks = Extension.create({
             rafId = requestAnimationFrame(calculate)
           }
 
-          // Initial calculation
           scheduleCalculation()
 
-          // Recalculate when editor element resizes (settings changes, window resize)
           const resizeObserver = new ResizeObserver(() => {
             scheduleCalculation()
           })
           resizeObserver.observe(editorView.dom)
 
-          // Subscribe to Zustand store changes so we recalculate when
-          // frontmatter (page settings) changes
           const unsubStore = useEditorStore.subscribe(scheduleCalculation)
 
           return {
@@ -297,9 +306,10 @@ export const PageBreaks = Extension.create({
             },
             destroy() {
               if (rafId !== null) cancelAnimationFrame(rafId)
+              if (zoneRafId !== null) cancelAnimationFrame(zoneRafId)
               resizeObserver.disconnect()
               unsubStore()
-              updateEdgeZones(editorView.dom, null, 0, '')
+              updatePageZones(editorView.dom.parentElement, editorView.dom, null, 0, '', 0, 0, 0)
             },
           }
         },

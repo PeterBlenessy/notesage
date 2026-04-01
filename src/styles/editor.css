@@ -85,8 +85,16 @@
 }
 
 /* ----------------------------------------------------------------
-   Header / Footer zones (paged mode)
+   Page zone overlay — absolute-positioned header/footer zones,
+   independent of page-break-gap decorations.
    ---------------------------------------------------------------- */
+.page-zone-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
 .page-header-zone,
 .page-footer-zone {
   display: flex;
@@ -94,7 +102,7 @@
   justify-content: space-between;
   padding: 2px var(--editor-padding-left, 6rem);
   font-size: 10px;
-  color: var(--color-muted-foreground);
+  color: var(--color-foreground);
   cursor: pointer;
   user-select: none;
   pointer-events: auto;
@@ -104,10 +112,6 @@
   left: 0;
   right: 0;
 }
-
-/* In page-break gaps: footer at top, header at bottom */
-.page-footer-zone { top: var(--page-remainder, 0px); }
-.page-header-zone { bottom: 0; }
 
 .page-header-zone:hover,
 .page-footer-zone:hover {
@@ -120,25 +124,17 @@
 .page-hf-center { text-align: center; }
 .page-hf-right { text-align: right; }
 
-/* Empty state — show placeholder text */
-.page-hf-empty { opacity: 0.3; }
-.page-hf-empty:hover { opacity: 0.7; }
-.page-footer-zone.page-hf-empty .page-hf-center::after { content: 'Click to add footer'; font-style: italic; }
-.page-header-zone.page-hf-empty .page-hf-center::after { content: 'Click to add header'; font-style: italic; }
-
-/* Edge zones: page-1 header & last-page footer (direct DOM children of .ProseMirror) */
-.page-edge-header,
-.page-edge-footer {
-  position: relative;
-  margin-left: calc(-1 * var(--editor-padding-left, 6rem));
-  margin-right: calc(-1 * var(--editor-padding-right, 6rem));
-  pointer-events: none;
+/* Empty state — centered placeholder */
+.page-hf-empty {
+  opacity: 0.5;
+  justify-content: center;
 }
-.page-edge-header .page-header-zone,
-.page-edge-footer .page-footer-zone {
-  position: relative;
-  top: auto;
-  bottom: auto;
+.page-hf-empty:hover {
+  opacity: 0.8;
+}
+.page-hf-empty .page-hf-col {
+  font-style: italic;
+  text-align: center;
 }
 
 /* Header/footer inline editor panel */

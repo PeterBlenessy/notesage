@@ -1,3 +1,9 @@
+---
+page:
+  header:
+    left: "{title}"
+---
+
 # Tasks: WYSIWYG Typography Phase 2 — Page Constructs
 
 |  |  |

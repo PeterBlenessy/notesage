@@ -160,15 +160,23 @@ export function PageHeaderFooterEditor({
 
   const label = type === 'header' ? 'Header' : 'Footer';
 
-  // Compute position: center over anchor, clamped to viewport
+  // Position the editor panel centered vertically on the zone.
+  // The zone is the small header/footer bar; the editor is taller,
+  // so we center it on the zone's midpoint and clamp to the viewport.
   const positionStyle: React.CSSProperties = anchorRect
-    ? {
-        position: 'fixed',
-        left: anchorRect.left,
-        top: anchorRect.top,
-        width: anchorRect.width,
-        zIndex: 50,
-      }
+    ? (() => {
+        const editorHeight = settings.differentFirstPage ? 140 : 90; // approximate
+        const zoneMidY = anchorRect.top + anchorRect.height / 2;
+        const idealTop = zoneMidY - editorHeight / 2;
+        const clampedTop = Math.max(8, Math.min(idealTop, window.innerHeight - editorHeight - 8));
+        return {
+          position: 'fixed' as const,
+          left: anchorRect.left,
+          top: clampedTop,
+          width: anchorRect.width,
+          zIndex: 50,
+        };
+      })()
     : {};
 
   return (

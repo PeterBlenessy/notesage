@@ -576,6 +576,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
               className={`w-full ${isPaperMode ? 'paper-mode' : ''}`}
               data-page-breaks={isPaperMode ? pageBreaks : undefined}
               style={{
+                position: isPaperMode ? 'relative' as const : undefined,
                 maxWidth: maxWidth ? `${maxWidth}px` : undefined,
                 '--editor-padding-top': paddingTop,
                 '--editor-padding-bottom': paddingBottom,
