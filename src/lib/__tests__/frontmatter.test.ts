@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseFrontmatter, serializeFrontmatter, ensureDocumentId, updateFrontmatterKey } from '../frontmatter';
-import { parsePageSettings, serializePageSettings } from '../page-settings';
+import { parsePageSettings, serializePageSettings, type DocumentPageSettings } from '../page-settings';
 
 describe('parseFrontmatter', () => {
   it('extracts YAML object and content from valid frontmatter', () => {
@@ -444,9 +444,10 @@ describe('updateFrontmatterKey — page settings round-trip', () => {
 
   it('round-trips page settings through parsePageSettings and serializePageSettings', () => {
     const md = '---\ntitle: Report\n---\n\nBody';
-    const settings = {
-      header: { left: '{title}', center: '', right: '{page} / {pages}', differentFirstPage: true, firstPage: { left: '', center: 'Cover Page', right: '' } },
-      footer: { left: '', center: 'Confidential', right: '{date}', differentFirstPage: false },
+    const settings: DocumentPageSettings = {
+      header: { left: '{title}', center: '', right: '{page} / {pages}', differentFirstPage: true, differentOddEven: false, firstPage: { left: '', center: 'Cover Page', right: '' } },
+      footer: { left: '', center: 'Confidential', right: '{date}', differentFirstPage: false, differentOddEven: false },
+      pageNumberStart: 1,
     };
 
     // Serialize and write to frontmatter

@@ -9,7 +9,6 @@
 import { useRef, useEffect, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,12 +27,16 @@ import {
 
 interface PageHeaderFooterEditorProps {
   type: 'header' | 'footer';
+  page: number;
   settings: PageHeaderFooter;
+  pageNumberStart?: number;
   onUpdate: (updated: PageHeaderFooter) => void;
+  onPageNumberStartChange?: (n: number) => void;
   onClose: () => void;
 }
 
 type ColumnKey = 'left' | 'center' | 'right';
+type SlotKey = 'main' | 'first' | 'odd' | 'even';
 
 // ---------------------------------------------------------------------------
 // Component
@@ -41,42 +44,74 @@ type ColumnKey = 'left' | 'center' | 'right';
 
 export function PageHeaderFooterEditor({
   type,
+  page,
   settings,
+  pageNumberStart = 1,
   onUpdate,
+  onPageNumberStartChange,
   onClose,
 }: PageHeaderFooterEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Close on Escape
+  // Stop keyboard events from bubbling up to ProseMirror.
+  // Escape closes the editor; all other keys stay within the inputs.
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
+    const el = containerRef.current;
+    if (!el) return;
+    function handleKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
         onClose();
+        return;
       }
+      e.stopPropagation();
     }
-    window.addEventListener('keydown', handleKeyDown, true);
-    return () => window.removeEventListener('keydown', handleKeyDown, true);
+    // Bubble phase: lets children (inputs) handle the event first,
+    // then stops it from reaching ProseMirror above.
+    el.addEventListener('keydown', handleKey, false);
+    el.addEventListener('keyup', handleKey, false);
+    return () => {
+      el.removeEventListener('keydown', handleKey, false);
+      el.removeEventListener('keyup', handleKey, false);
+    };
   }, [onClose]);
 
-  // Close on click outside
+  // Stop mouse events from bubbling up to ProseMirror (bubble phase, not capture)
+  // and close on click outside.
   useEffect(() => {
-    function handleClick(e: MouseEvent) {
+    const el = containerRef.current;
+    if (!el) return;
+
+    // Bubble-phase: stop events from propagating UP from our container
+    // to ProseMirror, but let them propagate DOWN to children (checkboxes etc.)
+    function stopBubble(e: Event) {
+      e.stopPropagation();
+    }
+    el.addEventListener('mousedown', stopBubble, false);
+    el.addEventListener('mouseup', stopBubble, false);
+    el.addEventListener('pointerdown', stopBubble, false);
+    el.addEventListener('pointerup', stopBubble, false);
+
+    // Close on click outside
+    function handleOutsideClick(e: MouseEvent) {
       const target = e.target as Node;
-      // Don't close if click is inside the editor or a Radix dropdown portal
-      if (containerRef.current && !containerRef.current.contains(target)) {
+      if (el && !el.contains(target)) {
         const radixPortal = (target as HTMLElement).closest?.('[data-radix-popper-content-wrapper]');
         if (radixPortal) return;
         onClose();
       }
     }
     const timer = setTimeout(() => {
-      window.addEventListener('mousedown', handleClick, true);
+      window.addEventListener('mousedown', handleOutsideClick, true);
     }, 50);
     return () => {
       clearTimeout(timer);
-      window.removeEventListener('mousedown', handleClick, true);
+      el.removeEventListener('mousedown', stopBubble, false);
+      el.removeEventListener('mouseup', stopBubble, false);
+      el.removeEventListener('pointerdown', stopBubble, false);
+      el.removeEventListener('pointerup', stopBubble, false);
+      window.removeEventListener('mousedown', handleOutsideClick, true);
     };
   }, [onClose]);
 
@@ -93,34 +128,48 @@ export function PageHeaderFooterEditor({
     if (inputs.length > 0) inputs[0].focus();
   }, []);
 
+  const emptyColumns = { left: '', center: '', right: '' };
+
+  // Determine which data slot this page's inputs bind to
+  const displayPage = page + (pageNumberStart - 1);
+  const isFirstPage = displayPage === 1 && settings.differentFirstPage;
+  const isOddPage = !isFirstPage && settings.differentOddEven && displayPage % 2 === 1;
+  const isEvenPage = !isFirstPage && settings.differentOddEven && displayPage % 2 === 0;
+  const activeSlot: SlotKey = isFirstPage ? 'first' : isOddPage ? 'odd' : isEvenPage ? 'even' : 'main';
+
+  const currentValues = activeSlot === 'first' ? (settings.firstPage ?? emptyColumns)
+    : activeSlot === 'odd' ? (settings.oddPage ?? emptyColumns)
+    : activeSlot === 'even' ? (settings.evenPage ?? emptyColumns)
+    : settings;
+
   const handleFieldChange = useCallback(
-    (row: 'main' | 'first', col: ColumnKey, value: string) => {
-      if (row === 'main') {
+    (_row: SlotKey, col: ColumnKey, value: string) => {
+      if (activeSlot === 'main') {
         onUpdate({ ...settings, [col]: value });
-      } else {
-        onUpdate({
-          ...settings,
-          firstPage: {
-            left: settings.firstPage?.left ?? '',
-            center: settings.firstPage?.center ?? '',
-            right: settings.firstPage?.right ?? '',
-            [col]: value,
-          },
-        });
+      } else if (activeSlot === 'first') {
+        onUpdate({ ...settings, firstPage: { ...(settings.firstPage ?? emptyColumns), [col]: value } });
+      } else if (activeSlot === 'odd') {
+        onUpdate({ ...settings, oddPage: { ...(settings.oddPage ?? emptyColumns), [col]: value } });
+      } else if (activeSlot === 'even') {
+        onUpdate({ ...settings, evenPage: { ...(settings.evenPage ?? emptyColumns), [col]: value } });
       }
     },
-    [settings, onUpdate],
+    [settings, activeSlot, onUpdate],
   );
 
-  const handleDifferentFirstPage = useCallback(
-    (checked: boolean) => {
-      onUpdate({
-        ...settings,
-        differentFirstPage: checked,
-        firstPage: checked
-          ? (settings.firstPage ?? { left: '', center: '', right: '' })
-          : settings.firstPage,
-      });
+  const handleToggle = useCallback(
+    (field: 'differentFirstPage' | 'differentOddEven', checked: boolean) => {
+      const update = { ...settings, [field]: checked };
+      const mainCols = { left: settings.left, center: settings.center, right: settings.right };
+      if (field === 'differentFirstPage' && checked) {
+        // Copy current main values so the user's work isn't lost
+        update.firstPage = settings.firstPage ?? { ...mainCols };
+      }
+      if (field === 'differentOddEven' && checked) {
+        update.oddPage = settings.oddPage ?? { ...mainCols };
+        update.evenPage = settings.evenPage ?? { ...mainCols };
+      }
+      onUpdate(update);
     },
     [settings, onUpdate],
   );
@@ -133,53 +182,61 @@ export function PageHeaderFooterEditor({
       className="page-hf-editor"
       onClick={(e) => e.stopPropagation()}
     >
-      {/* Section label */}
-      <div className="mb-1.5">
+      {/* Section label + slot indicator */}
+      <div className="flex items-center justify-between mb-1.5">
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           {label}
+          {activeSlot !== 'main' && (
+            <span className="ml-1.5 normal-case tracking-normal font-normal">
+              ({activeSlot === 'first' ? 'first page' : activeSlot === 'odd' ? 'odd pages' : 'even pages'})
+            </span>
+          )}
         </span>
       </div>
 
-      {/* Main row */}
+      {/* Single input row — binds to the active slot for this page */}
       <ColumnInputRow
-        row="main"
-        left={settings.left}
-        center={settings.center}
-        right={settings.right}
+        row={activeSlot}
+        left={currentValues.left}
+        center={currentValues.center}
+        right={currentValues.right}
         onChange={handleFieldChange}
       />
 
-      {/* Different first page toggle */}
-      <div className="flex items-center gap-1.5 mt-1.5">
-        <Checkbox
-          id={`hf-diff-first-${type}`}
-          checked={settings.differentFirstPage}
-          onCheckedChange={(checked) => handleDifferentFirstPage(checked === true)}
-          className="size-3"
-        />
-        <label
-          htmlFor={`hf-diff-first-${type}`}
-          className="text-[10px] text-muted-foreground cursor-pointer select-none"
-        >
-          Different first page
+      {/* Toggles + page number start */}
+      <div className="flex items-center gap-4 mt-1.5">
+        <label className="flex items-center gap-1.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={settings.differentFirstPage}
+            onChange={(e) => handleToggle('differentFirstPage', e.target.checked)}
+            className="size-3 accent-current"
+          />
+          <span className="text-[10px] text-muted-foreground">Different first page</span>
         </label>
+        <label className="flex items-center gap-1.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={settings.differentOddEven}
+            onChange={(e) => handleToggle('differentOddEven', e.target.checked)}
+            className="size-3 accent-current"
+          />
+          <span className="text-[10px] text-muted-foreground">Different odd &amp; even</span>
+        </label>
+        {onPageNumberStartChange && (
+          <div className="flex items-center gap-1 ml-auto">
+            <label className="text-[10px] text-muted-foreground select-none">Page #</label>
+            <input
+              type="number"
+              min={1}
+              value={pageNumberStart}
+              onChange={(e) => onPageNumberStartChange(Math.max(1, parseInt(e.target.value) || 1))}
+              className="w-10 h-5 text-[10px] text-center bg-transparent border border-border rounded px-1 text-foreground outline-none focus:border-muted-foreground"
+            />
+          </div>
+        )}
       </div>
 
-      {/* First page row */}
-      {settings.differentFirstPage && (
-        <div className="mt-1.5">
-          <span className="text-[10px] text-muted-foreground mb-1 block">
-            First page
-          </span>
-          <ColumnInputRow
-            row="first"
-            left={settings.firstPage?.left ?? ''}
-            center={settings.firstPage?.center ?? ''}
-            right={settings.firstPage?.right ?? ''}
-            onChange={handleFieldChange}
-          />
-        </div>
-      )}
     </div>
   );
 }
@@ -262,11 +319,11 @@ function ColumnInput({ value, placeholder, align, onChange }: ColumnInputProps) 
 // ---------------------------------------------------------------------------
 
 interface ColumnInputRowProps {
-  row: 'main' | 'first';
+  row: SlotKey;
   left: string;
   center: string;
   right: string;
-  onChange: (row: 'main' | 'first', col: ColumnKey, value: string) => void;
+  onChange: (row: SlotKey, col: ColumnKey, value: string) => void;
 }
 
 function ColumnInputRow({ row, left, center, right, onChange }: ColumnInputRowProps) {

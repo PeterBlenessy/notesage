@@ -5,6 +5,18 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Three-column content (left/center/right).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreeColumns {
+    #[serde(default)]
+    pub left: String,
+    #[serde(default)]
+    pub center: String,
+    #[serde(default)]
+    pub right: String,
+}
+
 /// Header or footer configuration with left/center/right columns.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,19 +30,13 @@ pub struct PageHeaderFooter {
     #[serde(default)]
     pub different_first_page: bool,
     #[serde(default)]
-    pub first_page: Option<FirstPageHeaderFooter>,
-}
-
-/// First page override for header or footer.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FirstPageHeaderFooter {
+    pub first_page: Option<ThreeColumns>,
     #[serde(default)]
-    pub left: String,
+    pub different_odd_even: bool,
     #[serde(default)]
-    pub center: String,
+    pub odd_page: Option<ThreeColumns>,
     #[serde(default)]
-    pub right: String,
+    pub even_page: Option<ThreeColumns>,
 }
 
 /// Complete document page settings (header + footer).
@@ -41,7 +47,11 @@ pub struct DocumentPageSettings {
     pub header: PageHeaderFooter,
     #[serde(default = "default_header_footer")]
     pub footer: PageHeaderFooter,
+    #[serde(default = "default_page_number_start")]
+    pub page_number_start: u32,
 }
+
+fn default_page_number_start() -> u32 { 1 }
 
 fn default_header_footer() -> PageHeaderFooter {
     PageHeaderFooter {
@@ -50,7 +60,32 @@ fn default_header_footer() -> PageHeaderFooter {
         right: String::new(),
         different_first_page: false,
         first_page: None,
+        different_odd_even: false,
+        odd_page: None,
+        even_page: None,
     }
+}
+
+/// Get effective columns for a given display page number.
+#[allow(dead_code)]
+pub fn get_effective_columns<'a>(hf: &'a PageHeaderFooter, display_page: u32) -> (&'a str, &'a str, &'a str) {
+    if display_page == 1 && hf.different_first_page {
+        if let Some(ref fp) = hf.first_page {
+            return (&fp.left, &fp.center, &fp.right);
+        }
+    }
+    if hf.different_odd_even {
+        if display_page % 2 == 1 {
+            if let Some(ref op) = hf.odd_page {
+                return (&op.left, &op.center, &op.right);
+            }
+        } else {
+            if let Some(ref ep) = hf.even_page {
+                return (&ep.left, &ep.center, &ep.right);
+            }
+        }
+    }
+    (&hf.left, &hf.center, &hf.right)
 }
 
 /// Context for resolving template variables like `{page}`, `{title}`, etc.

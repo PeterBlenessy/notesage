@@ -240,7 +240,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const { exportPdf, exportPptx, isExporting } = useExportOperations(editor);
   const { reviewActive, compareBranch, handleAcceptAll, handleRejectAll } = useDiffReview(editor);
   const { settings: pageSettings, updateSettings: updatePageSettings } = usePageSettings(editor);
-  const [hfEditState, setHfEditState] = useState<{ type: 'header' | 'footer'; zoneElement: HTMLDivElement } | null>(null);
+  const [hfEditState, setHfEditState] = useState<{ type: 'header' | 'footer'; page: number; zoneElement: HTMLDivElement } | null>(null);
   useFileWatcher();
   useCopilotCompletion(editor);
   useCopilotCompletionCM(cmView);
@@ -252,7 +252,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       const detail = (e as CustomEvent<PageHFClickDetail>).detail;
       const zone = detail.zoneElement;
       zone.classList.add('page-hf-editing');
-      setHfEditState({ type: detail.type, zoneElement: zone });
+      setHfEditState({ type: detail.type, page: detail.page, zoneElement: zone });
     };
     window.addEventListener(PAGE_HF_CLICK_EVENT, handler);
     return () => window.removeEventListener(PAGE_HF_CLICK_EVENT, handler);
@@ -607,12 +607,15 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           {hfEditState && createPortal(
             <PageHeaderFooterEditor
               type={hfEditState.type}
+              page={hfEditState.page}
               settings={hfEditState.type === 'header' ? pageSettings.header : pageSettings.footer}
+              pageNumberStart={pageSettings.pageNumberStart}
               onUpdate={(updated) => {
                 const newSettings = { ...pageSettings };
                 newSettings[hfEditState.type] = updated;
                 updatePageSettings(newSettings);
               }}
+              onPageNumberStartChange={(n) => updatePageSettings({ ...pageSettings, pageNumberStart: n })}
               onClose={closeHfEditor}
             />,
             hfEditState.zoneElement,

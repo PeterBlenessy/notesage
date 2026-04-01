@@ -1346,6 +1346,9 @@ impl<'a> DocxConverter<'a> {
                             right: fp_hf.right.clone(),
                             different_first_page: false,
                             first_page: None,
+                            different_odd_even: false,
+                            odd_page: None,
+                            even_page: None,
                         };
                         let fp_para = build_hf_paragraph(&fp, &self.title, &today);
                         Header::new().add_paragraph(fp_para)
@@ -1372,6 +1375,9 @@ impl<'a> DocxConverter<'a> {
                             right: fp_hf.right.clone(),
                             different_first_page: false,
                             first_page: None,
+                            different_odd_even: false,
+                            odd_page: None,
+                            even_page: None,
                         };
                         let fp_para = build_hf_paragraph(&fp, &self.title, &today);
                         Footer::new().add_paragraph(fp_para)

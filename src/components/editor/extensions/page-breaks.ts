@@ -2,7 +2,7 @@ import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { DocumentPageSettings, PageHeaderFooter } from '@/lib/page-settings'
-import { resolveVariables, hasContent, parsePageSettings } from '@/lib/page-settings'
+import { resolveVariables, hasContent, parsePageSettings, getEffectiveColumns } from '@/lib/page-settings'
 import { useEditorStore } from '@/stores/editor-store'
 
 export const pageBreaksKey = new PluginKey('pageBreaks')
@@ -27,15 +27,19 @@ function createZoneElement(
   page: number,
   totalPages: number,
   title: string,
-  isFirstPage: boolean,
+  pageNumberStart: number,
 ): HTMLDivElement {
   const zone = document.createElement('div')
   zone.className = `page-${zoneType}-zone`
   zone.setAttribute('contenteditable', 'false')
   zone.dataset.page = String(page)
 
-  const vars = { page, pages: totalPages, title, date: new Date().toLocaleDateString() }
-  const cols = isFirstPage && hf.differentFirstPage && hf.firstPage ? hf.firstPage : hf
+  const displayPage = page + (pageNumberStart - 1)
+  const displayTotal = totalPages + (pageNumberStart - 1)
+  const today = new Date()
+  const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const vars = { page: displayPage, pages: displayTotal, title, date: dateStr }
+  const cols = getEffectiveColumns(hf, displayPage)
   const left = resolveVariables(cols.left, vars)
   const center = resolveVariables(cols.center, vars)
   const right = resolveVariables(cols.right, vars)
@@ -64,7 +68,8 @@ function createZoneElement(
   }
 
   zone.addEventListener('click', (e) => {
-    e.preventDefault()
+    // Don't open the editor if already editing (click came from an input/checkbox inside)
+    if (zone.classList.contains('page-hf-editing')) return
     e.stopPropagation()
     window.dispatchEvent(
       new CustomEvent<PageHFClickDetail>(PAGE_HF_CLICK_EVENT, {
@@ -76,9 +81,15 @@ function createZoneElement(
   return zone
 }
 
-function resolveDocumentTitle(doc: { firstChild: { type: { name: string }; textContent: string } | null }): string {
-  const first = doc.firstChild
-  return first && first.type.name === 'heading' ? (first.textContent || '') : ''
+function resolveDocumentTitle(doc: { forEach: (fn: (node: { type: { name: string }; textContent: string }) => boolean | void) => void }): string {
+  let title = ''
+  doc.forEach((node) => {
+    if (!title && node.type.name === 'heading') {
+      title = node.textContent || ''
+      return false // stop iteration
+    }
+  })
+  return title
 }
 
 // ---------------------------------------------------------------------------
@@ -100,8 +111,12 @@ function updatePageZones(
 ) {
   if (!wrapper) return
 
-  // Remove previous overlay
-  wrapper.querySelector(`:scope > .${OVERLAY_CLASS}`)?.remove()
+  // Don't rebuild the overlay while a zone is being edited — the portal
+  // target would be destroyed and React would unmount the editor.
+  const existingOverlay = wrapper.querySelector(`:scope > .${OVERLAY_CLASS}`)
+  if (existingOverlay?.querySelector('.page-hf-editing')) return
+
+  existingOverlay?.remove()
 
   if (!pageSettings || !totalPages || !pageHeight) return
 
@@ -115,7 +130,7 @@ function updatePageZones(
   // Each zone fills the entire margin area (top margin = header, bottom margin = footer)
   const addZone = (zoneType: 'header' | 'footer', page: number, marginY: number, marginSize: number) => {
     const zone = createZoneElement(zoneType, zoneType === 'header' ? pageSettings.header : pageSettings.footer,
-      page, totalPages, docTitle, page === 1)
+      page, totalPages, docTitle, pageSettings.pageNumberStart)
     zone.style.top = `${Math.round(marginY)}px`
     zone.style.height = `${Math.round(marginSize)}px`
     overlay.appendChild(zone)
@@ -196,13 +211,17 @@ export const PageBreaks = Extension.create({
           const calculate = () => {
             rafId = null
 
+            // Skip everything while a zone is being edited — any ProseMirror
+            // dispatch would interfere with the React portal and inputs.
+            const wrapper = editorView.dom.parentElement
+            if (wrapper?.querySelector('.page-hf-editing')) return
+
             // Read page settings directly from the Zustand store
             const store = useEditorStore.getState()
             const activeTab = store.tabs.find((t) => t.id === store.activeTabId)
             const pageSettings: DocumentPageSettings = parsePageSettings(activeTab?.frontmatter ?? null)
             const docTitle = resolveDocumentTitle(editorView.state.doc)
 
-            const wrapper = editorView.dom.parentElement
             const pageHeightStr = wrapper
               ? getComputedStyle(wrapper).getPropertyValue('--page-height')
               : ''

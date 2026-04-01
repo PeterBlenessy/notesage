@@ -9,21 +9,27 @@
 // Core types
 // ---------------------------------------------------------------------------
 
+export interface ThreeColumns {
+  left: string;
+  center: string;
+  right: string;
+}
+
 export interface PageHeaderFooter {
   left: string;
   center: string;
   right: string;
   differentFirstPage: boolean;
-  firstPage?: {
-    left: string;
-    center: string;
-    right: string;
-  };
+  firstPage?: ThreeColumns;
+  differentOddEven: boolean;
+  oddPage?: ThreeColumns;
+  evenPage?: ThreeColumns;
 }
 
 export interface DocumentPageSettings {
   header: PageHeaderFooter;
   footer: PageHeaderFooter;
+  pageNumberStart: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -53,12 +59,14 @@ function emptyHeaderFooter(): PageHeaderFooter {
     center: '',
     right: '',
     differentFirstPage: false,
+    differentOddEven: false,
   };
 }
 
 export const PAGE_SETTINGS_DEFAULTS: DocumentPageSettings = {
   header: emptyHeaderFooter(),
   footer: emptyHeaderFooter(),
+  pageNumberStart: 1,
 };
 
 // ---------------------------------------------------------------------------
@@ -79,6 +87,17 @@ export function parsePageSettings(frontmatter: Record<string, unknown> | null): 
   return {
     header: parseHeaderFooter(page.header),
     footer: parseHeaderFooter(page.footer),
+    pageNumberStart: typeof page.pageNumberStart === 'number' ? page.pageNumberStart : 1,
+  };
+}
+
+function parseThreeColumns(raw: unknown): ThreeColumns | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const obj = raw as Record<string, unknown>;
+  return {
+    left: typeof obj.left === 'string' ? obj.left : '',
+    center: typeof obj.center === 'string' ? obj.center : '',
+    right: typeof obj.right === 'string' ? obj.right : '',
   };
 }
 
@@ -93,15 +112,15 @@ function parseHeaderFooter(raw: unknown): PageHeaderFooter {
     center: typeof obj.center === 'string' ? obj.center : '',
     right: typeof obj.right === 'string' ? obj.right : '',
     differentFirstPage: typeof obj.differentFirstPage === 'boolean' ? obj.differentFirstPage : false,
+    differentOddEven: typeof obj.differentOddEven === 'boolean' ? obj.differentOddEven : false,
   };
 
-  if (result.differentFirstPage && typeof obj.firstPage === 'object' && obj.firstPage !== null) {
-    const fp = obj.firstPage as Record<string, unknown>;
-    result.firstPage = {
-      left: typeof fp.left === 'string' ? fp.left : '',
-      center: typeof fp.center === 'string' ? fp.center : '',
-      right: typeof fp.right === 'string' ? fp.right : '',
-    };
+  if (result.differentFirstPage) {
+    result.firstPage = parseThreeColumns(obj.firstPage);
+  }
+  if (result.differentOddEven) {
+    result.oddPage = parseThreeColumns(obj.oddPage);
+    result.evenPage = parseThreeColumns(obj.evenPage);
   }
 
   return result;
@@ -126,6 +145,18 @@ export function serializePageSettings(settings: DocumentPageSettings): Record<st
     result.footer = serializeHeaderFooter(settings.footer);
   }
 
+  if (settings.pageNumberStart !== 1) {
+    result.pageNumberStart = settings.pageNumberStart;
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function serializeThreeColumns(cols: ThreeColumns): Record<string, unknown> | undefined {
+  const result: Record<string, unknown> = {};
+  if (cols.left) result.left = cols.left;
+  if (cols.center) result.center = cols.center;
+  if (cols.right) result.right = cols.right;
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
@@ -137,11 +168,19 @@ function serializeHeaderFooter(hf: PageHeaderFooter): Record<string, unknown> {
   if (hf.differentFirstPage) {
     result.differentFirstPage = true;
     if (hf.firstPage) {
-      const fp: Record<string, unknown> = {};
-      if (hf.firstPage.left) fp.left = hf.firstPage.left;
-      if (hf.firstPage.center) fp.center = hf.firstPage.center;
-      if (hf.firstPage.right) fp.right = hf.firstPage.right;
-      if (Object.keys(fp).length > 0) result.firstPage = fp;
+      const fp = serializeThreeColumns(hf.firstPage);
+      if (fp) result.firstPage = fp;
+    }
+  }
+  if (hf.differentOddEven) {
+    result.differentOddEven = true;
+    if (hf.oddPage) {
+      const op = serializeThreeColumns(hf.oddPage);
+      if (op) result.oddPage = op;
+    }
+    if (hf.evenPage) {
+      const ep = serializeThreeColumns(hf.evenPage);
+      if (ep) result.evenPage = ep;
     }
   }
   return result;
@@ -155,11 +194,30 @@ export function hasContent(hf: PageHeaderFooter): boolean {
 }
 
 function isDefaultSettings(settings: DocumentPageSettings): boolean {
-  return isDefaultHeaderFooter(settings.header) && isDefaultHeaderFooter(settings.footer);
+  return isDefaultHeaderFooter(settings.header) && isDefaultHeaderFooter(settings.footer) && settings.pageNumberStart === 1;
 }
 
 function isDefaultHeaderFooter(hf: PageHeaderFooter): boolean {
-  return !hf.left && !hf.center && !hf.right && !hf.differentFirstPage;
+  return !hf.left && !hf.center && !hf.right && !hf.differentFirstPage && !hf.differentOddEven;
+}
+
+// ---------------------------------------------------------------------------
+// Column resolution — pick the right content for a given page
+// ---------------------------------------------------------------------------
+
+/**
+ * Get the effective columns (left/center/right) for a header or footer
+ * on a specific page, considering differentFirstPage and differentOddEven.
+ */
+export function getEffectiveColumns(hf: PageHeaderFooter, displayPage: number): ThreeColumns {
+  if (displayPage === 1 && hf.differentFirstPage && hf.firstPage) {
+    return hf.firstPage;
+  }
+  if (hf.differentOddEven) {
+    if (displayPage % 2 === 1 && hf.oddPage) return hf.oddPage;
+    if (displayPage % 2 === 0 && hf.evenPage) return hf.evenPage;
+  }
+  return hf;
 }
 
 // ---------------------------------------------------------------------------

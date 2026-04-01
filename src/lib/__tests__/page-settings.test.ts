@@ -7,7 +7,6 @@ import {
   PAGE_SETTINGS_DEFAULTS,
   PAGE_VARIABLES,
   type DocumentPageSettings,
-  type PageHeaderFooter,
   type VariableContext,
 } from '../page-settings';
 
@@ -51,7 +50,7 @@ describe('parsePageSettings', () => {
       page: {
         header: {
           left: '', center: '', right: '{page}',
-          differentFirstPage: true,
+          differentFirstPage: true, differentOddEven: false,
           firstPage: { left: '', center: '{title}', right: '' },
         },
       },
@@ -104,16 +103,18 @@ describe('serializePageSettings', () => {
 
   it('returns undefined for empty strings everywhere', () => {
     const settings: DocumentPageSettings = {
-      header: { left: '', center: '', right: '', differentFirstPage: false },
-      footer: { left: '', center: '', right: '', differentFirstPage: false },
+      header: { left: '', center: '', right: '', differentFirstPage: false, differentOddEven: false },
+      footer: { left: '', center: '', right: '', differentFirstPage: false, differentOddEven: false },
+      pageNumberStart: 1,
     };
     expect(serializePageSettings(settings)).toBeUndefined();
   });
 
   it('serializes header with content', () => {
     const settings: DocumentPageSettings = {
-      header: { left: '{title}', center: '', right: '{page}', differentFirstPage: false },
-      footer: { left: '', center: '', right: '', differentFirstPage: false },
+      header: { left: '{title}', center: '', right: '{page}', differentFirstPage: false, differentOddEven: false },
+      footer: { left: '', center: '', right: '', differentFirstPage: false, differentOddEven: false },
+      pageNumberStart: 1,
     };
     const result = serializePageSettings(settings);
     expect(result).toBeDefined();
@@ -125,10 +126,11 @@ describe('serializePageSettings', () => {
     const settings: DocumentPageSettings = {
       header: {
         left: '', center: '', right: '{page}',
-        differentFirstPage: true,
+        differentFirstPage: true, differentOddEven: false,
         firstPage: { left: '', center: '{title}', right: '' },
       },
-      footer: { left: '', center: '', right: '', differentFirstPage: false },
+      footer: { left: '', center: '', right: '', differentFirstPage: false, differentOddEven: false },
+      pageNumberStart: 1,
     };
     const result = serializePageSettings(settings);
     expect(result).toBeDefined();
@@ -142,10 +144,11 @@ describe('serializePageSettings', () => {
     const settings: DocumentPageSettings = {
       header: {
         left: 'Title', center: '', right: '',
-        differentFirstPage: true,
+        differentFirstPage: true, differentOddEven: false,
         firstPage: { left: '', center: '', right: '' },
       },
-      footer: { left: '', center: '', right: '', differentFirstPage: false },
+      footer: { left: '', center: '', right: '', differentFirstPage: false, differentOddEven: false },
+      pageNumberStart: 1,
     };
     const result = serializePageSettings(settings);
     const hdr = result!.header as Record<string, unknown>;
@@ -202,25 +205,26 @@ describe('resolveVariables', () => {
 // ---------------------------------------------------------------------------
 
 describe('hasContent', () => {
+  const base = { differentFirstPage: false, differentOddEven: false };
+
   it('returns false for empty header/footer', () => {
-    const hf: PageHeaderFooter = { left: '', center: '', right: '', differentFirstPage: false };
-    expect(hasContent(hf)).toBe(false);
+    expect(hasContent({ left: '', center: '', right: '', ...base })).toBe(false);
   });
 
   it('returns true when left has content', () => {
-    expect(hasContent({ left: 'text', center: '', right: '', differentFirstPage: false })).toBe(true);
+    expect(hasContent({ left: 'text', center: '', right: '', ...base })).toBe(true);
   });
 
   it('returns true when center has content', () => {
-    expect(hasContent({ left: '', center: 'text', right: '', differentFirstPage: false })).toBe(true);
+    expect(hasContent({ left: '', center: 'text', right: '', ...base })).toBe(true);
   });
 
   it('returns true when right has content', () => {
-    expect(hasContent({ left: '', center: '', right: 'text', differentFirstPage: false })).toBe(true);
+    expect(hasContent({ left: '', center: '', right: 'text', ...base })).toBe(true);
   });
 
   it('does not consider differentFirstPage alone as having content', () => {
-    expect(hasContent({ left: '', center: '', right: '', differentFirstPage: true })).toBe(false);
+    expect(hasContent({ left: '', center: '', right: '', differentFirstPage: true, differentOddEven: false })).toBe(false);
   });
 });
 
@@ -249,8 +253,9 @@ describe('PAGE_VARIABLES', () => {
 describe('page settings round-trip', () => {
   it('round-trips simple header/footer through serialize/parse', () => {
     const original: DocumentPageSettings = {
-      header: { left: '{title}', center: '', right: '{page}', differentFirstPage: false },
-      footer: { left: '{date}', center: '', right: '', differentFirstPage: false },
+      header: { left: '{title}', center: '', right: '{page}', differentFirstPage: false, differentOddEven: false },
+      footer: { left: '{date}', center: '', right: '', differentFirstPage: false, differentOddEven: false },
+      pageNumberStart: 1,
     };
 
     const serialized = serializePageSettings(original);
@@ -268,10 +273,11 @@ describe('page settings round-trip', () => {
     const original: DocumentPageSettings = {
       header: {
         left: '', center: '', right: 'Page {page}',
-        differentFirstPage: true,
+        differentFirstPage: true, differentOddEven: false,
         firstPage: { left: '', center: '{title}', right: '' },
       },
-      footer: { left: '', center: '', right: '', differentFirstPage: false },
+      footer: { left: '', center: '', right: '', differentFirstPage: false, differentOddEven: false },
+      pageNumberStart: 1,
     };
 
     const serialized = serializePageSettings(original);
