@@ -93,10 +93,14 @@ export function PageHeaderFooterEditor({
     function stopAtZone(e: Event) {
       e.stopPropagation();
     }
-    zone.addEventListener('mousedown', stopAtZone, false);
-    zone.addEventListener('mouseup', stopAtZone, false);
-    zone.addEventListener('pointerdown', stopAtZone, false);
-    zone.addEventListener('pointerup', stopAtZone, false);
+    // Block pointer, clipboard, and drag events from reaching ProseMirror
+    const blockedEvents = [
+      'mousedown', 'mouseup', 'pointerdown', 'pointerup',
+      'paste', 'copy', 'cut', 'drop', 'dragstart',
+    ];
+    for (const evt of blockedEvents) {
+      zone.addEventListener(evt, stopAtZone, false);
+    }
 
     // Close on click outside
     function handleOutsideClick(e: MouseEvent) {
@@ -112,10 +116,9 @@ export function PageHeaderFooterEditor({
     }, 50);
     return () => {
       clearTimeout(timer);
-      zone.removeEventListener('mousedown', stopAtZone, false);
-      zone.removeEventListener('mouseup', stopAtZone, false);
-      zone.removeEventListener('pointerdown', stopAtZone, false);
-      zone.removeEventListener('pointerup', stopAtZone, false);
+      for (const evt of blockedEvents) {
+        zone.removeEventListener(evt, stopAtZone, false);
+      }
       window.removeEventListener('mousedown', handleOutsideClick, true);
     };
   }, [onClose]);
