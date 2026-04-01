@@ -442,6 +442,30 @@
   border-bottom-color: var(--color-primary);
 }
 
+/* Link URL tooltip on hover — matches shadcn tooltip style (inverted colors) */
+.ProseMirror a[href]:hover::after {
+  content: attr(href);
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  max-width: 400px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--color-foreground);
+  color: var(--color-background);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.ProseMirror a[href] {
+  position: relative;
+}
+
 /* Links — internal document (href doesn't start with http/mailto/tel/#) */
 .ProseMirror a:not([href^="http"]):not([href^="mailto"]):not([href^="tel"]):not([href^="#"]) {
   border-bottom-style: dashed;
