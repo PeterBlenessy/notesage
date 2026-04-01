@@ -29,7 +29,10 @@ import {
   getInlineDiffHunks,
   setSuggestion,
   hasActiveSuggestion,
+  PAGE_HF_CLICK_EVENT,
 } from "@/components/editor/extensions";
+import type { PageHFClickDetail } from "@/components/editor/extensions";
+import { usePageSettings } from "@/hooks/usePageSettings";
 import { extractReplacementText, resolveAnchorRange } from "@/lib/pm-replace";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { useGitStore } from "@/stores/git-store";
@@ -39,6 +42,7 @@ import { SourceModeEditor } from "./SourceModeEditor";
 import { HtmlViewer } from "./viewers/HtmlViewer";
 import { ImageInsertDialog } from "./ImageInsertDialog";
 import { TableHeaderMenu } from "./TableHeaderMenu";
+import { PageHeaderFooterEditor } from "./PageHeaderFooterEditor";
 import { tauriApi } from "@/lib/tauri";
 import { isBinaryFileType } from "@/lib/file-utils";
 import { log } from "@/lib/logger";
@@ -234,10 +238,25 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
 
   const { exportPdf, exportPptx, isExporting } = useExportOperations(editor);
   const { reviewActive, compareBranch, handleAcceptAll, handleRejectAll } = useDiffReview(editor);
+  const { settings: pageSettings, updateSettings: updatePageSettings } = usePageSettings(editor);
+  const [hfEditState, setHfEditState] = useState<{ type: 'header' | 'footer'; rect: DOMRect } | null>(null);
   useFileWatcher();
   useCopilotCompletion(editor);
   useCopilotCompletionCM(cmView);
   useLocalCompletion(editor);
+
+  // Listen for header/footer zone click events from the decoration DOM
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<PageHFClickDetail>).detail;
+      setHfEditState({ type: detail.type, rect: detail.rect });
+    };
+    window.addEventListener(PAGE_HF_CLICK_EVENT, handler);
+    return () => window.removeEventListener(PAGE_HF_CLICK_EVENT, handler);
+  }, []);
+
+  // Close header/footer editor on tab switch
+  useEffect(() => { setHfEditState(null); }, [activeTabId]);
 
   // Keyboard shortcuts + find bar
   const {
@@ -574,6 +593,19 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           </div>
           {editor && showFloatingToolbar && <BubbleMenu editor={editor} />}
           {editor && <TableHeaderMenu editor={editor} />}
+          {hfEditState && (
+            <PageHeaderFooterEditor
+              type={hfEditState.type}
+              settings={hfEditState.type === 'header' ? pageSettings.header : pageSettings.footer}
+              onUpdate={(updated) => {
+                const newSettings = { ...pageSettings };
+                newSettings[hfEditState.type] = updated;
+                updatePageSettings(newSettings);
+              }}
+              onClose={() => setHfEditState(null)}
+              anchorRect={hfEditState.rect}
+            />
+          )}
         </div>
         </div>
       )}

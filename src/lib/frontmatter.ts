@@ -131,6 +131,42 @@ export function serializeFrontmatter(frontmatter: Frontmatter | null, content: s
 }
 
 /**
+ * Update a single key in the frontmatter of a raw markdown string.
+ *
+ * - If value is `undefined`, the key is removed from the frontmatter.
+ * - If the markdown has no frontmatter, a new block is created (unless value is undefined).
+ * - All other frontmatter keys are preserved unchanged.
+ *
+ * Returns the updated markdown string.
+ */
+export function updateFrontmatterKey(
+  markdown: string,
+  key: string,
+  value: unknown,
+): string {
+  const { frontmatter, content } = parseFrontmatter(markdown);
+
+  if (value === undefined) {
+    // Remove the key
+    if (!frontmatter || !(key in frontmatter)) {
+      // Nothing to remove
+      return markdown;
+    }
+    const updated = { ...frontmatter };
+    delete updated[key];
+    // If frontmatter is now empty, drop it entirely
+    if (Object.keys(updated).length === 0) {
+      return content;
+    }
+    return serializeFrontmatter(updated, content);
+  }
+
+  // Set the key
+  const updated = { ...(frontmatter ?? {}), [key]: value };
+  return serializeFrontmatter(updated, content);
+}
+
+/**
  * Find the position of the closing `---` delimiter.
  * The closing delimiter must appear at the start of a line.
  * Returns the index of the `---` or -1 if not found.

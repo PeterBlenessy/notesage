@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { parseFrontmatter, serializeFrontmatter, ensureDocumentId } from '../frontmatter';
+import { parseFrontmatter, serializeFrontmatter, ensureDocumentId, updateFrontmatterKey } from '../frontmatter';
+import { parsePageSettings, serializePageSettings } from '../page-settings';
 
 describe('parseFrontmatter', () => {
   it('extracts YAML object and content from valid frontmatter', () => {
@@ -351,5 +352,135 @@ describe('ensureDocumentId', () => {
     const b = ensureDocumentId(null);
 
     expect(a.id).not.toBe(b.id);
+  });
+});
+
+describe('updateFrontmatterKey', () => {
+  it('adds a key to existing frontmatter', () => {
+    const md = '---\ntitle: Test\n---\n\nBody';
+    const result = updateFrontmatterKey(md, 'author', 'Alice');
+    const { frontmatter, content } = parseFrontmatter(result);
+    expect(frontmatter?.title).toBe('Test');
+    expect(frontmatter?.author).toBe('Alice');
+    expect(content).toBe('Body');
+  });
+
+  it('creates frontmatter when none exists', () => {
+    const md = '# Hello\n\nWorld';
+    const result = updateFrontmatterKey(md, 'page', { header: {} });
+    const { frontmatter, content } = parseFrontmatter(result);
+    expect(frontmatter?.page).toEqual({ header: {} });
+    expect(content).toBe('# Hello\n\nWorld');
+  });
+
+  it('removes a key when value is undefined', () => {
+    const md = '---\ntitle: Test\nauthor: Alice\n---\n\nBody';
+    const result = updateFrontmatterKey(md, 'author', undefined);
+    const { frontmatter, content } = parseFrontmatter(result);
+    expect(frontmatter?.title).toBe('Test');
+    expect(frontmatter?.author).toBeUndefined();
+    expect(content).toBe('Body');
+  });
+
+  it('drops frontmatter entirely when removing the last key', () => {
+    const md = '---\nauthor: Alice\n---\n\nBody';
+    const result = updateFrontmatterKey(md, 'author', undefined);
+    expect(result).toBe('Body');
+    const { frontmatter } = parseFrontmatter(result);
+    expect(frontmatter).toBeNull();
+  });
+
+  it('returns unchanged markdown when removing a non-existent key', () => {
+    const md = '---\ntitle: Test\n---\n\nBody';
+    const result = updateFrontmatterKey(md, 'nonexistent', undefined);
+    expect(result).toBe(md);
+  });
+
+  it('returns unchanged markdown when removing from content with no frontmatter', () => {
+    const md = '# Hello';
+    const result = updateFrontmatterKey(md, 'anything', undefined);
+    expect(result).toBe(md);
+  });
+
+  it('preserves all other keys when updating', () => {
+    const md = '---\ntitle: Test\ntags:\n  - a\n  - b\ncustom: value\n---\n\nBody';
+    const result = updateFrontmatterKey(md, 'page', { header: { left: '{title}' } });
+    const { frontmatter } = parseFrontmatter(result);
+    expect(frontmatter?.title).toBe('Test');
+    expect(frontmatter?.tags).toEqual(['a', 'b']);
+    expect(frontmatter?.custom).toBe('value');
+    expect(frontmatter?.page).toEqual({ header: { left: '{title}' } });
+  });
+
+  it('overwrites an existing key', () => {
+    const md = '---\ntitle: Old\n---\n\nBody';
+    const result = updateFrontmatterKey(md, 'title', 'New');
+    const { frontmatter } = parseFrontmatter(result);
+    expect(frontmatter?.title).toBe('New');
+  });
+});
+
+describe('updateFrontmatterKey — page settings round-trip', () => {
+  it('add page settings then parse them back', () => {
+    const md = '---\ntitle: My Doc\n---\n\n# Content';
+    const pageSettings = {
+      header: { left: '{title}', center: '', right: '{page}' },
+      footer: { center: 'Confidential' },
+    };
+    const updated = updateFrontmatterKey(md, 'page', pageSettings);
+    const { frontmatter } = parseFrontmatter(updated);
+    expect(frontmatter?.page).toEqual(pageSettings);
+    expect(frontmatter?.title).toBe('My Doc');
+  });
+
+  it('remove page settings by setting to undefined', () => {
+    const md = '---\ntitle: My Doc\npage:\n  header:\n    left: "{title}"\n---\n\n# Content';
+    const updated = updateFrontmatterKey(md, 'page', undefined);
+    const { frontmatter, content } = parseFrontmatter(updated);
+    expect(frontmatter?.page).toBeUndefined();
+    expect(frontmatter?.title).toBe('My Doc');
+    expect(content).toBe('# Content');
+  });
+
+  it('round-trips page settings through parsePageSettings and serializePageSettings', () => {
+    const md = '---\ntitle: Report\n---\n\nBody';
+    const settings = {
+      header: { left: '{title}', center: '', right: '{page} / {pages}', differentFirstPage: true, firstPage: { left: '', center: 'Cover Page', right: '' } },
+      footer: { left: '', center: 'Confidential', right: '{date}', differentFirstPage: false },
+    };
+
+    // Serialize and write to frontmatter
+    const serialized = serializePageSettings(settings);
+    const updated = updateFrontmatterKey(md, 'page', serialized);
+
+    // Parse back
+    const { frontmatter } = parseFrontmatter(updated);
+    const parsed = parsePageSettings(frontmatter);
+
+    expect(parsed.header.left).toBe('{title}');
+    expect(parsed.header.right).toBe('{page} / {pages}');
+    expect(parsed.header.differentFirstPage).toBe(true);
+    expect(parsed.header.firstPage?.center).toBe('Cover Page');
+    expect(parsed.footer.center).toBe('Confidential');
+    expect(parsed.footer.right).toBe('{date}');
+    expect(parsed.footer.differentFirstPage).toBe(false);
+  });
+
+  it('returns defaults when page key is absent', () => {
+    const { frontmatter } = parseFrontmatter('---\ntitle: Test\n---\n\nBody');
+    const settings = parsePageSettings(frontmatter);
+    expect(settings.header.left).toBe('');
+    expect(settings.header.center).toBe('');
+    expect(settings.header.right).toBe('');
+    expect(settings.header.differentFirstPage).toBe(false);
+    expect(settings.footer.left).toBe('');
+    expect(settings.footer.center).toBe('');
+    expect(settings.footer.right).toBe('');
+  });
+
+  it('serializePageSettings returns undefined for all-default settings', () => {
+    const defaults = parsePageSettings(null);
+    const serialized = serializePageSettings(defaults);
+    expect(serialized).toBeUndefined();
   });
 });

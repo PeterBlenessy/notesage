@@ -34,6 +34,7 @@ pub fn markdown_to_docx(
     template: &str,
     options: &DocxOptions,
     typography: Option<&super::typography::TypographyPresets>,
+    page_settings: Option<&super::page_settings::DocumentPageSettings>,
 ) -> Result<Vec<u8>, String> {
     let mut opts = Options::default();
     opts.extension.table = true;
@@ -49,7 +50,7 @@ pub fn markdown_to_docx(
         Some(presets) => TemplateConfig::from_typography(presets),
         None => TemplateConfig::from_name(template),
     };
-    let mut converter = DocxConverter::new(title, &template_config, options);
+    let mut converter = DocxConverter::new(title, &template_config, options, page_settings);
     converter.walk(root);
     converter.finish()
 }
@@ -184,6 +185,7 @@ struct DocxConverter<'a> {
     title: String,
     template: &'a TemplateConfig,
     options: &'a DocxOptions,
+    page_settings: Option<&'a super::page_settings::DocumentPageSettings>,
     paragraphs: Vec<DocxElement>,
     /// Active inline runs being accumulated for the current paragraph.
     runs: Vec<Run>,
@@ -226,11 +228,17 @@ enum ListKind {
 }
 
 impl<'a> DocxConverter<'a> {
-    fn new(title: &str, template: &'a TemplateConfig, options: &'a DocxOptions) -> Self {
+    fn new(
+        title: &str,
+        template: &'a TemplateConfig,
+        options: &'a DocxOptions,
+        page_settings: Option<&'a super::page_settings::DocumentPageSettings>,
+    ) -> Self {
         Self {
             title: title.to_string(),
             template,
             options,
+            page_settings,
             paragraphs: Vec::new(),
             runs: Vec::new(),
             bold: false,
@@ -1239,43 +1247,181 @@ impl<'a> DocxConverter<'a> {
             docx = docx.add_paragraph(break_para);
         }
 
-        // Header/footer
-        if self.template.has_header_footer {
-            // Header with title
-            let header_run = Run::new()
-                .add_text(&self.title)
-                .size(self.template.body_size - 4)
-                .color("888888")
-                .fonts(
-                    RunFonts::new()
-                        .ascii(self.template.body_font.clone())
-                        .hi_ansi(self.template.body_font.clone()),
-                );
-            let header = Header::new().add_paragraph(
-                Paragraph::new().add_run(header_run),
-            );
-            docx = docx.header(header);
-        }
+        // Header/footer — use page_settings if provided, else fall back to template defaults
+        if let Some(ps) = self.page_settings {
+            use super::page_settings::{has_content, resolve_variables, VariableContext, PageHeaderFooter};
 
-        if self.options.include_page_numbers || self.template.has_header_footer {
-            // Footer with page number
-            let page_num_run = Run::new()
-                .add_field_char(FieldCharType::Begin, false)
-                .add_instr_text(InstrText::PAGE(InstrPAGE::new()))
-                .add_field_char(FieldCharType::End, false)
-                .size(self.template.body_size - 4)
-                .color("888888")
-                .fonts(
-                    RunFonts::new()
-                        .ascii(self.template.body_font.clone())
-                        .hi_ansi(self.template.body_font.clone()),
+            let today = chrono::Local::now().format("%B %d, %Y").to_string();
+            let hf_size = self.template.body_size.saturating_sub(4).max(14);
+            let hf_fonts = RunFonts::new()
+                .ascii(self.template.body_font.clone())
+                .hi_ansi(self.template.body_font.clone());
+
+            // Helper to build a three-column paragraph from left/center/right text.
+            // Uses tab stops: center at page midpoint, right at page right edge.
+            // Page width minus margins: w - 2*1440 twips.
+            let page_text_width = (w as i32 - 2 * 1440).max(0) as usize;
+            let center_tab = page_text_width / 2;
+            let right_tab = page_text_width;
+
+            let build_hf_paragraph = |hf: &PageHeaderFooter, title: &str, date: &str| -> Paragraph {
+                let ctx = VariableContext {
+                    page: "",    // Will use field codes instead
+                    pages: "",   // Will use field codes instead
+                    title,
+                    date,
+                };
+
+                let mut para = Paragraph::new();
+
+                // Left content
+                let left_text = resolve_variables(&hf.left, &ctx);
+                let mut run = Run::new()
+                    .size(hf_size)
+                    .color("888888")
+                    .fonts(hf_fonts.clone());
+
+                // Process the left column - handle {page} and {pages} as field codes
+                if hf.left.contains("{page}") || hf.left.contains("{pages}") {
+                    run = add_runs_with_fields(run, &hf.left, title, date, hf_size, &hf_fonts);
+                } else if !left_text.is_empty() {
+                    run = run.add_text(&left_text);
+                }
+                para = para.add_run(run);
+
+                // Center tab + content
+                if !hf.center.is_empty() {
+                    let center_text = resolve_variables(&hf.center, &ctx);
+                    let tab_run = Run::new().add_tab();
+                    para = para.add_run(tab_run);
+
+                    let mut crun = Run::new()
+                        .size(hf_size)
+                        .color("888888")
+                        .fonts(hf_fonts.clone());
+                    if hf.center.contains("{page}") || hf.center.contains("{pages}") {
+                        crun = add_runs_with_fields(crun, &hf.center, title, date, hf_size, &hf_fonts);
+                    } else {
+                        crun = crun.add_text(&center_text);
+                    }
+                    para = para.add_run(crun);
+                }
+
+                // Right tab + content
+                if !hf.right.is_empty() {
+                    let right_text = resolve_variables(&hf.right, &ctx);
+                    let tab_run = Run::new().add_tab();
+                    para = para.add_run(tab_run);
+
+                    let mut rrun = Run::new()
+                        .size(hf_size)
+                        .color("888888")
+                        .fonts(hf_fonts.clone());
+                    if hf.right.contains("{page}") || hf.right.contains("{pages}") {
+                        rrun = add_runs_with_fields(rrun, &hf.right, title, date, hf_size, &hf_fonts);
+                    } else {
+                        rrun = rrun.add_text(&right_text);
+                    }
+                    para = para.add_run(rrun);
+                }
+
+                // Add tab stop definitions
+                para = para
+                    .add_tab(Tab::new().val(TabValueType::Center).pos(center_tab))
+                    .add_tab(Tab::new().val(TabValueType::Right).pos(right_tab));
+
+                para
+            };
+
+            if has_content(&ps.header) {
+                let header_para = build_hf_paragraph(&ps.header, &self.title, &today);
+                let header = Header::new().add_paragraph(header_para);
+
+                if ps.header.different_first_page {
+                    // Create first page header
+                    let first_header = if let Some(ref fp_hf) = ps.header.first_page {
+                        let fp = super::page_settings::PageHeaderFooter {
+                            left: fp_hf.left.clone(),
+                            center: fp_hf.center.clone(),
+                            right: fp_hf.right.clone(),
+                            different_first_page: false,
+                            first_page: None,
+                        };
+                        let fp_para = build_hf_paragraph(&fp, &self.title, &today);
+                        Header::new().add_paragraph(fp_para)
+                    } else {
+                        // Empty first page header
+                        Header::new().add_paragraph(Paragraph::new())
+                    };
+                    // first_header() automatically sets titlePg in section properties
+                    docx = docx.header(header).first_header(first_header);
+                } else {
+                    docx = docx.header(header);
+                }
+            }
+
+            if has_content(&ps.footer) {
+                let footer_para = build_hf_paragraph(&ps.footer, &self.title, &today);
+                let footer = Footer::new().add_paragraph(footer_para);
+
+                if ps.footer.different_first_page {
+                    let first_footer = if let Some(ref fp_hf) = ps.footer.first_page {
+                        let fp = super::page_settings::PageHeaderFooter {
+                            left: fp_hf.left.clone(),
+                            center: fp_hf.center.clone(),
+                            right: fp_hf.right.clone(),
+                            different_first_page: false,
+                            first_page: None,
+                        };
+                        let fp_para = build_hf_paragraph(&fp, &self.title, &today);
+                        Footer::new().add_paragraph(fp_para)
+                    } else {
+                        Footer::new().add_paragraph(Paragraph::new())
+                    };
+                    docx = docx.footer(footer).first_footer(first_footer);
+                } else {
+                    docx = docx.footer(footer);
+                }
+            }
+        } else {
+            // Legacy template-based header/footer
+            if self.template.has_header_footer {
+                // Header with title
+                let header_run = Run::new()
+                    .add_text(&self.title)
+                    .size(self.template.body_size - 4)
+                    .color("888888")
+                    .fonts(
+                        RunFonts::new()
+                            .ascii(self.template.body_font.clone())
+                            .hi_ansi(self.template.body_font.clone()),
+                    );
+                let header = Header::new().add_paragraph(
+                    Paragraph::new().add_run(header_run),
                 );
-            let footer = Footer::new().add_paragraph(
-                Paragraph::new()
-                    .add_run(page_num_run)
-                    .align(AlignmentType::Right),
-            );
-            docx = docx.footer(footer);
+                docx = docx.header(header);
+            }
+
+            if self.options.include_page_numbers || self.template.has_header_footer {
+                // Footer with page number
+                let page_num_run = Run::new()
+                    .add_field_char(FieldCharType::Begin, false)
+                    .add_instr_text(InstrText::PAGE(InstrPAGE::new()))
+                    .add_field_char(FieldCharType::End, false)
+                    .size(self.template.body_size - 4)
+                    .color("888888")
+                    .fonts(
+                        RunFonts::new()
+                            .ascii(self.template.body_font.clone())
+                            .hi_ansi(self.template.body_font.clone()),
+                    );
+                let footer = Footer::new().add_paragraph(
+                    Paragraph::new()
+                        .add_run(page_num_run)
+                        .align(AlignmentType::Right),
+                );
+                docx = docx.footer(footer);
+            }
         }
 
         // Add all content paragraphs
@@ -1304,6 +1450,74 @@ impl<'a> DocxConverter<'a> {
 // ---------------------------------------------------------------------------
 // Utility
 // ---------------------------------------------------------------------------
+
+/// Build a Run that resolves `{page}` and `{pages}` as Word field codes,
+/// and `{title}`/`{date}` as literal text. Returns the run with all parts added.
+fn add_runs_with_fields(
+    mut run: Run,
+    template: &str,
+    title: &str,
+    date: &str,
+    _size: usize,
+    _fonts: &RunFonts,
+) -> Run {
+    let mut remaining = template;
+
+    while !remaining.is_empty() {
+        // Find the next variable
+        let next_page = remaining.find("{page}");
+        let next_pages = remaining.find("{pages}");
+        let next_title = remaining.find("{title}");
+        let next_date = remaining.find("{date}");
+
+        // Find the earliest occurrence
+        let earliest = [next_page, next_pages, next_title, next_date]
+            .iter()
+            .filter_map(|&pos| pos)
+            .min();
+
+        match earliest {
+            None => {
+                // No more variables, add remaining text
+                if !remaining.is_empty() {
+                    run = run.add_text(remaining);
+                }
+                break;
+            }
+            Some(pos) => {
+                // Add text before the variable
+                if pos > 0 {
+                    run = run.add_text(&remaining[..pos]);
+                }
+
+                // Check which variable is at this position
+                if next_pages == Some(pos) {
+                    // {pages} → NUMPAGES field (check before {page} since it's longer)
+                    run = run
+                        .add_field_char(FieldCharType::Begin, false)
+                        .add_instr_text(InstrText::NUMPAGES(InstrNUMPAGES::new()))
+                        .add_field_char(FieldCharType::End, false);
+                    remaining = &remaining[pos + 7..]; // "{pages}".len() == 7
+                } else if next_page == Some(pos) {
+                    // {page} → PAGE field
+                    run = run
+                        .add_field_char(FieldCharType::Begin, false)
+                        .add_instr_text(InstrText::PAGE(InstrPAGE::new()))
+                        .add_field_char(FieldCharType::End, false);
+                    remaining = &remaining[pos + 6..]; // "{page}".len() == 6
+                } else if next_title == Some(pos) {
+                    run = run.add_text(title);
+                    remaining = &remaining[pos + 7..]; // "{title}".len() == 7
+                } else if next_date == Some(pos) {
+                    run = run.add_text(date);
+                    remaining = &remaining[pos + 6..]; // "{date}".len() == 6
+                }
+            }
+        }
+    }
+
+    run
+}
 
 /// Recursively collect plain text from an AST node.
 fn collect_text<'a>(node: &'a comrak::nodes::AstNode<'a>) -> String {
@@ -1338,6 +1552,7 @@ mod tests {
                 project_root: None,
             },
             None,
+            None,
         );
         assert!(result.is_ok());
         let bytes = result.unwrap();
@@ -1360,6 +1575,7 @@ mod tests {
                 project_root: None,
             },
             None,
+            None,
         );
         assert!(result.is_ok());
         assert!(!result.unwrap().is_empty());
@@ -1379,6 +1595,7 @@ mod tests {
                 project_root: None,
             },
             None,
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1396,6 +1613,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
             None,
         );
         assert!(result.is_ok());
@@ -1415,6 +1633,7 @@ mod tests {
                 project_root: None,
             },
             None,
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1432,6 +1651,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
             None,
         );
         assert!(result.is_ok());
@@ -1451,6 +1671,7 @@ mod tests {
                 project_root: None,
             },
             None,
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1468,6 +1689,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
             None,
         );
         assert!(result.is_ok());
@@ -1487,6 +1709,7 @@ mod tests {
                 project_root: None,
             },
             None,
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1504,6 +1727,7 @@ mod tests {
                     page_size: "a4".to_string(),
                     project_root: None,
                 },
+                None,
                 None,
             );
             assert!(result.is_ok(), "Template {} failed", template);
@@ -1524,6 +1748,7 @@ mod tests {
                     project_root: None,
                 },
                 None,
+                None,
             );
             assert!(result.is_ok(), "Page size {} failed", size);
         }
@@ -1541,6 +1766,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
             None,
         );
         assert!(result.is_ok());
@@ -1560,6 +1786,7 @@ mod tests {
                 project_root: None,
             },
             None,
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1578,6 +1805,7 @@ mod tests {
                 project_root: None,
             },
             None,
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1595,6 +1823,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
             None,
         );
         assert!(result.is_ok());
@@ -1697,6 +1926,7 @@ mod tests {
                 project_root: None,
             },
             Some(&presets),
+            None,
         );
         assert!(result.is_ok());
         let bytes = result.unwrap();

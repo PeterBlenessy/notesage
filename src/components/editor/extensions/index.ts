@@ -23,7 +23,8 @@ export {
   CommentMarkPluginKey,
 } from './comment-mark';
 export { LocalImage } from './local-image';
-export { pageBreaksKey } from './page-breaks';
+export { pageBreaksKey, PAGE_HF_CLICK_EVENT } from './page-breaks';
+export type { PageHFClickDetail } from './page-breaks';
 export {
   GhostText,
   GhostTextPluginKey,

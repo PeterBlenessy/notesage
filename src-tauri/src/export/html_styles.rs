@@ -406,11 +406,18 @@ del { color: var(--muted-fg); }
 "##;
 
 /// Build a complete HTML document from body content and CSS.
-pub fn wrap_html_document(body: &str, title: &str, theme: &str, css: &str) -> String {
+///
+/// `header_footer_html` contains optional visible header/footer elements
+/// to display in screen mode. The header is placed before the article,
+/// the footer after it. Pass an empty string if no header/footer.
+pub fn wrap_html_document(body: &str, title: &str, theme: &str, css: &str, header_footer_html: &str) -> String {
     let data_theme = match theme {
         "dark" => "dark",
         _ => "light",
     };
+
+    // Split header/footer HTML into header (before article) and footer (after article)
+    let (header_html, footer_html) = split_header_footer_html(header_footer_html);
 
     format!(
         r#"<!DOCTYPE html>
@@ -424,16 +431,40 @@ pub fn wrap_html_document(body: &str, title: &str, theme: &str, css: &str) -> St
   <style>{}</style>
 </head>
 <body>
-  <article class="notesage-document">
+{}  <article class="notesage-document">
 {}
   </article>
+{}
 </body>
 </html>"#,
         data_theme,
         html_escape_title(title),
         css,
-        body
+        header_html,
+        body,
+        footer_html,
     )
+}
+
+/// Split combined header/footer HTML into separate parts.
+/// Header elements have class "notesage-page-header", footer elements have "notesage-page-footer".
+fn split_header_footer_html(html: &str) -> (String, String) {
+    let mut header = String::new();
+    let mut footer = String::new();
+
+    for line in html.lines() {
+        if line.contains("notesage-page-header") {
+            header.push_str("  ");
+            header.push_str(line);
+            header.push('\n');
+        } else if line.contains("notesage-page-footer") {
+            footer.push_str("  ");
+            footer.push_str(line);
+            footer.push('\n');
+        }
+    }
+
+    (header, footer)
 }
 
 /// Escape HTML special characters in the document title.

@@ -173,6 +173,107 @@ pub fn generate_typst_styles(
     source
 }
 
+/// Generate Typst header/footer rules from DocumentPageSettings.
+///
+/// Produces `#set page(header: ..., footer: ...)` rules with three-column
+/// grid layout. Variables are resolved to Typst expressions.
+pub fn generate_typst_header_footer(
+    settings: &super::page_settings::DocumentPageSettings,
+    title: &str,
+) -> String {
+    use super::page_settings::has_content;
+
+    let mut source = String::new();
+
+    if has_content(&settings.header) {
+        source.push_str(&generate_typst_hf_rule("header", &settings.header, title));
+    }
+
+    if has_content(&settings.footer) {
+        source.push_str(&generate_typst_hf_rule("footer", &settings.footer, title));
+    }
+
+    source
+}
+
+/// Generate a single Typst header or footer rule.
+fn generate_typst_hf_rule(
+    kind: &str,
+    hf: &super::page_settings::PageHeaderFooter,
+    title: &str,
+) -> String {
+    let resolve = |template: &str| -> String {
+        resolve_typst_variables(template, title)
+    };
+
+    if hf.different_first_page {
+        // Use context-aware conditional based on page counter
+        let mut rule = format!("#set page({}: context {{\n", kind);
+        rule.push_str("  let page-num = counter(page).get().first()\n");
+        rule.push_str("  if page-num == 1 {\n");
+
+        // First page content
+        if let Some(ref fp) = hf.first_page {
+            if fp.left.is_empty() && fp.center.is_empty() && fp.right.is_empty() {
+                rule.push_str("    []\n");
+            } else {
+                rule.push_str("    grid(columns: (1fr, 1fr, 1fr),\n");
+                rule.push_str(&format!("      align(left)[#text(size: 9pt, fill: rgb(\"888888\"))[{}]],\n", resolve(&fp.left)));
+                rule.push_str(&format!("      align(center)[#text(size: 9pt, fill: rgb(\"888888\"))[{}]],\n", resolve(&fp.center)));
+                rule.push_str(&format!("      align(right)[#text(size: 9pt, fill: rgb(\"888888\"))[{}]],\n", resolve(&fp.right)));
+                rule.push_str("    )\n");
+            }
+        } else {
+            // No first page config means empty first page
+            rule.push_str("    []\n");
+        }
+
+        rule.push_str("  } else {\n");
+        rule.push_str("    grid(columns: (1fr, 1fr, 1fr),\n");
+        rule.push_str(&format!("      align(left)[#text(size: 9pt, fill: rgb(\"888888\"))[{}]],\n", resolve(&hf.left)));
+        rule.push_str(&format!("      align(center)[#text(size: 9pt, fill: rgb(\"888888\"))[{}]],\n", resolve(&hf.center)));
+        rule.push_str(&format!("      align(right)[#text(size: 9pt, fill: rgb(\"888888\"))[{}]],\n", resolve(&hf.right)));
+        rule.push_str("    )\n");
+        rule.push_str("  }\n");
+        rule.push_str("})\n");
+        rule
+    } else {
+        // Simple header/footer without first page differentiation
+        let mut rule = format!("#set page({}: context {{\n", kind);
+        rule.push_str("  grid(columns: (1fr, 1fr, 1fr),\n");
+        rule.push_str(&format!("    align(left)[#text(size: 9pt, fill: rgb(\"888888\"))[{}]],\n", resolve(&hf.left)));
+        rule.push_str(&format!("    align(center)[#text(size: 9pt, fill: rgb(\"888888\"))[{}]],\n", resolve(&hf.center)));
+        rule.push_str(&format!("    align(right)[#text(size: 9pt, fill: rgb(\"888888\"))[{}]],\n", resolve(&hf.right)));
+        rule.push_str("  )\n");
+        rule.push_str("})\n");
+        rule
+    }
+}
+
+/// Resolve template variables to Typst expressions.
+///
+/// - `{page}` -> `#counter(page).display()`
+/// - `{pages}` -> `#context counter(page).final().first()`
+/// - `{title}` -> literal title text
+/// - `{date}` -> `#datetime.today().display("[month repr:long] [day], [year]")`
+fn resolve_typst_variables(template: &str, title: &str) -> String {
+    if template.is_empty() {
+        return String::new();
+    }
+    // Escape Typst special characters in the title
+    let escaped_title = title
+        .replace('\\', "\\\\")
+        .replace('#', "\\#")
+        .replace('[', "\\[")
+        .replace(']', "\\]");
+
+    template
+        .replace("{page}", "#counter(page).display()")
+        .replace("{pages}", "#counter(page).final().first()")
+        .replace("{title}", &escaped_title)
+        .replace("{date}", "#datetime.today().display(\"[month repr:long] [day], [year]\")")
+}
+
 /// PPTX template preset names.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PptxTemplate {
@@ -585,5 +686,112 @@ fn main() {}
         // Report title color is white (for dark background)
         assert_eq!(report.title_color, "FFFFFF");
         assert_ne!(simple.title_color, "FFFFFF");
+    }
+
+    #[test]
+    fn test_generate_typst_header_footer_simple() {
+        use crate::export::page_settings::*;
+
+        let settings = DocumentPageSettings {
+            header: PageHeaderFooter {
+                left: "{title}".to_string(),
+                center: String::new(),
+                right: "Page {page}".to_string(),
+                different_first_page: false,
+                first_page: None,
+            },
+            footer: PageHeaderFooter {
+                left: String::new(),
+                center: "{page} / {pages}".to_string(),
+                right: String::new(),
+                different_first_page: false,
+                first_page: None,
+            },
+        };
+
+        let result = generate_typst_header_footer(&settings, "My Document");
+        // Should contain header and footer set rules
+        assert!(result.contains("#set page(header:"), "should have header rule");
+        assert!(result.contains("#set page(footer:"), "should have footer rule");
+        // Should resolve {title} to literal text
+        assert!(result.contains("My Document"), "should resolve title");
+        // Should resolve {page} to Typst counter
+        assert!(result.contains("counter(page).display()"), "should resolve page");
+        // Should resolve {pages} to Typst counter final
+        assert!(result.contains("counter(page).final()"), "should resolve pages");
+        // Should use grid layout
+        assert!(result.contains("grid(columns:"), "should use grid layout");
+    }
+
+    #[test]
+    fn test_generate_typst_header_footer_different_first_page() {
+        use crate::export::page_settings::*;
+
+        let settings = DocumentPageSettings {
+            header: PageHeaderFooter {
+                left: "{title}".to_string(),
+                center: String::new(),
+                right: String::new(),
+                different_first_page: true,
+                first_page: Some(FirstPageHeaderFooter {
+                    left: String::new(),
+                    center: String::new(),
+                    right: String::new(),
+                }),
+            },
+            footer: PageHeaderFooter {
+                left: String::new(),
+                center: String::new(),
+                right: String::new(),
+                different_first_page: false,
+                first_page: None,
+            },
+        };
+
+        let result = generate_typst_header_footer(&settings, "Test");
+        // Should have conditional for first page
+        assert!(result.contains("page-num == 1"), "should check page number");
+        // First page should be empty (all fields empty)
+        assert!(result.contains("[]"), "should have empty first page");
+    }
+
+    #[test]
+    fn test_generate_typst_header_footer_no_content() {
+        use crate::export::page_settings::*;
+
+        let settings = DocumentPageSettings {
+            header: PageHeaderFooter {
+                left: String::new(),
+                center: String::new(),
+                right: String::new(),
+                different_first_page: false,
+                first_page: None,
+            },
+            footer: PageHeaderFooter {
+                left: String::new(),
+                center: String::new(),
+                right: String::new(),
+                different_first_page: false,
+                first_page: None,
+            },
+        };
+
+        let result = generate_typst_header_footer(&settings, "Test");
+        // Should be empty when no content
+        assert!(result.is_empty(), "should be empty when no header/footer content");
+    }
+
+    #[test]
+    fn test_resolve_typst_variables_special_chars() {
+        // Title with Typst special characters should be escaped
+        let result = resolve_typst_variables("{title}", "My #Doc [v1]");
+        assert!(result.contains("\\#"), "should escape hash");
+        assert!(result.contains("\\["), "should escape bracket");
+    }
+
+    #[test]
+    fn test_resolve_typst_variables_date() {
+        let result = resolve_typst_variables("{date}", "Test");
+        assert!(result.contains("datetime.today()"), "should use datetime");
     }
 }

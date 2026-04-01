@@ -3,6 +3,7 @@ use crate::export::markdown_to_docx::{markdown_to_docx, DocxOptions};
 use crate::export::markdown_to_html::markdown_to_html;
 use crate::export::markdown_to_pptx::markdown_to_pptx;
 use crate::export::markdown_to_typst::markdown_to_typst;
+use crate::export::page_settings::DocumentPageSettings;
 use crate::export::templates::{generate_typst_styles, PageSize, Template, TemplateOptions};
 use crate::export::typography::TypographyPresets;
 use crate::export::typst_world::NotesageWorld;
@@ -20,6 +21,7 @@ pub async fn export_pdf(
     page_size: String,
     project_root: Option<String>,
     typography: Option<TypographyPresets>,
+    page_settings: Option<DocumentPageSettings>,
 ) -> Result<Vec<u8>, String> {
     let page_size = PageSize::from_str(&page_size)?;
 
@@ -28,17 +30,26 @@ pub async fn export_pdf(
 
     // Generate source: use typography presets if provided, else fall back to template
     let presets = typography.unwrap_or_default();
-    let source = generate_typst_styles(
+    let template_options = TemplateOptions {
+        template: Template::from_str(&template).unwrap_or(Template::Clean),
+        title,
+        include_toc,
+        include_page_numbers,
+        page_size,
+    };
+    let mut source = generate_typst_styles(
         &typst_content,
         &presets,
-        &TemplateOptions {
-            template: Template::from_str(&template).unwrap_or(Template::Clean),
-            title,
-            include_toc,
-            include_page_numbers,
-            page_size,
-        },
+        &template_options,
     );
+
+    // Inject custom header/footer if page settings are provided
+    if let Some(ref settings) = page_settings {
+        use crate::export::templates::generate_typst_header_footer;
+        let hf_source = generate_typst_header_footer(settings, &template_options.title);
+        // Insert header/footer rules after the page setup line
+        source = inject_typst_header_footer(&source, &hf_source);
+    }
 
     // Compile to PDF
     let world = NotesageWorld::new(source);
@@ -78,6 +89,7 @@ pub async fn export_docx(
     page_size: String,
     project_root: Option<String>,
     typography: Option<TypographyPresets>,
+    page_settings: Option<DocumentPageSettings>,
 ) -> Result<Vec<u8>, String> {
     let options = DocxOptions {
         include_toc,
@@ -85,7 +97,7 @@ pub async fn export_docx(
         page_size,
         project_root,
     };
-    markdown_to_docx(&markdown, &title, &template, &options, typography.as_ref())
+    markdown_to_docx(&markdown, &title, &template, &options, typography.as_ref(), page_settings.as_ref())
 }
 
 /// Render markdown to a complete HTML document or body fragment.
@@ -97,6 +109,7 @@ pub async fn render_html(
     include_styles: bool,
     project_root: Option<String>,
     typography: Option<TypographyPresets>,
+    page_settings: Option<DocumentPageSettings>,
 ) -> Result<String, String> {
     let body = markdown_to_html(&markdown, &theme, project_root.as_deref());
 
@@ -105,12 +118,264 @@ pub async fn render_html(
         // Generate typography override CSS if presets are provided
         let presets = typography.unwrap_or_default();
         let typography_css = generate_html_typography_css(&presets);
-        let css = format!("{}\n{}", base_css, typography_css);
-        Ok(wrap_html_document(&body, &title, &theme, &css))
+        // Generate header/footer CSS if page settings are provided
+        let hf_css = page_settings.as_ref()
+            .map(|ps| generate_html_header_footer_css(ps, &title))
+            .unwrap_or_default();
+        let css = format!("{}\n{}\n{}", base_css, typography_css, hf_css);
+
+        // Generate visible header/footer HTML elements for screen viewing
+        let hf_html = page_settings.as_ref()
+            .map(|ps| generate_html_header_footer_elements(ps, &title))
+            .unwrap_or_default();
+
+        Ok(wrap_html_document(&body, &title, &theme, &css, &hf_html))
     } else {
         // Clipboard mode: return body fragment only
         Ok(body)
     }
+}
+
+/// Insert Typst header/footer rules into the source after the page setup line.
+fn inject_typst_header_footer(source: &str, hf_source: &str) -> String {
+    // Find the first #set page(...) line and insert after it
+    if let Some(pos) = source.find("#set page(paper:") {
+        if let Some(newline) = source[pos..].find('\n') {
+            let insert_pos = pos + newline + 1;
+            let mut result = String::with_capacity(source.len() + hf_source.len());
+            result.push_str(&source[..insert_pos]);
+            result.push_str(hf_source);
+            result.push('\n');
+            result.push_str(&source[insert_pos..]);
+            return result;
+        }
+    }
+    // Fallback: prepend
+    format!("{}\n{}", hf_source, source)
+}
+
+/// Generate CSS for `@page` rules and visible header/footer from page settings.
+fn generate_html_header_footer_css(
+    settings: &DocumentPageSettings,
+    title: &str,
+) -> String {
+    use crate::export::page_settings::{has_content, resolve_variables, VariableContext};
+
+    let today = chrono::Local::now().format("%B %d, %Y").to_string();
+    let ctx = VariableContext {
+        page: "counter(page)",
+        pages: "counter(pages)",
+        title,
+        date: &today,
+    };
+
+    let mut css = String::new();
+
+    // @page rules for print (CSS Paged Media)
+    css.push_str("\n/* Page header/footer for print */\n");
+
+    if has_content(&settings.header) || has_content(&settings.footer) {
+        css.push_str("@page {\n");
+        // Header columns
+        if !settings.header.left.is_empty() {
+            let val = resolve_variables(&settings.header.left, &ctx);
+            css.push_str(&format!("  @top-left {{ content: \"{}\"; font-size: 9pt; color: #888; }}\n", css_escape(&val)));
+        }
+        if !settings.header.center.is_empty() {
+            let val = resolve_variables(&settings.header.center, &ctx);
+            css.push_str(&format!("  @top-center {{ content: \"{}\"; font-size: 9pt; color: #888; }}\n", css_escape(&val)));
+        }
+        if !settings.header.right.is_empty() {
+            let val = resolve_variables(&settings.header.right, &ctx);
+            css.push_str(&format!("  @top-right {{ content: \"{}\"; font-size: 9pt; color: #888; }}\n", css_escape(&val)));
+        }
+        // Footer columns
+        if !settings.footer.left.is_empty() {
+            let val = resolve_variables(&settings.footer.left, &ctx);
+            css.push_str(&format!("  @bottom-left {{ content: \"{}\"; font-size: 9pt; color: #888; }}\n", css_escape(&val)));
+        }
+        if !settings.footer.center.is_empty() {
+            let val = resolve_variables(&settings.footer.center, &ctx);
+            css.push_str(&format!("  @bottom-center {{ content: \"{}\"; font-size: 9pt; color: #888; }}\n", css_escape(&val)));
+        }
+        if !settings.footer.right.is_empty() {
+            let val = resolve_variables(&settings.footer.right, &ctx);
+            css.push_str(&format!("  @bottom-right {{ content: \"{}\"; font-size: 9pt; color: #888; }}\n", css_escape(&val)));
+        }
+        css.push_str("}\n");
+    }
+
+    // @page :first rules for different first page
+    if settings.header.different_first_page || settings.footer.different_first_page {
+        css.push_str("@page :first {\n");
+        if settings.header.different_first_page {
+            if let Some(ref fp) = settings.header.first_page {
+                let fp_ctx = VariableContext {
+                    page: "counter(page)",
+                    pages: "counter(pages)",
+                    title,
+                    date: &today,
+                };
+                if fp.left.is_empty() && fp.center.is_empty() && fp.right.is_empty() {
+                    // Empty first page header
+                    css.push_str("  @top-left { content: none; }\n");
+                    css.push_str("  @top-center { content: none; }\n");
+                    css.push_str("  @top-right { content: none; }\n");
+                } else {
+                    if !fp.left.is_empty() {
+                        css.push_str(&format!("  @top-left {{ content: \"{}\"; font-size: 9pt; color: #888; }}\n", css_escape(&resolve_variables(&fp.left, &fp_ctx))));
+                    } else {
+                        css.push_str("  @top-left { content: none; }\n");
+                    }
+                    if !fp.center.is_empty() {
+                        css.push_str(&format!("  @top-center {{ content: \"{}\"; font-size: 9pt; color: #888; }}\n", css_escape(&resolve_variables(&fp.center, &fp_ctx))));
+                    } else {
+                        css.push_str("  @top-center { content: none; }\n");
+                    }
+                    if !fp.right.is_empty() {
+                        css.push_str(&format!("  @top-right {{ content: \"{}\"; font-size: 9pt; color: #888; }}\n", css_escape(&resolve_variables(&fp.right, &fp_ctx))));
+                    } else {
+                        css.push_str("  @top-right { content: none; }\n");
+                    }
+                }
+            } else {
+                // No first page config means suppress header on first page
+                css.push_str("  @top-left { content: none; }\n");
+                css.push_str("  @top-center { content: none; }\n");
+                css.push_str("  @top-right { content: none; }\n");
+            }
+        }
+        if settings.footer.different_first_page {
+            if let Some(ref fp) = settings.footer.first_page {
+                let fp_ctx = VariableContext {
+                    page: "counter(page)",
+                    pages: "counter(pages)",
+                    title,
+                    date: &today,
+                };
+                if fp.left.is_empty() && fp.center.is_empty() && fp.right.is_empty() {
+                    css.push_str("  @bottom-left { content: none; }\n");
+                    css.push_str("  @bottom-center { content: none; }\n");
+                    css.push_str("  @bottom-right { content: none; }\n");
+                } else {
+                    if !fp.left.is_empty() {
+                        css.push_str(&format!("  @bottom-left {{ content: \"{}\"; font-size: 9pt; color: #888; }}\n", css_escape(&resolve_variables(&fp.left, &fp_ctx))));
+                    } else {
+                        css.push_str("  @bottom-left { content: none; }\n");
+                    }
+                    if !fp.center.is_empty() {
+                        css.push_str(&format!("  @bottom-center {{ content: \"{}\"; font-size: 9pt; color: #888; }}\n", css_escape(&resolve_variables(&fp.center, &fp_ctx))));
+                    } else {
+                        css.push_str("  @bottom-center { content: none; }\n");
+                    }
+                    if !fp.right.is_empty() {
+                        css.push_str(&format!("  @bottom-right {{ content: \"{}\"; font-size: 9pt; color: #888; }}\n", css_escape(&resolve_variables(&fp.right, &fp_ctx))));
+                    } else {
+                        css.push_str("  @bottom-right { content: none; }\n");
+                    }
+                }
+            } else {
+                css.push_str("  @bottom-left { content: none; }\n");
+                css.push_str("  @bottom-center { content: none; }\n");
+                css.push_str("  @bottom-right { content: none; }\n");
+            }
+        }
+        css.push_str("}\n");
+    }
+
+    // Visible header/footer styles for screen viewing
+    css.push_str(r#"
+/* Visible header/footer for screen */
+.notesage-page-header, .notesage-page-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 8px 24px;
+  font-size: 0.75em;
+  color: var(--muted-fg, #888);
+}
+.notesage-page-header {
+  border-bottom: 1px solid var(--border, #e5e5e5);
+  margin-bottom: 0;
+}
+.notesage-page-footer {
+  border-top: 1px solid var(--border, #e5e5e5);
+  margin-top: 0;
+}
+.notesage-page-header span, .notesage-page-footer span {
+  flex: 1;
+}
+.notesage-page-header span:nth-child(2), .notesage-page-footer span:nth-child(2) {
+  text-align: center;
+}
+.notesage-page-header span:nth-child(3), .notesage-page-footer span:nth-child(3) {
+  text-align: right;
+}
+@media print {
+  .notesage-page-header, .notesage-page-footer { display: none; }
+}
+"#);
+
+    css
+}
+
+/// Generate visible HTML header/footer elements for screen viewing.
+fn generate_html_header_footer_elements(
+    settings: &DocumentPageSettings,
+    title: &str,
+) -> String {
+    use crate::export::page_settings::{has_content, resolve_variables, VariableContext};
+
+    let today = chrono::Local::now().format("%B %d, %Y").to_string();
+    let ctx = VariableContext {
+        page: "",
+        pages: "",
+        title,
+        date: &today,
+    };
+
+    let mut html = String::new();
+
+    if has_content(&settings.header) {
+        let left = html_escape_content(&resolve_variables(&settings.header.left, &ctx));
+        let center = html_escape_content(&resolve_variables(&settings.header.center, &ctx));
+        let right = html_escape_content(&resolve_variables(&settings.header.right, &ctx));
+        html.push_str(&format!(
+            "<div class=\"notesage-page-header\"><span>{}</span><span>{}</span><span>{}</span></div>\n",
+            left, center, right
+        ));
+    }
+
+    // The body content goes between header and footer (handled by wrap_html_document)
+    // Footer marker — will be placed after body
+    if has_content(&settings.footer) {
+        let left = html_escape_content(&resolve_variables(&settings.footer.left, &ctx));
+        let center = html_escape_content(&resolve_variables(&settings.footer.center, &ctx));
+        let right = html_escape_content(&resolve_variables(&settings.footer.right, &ctx));
+        html.push_str(&format!(
+            "<div class=\"notesage-page-footer\"><span>{}</span><span>{}</span><span>{}</span></div>\n",
+            left, center, right
+        ));
+    }
+
+    html
+}
+
+/// Escape special characters for CSS string values.
+fn css_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\A ")
+}
+
+/// Escape HTML special characters in content text.
+fn html_escape_content(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 /// Generate CSS overrides from typography presets for HTML export.
