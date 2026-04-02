@@ -98,6 +98,9 @@ export function ChatPanel() {
     // Skip on first render or if no messages yet (no context to isolate)
     if (messages.length === 0) return;
 
+    // Skip if prev was empty — this is initial rehydration, not a user-initiated change
+    if (prev.length === 0) return;
+
     // Check if the set actually changed
     const prevSet = new Set(prev);
     const currSet = new Set(curr);
