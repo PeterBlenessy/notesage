@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { ChatMessage as ChatMessageType, AgentActivity, ToolCallActivity, ToolCallStatus, Segment } from '@/lib/ai/types';
-import { TextSegmentView, ThinkingSegmentView, ToolCallSegmentView, ToolResultSegmentView } from './segments';
+import { TextSegmentView, ThinkingSegmentView, ToolCallSegmentView, ToolResultSegmentView, ToolCallGroup } from './segments';
 
 function ActivityIcon({ activity, isActive }: { activity: AgentActivity; isActive: boolean }) {
   if (isActive && activity.status === 'running') {
@@ -338,10 +338,55 @@ function hasSegments(message: ChatMessageType): boolean {
   return !!(message.segments && message.segments.length > 0);
 }
 
+/** Group consecutive tool_call/tool_result segments into runs for collapsible rendering. */
+function groupSegments(segments: Segment[]): Array<{ type: 'single'; index: number } | { type: 'tool_group'; startIndex: number; endIndex: number }> {
+  const groups: Array<{ type: 'single'; index: number } | { type: 'tool_group'; startIndex: number; endIndex: number }> = [];
+  let i = 0;
+  while (i < segments.length) {
+    const seg = segments[i];
+    if (seg.type === 'tool_call' || seg.type === 'tool_result') {
+      // Scan ahead for consecutive tool segments
+      const start = i;
+      while (i < segments.length && (segments[i].type === 'tool_call' || segments[i].type === 'tool_result')) {
+        i++;
+      }
+      // Count actual tool_call entries (not just results)
+      const toolCalls = segments.slice(start, i).filter((s) => s.type === 'tool_call').length;
+      if (toolCalls >= 2) {
+        groups.push({ type: 'tool_group', startIndex: start, endIndex: i - 1 });
+      } else {
+        // Single tool call — render inline, not grouped
+        for (let j = start; j < i; j++) {
+          groups.push({ type: 'single', index: j });
+        }
+      }
+    } else {
+      groups.push({ type: 'single', index: i });
+      i++;
+    }
+  }
+  return groups;
+}
+
 function SegmentRenderer({ segments, isActivelyStreaming }: { segments: Segment[]; isActivelyStreaming: boolean }) {
+  const groups = groupSegments(segments);
+
   return (
     <div className="flex flex-col">
-      {segments.map((segment, index) => {
+      {groups.map((group) => {
+        if (group.type === 'tool_group') {
+          const groupSegments = segments.slice(group.startIndex, group.endIndex + 1);
+          return (
+            <ToolCallGroup
+              key={`group-${group.startIndex}`}
+              segments={groupSegments}
+              isActivelyStreaming={isActivelyStreaming}
+            />
+          );
+        }
+
+        const index = group.index;
+        const segment = segments[index];
         const isLastSegment = index === segments.length - 1;
         const isStreamingSegment = isActivelyStreaming && isLastSegment;
 

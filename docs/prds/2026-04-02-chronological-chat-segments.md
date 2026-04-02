@@ -222,6 +222,39 @@ Visual flow example:
 └──────────────────────────────────────────────────┘
 ```
 
+### Tool Call Grouping
+
+When the agent performs multiple consecutive tool calls without interleaving text, they are grouped into a collapsible section to reduce visual noise.
+
+**Grouping rule:** Two or more adjacent `tool_call`/`tool_result` segments (with no `text` or `thinking` segment between them) are collapsed into a `ToolCallGroup`.
+
+**Collapsed state:** Single summary line:
+- `▸ 5 actions` (generic) or a smart summary like `▸ Read 3 files, searched 2 queries`
+- Shows count of completed vs total when some are still running: `▸ 3 of 5 actions`
+
+**Expanded state:** Full list of individual `ToolCallSegmentView` + `ToolResultSegmentView` items, same as the ungrouped rendering.
+
+**Auto-expand rules:**
+- Groups with any `running` tool calls are expanded (so the user sees what's happening)
+- Groups where all calls are `done` are collapsed by default
+- User toggle overrides auto-collapse
+
+Visual flow with grouping:
+
+```
+┌─ Assistant ──────────────────────────────────────┐
+│                                                  │
+│  Let me research that topic.                     │  ← TextSegment
+│                                                  │
+│  ▸ 4 actions — Read 2 files, fetched 2 pages     │  ← ToolCallGroup (collapsed)
+│                                                  │
+│  Based on my research, here's what I found...    │  ← TextSegment
+│                                                  │
+└──────────────────────────────────────────────────┘
+```
+
+A single tool_call (not consecutive with another) renders inline as before — no grouping wrapper.
+
 ### Migration & Backward Compatibility
 
 **Old messages (no** `segments` **field):**

@@ -315,3 +315,26 @@
 - Backward compat: messages without segments render via old path (integration test with ChatMessage)
 - Segment accumulation: simulate a streaming sequence (text → thinking → tool_call → tool_result → text) and verify final segments array
 - Test that `content` field is still updated alongside segments (dual-write)
+
+---
+
+### #16 — Group consecutive tool calls into collapsible sections ✅
+
+**Description:** When multiple tool_call/tool_result segments appear consecutively (no text or thinking between them), render them as a collapsible group with a summary line. Single tool calls render inline as before.
+
+**Complexity:** M
+**Category:** frontend
+**Dependencies:** Depends on #11
+**Files:**
+- `src/components/chat/segments/ToolCallGroup.tsx` — new component
+- `src/components/chat/segments/index.ts` — add export
+- `src/components/chat/ChatMessage.tsx` — update SegmentRenderer to detect groups
+
+**Acceptance criteria:**
+- 2+ consecutive tool_call/tool_result segments are grouped
+- Collapsed shows summary: "N actions" with smart detail (e.g. "Read 2 files, fetched 3 pages")
+- Expanded shows all individual tool calls and results
+- Groups with running calls auto-expand; completed groups auto-collapse
+- User toggle overrides auto-collapse
+- Single tool calls render inline (no group wrapper)
+- Light/dark mode correct
