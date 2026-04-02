@@ -18,6 +18,7 @@ import {
   parseRawInput,
 } from '@/lib/ai/acp-utils';
 import { resetUnresponsiveTimer } from '@/hooks/useAcpLifecycle';
+import { useAgentStatusStore } from '@/stores/agent-status-store';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -65,6 +66,10 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
     if (event.payload.instanceId !== deps.instanceId) return;
     // Reset unresponsiveness timer — agent is still alive
     resetUnresponsiveTimer();
+    // Clear any "unresponsive" banner — agent is alive
+    if (useAgentStatusStore.getState().status === 'unresponsive') {
+      useAgentStatusStore.getState().clearStatus();
+    }
     const { update } = event.payload;
 
     if (

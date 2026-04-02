@@ -12,8 +12,9 @@ import { tauriApi } from '@/lib/tauri';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
 import { getAllWorkspacePaths } from '@/lib/ai/acp-utils';
-import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, clearAcpAgent } from '@/lib/ai/acp-agent-state';
+import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId } from '@/lib/ai/acp-agent-state';
 import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
+import { useAgentStatusStore } from '@/stores/agent-status-store';
 
 // Re-export for backward compatibility
 export { stopAcpAgent } from '@/lib/ai/acp-agent-state';
@@ -33,6 +34,18 @@ let unresponsiveTimerId: ReturnType<typeof setTimeout> | null = null;
 
 /** Callback to invoke when the timer fires. Set by the hook. */
 let onUnresponsiveCallback: (() => void) | null = null;
+
+/** Module-level retry callback — set by the hook, callable from UI components. */
+let retryCallback: (() => Promise<void>) | null = null;
+export function getRetryCallback(): (() => Promise<void>) | null {
+  return retryCallback;
+}
+
+/** Module-level keep-waiting callback — set by the hook, callable from UI components. */
+let keepWaitingCallback: (() => void) | null = null;
+export function getKeepWaitingCallback(): (() => void) | null {
+  return keepWaitingCallback;
+}
 
 /** Start (or restart) the unresponsiveness timer. */
 export function startUnresponsiveTimer(): void {
@@ -70,20 +83,16 @@ interface AcpLifecycleParams {
 }
 
 export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAcpSystemMessage }: AcpLifecycleParams) {
-  const { addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, addSystemStatus, appendTextSegment, pushSegment, updateSegment, finalizeSegments } = useChatStore();
+  const { addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, appendTextSegment, pushSegment, updateSegment, finalizeSegments, resetAssistantMessage } = useChatStore();
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const cleanupRef = useRef<(() => void) | null>(null);
 
   // ---------------------------------------------------------------------------
-  // Recovery orchestrator — up to 3 attempts with backoff
+  // Unresponsive agent detection — check if alive, then show banner
   // ---------------------------------------------------------------------------
 
-  const acpRecoverAgent = useCallback(async () => {
-    if (!acpAgent || !effectiveConnection) return;
-
-    const agentLabel = effectiveConnection.label || effectiveConnection.provider || 'the agent';
-    const sessionId = acpAgent.chatSessionId;
-    const oldInstanceId = acpAgent.instanceId;
+  const checkAgentAndNotify = useCallback(async () => {
+    if (!acpAgent) return;
 
     // Clean up listeners from the stuck prompt
     clearUnresponsiveTimer();
@@ -92,62 +101,34 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       cleanupRef.current = null;
     }
 
-    const MAX_ATTEMPTS = 3;
-    const BACKOFF_DELAYS = [5_000, 15_000, 30_000];
+    try {
+      const alive = await invoke<boolean>('acp_is_agent_alive', {
+        instanceId: acpAgent.instanceId,
+      });
 
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      addSystemStatus('reconnecting', agentLabel, attempt, MAX_ATTEMPTS);
-
-      // Wait backoff delay
-      await new Promise((resolve) => setTimeout(resolve, BACKOFF_DELAYS[attempt - 1]));
-
-      try {
-        const result = await invoke<{ instance_id: string }>('acp_agent_reconnect', {
-          instanceId: oldInstanceId,
-          sessionId: sessionId ?? '',
-        });
-
-        // Update the module-level singleton with new instance ID
-        if (!acpAgent) {
-          // Agent was cleared during recovery (e.g., connection changed)
-          break;
-        }
-        updateAcpAgentInstanceId(result.instance_id);
-
-        // Success — update status and resume
-        addSystemStatus('reconnected', agentLabel);
-        setLoading(false);
-        setActiveTool(null);
-        log.info('ai', `ACP recovery succeeded on attempt ${attempt}`);
-        return;
-      } catch (err) {
-        log.warn('ai', `ACP recovery attempt ${attempt} failed: ${String(err)}`);
-        // On failure, the old instance is already removed from the backend.
-        // For retry, we need to use the same instance_id to attempt again,
-        // but since reconnect already removed it, we need to handle this.
-        // Actually, on failure the reconnect command may have partially succeeded
-        // (spawned a new agent). Let's just continue — the next attempt will
-        // try to reconnect whatever is in the map.
+      if (alive) {
+        // Agent is still running — let user decide
+        useAgentStatusStore.getState().setStatus('unresponsive');
+        log.warn('ai', 'ACP agent unresponsive — showing banner (process alive)');
+      } else {
+        // Agent is dead
+        useAgentStatusStore.getState().setStatus('exited');
+        log.warn('ai', 'ACP agent unresponsive — process is dead');
       }
+    } catch {
+      // Can't determine status — assume exited
+      useAgentStatusStore.getState().setStatus('exited');
     }
-
-    // All attempts failed — show failed state
-    addSystemStatus('failed', agentLabel);
-    setLoading(false);
-    setActiveTool(null);
-    // Clear the agent so user can restart fresh
-    clearAcpAgent();
-    log.error('ai', 'ACP recovery exhausted all attempts');
-  }, [effectiveConnection, addSystemStatus, setLoading, setActiveTool]);
+  }, []);
 
   // Recovery callback ref for the unresponsive timer
   const recoveryCallbackRef = useRef<(() => void) | null>(null);
-  recoveryCallbackRef.current = acpRecoverAgent;
+  recoveryCallbackRef.current = checkAgentAndNotify;
 
   // Register the unresponsive callback so the timer can trigger recovery
   useEffect(() => {
     onUnresponsiveCallback = () => {
-      log.warn('ai', 'ACP agent unresponsive for 60s, triggering recovery');
+      log.warn('ai', `ACP agent unresponsive for ${UNRESPONSIVE_TIMEOUT_MS / 1000}s, checking status`);
       recoveryCallbackRef.current?.();
     };
     return () => {
@@ -172,6 +153,45 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     }
     prevWorkspaceKeyRef.current = key;
   }, [workspaceProjects, workspaceExplorerFolders]);
+
+  // Listen for agent process death events
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+
+    listen<{ instanceId: string; exitCode: number | null }>('acp-agent-exited', (event) => {
+      if (!acpAgent || event.payload.instanceId !== acpAgent.instanceId) return;
+
+      log.warn('ai', `ACP agent process exited (code: ${event.payload.exitCode})`);
+      useAgentStatusStore.getState().setStatus('exited', event.payload.exitCode);
+
+      // Clean up if we're mid-prompt
+      clearUnresponsiveTimer();
+      if (cleanupRef.current) {
+        cleanupRef.current();
+        cleanupRef.current = null;
+      }
+    }).then((fn) => { unlisten = fn; });
+
+    return () => { unlisten?.(); };
+  }, []);
+
+  /** Keep waiting for the agent — dismiss the banner and restart the timer. */
+  const keepWaiting = useCallback(() => {
+    useAgentStatusStore.getState().clearStatus();
+    // Restart the timer — if agent goes quiet again, we'll check again
+    startUnresponsiveTimer();
+    log.info('ai', 'User chose to keep waiting for agent');
+  }, []);
+
+  // Store last prompt context for retry (populated at the start of acpSendChatMessage)
+  const lastPromptRef = useRef<{
+    content: string;
+    assistantMessageId: number;
+    attachedFilePaths?: string[];
+    sandboxPaths?: string[];
+    pathFilterRoot: string | null;
+    homeDir: string;
+  } | null>(null);
 
   /**
    * Generate text via ACP agent (single-turn, auto-approve permissions).
@@ -304,6 +324,16 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         finalizeSegments,
       };
 
+      // Save context for retryWithRestore
+      lastPromptRef.current = {
+        content,
+        assistantMessageId,
+        attachedFilePaths: opts?.attachedFilePaths,
+        sandboxPaths: opts?.sandboxPaths,
+        pathFilterRoot,
+        homeDir,
+      };
+
       try {
         const cwd = selectedProjectPaths[0] || '/tmp';
         // Comment-sourced chats: scope to source project only. Regular chats: all workspace folders.
@@ -388,58 +418,12 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
         // Auto-retry once on connection errors (dead agent, broken pipe, etc.)
         if (isAcpConnectionError(error)) {
-          log.warn('ai', `ACP connection error, retrying: ${String(error)}`);
-          stopAcpAgent();
-          updateMessage(assistantMessageId, 'Reconnecting to agent...');
-
+          log.warn('ai', `ACP connection error, retrying with session restore: ${String(error)}`);
           try {
-            const cwd = selectedProjectPaths[0] || '/tmp';
-            const retrySandboxScope = opts?.sandboxPaths ?? getAllWorkspacePaths();
-            const instanceId = await ensureAcpAgent(effectiveConnection, cwd, retrySandboxScope);
-
-            // Need a fresh session after reconnect
-            const session = await invoke<AcpSessionResult>('acp_session_new', {
-              instanceId,
-              workingDirectory: cwd,
-            });
-            acpAgent!.chatSessionId = session.session_id;
-            useChatStore.getState().setSegmentSessionId(session.session_id);
-
-            if (session.available_models.length > 0) {
-              setAgentModels(
-                effectiveConnection.id,
-                session.available_models.map((m) => ({
-                  modelId: m.model_id,
-                  name: m.name,
-                  description: m.description,
-                })),
-                session.current_model,
-              );
-            }
-
-            // Set up listeners for the retry (reuses the same shared setup)
-            const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId });
-            cleanupRef.current = buildAcpChatCleanup(listeners, instanceId, cleanupRef, setLoading, setActiveTool);
-
-            const effectiveSystemMessage = buildAcpSystemMessage
-              ? buildAcpSystemMessage(opts?.attachedFilePaths)
-              : acpSystemMessage;
-            const promptContent = `${effectiveSystemMessage}\n\n${content}`;
-
-            try {
-              await invoke('acp_session_prompt', { instanceId, sessionId: acpAgent!.chatSessionId, content: promptContent });
-              return; // Retry succeeded
-            } finally {
-              if (cleanupRef.current) {
-                cleanupRef.current();
-              }
-            }
+            await retryWithRestore();
+            return;
           } catch (retryError) {
-            if (cleanupRef.current) {
-              cleanupRef.current();
-            }
-            stopAcpAgent();
-            log.error('ai', 'ACP retry also failed', retryError);
+            log.error('ai', 'ACP retry with restore also failed', retryError);
             setMessageError(assistantMessageId, friendlyAcpError(retryError, agentLabel));
             setLoading(false);
             setActiveTool(null);
@@ -471,6 +455,130 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     },
     [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, appendTextSegment, pushSegment, updateSegment, finalizeSegments]
   );
+
+  /**
+   * Retry the last prompt by reconnecting the agent (session/load) and resending.
+   * Reuses the existing assistant message — no branching.
+   */
+  const retryWithRestore = useCallback(async () => {
+    if (!acpAgent || !effectiveConnection) return;
+    const prompt = lastPromptRef.current;
+    if (!prompt) {
+      log.warn('ai', 'No prompt context available for retry');
+      return;
+    }
+
+    // Clear the banner
+    useAgentStatusStore.getState().clearStatus();
+
+    // Reset the existing assistant message (clear partial content/segments)
+    resetAssistantMessage(prompt.assistantMessageId);
+    setLoading(true);
+    setActiveTool(null);
+
+    const sessionId = acpAgent.chatSessionId;
+    const oldInstanceId = acpAgent.instanceId;
+    const agentLabel = effectiveConnection.label || effectiveConnection.provider || 'the agent';
+
+    const listenerDeps = {
+      assistantMessageId: prompt.assistantMessageId,
+      pathFilterRoot: prompt.pathFilterRoot,
+      homeDir: prompt.homeDir,
+      updateMessage,
+      addMessage,
+      setActiveTool,
+      addActivity,
+      completeLastActivity,
+      completeAllActivities,
+      appendTextSegment,
+      pushSegment,
+      updateSegment,
+      finalizeSegments,
+    };
+
+    try {
+      // Try to reconnect with session/load (preserves agent-side conversation context)
+      let instanceId: string;
+      let isNewSession = false;
+
+      try {
+        const result = await invoke<{ instance_id: string }>('acp_agent_reconnect', {
+          instanceId: oldInstanceId,
+          sessionId: sessionId ?? '',
+        });
+        instanceId = result.instance_id;
+        updateAcpAgentInstanceId(instanceId);
+        log.info('ai', `ACP retry: reconnected with session/load (new instance: ${instanceId})`);
+      } catch (reconnectErr) {
+        // session/load failed — fall back to fresh session
+        log.warn('ai', `ACP retry: reconnect failed (${String(reconnectErr)}), using fresh session`);
+        stopAcpAgent();
+        const cwd = selectedProjectPaths[0] || '/tmp';
+        const sandboxScope = prompt.sandboxPaths ?? getAllWorkspacePaths();
+        instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
+        isNewSession = true;
+      }
+
+      // Create new session if reconnect with session/load failed
+      if (isNewSession) {
+        const cwd = selectedProjectPaths[0] || '/tmp';
+        const session = await invoke<AcpSessionResult>('acp_session_new', {
+          instanceId,
+          workingDirectory: cwd,
+        });
+        acpAgent!.chatSessionId = session.session_id;
+        useChatStore.getState().setSegmentSessionId(session.session_id);
+
+        if (session.available_models.length > 0 && effectiveConnection) {
+          setAgentModels(
+            effectiveConnection.id,
+            session.available_models.map((m) => ({
+              modelId: m.model_id,
+              name: m.name,
+              description: m.description,
+            })),
+            session.current_model,
+          );
+        }
+      }
+
+      // Set up listeners
+      const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId });
+      cleanupRef.current = buildAcpChatCleanup(listeners, instanceId, cleanupRef, setLoading, setActiveTool);
+
+      // Resend the prompt
+      const effectiveSystemMessage = buildAcpSystemMessage
+        ? buildAcpSystemMessage(prompt.attachedFilePaths)
+        : acpSystemMessage;
+      const promptContent = isNewSession
+        ? `${effectiveSystemMessage}\n\n${prompt.content}`
+        : prompt.content;
+
+      try {
+        startUnresponsiveTimer();
+        await invoke('acp_session_prompt', {
+          instanceId,
+          sessionId: acpAgent!.chatSessionId,
+          content: promptContent,
+        });
+      } finally {
+        clearUnresponsiveTimer();
+        if (cleanupRef.current) {
+          cleanupRef.current();
+        }
+      }
+    } catch (error) {
+      clearUnresponsiveTimer();
+      if (cleanupRef.current) {
+        cleanupRef.current();
+      }
+      stopAcpAgent();
+      log.error('ai', 'ACP retry failed', error);
+      setMessageError(prompt.assistantMessageId, friendlyAcpError(error, agentLabel));
+      setLoading(false);
+      setActiveTool(null);
+    }
+  }, [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, updateMessage, addMessage, setMessageError, setLoading, setActiveTool, addActivity, completeLastActivity, completeAllActivities, appendTextSegment, pushSegment, updateSegment, finalizeSegments, resetAssistantMessage]);
 
   /**
    * Cancel an active ACP chat session.
@@ -536,8 +644,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         cancelEscalationRef.current = null;
         cancelEscalationListenerRef.current?.();
         cancelEscalationListenerRef.current = null;
-        log.warn('ai', 'ACP cancel escalation: agent did not respond within 5s, triggering recovery');
-        recoveryCallbackRef.current?.();
+        log.warn('ai', 'ACP cancel escalation: agent did not respond within 5s');
+        // Don't auto-recover — show banner so user can retry or restart manually
+        useAgentStatusStore.getState().setStatus('unresponsive');
       }, CANCEL_ESCALATION_MS);
 
       // Clear the session so the next message creates a fresh one
@@ -548,5 +657,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     setActiveTool(null);
   }, [setLoading, setActiveTool]);
 
-  return { acpGenerateText, acpSendChatMessage, acpCancelChat, acpRecoverAgent };
+  // Expose callbacks at module level so UI components can call them without prop drilling
+  retryCallback = retryWithRestore;
+  keepWaitingCallback = keepWaiting;
+
+  return { acpGenerateText, acpSendChatMessage, acpCancelChat, keepWaiting, retryWithRestore };
 }

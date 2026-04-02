@@ -15,7 +15,10 @@ import { LocalAISetupCard } from './LocalAISetupCard';
 import { PermissionCard } from './PermissionCard';
 import { DomainApprovalCard, type DomainApprovalRequest } from './DomainApprovalCard';
 import { ToolCallPermissionCard } from './ToolCallPermissionCard';
+import { AgentStatusBanner } from './AgentStatusBanner';
 import { useToolPermissionStore } from '@/stores/tool-permission-store';
+import { useAgentStatusStore } from '@/stores/agent-status-store';
+import { getRetryCallback, getKeepWaitingCallback } from '@/hooks/useAcpLifecycle';
 import { ProjectSwitchCard } from './ProjectSwitchCard';
 import { AgentSwitchCard } from './AgentSwitchCard';
 import { ContextDivider } from './ContextDivider';
@@ -267,6 +270,11 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
               </span>
             </div>
           )}
+          <AgentStatusBanner
+            onKeepWaiting={() => getKeepWaitingCallback()?.() ?? useAgentStatusStore.getState().clearStatus()}
+            onRetry={() => { getRetryCallback()?.(); }}
+            onCancel={() => useAgentStatusStore.getState().clearStatus()}
+          />
           {(permissionRequests.length > 0 || domainRequests.length > 0 || toolPermission) && (
             <div className="flex flex-col gap-2 mt-2">
               {permissionRequests.map((req) => (

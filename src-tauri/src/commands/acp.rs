@@ -3,7 +3,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
 use super::acp_binary::resolve_agent_binary;
@@ -13,6 +13,14 @@ use super::shell_path::get_shell_path;
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+#[derive(Serialize, Clone)]
+pub struct AgentExitedPayload {
+    #[serde(rename = "instanceId")]
+    instance_id: String,
+    #[serde(rename = "exitCode")]
+    exit_code: Option<i32>,
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -249,11 +257,16 @@ fn run_agent_thread(
     let local = tokio::task::LocalSet::new();
 
     local.block_on(&rt, async move {
+        // Flag to distinguish intentional Stop from unexpected process exit
+        let stopped_intentionally = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
         // Shared permission waiters for client ↔ command loop communication
         let permission_waiters: Rc<RefCell<HashMap<String, oneshot::Sender<PermissionReply>>>> =
             Rc::new(RefCell::new(HashMap::new()));
 
         let sandbox_instance_id = instance_id.clone();
+        let exit_app = app.clone();
+        let exit_instance_id = instance_id.clone();
         let client = NotesageClient {
             app,
             instance_id,
@@ -670,6 +683,7 @@ fn run_agent_thread(
                     }
                 }
                 AgentCmd::Stop { reply } => {
+                    stopped_intentionally.store(true, std::sync::atomic::Ordering::Relaxed);
                     // Clear any pending permission waiters so they cancel
                     permission_waiters.borrow_mut().clear();
                     let _ = child.kill().await;
@@ -677,6 +691,20 @@ fn run_agent_thread(
                     break;
                 }
             }
+        }
+
+        // Emit exit event if the agent died unexpectedly (not via Stop command)
+        if !stopped_intentionally.load(std::sync::atomic::Ordering::Relaxed) {
+            let exit_code = child.try_wait().ok().flatten().map(|s| s.code()).flatten();
+            let _ = exit_app.emit("acp-agent-exited", AgentExitedPayload {
+                instance_id: exit_instance_id.clone(),
+                exit_code,
+            });
+            log::warn!(
+                target: "notesage::acp",
+                "Agent {} exited unexpectedly (code: {:?})",
+                exit_instance_id, exit_code,
+            );
         }
     });
 
@@ -915,6 +943,23 @@ pub async fn acp_agent_exists(
     instance_id: String,
 ) -> Result<bool, String> {
     Ok(state.agents.lock().await.contains_key(&instance_id))
+}
+
+/// Check whether the agent's background thread is still running.
+/// Returns `false` if the agent is unknown or its thread has exited.
+#[tauri::command]
+pub async fn acp_is_agent_alive(
+    state: State<'_, AcpState>,
+    instance_id: String,
+) -> Result<bool, String> {
+    let agents = state.agents.lock().await;
+    match agents.get(&instance_id) {
+        Some(handle) => Ok(handle
+            .thread_handle
+            .as_ref()
+            .map_or(false, |th| !th.is_finished())),
+        None => Ok(false),
+    }
 }
 
 /// Stop an ACP agent subprocess and clean up resources.

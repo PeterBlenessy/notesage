@@ -137,6 +137,7 @@ pub fn run() {
             acp_agent_spawn,
             acp_agent_authenticate,
             acp_agent_exists,
+            acp_is_agent_alive,
             acp_agent_stop,
             acp_agent_reconnect,
             acp_session_new,

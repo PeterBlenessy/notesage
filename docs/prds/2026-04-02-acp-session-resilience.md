@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-02 |
-| **Status** | Draft |
+| **Status** | Implemented |
 | **Priority** | High |
 | **Impact** | Agents are never killed while actively working; full conversation context is preserved across restarts; retry continues in the same branch |
 

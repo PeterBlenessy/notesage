@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-02 |
-| **Status** | Not started |
+| **Status** | Complete |
 | **PRD** | [acp-session-resilience](../prds/2026-04-02-acp-session-resilience.md) |
 | **Total** | 10 tasks: 3S, 5M, 2L |
 | **Suggested order** | Backend (#1-#2) → Frontend lifecycle (#3-#6) → UI (#7-#8) → Polish (#9) → Tests (#10) |
@@ -16,7 +16,7 @@
 
 ---
 
-### #1 — Emit `acp-agent-exited` Tauri event on process death
+### #1 — Emit `acp-agent-exited` Tauri event on process death ✅
 
 **Description:** When the ACP agent process exits (for any reason — crash, SIGKILL, normal exit), emit an `acp-agent-exited` event with the instance ID and exit status. This enables the frontend to detect crashes instantly instead of waiting for the prompt timeout.
 
@@ -36,7 +36,7 @@
 
 ---
 
-### #2 — Add `acp_is_agent_alive` Tauri command
+### #2 — Add `acp_is_agent_alive` Tauri command ✅
 
 **Description:** Add a lightweight command that checks if a specific ACP agent's process is still running. The frontend calls this when the unresponsive timer fires to decide whether to show "still running" or "process died" UI.
 
@@ -55,7 +55,7 @@
 
 ---
 
-### #3 — Replace auto-kill recovery with user decision flow
+### #3 — Replace auto-kill recovery with user decision flow ✅
 
 **Description:** Remove the `acpRecoverAgent` function that auto-kills and reconnects. Replace with a flow that: (a) checks if agent is alive, (b) if alive, sets a store flag to show the unresponsive banner, (c) if dead, sets a store flag to show the "exited" error card.
 
@@ -75,7 +75,7 @@
 
 ---
 
-### #4 — Update retry flow: same-branch, reuse assistant message
+### #4 — Update retry flow: same-branch, reuse assistant message ✅
 
 **Description:** When the user clicks "Retry session" (from banner or error card), the retry must: (a) not create a new branch, (b) reuse the existing assistant message (clear its partial content/segments), (c) continue streaming into it.
 
@@ -96,7 +96,7 @@
 
 ---
 
-### #5 — Use `acp_agent_reconnect` + `session/load` for context restoration
+### #5 — Use `acp_agent_reconnect` + `session/load` for context restoration ✅
 
 **Description:** Wire the retry flow to use the existing `acp_agent_reconnect` Rust command (which spawns a new agent, re-authenticates, and calls `session/load`). Handle the case where `session/load` fails (agent didn't persist) by falling back to a fresh session with system prompt.
 
@@ -116,7 +116,7 @@
 
 ---
 
-### #6 — Handle "Keep waiting" and "Cancel" actions
+### #6 — Handle "Keep waiting" and "Cancel" actions ✅
 
 **Description:** Wire the "Keep waiting" and "Cancel" buttons from the unresponsive banner. Keep waiting: dismiss banner, reset timer. Cancel: send ACP cancel, stop loading, keep conversation.
 
@@ -135,7 +135,7 @@
 
 ---
 
-### #7 — Create `AgentStatusBanner` component
+### #7 — Create `AgentStatusBanner` component ✅
 
 **Description:** Build the chat-panel banner that shows when the agent is unresponsive or has exited. Two variants: "unresponsive but alive" (3 buttons: Wait, Retry, Cancel) and "exited" (2 buttons: Restart, Cancel).
 
@@ -156,7 +156,7 @@
 
 ---
 
-### #8 — Remove old `ReconnectCard` system-status flow for unresponsive recovery
+### #8 — Remove old `ReconnectCard` system-status flow for unresponsive recovery ✅
 
 **Description:** Clean up the old `addSystemStatus('reconnecting'/'reconnected'/'failed')` flow that was used by `acpRecoverAgent`. The `ReconnectCard` component and system-status messages for reconnection are replaced by `AgentStatusBanner`.
 
@@ -175,7 +175,7 @@
 
 ---
 
-### #9 — Update auto-retry on connection errors to use same-branch restore
+### #9 — Update auto-retry on connection errors to use same-branch restore ✅
 
 **Description:** The existing `catch` block in `acpSendChatMessage` auto-retries once on connection errors (dead agent, broken pipe). Update this to use the same `retryWithRestore` function instead of its own inline retry — same-branch, session/load, reuse message.
 
@@ -194,7 +194,7 @@
 
 ---
 
-### #10 — Tests for session resilience
+### #10 — Tests for session resilience ✅
 
 **Description:** Write tests covering the new lifecycle flows: timer → alive check → banner, process exit → exited card, retry with same-branch, cancel preserving content.
 

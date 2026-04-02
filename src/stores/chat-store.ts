@@ -95,6 +95,8 @@ interface ChatStore {
   updateSegment: (messageTimestamp: number, index: number, patch: Partial<Segment>) => void;
   /** Finalize all segments: collapse thinking, mark running tool_calls as done */
   finalizeSegments: (messageTimestamp: number) => void;
+  /** Reset an assistant message for retry — clears content, segments, error state */
+  resetAssistantMessage: (timestamp: number) => void;
 
   // ---------------------------------------------------------------------------
   // System status messages (reconnection flow)
@@ -488,6 +490,17 @@ export const useChatStore = create<ChatStore>()(
             });
             return { ...msg, segments };
           }),
+        }))),
+
+      resetAssistantMessage: (messageTimestamp) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          updatedAt: Date.now(),
+          messages: c.messages.map((msg) =>
+            msg.timestamp === messageTimestamp
+              ? { ...msg, content: '', segments: [], isError: false, thinking: '', activities: [], toolCallActivities: [] }
+              : msg
+          ),
         }))),
 
       // ----- System status messages -----
