@@ -101,7 +101,15 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
         type: 'tool_call',
         kind: update.kind || 'unknown',
         label: segmentLabel,
-        detail: typeof update.rawInput === 'string' ? update.rawInput : (update.rawInput ? JSON.stringify(update.rawInput) : update.title) || undefined,
+        detail: (() => {
+          // Prefer rawInput if it has useful content, otherwise fall back to title
+          if (typeof update.rawInput === 'string' && update.rawInput.trim() && update.rawInput.trim() !== '{}') return update.rawInput;
+          if (update.rawInput && typeof update.rawInput === 'object') {
+            const json = JSON.stringify(update.rawInput);
+            if (json !== '{}' && json !== 'null') return json;
+          }
+          return update.title || undefined;
+        })(),
         status: 'running',
         timestamp: Date.now(),
       } as ToolCallSegment);
