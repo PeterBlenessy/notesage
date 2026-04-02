@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, FileText, GitBranch, Cloud, Info, Loader2, ArrowUpCircle, ScrollText, Code, Download, Blocks, FolderOpen, Trash2, Mic, Cpu } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, FileText, GitBranch, Cloud, Info, Loader2, ArrowUpCircle, ScrollText, Code, Download, Blocks, FolderOpen, Trash2, Mic, Cpu, Palette, RotateCcw } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -51,7 +51,7 @@ import { setLogLevel as setLoggerLevel } from '@/lib/logger';
 import type { LogLevel } from '@/lib/logger';
 import type { UpdateState } from '@/hooks/useAutoUpdate';
 
-export type SettingsTab = 'ai' | 'local-ai' | 'prompts' | 'skills' | 'transcription' | 'editor' | 'git' | 'sync' | 'developer' | 'about';
+export type SettingsTab = 'general' | 'ai' | 'local-ai' | 'prompts' | 'skills' | 'transcription' | 'editor' | 'git' | 'sync' | 'developer' | 'about';
 
 interface SettingsDialogProps {
   open?: boolean;
@@ -62,7 +62,18 @@ interface SettingsDialogProps {
   onOpenUpdateDialog?: () => void;
 }
 
+const TINT_PRESETS = [
+  { label: 'Neutral', hue: 0, chroma: 0 },
+  { label: 'Warm', hue: 60, chroma: 12 },
+  { label: 'Sepia', hue: 55, chroma: 18 },
+  { label: 'Rose', hue: 10, chroma: 10 },
+  { label: 'Sage', hue: 145, chroma: 8 },
+  { label: 'Ocean', hue: 230, chroma: 8 },
+  { label: 'Lavender', hue: 290, chroma: 8 },
+];
+
 const TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
+  { id: 'general', label: 'General', icon: Palette },
   { id: 'editor', label: 'Editor', icon: Sliders },
   { id: 'ai', label: 'AI Providers', icon: Sparkles },
   { id: 'local-ai', label: 'Local AI', icon: Cpu },
@@ -135,6 +146,8 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
   const {
     theme, setTheme,
     contrastLevel, setContrastLevel,
+    tintHue, setTintHue,
+    tintChroma, setTintChroma,
     showFloatingToolbar, setShowFloatingToolbar,
     toolbarVisible, setToolbarVisible,
     externalChangeDiffReview, setExternalChangeDiffReview,
@@ -153,7 +166,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
     autoCheckUpdates, setAutoCheckUpdates,
     lastUpdateCheck,
   } = useSettingsStore();
-  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'editor');
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'general');
   const [gitNotAvailable, setGitNotAvailable] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [logPath, setLogPath] = useState<string | null>(null);
@@ -336,14 +349,14 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
               </div>
             )}
 
-            {activeTab === 'editor' && (
+            {activeTab === 'general' && (
               <div className="p-6 space-y-6">
                 {/* Theme Selection */}
                 <div className="space-y-4">
                   <div>
-                    <Label className="text-sm font-semibold">Appearance</Label>
+                    <Label className="text-sm font-semibold">Theme</Label>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Customize how Notesage looks
+                      Choose light, dark, or follow your system
                     </p>
                   </div>
 
@@ -368,8 +381,20 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                       </button>
                     ))}
                   </div>
+                </div>
 
-                  <div className="mt-3">
+                <div className="h-px bg-border" />
+
+                {/* Contrast & Tint */}
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-semibold">Appearance</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Fine-tune contrast and color tint
+                    </p>
+                  </div>
+
+                  <div>
                     <div className="flex items-center justify-between mb-2">
                       <div>
                         <span className="text-sm">Contrast</span>
@@ -388,10 +413,92 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                       className="w-full"
                     />
                   </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <span className="text-sm">Color Tint</span>
+                        <p className="text-xs text-muted-foreground">Add a subtle color wash to the interface</p>
+                      </div>
+                      {tintChroma > 0 && (
+                        <button
+                          onClick={() => { setTintChroma(0); }}
+                          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors duration-150"
+                        >
+                          <RotateCcw className="h-3 w-3" strokeWidth={1.5} />
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {TINT_PRESETS.map((preset) => {
+                        const isActive = preset.chroma === 0
+                          ? tintChroma === 0
+                          : tintChroma > 0 && tintHue === preset.hue && tintChroma === preset.chroma;
+                        return (
+                          <button
+                            key={preset.label}
+                            onClick={() => {
+                              setTintHue(preset.hue);
+                              setTintChroma(preset.chroma);
+                            }}
+                            className={cn(
+                              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 hover:bg-accent',
+                              isActive
+                                ? 'border border-foreground bg-accent text-foreground'
+                                : 'border border-border text-muted-foreground'
+                            )}
+                          >
+                            <span
+                              className="h-3 w-3 rounded-full shrink-0 border border-border"
+                              style={{
+                                backgroundColor: preset.chroma === 0
+                                  ? 'oklch(70% 0 0)'
+                                  : `oklch(70% 0.08 ${preset.hue})`,
+                              }}
+                            />
+                            {preset.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {tintChroma > 0 && (
+                      <>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs text-muted-foreground">Intensity</span>
+                          <span className="text-xs text-muted-foreground tabular-nums">
+                            {tintChroma === 0 ? 'None' : `${Math.round(tintChroma / 30 * 100)}%`}
+                          </span>
+                        </div>
+                        <Slider
+                          value={[tintChroma]}
+                          onValueChange={([v]) => setTintChroma(v)}
+                          min={1}
+                          max={30}
+                          step={1}
+                          className="w-full"
+                        />
+                        <div className="flex items-center justify-between mt-3 mb-1.5">
+                          <span className="text-xs text-muted-foreground">Hue</span>
+                          <span className="text-xs text-muted-foreground tabular-nums">{tintHue}°</span>
+                        </div>
+                        <Slider
+                          value={[tintHue]}
+                          onValueChange={([v]) => setTintHue(v)}
+                          min={0}
+                          max={359}
+                          step={1}
+                          className="w-full"
+                        />
+                      </>
+                    )}
+                  </div>
                 </div>
+              </div>
+            )}
 
-                <div className="h-px bg-border" />
-
+            {activeTab === 'editor' && (
+              <div className="p-6 space-y-6">
                 {/* Editor Options */}
                 <div className="space-y-4">
                   <div>

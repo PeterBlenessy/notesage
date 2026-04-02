@@ -149,36 +149,45 @@ const DARK_SOFT: EndpointMap = {
 export const CONTRAST_VARIABLE_NAMES: string[] = Object.keys(LIGHT_BASE);
 
 /**
- * Compute interpolated CSS variable overrides for a given theme and contrast
- * level.
+ * Compute interpolated CSS variable overrides for a given theme, contrast
+ * level, and optional color tint.
  *
  * @param theme  `'light'` or `'dark'`
  * @param level  0–100 where 0 = base (full contrast) and 100 = soft
+ * @param tintChroma  0–30 mapped to 0–0.03 oklch chroma. 0 = neutral grey.
+ * @param tintHue  0–360 oklch hue angle (e.g., 60 = warm yellow, 270 = cool blue)
  * @returns A record of CSS variable names to `oklch(...)` values. Returns an
- *          empty object when `level` is 0 (no overrides needed — the base
- *          values from the stylesheet apply).
+ *          empty object when both `level` is 0 and `tintChroma` is 0 (no
+ *          overrides needed — the base values from the stylesheet apply).
  */
 export function getContrastVariables(
   theme: 'light' | 'dark',
   level: number,
+  tintChroma: number = 0,
+  tintHue: number = 0,
 ): Record<string, string> {
-  if (level === 0) return {};
+  if (level === 0 && tintChroma === 0) return {};
 
   const base = theme === 'light' ? LIGHT_BASE : DARK_BASE;
   const soft = theme === 'light' ? LIGHT_SOFT : DARK_SOFT;
   const t = level / 100;
+  const chroma = round(tintChroma / 1000); // 0–30 → 0–0.03
 
   const result: Record<string, string> = {};
 
   for (const name of CONTRAST_VARIABLE_NAMES) {
     const b = base[name];
     const s = soft[name];
-    const lightness = round(b.lightness + (s.lightness - b.lightness) * t);
+    const lightness = level === 0
+      ? b.lightness
+      : round(b.lightness + (s.lightness - b.lightness) * t);
+
+    const c = chroma > 0 ? ` ${chroma} ${tintHue}` : ' 0 0';
 
     if (b.alpha !== undefined) {
-      result[name] = `oklch(${lightness}% 0 0 / ${b.alpha})`;
+      result[name] = `oklch(${lightness}%${c} / ${b.alpha})`;
     } else {
-      result[name] = `oklch(${lightness}% 0 0)`;
+      result[name] = `oklch(${lightness}%${c})`;
     }
   }
 

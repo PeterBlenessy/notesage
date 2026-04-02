@@ -13,6 +13,10 @@ export type PptxTemplate = "simple" | "business" | "report";
 interface SettingsStore {
   theme: Theme;
   contrastLevel: number;
+  /** Hue angle for UI color tint (0–360, oklch hue). 0 = warm yellow, 270 = cool blue, etc. */
+  tintHue: number;
+  /** Chroma intensity for UI color tint (0–30, mapped to 0–0.03 oklch chroma). 0 = neutral grey. */
+  tintChroma: number;
   showFloatingToolbar: boolean;
   toolbarVisible: boolean;
   contentWidth: ContentWidth;
@@ -62,6 +66,8 @@ interface SettingsStore {
   icloudNotesagePath: string | null;
   setTheme: (theme: Theme) => void;
   setContrastLevel: (level: number) => void;
+  setTintHue: (hue: number) => void;
+  setTintChroma: (chroma: number) => void;
   setShowFloatingToolbar: (show: boolean) => void;
   setToolbarVisible: (visible: boolean) => void;
   setContentWidth: (width: ContentWidth) => void;
@@ -108,6 +114,8 @@ export const useSettingsStore = create<SettingsStore>()(
     (set) => ({
       theme: "system",
       contrastLevel: 0,
+      tintHue: 60,
+      tintChroma: 0,
       showFloatingToolbar: true,
       toolbarVisible: true,
       contentWidth: "auto",
@@ -154,6 +162,14 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setContrastLevel: (level: number) => {
         set({ contrastLevel: Math.round(Math.max(0, Math.min(100, level))) });
+      },
+
+      setTintHue: (hue: number) => {
+        set({ tintHue: Math.round(((hue % 360) + 360) % 360) });
+      },
+
+      setTintChroma: (chroma: number) => {
+        set({ tintChroma: Math.round(Math.max(0, Math.min(30, chroma))) });
       },
 
       setShowFloatingToolbar: (show: boolean) => {

@@ -7,7 +7,7 @@ interface ThemeProviderProps {
 }
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
-  const { theme, contrastLevel } = useSettingsStore();
+  const { theme, contrastLevel, tintHue, tintChroma } = useSettingsStore();
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -23,9 +23,9 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     }
     root.classList.add(resolvedTheme);
 
-    // Apply contrast level via inline CSS variables
-    if (contrastLevel > 0) {
-      const vars = getContrastVariables(resolvedTheme, contrastLevel);
+    // Apply contrast level and color tint via inline CSS variables
+    if (contrastLevel > 0 || tintChroma > 0) {
+      const vars = getContrastVariables(resolvedTheme, contrastLevel, tintChroma, tintHue);
       for (const [name, value] of Object.entries(vars)) {
         root.style.setProperty(name, value);
       }
@@ -42,7 +42,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
         root.style.removeProperty(name);
       }
     };
-  }, [theme, contrastLevel]);
+  }, [theme, contrastLevel, tintHue, tintChroma]);
 
   return <>{children}</>;
 }
