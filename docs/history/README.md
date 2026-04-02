@@ -89,3 +89,4 @@ Chronological log of major implementation milestones and changes.
 | 083 | [Release v0.26.0](083-release-v0.26.0.md) | Inline charts, drawing canvas, callout blocks, external change fixes |
 | 084 | [Release v0.27.0](084-release-v0.27.0.md) | PPTX viewer, DOCX/PPTX/HTML export, chat resend/edit, dynamic tables |
 | 085 | [Release v0.28.0](085-release-v0.28.0.md) | Code file editing, syntax highlighting, WYSIWYG typography, page headers/footers |
+| 086 | [Release v0.28.1](086-release-v0.28.1.md) | Chronological chat segments, tool call grouping, ACP session resilience |
