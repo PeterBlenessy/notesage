@@ -112,16 +112,25 @@ impl agent_client_protocol::Client for NotesageClient {
 /// Some agents (e.g., Gemini CLI) write interactive prompts or log messages
 /// to stdout in ACP mode, corrupting the JSON-RPC stream. This filter reads
 /// line-by-line and only passes through lines that start with '{'.
+///
+/// For long JSON messages that span multiple read buffers (>8KB), the data
+/// is passed through directly — the ACP crate's own BufReader::read_line
+/// handles reassembly across multiple reads.
 pub(super) struct JsonLineFilter<R> {
     inner: tokio::io::BufReader<R>,
     buf: Vec<u8>,
+    /// True when we're in the middle of passing through a long JSON line
+    /// that didn't fit in a single buffer read.
+    passing_through_json: bool,
 }
 
 impl<R: tokio::io::AsyncRead + Unpin> JsonLineFilter<R> {
     pub fn new(inner: R) -> Self {
         Self {
-            inner: tokio::io::BufReader::new(inner),
+            // Use 64KB buffer to handle large JSON-RPC messages
+            inner: tokio::io::BufReader::with_capacity(65536, inner),
             buf: Vec::new(),
+            passing_through_json: false,
         }
     }
 }
@@ -157,6 +166,34 @@ impl<R: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for JsonLineFilter<R>
 
             if internal_buf.is_empty() {
                 // EOF
+                this.passing_through_json = false;
+                return std::task::Poll::Ready(Ok(()));
+            }
+
+            // If we're continuing a long JSON line from a previous read,
+            // pass all data through until we see a newline.
+            if this.passing_through_json {
+                if let Some(newline_pos) = internal_buf.iter().position(|&b| b == b'\n') {
+                    // End of the long JSON line — pass through including newline
+                    let data = &internal_buf[..=newline_pos];
+                    let n = std::cmp::min(buf.remaining(), data.len());
+                    buf.put_slice(&data[..n]);
+                    if n < data.len() {
+                        this.buf.extend_from_slice(&data[n..]);
+                    }
+                    let consume_len = newline_pos + 1;
+                    std::pin::Pin::new(&mut this.inner).consume(consume_len);
+                    this.passing_through_json = false;
+                } else {
+                    // Still no newline — pass through entire buffer
+                    let n = std::cmp::min(buf.remaining(), internal_buf.len());
+                    buf.put_slice(&internal_buf[..n]);
+                    if n < internal_buf.len() {
+                        this.buf.extend_from_slice(&internal_buf[n..]);
+                    }
+                    let consume_len = internal_buf.len();
+                    std::pin::Pin::new(&mut this.inner).consume(consume_len);
+                }
                 return std::task::Poll::Ready(Ok(()));
             }
 
@@ -179,21 +216,50 @@ impl<R: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for JsonLineFilter<R>
                     }
                 }
 
-                // Non-JSON line — skip it but log at info level for debugging
+                // Non-JSON line — skip it but log for debugging.
                 let skip_text = String::from_utf8_lossy(&internal_buf[..newline_pos]).to_string();
                 if !skip_text.trim().is_empty() {
-                    log::info!(target: "notesage::acp", "[agent:stdout] {}", skip_text.trim());
+                    log::warn!(
+                        target: "notesage::acp",
+                        "[agent:stdout] Skipped non-JSON line ({} bytes): {:?}",
+                        skip_text.len(),
+                        skip_text.trim(),
+                    );
                 }
                 let consume_len = newline_pos + 1;
                 std::pin::Pin::new(&mut this.inner).consume(consume_len);
                 // Loop to try the next line
             } else {
-                // No newline yet — need more data. Return pending to let the reader buffer more.
-                // But first check if the entire buffer is non-JSON (very long non-JSON line)
-                if internal_buf.len() > 4096 {
+                // No newline in the buffer — check if it starts with JSON
+                let first_non_ws = internal_buf.iter().position(|b| !b.is_ascii_whitespace());
+                let starts_with_json = first_non_ws.map_or(false, |i| internal_buf[i] == b'{');
+
+                if starts_with_json {
+                    // Long JSON line that doesn't fit in the buffer yet.
+                    // Pass the data through and let the ACP crate's read_line
+                    // handle reassembly. Set flag so subsequent reads continue
+                    // passing through until we see a newline.
+                    this.passing_through_json = true;
+                    let n = std::cmp::min(buf.remaining(), internal_buf.len());
+                    buf.put_slice(&internal_buf[..n]);
+                    if n < internal_buf.len() {
+                        this.buf.extend_from_slice(&internal_buf[n..]);
+                    }
+                    let consume_len = internal_buf.len();
+                    std::pin::Pin::new(&mut this.inner).consume(consume_len);
+                    return std::task::Poll::Ready(Ok(()));
+                } else if internal_buf.len() > 4096 {
+                    // Non-JSON oversized content — drop it
+                    log::warn!(
+                        target: "notesage::acp",
+                        "[agent:stdout] Dropping oversized non-JSON buffer ({} bytes, first 200: {:?})",
+                        internal_buf.len(),
+                        String::from_utf8_lossy(&internal_buf[..std::cmp::min(200, internal_buf.len())]),
+                    );
                     let consume_len = internal_buf.len();
                     std::pin::Pin::new(&mut this.inner).consume(consume_len);
                 }
+                // Small buffer without newline — wait for more data
                 return std::task::Poll::Pending;
             }
         }

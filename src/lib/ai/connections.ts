@@ -169,8 +169,8 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     capabilities: ['interactive', 'agent_tasks'],
     agentBinary: 'claude-agent-acp',
     installMeta: {
-      githubRepo: 'zed-industries/claude-agent-acp',
-      manualCommand: 'npm install -g @zed-industries/claude-agent-acp',
+      githubRepo: 'anthropics/claude-agent-acp',
+      manualCommand: 'npm install -g @agentclientprotocol/claude-agent-acp',
       allowedDomains: ['api.anthropic.com', 'github.com', '*.githubusercontent.com'],
     },
   },
@@ -189,8 +189,8 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     capabilities: ['interactive', 'agent_tasks'],
     agentBinary: 'codex-acp',
     installMeta: {
-      githubRepo: 'zed-industries/codex-acp',
-      manualCommand: 'npm install -g @zed-industries/codex-acp',
+      githubRepo: 'agentclientprotocol/codex-acp',
+      manualCommand: 'npm install -g @agentclientprotocol/codex-acp',
       allowedDomains: ['api.openai.com', 'chatgpt.com', '*.chatgpt.com', 'github.com', '*.githubusercontent.com'],
     },
   },

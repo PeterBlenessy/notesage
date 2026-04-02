@@ -440,6 +440,20 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           }
         }
 
+        // "Session not found" — stale session ID after recovery or reconnect.
+        // Clear the session so the next message creates a fresh one; don't kill the agent.
+        const errorStr = String(error).toLowerCase();
+        if (errorStr.includes('session not found') || errorStr.includes('session_not_found')) {
+          log.warn('ai', 'ACP session not found — clearing stale session ID');
+          if (acpAgent) {
+            acpAgent.chatSessionId = null;
+          }
+          setMessageError(assistantMessageId, 'Session expired. Please send your message again.');
+          setLoading(false);
+          setActiveTool(null);
+          return;
+        }
+
         // Non-connection error — show friendly message, no retry
         stopAcpAgent();
         log.error('ai', 'ACP chat error', error);

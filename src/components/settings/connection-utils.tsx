@@ -35,7 +35,7 @@ export function getInstallGuide(binary: string): SetupGuide {
         title: 'Install Claude Code',
         steps: [
           { label: 'Install Node.js if you don\'t have it', url: 'https://nodejs.org' },
-          { label: 'Run in your terminal:', command: 'npm install -g @zed-industries/claude-agent-acp' },
+          { label: 'Run in your terminal:', command: 'npm install -g @agentclientprotocol/claude-agent-acp' },
           { label: 'Requires a Claude Pro or Max subscription', url: 'https://anthropic.com/claude' },
         ],
       };
@@ -45,7 +45,7 @@ export function getInstallGuide(binary: string): SetupGuide {
         title: 'Install OpenAI Codex',
         steps: [
           { label: 'Install Node.js if you don\'t have it', url: 'https://nodejs.org' },
-          { label: 'Run in your terminal:', command: 'npm install -g @zed-industries/codex-acp' },
+          { label: 'Run in your terminal:', command: 'npm install -g @agentclientprotocol/codex-acp' },
           { label: 'Requires a ChatGPT Plus or Pro subscription' },
         ],
       };

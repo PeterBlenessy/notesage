@@ -157,16 +157,19 @@ export async function ensureAcpAgent(connection: Connection, cwd: string, sandbo
       });
 
       // Try to authenticate — some agents handle auth internally
-      // (e.g. claude-agent-acp uses Claude CLI's stored credentials)
+      // (e.g. claude-agent-acp v0.24+ uses stored CLI credentials and
+      // reports zero auth methods; older versions return "not implemented")
       try {
         await invoke('acp_agent_authenticate', {
           instanceId: result.instance_id,
         });
       } catch (authErr) {
-        const msg = String(authErr);
-        if (!msg.toLowerCase().includes('not implemented')) {
+        const msg = String(authErr).toLowerCase();
+        if (!msg.includes('not implemented') && !msg.includes('no authentication methods')) {
           throw authErr;
         }
+        // Agent handles auth internally — proceed without authentication
+        log.info('ai', `ACP auth skipped (agent handles internally): ${String(authErr)}`);
       }
 
       acpAgent = {

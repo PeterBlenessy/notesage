@@ -329,11 +329,14 @@ fn run_agent_thread(
             }
         }
 
-        // Pre-send "Y\n" for agents that prompt for confirmation before ACP starts
-        // (e.g., Gemini CLI asks "Do you want to continue? [Y/n]:" during auth)
-        {
+        // Pre-send "Y\n" ONLY for Gemini CLI which prompts for confirmation
+        // before entering ACP mode ("Do you want to continue? [Y/n]:").
+        // Other agents (claude-agent-acp, codex-acp, copilot) speak JSON-RPC
+        // immediately — sending "Y\n" corrupts their protocol stream.
+        if agent_binary.contains("gemini") {
             use tokio::io::AsyncWriteExt;
             if let Some(ref mut stdin_handle) = child.stdin {
+                log::info!(target: "notesage::acp", "Sending confirmation 'Y' to {} (Gemini CLI workaround)", agent_binary);
                 let _ = stdin_handle.write_all(b"Y\n").await;
                 let _ = stdin_handle.flush().await;
             }
@@ -384,9 +387,19 @@ fn run_agent_thread(
         let conn = Rc::new(conn);
 
         // Spawn the I/O task on the LocalSet
+        let io_binary = agent_binary.clone();
         tokio::task::spawn_local(async move {
-            if let Err(e) = io_task.await {
-                log::error!(target: "notesage::acp", "IO task error: {}", e);
+            match io_task.await {
+                Ok(_) => {
+                    log::info!(target: "notesage::acp", "[{}] IO task completed normally", io_binary);
+                }
+                Err(e) => {
+                    log::error!(
+                        target: "notesage::acp",
+                        "[{}] IO task error (agent may have crashed or closed its stdio): {}",
+                        io_binary, e,
+                    );
+                }
             }
         });
 
@@ -445,6 +458,21 @@ fn run_agent_thread(
         while let Some(cmd) = cmd_rx.recv().await {
             match cmd {
                 AgentCmd::Authenticate { method_id, reply } => {
+                    // If agent has no auth methods, it handles auth internally
+                    // (e.g., claude-agent-acp v0.24+ uses stored CLI credentials)
+                    if auth_method_ids.is_empty() {
+                        log::info!(
+                            target: "notesage::acp",
+                            "[{}] Agent has no auth methods — assuming internally authenticated",
+                            agent_binary,
+                        );
+                        let _ = reply.send(Ok(AuthStatus {
+                            authenticated: true,
+                            method_id: None,
+                        }));
+                        continue;
+                    }
+
                     // Pick the method: explicit ID, or first available
                     let selected_id = match &method_id {
                         Some(id) => {
@@ -459,15 +487,8 @@ fn run_agent_thread(
                             }
                         }
                         None => {
-                            match auth_method_ids.first() {
-                                Some((id, _, _)) => id.clone(),
-                                None => {
-                                    let _ = reply.send(Err(
-                                        "Agent has no authentication methods".to_string(),
-                                    ));
-                                    continue;
-                                }
-                            }
+                            // Fallback to first available method
+                            auth_method_ids.first().unwrap().0.clone()
                         }
                     };
 
@@ -589,16 +610,34 @@ fn run_agent_thread(
                     // responsive for Cancel and PermissionRespond commands
                     // while the agent processes the prompt.
                     let conn = Rc::clone(&conn);
+                    let prompt_binary = agent_binary.clone();
+                    let prompt_sid = sid.clone();
                     tokio::task::spawn_local(async move {
+                        log::info!(
+                            target: "notesage::acp",
+                            "[{}] Prompt started (session={}, content_len={})",
+                            prompt_binary, prompt_sid, content.len(),
+                        );
+                        let start = std::time::Instant::now();
                         let req = PromptRequest::new(
                             SessionId::new(sid),
                             vec![ContentBlock::Text(TextContent::new(content))],
                         );
                         match conn.prompt(req).await {
                             Ok(_) => {
+                                log::info!(
+                                    target: "notesage::acp",
+                                    "[{}] Prompt completed in {:.1}s (session={})",
+                                    prompt_binary, start.elapsed().as_secs_f64(), prompt_sid,
+                                );
                                 let _ = reply.send(Ok(()));
                             }
                             Err(e) => {
+                                log::error!(
+                                    target: "notesage::acp",
+                                    "[{}] Prompt failed after {:.1}s (session={}): {}",
+                                    prompt_binary, start.elapsed().as_secs_f64(), prompt_sid, e,
+                                );
                                 let _ =
                                     reply.send(Err(format!("Prompt failed: {}", e)));
                             }
@@ -1091,9 +1130,13 @@ pub async fn acp_session_prompt(
 
     drop(agents);
 
-    reply_rx
+    // 5-minute timeout — prompts can take a long time (tool calls, thinking),
+    // but an infinite hang means the agent is dead. The frontend also has a
+    // 60s unresponsive timer, but this backend timeout provides a hard ceiling.
+    tokio::time::timeout(std::time::Duration::from_secs(300), reply_rx)
         .await
-        .map_err(|_| "Agent thread did not respond to prompt".to_string())?
+        .map_err(|_| "Prompt timed out after 300s — the agent may be hung or crashed".to_string())?
+        .map_err(|_| "Agent thread did not respond to prompt (channel dropped — agent likely crashed)".to_string())?
 }
 
 /// Cancel the current prompt in an ACP session.
