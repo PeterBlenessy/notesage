@@ -133,8 +133,9 @@ function getDetail(call: ToolCallSegment): string {
     return call.label;
   }
 
-  // Nothing useful — return the kind as a last resort
-  return call.kind || 'action';
+  // Nothing useful — return the kind or a placeholder
+  if (call.kind && !isUseless(call.kind)) return call.kind;
+  return '(action)';
 }
 
 export const ToolCallGroup = memo(function ToolCallGroup({
@@ -196,7 +197,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({
                   title={stringifyDetail(effectiveCall.detail) || undefined}
                 >
                   <span className="opacity-40 shrink-0">–</span>
-                  <span className="truncate">{getDetail(effectiveCall)}</span>
+                  <span className="truncate">{getDetail(effectiveCall) || effectiveCall.label}</span>
                   {effectiveCall.status === 'running' && (
                     <Loader2 size={9} strokeWidth={1.5} className="animate-spin shrink-0 opacity-50" />
                   )}
