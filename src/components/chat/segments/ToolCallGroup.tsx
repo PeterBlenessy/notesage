@@ -12,45 +12,85 @@ interface ToolCallGroupProps {
   isActivelyStreaming: boolean;
 }
 
-/** Extract the most informative detail for a child item.
- *  Tries: label detail part → detail field (parsed for path/url) → full label */
+/** Try to parse a string as JSON and extract a useful value */
+function extractFromJson(raw: string): string | null {
+  let obj: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    obj = parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+
+  // Try path-like keys → basename
+  for (const key of ['file_path', 'path', 'file']) {
+    const val = obj[key];
+    if (typeof val === 'string' && val.length > 0) {
+      const parts = val.split('/');
+      return parts[parts.length - 1] || val;
+    }
+  }
+  // Try URL
+  for (const key of ['url', 'uri']) {
+    const val = obj[key];
+    if (typeof val === 'string' && /^https?:\/\//.test(val)) {
+      try { return new URL(val).hostname; } catch { return val.slice(0, 60); }
+    }
+  }
+  // Try command
+  for (const key of ['command', 'cmd']) {
+    const val = obj[key];
+    if (typeof val === 'string' && val.length > 0) {
+      return val.length > 70 ? val.slice(0, 70) + '\u2026' : val;
+    }
+  }
+  // Try query/pattern
+  for (const key of ['pattern', 'query', 'search', 'search_query', 'regex']) {
+    const val = obj[key];
+    if (typeof val === 'string' && val.length > 0) {
+      return `"${val.length > 50 ? val.slice(0, 50) + '\u2026' : val}"`;
+    }
+  }
+  // Try any string value that looks useful
+  for (const val of Object.values(obj)) {
+    if (typeof val === 'string' && val.length > 3 && val.length < 200) {
+      // Skip booleans-as-string, numbers, etc.
+      if (/^(true|false|null|\d+)$/.test(val)) continue;
+      return val.length > 70 ? val.slice(0, 70) + '\u2026' : val;
+    }
+  }
+  return null;
+}
+
+/** Extract the most informative detail for a child item */
 function getDetail(call: ToolCallSegment): string {
   // Extract part after the verb: "Reading config.ts" → "config.ts"
   const match = call.label.match(/^\S+:?\s+(.+)$/);
   const labelDetail = match?.[1];
 
-  // If the label detail is generic (e.g. "file", "command", "resource"), fall back
-  const generic = new Set(['file', 'files', 'command', 'resource', 'content', 'skill', 'script']);
-  if (labelDetail && !generic.has(labelDetail.toLowerCase())) {
+  // If the label detail is specific (not a generic word), use it
+  const generic = new Set([
+    'file', 'files', 'command', 'resource', 'content', 'skill', 'script',
+    'the web', 'web', 'task', 'Task',
+  ]);
+  if (labelDetail && !generic.has(labelDetail)) {
     return labelDetail;
   }
 
-  // Try extracting a useful value from the detail field (full arguments JSON)
+  // Parse the detail field (raw JSON or title) for a useful value
   if (call.detail) {
-    // Look for a file path
-    const pathMatch = call.detail.match(/"(?:path|file_path|file)":\s*"([^"]+)"/);
-    if (pathMatch) {
-      const parts = pathMatch[1].split('/');
-      return parts[parts.length - 1] || pathMatch[1];
-    }
-    // Look for a URL
-    const urlMatch = call.detail.match(/"url":\s*"([^"]+)"/);
-    if (urlMatch) {
-      try { return new URL(urlMatch[1]).hostname; } catch { return urlMatch[1].slice(0, 50); }
-    }
-    // Look for a command
-    const cmdMatch = call.detail.match(/"(?:command|cmd)":\s*"([^"]+)"/);
-    if (cmdMatch) {
-      const cmd = cmdMatch[1];
-      return cmd.length > 60 ? cmd.slice(0, 60) + '\u2026' : cmd;
-    }
-    // Truncated raw detail as last resort
-    const oneLine = call.detail.replace(/\n/g, ' ').trim();
-    if (oneLine.length > 2 && oneLine !== '{}') {
-      return oneLine.length > 60 ? oneLine.slice(0, 60) + '\u2026' : oneLine;
+    const fromJson = extractFromJson(call.detail);
+    if (fromJson) return fromJson;
+
+    // Not JSON — use as-is if it's not too generic
+    const trimmed = call.detail.trim();
+    if (trimmed.length > 2 && !generic.has(trimmed)) {
+      return trimmed.length > 70 ? trimmed.slice(0, 70) + '\u2026' : trimmed;
     }
   }
 
+  // Last resort: return the full label (e.g. "Reading file")
   return call.label;
 }
 
