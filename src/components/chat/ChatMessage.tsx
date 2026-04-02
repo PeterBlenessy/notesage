@@ -338,31 +338,76 @@ function hasSegments(message: ChatMessageType): boolean {
   return !!(message.segments && message.segments.length > 0);
 }
 
-/** Group consecutive tool_call/tool_result segments into runs for collapsible rendering. */
-function groupSegments(segments: Segment[]): Array<{ type: 'single'; index: number } | { type: 'tool_group'; startIndex: number; endIndex: number }> {
-  const groups: Array<{ type: 'single'; index: number } | { type: 'tool_group'; startIndex: number; endIndex: number }> = [];
+/** Extract the verb (first word) from a tool call label for grouping */
+function getVerb(seg: Segment): string {
+  if (seg.type !== 'tool_call') return '';
+  // Label format: "Reading file.ts", "Searching for ...", "Running: cmd", "Fetching host"
+  const match = seg.label.match(/^(\S+?)(?::?\s|$)/);
+  return match ? match[1] : seg.label;
+}
+
+type SegmentGroup =
+  | { type: 'single'; index: number }
+  | { type: 'verb_group'; label: string; startIndex: number; endIndex: number };
+
+/**
+ * Group consecutive tool segments by verb. Each run of tool_call/tool_result
+ * with the same verb becomes one collapsible group. Runs with a single tool_call
+ * render inline (no wrapper).
+ */
+function groupSegments(segments: Segment[]): SegmentGroup[] {
+  const groups: SegmentGroup[] = [];
   let i = 0;
   while (i < segments.length) {
     const seg = segments[i];
-    if (seg.type === 'tool_call' || seg.type === 'tool_result') {
-      // Scan ahead for consecutive tool segments
-      const start = i;
-      while (i < segments.length && (segments[i].type === 'tool_call' || segments[i].type === 'tool_result')) {
-        i++;
+    if (seg.type !== 'tool_call' && seg.type !== 'tool_result') {
+      groups.push({ type: 'single', index: i });
+      i++;
+      continue;
+    }
+
+    // Collect consecutive tool segments, splitting by verb
+    // Each tool_call starts a potential group entry; tool_results attach to their preceding call
+    const toolRunStart = i;
+    // Collect the full consecutive tool run first
+    while (i < segments.length && (segments[i].type === 'tool_call' || segments[i].type === 'tool_result')) {
+      i++;
+    }
+    const toolRun = segments.slice(toolRunStart, i);
+
+    // Now split this run into verb sub-groups
+    const verbRuns: Array<{ verb: string; start: number; end: number }> = [];
+    let currentVerb = '';
+    let runStart = toolRunStart;
+
+    for (let j = 0; j < toolRun.length; j++) {
+      const s = toolRun[j];
+      if (s.type === 'tool_call') {
+        const verb = getVerb(s);
+        if (verb !== currentVerb && currentVerb !== '') {
+          // New verb — close current run
+          verbRuns.push({ verb: currentVerb, start: runStart, end: toolRunStart + j - 1 });
+          runStart = toolRunStart + j;
+        }
+        currentVerb = verb;
       }
-      // Count actual tool_call entries (not just results)
-      const toolCalls = segments.slice(start, i).filter((s) => s.type === 'tool_call').length;
-      if (toolCalls >= 2) {
-        groups.push({ type: 'tool_group', startIndex: start, endIndex: i - 1 });
+      // tool_result always stays with current verb
+    }
+    if (currentVerb) {
+      verbRuns.push({ verb: currentVerb, start: runStart, end: i - 1 });
+    }
+
+    // Convert verb runs into groups
+    for (const run of verbRuns) {
+      const callCount = segments.slice(run.start, run.end + 1).filter((s) => s.type === 'tool_call').length;
+      if (callCount >= 2) {
+        groups.push({ type: 'verb_group', label: run.verb, startIndex: run.start, endIndex: run.end });
       } else {
-        // Single tool call — render inline, not grouped
-        for (let j = start; j < i; j++) {
+        // Single call — render inline
+        for (let j = run.start; j <= run.end; j++) {
           groups.push({ type: 'single', index: j });
         }
       }
-    } else {
-      groups.push({ type: 'single', index: i });
-      i++;
     }
   }
   return groups;
@@ -374,12 +419,13 @@ function SegmentRenderer({ segments, isActivelyStreaming }: { segments: Segment[
   return (
     <div className="flex flex-col">
       {groups.map((group) => {
-        if (group.type === 'tool_group') {
-          const groupSegments = segments.slice(group.startIndex, group.endIndex + 1);
+        if (group.type === 'verb_group') {
+          const groupSegs = segments.slice(group.startIndex, group.endIndex + 1);
           return (
             <ToolCallGroup
               key={`group-${group.startIndex}`}
-              segments={groupSegments}
+              label={group.label}
+              segments={groupSegs}
               isActivelyStreaming={isActivelyStreaming}
             />
           );
