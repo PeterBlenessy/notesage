@@ -23,7 +23,10 @@ export { truncateDetail, formatAcpToolName } from '@/lib/ai/acp-utils';
 // Unresponsiveness detection timer (60s inactivity → recovery)
 // ---------------------------------------------------------------------------
 
-const UNRESPONSIVE_TIMEOUT_MS = 60_000;
+// 5 minutes — agents can have long gaps between events (thinking, web fetches,
+// large file reads). The backend health check confirms aliveness; this timer
+// only catches genuinely hung agents, not slow ones.
+const UNRESPONSIVE_TIMEOUT_MS = 300_000;
 
 /** Module-level timer ID so useAcpSessionListeners can reset it. */
 let unresponsiveTimerId: ReturnType<typeof setTimeout> | null = null;
