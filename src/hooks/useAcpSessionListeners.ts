@@ -6,13 +6,16 @@ import { invoke } from '@tauri-apps/api/core';
 import { usePermissionStore } from '@/stores/permission-store';
 import { isToolCallAllowed } from '@/lib/ai/path-filter';
 import { log } from '@/lib/logger';
-import type { ChatMessage, AgentActivity } from '@/lib/ai/types';
+import type { ChatMessage, AgentActivity, ToolCallSegment, ToolResultSegment, Segment } from '@/lib/ai/types';
+import { useChatStore } from '@/stores/chat-store';
 import {
   type AcpSessionUpdatePayload,
   type AcpPermissionRequestPayload,
   extractToolInfo,
   truncateDetail,
   formatAcpToolName,
+  formatToolLabel,
+  parseRawInput,
 } from '@/lib/ai/acp-utils';
 import { resetUnresponsiveTimer } from '@/hooks/useAcpLifecycle';
 
@@ -32,6 +35,11 @@ interface ChatListenerDeps {
   addActivity: (messageId: number, activity: AgentActivity) => void;
   completeLastActivity: (messageId: number) => void;
   completeAllActivities: (messageId: number) => void;
+  // Segment actions (dual-write for chronological rendering)
+  appendTextSegment: (messageId: number, text: string) => void;
+  pushSegment: (messageId: number, segment: Segment) => void;
+  updateSegment: (messageId: number, index: number, patch: Partial<Segment>) => void;
+  finalizeSegments: (messageId: number) => void;
 }
 
 export interface AcpChatListeners {
@@ -50,6 +58,8 @@ export interface AcpChatListeners {
  */
 export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<AcpChatListeners> {
   let streamedContent = '';
+  // Segment tracking for tool calls — maps tool kind+timestamp to segment index
+  let lastToolCallSegmentIndex = -1;
 
   const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
     if (event.payload.instanceId !== deps.instanceId) return;
@@ -64,6 +74,7 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
     ) {
       streamedContent += update.content.text;
       deps.updateMessage(deps.assistantMessageId, streamedContent);
+      deps.appendTextSegment(deps.assistantMessageId, update.content.text);
     } else if (update.sessionUpdate === 'tool_call') {
       const toolLabel = formatAcpToolName(update.kind, update.title);
       deps.setActiveTool(toolLabel);
@@ -74,14 +85,41 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
         status: 'running',
         timestamp: Date.now(),
       });
+      // Segment: push tool call with descriptive label
+      const parsedArgs = parseRawInput(update.rawInput);
+      const segmentLabel = formatToolLabel(update.kind || 'unknown', parsedArgs);
+      const conv = useChatStore.getState().conversations
+        .find(c => c.id === useChatStore.getState().activeConversationId);
+      const msg = conv?.messages.find(m => m.timestamp === deps.assistantMessageId);
+      lastToolCallSegmentIndex = msg?.segments?.length ?? 0;
+      deps.pushSegment(deps.assistantMessageId, {
+        type: 'tool_call',
+        kind: update.kind || 'unknown',
+        label: segmentLabel,
+        detail: update.rawInput ? truncateDetail(update.rawInput, 200) : undefined,
+        status: 'running',
+        timestamp: Date.now(),
+      } as ToolCallSegment);
     } else if (update.sessionUpdate === 'tool_call_update') {
       deps.setActiveTool(formatAcpToolName(update.kind, update.title));
     } else if (update.sessionUpdate === 'tool_result') {
       deps.setActiveTool(null);
       deps.completeLastActivity(deps.assistantMessageId);
+      // Segment: push result and mark the preceding tool_call as done
+      deps.pushSegment(deps.assistantMessageId, {
+        type: 'tool_result',
+        result: typeof update.content?.text === 'string' ? update.content.text : undefined,
+        collapsed: true,
+        timestamp: Date.now(),
+      } as ToolResultSegment);
+      if (lastToolCallSegmentIndex >= 0) {
+        deps.updateSegment(deps.assistantMessageId, lastToolCallSegmentIndex, { status: 'done' });
+        lastToolCallSegmentIndex = -1;
+      }
     } else if (update.sessionUpdate === 'agent_turn_complete') {
       deps.setActiveTool(null);
       deps.completeAllActivities(deps.assistantMessageId);
+      deps.finalizeSegments(deps.assistantMessageId);
     }
   });
 

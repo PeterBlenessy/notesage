@@ -15,7 +15,7 @@ Notesage is a rich text markdown editor with AI collaboration capabilities, pack
 | Editor | Tiptap rich text editor with markdown round-tripping, find & replace, inline tag badges, dynamic tables (column types, aggregation, sorting, filtering, sparklines) | features/editor.md |
 | Document Index | SQLite-backed index with AST-parsed tags, mentions, tasks, goals, and FTS5 content search | prds/2026-03-14-sqlite-document-index.md |
 | AI Providers | Multi-provider architecture (Anthropic, OpenAI, Ollama, Local AI, ACP agents, Copilot LSP), tool calling, network sandboxing | features/ai-providers.md |
-| AI Workflows | Chat with history/export/branching, agents, skills, MCP, tool calling, provider context isolation, comment delegation, research, voice transcription | features/ai-workflows.md |
+| AI Workflows | Chat with history/export/branching, agents, skills, MCP, tool calling, chronological message segments, provider context isolation, comment delegation, research, voice transcription | features/ai-workflows.md |
 | Document Formats | EPUB viewer, PDF export, DOCX/PDF/plain text viewers, code file editor (22+ languages) | features/document-formats.md |
 | Workspace | Projects, file tree, iCloud sync, git integration, external change detection | features/workspace.md |
 
@@ -49,6 +49,18 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 - Rich link preview cards with OpenGraph metadata fetch, paste detection, and `> [!link](url)` markdown
 - Dynamic table enhancements: column types (text/number/currency/percentage/date), aggregation footer (sum/avg/count/min/max), click-to-sort, row filtering, inline sparkline charts, right-click column configuration, PDF export with footer rows
 - PRD: `docs/prds/2026-03-29-dynamic-table-enhancements.md`
+
+### Chronological Chat Message Segments (Completed)
+
+**Goal:** Render assistant messages as an interleaved chronological stream of text, thinking, tool calls, and tool results — matching the UX standard set by Claude Code, Cursor, and Cline.
+
+- `Segment` discriminated union type (text, thinking, tool_call, tool_result) on `ChatMessage`
+- Descriptive tool labels via `formatToolLabel` (file basenames, truncated commands, search queries)
+- Dual-write: segments for rendering, `content` for search/export, backward compat with old messages
+- Four segment view components: `TextSegmentView`, `ThinkingSegmentView`, `ToolCallSegmentView`, `ToolResultSegmentView`
+- Works for all AI paths: direct API with tool calling and ACP agents
+- Conversation export renders segments chronologically (Markdown and JSON)
+- PRD: `docs/prds/2026-04-02-chronological-chat-segments.md`
 
 ### Beyond — Ideas
 

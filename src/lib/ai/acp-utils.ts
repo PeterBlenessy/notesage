@@ -120,6 +120,99 @@ export function formatAcpToolName(kind?: string, title?: string): string {
   }
 }
 
+/** Parse ACP rawInput (JSON string or object) into a Record for formatToolLabel */
+export function parseRawInput(rawInput?: string | unknown): Record<string, unknown> {
+  if (!rawInput) return {};
+  if (typeof rawInput === 'object') return rawInput as Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(rawInput as string);
+    return typeof parsed === 'object' && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Format a descriptive tool call label from the tool kind and its arguments.
+ * Returns a human-readable label like "Reading config.ts" instead of generic "Reading file".
+ */
+export function formatToolLabel(kind: string, args?: Record<string, unknown>): string {
+  const getArg = (...keys: string[]): string | undefined => {
+    if (!args) return undefined;
+    for (const key of keys) {
+      const val = args[key];
+      if (val !== undefined && val !== null && String(val).trim()) return String(val).trim();
+    }
+    return undefined;
+  };
+
+  const basename = (p: string): string => {
+    const parts = p.replace(/\\/g, '/').split('/');
+    return parts[parts.length - 1] || p;
+  };
+
+  const truncate = (text: string, max: number): string => {
+    if (text.length <= max) return text;
+    return text.slice(0, max) + '\u2026';
+  };
+
+  switch (kind) {
+    case 'read':
+    case 'read_file': {
+      const path = getArg('path', 'file_path', 'file');
+      return path ? `Reading ${basename(path)}` : 'Reading file';
+    }
+    case 'write':
+    case 'write_file':
+    case 'edit': {
+      const path = getArg('path', 'file_path', 'file');
+      return path ? `Editing ${basename(path)}` : 'Editing file';
+    }
+    case 'bash':
+    case 'terminal': {
+      const cmd = getArg('command', 'cmd');
+      return cmd ? `Running: ${truncate(cmd, 60)}` : 'Running command';
+    }
+    case 'glob':
+    case 'list':
+    case 'list_directory': {
+      const target = getArg('pattern', 'path', 'directory');
+      return target ? `Searching ${basename(target)}` : 'Searching files';
+    }
+    case 'grep': {
+      const query = getArg('pattern', 'query', 'search');
+      return query ? `Searching for "${truncate(query, 40)}"` : 'Searching content';
+    }
+    case 'web_search': {
+      const query = getArg('query', 'search_query');
+      return query ? `Searching web: "${truncate(query, 40)}"` : 'Searching the web';
+    }
+    case 'fetch': {
+      const url = getArg('url');
+      if (url) {
+        try {
+          const hostname = new URL(url).hostname;
+          return `Fetching ${hostname}`;
+        } catch {
+          return `Fetching ${truncate(url, 40)}`;
+        }
+      }
+      return 'Fetching resource';
+    }
+    case 'execute_skill_script': {
+      const skill = getArg('skill', 'name');
+      return skill ? `Running skill: ${skill}` : 'Running skill script';
+    }
+    case 'read_skill_content': {
+      const skill = getArg('skill', 'name');
+      return skill ? `Loading skill: ${skill}` : 'Loading skill';
+    }
+    default:
+      if (kind) return kind;
+      return 'Working';
+  }
+}
+
 /** Get all workspace folder paths (projects + explorer folders) for sandbox scope */
 export function getAllWorkspacePaths(): string[] {
   const ws = useWorkspaceStore.getState();

@@ -36,6 +36,7 @@ Collapsible right sidebar (Cmd+Shift+C) with streaming AI responses.
 - Conversation branching: branch from any message to explore alternative responses. Branch indicator pills show at branch points with a popover to switch between branches. "Branch from here" action on all messages via GitBranch icon.
 - Conversation export: export active thread as Markdown, all branches as Markdown (separated by horizontal rules with "Branch N" headers), or full tree as JSON with `id`/`parentId` fields. Native save dialog with Reveal in Finder option.
 - Tool calling: models can autonomously call tools (web search, read/write files, execute skills) with results shown as collapsible activity blocks in assistant messages
+- **Chronological message segments:** Assistant messages render text, thinking, tool calls, and tool results as an interleaved chronological stream. Each segment type has a dedicated visual treatment (see Chronological Segments section below). Old messages without segments fall back to the legacy flat rendering.
 - Tool call permission cards appear inline when write/execute tools need approval
 - Tool call deny messages: when a tool call is denied, a chat message is shown ("Tool call X was denied")
 - Domain deny/timeout messages: blocked or timed-out domain requests shown as chat messages
@@ -170,6 +171,41 @@ On-device speech-to-text powered by whisper-rs with Metal GPU acceleration — f
 - Concurrent downloads with per-model progress bars and cancel buttons
 - Model management in Settings > Transcription tab
 - Auto-download: Whisper base model downloaded automatically on first dictation if no model is available
+
+## Chronological Message Segments
+
+Assistant messages render as an ordered stream of typed segments, matching the UX of Claude Code, Cursor, and Cline.
+
+**Data model:** `ChatMessage.segments?: Segment[]` — an ordered array of discriminated union types:
+
+| Segment Type | Fields | Visual Treatment |
+| --- | --- | --- |
+| `TextSegment` | `content` | Markdown-rendered text (same as legacy) |
+| `ThinkingSegment` | `content`, `collapsed` | Muted italic text, collapsible. Auto-expanded while streaming, auto-collapsed on turn complete. |
+| `ToolCallSegment` | `kind`, `label`, `detail`, `status` | Compact inline: icon + descriptive label (e.g. "Reading config.ts") + status indicator. Hover shows full arguments. |
+| `ToolResultSegment` | `result`, `error`, `collapsed` | Collapsible monospace output, collapsed by default. Error state in red. |
+
+**Descriptive tool labels:** `formatToolLabel(kind, args)` in `src/lib/ai/acp-utils.ts` extracts the most informative argument for each tool kind — file basenames for read/write, truncated commands for bash, quoted queries for search, hostnames for fetch. Falls back to generic labels when arguments are unavailable.
+
+**Dual-write:** During streaming, both `segments[]` (for chronological rendering) and `content` (for search/export) are updated in parallel. The `activities[]` and `toolCallActivities[]` fields continue to be written for backward compatibility with old messages.
+
+**Backward compatibility:** Messages without `segments` (or with an empty array) render using the legacy flat path — zero visual change. No migration needed.
+
+**Store actions:** `appendTextSegment`, `pushSegment`, `updateSegment`, `finalizeSegments` on `chat-store`. All produce new array references and update `conv.updatedAt` for Zustand selector cache invalidation.
+
+**Export:** Markdown export renders segments chronologically (text as paragraphs, thinking as blockquotes, tool calls as bold-label blockquotes, results as nested blockquotes). JSON export includes the full `segments` array.
+
+**Key files:**
+
+| File | Purpose |
+| --- | --- |
+| `src/lib/ai/types.ts` | `Segment` union type, segment interfaces |
+| `src/lib/ai/acp-utils.ts` | `formatToolLabel`, `parseRawInput` |
+| `src/stores/chat-store.ts` | Segment store actions |
+| `src/hooks/useDirectApiChat.ts` | Segment dual-write (direct API streaming) |
+| `src/hooks/useAcpSessionListeners.ts` | Segment dual-write (ACP streaming) |
+| `src/components/chat/segments/` | `TextSegmentView`, `ThinkingSegmentView`, `ToolCallSegmentView`, `ToolResultSegmentView` |
+| `src/components/chat/ChatMessage.tsx` | `SegmentRenderer` — renders segments or falls back to legacy |
 
 ## Key Files
 

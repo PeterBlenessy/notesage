@@ -5,7 +5,7 @@ import { usePermissionStore } from '@/stores/permission-store';
 import { useToolPermissionStore, type ToolCallDecision } from '@/stores/tool-permission-store';
 import { useSkillStore } from '@/stores/skill-store';
 import { getAIProvider } from '@/lib/ai';
-import type { ChatMessage, Citation, ToolDefinition } from '@/lib/ai/types';
+import type { ChatMessage, Citation, ToolDefinition, ToolCallSegment } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
 import type { ResolvedCredentials } from '@/lib/ai/credentials';
 import { executeToolCall } from '@/lib/tool-executor';
@@ -13,6 +13,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { log } from '@/lib/logger';
 import { friendlyAIError } from '@/lib/ai/errors';
+import { formatToolLabel } from '@/lib/ai/acp-utils';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -54,7 +55,7 @@ export function useDirectApiChat({
   composedSystemMessage,
   localSystemMessage,
 }: DirectApiChatParams) {
-  const { addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, addActivity } = useChatStore();
+  const { addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, addActivity, appendTextSegment, pushSegment, updateSegment, finalizeSegments } = useChatStore();
   const webSearchEnabled = useChatStore((s) => s.webSearchEnabled);
   const cleanupRef = useRef<(() => void) | null>(null);
 
@@ -140,6 +141,10 @@ export function useDirectApiChat({
         const pendingToolCalls: PendingToolCall[] = [];
         let toolCallCount = 0;
 
+        // Segment tracking for thinking blocks
+        let thinkingSegmentIndex = -1;
+        let thinkingSegmentContent = '';
+
         // Tracks messages accumulated during multi-turn tool call loops.
         // Starts with the initial history + user message, then grows with
         // assistant tool_call messages and tool result messages.
@@ -192,6 +197,14 @@ export function useDirectApiChat({
                 status: 'done',
                 timestamp: Date.now(),
               });
+              pushSegment(assistantMessageId, {
+                type: 'tool_call',
+                kind: call.name,
+                label: formatToolLabel(call.name, call.arguments),
+                detail: 'Tool call limit reached',
+                status: 'error',
+                timestamp: Date.now(),
+              } as ToolCallSegment);
               toolResultMessages.push({
                 role: 'tool' as const,
                 content: 'Tool call limit reached (20 per turn). Please respond with text.',
@@ -225,6 +238,14 @@ export function useDirectApiChat({
                   status: 'done',
                   timestamp: Date.now(),
                 });
+                pushSegment(assistantMessageId, {
+                  type: 'tool_call',
+                  kind: call.name,
+                  label: formatToolLabel(call.name, call.arguments),
+                  detail: 'Permission denied',
+                  status: 'error',
+                  timestamp: Date.now(),
+                } as ToolCallSegment);
                 toolResultMessages.push({
                   role: 'tool' as const,
                   content: `Permission denied for tool: ${call.name}`,
@@ -251,6 +272,23 @@ export function useDirectApiChat({
               timestamp: Date.now(),
             });
 
+            // Push tool call segment (running)
+            const toolLabel = formatToolLabel(call.name, call.arguments);
+            const toolDetail = Object.keys(call.arguments).length > 0
+              ? JSON.stringify(call.arguments, null, 2) : undefined;
+            const convForIdx = useChatStore.getState().conversations
+              .find(c => c.id === useChatStore.getState().activeConversationId);
+            const msgForIdx = convForIdx?.messages.find(m => m.timestamp === assistantMessageId);
+            const toolSegIdx = msgForIdx?.segments?.length ?? 0;
+            pushSegment(assistantMessageId, {
+              type: 'tool_call',
+              kind: call.name,
+              label: toolLabel,
+              detail: toolDetail,
+              status: 'running',
+              timestamp: Date.now(),
+            } as ToolCallSegment);
+
             const result = await executeToolCall(call.id, call.name, call.arguments);
 
             // Update activity to done
@@ -259,6 +297,17 @@ export function useDirectApiChat({
               label: call.name,
               detail: result.is_error ? result.content : 'completed',
               status: 'done',
+              timestamp: Date.now(),
+            });
+
+            // Update tool call segment to done and push tool result segment
+            updateSegment(assistantMessageId, toolSegIdx, { status: result.is_error ? 'error' : 'done' });
+            pushSegment(assistantMessageId, {
+              type: 'tool_result',
+              toolCallId: call.id,
+              result: result.is_error ? undefined : result.content,
+              error: result.is_error ? result.content : undefined,
+              collapsed: true,
               timestamp: Date.now(),
             });
 
@@ -275,6 +324,9 @@ export function useDirectApiChat({
           // Reset streamed content for the continuation turn
           streamedContent = '';
           contentDirty = false;
+          // Reset thinking tracking for the continuation turn
+          thinkingSegmentIndex = -1;
+          thinkingSegmentContent = '';
 
           // Re-invoke ai_chat_stream with full history including tool results
           await invoke('ai_chat_stream', {
@@ -306,6 +358,7 @@ export function useDirectApiChat({
           listen<string>('ai-stream-chunk', (event) => {
             streamedContent += event.payload;
             contentDirty = true;
+            appendTextSegment(assistantMessageId, event.payload);
           }),
           listen<string>('ai-stream-thinking-chunk', (event) => {
             if (!streamedThinking) {
@@ -313,6 +366,24 @@ export function useDirectApiChat({
             }
             streamedThinking += event.payload;
             thinkingDirty = true;
+            // Segment: accumulate thinking content
+            thinkingSegmentContent += event.payload;
+            if (thinkingSegmentIndex === -1) {
+              const conv = useChatStore.getState().conversations
+                .find(c => c.id === useChatStore.getState().activeConversationId);
+              const msg = conv?.messages.find(m => m.timestamp === assistantMessageId);
+              thinkingSegmentIndex = msg?.segments?.length ?? 0;
+              pushSegment(assistantMessageId, {
+                type: 'thinking',
+                content: thinkingSegmentContent,
+                collapsed: false,
+                timestamp: Date.now(),
+              });
+            } else {
+              updateSegment(assistantMessageId, thinkingSegmentIndex, {
+                content: thinkingSegmentContent,
+              });
+            }
           }),
           listen<{ tool: string; status: string }>('ai-tool-use', (event) => {
             if (event.payload.status === 'start') {
@@ -362,6 +433,7 @@ export function useDirectApiChat({
           if (collectedCitations.length > 0 || streamedContent) {
             updateMessage(assistantMessageId, streamedContent, collectedCitations.length > 0 ? collectedCitations : undefined);
           }
+          finalizeSegments(assistantMessageId);
           setLoading(false);
           setActiveTool(null);
           cleanupRef.current = null;
@@ -407,7 +479,7 @@ export function useDirectApiChat({
         setActiveTool(null);
       }
     },
-    [resolved, buildComposedSystemMessage, localSystemMessage, webSearchEnabled, addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, addActivity, effectiveConnection]
+    [resolved, buildComposedSystemMessage, localSystemMessage, webSearchEnabled, addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, addActivity, appendTextSegment, pushSegment, updateSegment, finalizeSegments, effectiveConnection]
   );
 
   const cancelDirectChat = useCallback(() => {

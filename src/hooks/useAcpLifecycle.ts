@@ -67,7 +67,7 @@ interface AcpLifecycleParams {
 }
 
 export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAcpSystemMessage }: AcpLifecycleParams) {
-  const { addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, addSystemStatus } = useChatStore();
+  const { addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, addSystemStatus, appendTextSegment, pushSegment, updateSegment, finalizeSegments } = useChatStore();
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const cleanupRef = useRef<(() => void) | null>(null);
 
@@ -295,6 +295,10 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         addActivity,
         completeLastActivity,
         completeAllActivities,
+        appendTextSegment,
+        pushSegment,
+        updateSegment,
+        finalizeSegments,
       };
 
       try {
@@ -462,7 +466,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         setActiveTool(null);
       }
     },
-    [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities]
+    [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, appendTextSegment, pushSegment, updateSegment, finalizeSegments]
   );
 
   /**

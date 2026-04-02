@@ -12,7 +12,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import type { ChatMessage as ChatMessageType, AgentActivity, ToolCallActivity, ToolCallStatus } from '@/lib/ai/types';
+import type { ChatMessage as ChatMessageType, AgentActivity, ToolCallActivity, ToolCallStatus, Segment } from '@/lib/ai/types';
+import { TextSegmentView, ThinkingSegmentView, ToolCallSegmentView, ToolResultSegmentView } from './segments';
 
 function ActivityIcon({ activity, isActive }: { activity: AgentActivity; isActive: boolean }) {
   if (isActive && activity.status === 'running') {
@@ -333,6 +334,69 @@ function UserActionButtons({ isUser, onEdit, onResend, onBranch, onCopy, copied 
   );
 }
 
+function hasSegments(message: ChatMessageType): boolean {
+  return !!(message.segments && message.segments.length > 0);
+}
+
+function SegmentRenderer({ segments, isActivelyStreaming }: { segments: Segment[]; isActivelyStreaming: boolean }) {
+  return (
+    <div className="flex flex-col">
+      {segments.map((segment, index) => {
+        const isLastSegment = index === segments.length - 1;
+        const isStreamingSegment = isActivelyStreaming && isLastSegment;
+
+        // Compute thinking duration from next segment's timestamp
+        let thinkingDuration: number | undefined;
+        if (segment.type === 'thinking' && index < segments.length - 1) {
+          const nextTimestamp = segments[index + 1].timestamp;
+          thinkingDuration = (nextTimestamp - segment.timestamp) / 1000;
+        }
+
+        switch (segment.type) {
+          case 'text':
+            return (
+              <TextSegmentView
+                key={`text-${index}`}
+                segment={segment}
+                isStreaming={isStreamingSegment}
+              />
+            );
+          case 'thinking':
+            return (
+              <ThinkingSegmentView
+                key={`thinking-${index}`}
+                segment={segment}
+                durationSec={thinkingDuration}
+                isStreaming={isStreamingSegment}
+              />
+            );
+          case 'tool_call': {
+            // When not streaming, force status to done as a safety net
+            const effectiveSegment = !isActivelyStreaming && segment.status === 'running'
+              ? { ...segment, status: 'done' as const }
+              : segment;
+            return (
+              <ToolCallSegmentView
+                key={`tool_call-${index}`}
+                segment={effectiveSegment}
+              />
+            );
+          }
+          case 'tool_result':
+            return (
+              <ToolResultSegmentView
+                key={`tool_result-${index}`}
+                segment={segment}
+              />
+            );
+          default:
+            return null;
+        }
+      })}
+    </div>
+  );
+}
+
 interface ChatMessageProps {
   message: ChatMessageType;
   /** Whether this is the last message in the list (controls streaming cursor) */
@@ -380,7 +444,7 @@ export function ChatMessage({ message, isLast = false, branchCount, onBranch, on
 
   const isUser = message.role === 'user';
   const isActivelyStreaming = isLoading && isLast;
-  const isStreaming = !isUser && isActivelyStreaming && message.content.length === 0;
+  const isStreaming = !isUser && isActivelyStreaming && message.content.length === 0 && !hasSegments(message);
   const hasCitations = !isUser && message.citations && message.citations.length > 0;
   const hasActivities = !isUser && message.activities && message.activities.length > 0;
   const hasToolCallActivities = !isUser && message.toolCallActivities && message.toolCallActivities.length > 0;
@@ -424,8 +488,8 @@ export function ChatMessage({ message, isLast = false, branchCount, onBranch, on
             : 'rounded-tl-sm bg-muted'
         }`}
       >
-        {/* Thinking / reasoning section */}
-        {hasThinking && (
+        {/* Thinking / reasoning section — only for old messages without segments */}
+        {hasThinking && !hasSegments(message) && (
           <div className={message.content ? 'mb-2' : ''}>
             <button
               onClick={() => setThinkingExpanded(!thinkingExpanded)}
@@ -455,6 +519,8 @@ export function ChatMessage({ message, isLast = false, branchCount, onBranch, on
           <UserContent message={message} />
         ) : message.isError ? (
           <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{message.content}</p>
+        ) : hasSegments(message) ? (
+          <SegmentRenderer segments={message.segments!} isActivelyStreaming={isActivelyStreaming} />
         ) : isStreaming ? (
           <div className="flex items-center gap-1.5 py-1">
             <div className="h-1.5 w-1.5 rounded-full animate-pulse bg-muted-foreground" />
@@ -478,13 +544,13 @@ export function ChatMessage({ message, isLast = false, branchCount, onBranch, on
           </div>
         )}
 
-        {/* Agent Activity Log */}
-        {hasActivities && (
+        {/* Agent Activity Log — only for old messages without segments */}
+        {hasActivities && !hasSegments(message) && (
           <ActivityLog activities={message.activities!} isActive={isActivelyStreaming} />
         )}
 
-        {/* Tool Call Activity Log */}
-        {hasToolCallActivities && (
+        {/* Tool Call Activity Log — only for old messages without segments */}
+        {hasToolCallActivities && !hasSegments(message) && (
           <ToolCallLog activities={message.toolCallActivities!} isActive={isActivelyStreaming} />
         )}
 

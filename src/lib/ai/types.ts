@@ -47,6 +47,44 @@ export interface ToolCallActivity {
 
 export type SystemStatusType = 'reconnecting' | 'reconnected' | 'failed';
 
+// ---------------------------------------------------------------------------
+// Message segments — chronological blocks within an assistant message
+// ---------------------------------------------------------------------------
+
+interface MessageSegmentBase {
+  type: 'text' | 'thinking' | 'tool_call' | 'tool_result';
+  timestamp: number;
+}
+
+export interface TextSegment extends MessageSegmentBase {
+  type: 'text';
+  content: string;
+}
+
+export interface ThinkingSegment extends MessageSegmentBase {
+  type: 'thinking';
+  content: string;
+  collapsed: boolean;
+}
+
+export interface ToolCallSegment extends MessageSegmentBase {
+  type: 'tool_call';
+  kind: string;
+  label: string;
+  detail?: string;
+  status: 'running' | 'done' | 'error';
+}
+
+export interface ToolResultSegment extends MessageSegmentBase {
+  type: 'tool_result';
+  toolCallId?: string;
+  result?: string;
+  error?: string;
+  collapsed: boolean;
+}
+
+export type Segment = TextSegment | ThinkingSegment | ToolCallSegment | ToolResultSegment;
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'tool' | 'system-status';
   content: string;
@@ -77,6 +115,8 @@ export interface ChatMessage {
   toolCallId?: string;
   /** Tool call execution activities for UI tracking */
   toolCallActivities?: ToolCallActivity[];
+  /** Ordered segments for chronological rendering (text, thinking, tool calls interleaved) */
+  segments?: Segment[];
   // --- system-status fields (role: 'system-status') ---
   /** Status type for reconnection messages */
   statusType?: SystemStatusType;

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { ChatMessage, Citation, AgentActivity, ToolCall, ToolCallActivity, SystemStatusType } from '@/lib/ai/types';
+import type { ChatMessage, Citation, AgentActivity, ToolCall, ToolCallActivity, SystemStatusType, Segment } from '@/lib/ai/types';
 import { createTauriStorage } from '@/lib/tauri-storage';
 import { getThread, getDescendants, getChildren, getLeaves } from '@/lib/chat-tree';
 
@@ -82,6 +82,19 @@ interface ChatStore {
   addToolCallsToMessage: (messageTimestamp: number, toolCalls: ToolCall[]) => void;
   addToolCallActivity: (messageTimestamp: number, activity: ToolCallActivity) => void;
   updateToolCallActivity: (messageTimestamp: number, toolCallId: string, updates: Partial<ToolCallActivity>) => void;
+
+  // ---------------------------------------------------------------------------
+  // Segment methods (chronological message rendering)
+  // ---------------------------------------------------------------------------
+
+  /** Append text to the last text segment, or create a new text segment */
+  appendTextSegment: (messageTimestamp: number, text: string) => void;
+  /** Push a new segment to the message's segments array */
+  pushSegment: (messageTimestamp: number, segment: Segment) => void;
+  /** Update a segment by index with a partial patch */
+  updateSegment: (messageTimestamp: number, index: number, patch: Partial<Segment>) => void;
+  /** Finalize all segments: collapse thinking, mark running tool_calls as done */
+  finalizeSegments: (messageTimestamp: number) => void;
 
   // ---------------------------------------------------------------------------
   // System status messages (reconnection flow)
@@ -415,6 +428,65 @@ export const useChatStore = create<ChatStore>()(
                 a.id === toolCallId ? { ...a, ...updates } : a
               ),
             };
+          }),
+        }))),
+
+      // ----- Segment methods -----
+
+      appendTextSegment: (messageTimestamp, text) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          updatedAt: Date.now(),
+          messages: c.messages.map((msg) => {
+            if (msg.timestamp !== messageTimestamp) return msg;
+            const segments = [...(msg.segments || [])];
+            const last = segments[segments.length - 1];
+            if (last && last.type === 'text') {
+              segments[segments.length - 1] = { ...last, content: last.content + text };
+            } else {
+              segments.push({ type: 'text', content: text, timestamp: Date.now() });
+            }
+            return { ...msg, segments };
+          }),
+        }))),
+
+      pushSegment: (messageTimestamp, segment) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          updatedAt: Date.now(),
+          messages: c.messages.map((msg) =>
+            msg.timestamp === messageTimestamp
+              ? { ...msg, segments: [...(msg.segments || []), segment] }
+              : msg
+          ),
+        }))),
+
+      updateSegment: (messageTimestamp, index, patch) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          updatedAt: Date.now(),
+          messages: c.messages.map((msg) => {
+            if (msg.timestamp !== messageTimestamp || !msg.segments) return msg;
+            if (index < 0 || index >= msg.segments.length) return msg;
+            const segments = msg.segments.map((s, i) =>
+              i === index ? { ...s, ...patch } as Segment : s
+            );
+            return { ...msg, segments };
+          }),
+        }))),
+
+      finalizeSegments: (messageTimestamp) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          updatedAt: Date.now(),
+          messages: c.messages.map((msg) => {
+            if (msg.timestamp !== messageTimestamp || !msg.segments) return msg;
+            const segments = msg.segments.map((s) => {
+              if (s.type === 'thinking') return { ...s, collapsed: true };
+              if (s.type === 'tool_call' && s.status === 'running') return { ...s, status: 'done' as const };
+              return s;
+            });
+            return { ...msg, segments };
           }),
         }))),
 

@@ -24,7 +24,37 @@ function formatMessagesAsMarkdown(messages: ChatMessage[]): string[] {
     if (msg.role === 'system-status') continue;
     const role = msg.role === 'user' ? 'You' : msg.role === 'system' ? 'System' : 'Assistant';
     const time = msg.timestamp ? new Date(msg.timestamp).toLocaleString() : '';
-    lines.push(`## ${role}${time ? ` — ${time}` : ''}`, '', msg.content, '');
+    lines.push(`## ${role}${time ? ` — ${time}` : ''}`, '');
+
+    if (msg.segments && msg.segments.length > 0) {
+      // Render segments chronologically
+      for (const seg of msg.segments) {
+        switch (seg.type) {
+          case 'text':
+            lines.push(seg.content, '');
+            break;
+          case 'thinking':
+            lines.push(`> *Thinking:* ${seg.content}`, '');
+            break;
+          case 'tool_call':
+            lines.push(`> **[${seg.label}]**${seg.detail ? ` ${seg.detail}` : ''}`, '');
+            break;
+          case 'tool_result':
+            if (seg.error) {
+              lines.push(`> > Error: ${seg.error}`, '');
+            } else if (seg.result) {
+              const truncated = seg.result.length > 500
+                ? seg.result.slice(0, 500) + '\u2026'
+                : seg.result;
+              lines.push(`> > ${truncated.replace(/\n/g, '\n> > ')}`, '');
+            }
+            break;
+        }
+      }
+    } else {
+      // Old messages without segments: export content as-is
+      lines.push(msg.content, '');
+    }
   }
   return lines;
 }
@@ -123,6 +153,7 @@ export const ChatHistoryView = memo(function ChatHistoryView({ onSelectConversat
         role: m.role,
         content: m.content,
         timestamp: m.timestamp ? new Date(m.timestamp).toISOString() : undefined,
+        ...(m.segments && m.segments.length > 0 ? { segments: m.segments } : {}),
       })),
     }, null, 2);
 
