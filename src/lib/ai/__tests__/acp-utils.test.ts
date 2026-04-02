@@ -157,6 +157,28 @@ describe('formatToolLabel', () => {
     expect(formatToolLabel('read', { input: '/Users/me/project/src/main.rs' })).toBe('Reading main.rs');
   });
 
+  // effectiveTitle filtering
+  it('filters title that equals the kind name', () => {
+    expect(formatToolLabel('fetch', {}, 'Fetch')).toBe('Fetching resource');
+    expect(formatToolLabel('fetch', {}, 'fetch')).toBe('Fetching resource');
+  });
+
+  it('filters "Task" as title for think kind', () => {
+    expect(formatToolLabel('think', {}, 'Task')).toBe('Thinking');
+  });
+
+  it('uses title when it differs from kind', () => {
+    expect(formatToolLabel('fetch', {}, 'https://example.com')).toBe('Fetching example.com');
+    expect(formatToolLabel('think', {}, 'Planning the approach')).toBe('Thinking: Planning the approach');
+  });
+
+  // Skill kind alias
+  it('handles "skill" as ACP kind alias', () => {
+    expect(formatToolLabel('skill', { name: 'search-research' })).toBe('Skill (search-research)');
+    expect(formatToolLabel('skill', {}, 'download-webpage')).toBe('Skill (download-webpage)');
+    expect(formatToolLabel('skill', {})).toBe('Running skill');
+  });
+
   // Case-insensitive kind matching
   it('handles capitalized kinds (ACP agents)', () => {
     expect(formatToolLabel('Read', { file_path: '/src/App.tsx' })).toBe('Reading App.tsx');

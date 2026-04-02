@@ -472,3 +472,57 @@ describe('backward compatibility', () => {
     expect(msg?.segments).toBeUndefined();
   });
 });
+
+// ===========================================================================
+// resetAssistantMessage
+// ===========================================================================
+
+describe('resetAssistantMessage', () => {
+  it('clears content, segments, error, thinking, and activities', () => {
+    const { assistantTs } = setupConversationWithAssistant();
+    const store = useChatStore.getState();
+
+    // Set up some state on the assistant message
+    store.updateMessage(assistantTs, 'partial response');
+    store.appendTextSegment(assistantTs, 'some text');
+    store.pushSegment(assistantTs, {
+      type: 'tool_call', kind: 'read', label: 'Reading', status: 'running', timestamp: Date.now(),
+    });
+
+    // Reset
+    store.resetAssistantMessage(assistantTs);
+
+    const msg = getAssistantMessage(assistantTs);
+    expect(msg?.content).toBe('');
+    expect(msg?.segments).toEqual([]);
+    expect(msg?.isError).toBe(false);
+    expect(msg?.thinking).toBe('');
+    expect(msg?.activities).toEqual([]);
+    expect(msg?.toolCallActivities).toEqual([]);
+  });
+
+  it('preserves the message in the conversation (does not delete it)', () => {
+    const { assistantTs } = setupConversationWithAssistant();
+    useChatStore.getState().updateMessage(assistantTs, 'hello');
+    useChatStore.getState().resetAssistantMessage(assistantTs);
+
+    const msg = getAssistantMessage(assistantTs);
+    expect(msg).toBeDefined();
+    expect(msg?.role).toBe('assistant');
+    expect(msg?.timestamp).toBe(assistantTs);
+  });
+
+  it('clears isError flag', () => {
+    const { assistantTs } = setupConversationWithAssistant();
+    useChatStore.getState().setMessageError(assistantTs, 'something failed');
+
+    const before = getAssistantMessage(assistantTs);
+    expect(before?.isError).toBe(true);
+
+    useChatStore.getState().resetAssistantMessage(assistantTs);
+
+    const after = getAssistantMessage(assistantTs);
+    expect(after?.isError).toBe(false);
+    expect(after?.content).toBe('');
+  });
+});
