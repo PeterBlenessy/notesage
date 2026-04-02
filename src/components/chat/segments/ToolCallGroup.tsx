@@ -133,9 +133,8 @@ function getDetail(call: ToolCallSegment): string {
     return call.label;
   }
 
-  // Nothing useful — return the kind or a placeholder
-  if (call.kind && !isUseless(call.kind)) return call.kind;
-  return '(action)';
+  // Nothing useful — return the full label (it at least has the verb)
+  return call.label;
 }
 
 export const ToolCallGroup = memo(function ToolCallGroup({
@@ -150,9 +149,13 @@ export const ToolCallGroup = memo(function ToolCallGroup({
   const doneCount = calls.length - (isActivelyStreaming ? rawRunning : 0);
   const allDone = !hasRunning;
 
-  // Default: expanded always. User can toggle collapsed.
-  const [userCollapsed, setUserCollapsed] = useState(false);
-  const isExpanded = !userCollapsed;
+  // Check if children have useful unique details worth showing
+  const childDetails = calls.map((c) => getDetail(c));
+  const hasUsefulChildren = childDetails.some((d) => !isUseless(d) && d !== calls[0]?.label);
+
+  // Default: expanded if children have useful info, collapsed if not. User can always toggle.
+  const [userToggled, setUserToggled] = useState<boolean | null>(null);
+  const isExpanded = userToggled !== null ? userToggled : hasUsefulChildren;
 
   const statusText = hasRunning ? `${doneCount}/${calls.length}` : String(calls.length);
 
@@ -161,7 +164,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({
       {/* Group header */}
       <button
         type="button"
-        onClick={() => setUserCollapsed((prev) => !prev)}
+        onClick={() => setUserToggled((prev) => prev !== null ? !prev : !isExpanded)}
         className="flex items-center gap-1.5 w-full px-2.5 py-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors duration-150 cursor-pointer"
       >
         <ChevronRight
