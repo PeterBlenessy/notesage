@@ -56,7 +56,7 @@ describe('formatToolLabel', () => {
 
   it('formats execute_skill_script', () => {
     expect(formatToolLabel('execute_skill_script', { skill: 'download-webpage' })).toBe(
-      'Running skill: download-webpage',
+      'Skill (download-webpage)',
     );
   });
 
@@ -109,7 +109,7 @@ describe('formatToolLabel', () => {
 
   it('handles name as alternative for skill operations', () => {
     expect(formatToolLabel('execute_skill_script', { name: 'my-skill' })).toBe(
-      'Running skill: my-skill',
+      'Skill (my-skill)',
     );
     expect(formatToolLabel('read_skill_content', { name: 'my-skill' })).toBe(
       'Loading skill: my-skill',

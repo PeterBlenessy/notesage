@@ -237,13 +237,14 @@ export function formatToolLabel(kind: string, args?: Record<string, unknown>, ti
     case 'think':
     case 'thinking':
       return effectiveTitle ? `Thinking: ${truncate(effectiveTitle, 50)}` : 'Thinking';
+    case 'skill':
     case 'execute_skill_script': {
-      const skill = getArg('skill', 'name');
-      return skill ? `Running skill: ${skill}` : (effectiveTitle || 'Running skill script');
+      const skill = getArg('skill', 'name') ?? effectiveTitle;
+      return skill ? `Skill (${truncate(skill, 40)})` : 'Running skill';
     }
     case 'read_skill_content': {
-      const skill = getArg('skill', 'name');
-      return skill ? `Loading skill: ${skill}` : (effectiveTitle || 'Loading skill');
+      const skill = getArg('skill', 'name') ?? effectiveTitle;
+      return skill ? `Loading skill: ${skill}` : 'Loading skill';
     }
     default: {
       // Use title if it's more descriptive than the raw kind

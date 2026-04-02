@@ -103,7 +103,7 @@ const GENERIC_WORDS = new Set([
   'file', 'files', 'command', 'resource', 'content', 'skill', 'script',
   'the web', 'web', 'task', 'Task', 'undefined', 'null', 'unknown',
   'Fetch', 'fetch', 'Read', 'read', 'Write', 'write', 'Edit', 'edit',
-  'Terminal', 'terminal',
+  'Terminal', 'terminal', 'Skill', 'skill',
 ]);
 
 /** Check if a string is useless as a display label */
