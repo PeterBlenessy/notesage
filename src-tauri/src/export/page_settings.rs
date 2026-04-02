@@ -53,7 +53,7 @@ pub struct DocumentPageSettings {
 
 fn default_page_number_start() -> u32 { 1 }
 
-fn default_header_footer() -> PageHeaderFooter {
+pub fn default_header_footer() -> PageHeaderFooter {
     PageHeaderFooter {
         left: String::new(),
         center: String::new(),
@@ -144,21 +144,12 @@ mod tests {
 
     #[test]
     fn test_has_content() {
-        let empty = PageHeaderFooter {
-            left: String::new(),
-            center: String::new(),
-            right: String::new(),
-            different_first_page: false,
-            first_page: None,
-        };
+        let empty = default_header_footer();
         assert!(!has_content(&empty));
 
         let with_center = PageHeaderFooter {
-            left: String::new(),
             center: "Title".to_string(),
-            right: String::new(),
-            different_first_page: false,
-            first_page: None,
+            ..default_header_footer()
         };
         assert!(has_content(&with_center));
     }

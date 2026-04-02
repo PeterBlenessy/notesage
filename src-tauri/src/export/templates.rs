@@ -695,18 +695,14 @@ fn main() {}
         let settings = DocumentPageSettings {
             header: PageHeaderFooter {
                 left: "{title}".to_string(),
-                center: String::new(),
                 right: "Page {page}".to_string(),
-                different_first_page: false,
-                first_page: None,
+                ..default_header_footer()
             },
             footer: PageHeaderFooter {
-                left: String::new(),
                 center: "{page} / {pages}".to_string(),
-                right: String::new(),
-                different_first_page: false,
-                first_page: None,
+                ..default_header_footer()
             },
+            page_number_start: 1,
         };
 
         let result = generate_typst_header_footer(&settings, "My Document");
@@ -730,22 +726,16 @@ fn main() {}
         let settings = DocumentPageSettings {
             header: PageHeaderFooter {
                 left: "{title}".to_string(),
-                center: String::new(),
-                right: String::new(),
                 different_first_page: true,
-                first_page: Some(FirstPageHeaderFooter {
+                first_page: Some(ThreeColumns {
                     left: String::new(),
                     center: String::new(),
                     right: String::new(),
                 }),
+                ..default_header_footer()
             },
-            footer: PageHeaderFooter {
-                left: String::new(),
-                center: String::new(),
-                right: String::new(),
-                different_first_page: false,
-                first_page: None,
-            },
+            footer: default_header_footer(),
+            page_number_start: 1,
         };
 
         let result = generate_typst_header_footer(&settings, "Test");
@@ -760,20 +750,9 @@ fn main() {}
         use crate::export::page_settings::*;
 
         let settings = DocumentPageSettings {
-            header: PageHeaderFooter {
-                left: String::new(),
-                center: String::new(),
-                right: String::new(),
-                different_first_page: false,
-                first_page: None,
-            },
-            footer: PageHeaderFooter {
-                left: String::new(),
-                center: String::new(),
-                right: String::new(),
-                different_first_page: false,
-                first_page: None,
-            },
+            header: default_header_footer(),
+            footer: default_header_footer(),
+            page_number_start: 1,
         };
 
         let result = generate_typst_header_footer(&settings, "Test");
