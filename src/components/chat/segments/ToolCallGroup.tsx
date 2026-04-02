@@ -59,7 +59,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({
 
       {/* Expanded child list */}
       {isExpanded && (
-        <div className="pl-6 pr-2.5 pb-1.5 flex flex-col gap-px">
+        <div className="pl-[38px] pr-2.5 pb-1.5 flex flex-col gap-px">
           {calls.map((call, i) => {
             const effectiveCall = !isActivelyStreaming && call.status === 'running'
               ? { ...call, status: 'done' as const }
