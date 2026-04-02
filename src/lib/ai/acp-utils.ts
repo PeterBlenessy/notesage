@@ -185,65 +185,69 @@ export function formatToolLabel(kind: string, args?: Record<string, unknown>, ti
   // Normalize kind to lowercase for matching
   const k = kind.toLowerCase();
 
+  // Filter out title if it's just the kind name (no useful info)
+  const effectiveTitle = title && title.toLowerCase() !== k && title !== 'Task' && title !== 'undefined'
+    ? title : undefined;
+
   switch (k) {
     case 'read':
     case 'read_file': {
       const path = getArg('path', 'file_path', 'file') ?? findPath() ?? (title && title.includes('/') ? title : undefined);
-      return path ? `Reading ${basename(path)}` : (title || 'Reading file');
+      return path ? `Reading ${basename(path)}` : (effectiveTitle || 'Reading file');
     }
     case 'write':
     case 'write_file':
     case 'edit': {
       const path = getArg('path', 'file_path', 'file') ?? findPath() ?? (title && title.includes('/') ? title : undefined);
-      return path ? `Editing ${basename(path)}` : (title || 'Editing file');
+      return path ? `Editing ${basename(path)}` : (effectiveTitle || 'Editing file');
     }
     case 'bash':
     case 'terminal':
     case 'execute': {
       const cmd = getArg('command', 'cmd');
       if (cmd) return `Running: ${truncate(cmd, 60)}`;
-      if (title) return `Running: ${truncate(title, 60)}`;
+      if (effectiveTitle) return `Running: ${truncate(effectiveTitle, 60)}`;
       return 'Running command';
     }
     case 'glob':
     case 'list':
     case 'list_directory': {
       const target = getArg('pattern', 'path', 'directory');
-      return target ? `Searching ${basename(target)}` : (title || 'Searching files');
+      return target ? `Searching ${basename(target)}` : (effectiveTitle || 'Searching files');
     }
     case 'grep':
     case 'search': {
       const query = getArg('pattern', 'query', 'search');
       if (query) return `Searching for "${truncate(query, 40)}"`;
-      if (title) return `Searching: ${truncate(title, 50)}`;
+      if (effectiveTitle) return `Searching: ${truncate(effectiveTitle, 50)}`;
       return 'Searching';
     }
     case 'web_search': {
       const query = getArg('query', 'search_query');
-      return query ? `Searching web: "${truncate(query, 40)}"` : (title || 'Searching the web');
+      return query ? `Searching web: "${truncate(query, 40)}"` : (effectiveTitle || 'Searching the web');
     }
     case 'fetch':
     case 'webfetch':
     case 'web_fetch': {
       const url = getArg('url') ?? findUrl();
       if (url) return `Fetching ${hostname(url)}`;
-      if (title) return `Fetching ${truncate(title, 50)}`;
+      if (effectiveTitle) return `Fetching ${truncate(effectiveTitle, 50)}`;
       return 'Fetching resource';
     }
     case 'think':
     case 'thinking':
-      return title ? `Thinking: ${truncate(title, 50)}` : 'Thinking';
+      return effectiveTitle ? `Thinking: ${truncate(effectiveTitle, 50)}` : 'Thinking';
     case 'execute_skill_script': {
       const skill = getArg('skill', 'name');
-      return skill ? `Running skill: ${skill}` : (title || 'Running skill script');
+      return skill ? `Running skill: ${skill}` : (effectiveTitle || 'Running skill script');
     }
     case 'read_skill_content': {
       const skill = getArg('skill', 'name');
-      return skill ? `Loading skill: ${skill}` : (title || 'Loading skill');
+      return skill ? `Loading skill: ${skill}` : (effectiveTitle || 'Loading skill');
     }
     default: {
       // Use title if it's more descriptive than the raw kind
-      if (title && title.length > 0) return title;
+      if (effectiveTitle && effectiveTitle.length > 0) return effectiveTitle;
       if (kind && kind.length > 0) return kind;
       return 'Working';
     }

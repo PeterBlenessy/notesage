@@ -108,7 +108,7 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
             const json = JSON.stringify(update.rawInput);
             if (json !== '{}' && json !== 'null') return json;
           }
-          return update.title || undefined;
+          return (update.title && update.title !== 'undefined' && update.title !== 'null') ? update.title : undefined;
         })(),
         status: 'running',
         timestamp: Date.now(),

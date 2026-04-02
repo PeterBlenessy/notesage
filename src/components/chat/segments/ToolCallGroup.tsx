@@ -98,29 +98,43 @@ function extractFromString(raw: string): string | null {
   return null;
 }
 
+/** Words that don't carry useful information as child labels */
+const GENERIC_WORDS = new Set([
+  'file', 'files', 'command', 'resource', 'content', 'skill', 'script',
+  'the web', 'web', 'task', 'Task', 'undefined', 'null', 'unknown',
+  'Fetch', 'fetch', 'Read', 'read', 'Write', 'write', 'Edit', 'edit',
+  'Terminal', 'terminal',
+]);
+
+/** Check if a string is useless as a display label */
+function isUseless(s: string): boolean {
+  if (!s || s === '{}' || s === '""' || s === 'undefined' || s === 'null') return true;
+  return GENERIC_WORDS.has(s.trim());
+}
+
 /** Extract the most informative detail for a child item */
 function getDetail(call: ToolCallSegment): string {
   // Extract part after the verb: "Reading config.ts" → "config.ts"
   const match = call.label.match(/^\S+:?\s+(.+)$/);
   const labelDetail = match?.[1];
 
-  // If the label detail is specific (not a generic word), use it
-  const generic = new Set([
-    'file', 'files', 'command', 'resource', 'content', 'skill', 'script',
-    'the web', 'web', 'task', 'Task',
-  ]);
-  if (labelDetail && !generic.has(labelDetail)) {
+  if (labelDetail && !isUseless(labelDetail)) {
     return labelDetail;
   }
 
   // Parse the detail field (raw JSON, title, or plain text) for a useful value
-  if (call.detail) {
+  if (call.detail && !isUseless(String(call.detail))) {
     const extracted = extractUsefulDetail(call.detail);
-    if (extracted) return extracted;
+    if (extracted && !isUseless(extracted)) return extracted;
   }
 
-  // Last resort: return the full label (e.g. "Reading file")
-  return call.label;
+  // Use the full label if it has more than just a verb
+  if (call.label && call.label.includes(' ') && !isUseless(call.label)) {
+    return call.label;
+  }
+
+  // Nothing useful — return the kind as a last resort
+  return call.kind || 'action';
 }
 
 export const ToolCallGroup = memo(function ToolCallGroup({
