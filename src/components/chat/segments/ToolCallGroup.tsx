@@ -100,8 +100,9 @@ export const ToolCallGroup = memo(function ToolCallGroup({
   isActivelyStreaming,
 }: ToolCallGroupProps) {
   const calls = segments.filter((s): s is ToolCallSegment => s.type === 'tool_call');
-  const hasRunning = calls.some((c) => c.status === 'running');
-  const doneCount = calls.filter((c) => c.status !== 'running').length;
+  // When not actively streaming, treat all as done (safety net for missed finalizeSegments)
+  const hasRunning = isActivelyStreaming && calls.some((c) => c.status === 'running');
+  const doneCount = hasRunning ? calls.filter((c) => c.status !== 'running').length : calls.length;
   const allDone = !hasRunning;
 
   // Default: expanded always. User can toggle collapsed.
