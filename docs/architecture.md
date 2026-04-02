@@ -218,6 +218,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `pdf-store` | PDF viewer preferences (zoom, fit mode, bookmarks) | Full |
 | `sync-store` | iCloud sync settings (enabled flag, synced projects) | Disk file (settings JSON) |
 | `tool-permission-store` | Pending tool call permission requests for direct API tool calling | None |
+| `agent-status-store` | ACP agent unresponsive/exited banner state | None |
 
 ### Styling
 

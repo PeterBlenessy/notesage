@@ -62,6 +62,18 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 - Conversation export renders segments chronologically (Markdown and JSON)
 - PRD: `docs/prds/2026-04-02-chronological-chat-segments.md`
 
+### ACP Session Resilience (Completed)
+
+**Goal:** Never auto-kill working agents. Preserve conversation context across restarts. Let users decide when agents are unresponsive.
+
+- Replaced auto-kill recovery with user decision flow (AgentStatusBanner: Wait/Retry/Cancel)
+- `acp-agent-exited` Tauri event for instant process death detection
+- `acp_is_agent_alive` command for liveness checking
+- Retry uses `acp_agent_reconnect` + ACP `session/load` for context restoration
+- Same-branch retry — reuses assistant message, no dead branches
+- 5-minute unresponsive timer (shows banner, not kill), 30-minute backend hard timeout
+- PRD: `docs/prds/2026-04-02-acp-session-resilience.md`
+
 ### Beyond — Ideas
 
 - **Workflows & Automation:** User-defined YAML workflows as skills

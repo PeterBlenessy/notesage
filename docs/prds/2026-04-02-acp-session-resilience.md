@@ -126,23 +126,23 @@ This catches crashes instantly rather than waiting 5 minutes or 30 minutes.
 
 ## Implementation Plan
 
-- [ ] Add `acp-agent-exited` Tauri event emission on process death (Rust)
+- [x] Add `acp-agent-exited` Tauri event emission on process death (Rust)
 
-- [ ] Replace auto-kill recovery with user-facing `UnresponsiveBanner` component
+- [x] Replace auto-kill recovery with user-facing `AgentStatusBanner` component
 
-- [ ] Add process alive check (frontend → `acp_is_alive` command or use existing health check)
+- [x] Add process alive check (frontend → `acp_is_agent_alive` command)
 
-- [ ] Update retry flow to continue in same branch (no `branchFromMessage`)
+- [x] Update retry flow to continue in same branch (no `branchFromMessage`)
 
-- [ ] Update retry flow to reuse/continue existing assistant message
+- [x] Update retry flow to reuse/continue existing assistant message
 
-- [ ] Update retry flow to use `acp_agent_reconnect` + `session/load` for context restoration
+- [x] Update retry flow to use `acp_agent_reconnect` + `session/load` for context restoration
 
-- [ ] Remove `acpRecoverAgent` auto-kill-and-reconnect function
+- [x] Remove `acpRecoverAgent` auto-kill-and-reconnect function
 
-- [ ] Keep 5-minute unresponsive timer but change its action (show banner, not kill)
+- [x] Keep 5-minute unresponsive timer but change its action (show banner, not kill)
 
-- [ ] Keep 30-minute backend hard timeout as safety net
+- [x] Keep 30-minute backend hard timeout as safety net
 
 - [ ] Test: agent doing long research (many tool calls) is not interrupted
 

@@ -41,6 +41,7 @@ interface AIProvider {
 - Prompts sent via `acp_session_prompt`, responses streamed as `acp-session-update` Tauri events
 - Four supported agents: Claude Code (`claude-agent-acp`), Codex (`codex-acp`), Copilot (`copilot --acp`), Gemini CLI (`gemini --acp`)
 - Process cleanup: `AcpState::stop_all_sync()` called from `RunEvent::Exit` hook; frontend `beforeunload` as secondary defense
+- Session resilience: 5-minute unresponsive timer checks if agent is alive (not auto-kill). `AgentStatusBanner` shows Wait/Retry/Cancel options. `acp-agent-exited` event for instant crash detection. Retry uses `acp_agent_reconnect` + `session/load` for context restoration, continues in same branch (no dead branches). `agent-status-store` for banner state.
 - Permission request handling: all tool calls require explicit user approval with tiered options (allow once / allow for session / allow always)
 - Tiered permission UI: PermissionCard with split Allow button + dropdown for session/always; session approvals non-persisted, always approvals persisted via Zustand persist
 - Thinking effort slider for Codex ACP: Default / Low / Medium / High / Extra High (hidden for free accounts)
