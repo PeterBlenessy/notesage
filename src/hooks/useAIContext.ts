@@ -75,8 +75,8 @@ export function useAIContext() {
         (sk.source === 'notesage-project' || sk.source === 'notesage-global')
     );
     if (active.length === 0) return '';
-    const lines = active.map((sk) => `- **${sk.name}**: ${sk.description}${sk.has_scripts ? ' (has scripts)' : ''}`);
-    return `\n\nNotesage skills:\n${lines.join('\n')}`;
+    const lines = active.map((sk) => `- **${sk.name}** (${sk.path}/SKILL.md): ${sk.description}${sk.has_scripts ? ' — has executable scripts in scripts/' : ''}`);
+    return `\n\n<notesage-skills>\nThe user has Notesage skills installed. To use a skill, read its SKILL.md file for instructions.\n\n${lines.join('\n')}\n</notesage-skills>`;
   });
   const agentInstructions = useSkillStore((s) => s.getMergedAgentInstructions());
   const notesageAgentInstructions = useSkillStore((s) => s.getNotesageAgentInstructions());

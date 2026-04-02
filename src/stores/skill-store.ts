@@ -268,9 +268,9 @@ export const useSkillStore = create<SkillStore>()(
         if (active.length === 0) return '';
 
         const lines = active.map(
-          (s) => `- **${s.name}**: ${s.description}${s.has_scripts ? ' (has scripts)' : ''}`
+          (s) => `- **${s.name}** (${s.path}/SKILL.md): ${s.description}${s.has_scripts ? ' — has executable scripts in scripts/' : ''}`
         );
-        return `\n\nNotesage skills:\n${lines.join('\n')}`;
+        return `\n\n<notesage-skills>\nThe user has Notesage skills installed. To use a skill, read its SKILL.md file for instructions.\n\n${lines.join('\n')}\n</notesage-skills>`;
       },
 
       getMergedAgentInstructions: () => {
