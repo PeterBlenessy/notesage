@@ -87,7 +87,7 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       });
       // Segment: push tool call with descriptive label
       const parsedArgs = parseRawInput(update.rawInput);
-      const segmentLabel = formatToolLabel(update.kind || 'unknown', parsedArgs);
+      const segmentLabel = formatToolLabel(update.kind || 'unknown', parsedArgs, update.title);
       const conv = useChatStore.getState().conversations
         .find(c => c.id === useChatStore.getState().activeConversationId);
       const msg = conv?.messages.find(m => m.timestamp === deps.assistantMessageId);

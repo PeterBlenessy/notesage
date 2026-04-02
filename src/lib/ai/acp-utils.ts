@@ -136,13 +136,35 @@ export function parseRawInput(rawInput?: string | unknown): Record<string, unkno
  * Format a descriptive tool call label from the tool kind and its arguments.
  * Returns a human-readable label like "Reading config.ts" instead of generic "Reading file".
  */
-export function formatToolLabel(kind: string, args?: Record<string, unknown>): string {
+export function formatToolLabel(kind: string, args?: Record<string, unknown>, title?: string): string {
   const getArg = (...keys: string[]): string | undefined => {
     if (!args) return undefined;
     for (const key of keys) {
       const val = args[key];
       if (val !== undefined && val !== null && String(val).trim()) return String(val).trim();
     }
+    return undefined;
+  };
+
+  /** Scan all arg values for a path-like string (contains / and ends in a filename) */
+  const findPath = (): string | undefined => {
+    if (!args) return undefined;
+    for (const val of Object.values(args)) {
+      const s = typeof val === 'string' ? val : '';
+      if (s.includes('/') && /\/[^/]+\.\w+$/.test(s)) return s;
+    }
+    return undefined;
+  };
+
+  /** Scan all arg values for a URL */
+  const findUrl = (): string | undefined => {
+    if (!args) return undefined;
+    for (const val of Object.values(args)) {
+      const s = typeof val === 'string' ? val : '';
+      if (/^https?:\/\//.test(s)) return s;
+    }
+    // Also check the raw string values for embedded URLs
+    if (title && /^https?:\/\//.test(title)) return title;
     return undefined;
   };
 
@@ -156,60 +178,75 @@ export function formatToolLabel(kind: string, args?: Record<string, unknown>): s
     return text.slice(0, max) + '\u2026';
   };
 
-  switch (kind) {
+  const hostname = (url: string): string => {
+    try { return new URL(url).hostname; } catch { return truncate(url, 40); }
+  };
+
+  // Normalize kind to lowercase for matching
+  const k = kind.toLowerCase();
+
+  switch (k) {
     case 'read':
     case 'read_file': {
-      const path = getArg('path', 'file_path', 'file');
-      return path ? `Reading ${basename(path)}` : 'Reading file';
+      const path = getArg('path', 'file_path', 'file') ?? findPath() ?? (title && title.includes('/') ? title : undefined);
+      return path ? `Reading ${basename(path)}` : (title || 'Reading file');
     }
     case 'write':
     case 'write_file':
     case 'edit': {
-      const path = getArg('path', 'file_path', 'file');
-      return path ? `Editing ${basename(path)}` : 'Editing file';
+      const path = getArg('path', 'file_path', 'file') ?? findPath() ?? (title && title.includes('/') ? title : undefined);
+      return path ? `Editing ${basename(path)}` : (title || 'Editing file');
     }
     case 'bash':
-    case 'terminal': {
+    case 'terminal':
+    case 'execute': {
       const cmd = getArg('command', 'cmd');
-      return cmd ? `Running: ${truncate(cmd, 60)}` : 'Running command';
+      if (cmd) return `Running: ${truncate(cmd, 60)}`;
+      if (title) return `Running: ${truncate(title, 60)}`;
+      return 'Running command';
     }
     case 'glob':
     case 'list':
     case 'list_directory': {
       const target = getArg('pattern', 'path', 'directory');
-      return target ? `Searching ${basename(target)}` : 'Searching files';
+      return target ? `Searching ${basename(target)}` : (title || 'Searching files');
     }
-    case 'grep': {
+    case 'grep':
+    case 'search': {
       const query = getArg('pattern', 'query', 'search');
-      return query ? `Searching for "${truncate(query, 40)}"` : 'Searching content';
+      if (query) return `Searching for "${truncate(query, 40)}"`;
+      if (title) return `Searching: ${truncate(title, 50)}`;
+      return 'Searching';
     }
     case 'web_search': {
       const query = getArg('query', 'search_query');
-      return query ? `Searching web: "${truncate(query, 40)}"` : 'Searching the web';
+      return query ? `Searching web: "${truncate(query, 40)}"` : (title || 'Searching the web');
     }
-    case 'fetch': {
-      const url = getArg('url');
-      if (url) {
-        try {
-          const hostname = new URL(url).hostname;
-          return `Fetching ${hostname}`;
-        } catch {
-          return `Fetching ${truncate(url, 40)}`;
-        }
-      }
+    case 'fetch':
+    case 'webfetch':
+    case 'web_fetch': {
+      const url = getArg('url') ?? findUrl();
+      if (url) return `Fetching ${hostname(url)}`;
+      if (title) return `Fetching ${truncate(title, 50)}`;
       return 'Fetching resource';
     }
+    case 'think':
+    case 'thinking':
+      return title ? `Thinking: ${truncate(title, 50)}` : 'Thinking';
     case 'execute_skill_script': {
       const skill = getArg('skill', 'name');
-      return skill ? `Running skill: ${skill}` : 'Running skill script';
+      return skill ? `Running skill: ${skill}` : (title || 'Running skill script');
     }
     case 'read_skill_content': {
       const skill = getArg('skill', 'name');
-      return skill ? `Loading skill: ${skill}` : 'Loading skill';
+      return skill ? `Loading skill: ${skill}` : (title || 'Loading skill');
     }
-    default:
-      if (kind) return kind;
+    default: {
+      // Use title if it's more descriptive than the raw kind
+      if (title && title.length > 0) return title;
+      if (kind && kind.length > 0) return kind;
       return 'Working';
+    }
   }
 }
 

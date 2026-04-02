@@ -115,6 +115,55 @@ describe('formatToolLabel', () => {
       'Loading skill: my-skill',
     );
   });
+
+  // ACP-specific kinds
+  it('handles "execute" as bash alias (ACP)', () => {
+    expect(formatToolLabel('execute', { command: 'npm test' })).toBe('Running: npm test');
+  });
+
+  it('handles "search" as grep alias (ACP)', () => {
+    expect(formatToolLabel('search', { query: 'useState' })).toBe('Searching for "useState"');
+  });
+
+  it('handles "think" kind (ACP)', () => {
+    expect(formatToolLabel('think', {})).toBe('Thinking');
+    expect(formatToolLabel('think', {}, 'Planning approach')).toBe('Thinking: Planning approach');
+  });
+
+  it('handles "webfetch" / "web_fetch" as fetch alias', () => {
+    expect(formatToolLabel('webfetch', { url: 'https://example.com/page' })).toBe('Fetching example.com');
+    expect(formatToolLabel('web_fetch', { url: 'https://github.com/repo' })).toBe('Fetching github.com');
+  });
+
+  // Title fallback
+  it('uses title as fallback when args are missing', () => {
+    expect(formatToolLabel('read', {}, 'config.ts')).toBe('config.ts');  // title used as fallback label
+    expect(formatToolLabel('read', {}, '/src/config.ts')).toBe('Reading config.ts');  // title with / used
+    expect(formatToolLabel('execute', {}, 'npm run build')).toBe('Running: npm run build');
+    expect(formatToolLabel('fetch', {}, 'https://api.example.com')).toBe('Fetching api.example.com');
+  });
+
+  it('uses title for unknown kinds', () => {
+    expect(formatToolLabel('some_mcp_tool', {}, 'Doing something useful')).toBe('Doing something useful');
+  });
+
+  // URL scanning from arg values
+  it('finds URL in arg values for fetch', () => {
+    expect(formatToolLabel('fetch', { input: 'https://docs.rs/tokio' })).toBe('Fetching docs.rs');
+  });
+
+  // Path scanning from arg values
+  it('finds file path in arg values for read', () => {
+    expect(formatToolLabel('read', { input: '/Users/me/project/src/main.rs' })).toBe('Reading main.rs');
+  });
+
+  // Case-insensitive kind matching
+  it('handles capitalized kinds (ACP agents)', () => {
+    expect(formatToolLabel('Read', { file_path: '/src/App.tsx' })).toBe('Reading App.tsx');
+    expect(formatToolLabel('Write', { file_path: '/src/App.tsx' })).toBe('Editing App.tsx');
+    expect(formatToolLabel('Bash', { command: 'ls' })).toBe('Running: ls');
+    expect(formatToolLabel('Grep', { pattern: 'foo' })).toBe('Searching for "foo"');
+  });
 });
 
 describe('parseRawInput', () => {

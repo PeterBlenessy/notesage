@@ -65,7 +65,7 @@ function StatusIcon({ status }: { status: ToolCallSegment['status'] }) {
 export const ToolCallSegmentView = memo(function ToolCallSegmentView({ segment }: ToolCallSegmentViewProps) {
   return (
     <div
-      className="my-0.5 flex items-center gap-1.5 px-1 py-0.5 text-[11px] text-muted-foreground"
+      className="my-0.5 flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground bg-background/50"
       title={segment.detail || undefined}
     >
       <span className="shrink-0 opacity-60">{getToolIcon(segment.kind)}</span>
