@@ -12,10 +12,46 @@ interface ToolCallGroupProps {
   isActivelyStreaming: boolean;
 }
 
-/** Extract the detail portion of a tool call label (after the verb) */
+/** Extract the most informative detail for a child item.
+ *  Tries: label detail part → detail field (parsed for path/url) → full label */
 function getDetail(call: ToolCallSegment): string {
+  // Extract part after the verb: "Reading config.ts" → "config.ts"
   const match = call.label.match(/^\S+:?\s+(.+)$/);
-  return match ? match[1] : call.label;
+  const labelDetail = match?.[1];
+
+  // If the label detail is generic (e.g. "file", "command", "resource"), fall back
+  const generic = new Set(['file', 'files', 'command', 'resource', 'content', 'skill', 'script']);
+  if (labelDetail && !generic.has(labelDetail.toLowerCase())) {
+    return labelDetail;
+  }
+
+  // Try extracting a useful value from the detail field (full arguments JSON)
+  if (call.detail) {
+    // Look for a file path
+    const pathMatch = call.detail.match(/"(?:path|file_path|file)":\s*"([^"]+)"/);
+    if (pathMatch) {
+      const parts = pathMatch[1].split('/');
+      return parts[parts.length - 1] || pathMatch[1];
+    }
+    // Look for a URL
+    const urlMatch = call.detail.match(/"url":\s*"([^"]+)"/);
+    if (urlMatch) {
+      try { return new URL(urlMatch[1]).hostname; } catch { return urlMatch[1].slice(0, 50); }
+    }
+    // Look for a command
+    const cmdMatch = call.detail.match(/"(?:command|cmd)":\s*"([^"]+)"/);
+    if (cmdMatch) {
+      const cmd = cmdMatch[1];
+      return cmd.length > 60 ? cmd.slice(0, 60) + '\u2026' : cmd;
+    }
+    // Truncated raw detail as last resort
+    const oneLine = call.detail.replace(/\n/g, ' ').trim();
+    if (oneLine.length > 2 && oneLine !== '{}') {
+      return oneLine.length > 60 ? oneLine.slice(0, 60) + '\u2026' : oneLine;
+    }
+  }
+
+  return call.label;
 }
 
 export const ToolCallGroup = memo(function ToolCallGroup({
