@@ -1130,12 +1130,13 @@ pub async fn acp_session_prompt(
 
     drop(agents);
 
-    // 5-minute timeout — prompts can take a long time (tool calls, thinking),
-    // but an infinite hang means the agent is dead. The frontend also has a
-    // 60s unresponsive timer, but this backend timeout provides a hard ceiling.
-    tokio::time::timeout(std::time::Duration::from_secs(300), reply_rx)
+    // 30-minute timeout — prompts can take very long for research tasks with many
+    // tool calls, web fetches, and file reads. The frontend has a 60s unresponsive
+    // timer (reset by each ACP event) for actual hangs; this backend timeout is
+    // only a hard ceiling to prevent truly abandoned prompts from leaking forever.
+    tokio::time::timeout(std::time::Duration::from_secs(1800), reply_rx)
         .await
-        .map_err(|_| "Prompt timed out after 300s — the agent may be hung or crashed".to_string())?
+        .map_err(|_| "Prompt timed out after 30 minutes — the agent may be hung or crashed".to_string())?
         .map_err(|_| "Agent thread did not respond to prompt (channel dropped — agent likely crashed)".to_string())?
 }
 
