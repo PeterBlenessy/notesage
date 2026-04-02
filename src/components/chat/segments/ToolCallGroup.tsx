@@ -12,54 +12,76 @@ interface ToolCallGroupProps {
   isActivelyStreaming: boolean;
 }
 
-/** Try to parse a string as JSON and extract a useful value */
-function extractFromJson(raw: string): string | null {
-  let obj: Record<string, unknown>;
+/** Try to extract a useful display value from a raw string (JSON or plain text) */
+function extractUsefulDetail(raw: string): string | null {
+  // 1. Try JSON parsing
   try {
     const parsed = JSON.parse(raw);
-    if (typeof parsed !== 'object' || parsed === null) return null;
-    obj = parsed as Record<string, unknown>;
+    if (typeof parsed === 'object' && parsed !== null) {
+      const obj = parsed as Record<string, unknown>;
+
+      // Path-like keys → basename
+      for (const key of ['file_path', 'path', 'file', 'filePath', 'filename']) {
+        const val = obj[key];
+        if (typeof val === 'string' && val.length > 0) {
+          const parts = val.split('/');
+          return parts[parts.length - 1] || val;
+        }
+      }
+      // URL
+      for (const key of ['url', 'uri']) {
+        const val = obj[key];
+        if (typeof val === 'string' && /^https?:\/\//.test(val)) {
+          try { return new URL(val).hostname; } catch { return val.slice(0, 60); }
+        }
+      }
+      // Command
+      for (const key of ['command', 'cmd']) {
+        const val = obj[key];
+        if (typeof val === 'string' && val.length > 0) {
+          return val.length > 70 ? val.slice(0, 70) + '\u2026' : val;
+        }
+      }
+      // Query/pattern
+      for (const key of ['pattern', 'query', 'search', 'search_query', 'regex']) {
+        const val = obj[key];
+        if (typeof val === 'string' && val.length > 0) {
+          return `"${val.length > 50 ? val.slice(0, 50) + '\u2026' : val}"`;
+        }
+      }
+      // Any string value containing a path separator
+      for (const val of Object.values(obj)) {
+        if (typeof val === 'string' && val.includes('/') && val.length > 1) {
+          const parts = val.split('/');
+          const base = parts[parts.length - 1];
+          if (base && base.length > 1) return base;
+        }
+      }
+      // Any non-trivial string value
+      for (const val of Object.values(obj)) {
+        if (typeof val === 'string' && val.length > 3 && val.length < 200) {
+          if (/^(true|false|null|\d+)$/.test(val)) continue;
+          return val.length > 70 ? val.slice(0, 70) + '\u2026' : val;
+        }
+      }
+    }
   } catch {
-    return null;
+    // Not JSON — continue to heuristic extraction
   }
 
-  // Try path-like keys → basename
-  for (const key of ['file_path', 'path', 'file']) {
-    const val = obj[key];
-    if (typeof val === 'string' && val.length > 0) {
-      const parts = val.split('/');
-      return parts[parts.length - 1] || val;
-    }
+  // 2. Try extracting a file path from plain text
+  const pathMatch = raw.match(/(?:^|[\s"'])(\/?(?:[\w.-]+\/)+[\w.-]+\.\w+)/);
+  if (pathMatch) {
+    const parts = pathMatch[1].split('/');
+    return parts[parts.length - 1] || pathMatch[1];
   }
-  // Try URL
-  for (const key of ['url', 'uri']) {
-    const val = obj[key];
-    if (typeof val === 'string' && /^https?:\/\//.test(val)) {
-      try { return new URL(val).hostname; } catch { return val.slice(0, 60); }
-    }
+
+  // 3. Try extracting a URL
+  const urlMatch = raw.match(/https?:\/\/[^\s"']+/);
+  if (urlMatch) {
+    try { return new URL(urlMatch[0]).hostname; } catch { return urlMatch[0].slice(0, 60); }
   }
-  // Try command
-  for (const key of ['command', 'cmd']) {
-    const val = obj[key];
-    if (typeof val === 'string' && val.length > 0) {
-      return val.length > 70 ? val.slice(0, 70) + '\u2026' : val;
-    }
-  }
-  // Try query/pattern
-  for (const key of ['pattern', 'query', 'search', 'search_query', 'regex']) {
-    const val = obj[key];
-    if (typeof val === 'string' && val.length > 0) {
-      return `"${val.length > 50 ? val.slice(0, 50) + '\u2026' : val}"`;
-    }
-  }
-  // Try any string value that looks useful
-  for (const val of Object.values(obj)) {
-    if (typeof val === 'string' && val.length > 3 && val.length < 200) {
-      // Skip booleans-as-string, numbers, etc.
-      if (/^(true|false|null|\d+)$/.test(val)) continue;
-      return val.length > 70 ? val.slice(0, 70) + '\u2026' : val;
-    }
-  }
+
   return null;
 }
 
@@ -78,16 +100,10 @@ function getDetail(call: ToolCallSegment): string {
     return labelDetail;
   }
 
-  // Parse the detail field (raw JSON or title) for a useful value
+  // Parse the detail field (raw JSON, title, or plain text) for a useful value
   if (call.detail) {
-    const fromJson = extractFromJson(call.detail);
-    if (fromJson) return fromJson;
-
-    // Not JSON — use as-is if it's not too generic
-    const trimmed = call.detail.trim();
-    if (trimmed.length > 2 && !generic.has(trimmed)) {
-      return trimmed.length > 70 ? trimmed.slice(0, 70) + '\u2026' : trimmed;
-    }
+    const extracted = extractUsefulDetail(call.detail);
+    if (extracted) return extracted;
   }
 
   // Last resort: return the full label (e.g. "Reading file")
@@ -101,15 +117,16 @@ export const ToolCallGroup = memo(function ToolCallGroup({
 }: ToolCallGroupProps) {
   const calls = segments.filter((s): s is ToolCallSegment => s.type === 'tool_call');
   // When not actively streaming, treat all as done (safety net for missed finalizeSegments)
-  const hasRunning = isActivelyStreaming && calls.some((c) => c.status === 'running');
-  const doneCount = hasRunning ? calls.filter((c) => c.status !== 'running').length : calls.length;
+  const rawRunning = calls.filter((c) => c.status === 'running').length;
+  const hasRunning = isActivelyStreaming && rawRunning > 0;
+  const doneCount = calls.length - (isActivelyStreaming ? rawRunning : 0);
   const allDone = !hasRunning;
 
   // Default: expanded always. User can toggle collapsed.
   const [userCollapsed, setUserCollapsed] = useState(false);
   const isExpanded = !userCollapsed;
 
-  const statusText = hasRunning ? `${doneCount}/${calls.length}` : `${calls.length}`;
+  const statusText = hasRunning ? `${doneCount}/${calls.length}` : String(calls.length);
 
   return (
     <div className="my-1 rounded-lg bg-background/80 border border-border/30 overflow-hidden">
