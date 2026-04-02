@@ -12,8 +12,21 @@ interface ToolCallGroupProps {
   isActivelyStreaming: boolean;
 }
 
+/** Ensure detail is a string — ACP rawInput can be an object */
+function stringifyDetail(detail: unknown): string {
+  if (typeof detail === 'string') return detail;
+  if (detail == null) return '';
+  try { return JSON.stringify(detail); } catch { return String(detail); }
+}
+
 /** Try to extract a useful display value from a raw string (JSON or plain text) */
-function extractUsefulDetail(raw: string): string | null {
+function extractUsefulDetail(raw: unknown): string | null {
+  const str = stringifyDetail(raw);
+  if (!str) return null;
+  return extractFromString(str);
+}
+
+function extractFromString(raw: string): string | null {
   // 1. Try JSON parsing
   try {
     const parsed = JSON.parse(raw);
@@ -166,7 +179,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({
               <div key={`call-${i}`}>
                 <div
                   className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70 leading-snug"
-                  title={effectiveCall.detail || undefined}
+                  title={stringifyDetail(effectiveCall.detail) || undefined}
                 >
                   <span className="opacity-40 shrink-0">–</span>
                   <span className="truncate">{getDetail(effectiveCall)}</span>

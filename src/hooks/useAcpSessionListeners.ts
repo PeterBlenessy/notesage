@@ -101,7 +101,7 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
         type: 'tool_call',
         kind: update.kind || 'unknown',
         label: segmentLabel,
-        detail: update.rawInput || update.title || undefined,
+        detail: typeof update.rawInput === 'string' ? update.rawInput : (update.rawInput ? JSON.stringify(update.rawInput) : update.title) || undefined,
         status: 'running',
         timestamp: Date.now(),
       } as ToolCallSegment);

@@ -66,7 +66,7 @@ export const ToolCallSegmentView = memo(function ToolCallSegmentView({ segment }
   return (
     <div
       className="my-0.5 flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground bg-background/50"
-      title={segment.detail || undefined}
+      title={typeof segment.detail === 'string' ? segment.detail : (segment.detail ? JSON.stringify(segment.detail, null, 2) : undefined)}
     >
       <span className="shrink-0 opacity-60">{getToolIcon(segment.kind)}</span>
       <span className="truncate">{segment.label}</span>
