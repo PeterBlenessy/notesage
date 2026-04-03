@@ -341,7 +341,7 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                 </p>
 
                 {/* File list — scrollable */}
-                <ScrollArea className="flex-1 min-h-0 max-h-[240px]">
+                <ScrollArea className="h-[220px]">
                   <div className="space-y-1 pr-4">
                     {(repoDetails?.files || selectedRepo.files)
                       .sort((a, b) => a.size_bytes - b.size_bytes)
