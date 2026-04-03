@@ -179,6 +179,11 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
         supportsVision: d?.supports_vision ?? r.supports_vision,
         multilingual: d?.multilingual ?? false,
         supportsFim: d?.supports_fim ?? false,
+        author: r.author || undefined,
+        architecture: r.architecture || undefined,
+        contextLength: r.context_length || undefined,
+        license: r.license || undefined,
+        baseModel: r.base_model || undefined,
       });
       // Auto-start download after adding
       const modelId = file.filename.replace('.gguf', '').toLowerCase().replace(/ /g, '-');

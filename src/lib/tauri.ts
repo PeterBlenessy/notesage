@@ -967,21 +967,31 @@ export const tauriApi = {
     await invoke("delete_local_model", { modelId });
   },
 
-  async addCustomLocalModel(name: string, url: string, capabilities?: {
+  async addCustomLocalModel(name: string, url: string, metadata?: {
     supportsToolCalling?: boolean;
     supportsThinking?: boolean;
     supportsVision?: boolean;
     multilingual?: boolean;
     supportsFim?: boolean;
+    author?: string;
+    architecture?: string;
+    contextLength?: number;
+    license?: string;
+    baseModel?: string;
   }): Promise<LocalModelInfo> {
     return await invoke<LocalModelInfo>("add_custom_local_model", {
       name,
       url,
-      supportsToolCalling: capabilities?.supportsToolCalling ?? null,
-      supportsThinking: capabilities?.supportsThinking ?? null,
-      supportsVision: capabilities?.supportsVision ?? null,
-      multilingual: capabilities?.multilingual ?? null,
-      supportsFim: capabilities?.supportsFim ?? null,
+      supportsToolCalling: metadata?.supportsToolCalling ?? null,
+      supportsThinking: metadata?.supportsThinking ?? null,
+      supportsVision: metadata?.supportsVision ?? null,
+      multilingual: metadata?.multilingual ?? null,
+      supportsFim: metadata?.supportsFim ?? null,
+      author: metadata?.author ?? null,
+      architecture: metadata?.architecture ?? null,
+      contextLength: metadata?.contextLength ?? null,
+      license: metadata?.license ?? null,
+      baseModel: metadata?.baseModel ?? null,
     });
   },
 

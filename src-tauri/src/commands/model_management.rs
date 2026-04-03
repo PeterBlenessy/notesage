@@ -425,6 +425,11 @@ pub async fn add_custom_local_model(
     supports_vision: Option<bool>,
     multilingual: Option<bool>,
     supports_fim: Option<bool>,
+    author: Option<String>,
+    architecture: Option<String>,
+    context_length: Option<u64>,
+    license: Option<String>,
+    base_model: Option<String>,
 ) -> Result<LocalModelInfo, String> {
     // Validate URL
     if !url.contains("huggingface.co") && !url.ends_with(".gguf") {
@@ -463,23 +468,52 @@ pub async fn add_custom_local_model(
     // Try to derive hf_repo_id from URL
     let hf_repo_id = super::model_metadata::repo_id_from_url(&url);
 
+    // Build a useful description from capabilities and metadata
+    let mut desc_parts: Vec<&str> = Vec::new();
+    if let Some(ref bm) = base_model {
+        // Extract org from base_model like "google/gemma-4-E4B-it" → "Google"
+        if let Some(org) = bm.split('/').next() {
+            let capitalized = org.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default()
+                + &org[1..];
+            desc_parts.push(Box::leak(capitalized.into_boxed_str()));
+        }
+    } else if let Some(ref a) = author {
+        desc_parts.push(Box::leak(a.clone().into_boxed_str()));
+    }
+    let mut caps: Vec<&str> = Vec::new();
+    if supports_vision.unwrap_or(false) { caps.push("vision"); }
+    if supports_thinking.unwrap_or(false) { caps.push("thinking"); }
+    if supports_tool_calling.unwrap_or(false) { caps.push("tool calling"); }
+    if supports_fim.unwrap_or(false) { caps.push("code completion"); }
+    if !caps.is_empty() {
+        let joined = caps.join(", ");
+        desc_parts.push(Box::leak(format!("with {}", joined).into_boxed_str()));
+    }
+    let description = if desc_parts.is_empty() {
+        "Custom model".to_string()
+    } else {
+        format!("{}.", desc_parts.join(". ").trim_end_matches('.'))
+    };
+
+    let quant = extract_quantization(&filename);
+
     let entry = CatalogEntry {
         id: id.clone(),
         name: name.clone(),
         filename: filename.clone(),
         size_bytes,
-        ram_required_bytes: (size_bytes as f64 * 1.3) as u64, // rough estimate
-        description: "Custom model".to_string(),
+        ram_required_bytes: (size_bytes as f64 * 1.3) as u64,
+        description,
         huggingface_url: url,
         source: "Custom".to_string(),
         supports_fim: supports_fim.unwrap_or(false),
-        author: None,
-        organization: None,
-        license: None,
+        author,
+        organization: base_model.as_ref().and_then(|bm| bm.split('/').next().map(|s| s.to_string())),
+        license,
         parameters: None,
-        architecture: None,
-        context_length: None,
-        quantization: None,
+        architecture,
+        context_length,
+        quantization: if quant != "Unknown" { Some(quant) } else { None },
         hf_repo_id,
         category: None,
         supports_tool_calling: supports_tool_calling.unwrap_or(false),
