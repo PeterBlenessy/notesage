@@ -232,8 +232,8 @@
     "id": "gemma-4-e4b",
     "name": "Gemma 4 E4B",
     "filename": "google_gemma-4-E4B-it-Q4_K_M.gguf",
-    "size_bytes": 3200000000,
-    "ram_required_bytes": 5000000000,
+    "size_bytes": 5340000000,
+    "ram_required_bytes": 7000000000,
     "description": "Google. Multimodal with thinking and tool calling.",
     "huggingface_url": "https://huggingface.co/bartowski/google_gemma-4-E4B-it-GGUF/resolve/main/google_gemma-4-E4B-it-Q4_K_M.gguf",
     "source": "bartowski",
@@ -252,7 +252,7 @@
     "thinking_tags": { "open": "<|channel>thought\n", "close": "<channel|>" },
     "supports_vision": true,
     "multilingual": true,
-    "recommended_for": ["16gb"]
+    "recommended_for": ["32gb"]
   },
   {
     "id": "qwen3-4b",
