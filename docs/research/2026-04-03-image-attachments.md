@@ -222,47 +222,69 @@ Sources: [ACP Content Docs](https://agentclientprotocol.com/protocol/content), [
 
 ## 2. Chat UI Patterns from Competitor Tools
 
-### Input Methods
+### Per-Tool Breakdown
 
-| Method | Tools |
-|--------|-------|
-| **Clipboard paste** (Cmd/Ctrl+V) | Claude desktop, ChatGPT, Copilot Chat, Cline, Cursor, Windsurf |
-| **Drag and drop** from OS | Claude desktop, ChatGPT, Copilot Chat, Cursor, Windsurf |
-| **File picker button** (paperclip icon) | Claude desktop, ChatGPT, all IDE tools |
-| **Screenshot capture** (built-in) | Copilot Chat in VS Code ("Attach > Screenshot Window") |
+**Cursor IDE:**
+- Input: Drag-drop (since v0.17.0), Ctrl+V paste in chat (not in Composer), file picker (inconsistent — [issue #2776](https://github.com/cursor/cursor/issues/2776))
+- Display: Originally inline thumbnails, switched to compact file tag chips in v0.40+
+- Non-vision: Explicit error "Trying to submit images without a vision-enabled model selected" — blocks send. Error persists in session even after switching models; must start new chat.
+- No client-side resize — users hit "Image base64 size exceeds API limit (5.0 MB)" and must manually resize
+- Images can get "stuck" in session state and re-sent with every subsequent API call
 
-**Clipboard paste is the most common interaction** — every tool supports it. Drag-and-drop is second. File picker is always available as a fallback. Screenshot capture is rare (only VS Code Copilot).
+**Continue.dev:**
+- Input: Cmd/Ctrl+V paste, Shift+drag-drop ([PR #7408](https://github.com/continuedev/continue/pull/7408) fixed overlay bug)
+- Display: Inline thumbnails in chat input
+- Non-vision: `image_input` capability auto-detected per provider/model in `core/llm/autodetect.ts` (`PROVIDER_SUPPORTS_IMAGES` array). UI disables attachment for non-vision models. Users can manually override in `config.yaml`.
+- No client-side compression
 
-### Display Patterns
+**Cline (Claude Dev):**
+- Input: Cmd/Ctrl+V paste, Shift+drag-drop, "Add Files & Images" button. Known issues on Linux Wayland ([#5016](https://github.com/cline/cline/issues/5016)) and SSH remotes ([#7606](https://github.com/cline/cline/issues/7606)). File dialog filter missing image extensions in v3.38.3 ([#7743](https://github.com/cline/cline/issues/7743)).
+- Display: Inline thumbnails before and after sending
+- Non-vision: `supportsImages` flag on model config gates UI. PRs [#8684](https://github.com/cline/cline/pull/8684) and [#9780](https://github.com/cline/cline/pull/9780) fixed bugs where paste/drag-drop bypassed the toggle.
+- No client-side resize; [issue #675](https://github.com/cline/cline/issues/675) requested 2000px dimension cap
 
-- **Before sending:** Small thumbnail appears in/near the chat input area. Click to enlarge or remove (X button on thumbnail).
-- **After sending:** Image displays inline within the user message bubble at a readable preview size.
-- **Non-image files:** Shown as a filename chip/badge rather than a preview (Cursor pattern).
+**Windsurf (Codeium):**
+- Input: Drag-drop from OS (not from Windsurf's own explorer), clipboard paste, "Add image" button
+- Display: Inline previews; positioned for "Image-to-Code" workflows (Figma screenshot → HTML/CSS)
+- Non-vision: Only available for GPT-4o and Claude 3.5 Sonnet. API error breaks session history with non-vision models.
+- Originally 1 MB limit (now lifted)
 
-### Provider Incompatibility Handling
+**Claude Desktop & Claude Code:**
+- Input: Paperclip button, drag-drop, Cmd+V paste. Claude Code uses Ctrl+V (not Cmd+V on macOS — known UX issue)
+- Display: Inline thumbnail previews, expandable
+- Size: 5 MB API limit / 30 MB on claude.ai. Server-side downscale if >1568px longest edge. Claude Code does NOT auto-resize ([feature request #20738](https://github.com/anthropics/claude-code/issues/20738))
+- Token cost: `(width * height) / 750` — ~1,600 tokens for typical image
 
-This is a critical UX question — what happens when the selected model doesn't support images?
+**ChatGPT Desktop:**
+- Input: + button menu → "Upload file", drag-drop (broken on Windows 11), Cmd/Ctrl+V paste, **built-in screenshot tool** (unique — shows open windows, searchable), webcam capture
+- Display: Inline thumbnails, clickable to expand
+- Size: 20 MB per image. Free tier: 2 images/day; Plus: 50/day
+- Server-side `detail` processing: `low` = 512x512 at 85 tokens, `high` = 768px shortest side then 512x512 tiles
 
-| Tool | Approach |
-|------|----------|
-| **Cline** | Only shows image option for multimodal models (GPT-4o, Claude, Gemini). Silently hidden otherwise. |
-| **Continue.dev** | Model capabilities in config with `image_input` flag. Non-vision models don't get attachment UI. |
-| **Copilot Chat** | Image attachment gated behind GPT-4o model selection. |
-| **Common pattern** | **Conditionally show/hide the attachment button** based on active model's vision capability. |
+### Summary Comparison Table
 
-**Consensus:** Hide/disable the attachment UI for non-vision models. Don't let users attach images they can't send.
+| Feature | Cursor | Continue.dev | Cline | Windsurf | Claude Desktop | ChatGPT Desktop |
+|---|---|---|---|---|---|---|
+| **Paste** | Ctrl+V in chat only | Cmd/Ctrl+V | Cmd/Ctrl+V | Yes | Yes | Yes |
+| **Drag-drop** | Yes | Shift+drag | Shift+drag | OS only | Yes | Yes (broken Win11) |
+| **File picker** | Inconsistent | Not prominent | "Add Files & Images" | "Add image" button | Paperclip | + button menu |
+| **Screenshot** | No (3rd-party ext) | No | No | No | No | **Built-in tool** |
+| **Preview display** | File tag chip (v0.40+) | Inline thumbnail | Inline thumbnail | Inline preview | Inline thumbnail | Inline thumbnail |
+| **Non-vision handling** | Error, blocks send | UI disables attach | `supportsImages` gates UI | API error, breaks session | N/A (all support) | Model-gated |
+| **Client-side resize** | No | No | No | No | No | No |
+| **Size limit** | Provider-dependent | Provider-dependent | Provider-dependent | Was 1MB, now lifted | 5MB API / 30MB web | 20MB |
 
-### Size Limits & Compression
+### Key Patterns
 
-| Aspect | Common Practice |
-|--------|----------------|
-| **Client-side compression** | `canvas.toDataURL('image/jpeg', 0.8)` — JPEG at 80% quality |
-| **Resolution downsizing** | Max 1568px on longest edge (Anthropic's optimal) or 2048px |
-| **Provider limits** | Anthropic: 5 MB; OpenAI: 20 MB |
-| **Image count** | VS Code Copilot limits to 3 images per prompt |
-| **Auto-compress** | Claude Code auto-compresses images over 5 MB |
+**Input methods:** Clipboard paste is universal and highest priority. Drag-drop second. File picker as fallback.
 
-**Recommendation:** Resize to 1568px longest edge + JPEG 80% quality before base64 encoding. This satisfies Anthropic's 5 MB limit (the most restrictive) while preserving visual quality.
+**Display:** Inline thumbnails (before and after sending) is the standard. Cursor's v0.40 switch to compact file chips is the outlier.
+
+**Non-vision models:** The consensus is to **gate the attachment UI on model vision capability**. Tools that allow attaching images to non-vision models create broken session state. Best practice: hide/disable the button and reject pastes with a toast.
+
+**Client-side compression:** **No tool does it today** — but it's the #1 requested feature across Cursor, Cline, and Claude Code. This is a clear opportunity: pre-resize to 1568px longest edge + JPEG 80% would prevent the most common user error (5 MB API limit).
+
+**Recommendation:** Resize to 1568px longest edge + JPEG 80% quality before base64 encoding. This satisfies Anthropic's 5 MB limit (the most restrictive) while preserving visual quality. Notesage would be the first tool to do client-side compression automatically.
 
 ---
 
