@@ -307,6 +307,7 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                   &larr; Back to results
                 </button>
 
+                <ScrollArea className="h-[400px]">
                 {/* Model info card */}
                 <div className="rounded-lg border border-border p-3 space-y-1.5">
                   <div className="text-sm font-medium">{selectedRepo.model_name}</div>
@@ -328,10 +329,9 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                   </div>
                 </div>
 
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-[10px] text-muted-foreground py-1.5">
                   Pick a size variant. Smaller files run faster but with lower quality. Q4_K_M offers the best balance.
                 </p>
-                <ScrollArea className="h-[250px]">
                   <div className="space-y-1">
                     {(repoDetails?.files || selectedRepo.files)
                       .sort((a, b) => a.size_bytes - b.size_bytes)
@@ -358,6 +358,7 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                   </div>
                 </ScrollArea>
               </div>
+
             ) : (
               /* Search results list */
               <ScrollArea className="h-[400px]">
