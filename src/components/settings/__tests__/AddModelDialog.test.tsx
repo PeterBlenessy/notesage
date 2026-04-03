@@ -153,7 +153,7 @@ describe('AddModelDialog', () => {
     });
 
     await waitFor(() => {
-      expect(mockSearchHuggingfaceModels).toHaveBeenCalledWith('gemma', 10);
+      expect(mockSearchHuggingfaceModels).toHaveBeenCalledWith('gemma', 30, undefined);
     });
 
     // Search results should appear
@@ -202,12 +202,10 @@ describe('AddModelDialog', () => {
       fireEvent.click(screen.getByText('google gemma-4-E4B-it'));
     });
 
-    // Should show the back button and file list
+    // Should show the back button and file list (quantization as title, filename in detail)
     expect(screen.getByText(/Back/)).toBeTruthy();
-    expect(screen.getByText('google_gemma-4-E4B-it-Q4_K_M.gguf')).toBeTruthy();
-    expect(screen.getByText('google_gemma-4-E4B-it-Q8_0.gguf')).toBeTruthy();
-    // Q4_K_M appears in both filename and quantization label
     expect(screen.getAllByText(/Q4_K_M/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Q8_0/).length).toBeGreaterThanOrEqual(1);
   });
 
   it('adds model from search when clicking a file', async () => {
@@ -236,15 +234,23 @@ describe('AddModelDialog', () => {
       fireEvent.click(screen.getByText('google gemma-4-E4B-it'));
     });
 
-    // Click the Q4_K_M file
+    // Click the Q4_K_M variant — find the download icon buttons in the file picker
+    const downloadIcons = screen.getAllByRole('button').filter(
+      (btn) => btn.textContent?.includes('Q4_K_M')
+    );
     await act(async () => {
-      fireEvent.click(screen.getByText('google_gemma-4-E4B-it-Q4_K_M.gguf'));
+      fireEvent.click(downloadIcons[0]);
     });
 
     await waitFor(() => {
       expect(mockAddCustomLocalModel).toHaveBeenCalledWith(
         'google gemma-4-E4B-it',
         'https://huggingface.co/bartowski/google_gemma-4-E4B-it-GGUF/resolve/main/google_gemma-4-E4B-it-Q4_K_M.gguf',
+        expect.objectContaining({
+          supportsToolCalling: true,
+          supportsThinking: true,
+          supportsVision: true,
+        }),
       );
     });
   });
@@ -287,6 +293,7 @@ describe('AddModelDialog', () => {
       expect(mockAddCustomLocalModel).toHaveBeenCalledWith(
         'My Custom Model',
         'https://huggingface.co/org/model/resolve/main/model-Q4_K_M.gguf',
+        undefined,
       );
     });
   });
