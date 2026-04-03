@@ -199,7 +199,7 @@ export const useLocalAIStore = create<LocalAIStore>()(
         addCustomModel: async (name, url, metadata) => {
           try {
             await tauriApi.addCustomLocalModel(name, url, metadata);
-            toast.success(`Added "${name}"`);
+            toast.success(`Added "${name}" — downloading`);
             await get().refreshModels();
           } catch (err) {
             toast.error(`Failed to add model: ${err}`);

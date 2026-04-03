@@ -497,7 +497,7 @@ function ModelCard({
   onHide: () => void;
 }) {
   return (
-    <ModelMetadataTooltip metadata={metadata} modelType="llm" side="right">
+    <ModelMetadataTooltip metadata={metadata} modelType="llm" side="left">
       <div className="relative rounded-md border px-3 py-2.5">
         {/* Action buttons — top right */}
         <div className="absolute top-2 right-2 flex items-center gap-1">
