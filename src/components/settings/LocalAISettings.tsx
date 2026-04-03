@@ -329,7 +329,7 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                 </div>
 
                 <p className="text-[10px] text-muted-foreground">
-                  Pick a quantization. Q4_K_M is recommended for quality/size balance.
+                  Pick a size variant. Smaller files run faster but with lower quality. Q4_K_M offers the best balance.
                 </p>
                 <ScrollArea className="h-[250px]">
                   <div className="space-y-1">
@@ -378,12 +378,12 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                         </div>
                         <div className="text-[10px] text-muted-foreground truncate">
                           {result.architecture && <>{result.architecture}</>}
-                          {result.context_length && <> &middot; {(result.context_length / 1024).toFixed(0)}K ctx</>}
+                          {result.context_length && <> &middot; {(result.context_length / 1024).toFixed(0)}K context</>}
                           {result.total_size && <> &middot; ~{formatBytes(result.total_size)}</>}
                           {result.license && <> &middot; {result.license}</>}
                         </div>
                         <div className="text-[10px] text-muted-foreground/60 truncate">
-                          {result.files.length} quant{result.files.length !== 1 ? 's' : ''}
+                          {result.files.length} variant{result.files.length !== 1 ? 's' : ''}
                           {result.downloads > 0 && <> &middot; {Intl.NumberFormat('en', { notation: 'compact' }).format(result.downloads)} downloads</>}
                         </div>
                         {(result.supports_tool_calling || result.supports_thinking || result.supports_vision) && (
@@ -469,6 +469,7 @@ function ModelCard({
   onCancelDownload,
   onDelete,
   onRemoveCustom,
+  onHide,
 }: {
   model: LocalModelInfo;
   isActive: boolean;
@@ -480,6 +481,7 @@ function ModelCard({
   onCancelDownload: () => void;
   onDelete: () => void;
   onRemoveCustom: () => void;
+  onHide: () => void;
 }) {
   return (
     <ModelMetadataTooltip metadata={metadata} modelType="llm" side="right">
@@ -556,6 +558,21 @@ function ModelCard({
                   <TooltipContent side="top">Remove custom model</TooltipContent>
                 </Tooltip>
               )}
+              {!model.is_custom && !isActive && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                      onClick={onHide}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Hide from list</TooltipContent>
+                </Tooltip>
+              )}
             </>
           ) : (
             <Tooltip>
@@ -627,6 +644,9 @@ export function LocalAISettings() {
     cancelDownload,
     deleteModel,
     removeCustomModel,
+    hideModel,
+    restoreDefaults,
+    hiddenModelIds,
     checkBinary,
     startServer,
     setCategoryFilter,
@@ -682,8 +702,11 @@ export function LocalAISettings() {
     } else {
       filtered = models.filter((m) => m.category === categoryFilter);
     }
+    // Hide models the user has removed from the list (unless downloaded)
+    const hiddenSet = new Set(hiddenModelIds);
+    filtered = filtered.filter((m) => !hiddenSet.has(m.id) || m.downloaded);
     return sortModels(filtered);
-  }, [models, categoryFilter, sortBy]);
+  }, [models, categoryFilter, sortBy, hiddenModelIds]);
 
   // Batch-fetch metadata for all models when settings panel mounts
   const modelIds = useMemo(() => models.map((m) => ({ id: m.id })), [models]);
@@ -764,6 +787,7 @@ export function LocalAISettings() {
       onCancelDownload={() => cancelDownload(model.id)}
       onDelete={() => deleteModel(model.id)}
       onRemoveCustom={() => removeCustomModel(model.id)}
+      onHide={() => hideModel(model.id)}
     />
   );
 
@@ -962,6 +986,14 @@ export function LocalAISettings() {
         </div>
 
         <div className="flex items-center gap-1.5">
+          {hiddenModelIds.length > 0 && (
+            <button
+              onClick={restoreDefaults}
+              className="text-[10px] text-muted-foreground hover:text-foreground hover:underline transition-colors"
+            >
+              Restore {hiddenModelIds.length} hidden model{hiddenModelIds.length !== 1 ? 's' : ''}
+            </button>
+            )}
           <p className="text-[10px] text-muted-foreground">
             Models stored in ~/.notesage/models/llm/
           </p>

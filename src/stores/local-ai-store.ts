@@ -19,6 +19,7 @@ interface LocalAIStore {
   contextLength: number;
   gpuLayers: number;
   dismissedFirstRun: boolean;
+  hiddenModelIds: string[];
 
   // Runtime (non-persisted)
   serverStatus: ServerStatus;
@@ -54,6 +55,9 @@ interface LocalAIStore {
     supportsFim?: boolean;
   }) => Promise<void>;
   removeCustomModel: (modelId: string) => Promise<void>;
+  hideModel: (modelId: string) => void;
+  unhideModel: (modelId: string) => void;
+  restoreDefaults: () => void;
   checkBinary: () => Promise<BinaryStatus>;
   startServer: (modelId: string, contextLength: number, gpuLayers: number) => Promise<void>;
 }
@@ -96,6 +100,7 @@ export const useLocalAIStore = create<LocalAIStore>()(
         contextLength: 4096,
         gpuLayers: -1,
         dismissedFirstRun: false,
+        hiddenModelIds: [],
 
         // Runtime defaults
         serverStatus: 'stopped',
@@ -206,6 +211,23 @@ export const useLocalAIStore = create<LocalAIStore>()(
           }
         },
 
+        hideModel: (modelId) => {
+          set((s) => ({
+            hiddenModelIds: s.hiddenModelIds.includes(modelId) ? s.hiddenModelIds : [...s.hiddenModelIds, modelId],
+          }));
+        },
+
+        unhideModel: (modelId) => {
+          set((s) => ({
+            hiddenModelIds: s.hiddenModelIds.filter((id) => id !== modelId),
+          }));
+        },
+
+        restoreDefaults: () => {
+          set({ hiddenModelIds: [] });
+          toast.success('Default models restored');
+        },
+
         checkBinary: async () => {
           const status = await tauriApi.checkLlamaServerAvailable();
           set({ binaryStatus: status.available ? 'available' : 'not_found' });
@@ -232,6 +254,7 @@ export const useLocalAIStore = create<LocalAIStore>()(
         contextLength: state.contextLength,
         gpuLayers: state.gpuLayers,
         dismissedFirstRun: state.dismissedFirstRun,
+        hiddenModelIds: state.hiddenModelIds,
       }),
     },
   ),
