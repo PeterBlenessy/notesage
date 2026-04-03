@@ -371,7 +371,7 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
 
             ) : (
               /* Search results list */
-              <ScrollArea className="h-[400px]">
+              <ScrollArea className="h-[350px]">
                 <div className="space-y-1 pr-4">
                   {filteredResults.map((result) => (
                     <div
@@ -382,10 +382,12 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline gap-1.5 truncate">
                           <span className="text-xs font-medium truncate">{result.model_name}</span>
-                          <button
-                            className="text-[10px] text-muted-foreground hover:text-foreground hover:underline transition-colors shrink-0"
-                            onClick={(e) => { e.stopPropagation(); setAuthorFilter(result.author); }}
-                          >by {result.author}</button>
+                          {result.author && (
+                            <button
+                              className="text-[10px] text-muted-foreground hover:text-foreground hover:underline transition-colors shrink-0"
+                              onClick={(e) => { e.stopPropagation(); setAuthorFilter(result.author); }}
+                            >by {result.author}</button>
+                          )}
                         </div>
                         <div className="text-[10px] text-muted-foreground truncate">
                           {result.architecture && <>{result.architecture}</>}

@@ -677,6 +677,8 @@ struct HfApiCardData {
     license: Option<String>,
     #[serde(default)]
     base_model: Option<serde_json::Value>,
+    #[serde(default)]
+    quantized_by: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -796,11 +798,10 @@ pub async fn search_huggingface_models(
             HfModelSearchResult {
                 repo_id: repo_id.clone(),
                 model_name,
-                author: if m.author.is_empty() {
-                    repo_id.split('/').next().unwrap_or("").to_string()
-                } else {
-                    m.author
-                },
+                author: m.card_data.as_ref()
+                    .and_then(|c| c.quantized_by.clone())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| repo_id.split('/').next().unwrap_or("").to_string()),
                 base_model,
                 license: m.card_data.as_ref().and_then(|c| c.license.clone()),
                 architecture: gguf.architecture.or_else(|| m.config.and_then(|c| c.model_type)),
