@@ -1145,4 +1145,141 @@ mod tests {
         let entry: CatalogEntry = serde_json::from_str(json_without).unwrap();
         assert!(!entry.supports_tool_calling, "supports_tool_calling should default to false");
     }
+
+    // -----------------------------------------------------------------------
+    // HF search helper tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_extract_quantization_standard_patterns() {
+        assert_eq!(extract_quantization("model-Q4_K_M.gguf"), "Q4_K_M");
+        assert_eq!(extract_quantization("model-Q8_0.gguf"), "Q8_0");
+        assert_eq!(extract_quantization("model-F16.gguf"), "F16");
+        assert_eq!(extract_quantization("model-BF16.gguf"), "BF16");
+        assert_eq!(extract_quantization("model-IQ4_XS.gguf"), "IQ4_XS");
+    }
+
+    #[test]
+    fn test_extract_quantization_real_filenames() {
+        assert_eq!(
+            extract_quantization("google_gemma-4-E4B-it-Q4_K_M.gguf"),
+            "Q4_K_M"
+        );
+        assert_eq!(
+            extract_quantization("gemma-4-26B-A4B-it-Q4_K_M.gguf"),
+            "Q4_K_M"
+        );
+        assert_eq!(
+            extract_quantization("Qwen3-8B-Q4_K_M.gguf"),
+            "Q4_K_M"
+        );
+        assert_eq!(
+            extract_quantization("Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"),
+            "Q4_K_M"
+        );
+        assert_eq!(
+            extract_quantization("DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf"),
+            "Q4_K_M"
+        );
+    }
+
+    #[test]
+    fn test_extract_quantization_fallback() {
+        assert_eq!(extract_quantization("some-model.gguf"), "Unknown");
+    }
+
+    #[test]
+    fn test_hf_api_model_deserialization() {
+        let json = r#"{
+            "id": "bartowski/google_gemma-4-E4B-it-GGUF",
+            "modelId": "bartowski/google_gemma-4-E4B-it-GGUF",
+            "author": "bartowski",
+            "downloads": 12345,
+            "likes": 42,
+            "tags": ["gguf", "gemma4"],
+            "siblings": [
+                {"rfilename": "README.md"},
+                {"rfilename": "google_gemma-4-E4B-it-Q4_K_M.gguf", "size": 5340000000},
+                {"rfilename": "google_gemma-4-E4B-it-Q8_0.gguf", "size": 9000000000},
+                {"rfilename": "config.json"}
+            ]
+        }"#;
+        let model: HfApiModel = serde_json::from_str(json).unwrap();
+        assert_eq!(model.author, "bartowski");
+        assert_eq!(model.downloads, 12345);
+        assert_eq!(model.likes, 42);
+        assert_eq!(model.siblings.len(), 4);
+
+        // Filter to GGUF only
+        let gguf_files: Vec<_> = model
+            .siblings
+            .iter()
+            .filter(|s| s.rfilename.ends_with(".gguf"))
+            .collect();
+        assert_eq!(gguf_files.len(), 2);
+        assert_eq!(gguf_files[0].rfilename, "google_gemma-4-E4B-it-Q4_K_M.gguf");
+        assert_eq!(gguf_files[0].size, Some(5340000000));
+    }
+
+    #[test]
+    fn test_hf_api_model_missing_optional_fields() {
+        // Minimal response: only id, no modelId, no siblings
+        let json = r#"{
+            "id": "some-org/some-model-GGUF"
+        }"#;
+        let model: HfApiModel = serde_json::from_str(json).unwrap();
+        assert_eq!(model.id, "some-org/some-model-GGUF");
+        assert!(model.model_id.is_none());
+        assert_eq!(model.downloads, 0);
+        assert!(model.siblings.is_empty());
+    }
+
+    #[test]
+    fn test_hf_search_result_model_name_derivation() {
+        // Simulate the model_name derivation from search results
+        let repo_id = "bartowski/google_gemma-4-E4B-it-GGUF";
+        let model_name = repo_id
+            .split('/')
+            .last()
+            .unwrap_or(repo_id)
+            .replace("-GGUF", "")
+            .replace('_', " ");
+        assert_eq!(model_name, "google gemma-4-E4B-it");
+    }
+
+    #[test]
+    fn test_hf_model_file_download_url_construction() {
+        let repo_id = "ggml-org/gemma-4-26B-A4B-it-GGUF";
+        let filename = "gemma-4-26B-A4B-it-Q4_K_M.gguf";
+        let url = format!(
+            "https://huggingface.co/{}/resolve/main/{}",
+            repo_id, filename
+        );
+        assert_eq!(
+            url,
+            "https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-Q4_K_M.gguf"
+        );
+    }
+
+    #[test]
+    fn test_gemma4_entries_in_catalog() {
+        let catalog = load_curated_catalog();
+
+        let e4b = catalog.iter().find(|e| e.id == "gemma-4-e4b");
+        assert!(e4b.is_some(), "Gemma 4 E4B should exist in catalog");
+        let e4b = e4b.unwrap();
+        assert!(e4b.supports_tool_calling, "Gemma 4 should support tool calling");
+        assert!(e4b.supports_thinking, "Gemma 4 should support thinking");
+        assert!(e4b.supports_vision, "Gemma 4 should support vision");
+        assert!(e4b.multilingual, "Gemma 4 should be multilingual");
+        assert!(e4b.thinking_tags.is_some(), "Gemma 4 should have thinking tags");
+        let tags = e4b.thinking_tags.as_ref().unwrap();
+        assert!(tags.open.contains("channel"), "Gemma 4 uses channel-based thinking tags");
+
+        let moe = catalog.iter().find(|e| e.id == "gemma-4-27b-a4b");
+        assert!(moe.is_some(), "Gemma 4 27B MoE should exist in catalog");
+        let moe = moe.unwrap();
+        assert_eq!(moe.parameters.as_deref(), Some("27B"));
+        assert_eq!(moe.context_length, Some(256000));
+    }
 }
