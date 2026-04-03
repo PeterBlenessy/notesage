@@ -307,17 +307,16 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
 
             {selectedRepo ? (
               /* Model detail + file picker */
-              <div className="space-y-2">
+              <div className="flex flex-col gap-2 min-h-0">
                 <button
                   onClick={() => { setSelectedRepo(null); setRepoDetails(null); }}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
                 >
                   &larr; Back to results
                 </button>
 
-                <ScrollArea className="h-[400px]">
-                {/* Model info card */}
-                <div className="rounded-lg border border-border p-3 space-y-1.5">
+                {/* Model info card — fixed, not scrolled */}
+                <div className="rounded-lg border border-border p-3 space-y-1.5 shrink-0">
                   <div className="text-sm font-medium">{selectedRepo.model_name}</div>
                   {selectedRepo.base_model && (
                     <div className="text-[10px] text-muted-foreground">Base: {selectedRepo.base_model}</div>
@@ -337,10 +336,13 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                   </div>
                 </div>
 
-                <p className="text-[10px] text-muted-foreground py-1.5">
+                <p className="text-[10px] text-muted-foreground shrink-0">
                   Pick a size variant. Smaller files run faster but with lower quality. Q4_K_M offers the best balance.
                 </p>
-                  <div className="space-y-1">
+
+                {/* File list — scrollable */}
+                <ScrollArea className="flex-1 min-h-0 max-h-[240px]">
+                  <div className="space-y-1 pr-2">
                     {(repoDetails?.files || selectedRepo.files)
                       .sort((a, b) => a.size_bytes - b.size_bytes)
                       .map((file) => (
@@ -348,7 +350,7 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                           key={file.filename}
                           onClick={() => handleAddFromSearch(file)}
                           disabled={loading}
-                          className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md text-left hover:bg-muted transition-colors disabled:opacity-50"
+                          className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md border border-border/50 text-left hover:bg-muted transition-colors disabled:opacity-50"
                         >
                           <div className="min-w-0 flex-1">
                             <div className="text-xs font-medium truncate">
@@ -370,11 +372,11 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
             ) : (
               /* Search results list */
               <ScrollArea className="h-[400px]">
-                <div className="space-y-0.5">
+                <div className="space-y-1 pr-2">
                   {filteredResults.map((result) => (
                     <div
                       key={result.repo_id}
-                      className="flex items-start gap-2.5 px-2.5 py-2 rounded-md hover:bg-muted transition-colors overflow-hidden cursor-pointer"
+                      className="flex items-start gap-2.5 px-2.5 py-2 rounded-md border border-border/50 hover:bg-muted transition-colors overflow-hidden cursor-pointer"
                       onClick={() => handleSelectRepo(result)}
                     >
                       <div className="min-w-0 flex-1">
