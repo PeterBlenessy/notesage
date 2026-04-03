@@ -19,6 +19,7 @@ interface LocalAIStore {
   contextLength: number;
   gpuLayers: number;
   dismissedFirstRun: boolean;
+  hiddenModelIds: string[];
 
   // Runtime (non-persisted)
   serverStatus: ServerStatus;
@@ -46,8 +47,22 @@ interface LocalAIStore {
   downloadModel: (modelId: string) => void;
   cancelDownload: (modelId: string) => void;
   deleteModel: (modelId: string) => Promise<void>;
-  addCustomModel: (name: string, url: string) => Promise<void>;
+  addCustomModel: (name: string, url: string, metadata?: {
+    supportsToolCalling?: boolean;
+    supportsThinking?: boolean;
+    supportsVision?: boolean;
+    multilingual?: boolean;
+    supportsFim?: boolean;
+    author?: string;
+    architecture?: string;
+    contextLength?: number;
+    license?: string;
+    baseModel?: string;
+  }) => Promise<void>;
   removeCustomModel: (modelId: string) => Promise<void>;
+  hideModel: (modelId: string) => void;
+  unhideModel: (modelId: string) => void;
+  restoreDefaults: () => void;
   checkBinary: () => Promise<BinaryStatus>;
   startServer: (modelId: string, contextLength: number, gpuLayers: number) => Promise<void>;
 }
@@ -90,6 +105,7 @@ export const useLocalAIStore = create<LocalAIStore>()(
         contextLength: 4096,
         gpuLayers: -1,
         dismissedFirstRun: false,
+        hiddenModelIds: [],
 
         // Runtime defaults
         serverStatus: 'stopped',
@@ -180,10 +196,10 @@ export const useLocalAIStore = create<LocalAIStore>()(
           }
         },
 
-        addCustomModel: async (name: string, url: string) => {
+        addCustomModel: async (name, url, metadata) => {
           try {
-            await tauriApi.addCustomLocalModel(name, url);
-            toast.success(`Added "${name}"`);
+            await tauriApi.addCustomLocalModel(name, url, metadata);
+            toast.success(`Added "${name}" — downloading`);
             await get().refreshModels();
           } catch (err) {
             toast.error(`Failed to add model: ${err}`);
@@ -198,6 +214,23 @@ export const useLocalAIStore = create<LocalAIStore>()(
           } catch (err) {
             toast.error(`Failed to remove model: ${err}`);
           }
+        },
+
+        hideModel: (modelId) => {
+          set((s) => ({
+            hiddenModelIds: s.hiddenModelIds.includes(modelId) ? s.hiddenModelIds : [...s.hiddenModelIds, modelId],
+          }));
+        },
+
+        unhideModel: (modelId) => {
+          set((s) => ({
+            hiddenModelIds: s.hiddenModelIds.filter((id) => id !== modelId),
+          }));
+        },
+
+        restoreDefaults: () => {
+          set({ hiddenModelIds: [] });
+          toast.success('Default models restored');
         },
 
         checkBinary: async () => {
@@ -226,6 +259,7 @@ export const useLocalAIStore = create<LocalAIStore>()(
         contextLength: state.contextLength,
         gpuLayers: state.gpuLayers,
         dismissedFirstRun: state.dismissedFirstRun,
+        hiddenModelIds: state.hiddenModelIds,
       }),
     },
   ),

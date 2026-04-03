@@ -68,7 +68,7 @@ export function ModelMetadataTooltip({
       </TooltipTrigger>
       <TooltipContent
         side={side}
-        className="w-[280px] p-3"
+        className="w-[220px] p-3"
       >
         <div className="space-y-2">
           {/* Header */}

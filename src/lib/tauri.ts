@@ -305,6 +305,54 @@ export interface LocalModelInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Hugging Face search types
+// ---------------------------------------------------------------------------
+
+export interface HfModelSearchResult {
+  repo_id: string;
+  model_name: string;
+  author: string;
+  base_model: string | null;
+  license: string | null;
+  architecture: string | null;
+  context_length: number | null;
+  total_size: number | null;
+  downloads: number;
+  likes: number;
+  tags: string[];
+  supports_tool_calling: boolean;
+  supports_thinking: boolean;
+  supports_vision: boolean;
+  files: HfModelFile[];
+}
+
+export interface HfModelFile {
+  filename: string;
+  size_bytes: number;
+  download_url: string;
+  quantization: string;
+}
+
+export interface HfModelDetails {
+  repo_id: string;
+  model_name: string;
+  author: string;
+  base_model: string | null;
+  license: string | null;
+  architecture: string | null;
+  context_length: number | null;
+  pipeline_tag: string | null;
+  downloads: number;
+  likes: number;
+  supports_tool_calling: boolean;
+  supports_thinking: boolean;
+  supports_vision: boolean;
+  supports_fim: boolean;
+  multilingual: boolean;
+  files: HfModelFile[];
+}
+
+// ---------------------------------------------------------------------------
 // Model Metadata types
 // ---------------------------------------------------------------------------
 
@@ -919,12 +967,44 @@ export const tauriApi = {
     await invoke("delete_local_model", { modelId });
   },
 
-  async addCustomLocalModel(name: string, url: string): Promise<LocalModelInfo> {
-    return await invoke<LocalModelInfo>("add_custom_local_model", { name, url });
+  async addCustomLocalModel(name: string, url: string, metadata?: {
+    supportsToolCalling?: boolean;
+    supportsThinking?: boolean;
+    supportsVision?: boolean;
+    multilingual?: boolean;
+    supportsFim?: boolean;
+    author?: string;
+    architecture?: string;
+    contextLength?: number;
+    license?: string;
+    baseModel?: string;
+  }): Promise<LocalModelInfo> {
+    return await invoke<LocalModelInfo>("add_custom_local_model", {
+      name,
+      url,
+      supportsToolCalling: metadata?.supportsToolCalling ?? null,
+      supportsThinking: metadata?.supportsThinking ?? null,
+      supportsVision: metadata?.supportsVision ?? null,
+      multilingual: metadata?.multilingual ?? null,
+      supportsFim: metadata?.supportsFim ?? null,
+      author: metadata?.author ?? null,
+      architecture: metadata?.architecture ?? null,
+      contextLength: metadata?.contextLength ?? null,
+      license: metadata?.license ?? null,
+      baseModel: metadata?.baseModel ?? null,
+    });
   },
 
   async removeCustomLocalModel(modelId: string): Promise<void> {
     await invoke("remove_custom_local_model", { modelId });
+  },
+
+  async searchHuggingfaceModels(query: string, limit?: number, author?: string): Promise<HfModelSearchResult[]> {
+    return await invoke<HfModelSearchResult[]>("search_huggingface_models", { query, limit: limit ?? null, author: author ?? null });
+  },
+
+  async fetchHfModelDetails(repoId: string): Promise<HfModelDetails> {
+    return await invoke<HfModelDetails>("fetch_hf_model_details", { repoId });
   },
 
   async startLocalServer(
