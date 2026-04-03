@@ -558,6 +558,164 @@ pub async fn remove_custom_local_model(
 }
 
 // ---------------------------------------------------------------------------
+// Hugging Face GGUF model search
+// ---------------------------------------------------------------------------
+
+/// A search result from the Hugging Face API for GGUF models.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct HfModelSearchResult {
+    pub repo_id: String,
+    pub model_name: String,
+    pub author: String,
+    pub downloads: u64,
+    pub likes: u64,
+    pub tags: Vec<String>,
+    pub files: Vec<HfModelFile>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct HfModelFile {
+    pub filename: String,
+    pub size_bytes: u64,
+    pub download_url: String,
+    pub quantization: String,
+}
+
+/// Raw HF API model response fields we care about.
+#[derive(Deserialize, Debug)]
+struct HfApiModel {
+    #[serde(rename = "modelId")]
+    model_id: Option<String>,
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    author: String,
+    #[serde(default)]
+    downloads: u64,
+    #[serde(default)]
+    likes: u64,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    siblings: Vec<HfApiSibling>,
+}
+
+#[derive(Deserialize, Debug)]
+struct HfApiSibling {
+    rfilename: String,
+    #[serde(default)]
+    size: Option<u64>,
+}
+
+/// Derive quantization label from GGUF filename (e.g. "Q4_K_M" from "model-Q4_K_M.gguf").
+fn extract_quantization(filename: &str) -> String {
+    // Common GGUF quant patterns: Q4_K_M, Q8_0, IQ4_XS, F16, etc.
+    let name = filename.trim_end_matches(".gguf");
+    // Try to find the last segment that looks like a quantization
+    if let Some(pos) = name.rfind('-') {
+        let suffix = &name[pos + 1..];
+        if suffix.starts_with('Q') || suffix.starts_with('F') || suffix.starts_with("IQ") || suffix.starts_with("BF") {
+            return suffix.to_string();
+        }
+    }
+    if let Some(pos) = name.rfind('_') {
+        // Could be like model_Q4_K_M — check the rest
+        let rest = &name[pos + 1..];
+        if rest.starts_with('Q') || rest.starts_with('F') || rest.starts_with("IQ") {
+            return rest.to_string();
+        }
+    }
+    // Fallback: scan for known patterns with underscores (e.g. "model-name-Q4_K_M")
+    for part in name.rsplitn(4, '-') {
+        if part.starts_with('Q') || part.starts_with('F') || part.starts_with("IQ") || part.starts_with("BF") {
+            return part.to_string();
+        }
+    }
+    "Unknown".to_string()
+}
+
+/// Search Hugging Face for GGUF model repos.
+#[tauri::command]
+pub async fn search_huggingface_models(
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<HfModelSearchResult>, String> {
+    let limit = limit.unwrap_or(10).min(20);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    // HF API search: filter for GGUF models
+    let search_url = format!(
+        "https://huggingface.co/api/models?search={query}+GGUF&filter=gguf&sort=downloads&direction=-1&limit={limit}"
+    );
+
+    let resp = client
+        .get(&search_url)
+        .header("User-Agent", "Notesage/1.0")
+        .send()
+        .await
+        .map_err(|e| format!("HF API request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("HF API returned status {}", resp.status()));
+    }
+
+    let models: Vec<HfApiModel> = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse HF API response: {}", e))?;
+
+    let results: Vec<HfModelSearchResult> = models
+        .into_iter()
+        .map(|m| {
+            let repo_id = m.model_id.unwrap_or(m.id.clone());
+            // Filter to only .gguf files
+            let files: Vec<HfModelFile> = m
+                .siblings
+                .into_iter()
+                .filter(|s| s.rfilename.ends_with(".gguf"))
+                .map(|s| {
+                    let quant = extract_quantization(&s.rfilename);
+                    let url = format!(
+                        "https://huggingface.co/{}/resolve/main/{}",
+                        repo_id, s.rfilename
+                    );
+                    HfModelFile {
+                        filename: s.rfilename,
+                        size_bytes: s.size.unwrap_or(0),
+                        download_url: url,
+                        quantization: quant,
+                    }
+                })
+                .collect();
+
+            // Derive a friendly model name from repo_id
+            let model_name = repo_id
+                .split('/')
+                .last()
+                .unwrap_or(&repo_id)
+                .replace("-GGUF", "")
+                .replace("_", " ");
+
+            HfModelSearchResult {
+                repo_id: repo_id.clone(),
+                model_name,
+                author: m.author,
+                downloads: m.downloads,
+                likes: m.likes,
+                tags: m.tags,
+                files,
+            }
+        })
+        .filter(|r| !r.files.is_empty())
+        .collect();
+
+    Ok(results)
+}
+
+// ---------------------------------------------------------------------------
 // Binary resolution
 // ---------------------------------------------------------------------------
 

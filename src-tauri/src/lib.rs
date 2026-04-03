@@ -224,6 +224,7 @@ pub fn run() {
             delete_local_model,
             add_custom_local_model,
             remove_custom_local_model,
+            search_huggingface_models,
             start_local_server,
             stop_local_server,
             get_local_server_status,

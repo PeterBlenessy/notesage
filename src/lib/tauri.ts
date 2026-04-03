@@ -305,6 +305,27 @@ export interface LocalModelInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Hugging Face search types
+// ---------------------------------------------------------------------------
+
+export interface HfModelSearchResult {
+  repo_id: string;
+  model_name: string;
+  author: string;
+  downloads: number;
+  likes: number;
+  tags: string[];
+  files: HfModelFile[];
+}
+
+export interface HfModelFile {
+  filename: string;
+  size_bytes: number;
+  download_url: string;
+  quantization: string;
+}
+
+// ---------------------------------------------------------------------------
 // Model Metadata types
 // ---------------------------------------------------------------------------
 
@@ -925,6 +946,10 @@ export const tauriApi = {
 
   async removeCustomLocalModel(modelId: string): Promise<void> {
     await invoke("remove_custom_local_model", { modelId });
+  },
+
+  async searchHuggingfaceModels(query: string, limit?: number): Promise<HfModelSearchResult[]> {
+    return await invoke<HfModelSearchResult[]>("search_huggingface_models", { query, limit: limit ?? null });
   },
 
   async startLocalServer(

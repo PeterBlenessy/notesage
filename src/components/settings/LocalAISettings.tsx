@@ -1,8 +1,8 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useLocalAIStore, type ModelCategory } from '@/stores/local-ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { tauriApi } from '@/lib/tauri';
-import type { LocalModelInfo } from '@/lib/tauri';
+import type { LocalModelInfo, HfModelSearchResult, HfModelFile } from '@/lib/tauri';
 import { useModelMetadata } from '@/hooks/useModelMetadata';
 import { ModelMetadataTooltip } from './ModelMetadataTooltip';
 import { Button } from '@/components/ui/button';
@@ -22,13 +22,14 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Download, Trash2, X, Plus, Link, Shield, HeartPulse, Loader2, FolderOpen, Star, ArrowUpDown, Check } from 'lucide-react';
+import { Download, Trash2, X, Plus, Link, Shield, HeartPulse, Loader2, FolderOpen, Star, ArrowUpDown, Check, Search } from 'lucide-react';
 import { toast } from 'sonner';
 
 type ModelSort = 'name' | 'size' | 'ram';
@@ -79,12 +80,61 @@ const SORT_OPTIONS: { value: ModelSort; label: string }[] = [
 
 function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<'search' | 'url'>('search');
+
+  // Search tab state
+  const [query, setQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<HfModelSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedRepo, setSelectedRepo] = useState<HfModelSearchResult | null>(null);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // URL tab state
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
+
   const [loading, setLoading] = useState(false);
   const addCustomModel = useLocalAIStore((s) => s.addCustomModel);
 
-  const handleSubmit = async () => {
+  const doSearch = useCallback(async (q: string) => {
+    if (q.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    setSearching(true);
+    try {
+      const results = await tauriApi.searchHuggingfaceModels(q.trim(), 10);
+      setSearchResults(results);
+    } catch (err) {
+      toast.error(`Search failed: ${err}`);
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }, []);
+
+  const handleQueryChange = useCallback((value: string) => {
+    setQuery(value);
+    setSelectedRepo(null);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => doSearch(value), 400);
+  }, [doSearch]);
+
+  const handleAddFromSearch = async (file: HfModelFile, repo: HfModelSearchResult) => {
+    setLoading(true);
+    try {
+      await addCustomModel(repo.model_name, file.download_url);
+      setQuery('');
+      setSearchResults([]);
+      setSelectedRepo(null);
+      setOpen(false);
+      onAdded();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmitUrl = async () => {
     if (!name.trim() || !url.trim()) {
       toast.error('Name and URL are required');
       return;
@@ -101,55 +151,175 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
     }
   };
 
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (!next) {
+      setQuery('');
+      setSearchResults([]);
+      setSelectedRepo(null);
+      setName('');
+      setUrl('');
+    }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-1.5">
           <Plus className="h-3.5 w-3.5" />
-          Add custom model
+          Add model
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-sm">Add Custom Model</DialogTitle>
+          <DialogTitle className="text-sm">Add Model</DialogTitle>
           <DialogDescription className="text-xs">
-            Paste a direct link to a GGUF model file from Hugging Face or any URL.
+            Search Hugging Face for GGUF models or paste a direct download URL.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3 pt-2">
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">Model name</label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Phi-4 Mini"
-              className="h-8 text-sm"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs text-muted-foreground">GGUF download URL</label>
+
+        {/* Tab switcher */}
+        <div className="flex gap-1 rounded-md bg-muted p-0.5">
+          <button
+            onClick={() => setTab('search')}
+            className={`flex-1 text-xs font-medium py-1.5 rounded-sm transition-colors ${tab === 'search' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Search className="inline h-3 w-3 mr-1 -mt-px" strokeWidth={1.5} />
+            Search Hugging Face
+          </button>
+          <button
+            onClick={() => setTab('url')}
+            className={`flex-1 text-xs font-medium py-1.5 rounded-sm transition-colors ${tab === 'url' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Link className="inline h-3 w-3 mr-1 -mt-px" strokeWidth={1.5} />
+            Paste URL
+          </button>
+        </div>
+
+        {tab === 'search' ? (
+          <div className="space-y-3">
             <div className="relative">
-              <Link className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
               <Input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://huggingface.co/.../model.gguf"
+                value={query}
+                onChange={(e) => handleQueryChange(e.target.value)}
+                placeholder="Search models... e.g. gemma-4, llama, qwen"
                 className="h-8 text-sm pl-8"
+                autoFocus
+              />
+              {searching && (
+                <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-muted-foreground" />
+              )}
+            </div>
+
+            {selectedRepo ? (
+              /* File picker for selected repo */
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setSelectedRepo(null)}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    &larr; Back
+                  </button>
+                  <span className="text-xs font-medium truncate">{selectedRepo.model_name}</span>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Pick a quantization. Q4_K_M is recommended for the best size/quality balance.
+                </p>
+                <ScrollArea className="max-h-[280px]">
+                  <div className="space-y-1">
+                    {selectedRepo.files
+                      .sort((a, b) => a.size_bytes - b.size_bytes)
+                      .map((file) => (
+                        <button
+                          key={file.filename}
+                          onClick={() => handleAddFromSearch(file, selectedRepo)}
+                          disabled={loading}
+                          className="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-md text-left hover:bg-muted transition-colors disabled:opacity-50"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-medium truncate">{file.filename}</div>
+                            <div className="text-[10px] text-muted-foreground">
+                              {file.quantization} &middot; {formatBytes(file.size_bytes)}
+                            </div>
+                          </div>
+                          <Download className="h-3.5 w-3.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                        </button>
+                      ))}
+                  </div>
+                </ScrollArea>
+              </div>
+            ) : (
+              /* Search results list */
+              <ScrollArea className="max-h-[320px]">
+                <div className="space-y-1">
+                  {searchResults.map((result) => (
+                    <button
+                      key={result.repo_id}
+                      onClick={() => setSelectedRepo(result)}
+                      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-left hover:bg-muted transition-colors"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-medium truncate">{result.model_name}</div>
+                        <div className="text-[10px] text-muted-foreground truncate">
+                          {result.author} &middot; {result.files.length} file{result.files.length !== 1 ? 's' : ''}
+                          {result.downloads > 0 && <> &middot; {Intl.NumberFormat('en', { notation: 'compact' }).format(result.downloads)} downloads</>}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                  {!searching && query.trim().length >= 2 && searchResults.length === 0 && (
+                    <p className="text-xs text-muted-foreground text-center py-4">
+                      No GGUF models found. Try a different search term.
+                    </p>
+                  )}
+                  {!searching && query.trim().length < 2 && (
+                    <p className="text-xs text-muted-foreground text-center py-4">
+                      Type at least 2 characters to search.
+                    </p>
+                  )}
+                </div>
+              </ScrollArea>
+            )}
+          </div>
+        ) : (
+          /* URL tab — same as original */
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Model name</label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Phi-4 Mini"
+                className="h-8 text-sm"
               />
             </div>
-            <p className="text-[10px] text-muted-foreground">
-              Use Q4_K_M quantization for the best size/quality balance.
-            </p>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">GGUF download URL</label>
+              <div className="relative">
+                <Link className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+                <Input
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://huggingface.co/.../model.gguf"
+                  className="h-8 text-sm pl-8"
+                />
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                Use Q4_K_M quantization for the best size/quality balance.
+              </p>
+            </div>
+            <Button
+              onClick={handleSubmitUrl}
+              disabled={loading || !name.trim() || !url.trim()}
+              className="w-full"
+              size="sm"
+            >
+              {loading ? 'Adding...' : 'Add model'}
+            </Button>
           </div>
-          <Button
-            onClick={handleSubmit}
-            disabled={loading || !name.trim() || !url.trim()}
-            className="w-full"
-            size="sm"
-          >
-            {loading ? 'Adding...' : 'Add model'}
-          </Button>
-        </div>
+        )}
       </DialogContent>
     </Dialog>
   );
