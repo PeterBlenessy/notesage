@@ -180,6 +180,9 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
         multilingual: d?.multilingual ?? false,
         supportsFim: d?.supports_fim ?? false,
       });
+      // Auto-start download after adding
+      const modelId = file.filename.replace('.gguf', '').toLowerCase().replace(/ /g, '-');
+      useLocalAIStore.getState().downloadModel(modelId);
       setQuery('');
       setSearchResults([]);
       setSelectedRepo(null);
