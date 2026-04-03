@@ -281,7 +281,7 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                     className="group flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-muted text-foreground hover:bg-muted/80 transition-colors"
                   >
                     {filterAuthor}
-                    <X className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" strokeWidth={2} />
+                    <X className="h-2.5 w-2.5 opacity-40 group-hover:opacity-100 transition-opacity" strokeWidth={2} />
                   </button>
                 )}
                 {[...filterCaps].map((cap) => (
@@ -291,7 +291,7 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                     className="group flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-muted text-foreground hover:bg-muted/80 transition-colors"
                   >
                     {cap}
-                    <X className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" strokeWidth={2} />
+                    <X className="h-2.5 w-2.5 opacity-40 group-hover:opacity-100 transition-opacity" strokeWidth={2} />
                   </button>
                 ))}
               </div>
@@ -369,13 +369,15 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                       onClick={() => handleSelectRepo(result)}
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="text-xs font-medium truncate">{result.model_name}</div>
-                        <div className="text-[10px] text-muted-foreground truncate">
+                        <div className="flex items-baseline gap-1.5 truncate">
+                          <span className="text-xs font-medium truncate">{result.model_name}</span>
                           <button
-                            className="hover:text-foreground hover:underline transition-colors"
+                            className="text-[10px] text-muted-foreground hover:text-foreground hover:underline transition-colors shrink-0"
                             onClick={(e) => { e.stopPropagation(); setAuthorFilter(result.author); }}
-                          >{result.author}</button>
-                          {result.architecture && <> &middot; {result.architecture}</>}
+                          >by {result.author}</button>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground truncate">
+                          {result.architecture && <>{result.architecture}</>}
                           {result.context_length && <> &middot; {(result.context_length / 1024).toFixed(0)}K ctx</>}
                           {result.total_size && <> &middot; ~{formatBytes(result.total_size)}</>}
                           {result.license && <> &middot; {result.license}</>}
