@@ -46,7 +46,13 @@ interface LocalAIStore {
   downloadModel: (modelId: string) => void;
   cancelDownload: (modelId: string) => void;
   deleteModel: (modelId: string) => Promise<void>;
-  addCustomModel: (name: string, url: string) => Promise<void>;
+  addCustomModel: (name: string, url: string, capabilities?: {
+    supportsToolCalling?: boolean;
+    supportsThinking?: boolean;
+    supportsVision?: boolean;
+    multilingual?: boolean;
+    supportsFim?: boolean;
+  }) => Promise<void>;
   removeCustomModel: (modelId: string) => Promise<void>;
   checkBinary: () => Promise<BinaryStatus>;
   startServer: (modelId: string, contextLength: number, gpuLayers: number) => Promise<void>;
@@ -180,9 +186,9 @@ export const useLocalAIStore = create<LocalAIStore>()(
           }
         },
 
-        addCustomModel: async (name: string, url: string) => {
+        addCustomModel: async (name, url, capabilities) => {
           try {
-            await tauriApi.addCustomLocalModel(name, url);
+            await tauriApi.addCustomLocalModel(name, url, capabilities);
             toast.success(`Added "${name}"`);
             await get().refreshModels();
           } catch (err) {

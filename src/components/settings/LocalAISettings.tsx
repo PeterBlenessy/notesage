@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useLocalAIStore, type ModelCategory } from '@/stores/local-ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { tauriApi } from '@/lib/tauri';
-import type { LocalModelInfo, HfModelSearchResult, HfModelFile } from '@/lib/tauri';
+import type { LocalModelInfo, HfModelSearchResult, HfModelFile, HfModelDetails } from '@/lib/tauri';
 import { useModelMetadata } from '@/hooks/useModelMetadata';
 import { ModelMetadataTooltip } from './ModelMetadataTooltip';
 import { Button } from '@/components/ui/button';
@@ -87,6 +87,8 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
   const [searchResults, setSearchResults] = useState<HfModelSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [selectedRepo, setSelectedRepo] = useState<HfModelSearchResult | null>(null);
+  const [repoDetails, setRepoDetails] = useState<HfModelDetails | null>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // URL tab state
@@ -103,7 +105,7 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
     }
     setSearching(true);
     try {
-      const results = await tauriApi.searchHuggingfaceModels(q.trim(), 10);
+      const results = await tauriApi.searchHuggingfaceModels(q.trim(), 20);
       setSearchResults(results);
     } catch (err) {
       toast.error(`Search failed: ${err}`);
@@ -120,13 +122,37 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
     searchTimerRef.current = setTimeout(() => doSearch(value), 400);
   }, [doSearch]);
 
-  const handleAddFromSearch = async (file: HfModelFile, repo: HfModelSearchResult) => {
+  const handleSelectRepo = useCallback(async (repo: HfModelSearchResult) => {
+    setSelectedRepo(repo);
+    setRepoDetails(null);
+    setLoadingDetails(true);
+    try {
+      const details = await tauriApi.fetchHfModelDetails(repo.repo_id);
+      setRepoDetails(details);
+    } catch {
+      // Fallback — use search data
+    } finally {
+      setLoadingDetails(false);
+    }
+  }, []);
+
+  const handleAddFromSearch = async (file: HfModelFile) => {
+    if (!selectedRepo) return;
     setLoading(true);
     try {
-      await addCustomModel(repo.model_name, file.download_url);
+      const d = repoDetails;
+      const r = selectedRepo;
+      await addCustomModel(d?.model_name || r.model_name, file.download_url, {
+        supportsToolCalling: d?.supports_tool_calling ?? r.supports_tool_calling,
+        supportsThinking: d?.supports_thinking ?? r.supports_thinking,
+        supportsVision: d?.supports_vision ?? r.supports_vision,
+        multilingual: d?.multilingual ?? false,
+        supportsFim: d?.supports_fim ?? false,
+      });
       setQuery('');
       setSearchResults([]);
       setSelectedRepo(null);
+      setRepoDetails(null);
       setOpen(false);
       onAdded();
     } finally {
@@ -157,6 +183,7 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
       setQuery('');
       setSearchResults([]);
       setSelectedRepo(null);
+      setRepoDetails(null);
       setName('');
       setUrl('');
     }
@@ -170,7 +197,7 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
           Add model
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg overflow-hidden">
         <DialogHeader>
           <DialogTitle className="text-sm">Add Model</DialogTitle>
           <DialogDescription className="text-xs">
@@ -213,35 +240,54 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
             </div>
 
             {selectedRepo ? (
-              /* File picker for selected repo */
+              /* Model detail + file picker */
               <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setSelectedRepo(null)}
-                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    &larr; Back
-                  </button>
-                  <span className="text-xs font-medium truncate">{selectedRepo.model_name}</span>
+                <button
+                  onClick={() => { setSelectedRepo(null); setRepoDetails(null); }}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  &larr; Back to results
+                </button>
+
+                {/* Model info card */}
+                <div className="rounded-lg border border-border p-3 space-y-1.5">
+                  <div className="text-sm font-medium">{selectedRepo.model_name}</div>
+                  {selectedRepo.base_model && (
+                    <div className="text-[10px] text-muted-foreground">Base: {selectedRepo.base_model}</div>
+                  )}
+                  <div className="text-[10px] text-muted-foreground">
+                    {selectedRepo.author}
+                    {selectedRepo.license && <> &middot; {selectedRepo.license}</>}
+                    {selectedRepo.architecture && <> &middot; {selectedRepo.architecture}</>}
+                    {selectedRepo.context_length && <> &middot; {(selectedRepo.context_length / 1024).toFixed(0)}K context</>}
+                    {selectedRepo.total_size && <> &middot; ~{formatBytes(selectedRepo.total_size)}</>}
+                  </div>
+                  <div className="flex flex-wrap gap-1 pt-0.5">
+                    {selectedRepo.supports_vision && <span className="px-1.5 py-px rounded text-[9px] bg-muted text-muted-foreground">Vision</span>}
+                    {selectedRepo.supports_tool_calling && <span className="px-1.5 py-px rounded text-[9px] bg-muted text-muted-foreground">Tools</span>}
+                    {selectedRepo.supports_thinking && <span className="px-1.5 py-px rounded text-[9px] bg-muted text-muted-foreground">Thinking</span>}
+                    {loadingDetails && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                  </div>
                 </div>
+
                 <p className="text-[10px] text-muted-foreground">
-                  Pick a quantization. Q4_K_M is recommended for the best size/quality balance.
+                  Pick a quantization. Q4_K_M is recommended for quality/size balance.
                 </p>
-                <ScrollArea className="max-h-[280px]">
+                <ScrollArea className="h-[250px]">
                   <div className="space-y-1">
-                    {selectedRepo.files
+                    {(repoDetails?.files || selectedRepo.files)
                       .sort((a, b) => a.size_bytes - b.size_bytes)
                       .map((file) => (
                         <button
                           key={file.filename}
-                          onClick={() => handleAddFromSearch(file, selectedRepo)}
+                          onClick={() => handleAddFromSearch(file)}
                           disabled={loading}
-                          className="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-md text-left hover:bg-muted transition-colors disabled:opacity-50"
+                          className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md text-left hover:bg-muted transition-colors disabled:opacity-50"
                         >
                           <div className="min-w-0 flex-1">
-                            <div className="text-xs font-medium truncate">{file.filename}</div>
+                            <div className="text-xs font-medium truncate">{file.quantization}</div>
                             <div className="text-[10px] text-muted-foreground">
-                              {file.quantization} &middot; {formatBytes(file.size_bytes)}
+                              {file.size_bytes > 0 ? <>{formatBytes(file.size_bytes)} &middot; ~{formatBytes(Math.round(file.size_bytes * 1.1))} RAM</> : file.filename}
                             </div>
                           </div>
                           <Download className="h-3.5 w-3.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
@@ -252,20 +298,34 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
               </div>
             ) : (
               /* Search results list */
-              <ScrollArea className="max-h-[320px]">
+              <ScrollArea className="h-[400px]">
                 <div className="space-y-1">
                   {searchResults.map((result) => (
                     <button
                       key={result.repo_id}
-                      onClick={() => setSelectedRepo(result)}
-                      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-left hover:bg-muted transition-colors"
+                      onClick={() => handleSelectRepo(result)}
+                      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-left hover:bg-muted transition-colors overflow-hidden"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="text-xs font-medium truncate">{result.model_name}</div>
                         <div className="text-[10px] text-muted-foreground truncate">
-                          {result.author} &middot; {result.files.length} file{result.files.length !== 1 ? 's' : ''}
+                          {result.author}
+                          {result.architecture && <> &middot; {result.architecture}</>}
+                          {result.context_length && <> &middot; {(result.context_length / 1024).toFixed(0)}K ctx</>}
+                          {result.total_size && <> &middot; ~{formatBytes(result.total_size)}</>}
+                          {result.license && <> &middot; {result.license}</>}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground/60 truncate">
+                          {result.files.length} quant{result.files.length !== 1 ? 's' : ''}
                           {result.downloads > 0 && <> &middot; {Intl.NumberFormat('en', { notation: 'compact' }).format(result.downloads)} downloads</>}
                         </div>
+                        {(result.supports_tool_calling || result.supports_thinking || result.supports_vision) && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {result.supports_vision && <span className="px-1 py-px rounded text-[9px] bg-muted text-muted-foreground">Vision</span>}
+                            {result.supports_tool_calling && <span className="px-1 py-px rounded text-[9px] bg-muted text-muted-foreground">Tools</span>}
+                            {result.supports_thinking && <span className="px-1 py-px rounded text-[9px] bg-muted text-muted-foreground">Thinking</span>}
+                          </div>
+                        )}
                       </div>
                     </button>
                   ))}
