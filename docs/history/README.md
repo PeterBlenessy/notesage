@@ -91,3 +91,4 @@ Chronological log of major implementation milestones and changes.
 | 085 | [Release v0.28.0](085-release-v0.28.0.md) | Code file editing, syntax highlighting, WYSIWYG typography, page headers/footers |
 | 086 | [Release v0.28.1](086-release-v0.28.1.md) | Chronological chat segments, tool call grouping, ACP session resilience |
 | 087 | [Release v0.28.2](087-release-v0.28.2.md) | ACP skill discovery, color tint system, Dependabot fixes |
+| 088 | [Release v0.28.3](088-release-v0.28.3.md) | Gemma 4, HF model search, catalog management, llama.cpp b8648 |
