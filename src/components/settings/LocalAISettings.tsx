@@ -342,7 +342,7 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
 
                 {/* File list — scrollable */}
                 <ScrollArea className="flex-1 min-h-0 max-h-[240px]">
-                  <div className="space-y-1 pr-2">
+                  <div className="space-y-1 pr-4">
                     {(repoDetails?.files || selectedRepo.files)
                       .sort((a, b) => a.size_bytes - b.size_bytes)
                       .map((file) => (
@@ -372,7 +372,7 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
             ) : (
               /* Search results list */
               <ScrollArea className="h-[400px]">
-                <div className="space-y-1 pr-2">
+                <div className="space-y-1 pr-4">
                   {filteredResults.map((result) => (
                     <div
                       key={result.repo_id}
