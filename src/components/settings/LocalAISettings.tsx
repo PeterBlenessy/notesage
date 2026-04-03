@@ -575,19 +575,34 @@ function ModelCard({
               )}
             </>
           ) : (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={onDownload}
-                >
-                  <Download className="h-3 w-3" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">Download model</TooltipContent>
-            </Tooltip>
+            <div className="flex items-center gap-0.5">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={onDownload}
+                  >
+                    <Download className="h-3 w-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">Download model</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                    onClick={onHide}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">Hide from list</TooltipContent>
+              </Tooltip>
+            </div>
           )}
         </div>
 
