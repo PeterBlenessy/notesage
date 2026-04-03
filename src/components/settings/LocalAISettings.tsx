@@ -91,6 +91,10 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Active filters (clickable badges)
+  const [filterAuthor, setFilterAuthor] = useState<string | null>(null);
+  const [filterCaps, setFilterCaps] = useState<Set<string>>(new Set());
+
   // URL tab state
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
@@ -98,14 +102,14 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
   const [loading, setLoading] = useState(false);
   const addCustomModel = useLocalAIStore((s) => s.addCustomModel);
 
-  const doSearch = useCallback(async (q: string) => {
+  const doSearch = useCallback(async (q: string, author?: string | null) => {
     if (q.trim().length < 2) {
       setSearchResults([]);
       return;
     }
     setSearching(true);
     try {
-      const results = await tauriApi.searchHuggingfaceModels(q.trim(), 20);
+      const results = await tauriApi.searchHuggingfaceModels(q.trim(), 30, author || undefined);
       setSearchResults(results);
     } catch (err) {
       toast.error(`Search failed: ${err}`);
@@ -115,12 +119,39 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
     }
   }, []);
 
+  // Filtered results based on capability filters (applied client-side)
+  const filteredResults = useMemo(() => {
+    if (filterCaps.size === 0) return searchResults;
+    return searchResults.filter((r) => {
+      if (filterCaps.has('Vision') && !r.supports_vision) return false;
+      if (filterCaps.has('Tools') && !r.supports_tool_calling) return false;
+      if (filterCaps.has('Thinking') && !r.supports_thinking) return false;
+      return true;
+    });
+  }, [searchResults, filterCaps]);
+
   const handleQueryChange = useCallback((value: string) => {
     setQuery(value);
     setSelectedRepo(null);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    searchTimerRef.current = setTimeout(() => doSearch(value), 400);
-  }, [doSearch]);
+    searchTimerRef.current = setTimeout(() => doSearch(value, filterAuthor), 400);
+  }, [doSearch, filterAuthor]);
+
+  const toggleCapFilter = useCallback((cap: string) => {
+    setFilterCaps((prev) => {
+      const next = new Set(prev);
+      if (next.has(cap)) next.delete(cap); else next.add(cap);
+      return next;
+    });
+  }, []);
+
+  const setAuthorFilter = useCallback((author: string | null) => {
+    setFilterAuthor(author);
+    // Re-search with the new author filter
+    if (query.trim().length >= 2) {
+      doSearch(query, author);
+    }
+  }, [doSearch, query]);
 
   const handleSelectRepo = useCallback(async (repo: HfModelSearchResult) => {
     setSelectedRepo(repo);
@@ -184,6 +215,8 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
       setSearchResults([]);
       setSelectedRepo(null);
       setRepoDetails(null);
+      setFilterAuthor(null);
+      setFilterCaps(new Set());
       setName('');
       setUrl('');
     }
@@ -239,6 +272,31 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
               )}
             </div>
 
+            {/* Active filter pills */}
+            {(filterAuthor || filterCaps.size > 0) && (
+              <div className="flex flex-wrap gap-1.5">
+                {filterAuthor && (
+                  <button
+                    onClick={() => setAuthorFilter(null)}
+                    className="group flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-muted text-foreground hover:bg-muted/80 transition-colors"
+                  >
+                    {filterAuthor}
+                    <X className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" strokeWidth={2} />
+                  </button>
+                )}
+                {[...filterCaps].map((cap) => (
+                  <button
+                    key={cap}
+                    onClick={() => toggleCapFilter(cap)}
+                    className="group flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-muted text-foreground hover:bg-muted/80 transition-colors"
+                  >
+                    {cap}
+                    <X className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" strokeWidth={2} />
+                  </button>
+                ))}
+              </div>
+            )}
+
             {selectedRepo ? (
               /* Model detail + file picker */
               <div className="space-y-2">
@@ -285,9 +343,13 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                           className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md text-left hover:bg-muted transition-colors disabled:opacity-50"
                         >
                           <div className="min-w-0 flex-1">
-                            <div className="text-xs font-medium truncate">{file.quantization}</div>
-                            <div className="text-[10px] text-muted-foreground">
-                              {file.size_bytes > 0 ? <>{formatBytes(file.size_bytes)} &middot; ~{formatBytes(Math.round(file.size_bytes * 1.1))} RAM</> : file.filename}
+                            <div className="text-xs font-medium truncate">
+                              {file.quantization !== 'Unknown' ? file.quantization : file.filename.replace('.gguf', '')}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground truncate">
+                              {file.size_bytes > 0 && <>{formatBytes(file.size_bytes)} &middot; ~{formatBytes(Math.round(file.size_bytes * 1.1))} RAM</>}
+                              {file.size_bytes > 0 && file.quantization !== 'Unknown' && <> &middot; </>}
+                              {file.quantization !== 'Unknown' && <span className="opacity-60">{file.filename}</span>}
                             </div>
                           </div>
                           <Download className="h-3.5 w-3.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
@@ -299,17 +361,20 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
             ) : (
               /* Search results list */
               <ScrollArea className="h-[400px]">
-                <div className="space-y-1">
-                  {searchResults.map((result) => (
-                    <button
+                <div className="space-y-0.5">
+                  {filteredResults.map((result) => (
+                    <div
                       key={result.repo_id}
+                      className="flex items-start gap-2.5 px-2.5 py-2 rounded-md hover:bg-muted transition-colors overflow-hidden cursor-pointer"
                       onClick={() => handleSelectRepo(result)}
-                      className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-left hover:bg-muted transition-colors overflow-hidden"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="text-xs font-medium truncate">{result.model_name}</div>
                         <div className="text-[10px] text-muted-foreground truncate">
-                          {result.author}
+                          <button
+                            className="hover:text-foreground hover:underline transition-colors"
+                            onClick={(e) => { e.stopPropagation(); setAuthorFilter(result.author); }}
+                          >{result.author}</button>
                           {result.architecture && <> &middot; {result.architecture}</>}
                           {result.context_length && <> &middot; {(result.context_length / 1024).toFixed(0)}K ctx</>}
                           {result.total_size && <> &middot; ~{formatBytes(result.total_size)}</>}
@@ -321,17 +386,23 @@ function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                         </div>
                         {(result.supports_tool_calling || result.supports_thinking || result.supports_vision) && (
                           <div className="flex flex-wrap gap-1 mt-1">
-                            {result.supports_vision && <span className="px-1 py-px rounded text-[9px] bg-muted text-muted-foreground">Vision</span>}
-                            {result.supports_tool_calling && <span className="px-1 py-px rounded text-[9px] bg-muted text-muted-foreground">Tools</span>}
-                            {result.supports_thinking && <span className="px-1 py-px rounded text-[9px] bg-muted text-muted-foreground">Thinking</span>}
+                            {result.supports_vision && (
+                              <button onClick={(e) => { e.stopPropagation(); toggleCapFilter('Vision'); }} className={`px-1 py-px rounded text-[9px] transition-colors ${filterCaps.has('Vision') ? 'bg-foreground/20 text-foreground' : 'bg-muted text-muted-foreground hover:bg-foreground/10'}`}>Vision</button>
+                            )}
+                            {result.supports_tool_calling && (
+                              <button onClick={(e) => { e.stopPropagation(); toggleCapFilter('Tools'); }} className={`px-1 py-px rounded text-[9px] transition-colors ${filterCaps.has('Tools') ? 'bg-foreground/20 text-foreground' : 'bg-muted text-muted-foreground hover:bg-foreground/10'}`}>Tools</button>
+                            )}
+                            {result.supports_thinking && (
+                              <button onClick={(e) => { e.stopPropagation(); toggleCapFilter('Thinking'); }} className={`px-1 py-px rounded text-[9px] transition-colors ${filterCaps.has('Thinking') ? 'bg-foreground/20 text-foreground' : 'bg-muted text-muted-foreground hover:bg-foreground/10'}`}>Thinking</button>
+                            )}
                           </div>
                         )}
                       </div>
-                    </button>
+                    </div>
                   ))}
-                  {!searching && query.trim().length >= 2 && searchResults.length === 0 && (
+                  {!searching && query.trim().length >= 2 && filteredResults.length === 0 && (
                     <p className="text-xs text-muted-foreground text-center py-4">
-                      No GGUF models found. Try a different search term.
+                      {searchResults.length > 0 ? 'No models match the active filters.' : 'No GGUF models found. Try a different search term.'}
                     </p>
                   )}
                   {!searching && query.trim().length < 2 && (

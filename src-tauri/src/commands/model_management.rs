@@ -684,16 +684,18 @@ fn extract_quantization(filename: &str) -> String {
 pub async fn search_huggingface_models(
     query: String,
     limit: Option<usize>,
+    author: Option<String>,
 ) -> Result<Vec<HfModelSearchResult>, String> {
-    let limit = limit.unwrap_or(10).min(20);
+    let limit = limit.unwrap_or(20).min(30);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
     // HF API search: filter for GGUF models
+    let author_param = author.map(|a| format!("&author={a}")).unwrap_or_default();
     let search_url = format!(
-        "https://huggingface.co/api/models?search={query}+GGUF&filter=gguf&sort=downloads&direction=-1&limit={limit}&expand[]=siblings&expand[]=tags&expand[]=config&expand[]=gguf&expand[]=cardData"
+        "https://huggingface.co/api/models?search={query}+GGUF&filter=gguf&sort=downloads&direction=-1&limit={limit}{author_param}&expand[]=siblings&expand[]=tags&expand[]=config&expand[]=gguf&expand[]=cardData"
     );
 
     let resp = client
