@@ -25,6 +25,7 @@ export function useLocalAI() {
   const retryCountRef = useRef(0);
   const startupLoadedRef = useRef(false);
   const diagnosticsLoggedRef = useRef(false);
+  const lastStartedModelRef = useRef<string | null>(null);
 
   // Check if Local AI connection exists in connections-store
   const hasLocalAIConnection = connections.some(
@@ -120,10 +121,16 @@ export function useLocalAI() {
       return;
     }
 
-    // Don't auto-start if already running
+    // If already running with a different model, restart with the new one
     if (store.serverStatus === 'running' || store.serverStatus === 'starting') {
-      autoStartResult = store.serverStatus === 'running' ? 'already running' : 'already starting';
-      return;
+      if (store.serverStatus === 'running' && lastStartedModelRef.current && lastStartedModelRef.current !== activeModelId) {
+        log.info('local-ai', `Model changed from ${lastStartedModelRef.current} to ${activeModelId} — restarting server`);
+        store.setServerStatusReason('Switching model...');
+        // Fall through to start with new model (start_local_server kills the old one)
+      } else {
+        autoStartResult = store.serverStatus === 'running' ? 'already running' : 'already starting';
+        return;
+      }
     }
 
     autoStartResult = 'started';
@@ -132,6 +139,7 @@ export function useLocalAI() {
       modelsLoaded: models.length,
     });
     store.setServerStatusReason('Starting...');
+    lastStartedModelRef.current = activeModelId;
     startServer(activeModelId, contextLength, gpuLayers);
 
     // Log startup diagnostics once (task 5)
