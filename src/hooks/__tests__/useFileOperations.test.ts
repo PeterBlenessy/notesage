@@ -240,9 +240,38 @@ describe('useFileOperations', () => {
           await result.current.saveFile('/project/note.md', 'Content', tabId);
         }),
       ).rejects.toThrow('Disk full');
+    });
 
-      // The tab should still be dirty since save failed
-      expect(useEditorStore.getState().tabs[0].isDirty).toBe(false); // Was never marked dirty in this test
+    it('re-marks tab dirty when save fails so user knows data is unsaved', async () => {
+      setMockInvokeHandler('read_file', () => 'Original content.');
+      setMockInvokeHandler('mark_self_write', () => undefined);
+      setMockInvokeHandler('write_file', () => {
+        throw new Error('Disk full');
+      });
+      setMockInvokeHandler('clear_self_write', () => undefined);
+
+      const { result } = renderHook(() => useFileOperations());
+
+      // Open a file
+      await act(async () => {
+        await result.current.openFile('/project/note.md', 'note.md');
+      });
+
+      const tabId = useEditorStore.getState().tabs[0].id;
+
+      // Mark tab dirty (user edited the document)
+      useEditorStore.getState().updateTabContent(tabId, 'Edited content.', true);
+      expect(useEditorStore.getState().tabs[0].isDirty).toBe(true);
+
+      // Attempt save — should fail
+      await expect(
+        act(async () => {
+          await result.current.saveFile('/project/note.md', 'Edited content.', tabId);
+        }),
+      ).rejects.toThrow('Disk full');
+
+      // Tab MUST still be dirty after a failed save
+      expect(useEditorStore.getState().tabs[0].isDirty).toBe(true);
     });
   });
 

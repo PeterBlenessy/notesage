@@ -128,16 +128,19 @@ export function CommandPalette({
   // --- Research search (from SQLite index) ---
   const [researchResults, setResearchResults] = useState<IndexResearchResult[]>([]);
   const [researchSearching, setResearchSearching] = useState(false);
+  const [researchError, setResearchError] = useState(false);
   const researchSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (mode !== "research" || !open) {
       setResearchResults([]);
       setResearchSearching(false);
+      setResearchError(false);
       return;
     }
 
     setResearchSearching(true);
+    setResearchError(false);
     if (researchSearchTimerRef.current) clearTimeout(researchSearchTimerRef.current);
     const researchStartTotal = performance.now();
     researchSearchTimerRef.current = setTimeout(async () => {
@@ -153,6 +156,7 @@ export function CommandPalette({
       } catch (error) {
         console.error("Failed to search research:", error);
         setResearchResults([]);
+        setResearchError(true);
       } finally {
         setResearchSearching(false);
       }
@@ -166,12 +170,14 @@ export function CommandPalette({
   // --- Content search (files mode, FTS5) ---
   const [contentMatches, setContentMatches] = useState<IndexContentSearchResult[]>([]);
   const [contentSearching, setContentSearching] = useState(false);
+  const [contentError, setContentError] = useState(false);
   const contentSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (mode !== "files" || !open) {
       setContentMatches([]);
       setContentSearching(false);
+      setContentError(false);
       return;
     }
 
@@ -179,10 +185,12 @@ export function CommandPalette({
     if (q.length < 2) {
       setContentMatches([]);
       setContentSearching(false);
+      setContentError(false);
       return;
     }
 
     setContentSearching(true);
+    setContentError(false);
     if (contentSearchTimerRef.current) clearTimeout(contentSearchTimerRef.current);
     const contentStartTotal = performance.now();
     contentSearchTimerRef.current = setTimeout(async () => {
@@ -201,6 +209,7 @@ export function CommandPalette({
       } catch (error) {
         console.error("Failed to search file content:", error);
         setContentMatches([]);
+        setContentError(true);
       } finally {
         setContentSearching(false);
       }
@@ -401,6 +410,8 @@ export function CommandPalette({
 
   // --- Empty state text ---
   const emptyText = useMemo(() => {
+    if (mode === "research" && researchError) return "Search failed \u2014 try again";
+    if ((mode === "default" || mode === "files") && contentError) return "Search failed \u2014 try again";
     switch (mode) {
       case "research": return "No research files found.";
       case "tags": return "No matching tags.";
@@ -408,7 +419,7 @@ export function CommandPalette({
       case "commands": return "No commands found.";
       default: return "No results found.";
     }
-  }, [mode]);
+  }, [mode, researchError, contentError]);
 
   // Compute drilldown name for symbol modes — either from prop (badge click) or internal state
   // The SymbolSearchResults component manages its own drilldown state internally,

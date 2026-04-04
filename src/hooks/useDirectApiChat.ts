@@ -347,6 +347,9 @@ export function useDirectApiChat({
         // Event listeners
         // -------------------------------------------------------------------
 
+        // Track whether this streaming session has been cleaned up (cancel or done)
+        let cancelled = false;
+
         const [
           unlistenChunk,
           unlistenThinking,
@@ -354,13 +357,16 @@ export function useDirectApiChat({
           unlistenCitation,
           unlistenToolCall,
           unlistenToolCallsDone,
+          unlistenDone,
         ] = await Promise.all([
           listen<string>('ai-stream-chunk', (event) => {
+            if (cancelled) return;
             streamedContent += event.payload;
             contentDirty = true;
             appendTextSegment(assistantMessageId, event.payload);
           }),
           listen<string>('ai-stream-thinking-chunk', (event) => {
+            if (cancelled) return;
             if (!streamedThinking) {
               log.debug('ai', 'Thinking content detected');
             }
@@ -386,21 +392,25 @@ export function useDirectApiChat({
             }
           }),
           listen<{ tool: string; status: string }>('ai-tool-use', (event) => {
+            if (cancelled) return;
             if (event.payload.status === 'start') {
               setActiveTool(event.payload.tool);
             }
           }),
           listen<{ url: string; title: string; cited_text: string }>('ai-citation', (event) => {
+            if (cancelled) return;
             const { url, title, cited_text } = event.payload;
             if (!collectedCitations.some((c) => c.url === url)) {
               collectedCitations.push({ url, title, citedText: cited_text });
             }
           }),
           listen<PendingToolCall>('ai-tool-call', (event) => {
+            if (cancelled) return;
             log.debug('ai', `Tool call received: ${event.payload.name}`);
             pendingToolCalls.push(event.payload);
           }),
           listen('ai-tool-calls-done', () => {
+            if (cancelled) return;
             // All tool calls for this turn have been emitted — execute and continue
             log.debug('ai', `Processing ${pendingToolCalls.length} tool calls`);
             handleToolCalls().catch((err) => {
@@ -417,9 +427,15 @@ export function useDirectApiChat({
               setActiveTool(null);
             });
           }),
+          listen('ai-stream-done', () => {
+            if (cancelled) return;
+            cleanup();
+          }),
         ]);
 
         const cleanup = () => {
+          if (cancelled) return;
+          cancelled = true;
           clearInterval(flushInterval);
           unlistenChunk();
           unlistenThinking();
@@ -427,6 +443,7 @@ export function useDirectApiChat({
           unlistenCitation();
           unlistenToolCall();
           unlistenToolCallsDone();
+          unlistenDone();
           if (streamedThinking) {
             updateMessageThinking(assistantMessageId, streamedThinking);
           }
@@ -440,11 +457,6 @@ export function useDirectApiChat({
         };
 
         cleanupRef.current = cleanup;
-
-        const unlistenDone = await listen('ai-stream-done', () => {
-          unlistenDone();
-          cleanup();
-        });
 
         // Build tools array if tool calling is enabled
         let tools: ToolDefinition[] | undefined;

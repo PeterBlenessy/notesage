@@ -13,6 +13,7 @@ import type { Connection } from '@/lib/ai/connections';
 import {
   useAgentTaskOperations,
   stopTaskAgent,
+  ensureTaskAgent,
   type TaskCallbacks,
   type TaskMeta,
   type TaskActivityEvent,
@@ -1456,6 +1457,50 @@ describe('useAgentTaskOperations', () => {
 
       const tasks = useActivityStore.getState().tasks;
       expect(tasks.length).toBe(1);
+    });
+  });
+
+  // ---- ensureTaskAgent recursion depth limit ----
+
+  describe('ensureTaskAgent recursion depth limit', () => {
+    it('throws after exceeding max retry depth', async () => {
+      stopTaskAgent();
+
+      const conn = makeAgentConnection();
+
+      // Call ensureTaskAgent directly with _depth exceeding the limit (> 3)
+      await expect(
+        ensureTaskAgent(conn, '/project', undefined, 4),
+      ).rejects.toThrow('Task agent spawn failed after multiple retries.');
+    });
+
+    it('allows calls within the depth limit', async () => {
+      stopTaskAgent();
+
+      const conn = makeAgentConnection();
+      registerAcpHandlers();
+
+      // _depth=0 (default) should succeed — normal spawn path
+      const instanceId = await ensureTaskAgent(conn, '/project');
+      expect(instanceId).toBe(TEST_INSTANCE_ID);
+    });
+
+    it('throws at exactly depth > 3 (limit is 3)', async () => {
+      stopTaskAgent();
+
+      const conn = makeAgentConnection();
+      registerAcpHandlers();
+
+      // depth=3 is within the limit — should NOT throw (3 > 3 is false)
+      const instanceId = await ensureTaskAgent(conn, '/project', undefined, 3);
+      expect(instanceId).toBe(TEST_INSTANCE_ID);
+
+      stopTaskAgent();
+
+      // depth=4 exceeds the limit — should throw (4 > 3 is true)
+      await expect(
+        ensureTaskAgent(conn, '/project', undefined, 4),
+      ).rejects.toThrow('Task agent spawn failed after multiple retries.');
     });
   });
 

@@ -55,12 +55,20 @@ export function stopAcpAgent(): void {
   acpSpawnPromise = null;
 }
 
+/** Maximum recursion depth for ensureAcpAgent to prevent infinite loops from racing callers. */
+const MAX_ENSURE_DEPTH = 3;
+
 /**
  * Ensure an ACP agent is spawned and authenticated for the given connection.
  * Reuses the existing agent if the connection matches. Stops and replaces
  * if the connection changed.
+ *
+ * @param depth Internal recursion counter — callers should not set this.
  */
-export async function ensureAcpAgent(connection: Connection, cwd: string, sandboxPaths?: string[]): Promise<string> {
+export async function ensureAcpAgent(connection: Connection, cwd: string, sandboxPaths?: string[], depth = 0): Promise<string> {
+  if (depth > MAX_ENSURE_DEPTH) {
+    throw new Error('Agent spawn failed after multiple retries');
+  }
   const scopeKey = (sandboxPaths ?? []).sort().join('|');
 
   // Respawn if connection changed OR sandbox scope changed
@@ -101,7 +109,7 @@ export async function ensureAcpAgent(connection: Connection, cwd: string, sandbo
       return instanceId;
     }
     // Agent changed or was replaced during await — restart the entire check
-    return ensureAcpAgent(connection, cwd, sandboxPaths);
+    return ensureAcpAgent(connection, cwd, sandboxPaths, depth + 1);
   }
 
   // Wrap spawn in a tracked promise so concurrent callers await instead of double-spawning

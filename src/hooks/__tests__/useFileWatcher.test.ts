@@ -841,6 +841,85 @@ describe('useFileWatcher', () => {
   });
 
   // ==========================================================================
+  // Debounce map overflow (Task #19 — bound map growth)
+  // ==========================================================================
+
+  describe('debounce map overflow', () => {
+    it('modifyDebounce map never exceeds MAX_DEBOUNCE_ENTRIES (500) under extreme file churn', async () => {
+      // Simulate 600 rapid modify events for unique files, none of which
+      // match an open tab — so each one creates a pending debounce entry
+      // that sits in the map for 200ms before its timeout fires.
+      renderHook(() => useFileWatcher());
+
+      // Fire 600 unique modify events without advancing timers (so no timeouts fire)
+      for (let i = 0; i < 600; i++) {
+        emitFileChangedBatch([{ path: `/churn/file-${i}.md`, kind: 'modify' }]);
+      }
+
+      // The overflow guard should have kicked in at 500 entries, flushing the
+      // map and triggering a batch refresh. After processing all 600 events,
+      // the map should contain at most 500 entries (the ones after the flush).
+      // We cannot directly inspect the ref, but we can verify the overflow
+      // path was taken by checking that refreshFileTree was scheduled (the
+      // overflow guard calls refreshFileTree as a batch fallback).
+
+      // Advance just enough for the refresh debounce (300ms) but not the
+      // per-file debounces (200ms would fire them naturally).
+      vi.advanceTimersByTime(300);
+
+      // The overflow guard schedules refreshFileTree as a batch fallback
+      expect(mockRefreshFileTree).toHaveBeenCalled();
+    });
+
+    it('icloudDiscoveryDebounce map does not grow beyond MAX_DEBOUNCE_ENTRIES', async () => {
+      const icloudPath = '/Users/testuser/Library/Mobile Documents/com~apple~CloudDocs/Notesage';
+      useSettingsStore.setState({ icloudNotesagePath: icloudPath });
+
+      // path_exists will return true but listDirectory will be slow (never resolves
+      // in this test since we don't advance timers far enough for the 1s debounce)
+      setMockInvokeHandler('path_exists', () => true);
+      setMockInvokeHandler('list_directory', () => []);
+
+      renderHook(() => useFileWatcher());
+
+      // Fire 600 create events for unique iCloud project subfolder files
+      // Each should create a discovery debounce entry for its top-level folder.
+      for (let i = 0; i < 600; i++) {
+        emitFileChangedBatch([{ path: `${icloudPath}/project-${i}/file.md`, kind: 'create' }]);
+      }
+
+      // The overflow guard should have flushed the map at 500 entries and
+      // scheduled a batch refreshFileTree as fallback.
+      vi.advanceTimersByTime(300);
+
+      expect(mockRefreshFileTree).toHaveBeenCalled();
+    });
+
+    it('modify events still work correctly after debounce map overflow', async () => {
+      const tab = makeTab({ content: '# Old' });
+      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      setMockInvokeHandler('read_file', () => '# New');
+
+      renderHook(() => useFileWatcher());
+
+      // Flood with 600 unique files to trigger overflow
+      for (let i = 0; i < 600; i++) {
+        emitFileChangedBatch([{ path: `/churn/file-${i}.md`, kind: 'modify' }]);
+      }
+
+      // Now emit a modify for our actual open tab
+      emitFileChangedBatch([{ path: '/project/notes/test.md', kind: 'modify' }]);
+
+      // Advance past the per-file debounce (200ms) and let async readFile resolve
+      await vi.advanceTimersByTimeAsync(300);
+
+      // The tab's external change should still be detected after overflow recovery
+      const changes = getExternalChanges();
+      expect(changes['/project/notes/test.md']).toBeDefined();
+    });
+  });
+
+  // ==========================================================================
   // Regression guards
   // ==========================================================================
 

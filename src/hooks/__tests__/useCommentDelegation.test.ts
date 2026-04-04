@@ -530,6 +530,102 @@ describe('useCommentDelegation', () => {
       appendSpy.mockRestore();
     });
 
+    it('uses captured commentId (not stale comment object) when comment is edited mid-delegation', async () => {
+      const comment = makeComment({ body: 'Original body text' });
+      useCommentStore.setState({
+        commentsByDocument: { [DOC_ID]: [comment] },
+        activitiesByComment: {},
+      });
+
+      const addReplySpy = vi.fn();
+      const setStatusSpy = vi.fn();
+      const saveSpy = vi.fn().mockResolvedValue(undefined);
+      useCommentStore.setState({
+        saveComments: saveSpy,
+        setTaskId: vi.fn(),
+        addActivity: vi.fn(),
+        addReply: addReplySpy,
+        setCommentStatus: setStatusSpy,
+        setDelegationMode: vi.fn(),
+        clearDelegationMode: vi.fn(),
+        clearActivities: vi.fn(),
+        completeAllActivities: vi.fn(),
+      } as unknown as Partial<ReturnType<typeof useCommentStore.getState>>);
+
+      const { result } = renderHook(() => useCommentDelegation());
+
+      await act(async () => {
+        await result.current.delegateComment(comment, DOC_ID, PROJECT_ROOT);
+      });
+
+      // Simulate editing the comment body in the store while task is running
+      // (e.g., user edits the comment text in the popover)
+      const mutatedComment = { ...comment, body: 'Completely rewritten body' };
+      useCommentStore.setState({
+        commentsByDocument: { [DOC_ID]: [mutatedComment] },
+      });
+
+      // Now fire the onComplete callback — it should use comment.id, not the full stale object
+      const callbacks = getStartTaskCallbacks();
+      act(() => {
+        callbacks.onComplete('Agent response text');
+      });
+
+      // The key assertion: addReply should be called with the original comment ID,
+      // proving the callback uses the captured ID, not re-reading from a stale closure
+      expect(addReplySpy).toHaveBeenCalledWith(
+        DOC_ID,
+        'comment-1', // must use the correct ID
+        'Agent response text',
+        'Claude Code',
+        expect.any(Array),
+      );
+
+      // Status update should also target the correct comment
+      expect(setStatusSpy).toHaveBeenCalledWith(DOC_ID, 'comment-1', 'done');
+    });
+
+    it('onError uses captured commentId when comment is edited mid-delegation', async () => {
+      const comment = makeComment({ body: 'Original body text' });
+      useCommentStore.setState({
+        commentsByDocument: { [DOC_ID]: [comment] },
+      });
+
+      const setStatusSpy = vi.fn();
+      const addActivitySpy = vi.fn();
+      const saveSpy = vi.fn().mockResolvedValue(undefined);
+      useCommentStore.setState({
+        saveComments: saveSpy,
+        setTaskId: vi.fn(),
+        addActivity: addActivitySpy,
+        setCommentStatus: setStatusSpy,
+        setDelegationMode: vi.fn(),
+        clearDelegationMode: vi.fn(),
+        clearActivities: vi.fn(),
+        completeAllActivities: vi.fn(),
+      } as unknown as Partial<ReturnType<typeof useCommentStore.getState>>);
+
+      const { result } = renderHook(() => useCommentDelegation());
+
+      await act(async () => {
+        await result.current.delegateComment(comment, DOC_ID, PROJECT_ROOT);
+      });
+
+      // Mutate the comment in the store
+      const mutatedComment = { ...comment, id: 'comment-1', body: 'Changed body' };
+      useCommentStore.setState({
+        commentsByDocument: { [DOC_ID]: [mutatedComment] },
+      });
+
+      const callbacks = getStartTaskCallbacks();
+      act(() => {
+        callbacks.onError('Connection timed out');
+      });
+
+      // Error handler should use the captured commentId
+      expect(setStatusSpy).toHaveBeenCalledWith(DOC_ID, 'comment-1', 'open');
+    });
+
     it('handles startTask throwing (spawn failure)', async () => {
       
       mockStartTask.mockRejectedValueOnce(new Error('Agent binary not found'));

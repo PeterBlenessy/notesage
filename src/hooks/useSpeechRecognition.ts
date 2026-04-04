@@ -40,11 +40,16 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
   }, []);
 
   const startWhisperDictation = useCallback(async () => {
+    // Capture generation at the start so we can detect cancellation after each await
+    const generation = ++listenGenerationRef.current;
+
     try {
       log.info('transcription', 'Starting Whisper dictation', { language: speechLanguage, defaultModel });
 
       // Ensure a Whisper model is downloaded before starting dictation
       const models = await tauriApi.listWhisperModels();
+      if (!mountedRef.current || generation !== listenGenerationRef.current) return;
+
       const downloadedModels = models.filter((m: { downloaded: boolean }) => m.downloaded);
       const preferredModel = models.find((m: { name: string; downloaded: boolean }) => m.name === defaultModel);
       log.info('transcription', 'Whisper models check', {
@@ -60,7 +65,7 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
         log.info('transcription', `Auto-downloading '${modelToDownload}' Whisper model for dictation`);
         toast.info('Downloading speech recognition model...');
         await tauriApi.downloadWhisperModel(modelToDownload);
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || generation !== listenGenerationRef.current) return;
         toast.success('Speech model ready');
         log.info('transcription', `Model '${modelToDownload}' download complete`);
       }
@@ -70,9 +75,6 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
         unlistenRef.current();
         unlistenRef.current = null;
       }
-
-      // Track generation so stale listeners from rapid toggles don't overwrite newer ones
-      const generation = ++listenGenerationRef.current;
 
       const unlisten = await listen<{ text: string; is_final: boolean; error?: string }>(
         'dictation-result',
@@ -100,13 +102,24 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
       unlistenRef.current = unlisten;
 
       await tauriApi.startDictation(speechLanguage, defaultModel);
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || generation !== listenGenerationRef.current) {
+        // Cancelled after startDictation was called — stop it and clean up listener
+        try { await tauriApi.stopDictation(); } catch { /* best effort */ }
+        if (unlistenRef.current === unlisten) {
+          unlisten();
+          unlistenRef.current = null;
+        }
+        return;
+      }
       log.info('transcription', 'Whisper dictation started successfully', { model: defaultModel });
       setIsDictating(true);
       storeStartDictating();
     } catch (err) {
-      log.error('transcription', 'Failed to start Whisper dictation', err);
-      toast.error(`Failed to start dictation: ${err}`);
+      // Only report error if this generation is still current
+      if (generation === listenGenerationRef.current) {
+        log.error('transcription', 'Failed to start Whisper dictation', err);
+        toast.error(`Failed to start dictation: ${err}`);
+      }
     }
   }, [speechLanguage, defaultModel, storeStartDictating, storeStopDictating]);
 
@@ -192,7 +205,18 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
   }, [isDictating, webSpeechWorks, speechLanguage, storeStartDictating, storeStopDictating, startWhisperDictation]);
 
   const stopDictation = useCallback(async () => {
-    if (!isDictating) return;
+    // Always bump generation to cancel any in-flight startWhisperDictation,
+    // even if isDictating is still false (start may be mid-setup)
+    listenGenerationRef.current++;
+
+    if (!isDictating) {
+      // Clean up listener in case start was partially complete
+      if (unlistenRef.current) {
+        unlistenRef.current();
+        unlistenRef.current = null;
+      }
+      return;
+    }
 
     if (recognitionRef.current) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

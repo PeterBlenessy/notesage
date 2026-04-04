@@ -200,6 +200,11 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
                   branchCount={branchCount}
                   onResend={onResend && message.role === 'user' ? () => onResend(message) : undefined}
                   onEdit={onEdit && message.role === 'user' ? () => onEdit(message) : undefined}
+                  onRetry={onResend && message.role === 'assistant' && message.isError ? () => {
+                    // Retry = resend the preceding user message
+                    const prevUser = messages.slice(0, index).reverse().find((m) => m.role === 'user');
+                    if (prevUser) onResend(prevUser);
+                  } : undefined}
                   onBranch={message.timestamp ? () => {
                     branchFromMessage(message.timestamp!);
                     toast('Branched conversation', {

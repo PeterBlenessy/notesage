@@ -620,6 +620,11 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       // Start 5-second escalation timer: if agent doesn't respond to cancel, treat as hung
       const CANCEL_ESCALATION_MS = 5_000;
 
+      // Track whether the escalation is still active. If the timeout fires before
+      // the listen() promise resolves, the .then() callback must call unlisten()
+      // immediately to avoid leaking the listener.
+      let cancelMounted = true;
+
       // Listen for successful cancel confirmation
       listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
         if (event.payload.instanceId !== instanceId) return;
@@ -629,6 +634,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           (update.sessionUpdate === 'agent_message_chunk' && update.stopReason === 'cancelled')
         ) {
           // Cancel succeeded — clear escalation
+          cancelMounted = false;
           if (cancelEscalationRef.current) {
             clearTimeout(cancelEscalationRef.current);
             cancelEscalationRef.current = null;
@@ -637,11 +643,18 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           cancelEscalationListenerRef.current = null;
         }
       }).then((unlisten) => {
+        if (!cancelMounted) {
+          // Escalation already resolved (timeout fired or cancel confirmed) —
+          // clean up the listener immediately to prevent a leak.
+          unlisten();
+          return;
+        }
         cancelEscalationListenerRef.current = unlisten;
       });
 
       cancelEscalationRef.current = setTimeout(() => {
         cancelEscalationRef.current = null;
+        cancelMounted = false;
         cancelEscalationListenerRef.current?.();
         cancelEscalationListenerRef.current = null;
         log.warn('ai', 'ACP cancel escalation: agent did not respond within 5s');

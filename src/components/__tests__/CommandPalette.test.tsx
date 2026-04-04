@@ -48,7 +48,8 @@ vi.mock('@/components/SymbolSearchResults', () => ({
 }));
 
 vi.mock('@/lib/command-palette', () => ({
-  deriveMode: vi.fn((input: string) => {
+  deriveMode: vi.fn((input: string, externalMode?: string) => {
+    if (externalMode === 'files') return 'files';
     if (input.startsWith('#')) return 'tags';
     if (input.startsWith('@')) return 'mentions';
     if (input.startsWith('>')) return 'commands';
@@ -182,5 +183,49 @@ describe('CommandPalette', () => {
     const input = screen.getByPlaceholderText('Search files and commands...');
     expect(input).toBeTruthy();
     expect(input.tagName.toLowerCase()).toBe('input');
+  });
+
+  it('shows error state when research index query fails', async () => {
+    const { tauriApi } = await import('@/lib/tauri');
+    vi.mocked(tauriApi.indexSearchResearch).mockRejectedValue(new Error('index corrupted'));
+
+    renderWithProviders(
+      <CommandPalette {...defaultProps({ initialMode: 'research' })} />,
+    );
+
+    const { waitFor } = await import('@testing-library/react');
+    // The debounced search fires after 300ms; wait for it to resolve
+    await waitFor(
+      () => {
+        expect(screen.getByText(/search failed/i)).toBeTruthy();
+      },
+      { timeout: 2000 },
+    );
+  });
+
+  it('shows error state when content search index query fails', async () => {
+    const { tauriApi } = await import('@/lib/tauri');
+    vi.mocked(tauriApi.indexSearchContent).mockRejectedValue(new Error('db locked'));
+
+    // Override getSearchPaths to return a non-empty array so content search fires
+    const { getSearchPaths } = await import('@/lib/command-palette');
+    vi.mocked(getSearchPaths).mockReturnValue(['/test/project']);
+
+    renderWithProviders(
+      <CommandPalette {...defaultProps({ initialMode: 'files' })} />,
+    );
+
+    // Type a query so content search triggers (needs >= 2 chars)
+    const { fireEvent } = await import('@testing-library/react');
+    const input = screen.getByPlaceholderText('Search files and commands...');
+    fireEvent.change(input, { target: { value: 'test query' } });
+
+    const { waitFor } = await import('@testing-library/react');
+    await waitFor(
+      () => {
+        expect(screen.getByText(/search failed/i)).toBeTruthy();
+      },
+      { timeout: 2000 },
+    );
   });
 });

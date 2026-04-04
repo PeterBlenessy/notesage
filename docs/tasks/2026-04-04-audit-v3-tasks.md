@@ -104,7 +104,7 @@
 
 **Process for each task:** (1) Write a failing test. (2) Verify it fails. (3) Implement the fix. (4) Verify the test passes.
 
-### #9 — Fix useDirectApiChat listener registration race
+### #9 — Fix useDirectApiChat listener registration race ✅
 
 **Description:** The `ai-stream-done` listener is registered AFTER `Promise.all()` for other listeners. If the done event fires before attachment, cleanup never runs.
 
@@ -118,7 +118,7 @@
 
 ---
 
-### #10 — Fix useAcpLifecycle cancel escalation listener leak
+### #10 — Fix useAcpLifecycle cancel escalation listener leak ✅
 
 **Description:** The cancel escalation listener in `acpCancelChat` can leak if the 5s timeout fires before the listener promise resolves.
 
@@ -132,7 +132,7 @@
 
 ---
 
-### #11 — Add recursion depth limit to ensureAcpAgent
+### #11 — Add recursion depth limit to ensureAcpAgent ✅
 
 **Description:** `ensureAcpAgent` can recurse unboundedly if multiple callers rapidly change connections. After awaiting `acpSpawnPromise`, it re-checks and may call itself again with no depth limit.
 
@@ -146,7 +146,7 @@
 
 ---
 
-### #12 — Add recursion depth limit to ensureTaskAgent
+### #12 — Add recursion depth limit to ensureTaskAgent ✅
 
 **Description:** Same pattern as #11 but in `useAgentTaskOperations.ts`.
 
@@ -160,7 +160,7 @@
 
 ---
 
-### #13 — Fix stale whisper listeners on rapid toggle
+### #13 — Fix stale whisper listeners on rapid toggle ✅
 
 **Description:** Rapid start/stop/start of dictation can leave dangling event listeners if the `listen()` promise chain fails mid-way.
 
@@ -174,7 +174,7 @@
 
 ---
 
-### #14 — Fix stale closure in useCommentDelegation
+### #14 — Fix stale closure in useCommentDelegation ✅
 
 **Description:** Delegation callbacks capture the full `comment` object. If the comment is edited between task start and completion, stale data is used.
 
@@ -188,7 +188,7 @@
 
 ---
 
-### #15 — Add abort signal to useDirectApiChat stream listeners
+### #15 — Add abort signal to useDirectApiChat stream listeners ✅
 
 **Description:** If `ai_chat_stream` completes before all listeners finish attaching, events can fire after cleanup.
 
@@ -202,7 +202,7 @@
 
 ---
 
-### #16 — Fix save failure not re-marking tab dirty
+### #16 — Fix save failure not re-marking tab dirty ✅
 
 **Description:** When `saveFile()` fails, the tab is NOT marked dirty. User thinks save succeeded, risking data loss.
 
@@ -216,7 +216,7 @@
 
 ---
 
-### #17 — Add retry UI for direct API chat failures
+### #17 — Add retry UI for direct API chat failures ✅
 
 **Description:** Network/API errors leave chat stuck with empty assistant message. ACP has ReconnectCard but direct API does not.
 
@@ -230,7 +230,7 @@
 
 ---
 
-### #18 — Show error state in CommandPalette on index query failure
+### #18 — Show error state in CommandPalette on index query failure ✅
 
 **Description:** Failed index search shows "No results" instead of indicating the search itself failed.
 
@@ -244,7 +244,7 @@
 
 ---
 
-### #19 — Bound file watcher debounce map growth
+### #19 — Bound file watcher debounce map growth ✅
 
 **Description:** `modifyDebounce` and `icloudDiscoveryDebounce` maps grow without bounds under extreme file churn.
 

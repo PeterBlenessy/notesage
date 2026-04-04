@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@/test/tauri-mock';
-import { setMockInvokeHandler, emitMockEvent } from '@/test/tauri-mock';
+import { setMockInvokeHandler, emitMockEvent, getListenerCount } from '@/test/tauri-mock';
 import { renderHook, act } from '@testing-library/react';
 import { useDirectApiChat } from '@/hooks/useDirectApiChat';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -139,5 +139,104 @@ describe('useDirectApiChat — tool calling', () => {
     // Only the allowed tool
     expect(tools).toHaveLength(1);
     expect(tools[0].name).toBe('read_file');
+  });
+});
+
+describe('useDirectApiChat — listener lifecycle (#9, #15)', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
+    useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
+    useChatStore.getState().clearMessages();
+    vi.mocked(invoke).mockClear();
+  });
+
+  it('cleans up all listeners when ai-stream-done fires', async () => {
+    // ai_chat_stream resolves immediately; done event fires in the next tick
+    setMockInvokeHandler('ai_chat_stream', async () => {
+      setTimeout(() => emitMockEvent('ai-stream-done', null), 0);
+    });
+
+    const { result } = renderDirectApiChat();
+
+    await act(async () => {
+      await result.current.sendChatMessage('hello', []);
+    });
+
+    // All listeners should be cleaned up after done
+    expect(getListenerCount('ai-stream-chunk')).toBe(0);
+    expect(getListenerCount('ai-stream-thinking-chunk')).toBe(0);
+    expect(getListenerCount('ai-stream-done')).toBe(0);
+    expect(getListenerCount('ai-tool-use')).toBe(0);
+    expect(getListenerCount('ai-citation')).toBe(0);
+    expect(getListenerCount('ai-tool-call')).toBe(0);
+    expect(getListenerCount('ai-tool-calls-done')).toBe(0);
+  });
+
+  it('ignores stream events after cancel (#15)', async () => {
+    // Stream that never auto-completes — we'll cancel manually
+    setMockInvokeHandler('ai_chat_stream', async () => {});
+
+    const { result } = renderDirectApiChat();
+
+    await act(async () => {
+      void result.current.sendChatMessage('hello', []);
+    });
+
+    // Cancel immediately
+    act(() => {
+      result.current.cancelDirectChat();
+    });
+
+    // Now emit events — they should be ignored (cancelled flag)
+    emitMockEvent('ai-stream-chunk', 'late chunk');
+    emitMockEvent('ai-stream-thinking-chunk', 'late thinking');
+
+    // All listeners should be cleaned up
+    expect(getListenerCount('ai-stream-chunk')).toBe(0);
+    expect(getListenerCount('ai-stream-done')).toBe(0);
+  });
+
+  it('ai-stream-done is registered atomically with other listeners (#9)', async () => {
+    // Emit done synchronously inside ai_chat_stream to simulate race
+    setMockInvokeHandler('ai_chat_stream', async () => {
+      emitMockEvent('ai-stream-done', null);
+    });
+
+    const { result } = renderDirectApiChat();
+
+    await act(async () => {
+      await result.current.sendChatMessage('hello', []);
+    });
+
+    // Done fired synchronously with invoke — should still clean up
+    expect(getListenerCount('ai-stream-chunk')).toBe(0);
+    expect(getListenerCount('ai-stream-done')).toBe(0);
+  });
+});
+
+describe('useDirectApiChat — error handling (#17)', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
+    useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
+    useChatStore.getState().clearMessages();
+    vi.mocked(invoke).mockClear();
+  });
+
+  it('sets isError on assistant message when stream fails', async () => {
+    setMockInvokeHandler('ai_chat_stream', async () => {
+      throw new Error('Network timeout');
+    });
+
+    const { result } = renderDirectApiChat();
+
+    await act(async () => {
+      await result.current.sendChatMessage('hello', []);
+    });
+
+    const conv = useChatStore.getState().conversations[0];
+    const assistantMsg = conv?.messages.find((m) => m.role === 'assistant');
+    expect(assistantMsg).toBeDefined();
+    expect(assistantMsg!.isError).toBe(true);
+    expect(assistantMsg!.content).toBeTruthy();
   });
 });

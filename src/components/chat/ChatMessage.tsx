@@ -500,9 +500,11 @@ interface ChatMessageProps {
   onResend?: () => void;
   /** Callback to edit this user message */
   onEdit?: () => void;
+  /** Callback to retry a failed assistant message */
+  onRetry?: () => void;
 }
 
-export function ChatMessage({ message, isLast = false, branchCount, onBranch, onResend, onEdit }: ChatMessageProps) {
+export function ChatMessage({ message, isLast = false, branchCount, onBranch, onResend, onEdit, onRetry }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const { isLoading, deleteMessage } = useChatStore();
 
@@ -609,7 +611,18 @@ export function ChatMessage({ message, isLast = false, branchCount, onBranch, on
         {isUser ? (
           <UserContent message={message} />
         ) : message.isError ? (
-          <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{message.content}</p>
+          <div>
+            <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{message.content}</p>
+            {onRetry && (
+              <button
+                onClick={onRetry}
+                className="mt-2 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm"
+              >
+                <RotateCcw className="h-3 w-3" strokeWidth={1.5} />
+                <span>Retry</span>
+              </button>
+            )}
+          </div>
         ) : hasSegments(message) ? (
           <SegmentRenderer segments={message.segments!} isActivelyStreaming={isActivelyStreaming} />
         ) : isStreaming ? (

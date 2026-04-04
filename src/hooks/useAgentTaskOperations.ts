@@ -55,7 +55,14 @@ export function stopTaskAgent(): void {
   taskSpawnPromise = null;
 }
 
-async function ensureTaskAgent(connection: Connection, cwd: string, sandboxPaths?: string[]): Promise<string> {
+/** Maximum recursion depth for ensureTaskAgent to prevent infinite loops. */
+const MAX_ENSURE_AGENT_DEPTH = 3;
+
+/** @internal Exported for testing only. */
+export async function ensureTaskAgent(connection: Connection, cwd: string, sandboxPaths?: string[], _depth = 0): Promise<string> {
+  if (_depth > MAX_ENSURE_AGENT_DEPTH) {
+    throw new Error('Task agent spawn failed after multiple retries.');
+  }
   // Respawn if connection changed OR project changed (different sandbox scope)
   if (taskAgent && (taskAgent.connectionId !== connection.id || taskAgent.projectRoot !== cwd)) {
     try {
@@ -91,7 +98,7 @@ async function ensureTaskAgent(connection: Connection, cwd: string, sandboxPaths
       return instanceId;
     }
     // Agent changed or was replaced during await — restart the entire check
-    return ensureTaskAgent(connection, cwd, sandboxPaths);
+    return ensureTaskAgent(connection, cwd, sandboxPaths, _depth + 1);
   }
 
   // Wrap spawn in a tracked promise so concurrent callers await instead of double-spawning

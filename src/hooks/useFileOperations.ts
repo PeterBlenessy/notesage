@@ -295,6 +295,13 @@ export function useFileOperations() {
         return true;
       } catch (error) {
         await tauriApi.clearSelfWrite(filePath).catch(() => {}); // Expected: best-effort cleanup, write already failed
+        // Defensive: ensure the tab stays dirty so the user knows data is unsaved.
+        // markTabClean is only called after a successful write, but re-assert dirty
+        // here to guard against future refactors that might change the order.
+        const tab = useEditorStore.getState().tabs.find((t) => t.id === tabId);
+        if (tab) {
+          useEditorStore.getState().updateTabContent(tabId, tab.content, true);
+        }
         console.error("Failed to save file:", error);
         throw error;
       }
