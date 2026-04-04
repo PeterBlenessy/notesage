@@ -1600,4 +1600,121 @@ mod tests {
         assert_eq!(results[1].0, 1);
         assert_eq!(results[1].2, Some("read_file".to_string()));
     }
+
+    // --- SSE parsing edge cases ---
+
+    #[test]
+    fn test_parse_sse_events_incomplete_buffer() {
+        let mut buffer = "event: content_block_start\ndata: {\"type\"".to_string();
+        let events = parse_sse_events(&mut buffer);
+        assert!(events.is_empty(), "no complete event should be returned");
+        assert_eq!(buffer, "event: content_block_start\ndata: {\"type\"",
+            "incomplete data must remain in the buffer");
+    }
+
+    #[test]
+    fn test_parse_sse_events_two_complete_plus_trailing_incomplete() {
+        let mut buffer = "event: e1\ndata: {\"a\":1}\n\nevent: e2\ndata: {\"b\":2}\n\nevent: e3\ndata: {\"c\"".to_string();
+        let events = parse_sse_events(&mut buffer);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].0, "e1");
+        assert_eq!(events[0].1, "{\"a\":1}");
+        assert_eq!(events[1].0, "e2");
+        assert_eq!(events[1].1, "{\"b\":2}");
+        assert_eq!(buffer, "event: e3\ndata: {\"c\"",
+            "incomplete third event must remain in the buffer");
+    }
+
+    #[test]
+    fn test_parse_sse_events_done_marker() {
+        let mut buffer = "data: [DONE]\n\n".to_string();
+        let events = parse_sse_events(&mut buffer);
+        // [DONE] is non-empty data, so it should be returned as a raw event
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].1, "[DONE]");
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_parse_sse_events_malformed_json_data() {
+        let mut buffer = "event: content_block_delta\ndata: {not valid json!}\n\n".to_string();
+        let events = parse_sse_events(&mut buffer);
+        // parse_sse_events returns raw strings — JSON parsing happens elsewhere
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].0, "content_block_delta");
+        assert_eq!(events[0].1, "{not valid json!}");
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_parse_sse_events_data_prefix_without_space() {
+        // SSE spec: "data:" without a trailing space is valid but our parser uses
+        // strip_prefix("data: ") which requires the space. Verify this behavior.
+        let mut buffer = "data:{\"compact\":true}\n\n".to_string();
+        let events = parse_sse_events(&mut buffer);
+        // Without the space after "data:", strip_prefix("data: ") won't match,
+        // so the line is skipped and no data is collected → empty event (no push).
+        assert!(events.is_empty(),
+            "data: without space should not match the parser's strip_prefix");
+        assert!(buffer.is_empty(), "the event block is still consumed from the buffer");
+    }
+
+    // --- Empty / edge-case tool call arguments ---
+
+    #[test]
+    fn test_anthropic_input_json_delta_empty_partial_json() {
+        let json = serde_json::json!({
+            "type": "content_block_delta",
+            "index": 1,
+            "delta": {
+                "type": "input_json_delta",
+                "partial_json": ""
+            }
+        });
+        let result = parse_anthropic_input_json_delta(&json);
+        assert_eq!(result, Some("".to_string()),
+            "empty partial_json should still return Some with empty string");
+    }
+
+    #[test]
+    fn test_chat_completions_tool_call_delta_empty_arguments() {
+        let json = serde_json::json!({
+            "choices": [{
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": "call_empty",
+                        "function": {
+                            "name": "no_args_tool",
+                            "arguments": ""
+                        }
+                    }]
+                }
+            }]
+        });
+        let results = parse_chat_completions_tool_call_delta(&json);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1, Some("call_empty".to_string()));
+        assert_eq!(results[0].2, Some("no_args_tool".to_string()));
+        assert_eq!(results[0].3, Some("".to_string()),
+            "empty arguments string should still be returned as Some");
+    }
+
+    #[test]
+    fn test_parse_sse_events_empty_buffer() {
+        let mut buffer = String::new();
+        let events = parse_sse_events(&mut buffer);
+        assert!(events.is_empty());
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_parse_sse_events_no_event_type() {
+        // SSE with only data line, no event: line
+        let mut buffer = "data: {\"text\":\"hello\"}\n\n".to_string();
+        let events = parse_sse_events(&mut buffer);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].0, "", "event type should be empty string when not specified");
+        assert_eq!(events[0].1, "{\"text\":\"hello\"}");
+    }
 }

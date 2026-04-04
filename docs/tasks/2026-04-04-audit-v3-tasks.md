@@ -382,7 +382,7 @@ Use `#[serde(rename_all = "lowercase")]` for backward-compatible JSON. Update fr
 
 **Process:** These are net-new tests for untested critical paths. No code changes needed — test-only.
 
-### #31 — Add ACP agent lifecycle tests
+### #31 — Add ACP agent lifecycle tests ✅
 
 **Description:** Create `src/lib/ai/__tests__/acp-agent-state.test.ts` (if not created in #11) and expand with tests for:
 - Successful spawn + session init
@@ -400,7 +400,7 @@ Mock `invoke` for all `acp_*` Tauri commands.
 
 ---
 
-### #32 — Add file watcher tests
+### #32 — Add file watcher tests ✅
 
 **Description:** Create `src/hooks/__tests__/useFileWatcher.test.ts` (if not expanded in #19) with tests for:
 - File create → tree refresh triggered
@@ -418,7 +418,7 @@ Mock `listen` for `file-changed-batch` events and `invoke` for file operations.
 
 ---
 
-### #33 — Add git command tests
+### #33 — Add git command tests ✅
 
 **Description:** Create `src-tauri/src/commands/git.rs` `#[cfg(test)]` module with tests for:
 - Status parsing (modified, staged, untracked, deleted, renamed, conflicted)
@@ -434,7 +434,7 @@ Use `tempfile::tempdir()` + `git init` for test fixtures.
 
 ---
 
-### #34 — Add sandbox policy tests
+### #34 — Add sandbox policy tests ✅
 
 **Description:** Create `src-tauri/src/commands/sandbox.rs` `#[cfg(test)]` module with tests for:
 - Profile generation includes `(deny default)`
@@ -449,7 +449,7 @@ Use `tempfile::tempdir()` + `git init` for test fixtures.
 
 ---
 
-### #35 — Add MCP server lifecycle tests
+### #35 — Add MCP server lifecycle tests ✅
 
 **Description:** Create `src-tauri/src/commands/mcp.rs` `#[cfg(test)]` module (or expand) with tests for:
 - Server spawn + initialize handshake
@@ -463,7 +463,7 @@ Use `tempfile::tempdir()` + `git init` for test fixtures.
 
 ---
 
-### #36 — Add AI streaming edge case tests
+### #36 — Add AI streaming edge case tests ✅
 
 **Description:** Expand existing `ai_streaming.rs` tests and `useDirectApiChat.test.ts` with:
 - Abort mid-stream → cleanup verified

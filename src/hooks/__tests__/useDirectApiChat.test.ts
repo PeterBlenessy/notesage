@@ -240,3 +240,127 @@ describe('useDirectApiChat — error handling (#17)', () => {
     expect(assistantMsg!.content).toBeTruthy();
   });
 });
+
+describe('useDirectApiChat — concurrent streams', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
+    useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
+    useChatStore.getState().clearMessages();
+    vi.mocked(invoke).mockClear();
+  });
+
+  it('cancel then re-send cleans up first stream before starting second', async () => {
+    // First stream that never auto-completes
+    setMockInvokeHandler('ai_chat_stream', async () => {});
+
+    const { result } = renderDirectApiChat();
+
+    // Send first message (will hang open)
+    await act(async () => {
+      await result.current.sendChatMessage('first message', []);
+    });
+
+    // Listeners should be active for the first stream
+    expect(getListenerCount('ai-stream-chunk')).toBeGreaterThan(0);
+
+    // Cancel the first stream explicitly
+    act(() => {
+      result.current.cancelDirectChat();
+    });
+
+    // First stream's listeners should be cleaned up
+    expect(getListenerCount('ai-stream-chunk')).toBe(0);
+    expect(getListenerCount('ai-stream-done')).toBe(0);
+
+    // Now send a second message with a completing stream
+    const invokeCountBefore = vi.mocked(invoke).mock.calls.length;
+    setMockInvokeHandler('ai_chat_stream', async () => {
+      emitMockEvent('ai-stream-done', null);
+    });
+
+    await act(async () => {
+      await result.current.sendChatMessage('second message', []);
+    });
+
+    // Verify invoke was actually called for the second message
+    const invokeCountAfter = vi.mocked(invoke).mock.calls.length;
+    expect(invokeCountAfter).toBeGreaterThan(invokeCountBefore);
+
+    // Second stream also cleaned up after done (emitted synchronously)
+    expect(getListenerCount('ai-stream-chunk')).toBe(0);
+    expect(getListenerCount('ai-stream-done')).toBe(0);
+  });
+});
+
+describe('useDirectApiChat — abort mid-stream', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
+    useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
+    useChatStore.getState().clearMessages();
+    vi.mocked(invoke).mockClear();
+  });
+
+  it('stops processing chunks after cancelDirectChat is called', async () => {
+    // Stream that never auto-completes
+    setMockInvokeHandler('ai_chat_stream', async () => {});
+
+    const { result } = renderDirectApiChat();
+
+    await act(async () => {
+      void result.current.sendChatMessage('hello', []);
+    });
+
+    // Emit a few chunks before cancelling
+    act(() => {
+      emitMockEvent('ai-stream-chunk', 'chunk1 ');
+      emitMockEvent('ai-stream-chunk', 'chunk2 ');
+    });
+
+    // Cancel mid-stream
+    act(() => {
+      result.current.cancelDirectChat();
+    });
+
+    // All listeners should be cleaned up
+    expect(getListenerCount('ai-stream-chunk')).toBe(0);
+    expect(getListenerCount('ai-stream-done')).toBe(0);
+    expect(getListenerCount('ai-stream-thinking-chunk')).toBe(0);
+    expect(getListenerCount('ai-tool-call')).toBe(0);
+
+    // Late chunks should be no-ops (no crash, no state update)
+    act(() => {
+      emitMockEvent('ai-stream-chunk', 'late chunk after cancel');
+    });
+  });
+});
+
+describe('useDirectApiChat — network timeout error', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
+    useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
+    useChatStore.getState().clearMessages();
+    vi.mocked(invoke).mockClear();
+  });
+
+  it('surfaces network timeout on assistant message with isError', async () => {
+    setMockInvokeHandler('ai_chat_stream', async () => {
+      throw new Error('Network timeout');
+    });
+
+    const { result } = renderDirectApiChat();
+
+    await act(async () => {
+      await result.current.sendChatMessage('hello', []);
+    });
+
+    const conv = useChatStore.getState().conversations[0];
+    const assistantMsg = conv?.messages.find((m) => m.role === 'assistant');
+    expect(assistantMsg).toBeDefined();
+    expect(assistantMsg!.isError).toBe(true);
+    expect(assistantMsg!.content).toContain('Network timeout');
+
+    // Listeners should be cleaned up even after error
+    expect(getListenerCount('ai-stream-chunk')).toBe(0);
+    expect(getListenerCount('ai-stream-done')).toBe(0);
+  });
+});

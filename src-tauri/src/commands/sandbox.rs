@@ -260,3 +260,201 @@ pub fn sandboxed_command(
 
     Ok(("bwrap".to_string(), args))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -------------------------------------------------------------------------
+    // macOS-only tests (Seatbelt profile generation)
+    // -------------------------------------------------------------------------
+
+    #[cfg(target_os = "macos")]
+    mod macos {
+        use super::*;
+        use crate::commands::network_proxy::NetworkSandboxConfig;
+
+        fn make_network_config(port: u16) -> NetworkSandboxConfig {
+            NetworkSandboxConfig {
+                proxy_addr: format!("127.0.0.1:{}", port),
+                proxy_port: port,
+            }
+        }
+
+        #[test]
+        fn profile_contains_deny_default() {
+            let id = "test-deny-default";
+            let result = generate_seatbelt_profile(id, &[], None, false);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            assert!(
+                content.contains("(deny default)"),
+                "Profile must contain (deny default)"
+            );
+        }
+
+        #[test]
+        fn writable_paths_correctly_allowed() {
+            let id = "test-writable-paths";
+            let paths = vec![
+                "/tmp/mydir".to_string(),
+                "/home/test".to_string(),
+            ];
+            let result = generate_seatbelt_profile(id, &paths, None, false);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            assert!(
+                content.contains(r#"(subpath "/tmp/mydir")"#),
+                "Profile must allow /tmp/mydir"
+            );
+            assert!(
+                content.contains(r#"(subpath "/home/test")"#),
+                "Profile must allow /home/test"
+            );
+        }
+
+        #[test]
+        fn sensitive_directories_denied() {
+            let id = "test-sensitive-deny";
+            let result = generate_seatbelt_profile(id, &[], None, false);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            assert!(content.contains(".ssh"), "Profile must deny .ssh");
+            assert!(content.contains(".aws"), "Profile must deny .aws");
+            assert!(content.contains(".gnupg"), "Profile must deny .gnupg");
+            assert!(
+                content.contains(".config/gcloud"),
+                "Profile must deny .config/gcloud"
+            );
+            assert!(
+                content.contains(r#"(regex #"\.env$")"#),
+                "Profile must deny .env files"
+            );
+            assert!(
+                content.contains(r#"(regex #"\.env\..*$")"#),
+                "Profile must deny .env.* files"
+            );
+        }
+
+        #[test]
+        fn network_proxy_only_when_kernel_deny_true() {
+            let id = "test-proxy-only";
+            let nc = make_network_config(8080);
+            let result = generate_seatbelt_profile(id, &[], Some(&nc), true);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            assert!(
+                content.contains(r#"(allow network-outbound (remote ip "localhost:8080"))"#),
+                "Profile must allow proxy port outbound"
+            );
+            assert!(
+                !content.contains("(allow network*)"),
+                "Profile must NOT contain allow-all network when kernel deny is true with proxy"
+            );
+        }
+
+        #[test]
+        fn network_allow_all_when_kernel_deny_false() {
+            let id = "test-allow-all-net";
+            let nc = make_network_config(9999);
+            let result = generate_seatbelt_profile(id, &[], Some(&nc), false);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            assert!(
+                content.contains("(allow network*)"),
+                "Profile must allow all network when kernel_network_deny is false"
+            );
+        }
+
+        #[test]
+        fn network_allow_all_fallback_no_proxy() {
+            let id = "test-no-proxy-fallback";
+            let result = generate_seatbelt_profile(id, &[], None, true);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            assert!(
+                content.contains("(allow network*)"),
+                "Profile must fallback to allow-all when kernel deny is true but no proxy configured"
+            );
+        }
+
+        #[test]
+        fn profile_path_in_temp_dir_with_correct_name() {
+            let id = "test-path-pattern";
+            let result = generate_seatbelt_profile(id, &[], None, false);
+            let path = result.expect("should generate profile");
+            cleanup_profile(id);
+
+            let expected_name = format!("notesage-sandbox-{}.sb", id);
+            assert!(
+                path.file_name().unwrap().to_string_lossy() == expected_name,
+                "Profile filename must be notesage-sandbox-{{}}.sb, got {:?}",
+                path.file_name()
+            );
+            assert!(
+                path.starts_with(std::env::temp_dir()),
+                "Profile must be inside temp dir, got {:?}",
+                path
+            );
+        }
+
+        #[test]
+        fn cleanup_profile_removes_file() {
+            let id = "test-cleanup";
+            let result = generate_seatbelt_profile(id, &[], None, false);
+            let path = result.expect("should generate profile");
+
+            assert!(path.exists(), "Profile file must exist after generation");
+            cleanup_profile(id);
+            assert!(!path.exists(), "Profile file must be gone after cleanup");
+        }
+
+        #[test]
+        fn sandboxed_command_returns_sandbox_exec() {
+            let id = "test-cmd";
+            let (program, args) = sandboxed_command(id, &[], None, false)
+                .expect("sandboxed_command should succeed");
+            cleanup_profile(id);
+
+            assert_eq!(program, "sandbox-exec", "Program must be sandbox-exec");
+            assert!(
+                args.contains(&"-f".to_string()),
+                "Args must contain -f flag"
+            );
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Cross-platform tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn should_sandbox_managed_install() {
+        let home = dirs::home_dir().unwrap_or_default();
+        let managed = home.join(".notesage/agents/bin/claude-agent");
+        assert!(
+            should_sandbox_by_default(&managed.to_string_lossy()),
+            "Managed install path should be sandboxed by default"
+        );
+    }
+
+    #[test]
+    fn should_not_sandbox_system_install() {
+        assert!(
+            !should_sandbox_by_default("/usr/local/bin/agent"),
+            "System install path should NOT be sandboxed by default"
+        );
+    }
+}

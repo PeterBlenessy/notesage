@@ -787,3 +787,232 @@ pub async fn mcp_check_import_sources() -> Result<Vec<String>, String> {
 
     Ok(available)
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn source_prefix_covers_all_variants() {
+        assert_eq!(source_prefix(&McpConfigSource::NotesageGlobal), "global");
+        assert_eq!(source_prefix(&McpConfigSource::NotesageProject), "project");
+        assert_eq!(source_prefix(&McpConfigSource::ClaudeDesktop), "claude");
+        assert_eq!(source_prefix(&McpConfigSource::Cursor), "cursor");
+        assert_eq!(source_prefix(&McpConfigSource::VsCode), "vscode");
+    }
+
+    #[test]
+    fn map_config_entries_basic() {
+        let mut entries = HashMap::new();
+        entries.insert(
+            "my-server".to_string(),
+            McpConfigEntry {
+                command: "node".to_string(),
+                args: vec!["server.js".to_string()],
+                env: HashMap::new(),
+                disabled: false,
+            },
+        );
+
+        let result = map_config_entries(entries, McpConfigSource::NotesageGlobal);
+        assert_eq!(result.len(), 1);
+
+        let cfg = &result[0];
+        assert_eq!(cfg.id, "global:my-server");
+        assert_eq!(cfg.name, "my-server");
+        assert_eq!(cfg.command, "node");
+        assert_eq!(cfg.args, vec!["server.js"]);
+        assert!(cfg.enabled);
+        assert_eq!(cfg.source, McpConfigSource::NotesageGlobal);
+    }
+
+    #[test]
+    fn map_config_entries_respects_disabled_flag() {
+        let mut entries = HashMap::new();
+        entries.insert(
+            "disabled-server".to_string(),
+            McpConfigEntry {
+                command: "npx".to_string(),
+                args: vec![],
+                env: HashMap::new(),
+                disabled: true,
+            },
+        );
+
+        let result = map_config_entries(entries, McpConfigSource::NotesageGlobal);
+        assert_eq!(result.len(), 1);
+        assert!(!result[0].enabled);
+    }
+
+    #[test]
+    fn map_config_entries_project_source_defaults_to_disabled() {
+        let mut entries = HashMap::new();
+        entries.insert(
+            "project-server".to_string(),
+            McpConfigEntry {
+                command: "python".to_string(),
+                args: vec!["mcp.py".to_string()],
+                env: HashMap::new(),
+                disabled: false, // explicitly not disabled, but project overrides
+            },
+        );
+
+        let result = map_config_entries(entries, McpConfigSource::NotesageProject);
+        assert_eq!(result.len(), 1);
+        assert!(!result[0].enabled, "Project-scoped servers should default to disabled for security");
+        assert_eq!(result[0].id, "project:project-server");
+    }
+
+    #[test]
+    fn map_config_entries_preserves_env_vars() {
+        let mut env = HashMap::new();
+        env.insert("API_KEY".to_string(), "secret".to_string());
+        env.insert("DEBUG".to_string(), "true".to_string());
+
+        let mut entries = HashMap::new();
+        entries.insert(
+            "env-server".to_string(),
+            McpConfigEntry {
+                command: "node".to_string(),
+                args: vec![],
+                env,
+                disabled: false,
+            },
+        );
+
+        let result = map_config_entries(entries, McpConfigSource::Cursor);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].env.get("API_KEY").unwrap(), "secret");
+        assert_eq!(result[0].env.get("DEBUG").unwrap(), "true");
+        assert_eq!(result[0].id, "cursor:env-server");
+    }
+
+    #[test]
+    fn parse_config_file_with_valid_json() {
+        let mut tmp = tempfile::NamedTempFile::new().expect("create temp file");
+        let json = r#"{
+            "mcpServers": {
+                "alpha": { "command": "node", "args": ["a.js"] },
+                "beta":  { "command": "python", "args": ["-m", "mcp"], "disabled": true }
+            }
+        }"#;
+        write!(tmp, "{}", json).unwrap();
+
+        let result = parse_config_file(&tmp.path().to_path_buf(), McpConfigSource::NotesageGlobal)
+            .expect("should parse valid JSON");
+
+        assert_eq!(result.len(), 2);
+
+        let alpha = result.iter().find(|c| c.name == "alpha").unwrap();
+        assert_eq!(alpha.id, "global:alpha");
+        assert_eq!(alpha.command, "node");
+        assert_eq!(alpha.args, vec!["a.js"]);
+        assert!(alpha.enabled);
+
+        let beta = result.iter().find(|c| c.name == "beta").unwrap();
+        assert!(!beta.enabled, "beta has disabled: true");
+    }
+
+    #[test]
+    fn parse_config_file_with_invalid_json() {
+        let mut tmp = tempfile::NamedTempFile::new().expect("create temp file");
+        write!(tmp, "{{not valid json").unwrap();
+
+        let result = parse_config_file(&tmp.path().to_path_buf(), McpConfigSource::NotesageGlobal);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_config_file_with_missing_file() {
+        let path = PathBuf::from("/tmp/notesage-test-nonexistent-mcp-config.json");
+        let result = parse_config_file(&path, McpConfigSource::NotesageGlobal);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_claude_desktop_config_valid() {
+        let mut tmp = tempfile::NamedTempFile::new().expect("create temp file");
+        let json = r#"{
+            "mcpServers": {
+                "test": { "command": "node", "args": ["server.js"] }
+            }
+        }"#;
+        write!(tmp, "{}", json).unwrap();
+
+        let result = parse_claude_desktop_config(&tmp.path().to_path_buf())
+            .expect("should parse Claude Desktop config");
+
+        assert_eq!(result.len(), 1);
+        let server = &result[0];
+        assert_eq!(server.name, "test");
+        assert_eq!(server.command, "node");
+        assert_eq!(server.args, vec!["server.js"]);
+        assert_eq!(server.source, McpConfigSource::ClaudeDesktop);
+        assert_eq!(server.id, "claude:test");
+        assert!(server.enabled);
+    }
+
+    #[test]
+    fn parse_vscode_config_valid() {
+        let mut tmp = tempfile::NamedTempFile::new().expect("create temp file");
+        let json = r#"{
+            "mcp": {
+                "servers": {
+                    "test": { "command": "npx", "args": ["-y", "@mcp/server"] }
+                }
+            }
+        }"#;
+        write!(tmp, "{}", json).unwrap();
+
+        let result = parse_vscode_config(&tmp.path().to_path_buf())
+            .expect("should parse VS Code config");
+
+        assert_eq!(result.len(), 1);
+        let server = &result[0];
+        assert_eq!(server.name, "test");
+        assert_eq!(server.command, "npx");
+        assert_eq!(server.args, vec!["-y", "@mcp/server"]);
+        assert_eq!(server.source, McpConfigSource::VsCode);
+        assert_eq!(server.id, "vscode:test");
+        assert!(server.enabled);
+    }
+
+    #[test]
+    fn mcp_state_new_and_stop_all_sync_no_panic() {
+        let state = McpState::new();
+        // stop_all_sync on empty state should be a no-op without panicking
+        state.stop_all_sync();
+    }
+
+    #[test]
+    fn mcp_server_config_serialization_round_trip() {
+        let mut env = HashMap::new();
+        env.insert("TOKEN".to_string(), "abc123".to_string());
+
+        let original = McpServerConfig {
+            id: "global:roundtrip".to_string(),
+            name: "roundtrip".to_string(),
+            command: "node".to_string(),
+            args: vec!["index.js".to_string(), "--port".to_string(), "3000".to_string()],
+            env,
+            source: McpConfigSource::NotesageGlobal,
+            enabled: true,
+        };
+
+        let json = serde_json::to_string(&original).expect("serialize");
+        let deserialized: McpServerConfig = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(deserialized.id, original.id);
+        assert_eq!(deserialized.name, original.name);
+        assert_eq!(deserialized.command, original.command);
+        assert_eq!(deserialized.args, original.args);
+        assert_eq!(deserialized.env, original.env);
+        assert_eq!(deserialized.source, original.source);
+        assert_eq!(deserialized.enabled, original.enabled);
+    }
+}

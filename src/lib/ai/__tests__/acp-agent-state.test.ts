@@ -136,4 +136,167 @@ describe('ensureAcpAgent', () => {
     const result = await ensureFn(makeConnection(), '/tmp', undefined, 0);
     expect(result).toBe('inst-ok');
   });
+
+  it('binary not found → graceful error, acpAgent remains null', async () => {
+    setupDefaultHandlers();
+    setMockInvokeHandler('acp_agent_spawn', () => {
+      throw new Error('Binary not found');
+    });
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    await expect(
+      mod.ensureAcpAgent(makeConnection(), '/tmp'),
+    ).rejects.toThrow('Binary not found');
+
+    expect(mod.acpAgent).toBeNull();
+  });
+
+  it('authentication "not implemented" is silently handled', async () => {
+    setupDefaultHandlers();
+    setMockInvokeHandler('acp_agent_spawn', () => ({
+      instance_id: 'inst-auth-skip',
+    }));
+    // setupDefaultHandlers already sets authenticate to throw "not implemented",
+    // but set it explicitly for clarity
+    setMockInvokeHandler('acp_agent_authenticate', () => {
+      throw new Error('not implemented');
+    });
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    const result = await mod.ensureAcpAgent(makeConnection(), '/tmp');
+    expect(result).toBe('inst-auth-skip');
+    expect(mod.acpAgent).not.toBeNull();
+  });
+
+  it('authentication real error propagates', async () => {
+    setupDefaultHandlers();
+    setMockInvokeHandler('acp_agent_spawn', () => ({
+      instance_id: 'inst-auth-fail',
+    }));
+    setMockInvokeHandler('acp_agent_authenticate', () => {
+      throw new Error('Invalid API key');
+    });
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    await expect(
+      mod.ensureAcpAgent(makeConnection(), '/tmp'),
+    ).rejects.toThrow('Invalid API key');
+
+    // State should be null since spawn promise rejects
+    expect(mod.acpAgent).toBeNull();
+  });
+
+  it('process exit → cleanup state via stopAcpAgent', async () => {
+    setupDefaultHandlers();
+    setMockInvokeHandler('acp_agent_spawn', () => ({
+      instance_id: 'inst-stop',
+    }));
+
+    let stopCalled = false;
+    setMockInvokeHandler('acp_agent_stop', () => {
+      stopCalled = true;
+      return undefined;
+    });
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    await mod.ensureAcpAgent(makeConnection(), '/tmp');
+    expect(mod.acpAgent).not.toBeNull();
+
+    mod.stopAcpAgent();
+
+    expect(mod.acpAgent).toBeNull();
+    expect(stopCalled).toBe(true);
+  });
+
+  it('backend reports agent not alive → respawns', async () => {
+    setupDefaultHandlers();
+    let spawnCount = 0;
+    setMockInvokeHandler('acp_agent_spawn', () => {
+      spawnCount++;
+      return { instance_id: `inst-${spawnCount}` };
+    });
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    const connection = makeConnection({ id: 'conn-alive' });
+    const result1 = await mod.ensureAcpAgent(connection, '/tmp');
+    expect(result1).toBe('inst-1');
+
+    // Now mock acp_agent_exists to return false — agent has crashed
+    setMockInvokeHandler('acp_agent_exists', () => false);
+
+    const result2 = await mod.ensureAcpAgent(connection, '/tmp');
+    expect(result2).toBe('inst-2');
+    expect(spawnCount).toBe(2);
+  });
+
+  it('concurrent callers share single spawn promise', async () => {
+    setupDefaultHandlers();
+    let spawnCount = 0;
+    setMockInvokeHandler('acp_agent_spawn', () => {
+      spawnCount++;
+      return { instance_id: `inst-${spawnCount}` };
+    });
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    const connection = makeConnection({ id: 'conn-concurrent' });
+
+    // Fire two calls concurrently without awaiting the first
+    const [result1, result2] = await Promise.all([
+      mod.ensureAcpAgent(connection, '/tmp'),
+      mod.ensureAcpAgent(connection, '/tmp'),
+    ]);
+
+    expect(spawnCount).toBe(1);
+    expect(result1).toBe('inst-1');
+    expect(result2).toBe('inst-1');
+  });
+
+  it('sandbox scope change triggers respawn', async () => {
+    setupDefaultHandlers();
+    let spawnCount = 0;
+    setMockInvokeHandler('acp_agent_spawn', () => {
+      spawnCount++;
+      return { instance_id: `inst-${spawnCount}` };
+    });
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    const connection = makeConnection({ id: 'conn-sandbox' });
+
+    const result1 = await mod.ensureAcpAgent(connection, '/tmp', ['/a']);
+    expect(result1).toBe('inst-1');
+
+    const result2 = await mod.ensureAcpAgent(connection, '/tmp', ['/b']);
+    expect(result2).toBe('inst-2');
+    expect(spawnCount).toBe(2);
+  });
+
+  it('updateAcpAgentInstanceId updates the instance ID', async () => {
+    setupDefaultHandlers();
+    setMockInvokeHandler('acp_agent_spawn', () => ({
+      instance_id: 'inst-original',
+    }));
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    await mod.ensureAcpAgent(makeConnection(), '/tmp');
+    expect(mod.acpAgent!.instanceId).toBe('inst-original');
+
+    mod.updateAcpAgentInstanceId('new-id');
+    expect(mod.acpAgent!.instanceId).toBe('new-id');
+  });
 });

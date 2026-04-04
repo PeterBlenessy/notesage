@@ -979,4 +979,427 @@ describe('useFileWatcher', () => {
       expect(indexFileSpy).not.toHaveBeenCalled();
     });
   });
+
+  // ==========================================================================
+  // Frontmatter stripping during content comparison
+  // ==========================================================================
+
+  describe('frontmatter stripping', () => {
+    it('strips YAML frontmatter before comparing content (no false external change)', async () => {
+      // Tab content is body-only (frontmatter already stripped by editor)
+      const tab = makeTab({ content: '# Hello\n\nBody text' });
+      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+
+      // Disk file has frontmatter wrapping the same body content
+      setMockInvokeHandler('read_file', () => '---\nid: abc-123\ntitle: Test\n---\n# Hello\n\nBody text');
+
+      renderHook(() => useFileWatcher());
+      emitFileChanged('/project/notes/test.md', 'modify');
+
+      await vi.advanceTimersByTimeAsync(300);
+
+      // parseFrontmatter strips the YAML block, so body matches — no external change
+      const changes = getExternalChanges();
+      expect(changes['/project/notes/test.md']).toBeUndefined();
+    });
+
+    it('detects change when body differs despite frontmatter being present', async () => {
+      const tab = makeTab({ content: '# Hello\n\nOriginal body' });
+      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+
+      setMockInvokeHandler('read_file', () => '---\nid: abc-123\n---\n# Hello\n\nChanged body');
+
+      renderHook(() => useFileWatcher());
+      emitFileChanged('/project/notes/test.md', 'modify');
+
+      await vi.advanceTimersByTimeAsync(300);
+
+      const changes = getExternalChanges();
+      expect(changes['/project/notes/test.md']).toBeDefined();
+    });
+  });
+
+  // ==========================================================================
+  // Delete events for open tabs
+  // ==========================================================================
+
+  describe('delete events for open tabs', () => {
+    it('triggers tree refresh and git refresh when an open tab file is deleted', async () => {
+      const tab = makeTab({ filePath: '/project/notes/doomed.md' });
+      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+
+      renderHook(() => useFileWatcher());
+      emitFileChanged('/project/notes/doomed.md', 'delete');
+
+      vi.advanceTimersByTime(300);
+      expect(mockRefreshFileTree).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(200); // total 500ms for git debounce
+      expect(mockRefreshGitForPath).toHaveBeenCalledWith('/project/notes/doomed.md');
+    });
+
+    it('does not attempt readFile for delete events (no modify handling)', async () => {
+      const tab = makeTab({ filePath: '/project/notes/doomed.md', content: '# Old' });
+      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+
+      let readCount = 0;
+      setMockInvokeHandler('read_file', () => {
+        readCount++;
+        return '# New';
+      });
+
+      renderHook(() => useFileWatcher());
+      emitFileChanged('/project/notes/doomed.md', 'delete');
+
+      await vi.advanceTimersByTimeAsync(500);
+
+      // Delete events should not trigger readFile — only modify events do
+      expect(readCount).toBe(0);
+    });
+  });
+
+  // ==========================================================================
+  // Mixed batch with all event kinds
+  // ==========================================================================
+
+  describe('mixed batch events', () => {
+    it('handles create + modify + delete in a single batch for different files', async () => {
+      const tab = makeTab({
+        id: 'tab-existing',
+        filePath: '/project/notes/existing.md',
+        fileName: 'existing.md',
+        content: '# Old content',
+      });
+      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      setMockInvokeHandler('read_file', () => '# Modified externally');
+
+      renderHook(() => useFileWatcher());
+
+      emitFileChangedBatch([
+        { path: '/project/notes/brand-new.md', kind: 'create' },
+        { path: '/project/notes/existing.md', kind: 'modify' },
+        { path: '/project/notes/removed.md', kind: 'delete' },
+      ]);
+
+      // Wait for tree refresh debounce (300ms) + modify debounce (200ms) + async
+      await vi.advanceTimersByTimeAsync(500);
+
+      // Create + delete both trigger tree refresh (coalesced into one call)
+      expect(mockRefreshFileTree).toHaveBeenCalled();
+
+      // Modify triggers external change for the open tab
+      const changes = getExternalChanges();
+      expect(changes['/project/notes/existing.md']).toBeDefined();
+
+      // Git refresh fires once (debounced, last path wins)
+      expect(mockRefreshGitForPath).toHaveBeenCalledTimes(1);
+    });
+
+    it('batch dedup: delete after modify for same path means only delete is processed', async () => {
+      const tab = makeTab({ content: '# Old' });
+      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+
+      let readCount = 0;
+      setMockInvokeHandler('read_file', () => {
+        readCount++;
+        return '# New';
+      });
+
+      renderHook(() => useFileWatcher());
+
+      // In the same batch, modify then delete for same path — last event wins
+      emitFileChangedBatch([
+        { path: '/project/notes/test.md', kind: 'modify' },
+        { path: '/project/notes/test.md', kind: 'delete' },
+      ]);
+
+      await vi.advanceTimersByTimeAsync(500);
+
+      // The delete event wins (last in batch), so no readFile for modify
+      expect(readCount).toBe(0);
+      // But tree refresh is triggered by the delete
+      expect(mockRefreshFileTree).toHaveBeenCalled();
+    });
+  });
+
+  // ==========================================================================
+  // Tab disappears during async readFile
+  // ==========================================================================
+
+  describe('tab state race conditions', () => {
+    it('handles tab closing between event emission and readFile resolution', async () => {
+      const tab = makeTab({ content: '# Old' });
+      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+
+      setMockInvokeHandler('read_file', () => {
+        // Simulate the tab being closed while readFile is in-flight
+        useEditorStore.setState({ tabs: [], activeTabId: null });
+        return '# New content';
+      });
+
+      renderHook(() => useFileWatcher());
+      emitFileChanged('/project/notes/test.md', 'modify');
+
+      // Should not throw — the hook re-reads state after await and bails out
+      await vi.advanceTimersByTimeAsync(300);
+
+      // No external change set since the tab no longer exists
+      const changes = getExternalChanges();
+      expect(Object.keys(changes)).toHaveLength(0);
+    });
+
+    it('handles tab content changing between event emission and readFile resolution', async () => {
+      const tab = makeTab({ content: '# Version 1' });
+      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+
+      setMockInvokeHandler('read_file', () => {
+        // User edits the tab while readFile is in-flight, and the new content
+        // happens to match the disk content — no external change needed
+        useEditorStore.setState({
+          tabs: [{ ...tab, content: '# Version 2' }],
+        });
+        return '# Version 2';
+      });
+
+      renderHook(() => useFileWatcher());
+      emitFileChanged('/project/notes/test.md', 'modify');
+
+      await vi.advanceTimersByTimeAsync(300);
+
+      // Content matches after re-read, so no external change
+      const changes = getExternalChanges();
+      expect(changes['/project/notes/test.md']).toBeUndefined();
+    });
+  });
+
+  // ==========================================================================
+  // Path normalization edge cases
+  // ==========================================================================
+
+  describe('path normalization edge cases', () => {
+    it('strips /private/etc prefix (macOS symlink)', async () => {
+      const tab = makeTab({
+        filePath: '/etc/notesage/config.md',
+        content: '# Old',
+      });
+      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+      setMockInvokeHandler('read_file', () => '# New');
+
+      renderHook(() => useFileWatcher());
+      emitFileChanged('/private/etc/notesage/config.md', 'modify');
+
+      await vi.advanceTimersByTimeAsync(300);
+
+      const changes = getExternalChanges();
+      expect(changes['/etc/notesage/config.md']).toBeDefined();
+    });
+
+    it('batch dedup normalizes paths before deduplicating', async () => {
+      const tab = makeTab({
+        filePath: '/var/folders/tmp/test.md',
+        content: '# Old',
+      });
+      useEditorStore.setState({ tabs: [tab], activeTabId: tab.id });
+
+      let readCount = 0;
+      setMockInvokeHandler('read_file', () => {
+        readCount++;
+        return '# New';
+      });
+
+      renderHook(() => useFileWatcher());
+
+      // Two events for the same file: one with /private prefix, one without
+      emitFileChangedBatch([
+        { path: '/var/folders/tmp/test.md', kind: 'modify' },
+        { path: '/private/var/folders/tmp/test.md', kind: 'modify' },
+      ]);
+
+      await vi.advanceTimersByTimeAsync(300);
+
+      // Paths normalize to the same value, so dedup should keep only one
+      expect(readCount).toBe(1);
+    });
+  });
+
+  // ==========================================================================
+  // MCP config change edge cases
+  // ==========================================================================
+
+  describe('MCP config change edge cases', () => {
+    it('triggers MCP rescan on mcp.json delete', async () => {
+      const counterBefore = useMcpStore.getState().rescanCounter;
+
+      renderHook(() => useFileWatcher());
+      emitFileChanged('/project/.notesage/mcp.json', 'delete');
+
+      await vi.advanceTimersByTimeAsync(600);
+
+      expect(useMcpStore.getState().rescanCounter).toBeGreaterThan(counterBefore);
+    });
+
+    it('does NOT trigger MCP rescan for mcp.json outside .notesage', async () => {
+      const counterBefore = useMcpStore.getState().rescanCounter;
+
+      renderHook(() => useFileWatcher());
+      emitFileChanged('/project/config/mcp.json', 'modify');
+
+      await vi.advanceTimersByTimeAsync(600);
+
+      expect(useMcpStore.getState().rescanCounter).toBe(counterBefore);
+    });
+
+    it('debounces rapid MCP config changes into one rescan', async () => {
+      const counterBefore = useMcpStore.getState().rescanCounter;
+
+      renderHook(() => useFileWatcher());
+
+      emitFileChanged('/project/.notesage/mcp.json', 'modify');
+      emitFileChanged('/project/.notesage/mcp.json', 'modify');
+      emitFileChanged('/project/.notesage/mcp.json', 'modify');
+
+      await vi.advanceTimersByTimeAsync(600);
+
+      // Should increment by exactly 1 (debounced)
+      expect(useMcpStore.getState().rescanCounter).toBe(counterBefore + 1);
+    });
+  });
+
+  // ==========================================================================
+  // Backend-filtered paths arriving at frontend
+  // ==========================================================================
+
+  describe('backend-filtered paths (robustness)', () => {
+    it('handles .git internal paths without crashing (if they leak through)', async () => {
+      renderHook(() => useFileWatcher());
+
+      // These should be filtered by Rust backend, but if they leak through,
+      // the frontend should not crash or set spurious state
+      emitFileChangedBatch([
+        { path: '/project/.git/objects/ab/cdef123', kind: 'modify' },
+        { path: '/project/.git/HEAD', kind: 'modify' },
+      ]);
+
+      await vi.advanceTimersByTimeAsync(500);
+
+      // No open tabs match these paths, so no external changes
+      const changes = getExternalChanges();
+      expect(Object.keys(changes)).toHaveLength(0);
+    });
+
+    it('handles .DS_Store events without crashing (if they leak through)', async () => {
+      renderHook(() => useFileWatcher());
+
+      emitFileChanged('/project/.DS_Store', 'modify');
+
+      await vi.advanceTimersByTimeAsync(500);
+
+      // No tab matches, no crash
+      const changes = getExternalChanges();
+      expect(Object.keys(changes)).toHaveLength(0);
+    });
+
+    it('.git modify events do not trigger tree refresh (only create/delete do)', () => {
+      renderHook(() => useFileWatcher());
+
+      emitFileChanged('/project/.git/index', 'modify');
+
+      vi.advanceTimersByTime(500);
+
+      // Modify events do not trigger refreshFileTree — only create/delete do
+      expect(mockRefreshFileTree).not.toHaveBeenCalled();
+    });
+  });
+
+  // ==========================================================================
+  // Multiple tabs with simultaneous modify events
+  // ==========================================================================
+
+  describe('multiple open tabs', () => {
+    it('processes modify events for multiple open tabs independently', async () => {
+      const tab1 = makeTab({
+        id: 'tab-a',
+        filePath: '/project/notes/alpha.md',
+        fileName: 'alpha.md',
+        content: '# Alpha old',
+      });
+      const tab2 = makeTab({
+        id: 'tab-b',
+        filePath: '/project/notes/beta.md',
+        fileName: 'beta.md',
+        content: '# Beta old',
+      });
+      const tab3 = makeTab({
+        id: 'tab-c',
+        filePath: '/project/notes/gamma.md',
+        fileName: 'gamma.md',
+        content: '# Gamma unchanged',
+      });
+      useEditorStore.setState({ tabs: [tab1, tab2, tab3], activeTabId: tab1.id });
+
+      setMockInvokeHandler('read_file', (args) => {
+        const p = (args as { path: string }).path;
+        if (p.includes('alpha')) return '# Alpha new';
+        if (p.includes('beta')) return '# Beta new';
+        if (p.includes('gamma')) return '# Gamma unchanged'; // same as tab
+        return '';
+      });
+
+      renderHook(() => useFileWatcher());
+
+      emitFileChangedBatch([
+        { path: '/project/notes/alpha.md', kind: 'modify' },
+        { path: '/project/notes/beta.md', kind: 'modify' },
+        { path: '/project/notes/gamma.md', kind: 'modify' },
+      ]);
+
+      await vi.advanceTimersByTimeAsync(300);
+
+      const changes = getExternalChanges();
+      // Alpha and beta have different content — external changes set
+      expect(changes['/project/notes/alpha.md']).toBeDefined();
+      expect(changes['/project/notes/beta.md']).toBeDefined();
+      // Gamma content matches — no external change
+      expect(changes['/project/notes/gamma.md']).toBeUndefined();
+    });
+
+    it('dirty and clean tabs in the same batch are handled with correct logic', async () => {
+      const cleanTab = makeTab({
+        id: 'tab-clean',
+        filePath: '/project/notes/clean.md',
+        fileName: 'clean.md',
+        content: '# Clean old',
+        isDirty: false,
+      });
+      const dirtyTab = makeTab({
+        id: 'tab-dirty',
+        filePath: '/project/notes/dirty.md',
+        fileName: 'dirty.md',
+        content: '# Dirty unsaved',
+        isDirty: true,
+      });
+      useEditorStore.setState({ tabs: [cleanTab, dirtyTab], activeTabId: cleanTab.id });
+
+      setMockInvokeHandler('read_file', (args) => {
+        const p = (args as { path: string }).path;
+        if (p.includes('clean')) return '# Clean new';
+        if (p.includes('dirty')) return '# Dirty external';
+        return '';
+      });
+
+      renderHook(() => useFileWatcher());
+
+      emitFileChangedBatch([
+        { path: '/project/notes/clean.md', kind: 'modify' },
+        { path: '/project/notes/dirty.md', kind: 'modify' },
+      ]);
+
+      await vi.advanceTimersByTimeAsync(300);
+
+      const changes = getExternalChanges();
+      // Both should have external changes set (clean → auto-reload, dirty → user prompt)
+      expect(changes['/project/notes/clean.md']).toBeDefined();
+      expect(changes['/project/notes/dirty.md']).toBeDefined();
+    });
+  });
 });
