@@ -5,6 +5,41 @@ import { useRecordingStore } from '@/stores/recording-store';
 import { toast } from 'sonner';
 import { log } from '@/lib/logger';
 
+/** Minimal interface for the Web Speech API recognition result. */
+interface WebSpeechRecognitionResult {
+  readonly isFinal: boolean;
+  readonly [index: number]: { readonly transcript: string };
+}
+
+/** Minimal interface for the Web Speech API recognition event. */
+interface WebSpeechRecognitionEvent {
+  readonly resultIndex: number;
+  readonly results: {
+    readonly length: number;
+    readonly [index: number]: WebSpeechRecognitionResult;
+  };
+}
+
+/** Minimal interface for the Web Speech API error event. */
+interface WebSpeechRecognitionErrorEvent {
+  readonly error: string;
+}
+
+/** Typed interface for the Web Speech API SpeechRecognition instance. */
+interface WebSpeechRecognition {
+  start(): void;
+  stop(): void;
+  onresult: ((event: WebSpeechRecognitionEvent) => void) | null;
+  onerror: ((event: WebSpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+}
+
+/** Constructor type for SpeechRecognition. */
+type WebSpeechRecognitionConstructor = new () => WebSpeechRecognition;
+
 interface SpeechRecognitionHook {
   startDictation: () => Promise<void>;
   stopDictation: () => Promise<void>;
@@ -136,14 +171,12 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
 
     if (SpeechRecognitionClass && webSpeechWorks) {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const recognition = new (SpeechRecognitionClass as any)();
+        const recognition = new (SpeechRecognitionClass as WebSpeechRecognitionConstructor)();
         recognition.continuous = false;
         recognition.interimResults = true;
         recognition.lang = speechLanguage || 'en-US';
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        recognition.onresult = (event: any) => {
+        recognition.onresult = (event: WebSpeechRecognitionEvent) => {
           let interim = '';
           let final_ = '';
           for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -219,8 +252,7 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
     }
 
     if (recognitionRef.current) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (recognitionRef.current as any).stop();
+      (recognitionRef.current as WebSpeechRecognition).stop();
       recognitionRef.current = null;
     } else {
       try {

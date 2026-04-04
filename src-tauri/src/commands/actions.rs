@@ -13,11 +13,32 @@ fn millis_to_iso(ms: i64) -> String {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum ActionSourceType {
+    Task,
+    Comment,
+    Agent,
+    Goal,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum ActionStatus {
+    Open,
+    Done,
+    Delegated,
+    Pending,
+    Running,
+    Completed,
+    Error,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ActionItem {
     pub id: String,
-    pub source_type: String,
-    pub status: String,
+    pub source_type: ActionSourceType,
+    pub status: ActionStatus,
     pub text: String,
     pub file_path: String,
     pub line_number: Option<u32>,
@@ -198,10 +219,9 @@ fn scan_comments(
                 .map(millis_to_iso);
 
             let mapped_status = match status_str {
-                "open" => "open",
-                "delegated" => "delegated",
-                "done" => "done",
-                _ => "open",
+                "delegated" => ActionStatus::Delegated,
+                "done" => ActionStatus::Done,
+                _ => ActionStatus::Open,
             };
 
             let mut metadata = serde_json::Map::new();
@@ -217,8 +237,8 @@ fn scan_comments(
 
             items.push(ActionItem {
                 id: format!("comment:{}:{}", document_id, comment_id),
-                source_type: "comment".to_string(),
-                status: mapped_status.to_string(),
+                source_type: ActionSourceType::Comment,
+                status: mapped_status,
                 text: display_text,
                 file_path,
                 line_number: None,

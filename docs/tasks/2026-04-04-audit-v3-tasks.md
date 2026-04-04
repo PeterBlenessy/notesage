@@ -262,7 +262,7 @@
 
 **Process:** Make the change, let the compiler/linter catch errors, run existing tests.
 
-### #20 — Migrate Tiptap storage `as any` to getEditorStorage<T>()
+### #20 — Migrate Tiptap storage ✅ `as any` to getEditorStorage<T>()
 
 **Description:** Replace 4 `as any` casts in `markdown.ts` (lines 739, 742, 754, 757) with the existing `getEditorStorage<T>()` utility from `src/lib/editor-storage.ts`.
 
@@ -272,7 +272,7 @@
 
 ---
 
-### #21 — Define WebSpeechRecognition interface
+### #21 — Define WebSpeechRecognition ✅ interface
 
 **Description:** Create a `WebSpeechRecognition` interface in `useSpeechRecognition.ts` covering `start()`, `stop()`, `onresult`, `onerror`, `onend`, `continuous`, `interimResults`, `lang`. Replace 3 `as any` casts with typed construction.
 
@@ -282,7 +282,7 @@
 
 ---
 
-### #22 — Replace Rust stringly-typed APIs with enums
+### #22 — Replace Rust stringly-typed ✅ APIs with enums
 
 **Description:** Define enums for:
 - `copilot_lsp.rs:27` — `CopilotStatusKind` (Normal, Error, Warning, Inactive)
@@ -298,7 +298,7 @@ Use `#[serde(rename_all = "lowercase")]` for backward-compatible JSON. Update fr
 
 ---
 
-### #23 — Add return types to public hooks
+### #23 — Add return types ✅ to public hooks
 
 **Description:** Add explicit return type annotations to `useEditor`, `useAIContext`, `useAgentTaskOperations`, `useCommentDelegation`, and any other exported hooks in `src/hooks/` missing them.
 
@@ -308,7 +308,7 @@ Use `#[serde(rename_all = "lowercase")]` for backward-compatible JSON. Update fr
 
 ---
 
-### #24 — Memoize FileTreeItem destinations array
+### #24 — Memoize FileTreeItem destinations ✅ array
 
 **Description:** Wrap the `destinations` array construction (lines 428-453) in `useMemo` with dependencies `[notesRootPath, projects, explorerFolders, notesTree, currentParent, entry]`.
 
@@ -318,7 +318,7 @@ Use `#[serde(rename_all = "lowercase")]` for backward-compatible JSON. Update fr
 
 ---
 
-### #25 — Extract FileTreeItem context menu callbacks
+### #25 — Extract FileTreeItem context menu ✅ callbacks
 
 **Description:** Extract inline arrow functions in ContextMenuItem onClick handlers to `useCallback` at the component level. Priority: the setTimeout + getState() callback at line 562-568.
 
@@ -328,7 +328,7 @@ Use `#[serde(rename_all = "lowercase")]` for backward-compatible JSON. Update fr
 
 ---
 
-### #26 — Memoize SidebarPanel conditional style objects
+### #26 — Memoize SidebarPanel conditional ✅ style objects
 
 **Description:** Replace inline `style={{ left: ..., ...(isResizing && { transition: "none" }) }}` with `useMemo` or extract to className variants using `cn()`.
 
@@ -338,7 +338,7 @@ Use `#[serde(rename_all = "lowercase")]` for backward-compatible JSON. Update fr
 
 ---
 
-### #27 — Memoize ExplorerFolderItem isProjectFolder
+### #27 — Memoize ExplorerFolderItem ✅ isProjectFolder
 
 **Description:** Wrap the `.some()` check at line 81-82 in `useMemo` with deps `[folderPath, projects, folder?.fileTree]`.
 
@@ -348,7 +348,7 @@ Use `#[serde(rename_all = "lowercase")]` for backward-compatible JSON. Update fr
 
 ---
 
-### #28 — Use selector factory for ProjectItem project lookup
+### #28 — Use selector factory ✅ for ProjectItem project lookup
 
 **Description:** Replace `s.projects.find((p) => p.path === projectPath)` inside the selector with a stable selector factory: `const selectProject = useMemo(() => (s) => s.projects.find(...), [projectPath])`.
 
@@ -358,7 +358,7 @@ Use `#[serde(rename_all = "lowercase")]` for backward-compatible JSON. Update fr
 
 ---
 
-### #29 — Replace getState() in ChatFooter useMemo with selectors
+### #29 — Replace getState() in ChatFooter useMemo with selectors — SKIPPED
 
 **Description:** The `invocableAgents`, `activeAgent`, and `toolDefs` memos call `useSkillStore.getState()` inside useMemo. Replace with proper selector subscriptions so updates are reactive.
 
@@ -368,7 +368,7 @@ Use `#[serde(rename_all = "lowercase")]` for backward-compatible JSON. Update fr
 
 ---
 
-### #30 — Lift expensive store subscriptions from FileTreeItem to parent
+### #30 — Lift expensive store subscriptions ✅ from FileTreeItem to parent
 
 **Description:** Move `projects`, `explorerFolders`, `notesTree` subscriptions from individual FileTreeItem components to the parent FileTree. Pass relevant data as props. This eliminates N subscriptions (one per file) in favor of 1 subscription at the tree level.
 

@@ -174,7 +174,7 @@ export async function ensureTaskAgent(connection: Connection, cwd: string, sandb
 
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
-interface InternalTask {
+export interface InternalTask {
   id: string;
   prompt: string;
   status: TaskStatus;
@@ -543,7 +543,14 @@ async function startDirectApiTask(
 // Hook
 // ---------------------------------------------------------------------------
 
-export function useAgentTaskOperations() {
+export interface UseAgentTaskOperationsReturn {
+  startTask: (prompt: string, callbacks?: TaskCallbacks, taskMeta?: TaskMeta) => Promise<string>;
+  cancelTask: (taskId: string) => Promise<boolean>;
+  getTask: (taskId: string) => InternalTask | undefined;
+  taskConnection: Connection | null;
+}
+
+export function useAgentTaskOperations(): UseAgentTaskOperationsReturn {
   const selectedProjectPaths = useChatStore(selectProjectPaths);
 
   const taskConnection = useRoutingStore((s) => {

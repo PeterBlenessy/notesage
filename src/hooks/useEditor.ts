@@ -1,4 +1,4 @@
-import { useEditor as useTiptapEditor } from "@tiptap/react";
+import { useEditor as useTiptapEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { LocalImage } from "@/components/editor/extensions/local-image";
@@ -40,7 +40,7 @@ interface UseEditorOptions {
   documentDir?: string;
 }
 
-export function useEditor({ content, onUpdate, editable = true, documentDir }: UseEditorOptions) {
+export function useEditor({ content, onUpdate, editable = true, documentDir }: UseEditorOptions): Editor | null {
   const editor = useTiptapEditor({
     onCreate: ({ editor }) => {
       // Set documentDir early so image nodes created during initial parse resolve correctly

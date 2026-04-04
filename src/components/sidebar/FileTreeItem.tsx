@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, memo } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown, Eye } from "lucide-react";
 import { SyncedIcon } from "./SyncedIcon";
 import { FolderPickerItem } from "./FolderPickerItem";
@@ -166,6 +166,37 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
 
   const currentParent = entry.path.substring(0, entry.path.lastIndexOf("/"));
 
+  // Task #24: Memoize destinations for "Move to..." context menu
+  const moveDestinations = useMemo(() => {
+    const destinations = [
+      // Quick Notes root
+      ...(notesRootPath && !notesRootPath.startsWith("~") ? [{ path: notesRootPath, label: "Quick Notes", category: "notes" as const, tree: notesTree }] : []),
+      // Projects
+      ...projects.map((p) => ({
+        path: p.path,
+        label: metadataMap[p.path]?.name || p.path.split("/").filter(Boolean).pop() || "Project",
+        category: "project" as const,
+        tree: p.fileTree,
+      })),
+      // Explorer folders
+      ...explorerFolders.map((f) => ({
+        path: f.path,
+        label: f.path.split("/").filter(Boolean).pop() || "Folder",
+        category: "folder" as const,
+        tree: f.fileTree,
+      })),
+    ];
+    // Deduplicate by path (a project may also be an explorer folder or Quick Notes root)
+    const seen = new Set<string>();
+    const unique = destinations.filter((d) => {
+      if (seen.has(d.path)) return false;
+      seen.add(d.path);
+      return true;
+    });
+    // Filter out the entry itself if it's a directory (can't move into self)
+    return unique.filter((d) => !(entry.is_directory && d.path === entry.path));
+  }, [notesRootPath, projects, explorerFolders, notesTree, metadataMap, currentParent, entry.path, entry.is_directory]);
+
   const handleMoveTo = async (destFolderPath: string) => {
     if (destFolderPath === currentParent) return;
     if (entry.is_directory && (destFolderPath === entry.path || destFolderPath.startsWith(entry.path + "/"))) {
@@ -184,6 +215,44 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
       console.error("Failed to move file:", error);
     }
   };
+
+  // Task #25: Extract context menu callbacks to useCallback
+  const handlePreviewAsHtml = useCallback(() => {
+    onFileClick(entry.path, entry.name);
+    setTimeout(() => {
+      const { tabs, setViewMode } = useEditorStore.getState();
+      const tab = tabs.find((t) => t.filePath === entry.path);
+      if (tab) setViewMode(tab.id, "html-preview");
+    }, 100);
+  }, [onFileClick, entry.path, entry.name]);
+
+  const handleMakeProject = useCallback(() => {
+    onMakeProject?.(entry.path);
+  }, [onMakeProject, entry.path]);
+
+  const handleCommitFile = useCallback(() => {
+    onCommitFile?.(entry.path);
+  }, [onCommitFile, entry.path]);
+
+  const handleOpenDeleteDialog = useCallback(() => {
+    setDeleteDialogOpen(true);
+  }, []);
+
+  const handleExportPdf = useCallback(() => {
+    onExportFile?.(entry.path, entry.name, 'pdf');
+  }, [onExportFile, entry.path, entry.name]);
+
+  const handleExportDocx = useCallback(() => {
+    onExportFile?.(entry.path, entry.name, 'docx');
+  }, [onExportFile, entry.path, entry.name]);
+
+  const handleExportPptx = useCallback(() => {
+    onExportFile?.(entry.path, entry.name, 'pptx');
+  }, [onExportFile, entry.path, entry.name]);
+
+  const handleExportHtml = useCallback(() => {
+    onExportFile?.(entry.path, entry.name, 'html');
+  }, [onExportFile, entry.path, entry.name]);
 
   const handleRevealInFinder = async () => {
     try {
@@ -418,45 +487,18 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
           {entry.is_directory && onMakeProject && (
             <>
               <ContextMenuSeparator />
-              <ContextMenuItem onClick={() => onMakeProject(entry.path)}>
+              <ContextMenuItem onClick={handleMakeProject}>
                 <FolderDot className="h-4 w-4" strokeWidth={1.5} />
                 {isProjectFolder ? "Open as Project" : "Make Project"}
               </ContextMenuItem>
             </>
           )}
           {(() => {
-            const destinations = [
-              // Quick Notes root
-              ...(notesRootPath && !notesRootPath.startsWith("~") ? [{ path: notesRootPath, label: "Quick Notes", category: "notes" as const, tree: notesTree }] : []),
-              // Projects
-              ...projects.map((p) => ({
-                path: p.path,
-                label: metadataMap[p.path]?.name || p.path.split("/").filter(Boolean).pop() || "Project",
-                category: "project" as const,
-                tree: p.fileTree,
-              })),
-              // Explorer folders
-              ...explorerFolders.map((f) => ({
-                path: f.path,
-                label: f.path.split("/").filter(Boolean).pop() || "Folder",
-                category: "folder" as const,
-                tree: f.fileTree,
-              })),
-            ];
-            // Deduplicate by path (a project may also be an explorer folder or Quick Notes root)
-            const seen = new Set<string>();
-            const unique = destinations.filter((d) => {
-              if (seen.has(d.path)) return false;
-              seen.add(d.path);
-              return true;
-            });
-            // Filter out the entry itself if it's a directory (can't move into self)
-            const valid = unique.filter((d) => !(entry.is_directory && d.path === entry.path));
-            if (valid.length === 0) return null;
+            if (moveDestinations.length === 0) return null;
 
-            const hasMultipleCategories = new Set(valid.map((d) => d.category)).size > 1;
+            const hasMultipleCategories = new Set(moveDestinations.map((d) => d.category)).size > 1;
 
-            const renderDestination = (d: typeof valid[number]) => {
+            const renderDestination = (d: typeof moveDestinations[number]) => {
               const subfolders = d.tree.filter((e) =>
                 e.is_directory && e.name !== ".notesage" && e.name !== ".git" &&
                 !(entry.is_directory && (e.path === entry.path || e.path.startsWith(entry.path + "/")))
@@ -504,27 +546,27 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
                   <ContextMenuSubContent>
                     {hasMultipleCategories ? (
                       <>
-                        {valid.some((d) => d.category === "notes") && (
+                        {moveDestinations.some((d) => d.category === "notes") && (
                           <>
                             <ContextMenuLabel className="text-xs text-muted-foreground">QUICK NOTES</ContextMenuLabel>
-                            {valid.filter((d) => d.category === "notes").map(renderDestination)}
+                            {moveDestinations.filter((d) => d.category === "notes").map(renderDestination)}
                           </>
                         )}
-                        {valid.some((d) => d.category === "project") && (
+                        {moveDestinations.some((d) => d.category === "project") && (
                           <>
                             <ContextMenuLabel className="text-xs text-muted-foreground">PROJECTS</ContextMenuLabel>
-                            {valid.filter((d) => d.category === "project").map(renderDestination)}
+                            {moveDestinations.filter((d) => d.category === "project").map(renderDestination)}
                           </>
                         )}
-                        {valid.some((d) => d.category === "folder") && (
+                        {moveDestinations.some((d) => d.category === "folder") && (
                           <>
                             <ContextMenuLabel className="text-xs text-muted-foreground">FOLDERS</ContextMenuLabel>
-                            {valid.filter((d) => d.category === "folder").map(renderDestination)}
+                            {moveDestinations.filter((d) => d.category === "folder").map(renderDestination)}
                           </>
                         )}
                       </>
                     ) : (
-                      valid.map(renderDestination)
+                      moveDestinations.map(renderDestination)
                     )}
                   </ContextMenuSubContent>
                 </ContextMenuSub>
@@ -545,28 +587,21 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
                   Export as...
                 </ContextMenuSubTrigger>
                 <ContextMenuSubContent>
-                  <ContextMenuItem onClick={() => onExportFile(entry.path, entry.name, 'pdf')}>
+                  <ContextMenuItem onClick={handleExportPdf}>
                     PDF
                   </ContextMenuItem>
-                  <ContextMenuItem onClick={() => onExportFile(entry.path, entry.name, 'docx')}>
+                  <ContextMenuItem onClick={handleExportDocx}>
                     Word (.docx)
                   </ContextMenuItem>
-                  <ContextMenuItem onClick={() => onExportFile(entry.path, entry.name, 'pptx')}>
+                  <ContextMenuItem onClick={handleExportPptx}>
                     PowerPoint
                   </ContextMenuItem>
-                  <ContextMenuItem onClick={() => onExportFile(entry.path, entry.name, 'html')}>
+                  <ContextMenuItem onClick={handleExportHtml}>
                     HTML
                   </ContextMenuItem>
                 </ContextMenuSubContent>
               </ContextMenuSub>
-              <ContextMenuItem onClick={() => {
-                onFileClick(entry.path, entry.name);
-                setTimeout(() => {
-                  const { tabs, setViewMode } = useEditorStore.getState();
-                  const tab = tabs.find((t) => t.filePath === entry.path);
-                  if (tab) setViewMode(tab.id, "html-preview");
-                }, 100);
-              }}>
+              <ContextMenuItem onClick={handlePreviewAsHtml}>
                 <Eye className="h-4 w-4" strokeWidth={1.5} />
                 Preview as HTML
               </ContextMenuItem>
@@ -575,7 +610,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
           {gitInfo && onCommitFile && (
             <>
               <ContextMenuSeparator />
-              <ContextMenuItem onClick={() => onCommitFile(entry.path)}>
+              <ContextMenuItem onClick={handleCommitFile}>
                 <GitCommitVertical className="h-4 w-4" strokeWidth={1.5} />
                 Commit...
               </ContextMenuItem>
@@ -586,7 +621,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
             <Pencil className="h-4 w-4" strokeWidth={1.5} />
             Rename
           </ContextMenuItem>
-          <ContextMenuItem onClick={() => setDeleteDialogOpen(true)}>
+          <ContextMenuItem onClick={handleOpenDeleteDialog}>
             <Trash2 className="h-4 w-4 text-destructive" strokeWidth={1.5} />
             Delete
           </ContextMenuItem>

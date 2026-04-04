@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createTauriStorage } from '@/lib/tauri-storage';
 import { toast } from 'sonner';
-import { tauriApi, type ActionItem, type IndexedTask, type IndexedGoal } from '@/lib/tauri';
+import { tauriApi, type ActionItem, type ActionSourceType, type ActionStatus, type IndexedTask, type IndexedGoal } from '@/lib/tauri';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useEditorStore } from '@/stores/editor-store';
@@ -10,10 +10,7 @@ import { useActivityStore, type AgentTask } from '@/stores/activity-store';
 import { parseFrontmatter } from '@/lib/frontmatter';
 import { log } from '@/lib/logger';
 
-export type { ActionItem } from '@/lib/tauri';
-
-export type ActionSourceType = 'task' | 'comment' | 'agent' | 'goal';
-export type ActionStatus = 'open' | 'done' | 'delegated' | 'pending' | 'running' | 'completed' | 'error';
+export type { ActionItem, ActionSourceType, ActionStatus } from '@/lib/tauri';
 
 export interface ActionFilter {
   status: ActionStatus[];
@@ -80,7 +77,7 @@ function agentTasksToActions(): ActionItem[] {
     .map((t: AgentTask) => ({
       id: `agent:${t.id}`,
       source_type: 'agent',
-      status: t.status === 'done' ? 'completed' : t.status,
+      status: (t.status === 'done' ? 'completed' : t.status) as ActionStatus,
       text: t.label,
       file_path: t.sourceFile ?? '',
       line_number: undefined,
@@ -415,11 +412,11 @@ export const useActionStore = create<ActionStore>()(
         const { actions, filter } = get();
         return actions.filter((a) => {
           // Status filter
-          if (filter.status.length > 0 && !filter.status.includes(a.status as ActionStatus)) {
+          if (filter.status.length > 0 && !filter.status.includes(a.status)) {
             return false;
           }
           // Source type filter
-          if (filter.sourceType.length > 0 && !filter.sourceType.includes(a.source_type as ActionSourceType)) {
+          if (filter.sourceType.length > 0 && !filter.sourceType.includes(a.source_type)) {
             return false;
           }
           // Project filter

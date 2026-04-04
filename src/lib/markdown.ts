@@ -1,4 +1,8 @@
 import type { Editor } from "@tiptap/core";
+import {
+  getEditorStorage,
+  type EditorStorageMarkdown,
+} from "@/lib/editor-storage";
 import { EditorState } from "@tiptap/pm/state";
 
 // ---------------------------------------------------------------------------
@@ -730,35 +734,12 @@ export function getMarkdownFromEditor(editor: Editor): string {
 
   // Try to use the Markdown extension's getMarkdown method
   try {
-    const markdownExt = editor.extensionManager.extensions.find(
-      (ext) => ext.name === "markdown"
-    );
-    if (
-      markdownExt &&
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      typeof (markdownExt as any).storage?.getMarkdown === "function"
-    ) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      markdown = decodeImagePathSpaces((markdownExt as any).storage.getMarkdown());
+    const mdStorage = getEditorStorage<EditorStorageMarkdown>(editor, "markdown");
+    if (typeof mdStorage?.getMarkdown === "function") {
+      markdown = decodeImagePathSpaces(mdStorage.getMarkdown());
     }
   } catch (error) {
-    console.warn("Failed to get markdown from extension:", error);
-  }
-
-  // Fallback: try editor storage
-  if (!markdown) {
-    try {
-      if (
-        editor.storage &&
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        typeof (editor.storage as any).markdown?.getMarkdown === "function"
-      ) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        markdown = decodeImagePathSpaces((editor.storage as any).markdown.getMarkdown());
-      }
-    } catch (error) {
-      console.warn("Failed to get markdown from storage:", error);
-    }
+    console.warn("Failed to get markdown from storage:", error);
   }
 
   // Last resort

@@ -28,7 +28,6 @@ import type { GitStatus } from "@/lib/tauri";
 const STATUS_CONFIG: Record<GitStatus, { label: string; color: string; tooltip: string }> = {
   modified: { label: "M", color: "text-muted-foreground/50", tooltip: "Modified" },
   added: { label: "A", color: "text-muted-foreground/50", tooltip: "Added — new file staged for commit" },
-  staged: { label: "S", color: "text-muted-foreground/50", tooltip: "Staged" },
   untracked: { label: "U", color: "text-muted-foreground/50", tooltip: "Untracked — not yet tracked by git" },
   deleted: { label: "D", color: "text-muted-foreground/50", tooltip: "Deleted" },
   renamed: { label: "R", color: "text-muted-foreground/50", tooltip: "Renamed" },

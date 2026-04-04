@@ -2,10 +2,21 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command;
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum GitFileStatusKind {
+    Modified,
+    Added,
+    Deleted,
+    Renamed,
+    Untracked,
+    Conflicted,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct GitFileStatus {
     pub path: String,
-    pub status: String,
+    pub status: GitFileStatusKind,
     pub staged: bool,
 }
 
@@ -164,22 +175,22 @@ pub async fn git_status(path: String) -> Result<Vec<GitFileStatus>, String> {
         match index_status {
             b'A' => results.push(GitFileStatus {
                 path: abs_path.clone(),
-                status: "added".to_string(),
+                status: GitFileStatusKind::Added,
                 staged: true,
             }),
             b'M' | b'T' => results.push(GitFileStatus {
                 path: abs_path.clone(),
-                status: "modified".to_string(),
+                status: GitFileStatusKind::Modified,
                 staged: true,
             }),
             b'D' => results.push(GitFileStatus {
                 path: abs_path.clone(),
-                status: "deleted".to_string(),
+                status: GitFileStatusKind::Deleted,
                 staged: true,
             }),
             b'R' => results.push(GitFileStatus {
                 path: abs_path.clone(),
-                status: "renamed".to_string(),
+                status: GitFileStatusKind::Renamed,
                 staged: true,
             }),
             _ => {}
@@ -189,12 +200,12 @@ pub async fn git_status(path: String) -> Result<Vec<GitFileStatus>, String> {
         match wt_status {
             b'M' | b'T' => results.push(GitFileStatus {
                 path: abs_path.clone(),
-                status: "modified".to_string(),
+                status: GitFileStatusKind::Modified,
                 staged: false,
             }),
             b'D' => results.push(GitFileStatus {
                 path: abs_path.clone(),
-                status: "deleted".to_string(),
+                status: GitFileStatusKind::Deleted,
                 staged: false,
             }),
             _ => {}
@@ -204,7 +215,7 @@ pub async fn git_status(path: String) -> Result<Vec<GitFileStatus>, String> {
         if index_status == b'?' && wt_status == b'?' {
             results.push(GitFileStatus {
                 path: abs_path.clone(),
-                status: "untracked".to_string(),
+                status: GitFileStatusKind::Untracked,
                 staged: false,
             });
         }
@@ -216,7 +227,7 @@ pub async fn git_status(path: String) -> Result<Vec<GitFileStatus>, String> {
         {
             results.push(GitFileStatus {
                 path: abs_path,
-                status: "conflicted".to_string(),
+                status: GitFileStatusKind::Conflicted,
                 staged: false,
             });
         }

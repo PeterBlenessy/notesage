@@ -3,6 +3,7 @@ use tauri::{AppHandle, Manager};
 
 use super::file_scanner::is_indexable;
 use super::{db, get_db_for_path, reindex_file_in_db, IndexState};
+use crate::commands::watcher::FileChangeKind;
 
 /// Max reindexes per file within the circuit breaker window.
 const REINDEX_CIRCUIT_BREAKER_MAX: u32 = 5;
@@ -12,12 +13,12 @@ const REINDEX_CIRCUIT_BREAKER_WINDOW: Duration = Duration::from_secs(30);
 #[derive(Clone)]
 pub(crate) struct ReindexEntry {
     pub path: String,
-    pub kind: String,
+    pub kind: FileChangeKind,
 }
 
 impl IndexState {
     /// Queue a file for reindexing (called from watcher).
-    pub fn queue_reindex(&self, path: String, kind: String) {
+    pub fn queue_reindex(&self, path: String, kind: FileChangeKind) {
         self.reindex_queue.lock().push(ReindexEntry { path, kind });
     }
 
@@ -84,12 +85,12 @@ pub fn process_reindex_queue(app: &AppHandle) {
 
     for entry in entries {
         // Apply circuit breaker — skip files being reindexed too rapidly
-        if entry.kind != "delete" && state.is_reindex_throttled(&entry.path) {
+        if entry.kind != FileChangeKind::Delete && state.is_reindex_throttled(&entry.path) {
             continue;
         }
 
         if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &entry.path) {
-            if entry.kind == "delete" {
+            if entry.kind == FileChangeKind::Delete {
                 let _ = db::remove_file(conn, &entry.path);
             } else if is_indexable(&entry.path) {
                 let _ = reindex_file_in_db(conn, &entry.path, project_path.as_deref());

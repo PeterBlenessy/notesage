@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Folder, FolderOpen, Settings, X, ExternalLink, GitCommitVertical, GitBranch, Target, FilePlus, FolderPlus } from "lucide-react";
 import { parseNotesageDrop } from "@/lib/drag-utils";
 import { SyncedIcon } from "./SyncedIcon";
 import { tauriApi } from "@/lib/tauri";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
-import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useSyncStore } from "@/stores/sync-store";
 import { useGitOperations } from "@/hooks/useGitOperations";
@@ -41,9 +41,12 @@ export function ProjectItem({
   onCloseProject,
   onExportFile,
 }: ProjectItemProps) {
-  const project = useWorkspaceStore((s) =>
-    s.projects.find((p) => p.path === projectPath)
+  const selectProject = useMemo(
+    () => (s: { projects: WorkspaceProject[] }) =>
+      s.projects.find((p) => p.path === projectPath),
+    [projectPath]
   );
+  const project = useWorkspaceStore(selectProject);
   const metadata = useProjectMetadataStore((s) => s.metadataMap[projectPath]);
   const { isExpanded, toggleFolder } = useWorkspaceStore();
   const gitEnabled = useSettingsStore((s) => s.gitEnabled);

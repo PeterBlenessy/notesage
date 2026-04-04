@@ -9,7 +9,7 @@ export interface FileEntry {
   children?: FileEntry[];
 }
 
-export type GitStatus = 'modified' | 'added' | 'staged' | 'untracked' | 'deleted' | 'renamed' | 'conflicted';
+export type GitStatus = 'modified' | 'added' | 'untracked' | 'deleted' | 'renamed' | 'conflicted';
 
 export interface GitFileStatus {
   path: string;
@@ -199,10 +199,13 @@ export interface IndexStats {
   indexed_at: number;
 }
 
+export type ActionSourceType = 'task' | 'comment' | 'agent' | 'goal';
+export type ActionStatus = 'open' | 'done' | 'delegated' | 'pending' | 'running' | 'completed' | 'error';
+
 export interface ActionItem {
   id: string;
-  source_type: string;
-  status: string;
+  source_type: ActionSourceType;
+  status: ActionStatus;
   text: string;
   file_path: string;
   line_number?: number;

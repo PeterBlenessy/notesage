@@ -21,10 +21,19 @@ use super::constants;
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "PascalCase")]
+pub enum CopilotStatusKind {
+    Normal,
+    Error,
+    Warning,
+    Inactive,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct CopilotStatus {
     pub authenticated: bool,
     pub message: String,
-    pub kind: String, // "Normal" | "Error" | "Warning" | "Inactive"
+    pub kind: CopilotStatusKind,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -711,7 +720,7 @@ pub async fn copilot_lsp_start(
     let status = CopilotStatus {
         authenticated: false,
         message: "Started".to_string(),
-        kind: "Normal".to_string(),
+        kind: CopilotStatusKind::Normal,
     };
 
     *guard = Some(CopilotLspProcess {
@@ -807,7 +816,7 @@ pub async fn copilot_lsp_status(
                     Ok(CopilotStatus {
                         authenticated,
                         message,
-                        kind: if authenticated { "Normal".to_string() } else { "Inactive".to_string() },
+                        kind: if authenticated { CopilotStatusKind::Normal } else { CopilotStatusKind::Inactive },
                     })
                 }
                 Err(e) => {
@@ -815,7 +824,7 @@ pub async fn copilot_lsp_status(
                     Ok(CopilotStatus {
                         authenticated: false,
                         message: format!("checkStatus failed: {}", e),
-                        kind: "Error".to_string(),
+                        kind: CopilotStatusKind::Error,
                     })
                 }
             }
@@ -824,7 +833,7 @@ pub async fn copilot_lsp_status(
             Ok(CopilotStatus {
                 authenticated: false,
                 message: "Not running".to_string(),
-                kind: "Inactive".to_string(),
+                kind: CopilotStatusKind::Inactive,
             })
         }
     }

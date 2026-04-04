@@ -1,17 +1,26 @@
 use notify::RecursiveMode;
 use notify_debouncer_full::{new_debouncer, DebouncedEvent, Debouncer, RecommendedCache};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 
+/// The kind of filesystem change detected.
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum FileChangeKind {
+    Create,
+    Modify,
+    Delete,
+}
+
 /// Event payload emitted to the frontend via `file-changed`.
 #[derive(Clone, Serialize)]
 pub struct FileChangedEvent {
     pub path: String,
-    pub kind: String,
+    pub kind: FileChangeKind,
 }
 
 /// How long a self-write mark stays active. Must cover:
@@ -91,13 +100,13 @@ impl WatcherState {
     }
 }
 
-/// Map a notify event kind to a simple string for the frontend.
-fn event_kind_str(kind: &notify::EventKind) -> Option<&'static str> {
+/// Map a notify event kind to a `FileChangeKind` for the frontend.
+fn event_kind(kind: &notify::EventKind) -> Option<FileChangeKind> {
     use notify::EventKind::*;
     match kind {
-        Create(_) => Some("create"),
-        Modify(_) => Some("modify"),
-        Remove(_) => Some("delete"),
+        Create(_) => Some(FileChangeKind::Create),
+        Modify(_) => Some(FileChangeKind::Modify),
+        Remove(_) => Some(FileChangeKind::Delete),
         _ => None,
     }
 }
@@ -151,7 +160,7 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
             let mut batch: Vec<FileChangedEvent> = Vec::new();
 
             for event in events {
-                let kind_str = match event_kind_str(&event.kind) {
+                let change_kind = match event_kind(&event.kind) {
                     Some(k) => k,
                     None => continue,
                 };
@@ -172,15 +181,15 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
                     // "modify" on the parent directory or the deleted path.
                     // Reclassify: if notify says "modify" but the path no
                     // longer exists, treat it as a delete.
-                    let effective_kind = if kind_str == "modify" && !path.exists() {
-                        "delete"
+                    let effective_kind = if change_kind == FileChangeKind::Modify && !path.exists() {
+                        FileChangeKind::Delete
                     } else {
-                        kind_str
+                        change_kind.clone()
                     };
 
                     // Skip directories, but NOT for delete events (file is
                     // already gone so is_dir() would return false anyway).
-                    if effective_kind != "delete" && path.is_dir() {
+                    if effective_kind != FileChangeKind::Delete && path.is_dir() {
                         continue;
                     }
 
@@ -189,7 +198,7 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
                     if let Some(indexer) = app_handle.try_state::<crate::index::IndexState>() {
                         indexer.queue_reindex(
                             path.to_string_lossy().to_string(),
-                            effective_kind.to_string(),
+                            effective_kind.clone(),
                         );
                     }
 
@@ -201,7 +210,7 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
 
                     batch.push(FileChangedEvent {
                         path: path.to_string_lossy().to_string(),
-                        kind: effective_kind.to_string(),
+                        kind: effective_kind,
                     });
                 }
             }

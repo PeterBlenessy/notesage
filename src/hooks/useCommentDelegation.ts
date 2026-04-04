@@ -18,11 +18,20 @@ function resolveSandboxRoot(filePath: string | undefined): string | undefined {
   return undefined;
 }
 
+export interface UseCommentDelegationReturn {
+  delegateComment: (comment: Comment, documentId: string, projectRoot: string, mode?: DelegationMode) => Promise<void>;
+  delegateReply: (comment: Comment, replyText: string, documentId: string, projectRoot: string, mode?: DelegationMode) => Promise<void>;
+  cancelDelegation: (comment: Comment, documentId: string, projectRoot: string) => Promise<void>;
+  delegateAll: (documentId: string, projectRoot: string) => Promise<void>;
+  moveToChat: (comment: Comment, projectPath?: string, storageRoot?: string) => void;
+  canDelegate: boolean;
+}
+
 /**
  * Encapsulates the comment -> agent delegation flow.
  * Uses the `agent_tasks` routing slot via useAgentTaskOperations.
  */
-export function useCommentDelegation() {
+export function useCommentDelegation(): UseCommentDelegationReturn {
   const { startTask, cancelTask, taskConnection } = useAgentTaskOperations();
 
   const delegateComment = useCallback(

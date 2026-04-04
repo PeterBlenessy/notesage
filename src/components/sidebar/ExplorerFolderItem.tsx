@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { ChevronRight, Folder, FolderOpen, FolderDot, X, ExternalLink, FilePlus, FolderPlus } from "lucide-react";
 import { toast } from "sonner";
 import { tauriApi } from "@/lib/tauri";
@@ -78,8 +78,11 @@ export function ExplorerFolderItem({
   const expandKey = `explorer-folder:${folderPath}`;
   const expanded = isExpanded(expandKey);
 
-  const isProjectFolder = projects.some((p) => p.path === folderPath) ||
-    folder?.fileTree.some((c) => c.name === ".notesage" && c.is_directory);
+  const isProjectFolder = useMemo(
+    () => projects.some((p) => p.path === folderPath) ||
+      folder?.fileTree.some((c) => c.name === ".notesage" && c.is_directory),
+    [folderPath, projects, folder?.fileTree]
+  );
 
   const { refreshFileTree } = useFileOperations();
 

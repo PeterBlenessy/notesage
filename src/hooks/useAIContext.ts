@@ -12,7 +12,15 @@ import { invoke } from '@tauri-apps/api/core';
 // Hook — builds all AI system messages and context
 // ---------------------------------------------------------------------------
 
-export function useAIContext() {
+export interface UseAIContextReturn {
+  composedSystemMessage: string;
+  localSystemMessage: string;
+  acpSystemMessage: string;
+  buildComposedSystemMessage: (attachedFilePaths?: string[]) => string;
+  buildAcpSystemMessage: (attachedFilePaths?: string[]) => string;
+}
+
+export function useAIContext(): UseAIContextReturn {
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
 

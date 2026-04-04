@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Settings, PanelLeft, GripVerticalIcon } from "lucide-react";
 import { useSettingsStore } from "@/stores/settings-store";
 import { Sidebar } from "@/components/sidebar/Sidebar";
@@ -137,6 +137,21 @@ export function SidebarPanel({
   // Toggle left position: after traffic lights when collapsed, near sidebar right edge when expanded
   const toggleLeft = expanded ? expandedWidth - 34 : 72;
 
+  const toggleStyle = useMemo<React.CSSProperties>(
+    () => ({ left: toggleLeft, top: 4, ...(isResizing && { transition: "none" }) }),
+    [toggleLeft, isResizing]
+  );
+
+  const flowStyle = useMemo<React.CSSProperties>(
+    () => ({ width: sidebarPinned ? expandedWidth : STRIP_WIDTH, ...(isResizing && { transition: "none" }) }),
+    [sidebarPinned, expandedWidth, isResizing]
+  );
+
+  const panelStyle = useMemo<React.CSSProperties>(
+    () => ({ width: expanded ? expandedWidth : STRIP_WIDTH, ...(isResizing && { transition: "none" }) }),
+    [expanded, expandedWidth, isResizing]
+  );
+
   return (
     <>
       {/* Click-away backdrop for overlay */}
@@ -153,7 +168,7 @@ export function SidebarPanel({
           !isResizing && "transition-all duration-150 ease-out",
           sidebarPinned && "text-foreground"
         )}
-        style={{ left: toggleLeft, top: 4, ...(isResizing && { transition: "none" }) }}
+        style={toggleStyle}
         onClick={handleToggle}
         title={`${sidebarPinned ? "Collapse" : "Expand"} Sidebar (⌘⇧L)`}
       >
@@ -166,7 +181,7 @@ export function SidebarPanel({
           "h-full shrink-0 relative z-40",
           !isResizing && "transition-[width] duration-150 ease-out"
         )}
-        style={{ width: sidebarPinned ? expandedWidth : STRIP_WIDTH, ...(isResizing && { transition: "none" }) }}
+        style={flowStyle}
       >
         {/* Panel surface — single column, overflow-hidden clips content past width */}
         <div
@@ -175,7 +190,7 @@ export function SidebarPanel({
             !isResizing && "transition-[width] duration-150 ease-out",
             !sidebarPinned && overlayVisible && "shadow-xl"
           )}
-          style={{ width: expanded ? expandedWidth : STRIP_WIDTH, ...(isResizing && { transition: "none" }) }}
+          style={panelStyle}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
