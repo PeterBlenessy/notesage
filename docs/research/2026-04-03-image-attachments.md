@@ -1,7 +1,12 @@
 # Research: Image Attachments for Multi-Modal AI Chat
 
-**Date:** 2026-04-03
-**Status:** Research complete
+**Date:** 2026-04-03 **Status:** Research complete
+
+| Stage | Link | Status |
+| --- | --- | --- |
+| PRD | [image-attachments](../prds/2026-04-04-image-attachments.md) | Draft |
+| Tasks | --- | Not planned |
+
 **Purpose:** Understand how image attachments should work across Notesage's four AI paths (Direct API, ACP, Copilot LSP, Local Bundled) by surveying API formats, competitor UX, and implementation patterns.
 
 ---
