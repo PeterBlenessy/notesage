@@ -5,7 +5,7 @@
 | Stage | Link | Status |
 | --- | --- | --- |
 | PRD | [image-attachments](../prds/2026-04-04-image-attachments.md) | Draft |
-| Tasks | --- | Not planned |
+| Tasks | [image-attachments-tasks](../tasks/2026-04-04-image-attachments-tasks.md) | Not started |
 
 **Purpose:** Understand how image attachments should work across Notesage's four AI paths (Direct API, ACP, Copilot LSP, Local Bundled) by surveying API formats, competitor UX, and implementation patterns.
 
