@@ -48,8 +48,11 @@ interface ErrorMapping {
 
 const ERROR_MAPPINGS: ErrorMapping[] = [
   {
-    patterns: [/connection\s*refused/, /econnrefused/, /connect\s+econnrefused/],
-    message: (p) => `Could not reach ${p}. Check that the service is running.`,
+    patterns: [/connection\s*refused/, /econnrefused/, /connect\s+econnrefused/, /fetch\s+failed/],
+    message: (p) =>
+      p === 'Ollama'
+        ? `Ollama is not running. Start it with \`ollama serve\` in a terminal.`
+        : `Could not reach ${p}. Check that the service is running.`,
     settingsHint: true,
   },
   {

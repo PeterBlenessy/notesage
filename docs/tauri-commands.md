@@ -2,6 +2,8 @@
 
 All frontend-to-backend communication uses Tauri IPC commands. These are defined in `src-tauri/src/commands/` and invoked from the frontend via `@tauri-apps/api/core`.
 
+> **Note:** This document covers a subset of commonly used commands. See `docs/architecture.md` for the full command module inventory.
+
 ## File Operations
 
 Located in `src-tauri/src/commands/file.rs`
@@ -543,7 +545,7 @@ pub struct ToolCall {
 
 ## Web Search Operations
 
-Located in `src-tauri/src/commands/ai.rs`
+Located in `src-tauri/src/commands/web_search.rs`
 
 ### web_search
 

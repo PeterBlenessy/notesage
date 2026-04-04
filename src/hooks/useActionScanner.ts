@@ -24,10 +24,14 @@ export function useActionScanner() {
   useEffect(() => {
     if (!startupReady) return;
 
+    let mounted = true;
+    let unlistenFn: (() => void) | null = null;
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const pendingPaths = new Set<string>();
 
-    const unlisten = listen<{ path: string; kind: string }[]>('file-changed-batch', (event) => {
+    listen<{ path: string; kind: string }[]>('file-changed-batch', (event) => {
+      if (!mounted) return;
+
       const batch = event.payload;
       if (!batch || batch.length === 0) return;
 
@@ -52,10 +56,18 @@ export function useActionScanner() {
         }
         pendingPaths.clear();
       }, 500);
+    }).then((fn) => {
+      if (mounted) {
+        unlistenFn = fn;
+      } else {
+        // Already unmounted — clean up immediately
+        fn();
+      }
     });
 
     return () => {
-      unlisten.then((fn) => fn());
+      mounted = false;
+      unlistenFn?.();
       if (debounceTimer) clearTimeout(debounceTimer);
     };
   }, [startupReady]);

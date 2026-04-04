@@ -92,6 +92,7 @@ export function ActivityPanel({ onCancelTask, onClickTask }: ActivityStripProps)
           <div className="flex flex-col items-center justify-center px-4 py-8 text-center gap-2">
             <Bot className="h-6 w-6 text-muted-foreground/40" strokeWidth={1.5} />
             <span className="text-xs text-muted-foreground">No agent tasks yet</span>
+            <span className="text-xs text-muted-foreground/60">Open Chat (Cmd+Shift+C) to get started</span>
           </div>
         ) : (
           <div className="divide-y divide-border">

@@ -31,7 +31,7 @@ function ActivityLog({ activities, isActive }: { activities: AgentActivity[]; is
     <div className="mt-2 pt-1.5 border-t border-border/50">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm"
       >
         <ChevronDown
           className={`h-2.5 w-2.5 transition-transform duration-150 ${expanded ? '' : '-rotate-90'}`}
@@ -100,7 +100,7 @@ function ToolCallItem({ activity, isActive }: { activity: ToolCallActivity; isAc
           {activity.status === 'complete' && activity.result && (
             <button
               onClick={() => setResultExpanded(!resultExpanded)}
-              className="text-[10px] text-muted-foreground hover:text-foreground mt-0.5 flex items-center gap-0.5 transition-colors"
+              className="text-[10px] text-muted-foreground hover:text-foreground mt-0.5 flex items-center gap-0.5 transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm"
             >
               <ChevronDown
                 className={`h-2 w-2 transition-transform duration-150 ${resultExpanded ? '' : '-rotate-90'}`}
@@ -128,7 +128,7 @@ function ToolCallLog({ activities, isActive }: { activities: ToolCallActivity[];
     <div className="mt-2 pt-1.5 border-t border-border/50">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm"
       >
         <ChevronDown
           className={`h-2.5 w-2.5 transition-transform duration-150 ${expanded ? '' : '-rotate-90'}`}

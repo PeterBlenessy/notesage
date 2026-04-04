@@ -131,16 +131,18 @@ function IndexProgressIndicator() {
     return () => { unlisten1?.(); unlisten2?.(); };
   }, []);
 
-  if (!progress) return null;
-
   return (
-    <>
-      <span className="inline-flex items-center gap-1 text-muted-foreground">
-        <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.5} />
-        <span>Indexing {progress.current}/{progress.total}</span>
-      </span>
-      <span className="w-px h-2.5 bg-border" />
-    </>
+    <div aria-live="polite" aria-atomic="true" className="contents">
+      {progress && (
+        <>
+          <span className="inline-flex items-center gap-1 text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.5} />
+            <span>Indexing {progress.current}/{progress.total}</span>
+          </span>
+          <span className="w-px h-2.5 bg-border" />
+        </>
+      )}
+    </div>
   );
 }
 

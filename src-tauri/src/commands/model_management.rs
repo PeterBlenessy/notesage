@@ -635,6 +635,7 @@ struct HfApiModel {
     model_id: Option<String>,
     #[serde(default)]
     id: String,
+    #[allow(dead_code)]
     #[serde(default)]
     author: String,
     #[serde(default)]
@@ -882,6 +883,7 @@ struct HfGgufData {
     context_length: Option<u64>,
     #[serde(default)]
     chat_template: Option<String>,
+    #[allow(dead_code)]
     #[serde(default)]
     total: Option<u64>,
 }
