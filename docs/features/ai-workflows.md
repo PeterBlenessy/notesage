@@ -41,6 +41,7 @@ Collapsible right sidebar (Cmd+Shift+C) with streaming AI responses.
 - Tool call deny messages: when a tool call is denied, a chat message is shown ("Tool call X was denied")
 - Domain deny/timeout messages: blocked or timed-out domain requests shown as chat messages
 - Chat panel resizable up to 50% of the content area
+- Image attachments: paste, drag-drop, or file picker to attach up to 5 images per message. Images compressed client-side (1568px max, PNG→JPEG, 5MB cap). Vision capability auto-detected per provider. Right-click "Add to chat" on editor images/drawings or sidebar image files. See [Image Attachments & Vision](ai-providers.md#image-attachments--vision) for full details.
 
 **Provider context isolation:**
 
@@ -228,6 +229,9 @@ Assistant messages render as an ordered stream of typed segments, matching the U
 | `src/stores/chat-store.ts` | Chat conversation state (branching actions, tree selectors) |
 | `src/lib/chat-tree.ts` | Tree traversal utilities (getThread, getChildren, getBranches, getLeaves) |
 | `src/components/chat/BranchSwitcher.tsx` | Branch switcher popover at branch points |
+| `src/components/chat/AttachmentStrip.tsx` | Image attachment thumbnails with remove buttons |
+| `src/lib/ai/vision.ts` | Vision capability detection + editor→chat image event bus |
+| `src/lib/image-compress.ts` | Client-side image compression pipeline |
 | `src/stores/skill-store.ts` | Skills registry, agents, instructions |
 | `src/stores/comment-store.ts` | Comments, replies, delegation |
 | `src/stores/activity-store.ts` | Agent task registry |

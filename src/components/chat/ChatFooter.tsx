@@ -55,16 +55,17 @@ function prettySkillToolName(toolName: string, skillName: string): string {
 import type { EditContext } from './ChatPanel';
 
 interface ChatFooterProps {
-  onSend: (content: string) => Promise<void>;
+  onSend: (content: string, attachments?: import('@/lib/ai/types').ImageAttachment[]) => Promise<void>;
   selectedProjectPaths: string[];
   hasAIProvider: boolean;
   chatPlaceholder: string;
   editContext?: EditContext | null;
   onCancelEdit?: () => void;
   chatInputRef?: RefObject<ChatInputHandle | null>;
+  supportsVision?: boolean;
 }
 
-export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPaths, hasAIProvider, chatPlaceholder, editContext, onCancelEdit, chatInputRef }: ChatFooterProps) {
+export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPaths, hasAIProvider, chatPlaceholder, editContext, onCancelEdit, chatInputRef, supportsVision }: ChatFooterProps) {
   const isLoading = useChatStore((s) => s.isLoading);
   const pendingProjectSwitch = useChatStore(selectPendingProjectSwitch);
   const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
@@ -181,6 +182,7 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
         onCancelEdit={onCancelEdit}
         contextItems={contextItems}
         onDismissContext={dismissItem}
+        supportsVision={supportsVision}
         footer={
           <>
             {(interactiveConnections.length > 0 || hasProjectOverride) && (

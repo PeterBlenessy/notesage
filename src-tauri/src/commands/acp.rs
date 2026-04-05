@@ -172,6 +172,8 @@ struct AgentHandle {
     network_sandbox_enabled: bool,
     network_allowed_domains: Option<Vec<String>>,
     kernel_network_deny: bool,
+    /// Whether the agent supports image content (from promptCapabilities)
+    supports_images: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +197,7 @@ enum AgentCmd {
     Prompt {
         session_id: String,
         content: String,
+        images: Option<Vec<super::ai::ImageData>>,
         reply: oneshot::Sender<Result<(), String>>,
     },
     Cancel {
@@ -446,6 +449,12 @@ fn run_agent_thread(
                     })
                     .collect();
 
+                let supports_images_flag = resp.agent_capabilities.prompt_capabilities.image;
+                log::info!(
+                    target: "notesage::acp",
+                    "Agent {} supports_images={}",
+                    agent_binary, supports_images_flag,
+                );
                 let info = InitInfo {
                     agent_name: resp.agent_info.as_ref().map(|i| i.name.clone()),
                     agent_version: resp.agent_info.as_ref().map(|i| i.version.clone()),
@@ -457,6 +466,7 @@ fn run_agent_thread(
                             description: desc.clone(),
                         })
                         .collect(),
+                    supports_images: supports_images_flag,
                 };
                 let _ = init_tx.send(Ok(info));
             }
@@ -617,6 +627,7 @@ fn run_agent_thread(
                 AgentCmd::Prompt {
                     session_id: sid,
                     content,
+                    images,
                     reply,
                 } => {
                     // Run prompt in a spawn_local so the command loop remains
@@ -628,13 +639,24 @@ fn run_agent_thread(
                     tokio::task::spawn_local(async move {
                         log::info!(
                             target: "notesage::acp",
-                            "[{}] Prompt started (session={}, content_len={})",
+                            "[{}] Prompt started (session={}, content_len={}, images={})",
                             prompt_binary, prompt_sid, content.len(),
+                            images.as_ref().map_or(0, |v| v.len()),
                         );
                         let start = std::time::Instant::now();
+                        let mut blocks: Vec<ContentBlock> = Vec::new();
+                        if let Some(ref imgs) = images {
+                            for img in imgs {
+                                blocks.push(ContentBlock::Image(ImageContent::new(
+                                    img.data.clone(),
+                                    img.mime_type.clone(),
+                                )));
+                            }
+                        }
+                        blocks.push(ContentBlock::Text(TextContent::new(content)));
                         let req = PromptRequest::new(
                             SessionId::new(sid),
-                            vec![ContentBlock::Text(TextContent::new(content))],
+                            blocks,
                         );
                         match conn.prompt(req).await {
                             Ok(_) => {
@@ -886,6 +908,7 @@ pub async fn acp_agent_spawn(
             None
         },
         kernel_network_deny: knd,
+        supports_images: init_info.supports_images,
     };
 
     state
@@ -1155,6 +1178,7 @@ pub async fn acp_session_prompt(
     instance_id: String,
     session_id: String,
     content: String,
+    images: Option<Vec<super::ai::ImageData>>,
 ) -> Result<(), String> {
     let agents = state.agents.lock().await;
     let handle = agents
@@ -1168,6 +1192,7 @@ pub async fn acp_session_prompt(
         .send(AgentCmd::Prompt {
             session_id,
             content,
+            images,
             reply: reply_tx,
         })
         .await
@@ -1183,6 +1208,19 @@ pub async fn acp_session_prompt(
         .await
         .map_err(|_| "Prompt timed out after 30 minutes — the agent may be hung or crashed".to_string())?
         .map_err(|_| "Agent thread did not respond to prompt (channel dropped — agent likely crashed)".to_string())?
+}
+
+/// Check whether the agent supports image content in prompts.
+#[tauri::command]
+pub async fn acp_supports_images(
+    state: State<'_, AcpState>,
+    instance_id: String,
+) -> Result<bool, String> {
+    let agents = state.agents.lock().await;
+    let handle = agents
+        .get(&instance_id)
+        .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+    Ok(handle.supports_images)
 }
 
 /// Cancel the current prompt in an ACP session.

@@ -5,7 +5,7 @@ import { usePermissionStore } from '@/stores/permission-store';
 import { useToolPermissionStore, type ToolCallDecision } from '@/stores/tool-permission-store';
 import { useSkillStore } from '@/stores/skill-store';
 import { getAIProvider } from '@/lib/ai';
-import type { ChatMessage, Citation, ToolDefinition, ToolCallSegment } from '@/lib/ai/types';
+import type { ChatMessage, Citation, ToolDefinition, ToolCallSegment, ImageAttachment } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
 import type { ResolvedCredentials } from '@/lib/ai/credentials';
 import { executeToolCall } from '@/lib/tool-executor';
@@ -33,6 +33,7 @@ interface SendChatOpts {
   attachedFilePaths?: string[];
   sandboxPaths?: string[];
   parentId?: string | null;
+  attachments?: ImageAttachment[];
 }
 
 interface PendingToolCall {
@@ -43,6 +44,19 @@ interface PendingToolCall {
 
 /** Maximum tool calls allowed per user turn to prevent runaway loops. */
 const MAX_TOOL_CALLS_PER_TURN = 20;
+
+/** Map ChatMessage attachments to the Rust `images` field format for ai_chat_stream. */
+function mapMessagesForRust(messages: ChatMessage[]): Array<Record<string, unknown>> {
+  return messages.map(m => {
+    const msg: Record<string, unknown> = { role: m.role, content: m.content };
+    if (m.toolCalls) msg.tool_calls = m.toolCalls;
+    if (m.toolCallId) msg.tool_call_id = m.toolCallId;
+    if (m.attachments && m.attachments.length > 0) {
+      msg.images = m.attachments.map(a => ({ data: a.data, mime_type: a.mimeType }));
+    }
+    return msg;
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Hook — handles all direct API streaming (Anthropic, OpenAI, Ollama, local)
@@ -100,7 +114,7 @@ export function useDirectApiChat({
       setError(null);
 
       const userTimestamp = Date.now();
-      const userMessage: ChatMessage = { role: 'user', content, timestamp: userTimestamp, displayContent: opts?.displayContent, skillName: opts?.skillName, ...(opts?.parentId !== undefined ? { parentId: opts.parentId } : {}) };
+      const userMessage: ChatMessage = { role: 'user', content, timestamp: userTimestamp, displayContent: opts?.displayContent, skillName: opts?.skillName, attachments: opts?.attachments, ...(opts?.parentId !== undefined ? { parentId: opts.parentId } : {}) };
       addMessage(userMessage);
 
       const assistantMessageId = userTimestamp + 1;
@@ -330,7 +344,7 @@ export function useDirectApiChat({
 
           // Re-invoke ai_chat_stream with full history including tool results
           await invoke('ai_chat_stream', {
-            messages: conversationMessages,
+            messages: mapMessagesForRust(conversationMessages),
             provider: resolved.provider,
             connectionId: resolved.connectionId,
             ollamaUrl: resolved.ollamaUrl,
@@ -469,7 +483,7 @@ export function useDirectApiChat({
         }
 
         await invoke('ai_chat_stream', {
-          messages: conversationMessages,
+          messages: mapMessagesForRust(conversationMessages),
           provider: resolved.provider,
           connectionId: resolved.connectionId,
           ollamaUrl: resolved.ollamaUrl,

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
-import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown, Eye } from "lucide-react";
+import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown, Eye, MessageSquare } from "lucide-react";
 import { SyncedIcon } from "./SyncedIcon";
 import { FolderPickerItem } from "./FolderPickerItem";
 import { NewFolderDialog } from "./NewFolderDialog";
@@ -276,6 +276,26 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
   const handleExportHtml = useCallback(() => {
     onExportFile?.(entry.path, entry.name, 'html');
   }, [onExportFile, entry.path, entry.name]);
+
+  const IMAGE_EXTENSIONS = /\.(jpe?g|png|gif|webp|bmp|svg)$/i;
+  const isImageFile = !entry.is_directory && IMAGE_EXTENSIONS.test(entry.name);
+
+  const handleAddToChat = useCallback(async () => {
+    try {
+      const { compressImage } = await import('@/lib/image-compress');
+      const { sendImageToChat } = await import('@/lib/ai/vision');
+      const bytes = await tauriApi.readBinaryFile(entry.path);
+      const ext = entry.name.split('.').pop()?.toLowerCase() ?? '';
+      const mimeMap: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml' };
+      const blob = new Blob([new Uint8Array(bytes)], { type: mimeMap[ext] ?? 'image/png' });
+      const attachment = await compressImage(blob, { name: entry.name });
+      sendImageToChat(attachment);
+      useSettingsStore.getState().setChatPanelOpen(true);
+      toast.success('Image added to chat');
+    } catch {
+      toast.error('Failed to add image to chat');
+    }
+  }, [entry.path, entry.name]);
 
   const handleRevealInFinder = async () => {
     try {
@@ -614,6 +634,12 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
             <ExternalLink className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             Reveal in Finder
           </ContextMenuItem>
+          {isImageFile && (
+            <ContextMenuItem onClick={handleAddToChat}>
+              <MessageSquare className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
+              Add to chat
+            </ContextMenuItem>
+          )}
           {!entry.is_directory && entry.name.endsWith(".md") && onExportFile && (
             <>
               <ContextMenuSeparator />

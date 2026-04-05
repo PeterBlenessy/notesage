@@ -61,6 +61,10 @@ pub struct LocalModelInfo {
     pub thinking_tags: Option<ThinkingTags>,
     #[serde(default)]
     pub supports_vision: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mmproj_filename: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mmproj_url: Option<String>,
     #[serde(default)]
     pub multilingual: bool,
     #[serde(default)]
@@ -113,6 +117,10 @@ pub struct CatalogEntry {
     pub thinking_tags: Option<ThinkingTags>,
     #[serde(default)]
     pub supports_vision: bool,
+    #[serde(default)]
+    pub mmproj_filename: Option<String>,
+    #[serde(default)]
+    pub mmproj_url: Option<String>,
     #[serde(default)]
     pub multilingual: bool,
     #[serde(default)]
@@ -244,6 +252,8 @@ pub async fn list_local_models(
                 supports_thinking: entry.supports_thinking,
                 thinking_tags: entry.thinking_tags,
                 supports_vision: entry.supports_vision,
+                mmproj_filename: entry.mmproj_filename,
+                mmproj_url: entry.mmproj_url,
                 multilingual: entry.multilingual,
                 recommended_for: entry.recommended_for,
             }
@@ -355,6 +365,42 @@ async fn download_model_inner(
     // Auto-parse GGUF header and cache metadata (Task 9)
     if entry.filename.ends_with(".gguf") {
         super::model_metadata::parse_and_cache_gguf_for_model(&entry.id, &final_path);
+    }
+
+    // Download mmproj file for vision models (needed by llama-server --mmproj)
+    if let (Some(ref mmproj_filename), Some(ref mmproj_url)) = (&entry.mmproj_filename, &entry.mmproj_url) {
+        let mmproj_path = models_dir.join(mmproj_filename);
+        if !mmproj_path.exists() {
+            log::info!(target: "notesage::local_ai", "Downloading mmproj for '{}': {}", entry.id, mmproj_filename);
+            let mmproj_temp = models_dir.join(format!("{}.downloading", mmproj_filename));
+            let _ = std::fs::remove_file(&mmproj_temp);
+
+            let mmproj_resp = client.get(mmproj_url).send().await
+                .map_err(|e| format!("mmproj download failed: {}", e))?;
+            if !mmproj_resp.status().is_success() {
+                log::warn!(target: "notesage::local_ai", "mmproj download failed with status {}", mmproj_resp.status());
+                return Ok(()); // Non-fatal — model itself is usable without vision
+            }
+
+            let mut mmproj_stream = mmproj_resp.bytes_stream();
+            let mut mmproj_file = std::fs::File::create(&mmproj_temp)
+                .map_err(|e| format!("Failed to create mmproj temp file: {}", e))?;
+            while let Some(chunk) = mmproj_stream.next().await {
+                if cancel.load(Ordering::Relaxed) {
+                    drop(mmproj_file);
+                    let _ = std::fs::remove_file(&mmproj_temp);
+                    return Ok(()); // Model is already downloaded, just skip mmproj
+                }
+                let chunk = chunk.map_err(|e| format!("mmproj download error: {}", e))?;
+                use std::io::Write;
+                mmproj_file.write_all(&chunk)
+                    .map_err(|e| format!("mmproj write error: {}", e))?;
+            }
+            drop(mmproj_file);
+            std::fs::rename(&mmproj_temp, &mmproj_path)
+                .map_err(|e| format!("Failed to finalize mmproj download: {}", e))?;
+            log::info!(target: "notesage::local_ai", "Downloaded mmproj '{}'", mmproj_filename);
+        }
     }
 
     Ok(())
@@ -504,6 +550,8 @@ pub async fn add_custom_local_model(
         supports_thinking: supports_thinking.unwrap_or(false),
         thinking_tags: None,
         supports_vision: supports_vision.unwrap_or(false),
+        mmproj_filename: None,
+        mmproj_url: None,
         multilingual: multilingual.unwrap_or(false),
         recommended_for: vec![],
     };
@@ -539,6 +587,8 @@ pub async fn add_custom_local_model(
         supports_thinking: entry.supports_thinking,
         thinking_tags: entry.thinking_tags,
         supports_vision: entry.supports_vision,
+        mmproj_filename: entry.mmproj_filename,
+        mmproj_url: entry.mmproj_url,
         multilingual: entry.multilingual,
         recommended_for: entry.recommended_for,
     })

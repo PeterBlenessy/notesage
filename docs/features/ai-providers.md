@@ -214,6 +214,65 @@ Script-bearing skills are automatically converted to first-class tool definition
 - `searchProvider` setting for web search backend (DuckDuckGo)
 - Tools indicator badge in chat footer showing count of available tools
 
+## Image Attachments & Vision
+
+Chat messages can include up to 5 image attachments, enabling multimodal conversations with vision-capable models.
+
+**Image input methods:**
+
+- Paste from clipboard (Cmd+V in chat input)
+- Drag and drop files onto the chat input area
+- File picker button in the attachment strip
+- Right-click "Add to chat" on images and drawings in the editor (via `SendToAI` ProseMirror plugin)
+- Right-click "Add to chat" on image files in the sidebar file tree
+- Drag image files from the sidebar into the chat panel
+
+**Image compression pipeline (`src/lib/image-compress.ts`):**
+
+- Images resized to fit within 1568px max dimension (preserving aspect ratio)
+- PNG images converted to JPEG for smaller payload
+- Final size capped at 5MB per image
+- Compression runs client-side via Canvas API before sending to the backend
+
+**Vision capability detection (`src/lib/ai/vision.ts`):**
+
+- **Anthropic / OpenAI:** Always vision-capable (all current models support images)
+- **Ollama:** Detected at runtime via `/api/show` — checks for `vision` in model capabilities
+- **Local bundled:** Checked via `supports_vision` flag in model catalog metadata
+- **ACP agents:** Checked via `promptCapabilities.images` from the ACP session
+- **OpenAI-compatible:** Always reported as vision-capable (best-effort)
+- Switching to a non-vision model clears any pending image attachments
+
+**Provider-specific image serialization (Rust backend):**
+
+- **Anthropic:** `content` array with `type: "image"` blocks using `source.type: "base64"`
+- **OpenAI / OpenAI-compatible:** `content` array with `type: "image_url"` using `data:` URI
+- **Ollama:** `images` array on the message object (raw base64 strings)
+- **Local bundled:** Same format as OpenAI via `/v1/chat/completions`
+- **ACP:** `ContentBlock::Image` with base64 data and media type
+
+**Multimodal projector (mmproj) for local models:**
+
+- Vision models like Gemma 4 require a separate mmproj GGUF file for image processing
+- mmproj files auto-downloaded from Hugging Face when a vision model with `mmproj_file` metadata is activated
+- Download progress shown as chronological status updates in the chat panel
+- mmproj path passed to llama-server via `--mmproj` flag at startup
+
+**UI components:**
+
+- `AttachmentStrip` shows pending image thumbnails with remove buttons below the chat input
+- Sent messages display image thumbnails (120px max) that are clickable for full-size preview
+- Image event bus (`src/lib/ai/vision.ts`) bridges editor "Add to chat" actions to the chat panel
+
+**Key files:**
+
+| File | Purpose |
+| --- | --- |
+| `src/lib/image-compress.ts` | Client-side image compression (resize, PNG→JPEG, 5MB cap) |
+| `src/lib/ai/vision.ts` | Vision detection per provider + image event bus |
+| `src/components/chat/AttachmentStrip.tsx` | Thumbnail strip with remove buttons |
+| `src/components/editor/extensions/send-to-ai.ts` | ProseMirror plugin for "Add to chat" context menu |
+
 ## Web Search
 
 Web search is implemented as a client-side tool (`web_search`) available to all providers when tool calling is enabled. The backend `web_search` Tauri command queries DuckDuckGo's HTML endpoint — no API key needed. Results are returned to the model as tool call results with title, URL, and snippet for each hit.

@@ -15,6 +15,9 @@ import { ChatHistoryView } from './ChatHistoryView';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatFooter } from './ChatFooter';
 import type { ChatInputHandle } from './ChatInput';
+import type { ImageAttachment } from '@/lib/ai/types';
+import { supportsVision as checkVision, type VisionCheckContext } from '@/lib/ai/vision';
+import { useLocalAIStore } from '@/stores/local-ai-store';
 import {
   Tooltip,
   TooltipContent,
@@ -74,6 +77,23 @@ export function ChatPanel() {
 
   // AI availability: check v2 routing/connections first, fall back to v1 ai-store
   const hasAIProvider = !!effectiveConnection || !!legacyProvider;
+
+  // Vision support check for image attachments
+  const localAIModels = useLocalAIStore((s) => s.models);
+  const localActiveModelId = useLocalAIStore((s) => s.activeModelId);
+  const visionSupported = useMemo(() => {
+    if (!effectiveConnection) return false;
+    // Map ConnectionProvider to VisionCheckContext provider
+    // ConnectionProvider uses 'local_ai' while AIProviderType uses 'local_bundled'
+    const providerMap: Record<string, VisionCheckContext['provider']> = { local_ai: 'local_bundled' };
+    const provider = (providerMap[effectiveConnection.provider] ?? effectiveConnection.provider) as VisionCheckContext['provider'];
+    const ctx: VisionCheckContext = { provider };
+    if (provider === 'local_bundled') {
+      const activeModel = localAIModels.find((m) => m.id === localActiveModelId);
+      ctx.localModelSupportsVision = activeModel?.supports_vision ?? false;
+    }
+    return checkVision(ctx);
+  }, [effectiveConnection, localAIModels, localActiveModelId]);
 
   // Goals discovery for single-project selection only
   const { goalFiles } = useGoalsDiscovery(singleProjectPath);
@@ -152,7 +172,7 @@ export function ChatPanel() {
     }
   }, [activeConversationId, conversations.length, createConversation]);
 
-  const handleSend = useCallback(async (content: string) => {
+  const handleSend = useCallback(async (content: string, attachments?: ImageAttachment[]) => {
     if (!hasAIProvider) {
       return;
     }
@@ -202,7 +222,7 @@ export function ChatPanel() {
       ? activeConv.projectPaths
       : undefined; // undefined = all workspace folders (default)
 
-    const sendOpts: Record<string, unknown> = { ...(skillName ? { displayContent: content, skillName } : {}), attachedFilePaths, sandboxPaths };
+    const sendOpts: Record<string, unknown> = { ...(skillName ? { displayContent: content, skillName } : {}), attachedFilePaths, sandboxPaths, attachments };
     if (editContextRef.current) {
       sendOpts.parentId = editContextRef.current.parentId;
       clearEditContext();
@@ -315,6 +335,7 @@ export function ChatPanel() {
         editContext={editContext}
         onCancelEdit={clearEditContext}
         chatInputRef={chatInputRef}
+        supportsVision={visionSupported}
       />
       </>
       )}

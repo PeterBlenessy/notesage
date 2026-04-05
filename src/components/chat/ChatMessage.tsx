@@ -152,6 +152,35 @@ function ToolCallLog({ activities, isActive }: { activities: ToolCallActivity[];
   );
 }
 
+function AttachmentThumbnails({ message }: { message: ChatMessageType }) {
+  if (!message.attachments || message.attachments.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-2 mb-2">
+      {message.attachments.map((att) => (
+        <button
+          key={att.id}
+          className="block rounded-md overflow-hidden border border-border hover:border-foreground/30 transition-colors duration-150 cursor-pointer"
+          onClick={() => {
+            const win = window.open('', '_blank');
+            if (win) {
+              win.document.write(`<img src="data:${att.mimeType};base64,${att.data}" style="max-width:100%;height:auto" />`);
+              win.document.title = att.name ?? 'Image';
+            }
+          }}
+          title={att.name ?? 'Click to view full size'}
+        >
+          <img
+            src={`data:${att.mimeType};base64,${att.data}`}
+            alt={att.name ?? 'Attached image'}
+            className="max-w-[120px] max-h-[120px] object-contain"
+          />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function UserContent({ message }: { message: ChatMessageType }) {
   const [skillExpanded, setSkillExpanded] = useState(false);
   const displayText = message.displayContent ?? message.content;
@@ -159,6 +188,7 @@ function UserContent({ message }: { message: ChatMessageType }) {
   if (message.skillName) {
     return (
       <div>
+        <AttachmentThumbnails message={message} />
         <button
           onClick={() => setSkillExpanded(!skillExpanded)}
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-1.5"
@@ -180,7 +210,12 @@ function UserContent({ message }: { message: ChatMessageType }) {
     );
   }
 
-  return <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed">{displayText}</p>;
+  return (
+    <div>
+      <AttachmentThumbnails message={message} />
+      <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed">{displayText}</p>
+    </div>
+  );
 }
 
 /** Action buttons for messages. For user messages, collapses into a ⋯ menu when buttons overflow the bubble. */

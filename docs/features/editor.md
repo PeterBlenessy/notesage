@@ -27,6 +27,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 
 - Top toolbar with formatting controls: heading level picker, undo/redo, bold, italic, underline, strikethrough, code, text color, highlight, bullet list, ordered list, task list, indent/outdent, blockquote, callout picker (4 types), code block, horizontal rule, alignment (left/center/right), table, image, drawing, typography settings (searchable font picker with 14 presets + all installed system fonts, font size, line height, paragraph spacing), dictation
 - Bubble menu on text selection with AI actions (Improve, Summarize, Expand) — toggleable in settings
+- Right-click "Add to chat" on images and drawing blocks sends the image to the AI chat panel as an attachment (via `SendToAI` ProseMirror plugin and vision event bus)
 - Floating table toolbar appears when cursor is inside a table — add/remove rows and columns, merge/split cells, toggle header row, delete table
 - ~~Block drag handles~~ — deferred, needs unified left-gutter design
 - ~~Item annotations~~ — deferred, needs unified left-gutter design
@@ -37,7 +38,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 
 ## File Management
 
-- Sidebar file tree with expand/collapse, file icons by extension, right-click context menu (new file, new folder, rename, delete)
+- Sidebar file tree with expand/collapse, file icons by extension, right-click context menu (new file, new folder, rename, delete, "Add to chat" for image files)
 - File operations via Tauri commands: open folder (native dialog), open/save/create/rename/delete files
 - Hidden files/folders ignored by default; optional "Show Hidden Files" toggle in Settings > Advanced reveals dotfiles with dimmed styling and bottom-sort order. `.DS_Store` and `.git/objects|pack|logs` always excluded.
 

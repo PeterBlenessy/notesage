@@ -25,6 +25,7 @@ import { SlashCommand } from "@/components/editor/extensions/slash-command";
 import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSuggestion, MentionHighlight, MentionSuggestion, DateHighlight, DateSuggestion, SearchHighlight, Drawing, Chart, LinkPreview } from "@/components/editor/extensions";
 import { PageBreaks } from "@/components/editor/extensions/page-breaks";
 import { LinkClick } from "@/components/editor/extensions/link-click";
+import { SendToAI } from "@/components/editor/extensions/send-to-ai";
 import { Callout } from "@/components/editor/extensions/callout";
 import { HeadingWithOverrides, ParagraphWithOverrides, TypographyOverrides } from "@/components/editor/extensions/typography-overrides";
 import { getMarkdownFromEditor } from "@/lib/markdown";
@@ -161,6 +162,7 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       TableSort,
       TableSparkline,
       TableHeaderMenu,
+      SendToAI,
     ],
     content,
     editable,

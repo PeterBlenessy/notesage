@@ -73,6 +73,17 @@ pub struct ChatMessage {
     pub tool_calls: Option<Vec<ToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub images: Option<Vec<ImageData>>,
+}
+
+/// Image data sent alongside a chat message for multi-modal AI providers.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ImageData {
+    /// Base64-encoded image data
+    pub data: String,
+    /// MIME type: "image/jpeg", "image/png", etc.
+    pub mime_type: String,
 }
 
 /// Definition of a tool that can be passed to an AI provider for function calling.
@@ -978,6 +989,23 @@ async fn openai_compatible_chat(
     Ok(content)
 }
 
+#[tauri::command]
+pub async fn ollama_model_supports_vision(
+    ollama_url: Option<String>,
+    model: String,
+    base_url: Option<String>,
+) -> Result<bool, String> {
+    let base = base_url
+        .as_deref()
+        .or(ollama_url.as_deref())
+        .unwrap_or("http://localhost:11434");
+
+    let client = reqwest::Client::new();
+    let result =
+        crate::commands::segment_builder::detect_vision_support(&client, base, &model).await;
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -990,6 +1018,7 @@ mod tests {
             content: "Hello".to_string(),
             tool_calls: None,
             tool_call_id: None,
+            images: None,
         };
         let json = serde_json::to_value(&msg).unwrap();
         assert_eq!(json["role"], "user");
@@ -1010,6 +1039,7 @@ mod tests {
                 arguments: json!({"path": "/tmp/test.md"}),
             }]),
             tool_call_id: None,
+            images: None,
         };
         let json = serde_json::to_value(&msg).unwrap();
         assert_eq!(json["tool_calls"][0]["id"], "call_123");
@@ -1025,6 +1055,7 @@ mod tests {
             content: "file contents here".to_string(),
             tool_calls: None,
             tool_call_id: Some("call_123".to_string()),
+            images: None,
         };
         let json = serde_json::to_value(&msg).unwrap();
         assert_eq!(json["role"], "tool");
@@ -1155,11 +1186,86 @@ mod tests {
                 },
             ]),
             tool_call_id: None,
+            images: None,
         };
         let json = serde_json::to_value(&msg).unwrap();
         let calls = json["tool_calls"].as_array().unwrap();
         assert_eq!(calls.len(), 2);
         assert_eq!(calls[0]["id"], "call_1");
         assert_eq!(calls[1]["id"], "call_2");
+    }
+
+    #[test]
+    fn test_chat_message_with_images_serializes() {
+        let msg = ChatMessage {
+            role: "user".to_string(),
+            content: "Check this image".to_string(),
+            tool_calls: None,
+            tool_call_id: None,
+            images: Some(vec![ImageData {
+                data: "base64data".to_string(),
+                mime_type: "image/jpeg".to_string(),
+            }]),
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["role"], "user");
+        assert_eq!(json["content"], "Check this image");
+        let images = json["images"].as_array().unwrap();
+        assert_eq!(images.len(), 1);
+        assert_eq!(images[0]["data"], "base64data");
+        assert_eq!(images[0]["mime_type"], "image/jpeg");
+    }
+
+    #[test]
+    fn test_chat_message_without_images_skips_field() {
+        let msg = ChatMessage {
+            role: "user".to_string(),
+            content: "No images".to_string(),
+            tool_calls: None,
+            tool_call_id: None,
+            images: None,
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert!(json.get("images").is_none());
+    }
+
+    #[test]
+    fn test_chat_message_with_images_deserializes() {
+        let json = json!({
+            "role": "user",
+            "content": "Check this",
+            "images": [{
+                "data": "abc123",
+                "mime_type": "image/png"
+            }]
+        });
+        let msg: ChatMessage = serde_json::from_value(json).unwrap();
+        assert!(msg.images.is_some());
+        let images = msg.images.unwrap();
+        assert_eq!(images.len(), 1);
+        assert_eq!(images[0].data, "abc123");
+        assert_eq!(images[0].mime_type, "image/png");
+    }
+
+    #[test]
+    fn test_chat_message_without_images_deserializes() {
+        let json = json!({
+            "role": "user",
+            "content": "No images"
+        });
+        let msg: ChatMessage = serde_json::from_value(json).unwrap();
+        assert!(msg.images.is_none());
+    }
+
+    #[test]
+    fn test_image_data_roundtrip() {
+        let img = ImageData {
+            data: "base64data==".to_string(),
+            mime_type: "image/jpeg".to_string(),
+        };
+        let serialized = serde_json::to_string(&img).unwrap();
+        let deserialized: ImageData = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.data, "base64data==");
+        assert_eq!(deserialized.mime_type, "image/jpeg");
     }
 }

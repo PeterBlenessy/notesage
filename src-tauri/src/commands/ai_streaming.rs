@@ -102,6 +102,28 @@ pub async fn anthropic_chat_stream(
         .iter()
         .filter(|m| m.role != "system")
         .map(|m| {
+            if let Some(ref images) = m.images {
+                if !images.is_empty() {
+                    let mut content_blocks: Vec<serde_json::Value> = images.iter().map(|img| {
+                        serde_json::json!({
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": img.mime_type,
+                                "data": img.data
+                            }
+                        })
+                    }).collect();
+                    content_blocks.push(serde_json::json!({
+                        "type": "text",
+                        "text": m.content
+                    }));
+                    return serde_json::json!({
+                        "role": m.role,
+                        "content": content_blocks
+                    });
+                }
+            }
             serde_json::json!({
                 "role": m.role,
                 "content": m.content
@@ -376,6 +398,25 @@ pub async fn openai_chat_stream(
                     }]
                 })
             } else {
+                if let Some(ref images) = m.images {
+                    if !images.is_empty() {
+                        let mut content_parts: Vec<serde_json::Value> = images.iter().map(|img| {
+                            serde_json::json!({
+                                "type": "input_image",
+                                "image_url": format!("data:{};base64,{}", img.mime_type, img.data)
+                            })
+                        }).collect();
+                        content_parts.push(serde_json::json!({
+                            "type": "input_text",
+                            "text": m.content
+                        }));
+                        return serde_json::json!({
+                            "type": "message",
+                            "role": "user",
+                            "content": content_parts
+                        });
+                    }
+                }
                 serde_json::json!({
                     "type": "message",
                     "role": "user",
@@ -602,10 +643,18 @@ pub async fn ollama_chat_stream(
     let api_messages: Vec<serde_json::Value> = messages
         .iter()
         .map(|m| {
-            serde_json::json!({
+            let mut msg = serde_json::json!({
                 "role": m.role,
                 "content": m.content
-            })
+            });
+            if let Some(ref images) = m.images {
+                if !images.is_empty() {
+                    msg["images"] = serde_json::json!(
+                        images.iter().map(|img| &img.data).collect::<Vec<_>>()
+                    );
+                }
+            }
+            msg
         })
         .collect();
 
@@ -827,6 +876,24 @@ pub async fn openai_compatible_chat_stream(
     let api_messages: Vec<serde_json::Value> = messages
         .iter()
         .map(|m| {
+            if let Some(ref images) = m.images {
+                if !images.is_empty() {
+                    let mut content_parts: Vec<serde_json::Value> = images.iter().map(|img| {
+                        serde_json::json!({
+                            "type": "image_url",
+                            "image_url": { "url": format!("data:{};base64,{}", img.mime_type, img.data) }
+                        })
+                    }).collect();
+                    content_parts.push(serde_json::json!({
+                        "type": "text",
+                        "text": m.content
+                    }));
+                    return serde_json::json!({
+                        "role": m.role,
+                        "content": content_parts
+                    });
+                }
+            }
             serde_json::json!({
                 "role": m.role,
                 "content": m.content

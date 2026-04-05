@@ -1,5 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from 'react';
-import { ArrowUp, Square, Mic, MicOff, X } from 'lucide-react';
+import { ArrowUp, Square, Mic, MicOff, X, ImagePlus } from 'lucide-react';
+import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
+import { toast } from 'sonner';
 import type { EditContext } from './ChatPanel';
 import { Button } from '@/components/ui/button';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -7,15 +9,21 @@ import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { SkillCommandMenu, type SkillCommandMenuHandle } from './SkillCommandMenu';
 import { AgentCommandMenu, type AgentCommandMenuHandle } from './AgentCommandMenu';
 import { ContextPill } from './ContextPill';
+import { AttachmentStrip } from './AttachmentStrip';
 import type { SkillEntry, AgentEntry } from '@/stores/skill-store';
 import type { ContextItem } from '@/hooks/useChatContext';
+import type { ImageAttachment } from '@/lib/ai/types';
+import { compressImage } from '@/lib/image-compress';
+import { registerSendImageHandler, unregisterSendImageHandler } from '@/lib/ai/vision';
+import { tauriApi } from '@/lib/tauri';
+import { parseNotesageDrop } from '@/lib/drag-utils';
 
 export interface ChatInputHandle {
   prefill: (text: string) => void;
 }
 
 interface ChatInputProps {
-  onSend: (message: string) => void;
+  onSend: (message: string, attachments?: ImageAttachment[]) => void;
   onStop?: () => void;
   isLoading?: boolean;
   disabled?: boolean;
@@ -25,10 +33,13 @@ interface ChatInputProps {
   onDismissContext?: (id: string) => void;
   editContext?: EditContext | null;
   onCancelEdit?: () => void;
+  supportsVision?: boolean;
 }
 
-export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = 'Ask anything...', footer, contextItems, onDismissContext, editContext, onCancelEdit }, ref) {
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = 'Ask anything...', footer, contextItems, onDismissContext, editContext, onCancelEdit, supportsVision }, ref) {
   const [message, setMessage] = useState('');
+  const [pendingAttachments, setPendingAttachments] = useState<ImageAttachment[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
   const chatHintsShown = useSettingsStore((s) => s.chatHintsShown);
   const setChatHintsShown = useSettingsStore((s) => s.setChatHintsShown);
   const [showSkillMenu, setShowSkillMenu] = useState(false);
@@ -89,10 +100,148 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     el.style.height = `${el.scrollHeight}px`;
   }, []);
 
+  // Clear pending attachments when switching to a non-vision model
+  useEffect(() => {
+    if (!supportsVision && pendingAttachments.length > 0) {
+      setPendingAttachments([]);
+      toast.info('Images removed — current model doesn\'t support images');
+    }
+  }, [supportsVision]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Register cross-component event handler so the editor's "Send to AI"
+  // context menu can inject image attachments into this component.
+  const pendingAttachmentsRef = useRef(pendingAttachments);
+  pendingAttachmentsRef.current = pendingAttachments;
+
+  useEffect(() => {
+    registerSendImageHandler((attachment) => {
+      if (pendingAttachmentsRef.current.length >= 5) {
+        toast.error('Maximum 5 images per message');
+        return;
+      }
+      setPendingAttachments((prev) => (prev.length >= 5 ? prev : [...prev, attachment]));
+    });
+    return () => unregisterSendImageHandler();
+  }, []);
+
+  // --- Image attachment handlers ---
+
+  const addAttachment = useCallback(async (source: File | Blob | string, name?: string) => {
+    if (!supportsVision) {
+      toast.error("Current model doesn't support images");
+      return;
+    }
+    if (pendingAttachments.length >= 5) {
+      toast.error('Maximum 5 images per message');
+      return;
+    }
+    try {
+      const attachment = await compressImage(source, { name });
+      setPendingAttachments(prev => {
+        if (prev.length >= 5) return prev;
+        return [...prev, attachment];
+      });
+    } catch {
+      toast.error('Failed to process image');
+    }
+  }, [supportsVision, pendingAttachments.length]);
+
+  const handleRemoveAttachment = useCallback((id: string) => {
+    setPendingAttachments(prev => prev.filter(a => a.id !== id));
+  }, []);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const files = e.clipboardData?.files;
+    if (files && files.length > 0) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file.type.startsWith('image/')) {
+          e.preventDefault();
+          addAttachment(file);
+        }
+      }
+    }
+  }, [addAttachment]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!supportsVision) return;
+    // Accept both native file drops and Notesage sidebar drags (text/plain with JSON payload)
+    const hasFiles = e.dataTransfer.types.includes('Files');
+    const hasText = e.dataTransfer.types.includes('text/plain');
+    if (!hasFiles && !hasText) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = hasFiles ? 'copy' : 'move';
+    setIsDragOver(true);
+  }, [supportsVision]);
+
+  const handleDragLeave = useCallback(() => {
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (!supportsVision) {
+      toast.error("Current model doesn't support images");
+      return;
+    }
+
+    // Handle Notesage sidebar drags (image files dragged from file tree)
+    const IMAGE_EXT = /\.(jpe?g|png|gif|webp|bmp|svg)$/i;
+    const notesageDrop = parseNotesageDrop(e);
+    if (notesageDrop && !notesageDrop.isDirectory && IMAGE_EXT.test(notesageDrop.name)) {
+      try {
+        const bytes = await tauriApi.readBinaryFile(notesageDrop.path);
+        const ext = notesageDrop.name.split('.').pop()?.toLowerCase() ?? '';
+        const mimeMap: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml' };
+        const blob = new Blob([new Uint8Array(bytes)], { type: mimeMap[ext] ?? 'image/png' });
+        await addAttachment(blob, notesageDrop.name);
+      } catch {
+        toast.error('Failed to add image');
+      }
+      return;
+    }
+
+    // Handle native file drops (from Finder / desktop)
+    const files = e.dataTransfer?.files;
+    if (files) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file.type.startsWith('image/')) {
+          addAttachment(file);
+        }
+      }
+    }
+  }, [supportsVision, addAttachment]);
+
+  const handleAttachClick = useCallback(async () => {
+    try {
+      const selected = await openFileDialog({
+        multiple: true,
+        filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] }],
+      });
+      if (selected) {
+        const paths = Array.isArray(selected) ? selected : [selected];
+        for (const filePath of paths) {
+          if (typeof filePath === 'string') {
+            const bytes = await tauriApi.readBinaryFile(filePath);
+            const u8 = new Uint8Array(bytes);
+            const blob = new Blob([u8]);
+            const name = filePath.split('/').pop() ?? 'image';
+            await addAttachment(blob, name);
+          }
+        }
+      }
+    } catch {
+      // User cancelled dialog — no action needed
+    }
+  }, [addAttachment]);
+
   const handleSubmit = () => {
-    if (message.trim() && !disabled) {
-      onSend(message.trim());
+    if ((message.trim() || pendingAttachments.length > 0) && !disabled) {
+      onSend(message.trim(), pendingAttachments.length > 0 ? pendingAttachments : undefined);
       setMessage('');
+      setPendingAttachments([]);
       setShowSkillMenu(false);
       setShowAgentMenu(false);
       if (!chatHintsShown) {
@@ -183,7 +332,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     }
   }, [isDictating, startDictation, stopDictation]);
 
-  const canSend = message.trim() && !disabled;
+  const canSend = (message.trim() || pendingAttachments.length > 0) && !disabled;
 
   const micButton = (
     <Button
@@ -227,9 +376,27 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     </Button>
   ) : null;
 
+  const attachButton = supportsVision ? (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={handleAttachClick}
+      disabled={disabled}
+      className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground transition-colors duration-150"
+      title="Attach image"
+    >
+      <ImagePlus className="h-3.5 w-3.5" strokeWidth={1.5} />
+    </Button>
+  ) : null;
+
   return (
     <>
-    <div className="relative rounded-xl border border-border bg-background transition-colors focus-within:ring-1 focus-within:ring-ring">
+    <div
+      className={`relative rounded-xl border bg-background transition-colors focus-within:ring-1 focus-within:ring-ring ${isDragOver ? 'border-dashed border-foreground/30 bg-muted/50' : 'border-border'}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       {showSkillMenu && (
         <SkillCommandMenu
           ref={menuRef}
@@ -266,6 +433,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           ))}
         </div>
       )}
+      <AttachmentStrip attachments={pendingAttachments} onRemove={handleRemoveAttachment} />
       <div className="flex items-end gap-2 px-3 py-2">
         <textarea
           ref={textareaRef}
@@ -275,6 +443,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             autoResize();
           }}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder={isDictating && interimText ? interimText : placeholder}
           disabled={disabled}
           rows={1}
@@ -289,6 +458,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
               {footer}
             </div>
             <div className="flex items-center gap-1.5">
+              {attachButton}
               {micButton}
               {stopButton}
               {sendButton}
@@ -298,6 +468,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       )}
       {!footer && (
         <div className="flex justify-end px-3 pb-2 gap-1.5">
+          {attachButton}
           {micButton}
           {stopButton}
           {sendButton}

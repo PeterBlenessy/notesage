@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useChatStore, selectProjectPaths, selectPendingProjectSwitch } from '@/stores/chat-store';
 import { usePermissionStore } from '@/stores/permission-store';
-import type { ChatMessage } from '@/lib/ai/types';
+import type { ChatMessage, ImageAttachment } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
 import { setAgentModels } from '@/lib/ai/connections';
 import { invoke } from '@tauri-apps/api/core';
@@ -189,6 +189,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     assistantMessageId: number;
     attachedFilePaths?: string[];
     sandboxPaths?: string[];
+    attachments?: ImageAttachment[];
     pathFilterRoot: string | null;
     homeDir: string;
   } | null>(null);
@@ -279,7 +280,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
    * Send a chat message via ACP agent (multi-turn with permission handling).
    */
   const acpSendChatMessage = useCallback(
-    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null }) => {
+    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null; attachments?: ImageAttachment[] }) => {
       // Clean up any stale listeners from a previous streaming call
       if (cleanupRef.current) {
         cleanupRef.current();
@@ -292,7 +293,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       setError(null);
 
       const userTimestamp = Date.now();
-      const userMessage: ChatMessage = { role: 'user', content, timestamp: userTimestamp, displayContent: opts?.displayContent, skillName: opts?.skillName, ...(opts?.parentId !== undefined ? { parentId: opts.parentId } : {}) };
+      const userMessage: ChatMessage = { role: 'user', content, timestamp: userTimestamp, displayContent: opts?.displayContent, skillName: opts?.skillName, attachments: opts?.attachments, ...(opts?.parentId !== undefined ? { parentId: opts.parentId } : {}) };
       addMessage(userMessage);
       const assistantMessageId = userTimestamp + 1;
       addMessage({
@@ -330,6 +331,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         assistantMessageId,
         attachedFilePaths: opts?.attachedFilePaths,
         sandboxPaths: opts?.sandboxPaths,
+        attachments: opts?.attachments,
         pathFilterRoot,
         homeDir,
       };
@@ -397,10 +399,14 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             : content;
           // Start unresponsiveness detection timer before prompt
           startUnresponsiveTimer();
+          const acpImages = opts?.attachments?.length
+            ? opts.attachments.map(a => ({ data: a.data, mime_type: a.mimeType }))
+            : null;
           await invoke('acp_session_prompt', {
             instanceId,
             sessionId: acpAgent!.chatSessionId,
             content: promptContent,
+            images: acpImages,
           });
         } finally {
           clearUnresponsiveTimer();
@@ -556,10 +562,14 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
       try {
         startUnresponsiveTimer();
+        const retryImages = prompt.attachments?.length
+          ? prompt.attachments.map(a => ({ data: a.data, mime_type: a.mimeType }))
+          : null;
         await invoke('acp_session_prompt', {
           instanceId,
           sessionId: acpAgent!.chatSessionId,
           content: promptContent,
+          images: retryImages,
         });
       } finally {
         clearUnresponsiveTimer();

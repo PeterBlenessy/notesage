@@ -1251,3 +1251,67 @@ describe('system-status messages', () => {
     expect(statusMsgs[0].statusType).toBe('failed');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Image attachments on messages
+// ---------------------------------------------------------------------------
+
+describe('image attachments', () => {
+  beforeEach(() => {
+    storageBacking.clear();
+    useChatStore.setState({
+      conversations: [],
+      activeConversationId: null,
+    } as Partial<ReturnType<typeof useChatStore.getState>> as ReturnType<typeof useChatStore.getState>);
+    useChatStore.getState().createConversation();
+  });
+
+  it('persists message with attachments', () => {
+    useChatStore.getState().addMessage({
+      role: 'user',
+      content: 'Check this image',
+      attachments: [
+        {
+          id: 'img-test-1',
+          data: 'base64data',
+          mimeType: 'image/jpeg',
+          width: 800,
+          height: 600,
+          size: 1234,
+        },
+      ],
+    });
+
+    const conv = useChatStore.getState().conversations[0];
+    const lastMsg = conv.messages[conv.messages.length - 1];
+    expect(lastMsg.attachments).toHaveLength(1);
+    expect(lastMsg.attachments![0].id).toBe('img-test-1');
+    expect(lastMsg.attachments![0].mimeType).toBe('image/jpeg');
+    expect(lastMsg.attachments![0].width).toBe(800);
+  });
+
+  it('handles messages without attachments (backward compat)', () => {
+    useChatStore.getState().addMessage({ role: 'user', content: 'No images here' });
+
+    const conv = useChatStore.getState().conversations[0];
+    const lastMsg = conv.messages[conv.messages.length - 1];
+    expect(lastMsg.attachments).toBeUndefined();
+  });
+
+  it('preserves multiple attachments on a single message', () => {
+    useChatStore.getState().addMessage({
+      role: 'user',
+      content: 'Two images',
+      attachments: [
+        { id: 'img-1', data: 'a', mimeType: 'image/png', width: 100, height: 100, size: 500 },
+        { id: 'img-2', data: 'b', mimeType: 'image/jpeg', width: 200, height: 150, size: 1000 },
+      ],
+    });
+
+    const conv = useChatStore.getState().conversations[0];
+    const lastMsg = conv.messages[conv.messages.length - 1];
+    expect(lastMsg.attachments).toHaveLength(2);
+    expect(lastMsg.attachments![0].id).toBe('img-1');
+    expect(lastMsg.attachments![1].id).toBe('img-2');
+  });
+});

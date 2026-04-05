@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-04 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | High |
 | **Impact** | Users can include images in AI chat across all providers, enabling visual context for code review, UI feedback, document analysis, and drawing-to-code workflows |
 | **Research** | [docs/research/2026-04-03-image-attachments.md](../research/2026-04-03-image-attachments.md) |
@@ -62,9 +62,9 @@ Images flow through three layers:
 All images are processed before base64 encoding:
 
 1. Load into `HTMLCanvasElement`
-2. Resize so longest edge <= 1568px (Anthropic's optimal; server-side resize threshold)
+2. Resize so longest edge &lt;= 1568px (Anthropic's optimal; server-side resize threshold)
 3. If image has no transparency, convert to JPEG at 80% quality; otherwise keep PNG
-4. Validate base64 size < 5 MB (Anthropic's limit — most restrictive provider)
+4. Validate base64 size &lt; 5 MB (Anthropic's limit — most restrictive provider)
 5. If still too large, retry at 60% quality
 6. Store as `ImageAttachment` with base64 data, MIME type, and display dimensions
 
@@ -75,7 +75,7 @@ Utility: `src/lib/image-compress.ts`
 Each AI path reports vision support differently. A unified `supportsVision()` function resolves this:
 
 | Path | Detection method |
-|------|------------------|
+| --- | --- |
 | Direct API (Anthropic) | Always `true` (Claude 3+ all support vision) |
 | Direct API (OpenAI) | Always `true` (GPT-4o+ all support vision) |
 | Direct API (Ollama) | Query `/api/show` for `"multimodal"` capability (extend existing `detect_thinking_support()` pattern) |
@@ -88,7 +88,7 @@ Each AI path reports vision support differently. A unified `supportsVision()` fu
 The `ai_chat_stream` command receives images as an optional field on `ChatMessage`. Each provider's request builder serializes them differently:
 
 | Provider | Serialization |
-|----------|---------------|
+| --- | --- |
 | Anthropic | `content[]` array: `{ type: "image", source: { type: "base64", media_type, data } }` before text blocks |
 | OpenAI | `content[]` array: `{ type: "image_url", image_url: { url: "data:{mime};base64,{data}" } }` |
 | Ollama (native) | `images: [base64_data]` on the message JSON object |
@@ -129,6 +129,7 @@ When a user right-clicks an image or drawing in the editor:
 **File picker:** Clicking the attachment button opens a native file dialog (via Tauri `dialog.open()`) filtered to image types (JPEG, PNG, GIF, WebP).
 
 **States:**
+
 - **No attachments:** Button visible (if vision-capable), strip hidden
 - **With attachments:** Strip visible with thumbnails, badge count on button
 - **Sending:** Thumbnails show a subtle opacity reduction during upload
@@ -260,45 +261,77 @@ The `chat-store` `ChatMessage` type gains the `attachments` field. Zustand persi
 ### Functional
 
 - [ ] Paste image from clipboard into chat input shows thumbnail preview
+
 - [ ] Drag image file onto chat input shows thumbnail preview
+
 - [ ] Click attachment button opens native file dialog filtered to images
+
 - [ ] Removing a thumbnail from the strip works (X button)
+
 - [ ] Sending a message with image(s) works with Anthropic provider
+
 - [ ] Sending a message with image(s) works with OpenAI provider
+
 - [ ] Sending a message with image(s) works with Ollama (vision model)
+
 - [ ] Sending a message with image(s) works with local bundled (vision model)
+
 - [ ] Sending a message with image(s) works via ACP (any agent)
-- [ ] Images > 1568px longest edge are resized before sending
-- [ ] Images > 5 MB after compression are re-compressed at lower quality
+
+- [ ] Images &gt; 1568px longest edge are resized before sending
+
+- [ ] Images &gt; 5 MB after compression are re-compressed at lower quality
+
 - [ ] Attachment button is hidden when active model doesn't support vision
+
 - [ ] Pasting an image with a non-vision model shows "doesn't support images" toast
+
 - [ ] Switching from vision to non-vision model with pending attachments clears them with toast
+
 - [ ] Right-click image in editor shows "Send to AI" context menu item
+
 - [ ] Right-click drawing in editor shows "Send to AI" context menu item
+
 - [ ] Sent messages display inline image thumbnails
+
 - [ ] Image attachments persist in chat history (Zustand persist)
+
 - [ ] Old conversations without attachments render correctly (backward compat)
+
 - [ ] Maximum 5 images per message enforced
 
 ### Design
 
 - [ ] Attachment strip thumbnails are 48x48px rounded, consistent spacing
+
 - [ ] Thumbnail remove button only visible on hover with 150ms transition
+
 - [ ] Drag-drop highlight uses dashed border, no chromatic colors
+
 - [ ] All colors from CSS variables, works in light and dark mode
+
 - [ ] Attachment button matches existing chat footer control styling
+
 - [ ] Sent message thumbnails are max 120px wide, rounded, clickable
+
 - [ ] No layout shift when attaching/removing images
 
 ### Testing
 
 - [ ] Unit test: `compressImage` resizes to max dimension
+
 - [ ] Unit test: `compressImage` converts PNG without transparency to JPEG
+
 - [ ] Unit test: `compressImage` preserves PNG with transparency
+
 - [ ] Unit test: `supportsVision` returns correct value for each provider type
+
 - [ ] Unit test: Provider serializers produce correct wire format (Anthropic, OpenAI, Ollama, ACP)
+
 - [ ] Unit test: ChatMessage with attachments round-trips through Zustand persist
+
 - [ ] Rust test: `ChatMessage` with images serializes correctly for each provider
+
 - [ ] Rust test: `acp_session_prompt` builds correct `ContentBlock::Image` blocks
 
 ## Out of Scope

@@ -45,6 +45,23 @@ export interface ToolCallActivity {
   completedAt?: number;
 }
 
+export interface ImageAttachment {
+  /** Unique ID for React keys and removal */
+  id: string;
+  /** Base64-encoded image data (after compression) */
+  data: string;
+  /** MIME type: "image/jpeg" | "image/png" | "image/gif" | "image/webp" */
+  mimeType: string;
+  /** Display width in pixels (post-compression) */
+  width: number;
+  /** Display height in pixels (post-compression) */
+  height: number;
+  /** Original filename if from file picker/drop, undefined if from paste */
+  name?: string;
+  /** Base64 byte size (for UI display, e.g. "340 KB") */
+  size: number;
+}
+
 export type SystemStatusType = 'reconnecting' | 'reconnected' | 'failed';
 
 // ---------------------------------------------------------------------------
@@ -117,6 +134,8 @@ export interface ChatMessage {
   toolCallActivities?: ToolCallActivity[];
   /** Ordered segments for chronological rendering (text, thinking, tool calls interleaved) */
   segments?: Segment[];
+  /** Image attachments on this message */
+  attachments?: ImageAttachment[];
   // --- system-status fields (role: 'system-status') ---
   /** Status type for reconnection messages */
   statusType?: SystemStatusType;

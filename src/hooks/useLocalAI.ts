@@ -277,6 +277,18 @@ async function startServer(modelId: string, contextLength: number, gpuLayers: nu
   useLocalAIStore.getState().setServerStatus('starting');
   useLocalAIStore.getState().setServerStatusReason('Starting...');
   updateConnectionStatus('expired'); // Amber while starting
+
+  // Listen for status updates from the backend (e.g., mmproj download for vision models)
+  let unlisten: (() => void) | undefined;
+  try {
+    const { listen } = await import('@tauri-apps/api/event');
+    unlisten = await listen<{ status: string; model: string }>('local-ai-status', (event) => {
+      if (event.payload.status === 'downloading_mmproj') {
+        useLocalAIStore.getState().setServerStatusReason('Downloading vision support...');
+      }
+    });
+  } catch { /* ignore */ }
+
   try {
     const port = await tauriApi.startLocalServer(modelId, contextLength, gpuLayers);
     log.info('local-ai', `Server started on port ${port}`);
@@ -291,6 +303,8 @@ async function startServer(modelId: string, contextLength: number, gpuLayers: nu
     useLocalAIStore.getState().setServerStatusReason(`Server failed to start: ${errorMsg}`);
     updateConnectionStatus('error');
     toast.error(`Failed to start Local AI: ${errorMsg}`);
+  } finally {
+    unlisten?.();
   }
 }
 

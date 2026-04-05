@@ -251,6 +251,8 @@
     "supports_thinking": true,
     "thinking_tags": { "open": "<|channel>thought\n", "close": "<channel|>" },
     "supports_vision": true,
+    "mmproj_filename": "mmproj-google_gemma-4-E4B-it-f16.gguf",
+    "mmproj_url": "https://huggingface.co/bartowski/google_gemma-4-E4B-it-GGUF/resolve/main/mmproj-google_gemma-4-E4B-it-f16.gguf",
     "multilingual": true,
     "recommended_for": ["32gb"]
   },
@@ -430,6 +432,8 @@
     "supports_thinking": true,
     "thinking_tags": { "open": "<|channel>thought\n", "close": "<channel|>" },
     "supports_vision": true,
+    "mmproj_filename": "mmproj-gemma-4-26B-A4B-it-f16.gguf",
+    "mmproj_url": "https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/mmproj-gemma-4-26B-A4B-it-f16.gguf",
     "multilingual": true,
     "recommended_for": ["64gb"]
   },

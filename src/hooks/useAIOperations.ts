@@ -4,7 +4,7 @@ import { useRoutingStore } from '@/stores/routing-store';
 import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { useConnectionsStore } from '@/stores/connections-store';
-import type { AIProviderType, ChatMessage } from '@/lib/ai/types';
+import type { AIProviderType, ChatMessage, ImageAttachment } from '@/lib/ai/types';
 import { resolveConnectionCredentials } from '@/lib/ai/credentials';
 import { useAIContext } from '@/hooks/useAIContext';
 import { useDirectApiChat } from '@/hooks/useDirectApiChat';
@@ -122,7 +122,7 @@ export function useAIOperations() {
 
   // Route sendChatMessage based on connection type
   const sendChatMessage = useCallback(
-    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null }) => {
+    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null; attachments?: ImageAttachment[] }) => {
       if (effectiveConnection?.authMethod === 'agent_managed') {
         return acpSendChatMessage(content, messages, opts);
       }

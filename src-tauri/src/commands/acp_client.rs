@@ -13,6 +13,7 @@ pub(super) struct InitInfo {
     pub agent_name: Option<String>,
     pub agent_version: Option<String>,
     pub auth_methods: Vec<super::acp::AuthMethodInfo>,
+    pub supports_images: bool,
 }
 
 /// Reply payload for permission responses from the frontend.

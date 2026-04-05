@@ -102,13 +102,13 @@ note-sage/
 │   │   ├── sidebar/        # Sidebar.tsx, FileTree.tsx, FileTreeItem.tsx, ExplorerFolderItem.tsx
 │   │   ├── tabs/           # TabBar.tsx, Tab.tsx
 │   │   ├── settings/       # SettingsDialog, ConnectionsSettings, LocalAISettings, TranscriptionSettings, etc.
-│   │   ├── chat/           # ChatPanel, ChatMessage, ChatInput, BranchSwitcher, PermissionCard, DomainApprovalCard, AgentSwitchCard, segments/, etc.
+│   │   ├── chat/           # ChatPanel, ChatMessage, ChatInput, BranchSwitcher, PermissionCard, DomainApprovalCard, AgentSwitchCard, AttachmentStrip, segments/, etc.
 │   │   ├── activity/       # ActivityStrip.tsx, ActivityTaskCard.tsx
 │   │   ├── editor/viewers/ # EpubViewer, PdfViewer, DocxViewer, PlainTextViewer, CodeEditor, PptxViewer (+ PptxSlideRenderer, PptxChartRenderer, PptxSearchBar, PptxZoomControls)
 │   │   └── ui/             # shadcn/ui components (auto-generated)
 │   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, etc.)
 │   ├── stores/             # Zustand stores (editor, workspace, ai, chat, skill, etc.)
-│   ├── lib/                # Utilities (markdown, tauri, ai/{context,errors}, dom-search, chat-tree, conversationOps, segmentOps, etc.)
+│   ├── lib/                # Utilities (markdown, tauri, ai/{context,errors,vision}, dom-search, chat-tree, conversationOps, segmentOps, image-compress, etc.)
 │   └── styles/             # globals.css, editor.css
 ├── public/
 │   ├── foliate-js/         # Vendored EPUB renderer (MIT)
@@ -249,7 +249,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `pnpm coverage:check` | Coverage regression detection | Compares changed files against `coverage-baseline.json` |
 | `pnpm coverage:update-baseline` | Update coverage baseline | Runs tests + writes `coverage-baseline.json` |
 
-**Test inventory (2026-03-30):** 65 unit test files (18 stores, 10 components, 11 hooks, 11 libraries, 6 extensions, 4 perf harness), 5 Playwright E2E specs, 7 real E2E specs. ~1537 total test cases.
+**Test inventory (2026-04-05):** 89 unit test files, 5 Playwright E2E specs, 7 real E2E specs. ~2040 total test cases.
 
 **Frontend coverage** uses `@vitest/coverage-istanbul` and requires Node 22 (pinned in `.nvmrc`). Coverage output lands in `./coverage/` (gitignored). Coverage baseline tracked in `coverage-baseline.json` with per-file metrics. Regression detection via `scripts/coverage-check.sh`: identifies changed `.ts`/`.tsx` files via git diff, compares per-file coverage against baseline, reports regressions. Currently warning-only (exit 0).
 

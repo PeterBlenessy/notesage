@@ -103,6 +103,48 @@ pub async fn detect_thinking_support(
     ThinkingSupport { has_native: false, tags: None }
 }
 
+/// Detect whether an Ollama model supports vision/multimodal input.
+/// Checks the `/api/show` response for the `"vision"` capability.
+pub async fn detect_vision_support(
+    client: &reqwest::Client,
+    base_url: &str,
+    model: &str,
+) -> bool {
+    let url = format!("{}/api/show", base_url);
+    let resp = client
+        .post(&url)
+        .json(&serde_json::json!({ "name": model }))
+        .send()
+        .await;
+
+    let json = match resp {
+        Ok(r) if r.status().is_success() => r.json::<serde_json::Value>().await.ok(),
+        _ => return false,
+    };
+
+    let json = match json {
+        Some(j) => j,
+        None => return false,
+    };
+
+    // Check if capabilities include "vision"
+    if let Some(caps) = json["capabilities"].as_array() {
+        if caps.iter().any(|v| v.as_str() == Some("vision")) {
+            return true;
+        }
+    }
+
+    // Fallback: check model family for known vision models
+    let family = json["details"]["family"].as_str().unwrap_or("");
+    let model_lower = model.to_lowercase();
+    model_lower.contains("llava")
+        || model_lower.contains("bakllava")
+        || model_lower.contains("moondream")
+        || model_lower.contains("llama-vision")
+        || model_lower.contains("smolvlm")
+        || family.contains("llava")
+}
+
 /// Try to extract opening/closing tags from a Go template string by finding
 /// text surrounding a `{{.Thinking}}` reference.
 fn extract_tags_from_template(template: &str) -> Option<ThinkingTags> {

@@ -129,6 +129,46 @@ pub struct ServerStatus {
     pub model: Option<String>,
 }
 
+/// Download a multimodal projector file on demand (e.g., when server starts with
+/// a vision model whose mmproj was not yet downloaded).
+async fn download_mmproj(
+    models_dir: &std::path::Path,
+    filename: &str,
+    url: &str,
+) -> Result<(), String> {
+    use futures::StreamExt;
+
+    let final_path = models_dir.join(filename);
+    let temp_path = models_dir.join(format!("{}.downloading", filename));
+    let _ = std::fs::remove_file(&temp_path);
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3600))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let resp = client.get(url).send().await
+        .map_err(|e| format!("mmproj download failed: {}", e))?;
+    if !resp.status().is_success() {
+        return Err(format!("mmproj download HTTP {}", resp.status()));
+    }
+
+    let mut stream = resp.bytes_stream();
+    let mut file = std::fs::File::create(&temp_path)
+        .map_err(|e| format!("Failed to create temp file: {}", e))?;
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Download error: {}", e))?;
+        use std::io::Write;
+        file.write_all(&chunk).map_err(|e| format!("Write error: {}", e))?;
+    }
+
+    drop(file);
+    std::fs::rename(&temp_path, &final_path)
+        .map_err(|e| format!("Failed to finalize mmproj: {}", e))?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn start_local_server(
     app: AppHandle,
@@ -176,6 +216,25 @@ pub async fn start_local_server(
     if entry.supports_tool_calling {
         cmd.arg("--jinja");
         log::debug!(target: "notesage::local_ai", "Enabling --jinja for model '{}' (supports tool calling)", model_id);
+    }
+
+    // Pass multimodal projector file for vision models.
+    // llama-server requires --mmproj to process image inputs.
+    // If the mmproj file is missing (model was downloaded before vision support), download it now.
+    if let (Some(ref mmproj_filename), Some(ref mmproj_url)) = (&entry.mmproj_filename, &entry.mmproj_url) {
+        let mmproj_path = state.models_dir.join(mmproj_filename);
+        if !mmproj_path.exists() {
+            log::info!(target: "notesage::local_ai", "mmproj missing for '{}', downloading: {}", model_id, mmproj_filename);
+            let _ = app.emit("local-ai-status", serde_json::json!({ "status": "downloading_mmproj", "model": model_id }));
+            match download_mmproj(&state.models_dir, mmproj_filename, mmproj_url).await {
+                Ok(_) => log::info!(target: "notesage::local_ai", "Downloaded mmproj '{}'", mmproj_filename),
+                Err(e) => log::warn!(target: "notesage::local_ai", "Failed to download mmproj: {} — vision will not work", e),
+            }
+        }
+        if mmproj_path.exists() {
+            cmd.args(["--mmproj", mmproj_path.to_str().unwrap_or("")]);
+            log::info!(target: "notesage::local_ai", "Enabling --mmproj for model '{}': {}", model_id, mmproj_filename);
+        }
     }
 
     cmd.stdin(std::process::Stdio::null())
@@ -413,7 +472,27 @@ pub async fn local_bundled_chat_stream(
         // crash if it's "" when tool_calls are present.
         messages.iter().map(|m| {
             let has_tool_calls = m.tool_calls.as_ref().map_or(false, |tc| !tc.is_empty());
-            let content_value = if has_tool_calls && m.content.is_empty() {
+            let content_value = if m.role == "user" {
+                if let Some(ref images) = m.images {
+                    if !images.is_empty() {
+                        let mut content_parts: Vec<serde_json::Value> = images.iter().map(|img| {
+                            serde_json::json!({
+                                "type": "image_url",
+                                "image_url": { "url": format!("data:{};base64,{}", img.mime_type, img.data) }
+                            })
+                        }).collect();
+                        content_parts.push(serde_json::json!({
+                            "type": "text",
+                            "text": m.content
+                        }));
+                        return serde_json::json!({
+                            "role": m.role,
+                            "content": content_parts
+                        });
+                    }
+                }
+                serde_json::json!(m.content)
+            } else if has_tool_calls && m.content.is_empty() {
                 serde_json::Value::Null
             } else {
                 serde_json::json!(m.content)
@@ -455,6 +534,26 @@ pub async fn local_bundled_chat_stream(
                     }
                 }
                 Some(serde_json::json!({ "role": "assistant", "content": content }))
+            } else if m.role == "user" {
+                if let Some(ref images) = m.images {
+                    if !images.is_empty() {
+                        let mut content_parts: Vec<serde_json::Value> = images.iter().map(|img| {
+                            serde_json::json!({
+                                "type": "image_url",
+                                "image_url": { "url": format!("data:{};base64,{}", img.mime_type, img.data) }
+                            })
+                        }).collect();
+                        content_parts.push(serde_json::json!({
+                            "type": "text",
+                            "text": m.content
+                        }));
+                        return Some(serde_json::json!({
+                            "role": "user",
+                            "content": content_parts
+                        }));
+                    }
+                }
+                Some(serde_json::json!({ "role": m.role, "content": m.content }))
             } else {
                 Some(serde_json::json!({ "role": m.role, "content": m.content }))
             }
@@ -783,6 +882,7 @@ pub async fn local_bundled_generate(
         content: prompt.to_string(),
         tool_calls: None,
         tool_call_id: None,
+        images: None,
     }];
     local_bundled_chat(&messages, state, model, temperature, max_tokens).await
 }

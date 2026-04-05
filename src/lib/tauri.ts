@@ -304,6 +304,8 @@ export interface LocalModelInfo {
   supports_thinking: boolean;
   thinking_tags?: ThinkingTags;
   supports_vision: boolean;
+  mmproj_filename?: string;
+  mmproj_url?: string;
   multilingual: boolean;
   recommended_for: string[];
 }
@@ -676,8 +678,12 @@ export const tauriApi = {
     return await invoke<AcpSessionResult>("acp_session_new", { instanceId, workingDirectory });
   },
 
-  async acpSessionPrompt(instanceId: string, sessionId: string, content: string): Promise<void> {
-    await invoke("acp_session_prompt", { instanceId, sessionId, content });
+  async acpSessionPrompt(instanceId: string, sessionId: string, content: string, images?: Array<{ data: string; mime_type: string }>): Promise<void> {
+    await invoke("acp_session_prompt", { instanceId, sessionId, content, images: images ?? null });
+  },
+
+  async acpSupportsImages(instanceId: string): Promise<boolean> {
+    return invoke<boolean>("acp_supports_images", { instanceId });
   },
 
   async acpSessionCancel(instanceId: string, sessionId: string): Promise<void> {
@@ -686,6 +692,11 @@ export const tauriApi = {
 
   async acpPermissionRespond(instanceId: string, requestId: string, optionId: string | null): Promise<void> {
     await invoke("acp_permission_respond", { instanceId, requestId, optionId });
+  },
+
+  // Ollama vision capability detection
+  async ollamaModelSupportsVision(ollamaUrl: string | null, model: string, baseUrl?: string): Promise<boolean> {
+    return invoke<boolean>("ollama_model_supports_vision", { ollamaUrl, model, baseUrl: baseUrl ?? null });
   },
 
   // Ollama FIM completion
