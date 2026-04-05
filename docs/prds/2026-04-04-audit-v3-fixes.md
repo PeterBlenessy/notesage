@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-04 |
-| **Status** | In Progress |
+| **Status** | Complete |
 | **Audit** | [2026-04-04-full](../audit/2026-04-04-full.md) |
 | **Tasks** | [2026-04-04-audit-v3-tasks](../tasks/2026-04-04-audit-v3-tasks.md) |
 | **Version** | 0.28.3 |
@@ -49,7 +49,7 @@ To reduce the risk of incomplete fixes and missed regressions:
 
 Mechanical fixes that are self-evidently correct. Aria-labels, docs updates, CSS tweaks.
 
-| # | Finding | Category | Complexity |
+| \# | Finding | Category | Complexity |
 | --- | --- | --- | --- |
 | 1 | Add mounted guard to useMcpOperations listener callback | Memory Leaks | S |
 | 2 | Add mounted guard to useActionScanner listener | Memory Leaks | S |
@@ -64,7 +64,7 @@ Mechanical fixes that are self-evidently correct. Aria-labels, docs updates, CSS
 
 Write a failing test FIRST, then implement the fix.
 
-| # | Finding | Category | Complexity | Test Strategy |
+| \# | Finding | Category | Complexity | Test Strategy |
 | --- | --- | --- | --- | --- |
 | 9 | useDirectApiChat: ai-stream-done listener registration race | Memory Leaks | M | Test: register listeners, emit done before all attached, assert cleanup |
 | 10 | useAcpLifecycle: cancel escalation listener leak | Memory Leaks | M | Test: rapid cancel, assert no dangling listeners |
@@ -82,7 +82,7 @@ Write a failing test FIRST, then implement the fix.
 
 Type safety and render performance fixes verified by compiler + existing tests + manual profiling.
 
-| # | Finding | Category | Complexity | Verification |
+| \# | Finding | Category | Complexity | Verification |
 | --- | --- | --- | --- | --- |
 | 20 | Migrate Tiptap storage `as any` to `getEditorStorage<T>()` | Type Safety | S | Compiler — utility already exists |
 | 21 | Define WebSpeechRecognition interface, remove `as any` | Type Safety | S | Compiler — local interface |
@@ -100,7 +100,7 @@ Type safety and render performance fixes verified by compiler + existing tests +
 
 Add tests for critical untested paths. These aren't fixing bugs — they're adding safety nets.
 
-| # | Finding | Category | Complexity |
+| \# | Finding | Category | Complexity |
 | --- | --- | --- | --- |
 | 31 | ACP agent lifecycle: spawn, auth, permission, cleanup | Test Coverage | L |
 | 32 | File watcher: change detection, debouncing, self-write filter | Test Coverage | L |
@@ -113,7 +113,7 @@ Add tests for critical untested paths. These aren't fixing bugs — they're addi
 
 Lower priority — these files work correctly, they're just large.
 
-| # | Finding | Category | Complexity |
+| \# | Finding | Category | Complexity |
 | --- | --- | --- | --- |
 | 37 | ai_streaming.rs (1603): extract tool_execution.rs, segment_builder.rs | Decomposition | L |
 | 38 | model_management.rs (1582): extract per-provider modules | Decomposition | L |
@@ -122,13 +122,19 @@ Lower priority — these files work correctly, they're just large.
 
 ## Quality Gates
 
-- [ ] All existing tests pass (`pnpm test`, `cargo test`)
-- [ ] TypeScript type check passes (`pnpm typecheck`)
-- [ ] No new `as any` casts introduced
-- [ ] Tier 2 fixes each have a corresponding test that fails without the fix
-- [ ] Tier 3 refactors don't change behavior (existing tests sufficient)
-- [ ] Performance benchmarks still pass (`pnpm test:perf`)
-- [ ] Manual verification: both light/dark themes, soft contrast mode
+- [x] All existing tests pass (`pnpm test`, `cargo test`)
+
+- [x] TypeScript type check passes (`pnpm typecheck`)
+
+- [x] No new `as any` casts introduced
+
+- [x] Tier 2 fixes each have a corresponding test that fails without the fix
+
+- [x] Tier 3 refactors don't change behavior (existing tests sufficient)
+
+- [x] Performance benchmarks still pass (`pnpm test:perf`)
+
+- [x] Manual verification: both light/dark themes, soft contrast mode
 
 ## Risks
 
