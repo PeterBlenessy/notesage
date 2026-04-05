@@ -10,6 +10,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -89,6 +99,8 @@ export function ExportDialog({
   const [pageSize, setPageSize] = useState<ExportPageSize>(lastExportPageSize);
   const [pptxTemplate, setPptxTemplate] = useState<string>(lastPptxTemplate);
   const [userTemplates, setUserTemplates] = useState<PptxTemplateInfo[]>([]);
+  const [pendingDeleteTemplate, setPendingDeleteTemplate] =
+    useState<PptxTemplateInfo | null>(null);
 
   // Reset to last-used settings when dialog opens
   useEffect(() => {
@@ -150,6 +162,13 @@ export function ExportDialog({
       }
     } catch (err) {
       toast.error(`Failed to import template: ${err}`);
+    }
+  };
+
+  const handleConfirmDeleteTemplate = async () => {
+    if (pendingDeleteTemplate) {
+      await handleDeleteTemplate(pendingDeleteTemplate);
+      setPendingDeleteTemplate(null);
     }
   };
 
@@ -309,7 +328,7 @@ export function ExportDialog({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleDeleteTemplate(tmpl);
+                            setPendingDeleteTemplate(tmpl);
                           }}
                           className="absolute -top-1.5 -right-1.5 hidden group-hover:flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground text-xs transition-opacity"
                         >
@@ -355,6 +374,32 @@ export function ExportDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <AlertDialog
+        open={pendingDeleteTemplate !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteTemplate(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove template?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Remove &ldquo;{pendingDeleteTemplate?.name}&rdquo;? This cannot be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDeleteTemplate}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

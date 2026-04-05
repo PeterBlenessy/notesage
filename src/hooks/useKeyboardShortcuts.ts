@@ -23,7 +23,7 @@ interface KeyboardShortcutCallbacks {
 }
 
 export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
-  const { tabs, activeTabId, closeTab } = useEditorStore();
+  const { tabs, activeTabId, closeTab, setPendingCloseTabId } = useEditorStore();
   const { setSidebarPinned, setChatPanelOpen } = useSettingsStore();
 
   useEffect(() => {
@@ -43,10 +43,8 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
         if (activeTabId) {
           const activeTab = tabs.find((t) => t.id === activeTabId);
           if (activeTab?.isDirty) {
-            const confirmed = window.confirm(
-              "This file has unsaved changes. Close anyway?"
-            );
-            if (!confirmed) return;
+            setPendingCloseTabId(activeTabId);
+            return;
           }
           closeTab(activeTabId);
         }
@@ -214,5 +212,5 @@ export function useKeyboardShortcuts(callbacks: KeyboardShortcutCallbacks) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeTabId, tabs, closeTab, setSidebarPinned, setChatPanelOpen, callbacks]);
+  }, [activeTabId, tabs, closeTab, setPendingCloseTabId, setSidebarPinned, setChatPanelOpen, callbacks]);
 }

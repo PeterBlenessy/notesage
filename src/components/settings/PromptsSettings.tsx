@@ -13,6 +13,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Plus, Pencil, Trash2, Sparkles } from 'lucide-react';
 
 export function PromptsSettings() {
@@ -21,6 +31,7 @@ export function PromptsSettings() {
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<CustomPrompt | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     icon: '✨',
@@ -52,10 +63,17 @@ export function PromptsSettings() {
   };
 
   const handleDeletePrompt = (id: string) => {
-    if (confirm('Are you sure you want to delete this prompt?')) {
-      deleteCustomPrompt(id);
+    setPendingDeleteId(id);
+  };
+
+  const handleConfirmDelete = () => {
+    if (pendingDeleteId) {
+      deleteCustomPrompt(pendingDeleteId);
+      setPendingDeleteId(null);
     }
   };
+
+  const pendingPrompt = customPrompts.find((p) => p.id === pendingDeleteId);
 
   const openEditDialog = (prompt: CustomPrompt) => {
     setEditingPrompt(prompt);
@@ -274,6 +292,31 @@ export function PromptsSettings() {
           </div>
         )}
       </div>
+
+      <AlertDialog
+        open={pendingDeleteId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete prompt?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete &ldquo;{pendingPrompt?.name}&rdquo;? This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

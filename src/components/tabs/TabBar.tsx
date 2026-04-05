@@ -1,7 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useEditorStore, type FileType } from "@/stores/editor-store";
+import { useFileOperations } from "@/hooks/useFileOperations";
 import { X, FileText, FileImage, FileType2, FileSpreadsheet, File } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 const TAB_DRAG_MIME = "application/x-notesage-tab";
 
@@ -23,7 +36,8 @@ function TabIcon({ fileType }: { fileType?: FileType }) {
 }
 
 export function TabBar() {
-  const { tabs, activeTabId, setActiveTab, closeTab, reorderTab } = useEditorStore();
+  const { tabs, activeTabId, setActiveTab, closeTab, reorderTab, pendingCloseTabId, setPendingCloseTabId } = useEditorStore();
+  const { saveFile } = useFileOperations();
   const activeTabRef = useRef<HTMLButtonElement>(null);
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [dropIndicatorIndex, setDropIndicatorIndex] = useState<number | null>(null);
@@ -33,20 +47,7 @@ export function TabBar() {
     activeTabRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
   }, [activeTabId]);
 
-  const handleCloseTab = (
-    e: React.MouseEvent | React.KeyboardEvent,
-    tabId: string,
-    isDirty: boolean
-  ) => {
-    e.stopPropagation();
-
-    if (isDirty) {
-      const confirmed = window.confirm(
-        "This file has unsaved changes. Close anyway?"
-      );
-      if (!confirmed) return;
-    }
-
+  const doCloseTab = useCallback((tabId: string) => {
     // Hide the editor content instantly via DOM before React's synchronous
     // unmount of heavy viewers (e.g., PDF with hundreds of canvas elements).
     const editorContent = document.getElementById("editor-content");
@@ -58,7 +59,43 @@ export function TabBar() {
     requestAnimationFrame(() => {
       if (editorContent) editorContent.style.visibility = "";
     });
+  }, [closeTab]);
+
+  const handleCloseTab = (
+    e: React.MouseEvent | React.KeyboardEvent,
+    tabId: string,
+    isDirty: boolean
+  ) => {
+    e.stopPropagation();
+
+    if (isDirty) {
+      setPendingCloseTabId(tabId);
+      return;
+    }
+
+    doCloseTab(tabId);
   };
+
+  const handleSaveAndClose = useCallback(async () => {
+    if (!pendingCloseTabId) return;
+    const tab = tabs.find((t) => t.id === pendingCloseTabId);
+    if (!tab) return;
+    try {
+      await saveFile(tab.filePath, tab.content, tab.id);
+      doCloseTab(pendingCloseTabId);
+    } catch {
+      toast.error(`Failed to save "${tab.fileName}"`);
+    }
+    setPendingCloseTabId(null);
+  }, [pendingCloseTabId, tabs, saveFile, doCloseTab]);
+
+  const handleDiscard = useCallback(() => {
+    if (!pendingCloseTabId) return;
+    doCloseTab(pendingCloseTabId);
+    setPendingCloseTabId(null);
+  }, [pendingCloseTabId, doCloseTab]);
+
+  const pendingTab = pendingCloseTabId ? tabs.find((t) => t.id === pendingCloseTabId) : null;
 
   const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
     e.dataTransfer.effectAllowed = "move";
@@ -115,6 +152,7 @@ export function TabBar() {
   }
 
   return (
+    <>
     <div
       className="h-9 border-b border-border flex items-end shrink-0 overflow-x-auto overflow-y-hidden tabbar-scrollbar gap-0.5 px-2 bg-background"
       onDrop={handleDrop}
@@ -188,5 +226,22 @@ export function TabBar() {
         );
       })}
     </div>
+
+    <AlertDialog open={pendingCloseTabId !== null} onOpenChange={(open) => { if (!open) setPendingCloseTabId(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+          <AlertDialogDescription>
+            &ldquo;{pendingTab?.fileName}&rdquo; has unsaved changes. What would you like to do?
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <Button variant="destructive" onClick={handleDiscard}>Discard</Button>
+          <AlertDialogAction onClick={handleSaveAndClose}>Save &amp; Close</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }

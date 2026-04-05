@@ -61,6 +61,8 @@ interface EditorStore {
   scrollPositions: Record<string, number>;
   /** Ephemeral: paths with pending external changes → disk content. Not persisted. */
   externalChanges: Record<string, string>;
+  /** Ephemeral: tab ID awaiting save/discard decision. Not persisted. */
+  pendingCloseTabId: string | null;
   /** Persisted list of open file paths so we can re-open them on restart. */
   persistedTabs: PersistedTab[];
   /** Persisted: which file was active, so we can re-activate it on restart. */
@@ -97,6 +99,8 @@ interface EditorStore {
   setScrollToTag: (tabId: string, target: ScrollToTag | undefined) => void;
   /** Set a text scroll target. Cleared after Editor.tsx consumes it. */
   setScrollToText: (tabId: string, text: string | undefined) => void;
+  /** Set tab awaiting save/discard decision (for dirty tab close). */
+  setPendingCloseTabId: (tabId: string | null) => void;
 }
 
 export const useEditorStore = create<EditorStore>()(
@@ -107,6 +111,7 @@ export const useEditorStore = create<EditorStore>()(
       recentFiles: [],
       scrollPositions: {},
       externalChanges: {},
+      pendingCloseTabId: null,
       persistedTabs: [],
       persistedActiveFilePath: null,
 
@@ -392,6 +397,10 @@ export const useEditorStore = create<EditorStore>()(
             tab.id === tabId ? { ...tab, scrollToText: text } : tab
           ),
         }));
+      },
+
+      setPendingCloseTabId: (tabId: string | null) => {
+        set({ pendingCloseTabId: tabId });
       },
 
       updateFilePaths: (oldPrefix: string, newPrefix: string) => {

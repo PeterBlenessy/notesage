@@ -14,6 +14,7 @@ beforeEach(() => {
   useEditorStore.setState({
     tabs: [],
     activeTabId: null,
+    pendingCloseTabId: null,
   });
 });
 
@@ -140,9 +141,8 @@ describe('TabBar', () => {
     expect(closeTab).toHaveBeenCalledWith('tab-1');
   });
 
-  it('close button prompts confirm for dirty tabs', () => {
+  it('close button sets pendingCloseTabId for dirty tabs instead of closing', () => {
     const closeTab = vi.fn();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const tab = createMockTab({ id: 'tab-1', fileName: 'dirty.md', isDirty: true });
     useEditorStore.setState({ tabs: [tab], activeTabId: 'tab-1', closeTab });
 
@@ -151,26 +151,22 @@ describe('TabBar', () => {
     const closeButton = screen.getByRole('button', { name: 'Close tab' });
     closeButton.click();
 
-    expect(confirmSpy).toHaveBeenCalled();
-    expect(closeTab).toHaveBeenCalledWith('tab-1');
-
-    confirmSpy.mockRestore();
+    // Should set pending state instead of calling closeTab
+    expect(useEditorStore.getState().pendingCloseTabId).toBe('tab-1');
+    expect(closeTab).not.toHaveBeenCalled();
   });
 
-  it('close button does not close dirty tab when confirm is cancelled', () => {
-    const closeTab = vi.fn();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('does not use window.confirm for dirty tabs', () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const tab = createMockTab({ id: 'tab-1', fileName: 'dirty.md', isDirty: true });
-    useEditorStore.setState({ tabs: [tab], activeTabId: 'tab-1', closeTab });
+    useEditorStore.setState({ tabs: [tab], activeTabId: 'tab-1' });
 
     renderWithProviders(<TabBar />);
 
     const closeButton = screen.getByRole('button', { name: 'Close tab' });
     closeButton.click();
 
-    expect(confirmSpy).toHaveBeenCalled();
-    expect(closeTab).not.toHaveBeenCalled();
-
+    expect(confirmSpy).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
   });
 });
