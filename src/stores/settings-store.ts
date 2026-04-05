@@ -60,6 +60,8 @@ interface SettingsStore {
   lastPptxTemplate: string;
   /** Whether custom personas have been migrated to agent files. Persisted. */
   personasMigrated: boolean;
+  /** Whether the chat input syntax hints have been auto-dismissed (after first send). Persisted. */
+  chatHintsShown: boolean;
   // Runtime-only (not persisted) — detected on startup
   startupReady: boolean;
   icloudAvailable: boolean;
@@ -107,6 +109,7 @@ interface SettingsStore {
   setICloudAvailable: (available: boolean) => void;
   setICloudNotesagePath: (path: string | null) => void;
   setPersonasMigrated: (migrated: boolean) => void;
+  setChatHintsShown: (shown: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -131,6 +134,7 @@ export const useSettingsStore = create<SettingsStore>()(
       notesRootPath: "~/Notesage",
       gitEnabled: false,
       personasMigrated: false,
+      chatHintsShown: false,
       startupReady: false,
       icloudAvailable: false,
       icloudNotesagePath: null,
@@ -322,6 +326,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setPersonasMigrated: (migrated: boolean) => {
         set({ personasMigrated: migrated });
+      },
+
+      setChatHintsShown: (shown: boolean) => {
+        set({ chatHintsShown: shown });
       },
     }),
     {

@@ -161,9 +161,9 @@ export function FindBar({
           onKeyDown={handleSearchKeyDown}
           placeholder="Find..."
           aria-label="Find in document"
-          className="h-6 w-48 px-2 text-xs bg-muted border border-border rounded focus:outline-none focus:ring-1 focus:ring-muted-foreground/50"
+          className={`h-6 w-48 px-2 text-xs bg-muted border rounded transition-colors duration-150 focus:outline-none focus:ring-1 focus:ring-muted-foreground/50 ${matchCount === 0 && query.length > 0 ? "border-destructive/50" : "border-border"}`}
         />
-        <span className="text-[10px] text-muted-foreground w-16 text-center select-none tabular-nums">
+        <span className={`text-[10px] w-16 text-center select-none tabular-nums transition-colors duration-150 ${matchCount === 0 && query.length > 0 ? "text-destructive" : "text-muted-foreground"}`}>
           {matchLabel}
         </span>
         <button

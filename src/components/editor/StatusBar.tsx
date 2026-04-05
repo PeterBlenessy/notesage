@@ -535,7 +535,7 @@ export function StatusBar({
                 <PopoverTrigger asChild>
                   <button
                     className={`inline-flex items-center gap-1 hover:text-foreground transition-colors ${
-                      disabled ? "opacity-40" : ""
+                      disabled ? "opacity-50" : ""
                     }`}
                     title="Inline completions"
                   >

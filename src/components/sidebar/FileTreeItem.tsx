@@ -3,7 +3,9 @@ import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlu
 import { SyncedIcon } from "./SyncedIcon";
 import { FolderPickerItem } from "./FolderPickerItem";
 import { NewFolderDialog } from "./NewFolderDialog";
+import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
+import { parseFileError } from "@/lib/file-errors";
 import { FileEntry, tauriApi } from "@/lib/tauri";
 import { NOTESAGE_DRAG_MIME, parseNotesageDrop } from "@/lib/drag-utils";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -62,6 +64,8 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
   const [renameValue, setRenameValue] = useState(entry.name);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isDragExpandPending, setIsDragExpandPending] = useState(false);
+  const [deleteChildCount, setDeleteChildCount] = useState<number | null>(null);
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const renameFocusingRef = useRef(false);
@@ -145,7 +149,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
       const newPath = `${parentPath}/${newName}`;
       await renamePath(entry.path, newPath);
     } catch (error) {
-      console.error("Failed to rename:", error);
+      toast.error(`Failed to rename: ${parseFileError(error)}`);
     }
   };
 
@@ -160,7 +164,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
     try {
       await deletePath(entry.path);
     } catch (error) {
-      toast.error(`Failed to delete: ${error}`);
+      toast.error(`Failed to delete: ${parseFileError(error)}`);
     }
   };
 
@@ -212,7 +216,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
       }
       await renamePath(entry.path, destPath);
     } catch (error) {
-      console.error("Failed to move file:", error);
+      toast.error(`Failed to move: ${parseFileError(error)}`);
     }
   };
 
@@ -234,9 +238,28 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
     onCommitFile?.(entry.path);
   }, [onCommitFile, entry.path]);
 
-  const handleOpenDeleteDialog = useCallback(() => {
+  const handleOpenDeleteDialog = useCallback(async () => {
+    if (entry.is_directory) {
+      try {
+        const entries = await invoke<FileEntry[]>('list_directory', { path: entry.path });
+        const countFiles = (items: FileEntry[]): number => {
+          let count = 0;
+          for (const item of items) {
+            if (item.is_directory) {
+              count += item.children ? countFiles(item.children) : 0;
+            } else {
+              count++;
+            }
+          }
+          return count;
+        };
+        setDeleteChildCount(countFiles(entries));
+      } catch {
+        setDeleteChildCount(null);
+      }
+    }
     setDeleteDialogOpen(true);
-  }, []);
+  }, [entry.is_directory, entry.path]);
 
   const handleExportPdf = useCallback(() => {
     onExportFile?.(entry.path, entry.name, 'pdf');
@@ -283,6 +306,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
     e.stopPropagation();
     dragCounter.current = 0;
     setIsDragOver(false);
+    setIsDragExpandPending(false);
     if (dragExpandTimeout.current) {
       clearTimeout(dragExpandTimeout.current);
       dragExpandTimeout.current = null;
@@ -311,7 +335,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
       }
       await renamePath(dragged.path, destPath);
     } catch (error) {
-      console.error("Failed to move:", error);
+      toast.error(`Failed to move: ${parseFileError(error)}`);
     }
   }, [entry.path, entry.name, entry.is_directory, renamePath]);
 
@@ -344,7 +368,11 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
           if (dragCounter.current === 1) {
             setIsDragOver(true);
             if (!expanded) {
-              dragExpandTimeout.current = setTimeout(() => toggleFolder(expandKey), 600);
+              setIsDragExpandPending(true);
+              dragExpandTimeout.current = setTimeout(() => {
+                toggleFolder(expandKey);
+                setIsDragExpandPending(false);
+              }, 600);
             }
           }
         }}
@@ -354,6 +382,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
           dragCounter.current--;
           if (dragCounter.current === 0) {
             setIsDragOver(false);
+            setIsDragExpandPending(false);
             if (dragExpandTimeout.current) { clearTimeout(dragExpandTimeout.current); dragExpandTimeout.current = null; }
           }
         }}
@@ -369,7 +398,8 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
               isActive
                 ? "bg-accent text-foreground font-medium"
                 : "text-muted-foreground hover:bg-accent hover:text-foreground",
-              isDragOver && entry.is_directory && "bg-accent ring-2 ring-ring/30"
+              isDragOver && entry.is_directory && "bg-accent ring-2 ring-ring/30",
+              isDragExpandPending && "animate-pulse"
             )}
             style={{ paddingLeft }}
             onClick={handleClick}
@@ -642,7 +672,9 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
             </AlertDialogTitle>
             <AlertDialogDescription>
               {entry.is_directory
-                ? `"${entry.name}" and all its contents will be permanently deleted.`
+                ? deleteChildCount !== null && deleteChildCount > 0
+                  ? `Delete "${entry.name}" and its ${deleteChildCount} ${deleteChildCount === 1 ? "file" : "files"}? This cannot be undone.`
+                  : `"${entry.name}" and all its contents will be permanently deleted.`
                 : `"${entry.name}" will be permanently deleted.`}
             </AlertDialogDescription>
           </AlertDialogHeader>

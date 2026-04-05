@@ -413,11 +413,11 @@ export function CommandPalette({
     if (mode === "research" && researchError) return "Search failed \u2014 try again";
     if ((mode === "default" || mode === "files") && contentError) return "Search failed \u2014 try again";
     switch (mode) {
-      case "research": return "No research files found.";
-      case "tags": return "No matching tags.";
-      case "mentions": return "No matching mentions.";
+      case "research": return "Create research files with the download-webpage skill";
+      case "tags": return "Tags are created by typing #tagName in your notes";
+      case "mentions": return "Mentions are created by typing @name in your notes";
       case "commands": return "No commands found.";
-      default: return "No results found.";
+      default: return "No results \u2014 try a different search term";
     }
   }, [mode, researchError, contentError]);
 
@@ -686,31 +686,62 @@ export function CommandPalette({
           </span>
         </div>
         <div className="flex items-center gap-3">
-          {mode === "default" ? (
+          {mode !== "files" && (
             <>
               <span className="flex items-center gap-1">
-                <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">#</kbd>
-                <span>tags</span>
+                {mode === "tags" ? (
+                  <>
+                    <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">&#9003;</kbd>
+                    <span>return</span>
+                  </>
+                ) : (
+                  <>
+                    <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">#</kbd>
+                    <span>tags</span>
+                  </>
+                )}
               </span>
               <span className="flex items-center gap-1">
-                <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">@</kbd>
-                <span>mentions</span>
+                {mode === "mentions" ? (
+                  <>
+                    <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">&#9003;</kbd>
+                    <span>return</span>
+                  </>
+                ) : (
+                  <>
+                    <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">@</kbd>
+                    <span>mentions</span>
+                  </>
+                )}
               </span>
               <span className="flex items-center gap-1">
-                <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">&gt;</kbd>
-                <span>commands</span>
+                {mode === "commands" ? (
+                  <>
+                    <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">&#9003;</kbd>
+                    <span>return</span>
+                  </>
+                ) : (
+                  <>
+                    <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">&gt;</kbd>
+                    <span>commands</span>
+                  </>
+                )}
               </span>
               <span className="flex items-center gap-1">
-                <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">?</kbd>
-                <span>research</span>
+                {mode === "research" ? (
+                  <>
+                    <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">&#9003;</kbd>
+                    <span>return</span>
+                  </>
+                ) : (
+                  <>
+                    <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">?</kbd>
+                    <span>research</span>
+                  </>
+                )}
               </span>
             </>
-          ) : mode !== "files" ? (
-            <span className="flex items-center gap-1">
-              <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">&#9003;</kbd>
-              <span>back to search</span>
-            </span>
-          ) : null}
+          )}
         </div>
       </div>
     </CommandDialog>

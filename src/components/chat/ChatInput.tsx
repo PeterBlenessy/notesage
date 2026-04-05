@@ -1,13 +1,18 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { ArrowUp, Square, Mic, MicOff, X } from 'lucide-react';
 import type { EditContext } from './ChatPanel';
 import { Button } from '@/components/ui/button';
+import { useSettingsStore } from '@/stores/settings-store';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { SkillCommandMenu, type SkillCommandMenuHandle } from './SkillCommandMenu';
 import { AgentCommandMenu, type AgentCommandMenuHandle } from './AgentCommandMenu';
 import { ContextPill } from './ContextPill';
 import type { SkillEntry, AgentEntry } from '@/stores/skill-store';
 import type { ContextItem } from '@/hooks/useChatContext';
+
+export interface ChatInputHandle {
+  prefill: (text: string) => void;
+}
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -22,8 +27,10 @@ interface ChatInputProps {
   onCancelEdit?: () => void;
 }
 
-export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = 'Ask anything...', footer, contextItems, onDismissContext, editContext, onCancelEdit }: ChatInputProps) {
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = 'Ask anything...', footer, contextItems, onDismissContext, editContext, onCancelEdit }, ref) {
   const [message, setMessage] = useState('');
+  const chatHintsShown = useSettingsStore((s) => s.chatHintsShown);
+  const setChatHintsShown = useSettingsStore((s) => s.setChatHintsShown);
   const [showSkillMenu, setShowSkillMenu] = useState(false);
   const [skillQuery, setSkillQuery] = useState('');
   const [showAgentMenu, setShowAgentMenu] = useState(false);
@@ -32,6 +39,22 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
   const menuRef = useRef<SkillCommandMenuHandle>(null);
   const agentMenuRef = useRef<AgentCommandMenuHandle>(null);
   const { startDictation, stopDictation, isDictating, interimText, finalText } = useSpeechRecognition();
+
+  useImperativeHandle(ref, () => ({
+    prefill: (text: string) => {
+      setMessage(text);
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.selectionStart = text.length;
+          el.selectionEnd = text.length;
+          el.style.height = 'auto';
+          el.style.height = `${el.scrollHeight}px`;
+        }
+      });
+    },
+  }), []);
 
   // Append dictation text to message
   useEffect(() => {
@@ -72,6 +95,9 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
       setMessage('');
       setShowSkillMenu(false);
       setShowAgentMenu(false);
+      if (!chatHintsShown) {
+        setChatHintsShown(true);
+      }
       requestAnimationFrame(() => {
         const el = textareaRef.current;
         if (el) {
@@ -182,7 +208,7 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
       size="icon"
       onClick={handleSubmit}
       disabled={!canSend}
-      className={`h-6 w-6 shrink-0 disabled:opacity-30 ${canSend ? 'bg-foreground text-background hover:bg-foreground/90' : 'bg-muted text-muted-foreground'}`}
+      className={`h-6 w-6 shrink-0 disabled:opacity-50 ${canSend ? 'bg-foreground text-background hover:bg-foreground/90' : 'bg-muted text-muted-foreground'}`}
       title="Send (Cmd+Enter)"
     >
       <ArrowUp className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -202,6 +228,7 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
   ) : null;
 
   return (
+    <>
     <div className="relative rounded-xl border border-border bg-background transition-colors focus-within:ring-1 focus-within:ring-ring">
       {showSkillMenu && (
         <SkillCommandMenu
@@ -277,5 +304,11 @@ export function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = '
         </div>
       )}
     </div>
+    {!chatHintsShown && (
+      <p className="text-[10px] text-muted-foreground mt-1.5 px-1 transition-opacity">
+        Type <kbd className="px-1 py-px rounded bg-muted font-mono text-[10px]">/</kbd> for skills, <kbd className="px-1 py-px rounded bg-muted font-mono text-[10px]">@</kbd> for agents
+      </p>
+    )}
+    </>
   );
-}
+});

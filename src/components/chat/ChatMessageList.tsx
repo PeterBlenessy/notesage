@@ -3,6 +3,7 @@ import { Loader2, GitBranch } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
 import { useChatStore, selectMessages, selectAllMessages, selectPendingProjectSwitch, selectPendingAgentSwitch, selectSegments } from '@/stores/chat-store';
 import { getChildren } from '@/lib/chat-tree';
 import { useConnectionsStore } from '@/stores/connections-store';
@@ -24,14 +25,21 @@ import { AgentSwitchCard } from './AgentSwitchCard';
 import { ContextDivider } from './ContextDivider';
 import { QuickReplies, parseQuickReplies } from './QuickReplies';
 
+const ONBOARDING_PROMPTS = [
+  'Summarize my current note',
+  'Help me brainstorm ideas',
+  'Review this document',
+];
+
 interface ChatMessageListProps {
   onSend: (content: string) => void;
   selectedProjectPaths: string[];
   onResend?: (message: { parentId?: string | null; content: string }) => void;
   onEdit?: (message: { parentId?: string | null; content: string }) => void;
+  onPrefill?: (text: string) => void;
 }
 
-export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedProjectPaths, onResend, onEdit }: ChatMessageListProps) {
+export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedProjectPaths, onResend, onEdit, onPrefill }: ChatMessageListProps) {
   const isLoading = useChatStore((s) => s.isLoading);
   const activeTool = useChatStore((s) => s.activeTool);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
@@ -154,12 +162,24 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
     <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 py-4">
       {messages.length === 0 ? (
         <div className="flex items-center justify-center h-full text-muted-foreground text-sm text-center">
-          <div>
+          <div className="max-w-[260px]">
             <LocalAISetupCard />
-            <p className="mt-4">
-              Start a conversation with AI.
-              <br />
-              Ask questions about your writing or get suggestions.
+            <p className="mt-4 text-sm font-medium text-foreground">Start a conversation</p>
+            <div className="flex flex-wrap justify-center gap-1.5 mt-3">
+              {ONBOARDING_PROMPTS.map((prompt) => (
+                <Button
+                  key={prompt}
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-7"
+                  onClick={() => onPrefill?.(prompt)}
+                >
+                  {prompt}
+                </Button>
+              ))}
+            </div>
+            <p className="mt-3 text-[10px] text-muted-foreground">
+              Type <kbd className="px-1 py-px rounded bg-muted font-mono text-[10px]">/</kbd> for skills, <kbd className="px-1 py-px rounded bg-muted font-mono text-[10px]">@</kbd> for agents
             </p>
           </div>
         </div>

@@ -47,7 +47,7 @@ function TableButton({
           onClick={onClick}
           disabled={disabled}
           className={cn(
-            "disabled:opacity-30 active:scale-90",
+            "disabled:opacity-50 active:scale-90",
             destructive
               ? "text-destructive hover:text-destructive hover:bg-destructive/10"
               : active

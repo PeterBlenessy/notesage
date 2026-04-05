@@ -113,7 +113,7 @@ Check: `FileTreeItem.tsx`, `ExplorerFolderItem.tsx`, `ProjectItem.tsx`, `QuickNo
 
 ## Tier 3: Empty States
 
-### #8 — Improve QuickNotesSection empty state
+### #8 — Improve QuickNotesSection empty state ✅
 
 **Description:** Replace "Notes in \~/Notesage" (line \~58) with: "No notes yet" + an underlined "Create a note" action link that triggers the same new note handler as the section's add button. Use `text-xs text-muted-foreground` for the text and `text-xs underline cursor-pointer` for the link.
 
@@ -123,7 +123,7 @@ Check: `FileTreeItem.tsx`, `ExplorerFolderItem.tsx`, `ProjectItem.tsx`, `QuickNo
 
 ---
 
-### #9 — Improve ProjectsSection empty state
+### #9 — Improve ProjectsSection empty state ✅
 
 **Description:** Replace "No projects open" (line \~89) with: "No projects yet" + an underlined "New Project" action link that opens the New Project dialog. Same styling pattern as #8.
 
@@ -133,7 +133,7 @@ Check: `FileTreeItem.tsx`, `ExplorerFolderItem.tsx`, `ProjectItem.tsx`, `QuickNo
 
 ---
 
-### #10 — Improve FoldersSection empty state
+### #10 — Improve FoldersSection empty state ✅
 
 **Description:** Keep existing "Open a folder to browse files" text but add an underlined "Open Folder" action link below it that triggers the folder open dialog. Same styling pattern as #8.
 
@@ -143,7 +143,7 @@ Check: `FileTreeItem.tsx`, `ExplorerFolderItem.tsx`, `ProjectItem.tsx`, `QuickNo
 
 ---
 
-### #11 — Redesign chat empty state with onboarding
+### #11 — Redesign chat empty state with onboarding ✅
 
 **Description:** Replace the generic "Start a conversation with AI" text at `ChatMessageList.tsx:155-165` with a structured onboarding card:
 
@@ -160,7 +160,7 @@ Prompt chips should use `outline` button variant at `text-xs` size.
 
 ---
 
-### #12 — Add mode-specific empty states to CommandPalette
+### #12 — Add mode-specific empty states to CommandPalette ✅
 
 **Description:** Replace generic empty text with mode-specific guidance:
 
@@ -181,7 +181,7 @@ Update the `emptyText` logic at `CommandPalette.tsx:412-422`.
 
 ## Tier 4: Feature Discoverability
 
-### #13 — Add syntax hints below ChatInput
+### #13 — Add syntax hints below ChatInput ✅
 
 **Description:** Add muted hint text below the chat textarea: "Type `/` for skills, `@` for agents". Auto-hide after the user sends their first message via a persisted flag `chatHintsShown` in `settings-store`. Use `text-[10px] text-muted-foreground` styling.
 
@@ -191,7 +191,7 @@ Update the `emptyText` logic at `CommandPalette.tsx:412-422`.
 
 ---
 
-### #14 — Keep Command Palette prefix mode hints visible
+### #14 — Keep Command Palette prefix mode hints visible ✅
 
 **Description:** Currently, the prefix mode hints (`#tags`, `@mentions`, `>commands`, `?research`) in the Command Palette footer disappear when a prefix mode is active. Keep them visible in all modes. When in a prefix mode, replace the current mode's hint with "← Backspace to return".
 
@@ -203,7 +203,7 @@ Update the `emptyText` logic at `CommandPalette.tsx:412-422`.
 
 ## Tier 5: Visual Polish
 
-### #15 — Add zero-match styling to FindBar
+### #15 — Add zero-match styling to FindBar ✅
 
 **Description:** When `matchCount === 0 && query.length > 0`, add `border-destructive/50` class to the search input and change "No results" text to `text-destructive`. Add `transition-colors duration-150` for smooth feedback.
 
@@ -215,7 +215,7 @@ Pattern: VS Code, Sublime, Safari all use red/warning border for no matches.
 
 ---
 
-### #16 — Add transition to table toolbar appearance
+### #16 — Add transition to table toolbar appearance ✅
 
 **Description:** Add `animate-in fade-in duration-150` to the `TableToolsPopover` appearance in the Toolbar so it doesn't appear/disappear abruptly when the cursor enters/leaves a table. Match the existing FindBar animation timing.
 
@@ -225,7 +225,7 @@ Pattern: VS Code, Sublime, Safari all use red/warning border for no matches.
 
 ---
 
-### #17 — Normalize disabled opacity across components
+### #17 — Normalize disabled opacity across components ✅
 
 **Description:** Audit and standardize disabled states to `disabled:opacity-50` everywhere. Currently inconsistent: some use `opacity-30`, others `opacity-50`, others custom values.
 
@@ -237,7 +237,7 @@ Check: Toolbar buttons, ChatInput send button, settings toggles, tab close butto
 
 ---
 
-### #18 — Add drag-expand pulse feedback to FileTreeItem
+### #18 — Add drag-expand pulse feedback to FileTreeItem ✅
 
 **Description:** When the 600ms drag-expand timer is active on a folder (line \~278 in `FileTreeItem.tsx`), add an `animate-pulse` class to the folder's container div. Remove on timer clear. This gives visual feedback that the folder is about to auto-expand.
 
@@ -249,7 +249,7 @@ Check: Toolbar buttons, ChatInput send button, settings toggles, tab close butto
 
 ## Tier 6: Error Handling
 
-### #19 — Improve error messages in FileTreeItem
+### #19 — Improve error messages in FileTreeItem ✅
 
 **Description:** Four changes:
 
@@ -266,7 +266,7 @@ Create a small `parseFileError(error: unknown): string` utility for consistent e
 
 ---
 
-### #20 — Add recovery actions to AI error toasts
+### #20 — Add recovery actions to AI error toasts ✅
 
 **Description:** In `BubbleMenu.tsx` (line \~91), when AI actions fail, add a Sonner `action` button pointing to Settings &gt; Connections: `toast.error("AI action failed", { action: { label: "Check settings", onClick: openSettings } })`. Use Sonner's existing `action` parameter — no new dependencies.
 

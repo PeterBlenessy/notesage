@@ -76,7 +76,7 @@ function ToolbarButton({
           onClick={onClick}
           disabled={disabled}
           className={cn(
-            "disabled:opacity-30 active:scale-90",
+            "disabled:opacity-50 active:scale-90",
             active
               ? "bg-accent text-foreground"
               : "text-muted-foreground"
@@ -306,7 +306,9 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
 
           {/* Table editing tools — only visible when cursor is inside a table */}
           {editor.isActive("table") && (
-            <TableToolsPopover editor={editor} />
+            <div className="animate-in fade-in duration-150">
+              <TableToolsPopover editor={editor} />
+            </div>
           )}
 
           <ToolbarButton

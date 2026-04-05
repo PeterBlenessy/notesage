@@ -373,6 +373,17 @@ function App() {
     }
   }, [updateState.status, updateState.updateInfo]);
 
+  // Listen for global "open settings" event (used by toast actions, etc.)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ tab?: SettingsTab }>).detail;
+      if (detail?.tab) setSettingsInitialTab(detail.tab);
+      setSettingsOpen(true);
+    };
+    window.addEventListener("notesage:open-settings", handler);
+    return () => window.removeEventListener("notesage:open-settings", handler);
+  }, []);
+
   // Show and auto-fade focus mode hint
   useEffect(() => {
     if (focusMode) {

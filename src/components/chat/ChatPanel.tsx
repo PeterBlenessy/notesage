@@ -14,6 +14,7 @@ import { useChatContext } from '@/hooks/useChatContext';
 import { ChatHistoryView } from './ChatHistoryView';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatFooter } from './ChatFooter';
+import type { ChatInputHandle } from './ChatInput';
 import {
   Tooltip,
   TooltipContent,
@@ -79,6 +80,7 @@ export function ChatPanel() {
   const { sendChatMessage } = useAIOperations();
   const { attachedFilePaths } = useChatContext();
 
+  const chatInputRef = useRef<ChatInputHandle>(null);
   const [chatView, setChatView] = useState<'chat' | 'history'>('chat');
   const [editContext, setEditContext] = useState<EditContext | null>(null);
   const editContextRef = useRef<EditContext | null>(null);
@@ -229,6 +231,10 @@ export function ChatPanel() {
     setChatView('chat');
   }, [setActiveConversation]);
 
+  const handlePrefill = useCallback((text: string) => {
+    chatInputRef.current?.prefill(text);
+  }, []);
+
   const activeConvTitle = useMemo(() => {
     if (!activeConversationId) return 'New Chat';
     const conv = conversations.find((c) => c.id === activeConversationId);
@@ -298,6 +304,7 @@ export function ChatPanel() {
         selectedProjectPaths={selectedProjectPaths}
         onResend={handleResend}
         onEdit={handleEdit}
+        onPrefill={handlePrefill}
       />
 
       <ChatFooter
@@ -307,6 +314,7 @@ export function ChatPanel() {
         chatPlaceholder={chatPlaceholder}
         editContext={editContext}
         onCancelEdit={clearEditContext}
+        chatInputRef={chatInputRef}
       />
       </>
       )}

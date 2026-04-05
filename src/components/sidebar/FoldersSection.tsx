@@ -80,9 +80,15 @@ export const FoldersSection = React.memo(function FoldersSection({
           ))}
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground py-1.5">
-          Open a folder to browse files
-        </p>
+        <div className="py-1.5">
+          <p className="text-xs text-muted-foreground">Open a folder to browse files</p>
+          <span
+            className="text-xs underline cursor-pointer text-muted-foreground"
+            onClick={handleOpenFolder}
+          >
+            Open Folder
+          </span>
+        </div>
       )}
     </SidebarSection>
   );

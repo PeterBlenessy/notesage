@@ -55,9 +55,15 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
     };
   }, [editor]);
 
+  const openConnectionSettings = () => {
+    window.dispatchEvent(new CustomEvent("notesage:open-settings", { detail: { tab: "ai" } }));
+  };
+
+  const settingsAction = { label: "Check settings", onClick: openConnectionSettings };
+
   const handleAIAction = async (action: 'improve' | 'summarize' | 'expand') => {
     if (!hasAIProvider) {
-      toast.error('Please configure an AI provider in Settings first.');
+      toast.error('Please configure an AI provider in Settings first.', { action: settingsAction });
       return;
     }
 
@@ -88,7 +94,9 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
       setSuggestion(editor, from, to, selectedText, result.trim());
     } catch (error) {
       console.error('AI action failed:', error);
-      toast.error(`AI ${action} failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      const isConfigError = /api.?key|unauthorized|401|403|forbidden|provider|connection|not configured/i.test(msg);
+      toast.error(`AI ${action} failed: ${msg}`, isConfigError ? { action: settingsAction } : undefined);
     } finally {
       setLoadingAction(null);
     }
@@ -96,7 +104,7 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
 
   const handleCustomPrompt = async (template: string) => {
     if (!hasAIProvider) {
-      toast.error('Please configure an AI provider in Settings first.');
+      toast.error('Please configure an AI provider in Settings first.', { action: settingsAction });
       return;
     }
 
@@ -115,7 +123,9 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
       setSuggestion(editor, from, to, selectedText, result.trim());
     } catch (error) {
       console.error('Custom prompt failed:', error);
-      toast.error(`Custom prompt failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      const isConfigError = /api.?key|unauthorized|401|403|forbidden|provider|connection|not configured/i.test(msg);
+      toast.error(`Custom prompt failed: ${msg}`, isConfigError ? { action: settingsAction } : undefined);
     } finally {
       setLoadingAction(null);
     }

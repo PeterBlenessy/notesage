@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useMemo, useState, type RefObject } from 'react';
 import { ChevronUp, FolderOpen, Check, Target, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentIcon } from '@/components/AgentIcon';
@@ -13,7 +13,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { useChatContext } from '@/hooks/useChatContext';
 import { useAIOperations } from '@/hooks/useAIOperations';
-import { ChatInput } from './ChatInput';
+import { ChatInput, type ChatInputHandle } from './ChatInput';
 import {
   Tooltip,
   TooltipContent,
@@ -61,9 +61,10 @@ interface ChatFooterProps {
   chatPlaceholder: string;
   editContext?: EditContext | null;
   onCancelEdit?: () => void;
+  chatInputRef?: RefObject<ChatInputHandle | null>;
 }
 
-export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPaths, hasAIProvider, chatPlaceholder, editContext, onCancelEdit }: ChatFooterProps) {
+export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPaths, hasAIProvider, chatPlaceholder, editContext, onCancelEdit, chatInputRef }: ChatFooterProps) {
   const isLoading = useChatStore((s) => s.isLoading);
   const pendingProjectSwitch = useChatStore(selectPendingProjectSwitch);
   const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
@@ -170,6 +171,7 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
   return (
     <div className="border-t border-border px-3 py-3">
       <ChatInput
+        ref={chatInputRef}
         onSend={onSend}
         onStop={cancelChat}
         isLoading={isLoading}

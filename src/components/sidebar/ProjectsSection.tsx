@@ -86,9 +86,17 @@ export const ProjectsSection = React.memo(function ProjectsSection({
           ))}
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground py-1.5">
-          No projects open
-        </p>
+        <div className="py-1.5">
+          <p className="text-xs text-muted-foreground">No projects yet</p>
+          {onNewProject && (
+            <span
+              className="text-xs underline cursor-pointer text-muted-foreground"
+              onClick={onNewProject}
+            >
+              New Project
+            </span>
+          )}
+        </div>
       )}
     </SidebarSection>
   );
