@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -38,9 +39,24 @@ function QuickCaptureInner() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const projects = useWorkspaceStore((s) => s.projects);
 
-  // Auto-focus textarea on mount
+  // Show window and focus textarea after render (window starts hidden to avoid white flash)
   useEffect(() => {
-    textareaRef.current?.focus();
+    const win = getCurrentWindow();
+    // Small delay to let React paint first
+    requestAnimationFrame(() => {
+      win.show().then(() => win.setFocus());
+      textareaRef.current?.focus();
+    });
+  }, []);
+
+  // Reset content when window is re-shown
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen("quick-capture-reset", () => {
+      setContent("");
+      textareaRef.current?.focus();
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
   }, []);
 
   // Escape to close

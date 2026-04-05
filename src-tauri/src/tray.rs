@@ -238,6 +238,7 @@ pub async fn show_quick_capture(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("quick-capture") {
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
+        let _ = window.emit("quick-capture-reset", ());
         return Ok(());
     }
 
@@ -253,8 +254,7 @@ pub async fn show_quick_capture(app: AppHandle) -> Result<(), String> {
     .always_on_top(true)
     .center()
     .decorations(true)
-    .visible(true)
-    .focused(true)
+    .visible(false)
     .skip_taskbar(true)
     .build()
     .map_err(|e| e.to_string())?;
