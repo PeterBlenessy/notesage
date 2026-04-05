@@ -151,6 +151,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
     showFloatingToolbar, setShowFloatingToolbar,
     toolbarVisible, setToolbarVisible,
     externalChangeDiffReview, setExternalChangeDiffReview,
+    showHiddenFiles, setShowHiddenFiles,
     contentWidth, setContentWidth,
     measurementUnit, setMeasurementUnit,
     marginTop, setMarginTop,
@@ -953,6 +954,22 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         Enable delete and move actions for custom skills and agents in Settings
+                      </p>
+                    </div>
+
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label htmlFor="show-hidden-files" className="text-sm font-medium cursor-pointer">
+                          Show Hidden Files
+                        </Label>
+                        <Switch
+                          id="show-hidden-files"
+                          checked={showHiddenFiles}
+                          onCheckedChange={setShowHiddenFiles}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Show dotfiles and dot-directories (starting with &quot;.&quot;) in the sidebar file tree.
                       </p>
                     </div>
                   </div>

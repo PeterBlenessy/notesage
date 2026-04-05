@@ -129,6 +129,7 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   printLayout: false,
   typewriterScrolling: false,
   externalChangeDiffReview: false,
+  showHiddenFiles: false,
   sourceWordWrap: true,
   copilotMaxCompletionChars: 80,
   fimContextChars: 500,
@@ -194,6 +195,7 @@ describe('initial state defaults', () => {
     expect(s.printLayout).toBe(false);
     expect(s.typewriterScrolling).toBe(false);
     expect(s.externalChangeDiffReview).toBe(false);
+    expect(s.showHiddenFiles).toBe(false);
     expect(s.sourceWordWrap).toBe(true);
     expect(s.copilotMaxCompletionChars).toBe(80);
     expect(s.fimContextChars).toBe(500);
@@ -326,6 +328,14 @@ describe('boolean setters', () => {
   it('setExternalChangeDiffReview', () => {
     useSettingsStore.getState().setExternalChangeDiffReview(true);
     expect(useSettingsStore.getState().externalChangeDiffReview).toBe(true);
+  });
+
+  it('setShowHiddenFiles', () => {
+    expect(useSettingsStore.getState().showHiddenFiles).toBe(false);
+    useSettingsStore.getState().setShowHiddenFiles(true);
+    expect(useSettingsStore.getState().showHiddenFiles).toBe(true);
+    useSettingsStore.getState().setShowHiddenFiles(false);
+    expect(useSettingsStore.getState().showHiddenFiles).toBe(false);
   });
 
   it('setSourceWordWrap', () => {

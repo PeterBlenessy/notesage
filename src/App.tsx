@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { CommandPalette } from "@/components/CommandPalette";
 import type { SettingsTab } from "@/components/settings/SettingsDialog";
@@ -118,7 +118,8 @@ function App() {
 
   const stripExpanded = !isManuallyHidden && !focusMode;
 
-  const { openFile, openFileAtTag, openFileAtText } = useFileOperations();
+  const { openFile, openFileAtTag, openFileAtText, refreshFileTree } = useFileOperations();
+  const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
 
   // Handle file-open events from macOS file association
   useEffect(() => {
@@ -137,7 +138,7 @@ function App() {
                 ws.explorerFolders.some((f) => filePath.startsWith(f.path));
               if (!isKnown) {
                 try {
-                  const tree = await tauriApi.listDirectory(parentDir);
+                  const tree = await tauriApi.listDirectory(parentDir, useSettingsStore.getState().showHiddenFiles);
                   addExplorerFolder(parentDir, tree);
                 } catch {
                   // Parent directory may not be listable
@@ -156,6 +157,16 @@ function App() {
     return () => { unlisten?.(); };
   }, [openFile, addExplorerFolder]);
 
+  // Refresh file tree when hidden files toggle changes
+  const hiddenFilesInitRef = useRef(true);
+  useEffect(() => {
+    if (hiddenFilesInitRef.current) {
+      hiddenFilesInitRef.current = false;
+      return;
+    }
+    refreshFileTree();
+  }, [showHiddenFiles, refreshFileTree]);
+
   // --- Callbacks ---
 
   const handleOpenFolder = useCallback(async () => {
@@ -163,7 +174,7 @@ function App() {
       const folderPath = await tauriApi.openFolderDialog();
       if (folderPath) {
         const isProject = await tauriApi.pathExists(`${folderPath}/.notesage`);
-        const tree = await tauriApi.listDirectory(folderPath);
+        const tree = await tauriApi.listDirectory(folderPath, useSettingsStore.getState().showHiddenFiles);
         if (isProject) {
           addProject(folderPath, tree);
         } else {
@@ -178,7 +189,7 @@ function App() {
 
   const handleOpenProject = useCallback(async (projectPath: string) => {
     try {
-      const tree = await tauriApi.listDirectory(projectPath);
+      const tree = await tauriApi.listDirectory(projectPath, useSettingsStore.getState().showHiddenFiles);
       addProject(projectPath, tree);
     } catch (error) {
       log.error("lifecycle", "Failed to open project", error);
@@ -213,7 +224,7 @@ function App() {
         if (!dirExists) {
           await tauriApi.createDirectory(metaDir);
         }
-        const tree = await tauriApi.listDirectory(folderPath);
+        const tree = await tauriApi.listDirectory(folderPath, useSettingsStore.getState().showHiddenFiles);
         addProject(folderPath, tree);
       }
     } catch (error) {
@@ -229,7 +240,7 @@ function App() {
       if (!dirExists) {
         await tauriApi.createDirectory(metaDir);
       }
-      const tree = await tauriApi.listDirectory(path);
+      const tree = await tauriApi.listDirectory(path, useSettingsStore.getState().showHiddenFiles);
       addProject(path, tree);
     } catch (error) {
       log.error("lifecycle", "Failed to make project", error);
@@ -243,14 +254,14 @@ function App() {
       const ws = useWorkspaceStore.getState();
       for (const project of ws.projects) {
         if (filePath.startsWith(project.path + "/")) {
-          const tree = await tauriApi.listDirectory(project.path);
+          const tree = await tauriApi.listDirectory(project.path, useSettingsStore.getState().showHiddenFiles);
           ws.updateProjectTree(project.path, tree);
           break;
         }
       }
       for (const folder of ws.explorerFolders) {
         if (filePath.startsWith(folder.path + "/")) {
-          const tree = await tauriApi.listDirectory(folder.path);
+          const tree = await tauriApi.listDirectory(folder.path, useSettingsStore.getState().showHiddenFiles);
           ws.updateExplorerTree(folder.path, tree);
           break;
         }

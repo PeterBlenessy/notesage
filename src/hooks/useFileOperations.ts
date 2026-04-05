@@ -77,7 +77,7 @@ async function detectRenamedProject(
     const parentExists = await tauriApi.pathExists(parentDir);
     if (!parentExists) return null;
 
-    const entries = await tauriApi.listDirectory(parentDir);
+    const entries = await tauriApi.listDirectory(parentDir, useSettingsStore.getState().showHiddenFiles);
     const ws = useWorkspaceStore.getState();
     const openPaths = new Set(ws.projects.map((p) => p.path));
 
@@ -116,7 +116,7 @@ export function useFileOperations() {
         if (targetPath.startsWith(folder.path)) {
           try {
             const t0 = performance.now();
-            const tree = await tauriApi.listDirectory(folder.path);
+            const tree = await tauriApi.listDirectory(folder.path, settings.showHiddenFiles);
             const ms = Math.round(performance.now() - t0);
             const fileCount = countFiles(tree);
             const path = folder.path.split('/').pop() ?? folder.path;
@@ -135,7 +135,7 @@ export function useFileOperations() {
         if (targetPath.startsWith(project.path)) {
           try {
             const t0 = performance.now();
-            const tree = await tauriApi.listDirectory(project.path);
+            const tree = await tauriApi.listDirectory(project.path, settings.showHiddenFiles);
             const ms = Math.round(performance.now() - t0);
             const fileCount = countFiles(tree);
             const path = project.path.split('/').pop() ?? project.path;
@@ -169,7 +169,7 @@ export function useFileOperations() {
     for (const folder of ws.explorerFolders) {
       try {
         const t0 = performance.now();
-        const tree = await tauriApi.listDirectory(folder.path);
+        const tree = await tauriApi.listDirectory(folder.path, settings.showHiddenFiles);
         const ms = Math.round(performance.now() - t0);
         const fileCount = countFiles(tree);
         const path = folder.path.split('/').pop() ?? folder.path;
@@ -185,7 +185,7 @@ export function useFileOperations() {
     for (const project of ws.projects) {
       try {
         const t0 = performance.now();
-        const tree = await tauriApi.listDirectory(project.path);
+        const tree = await tauriApi.listDirectory(project.path, settings.showHiddenFiles);
         const ms = Math.round(performance.now() - t0);
         const fileCount = countFiles(tree);
         const path = project.path.split('/').pop() ?? project.path;

@@ -201,7 +201,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `editor-store` | Open tabs, active tab, per-tab flags | Full |
 | `workspace-store` | Explorer folders, projects, notes tree | Full |
 | `project-metadata-store` | Project metadata from `.notesage/project.json` | Full |
-| `settings-store` | Theme, soft contrast mode, UI preferences, `startupReady` flag, `toolCallingEnabled`, `searchProvider` | Full (except `startupReady`) |
+| `settings-store` | Theme, soft contrast mode, UI preferences, `startupReady` flag, `toolCallingEnabled`, `searchProvider`, `showHiddenFiles` | Full (except `startupReady`) |
 | `ai-store` | AI provider config (legacy, fallback) | Full |
 | `skill-store` | Skills registry, agents, instructions, active agent | Partial (overrides + active agent) |
 | `connections-store` | Multi-provider connections, sandbox/network config, kernel enforcement, writable paths | Full |

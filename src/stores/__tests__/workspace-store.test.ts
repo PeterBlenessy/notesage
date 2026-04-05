@@ -110,6 +110,7 @@ function makeTree(names: string[], basePath: string): FileEntry[] {
     name,
     path: `${basePath}/${name}`,
     is_directory: false,
+    hidden: name.startsWith('.'),
     children: undefined,
   }));
 }

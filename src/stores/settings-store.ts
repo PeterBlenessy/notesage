@@ -62,6 +62,8 @@ interface SettingsStore {
   personasMigrated: boolean;
   /** Whether the chat input syntax hints have been auto-dismissed (after first send). Persisted. */
   chatHintsShown: boolean;
+  /** Show dotfiles and dot-directories in the sidebar file tree */
+  showHiddenFiles: boolean;
   // Runtime-only (not persisted) — detected on startup
   startupReady: boolean;
   icloudAvailable: boolean;
@@ -110,6 +112,7 @@ interface SettingsStore {
   setICloudNotesagePath: (path: string | null) => void;
   setPersonasMigrated: (migrated: boolean) => void;
   setChatHintsShown: (shown: boolean) => void;
+  setShowHiddenFiles: (show: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -135,6 +138,7 @@ export const useSettingsStore = create<SettingsStore>()(
       gitEnabled: false,
       personasMigrated: false,
       chatHintsShown: false,
+      showHiddenFiles: false,
       startupReady: false,
       icloudAvailable: false,
       icloudNotesagePath: null,
@@ -330,6 +334,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setChatHintsShown: (shown: boolean) => {
         set({ chatHintsShown: shown });
+      },
+
+      setShowHiddenFiles: (show: boolean) => {
+        set({ showHiddenFiles: show });
       },
     }),
     {

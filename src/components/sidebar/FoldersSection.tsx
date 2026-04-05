@@ -3,6 +3,7 @@ import { FolderOpen, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { tauriApi } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { Button } from "@/components/ui/button";
 import { SidebarSection } from "./SidebarSection";
 import { ExplorerFolderItem } from "./ExplorerFolderItem";
@@ -33,7 +34,7 @@ export const FoldersSection = React.memo(function FoldersSection({
       setIsLoading(true);
       const folderPath = await tauriApi.openFolderDialog();
       if (folderPath) {
-        const tree = await tauriApi.listDirectory(folderPath);
+        const tree = await tauriApi.listDirectory(folderPath, useSettingsStore.getState().showHiddenFiles);
         addExplorerFolder(folderPath, tree);
       }
     } catch (error) {

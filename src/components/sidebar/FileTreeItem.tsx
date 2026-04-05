@@ -398,6 +398,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
               isActive
                 ? "bg-accent text-foreground font-medium"
                 : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              entry.hidden && "opacity-50",
               isDragOver && entry.is_directory && "bg-accent ring-2 ring-ring/30",
               isDragExpandPending && "animate-pulse"
             )}

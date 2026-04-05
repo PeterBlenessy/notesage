@@ -39,7 +39,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 
 - Sidebar file tree with expand/collapse, file icons by extension, right-click context menu (new file, new folder, rename, delete)
 - File operations via Tauri commands: open folder (native dialog), open/save/create/rename/delete files
-- Hidden files/folders ignored by default
+- Hidden files/folders ignored by default; optional "Show Hidden Files" toggle in Settings > Advanced reveals dotfiles with dimmed styling and bottom-sort order. `.DS_Store` and `.git/objects|pack|logs` always excluded.
 
 ## Markdown Round-Tripping
 

@@ -213,7 +213,7 @@ async function reloadTrees() {
   const validFolders: string[] = [];
   for (const folder of ws.explorerFolders) {
     try {
-      const tree = await tauriApi.listDirectory(folder.path);
+      const tree = await tauriApi.listDirectory(folder.path, settings.showHiddenFiles);
       ws.updateExplorerTree(folder.path, tree);
       validFolders.push(folder.path);
     } catch {
@@ -229,7 +229,7 @@ async function reloadTrees() {
   // Reload all project trees
   for (const project of ws.projects) {
     try {
-      const tree = await tauriApi.listDirectory(project.path);
+      const tree = await tauriApi.listDirectory(project.path, settings.showHiddenFiles);
       ws.updateProjectTree(project.path, tree);
     } catch {
       // Expected: project directory may have been deleted or moved
@@ -301,7 +301,7 @@ async function reloadTrees() {
       } else {
         for (const syncedPath of syncStore.syncedProjectPaths) {
           try {
-            const tree = await tauriApi.listDirectory(syncedPath);
+            const tree = await tauriApi.listDirectory(syncedPath, settings.showHiddenFiles);
             ws.addProject(syncedPath, tree);
           } catch {
             // Expected: synced project directory may have been removed from iCloud

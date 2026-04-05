@@ -107,7 +107,7 @@ export function useFileWatcher() {
                   const hasMetadata = await tauriApi.pathExists(`${projectRoot}/.notesage`);
                   if (!hasMetadata) return;
 
-                  const tree = await tauriApi.listDirectory(projectRoot);
+                  const tree = await tauriApi.listDirectory(projectRoot, useSettingsStore.getState().showHiddenFiles);
                   // Re-read fresh state after awaits to avoid stale snapshot
                   if (useWorkspaceStore.getState().projects.some((p) => p.path === projectRoot)) return;
                   useWorkspaceStore.getState().addProject(projectRoot, tree);
@@ -148,6 +148,15 @@ export function useFileWatcher() {
             }, 500);
           }
         });
+      }
+
+      // For modify events on dotfiles when hidden files are not shown, skip the
+      // content-reload check — there's no tab or UI to update.
+      if (kind === "modify") {
+        const fileName = path.split("/").pop() ?? "";
+        if (fileName.startsWith(".") && !useSettingsStore.getState().showHiddenFiles) {
+          return;
+        }
       }
 
       // For modify events, debounce per-file to collapse duplicate FSEvents

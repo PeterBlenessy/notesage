@@ -1,5 +1,6 @@
 import { tauriApi } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useEditorStore } from "@/stores/editor-store";
 
@@ -9,7 +10,7 @@ import { useEditorStore } from "@/stores/editor-store";
  */
 export async function migrateProjectPath(oldPath: string, newPath: string): Promise<void> {
   // Load file tree at the new location
-  const tree = await tauriApi.listDirectory(newPath);
+  const tree = await tauriApi.listDirectory(newPath, useSettingsStore.getState().showHiddenFiles);
 
   // Update workspace store (atomic path swap, preserves expanded state)
   const ws = useWorkspaceStore.getState();

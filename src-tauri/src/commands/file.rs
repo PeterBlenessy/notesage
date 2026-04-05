@@ -9,6 +9,7 @@ pub struct FileEntry {
     pub path: String,
     pub is_directory: bool,
     pub children: Option<Vec<FileEntry>>,
+    pub hidden: bool,
 }
 
 #[tauri::command]
@@ -28,12 +29,21 @@ pub async fn write_file(path: String, content: String) -> Result<(), String> {
 
 const MAX_DIRECTORY_DEPTH: usize = 50;
 
+/// Subdirectories of `.git/` that are always excluded even when `show_hidden` is true,
+/// to prevent performance degradation from thousands of pack/object files.
+const GIT_ALWAYS_HIDDEN_CHILDREN: &[&str] = &["objects", "pack", "logs"];
+
 #[tauri::command]
-pub async fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
-    list_directory_recursive(&path, 0).await
+pub async fn list_directory(path: String, show_hidden: Option<bool>) -> Result<Vec<FileEntry>, String> {
+    list_directory_recursive(&path, 0, show_hidden.unwrap_or(false), false).await
 }
 
-async fn list_directory_recursive(path: &str, depth: usize) -> Result<Vec<FileEntry>, String> {
+async fn list_directory_recursive(
+    path: &str,
+    depth: usize,
+    show_hidden: bool,
+    inside_git: bool,
+) -> Result<Vec<FileEntry>, String> {
     let dir_path = Path::new(path);
 
     if !dir_path.is_dir() {
@@ -48,17 +58,30 @@ async fn list_directory_recursive(path: &str, depth: usize) -> Result<Vec<FileEn
         let entry = entry.map_err(|e| format!("Failed to read entry in {}: {}", path, e))?;
         let entry_path = entry.path();
         let file_name = entry.file_name().to_string_lossy().to_string();
+        let is_hidden = file_name.starts_with('.');
 
-        // Skip hidden files (starting with .)
-        if file_name.starts_with('.') {
+        // Always exclude .DS_Store
+        if file_name == ".DS_Store" {
+            continue;
+        }
+
+        // Skip hidden files unless show_hidden is enabled
+        if is_hidden && !show_hidden {
+            continue;
+        }
+
+        // Inside .git/, exclude bulk subdirectories (objects, pack, logs)
+        if inside_git && GIT_ALWAYS_HIDDEN_CHILDREN.contains(&file_name.as_str()) {
             continue;
         }
 
         let is_directory = entry_path.is_dir();
         let path_str = entry_path.to_string_lossy().to_string();
 
+        let child_inside_git = inside_git || (is_hidden && file_name == ".git");
+
         let children = if is_directory && depth < MAX_DIRECTORY_DEPTH {
-            match Box::pin(list_directory_recursive(&path_str, depth + 1)).await {
+            match Box::pin(list_directory_recursive(&path_str, depth + 1, show_hidden, child_inside_git)).await {
                 Ok(children) => Some(children),
                 Err(e) => {
                     log::warn!(target: "notesage::file", "Skipping unreadable directory {}: {}", path_str, e);
@@ -76,16 +99,21 @@ async fn list_directory_recursive(path: &str, depth: usize) -> Result<Vec<FileEn
             name: file_name,
             path: path_str,
             is_directory,
+            hidden: is_hidden,
             children,
         });
     }
 
-    // Sort: directories first, then alphabetically
+    // Sort: directories first, then hidden last within each group, then alphabetically
     entries.sort_by(|a, b| {
         match (a.is_directory, b.is_directory) {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
-            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+            _ => match (a.hidden, b.hidden) {
+                (false, true) => std::cmp::Ordering::Less,
+                (true, false) => std::cmp::Ordering::Greater,
+                _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+            },
         }
     });
 
@@ -95,8 +123,9 @@ async fn list_directory_recursive(path: &str, depth: usize) -> Result<Vec<FileEn
 /// List only files (not directories) at the top level of a directory.
 /// No recursive descent — much faster than list_directory for flat file listings.
 #[tauri::command]
-pub async fn list_files_shallow(path: String) -> Result<Vec<FileEntry>, String> {
+pub async fn list_files_shallow(path: String, show_hidden: Option<bool>) -> Result<Vec<FileEntry>, String> {
     let dir_path = Path::new(&path);
+    let show_hidden = show_hidden.unwrap_or(false);
 
     let mut entries = Vec::new();
     let read_dir = fs::read_dir(dir_path).map_err(|e| match e.kind() {
@@ -109,9 +138,15 @@ pub async fn list_files_shallow(path: String) -> Result<Vec<FileEntry>, String> 
         let entry = entry.map_err(|e| format!("Failed to read entry in {}: {e}", path))?;
         let entry_path = entry.path();
         let file_name = entry.file_name().to_string_lossy().to_string();
+        let is_hidden = file_name.starts_with('.');
 
-        // Skip hidden files and directories
-        if file_name.starts_with('.') {
+        // Always exclude .DS_Store
+        if file_name == ".DS_Store" {
+            continue;
+        }
+
+        // Skip hidden files unless show_hidden is enabled
+        if is_hidden && !show_hidden {
             continue;
         }
 
@@ -124,12 +159,19 @@ pub async fn list_files_shallow(path: String) -> Result<Vec<FileEntry>, String> 
             name: file_name,
             path: entry_path.to_string_lossy().to_string(),
             is_directory: false,
+            hidden: is_hidden,
             children: None,
         });
     }
 
-    // Sort alphabetically
-    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    // Sort: hidden last, then alphabetically
+    entries.sort_by(|a, b| {
+        match (a.hidden, b.hidden) {
+            (false, true) => std::cmp::Ordering::Less,
+            (true, false) => std::cmp::Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        }
+    });
 
     Ok(entries)
 }
@@ -275,7 +317,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_files_shallow_returns_error_for_nonexistent_path() {
-        let result = list_files_shallow("/nonexistent/path/abc123".to_string()).await;
+        let result = list_files_shallow("/nonexistent/path/abc123".to_string(), None).await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.contains("/nonexistent/path/abc123"), "Error should contain the path: {}", err);
@@ -377,5 +419,145 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.contains("/nonexistent/dir/file.txt"), "Error should contain the path: {}", err);
+    }
+
+    // --- Hidden file visibility tests ---
+
+    fn create_test_tree(tmp: &TempDir) {
+        // Regular files/dirs
+        fs::write(tmp.path().join("readme.md"), "hello").unwrap();
+        fs::write(tmp.path().join("notes.txt"), "world").unwrap();
+        fs::create_dir(tmp.path().join("docs")).unwrap();
+        fs::write(tmp.path().join("docs/guide.md"), "guide").unwrap();
+
+        // Hidden files/dirs
+        fs::write(tmp.path().join(".gitignore"), "node_modules").unwrap();
+        fs::write(tmp.path().join(".DS_Store"), "junk").unwrap();
+        fs::create_dir_all(tmp.path().join(".git/objects")).unwrap();
+        fs::create_dir_all(tmp.path().join(".git/pack")).unwrap();
+        fs::create_dir_all(tmp.path().join(".git/logs")).unwrap();
+        fs::create_dir_all(tmp.path().join(".git/refs")).unwrap();
+        fs::write(tmp.path().join(".git/config"), "[core]").unwrap();
+        fs::write(tmp.path().join(".git/HEAD"), "ref: refs/heads/main").unwrap();
+        fs::create_dir(tmp.path().join(".notesage")).unwrap();
+        fs::write(tmp.path().join(".notesage/project.json"), "{}").unwrap();
+    }
+
+    #[tokio::test]
+    async fn list_directory_hides_dotfiles_by_default() {
+        let tmp = TempDir::new().unwrap();
+        create_test_tree(&tmp);
+
+        let entries = list_directory(tmp.path().to_string_lossy().to_string(), None).await.unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+
+        assert!(names.contains(&"readme.md"));
+        assert!(names.contains(&"notes.txt"));
+        assert!(names.contains(&"docs"));
+        assert!(!names.contains(&".gitignore"), "dotfiles should be hidden by default");
+        assert!(!names.contains(&".git"), "dot-directories should be hidden by default");
+        assert!(!names.contains(&".DS_Store"), ".DS_Store should always be hidden");
+    }
+
+    #[tokio::test]
+    async fn list_directory_shows_dotfiles_when_enabled() {
+        let tmp = TempDir::new().unwrap();
+        create_test_tree(&tmp);
+
+        let entries = list_directory(tmp.path().to_string_lossy().to_string(), Some(true)).await.unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+
+        assert!(names.contains(&"readme.md"));
+        assert!(names.contains(&".gitignore"), "dotfiles should be visible when show_hidden=true");
+        assert!(names.contains(&".git"), ".git dir should be visible");
+        assert!(names.contains(&".notesage"), ".notesage dir should be visible");
+        assert!(!names.contains(&".DS_Store"), ".DS_Store should always be excluded");
+    }
+
+    #[tokio::test]
+    async fn list_directory_excludes_git_bulk_subdirs() {
+        let tmp = TempDir::new().unwrap();
+        create_test_tree(&tmp);
+
+        let entries = list_directory(tmp.path().to_string_lossy().to_string(), Some(true)).await.unwrap();
+        let git_entry = entries.iter().find(|e| e.name == ".git").unwrap();
+        let git_children: Vec<&str> = git_entry.children.as_ref().unwrap().iter().map(|e| e.name.as_str()).collect();
+
+        assert!(git_children.contains(&"config"), ".git/config should be visible");
+        assert!(git_children.contains(&"HEAD"), ".git/HEAD should be visible");
+        assert!(git_children.contains(&"refs"), ".git/refs should be visible");
+        assert!(!git_children.contains(&"objects"), ".git/objects should be excluded");
+        assert!(!git_children.contains(&"pack"), ".git/pack should be excluded");
+        assert!(!git_children.contains(&"logs"), ".git/logs should be excluded");
+    }
+
+    #[tokio::test]
+    async fn file_entry_hidden_flag_is_set_correctly() {
+        let tmp = TempDir::new().unwrap();
+        create_test_tree(&tmp);
+
+        let entries = list_directory(tmp.path().to_string_lossy().to_string(), Some(true)).await.unwrap();
+
+        for entry in &entries {
+            if entry.name.starts_with('.') {
+                assert!(entry.hidden, "{} should have hidden=true", entry.name);
+            } else {
+                assert!(!entry.hidden, "{} should have hidden=false", entry.name);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn hidden_entries_sorted_after_regular_entries() {
+        let tmp = TempDir::new().unwrap();
+        create_test_tree(&tmp);
+
+        let entries = list_directory(tmp.path().to_string_lossy().to_string(), Some(true)).await.unwrap();
+
+        // Find the boundary between regular and hidden entries (within each group: dirs then files)
+        let dirs: Vec<&FileEntry> = entries.iter().filter(|e| e.is_directory).collect();
+        let files: Vec<&FileEntry> = entries.iter().filter(|e| !e.is_directory).collect();
+
+        // Within directories: regular dirs before hidden dirs
+        let first_hidden_dir = dirs.iter().position(|e| e.hidden);
+        if let Some(pos) = first_hidden_dir {
+            for d in &dirs[..pos] {
+                assert!(!d.hidden, "regular dirs should come before hidden dirs");
+            }
+            for d in &dirs[pos..] {
+                assert!(d.hidden, "hidden dirs should come after regular dirs");
+            }
+        }
+
+        // Within files: regular files before hidden files
+        let first_hidden_file = files.iter().position(|e| e.hidden);
+        if let Some(pos) = first_hidden_file {
+            for f in &files[..pos] {
+                assert!(!f.hidden, "regular files should come before hidden files");
+            }
+            for f in &files[pos..] {
+                assert!(f.hidden, "hidden files should come after regular files");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn list_files_shallow_respects_show_hidden() {
+        let tmp = TempDir::new().unwrap();
+        create_test_tree(&tmp);
+
+        // Default: no hidden files
+        let entries = list_files_shallow(tmp.path().to_string_lossy().to_string(), None).await.unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"readme.md"));
+        assert!(!names.contains(&".gitignore"));
+        assert!(!names.contains(&".DS_Store"));
+
+        // With show_hidden: includes dotfiles (except .DS_Store)
+        let entries = list_files_shallow(tmp.path().to_string_lossy().to_string(), Some(true)).await.unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"readme.md"));
+        assert!(names.contains(&".gitignore"));
+        assert!(!names.contains(&".DS_Store"), ".DS_Store should always be excluded");
     }
 }

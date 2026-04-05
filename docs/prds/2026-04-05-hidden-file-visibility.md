@@ -3,9 +3,10 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-05 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | Low |
 | **Impact** | Advanced users can browse `.notesage/`, `.git/`, and other dotfile directories directly in the sidebar, enabling manual inspection and editing of research files, comments, agent instructions, and project metadata |
+| **Tasks** | [hidden-file-visibility-tasks](../tasks/2026-04-05-hidden-file-visibility-tasks.md) |
 
 ## Problem
 
@@ -28,7 +29,7 @@ However, this creates friction for advanced users who want to:
 
 ## Non-Goals
 
-- **Editing `.notesage/` metadata through custom UI** — this toggle is for raw file access; structured editing (comments, research) uses existing purpose-built UI
+- **Editing** `.notesage/` **metadata through custom UI** — this toggle is for raw file access; structured editing (comments, research) uses existing purpose-built UI
 - **Per-project hidden file settings** — one global toggle is sufficient
 - **Showing hidden files by default** — the default must remain hidden
 - **gitignore-aware filtering** — a separate concern; this PRD only addresses dotfile visibility
@@ -47,7 +48,7 @@ However, this creates friction for advanced users who want to:
 
 ### Settings UI
 
-A new toggle in **Settings > Advanced**:
+A new toggle in **Settings &gt; Advanced**:
 
 ```
 Show hidden files and folders
@@ -82,7 +83,7 @@ When `show_hidden` is `Some(true)`, dotfiles are included in the listing. Defaul
 Even with the toggle ON, these paths are excluded to prevent performance degradation and noise:
 
 | Path pattern | Reason |
-|-------------|--------|
+| --- | --- |
 | `.git/objects/` | Thousands of pack files |
 | `.git/pack/` | Large binary pack files |
 | `.git/logs/` | Verbose reflog |
@@ -122,31 +123,43 @@ When `showHiddenFiles` is ON, the watcher (`watcher.rs`) should emit events for 
 
 ## Implementation Plan
 
-- [ ] Add `showHiddenFiles` to `settings-store` (default `false`, persisted)
-- [ ] Add toggle to Settings > Advanced section
-- [ ] Update `list_directory` Rust command to accept `show_hidden` parameter
-- [ ] Add always-hidden exclusion list (`.git/objects/`, `.git/pack/`, `.git/logs/`, `.DS_Store`)
-- [ ] Add `hidden` field to `FileEntry` struct
-- [ ] Update frontend `FileTree` / `FileTreeItem` to pass `showHiddenFiles` setting to `list_directory`
-- [ ] Style hidden entries with dimmed opacity and bottom-sort order
-- [ ] Update `useFileWatcher` to handle dotfile change events when toggle is ON
-- [ ] Update TypeScript `FileEntry` interface to include `hidden` field
-- [ ] Test: toggle OFF shows no dotfiles (existing behavior preserved)
-- [ ] Test: toggle ON shows dotfiles except always-hidden exclusions
-- [ ] Test: `.git/` top-level visible but bulk subdirs pruned
-- [ ] Test: dimmed styling applied only to hidden entries
+- [x] Add `showHiddenFiles` to `settings-store` (default `false`, persisted)
+
+- [x] Add toggle to Settings &gt; Advanced section
+
+- [x] Update `list_directory` Rust command to accept `show_hidden` parameter
+
+- [x] Add always-hidden exclusion list (`.git/objects/`, `.git/pack/`, `.git/logs/`, `.DS_Store`)
+
+- [x] Add `hidden` field to `FileEntry` struct
+
+- [x] Update frontend `FileTree` / `FileTreeItem` to pass `showHiddenFiles` setting to `list_directory`
+
+- [x] Style hidden entries with dimmed opacity and bottom-sort order
+
+- [x] Update `useFileWatcher` to handle dotfile change events when toggle is ON
+
+- [x] Update TypeScript `FileEntry` interface to include `hidden` field
+
+- [x] Test: toggle OFF shows no dotfiles (existing behavior preserved)
+
+- [x] Test: toggle ON shows dotfiles except always-hidden exclusions
+
+- [x] Test: `.git/` top-level visible but bulk subdirs pruned
+
+- [x] Test: dimmed styling applied only to hidden entries
 
 ## Quality Gates
 
-1. Default behavior unchanged: with toggle OFF, sidebar is identical to current behavior
-2. Toggle ON reveals `.notesage/`, `.git/`, `.github/`, `.vscode/`, and other dotfiles
-3. Always-hidden exclusions prevent `.git/objects/` and other bulk directories from appearing
-4. Hidden entries are visually distinct (dimmed) from regular files
-5. Dotfiles sort to the bottom of each directory listing
-6. `FileEntry.hidden` flag correctly set for all hidden entries
-7. Performance: enabling the toggle on a project with `.git/` does not cause noticeable lag
-8. Watcher correctly reports/suppresses dotfile events based on toggle state
-9. Round-trip: toggle ON → browse `.notesage/research/` → open a research file → edit → save works correctly
+ 1. Default behavior unchanged: with toggle OFF, sidebar is identical to current behavior
+ 2. Toggle ON reveals `.notesage/`, `.git/`, `.github/`, `.vscode/`, and other dotfiles
+ 3. Always-hidden exclusions prevent `.git/objects/` and other bulk directories from appearing
+ 4. Hidden entries are visually distinct (dimmed) from regular files
+ 5. Dotfiles sort to the bottom of each directory listing
+ 6. `FileEntry.hidden` flag correctly set for all hidden entries
+ 7. Performance: enabling the toggle on a project with `.git/` does not cause noticeable lag
+ 8. Watcher correctly reports/suppresses dotfile events based on toggle state
+ 9. Round-trip: toggle ON → browse `.notesage/research/` → open a research file → edit → save works correctly
 10. Both light and dark mode render dimmed entries with appropriate contrast
 
 ## Out of Scope

@@ -42,6 +42,7 @@ export function createMockFileEntry(overrides?: Partial<FileEntry>): FileEntry {
     name: 'test.md',
     path: '/test/test.md',
     is_directory: false,
+    hidden: false,
     children: undefined,
     ...overrides,
   };
@@ -58,16 +59,19 @@ export function createMockFileTree(): FileEntry[] {
       name: 'docs',
       path: '/test/docs',
       is_directory: true,
+      hidden: false,
       children: [
         {
           name: 'readme.md',
           path: '/test/docs/readme.md',
           is_directory: false,
+          hidden: false,
         },
         {
           name: 'guide.md',
           path: '/test/docs/guide.md',
           is_directory: false,
+          hidden: false,
         },
       ],
     },
@@ -75,11 +79,13 @@ export function createMockFileTree(): FileEntry[] {
       name: 'notes.md',
       path: '/test/notes.md',
       is_directory: false,
+      hidden: false,
     },
     {
       name: 'todo.md',
       path: '/test/todo.md',
       is_directory: false,
+      hidden: false,
     },
   ];
 }

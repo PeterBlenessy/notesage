@@ -281,8 +281,40 @@ describe('executeToolCall', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Unknown tool
+  // list_directory
   // ---------------------------------------------------------------------------
+
+  describe('list_directory', () => {
+    it('passes showHidden: true to always show hidden files for AI', async () => {
+      let capturedArgs: Record<string, unknown> = {};
+      setMockInvokeHandler('list_files_shallow', (_args) => {
+        capturedArgs = _args as Record<string, unknown>;
+        return [
+          { name: 'readme.md', path: '/tmp/readme.md', is_directory: false, hidden: false },
+          { name: '.gitignore', path: '/tmp/.gitignore', is_directory: false, hidden: true },
+        ];
+      });
+
+      const result = await executeToolCall('call-ld1', 'list_directory', {
+        path: '/tmp',
+      });
+
+      expect(result.is_error).toBe(false);
+      expect(capturedArgs.showHidden).toBe(true);
+      expect(result.content).toContain('readme.md');
+      expect(result.content).toContain('.gitignore');
+    });
+
+    it('returns error when path is missing', async () => {
+      const result = await executeToolCall('call-ld2', 'list_directory', {});
+
+      expect(result).toEqual({
+        tool_call_id: 'call-ld2',
+        content: 'Missing required argument: path',
+        is_error: true,
+      });
+    });
+  });
 
   // ---------------------------------------------------------------------------
   // Skill tool routing (skill__ prefix)

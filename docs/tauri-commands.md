@@ -65,22 +65,23 @@ Lists all files and folders in a directory, recursively.
 
 ```rust
 #[tauri::command]
-async fn list_directory(path: String) -> Result<Vec<FileEntry>, String>
+async fn list_directory(path: String, show_hidden: Option<bool>) -> Result<Vec<FileEntry>, String>
 ```
 
 **Parameters:**
 
 - `path`: Absolute path to the directory
+- `show_hidden`: Optional. When `true`, includes dotfiles and dot-directories. Default `false` (hides entries starting with `.`). Even when `true`, `.DS_Store` and `.git/objects|pack|logs` are always excluded.
 
 **Returns:**
 
-- `Ok(Vec<FileEntry>)`: Array of file entries with nested children
+- `Ok(Vec<FileEntry>)`: Array of file entries with nested children. Hidden entries sorted after regular entries within each directory level.
 - `Err(String)`: Error message if directory cannot be read
 
 **Frontend usage:**
 
 ```typescript
-const entries = await invoke<FileEntry[]>('list_directory', { path: '/path/to/project' });
+const entries = await invoke<FileEntry[]>('list_directory', { path: '/path/to/project', showHidden: true });
 ```
 
 ### create_file
@@ -213,6 +214,7 @@ pub struct FileEntry {
     pub path: String,
     pub is_directory: bool,
     pub children: Option<Vec<FileEntry>>,
+    pub hidden: bool,
 }
 ```
 
@@ -222,6 +224,7 @@ pub struct FileEntry {
 - `path`: Absolute path to the file/directory
 - `is_directory`: `true` if this is a directory, `false` if file
 - `children`: For directories, contains nested FileEntry array. For files, this is `None`.
+- `hidden`: `true` if the entry name starts with `.`. Always populated regardless of `show_hidden` — used by the frontend for dimmed styling.
 
 **TypeScript interface:**
 
@@ -231,6 +234,7 @@ interface FileEntry {
   path: string;
   is_directory: boolean;
   children?: FileEntry[];
+  hidden: boolean;
 }
 ```
 

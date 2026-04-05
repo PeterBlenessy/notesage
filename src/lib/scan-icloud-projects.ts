@@ -1,5 +1,6 @@
 import { tauriApi } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useSyncStore } from "@/stores/sync-store";
 
 /**
@@ -19,7 +20,7 @@ export async function scanICloudForProjects(
   let discovered = false;
 
   try {
-    const entries = await tauriApi.listDirectory(icloudNotesagePath);
+    const entries = await tauriApi.listDirectory(icloudNotesagePath, useSettingsStore.getState().showHiddenFiles);
 
     for (const entry of entries) {
       if (!entry.is_directory) continue;
@@ -32,7 +33,7 @@ export async function scanICloudForProjects(
         );
         if (!hasMetadata) continue;
 
-        const tree = await tauriApi.listDirectory(entry.path);
+        const tree = await tauriApi.listDirectory(entry.path, useSettingsStore.getState().showHiddenFiles);
         ws.addProject(entry.path, tree);
         syncStore.addSyncedProject(entry.path);
         discovered = true;

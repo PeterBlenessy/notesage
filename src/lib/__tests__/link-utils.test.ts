@@ -100,12 +100,14 @@ describe('searchWorkspaceFiles', () => {
     name,
     path,
     is_directory: false,
+    hidden: name.startsWith('.'),
   });
 
   const makeDir = (name: string, path: string, children: FileEntry[]): FileEntry => ({
     name,
     path,
     is_directory: true,
+    hidden: name.startsWith('.'),
     children,
   });
 

@@ -123,8 +123,8 @@ export async function executeToolCall(
       case 'list_directory': {
         const path = args.path as string;
         if (!path) throw new Error('Missing required argument: path');
-        interface FileEntry { name: string; path: string; is_directory: boolean; children?: FileEntry[] }
-        const entries = await invoke<FileEntry[]>('list_files_shallow', { path });
+        interface FileEntry { name: string; path: string; is_directory: boolean; hidden: boolean; children?: FileEntry[] }
+        const entries = await invoke<FileEntry[]>('list_files_shallow', { path, showHidden: true });
         content = entries
           .map((e) => `${e.name}${e.is_directory ? '/' : ''}`)
           .join('\n');

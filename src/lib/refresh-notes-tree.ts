@@ -16,11 +16,12 @@ function mergeFileLists(local: FileEntry[], icloud: FileEntry[]): FileEntry[] {
  * shallow command is unavailable (e.g. backend not rebuilt).
  */
 async function listNotesFiles(path: string): Promise<FileEntry[]> {
+  const showHidden = useSettingsStore.getState().showHiddenFiles;
   try {
-    return await tauriApi.listFilesShallow(path);
+    return await tauriApi.listFilesShallow(path, showHidden);
   } catch {
     // Expected: listFilesShallow command may not exist (backend not rebuilt) — fallback to recursive listing
-    const tree = await tauriApi.listDirectory(path);
+    const tree = await tauriApi.listDirectory(path, showHidden);
     return tree.filter((e) => !e.is_directory);
   }
 }

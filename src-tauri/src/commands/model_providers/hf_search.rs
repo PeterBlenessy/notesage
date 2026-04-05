@@ -59,6 +59,7 @@ pub struct HfModelDetails {
 
 /// Raw HF API model response fields we care about.
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct HfApiModel {
     #[serde(rename = "modelId")]
     model_id: Option<String>,
@@ -149,6 +150,7 @@ struct HfCardData {
 }
 
 #[derive(Deserialize, Debug, Default)]
+#[allow(dead_code)]
 struct HfGgufData {
     #[serde(default)]
     architecture: Option<String>,

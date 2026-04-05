@@ -7,12 +7,11 @@ use super::local_inference::LocalInferenceState;
 
 // Re-export submodule types so existing `use super::model_management::*` paths keep working.
 pub use super::model_providers::binary_resolution::{
-    BinaryStatus, DiagnosticFile, LocalAIDiagnostics,
-    find_available_port, resolve_llama_server_binary, dir_total_size,
+    DiagnosticFile, LocalAIDiagnostics,
+    find_available_port, resolve_llama_server_binary,
     collect_local_ai_diagnostics, check_llama_server_available,
 };
 pub use super::model_providers::hf_search::{
-    HfModelSearchResult, HfModelFile, HfModelDetails,
     extract_quantization, search_huggingface_models, fetch_hf_model_details,
 };
 

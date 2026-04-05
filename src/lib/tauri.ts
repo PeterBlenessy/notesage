@@ -7,6 +7,7 @@ export interface FileEntry {
   path: string;
   is_directory: boolean;
   children?: FileEntry[];
+  hidden: boolean;
 }
 
 export type GitStatus = 'modified' | 'added' | 'untracked' | 'deleted' | 'renamed' | 'conflicted';
@@ -420,12 +421,12 @@ export const tauriApi = {
     await invoke("write_file", { path, content });
   },
 
-  async listDirectory(path: string): Promise<FileEntry[]> {
-    return await invoke<FileEntry[]>("list_directory", { path });
+  async listDirectory(path: string, showHidden?: boolean): Promise<FileEntry[]> {
+    return await invoke<FileEntry[]>("list_directory", { path, showHidden });
   },
 
-  async listFilesShallow(path: string): Promise<FileEntry[]> {
-    return await invoke<FileEntry[]>("list_files_shallow", { path });
+  async listFilesShallow(path: string, showHidden?: boolean): Promise<FileEntry[]> {
+    return await invoke<FileEntry[]>("list_files_shallow", { path, showHidden });
   },
 
   async createFile(path: string): Promise<void> {
