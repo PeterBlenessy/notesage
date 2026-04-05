@@ -50,12 +50,13 @@ Content array with `type: "image"` blocks. Three source types:
 ```
 
 **Constraints:**
+
 - Formats: JPEG, PNG, GIF, WebP
 - Max 5 MB per image (API), 10 MB (claude.ai)
-- Max 8000x8000 px (single), 2000x2000 px (when >20 images)
+- Max 8000x8000 px (single), 2000x2000 px (when &gt;20 images)
 - Up to 600 images per request (100 for 200k-token models)
 - 32 MB total request size limit
-- Server-side resize if long edge >1568 px
+- Server-side resize if long edge &gt;1568 px
 - Token cost: `(width * height) / 750`
 - Images should be placed **before** text in the content array for best results
 - Base64 images re-sent every turn in multi-turn conversations (Files API avoids this)
@@ -85,15 +86,16 @@ Content array with `type: "image_url"` blocks. Base64 encoded as data URIs:
 ```
 
 **Constraints:**
+
 - Formats: JPEG, PNG, GIF, WebP
 - `detail` parameter: `"low"` (fixed 85 tokens), `"high"` (variable by tile count), `"auto"` (model decides)
 - Low detail: resized to 512x512
-- High detail: scaled so shortest side = 768px, split into 512x512 tiles; cost = 85 + (170 * tiles) tokens
+- High detail: scaled so shortest side = 768px, split into 512x512 tiles; cost = 85 + (170 \* tiles) tokens
 - Max 20 MB per image
 
 ### Ollama
 
-**Native `/api/chat`** — `images` array on the message itself (not in a content array):
+**Native** `/api/chat` — `images` array on the message itself (not in a content array):
 
 ```json
 {
@@ -103,9 +105,10 @@ Content array with `type: "image_url"` blocks. Base64 encoded as data URIs:
 }
 ```
 
-**OpenAI-compatible `/v1/chat/completions`** — also accepts the OpenAI `image_url` format with data URIs.
+**OpenAI-compatible** `/v1/chat/completions` — also accepts the OpenAI `image_url` format with data URIs.
 
 **Constraints:**
+
 - Base64-only (no URL support in native REST API)
 - Formats: JPEG, PNG, WebP
 - Requires multimodal model (llava, SmolVLM, etc.)
@@ -130,6 +133,7 @@ OpenAI-compatible `image_url` format via `/v1/chat/completions`:
 ```
 
 **Constraints:**
+
 - Supports base64 data URIs and remote URLs
 - Multimodal is "experimental" — requires vision projector (`--mmproj` or auto-detected via `-hf`)
 - Supported families: Gemma 3, Qwen 2/2.5 VL, SmolVLM, Pixtral, InternVL, Llama 4 Scout, Moondream2
@@ -185,7 +189,7 @@ Clients MUST check these before including non-text content blocks.
 **Per-agent support status:**
 
 | Agent | Image support? | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `claude-agent-acp` | Yes | Claude models are vision-capable; changelog mentions "fix for image output from tool calls" |
 | `codex-acp` | Yes | Codex CLI supports `--image` flag; uses vision-enabled models |
 | `copilot --acp` | Yes | ACP server explicitly supports "prompts with text, images, and context resources" |
@@ -215,7 +219,7 @@ Sources: [ACP Content Docs](https://agentclientprotocol.com/protocol/content), [
 ### Format Summary Table
 
 | Provider | Content Type | Base64 Format | URL Support | Image Location |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Anthropic | `"type": "image"` | `source.data` | `source.url` | `content[]` array |
 | OpenAI | `"type": "image_url"` | data URI in `image_url.url` | direct URL | `content[]` array |
 | Ollama (native) | N/A | `images: [base64]` | No | Message object |
@@ -230,6 +234,7 @@ Sources: [ACP Content Docs](https://agentclientprotocol.com/protocol/content), [
 ### Per-Tool Breakdown
 
 **Cursor IDE:**
+
 - Input: Drag-drop (since v0.17.0), Ctrl+V paste in chat (not in Composer), file picker (inconsistent — [issue #2776](https://github.com/cursor/cursor/issues/2776))
 - Display: Originally inline thumbnails, switched to compact file tag chips in v0.40+
 - Non-vision: Explicit error "Trying to submit images without a vision-enabled model selected" — blocks send. Error persists in session even after switching models; must start new chat.
@@ -237,30 +242,35 @@ Sources: [ACP Content Docs](https://agentclientprotocol.com/protocol/content), [
 - Images can get "stuck" in session state and re-sent with every subsequent API call
 
 **Continue.dev:**
+
 - Input: Cmd/Ctrl+V paste, Shift+drag-drop ([PR #7408](https://github.com/continuedev/continue/pull/7408) fixed overlay bug)
 - Display: Inline thumbnails in chat input
 - Non-vision: `image_input` capability auto-detected per provider/model in `core/llm/autodetect.ts` (`PROVIDER_SUPPORTS_IMAGES` array). UI disables attachment for non-vision models. Users can manually override in `config.yaml`.
 - No client-side compression
 
 **Cline (Claude Dev):**
+
 - Input: Cmd/Ctrl+V paste, Shift+drag-drop, "Add Files & Images" button. Known issues on Linux Wayland ([#5016](https://github.com/cline/cline/issues/5016)) and SSH remotes ([#7606](https://github.com/cline/cline/issues/7606)). File dialog filter missing image extensions in v3.38.3 ([#7743](https://github.com/cline/cline/issues/7743)).
 - Display: Inline thumbnails before and after sending
 - Non-vision: `supportsImages` flag on model config gates UI. PRs [#8684](https://github.com/cline/cline/pull/8684) and [#9780](https://github.com/cline/cline/pull/9780) fixed bugs where paste/drag-drop bypassed the toggle.
 - No client-side resize; [issue #675](https://github.com/cline/cline/issues/675) requested 2000px dimension cap
 
 **Windsurf (Codeium):**
+
 - Input: Drag-drop from OS (not from Windsurf's own explorer), clipboard paste, "Add image" button
 - Display: Inline previews; positioned for "Image-to-Code" workflows (Figma screenshot → HTML/CSS)
 - Non-vision: Only available for GPT-4o and Claude 3.5 Sonnet. API error breaks session history with non-vision models.
 - Originally 1 MB limit (now lifted)
 
 **Claude Desktop & Claude Code:**
+
 - Input: Paperclip button, drag-drop, Cmd+V paste. Claude Code uses Ctrl+V (not Cmd+V on macOS — known UX issue)
 - Display: Inline thumbnail previews, expandable
-- Size: 5 MB API limit / 30 MB on claude.ai. Server-side downscale if >1568px longest edge. Claude Code does NOT auto-resize ([feature request #20738](https://github.com/anthropics/claude-code/issues/20738))
-- Token cost: `(width * height) / 750` — ~1,600 tokens for typical image
+- Size: 5 MB API limit / 30 MB on claude.ai. Server-side downscale if &gt;1568px longest edge. Claude Code does NOT auto-resize ([feature request #20738](https://github.com/anthropics/claude-code/issues/20738))
+- Token cost: `(width * height) / 750` — \~1,600 tokens for typical image
 
 **ChatGPT Desktop:**
+
 - Input: + button menu → "Upload file", drag-drop (broken on Windows 11), Cmd/Ctrl+V paste, **built-in screenshot tool** (unique — shows open windows, searchable), webcam capture
 - Display: Inline thumbnails, clickable to expand
 - Size: 20 MB per image. Free tier: 2 images/day; Plus: 50/day
@@ -269,10 +279,10 @@ Sources: [ACP Content Docs](https://agentclientprotocol.com/protocol/content), [
 ### Summary Comparison Table
 
 | Feature | Cursor | Continue.dev | Cline | Windsurf | Claude Desktop | ChatGPT Desktop |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | **Paste** | Ctrl+V in chat only | Cmd/Ctrl+V | Cmd/Ctrl+V | Yes | Yes | Yes |
 | **Drag-drop** | Yes | Shift+drag | Shift+drag | OS only | Yes | Yes (broken Win11) |
-| **File picker** | Inconsistent | Not prominent | "Add Files & Images" | "Add image" button | Paperclip | + button menu |
+| **File picker** | Inconsistent | Not prominent | "Add Files & Images" | "Add image" button | Paperclip | \+ button menu |
 | **Screenshot** | No (3rd-party ext) | No | No | No | No | **Built-in tool** |
 | **Preview display** | File tag chip (v0.40+) | Inline thumbnail | Inline thumbnail | Inline preview | Inline thumbnail | Inline thumbnail |
 | **Non-vision handling** | Error, blocks send | UI disables attach | `supportsImages` gates UI | API error, breaks session | N/A (all support) | Model-gated |
@@ -313,7 +323,7 @@ Sources: [ACP Content Docs](https://agentclientprotocol.com/protocol/content), [
 
 Notesage already has images and drawings embedded in documents (Image extension, Excalidraw Drawing extension). A unique feature would be:
 
-- Right-click image in editor -> "Send to AI" / "Ask AI about this image"
+- Right-click image in editor -&gt; "Send to AI" / "Ask AI about this image"
 - Bubble menu on image selection with AI actions
 - Auto-include document images as context when user references them in chat
 
@@ -326,7 +336,7 @@ Notesage already has images and drawings embedded in documents (Image extension,
 Each AI path needs vision capability checking:
 
 | Path | How to detect vision support |
-|------|------------------------------|
+| --- | --- |
 | **Direct API (Anthropic/OpenAI)** | Always supported (Claude 3+, GPT-4o+). Could be model-gated. |
 | **Direct API (Ollama)** | Query `/api/show` for multimodal tag (similar to existing thinking detection) |
 | **ACP** | Check `promptCapabilities.image` from agent initialization |
@@ -348,16 +358,18 @@ interface ImageAttachment {
 ```
 
 Provider serializers convert this to the appropriate wire format:
-- **Anthropic** -> `{ type: "image", source: { type: "base64", media_type, data } }`
-- **OpenAI** -> `{ type: "image_url", image_url: { url: "data:${mime};base64,${data}" } }`
-- **Ollama native** -> `images: [data]` on the message object
-- **ACP** -> `{ type: "image", data, mimeType }`
+
+- **Anthropic** -&gt; `{ type: "image", source: { type: "base64", media_type, data } }`
+- **OpenAI** -&gt; `{ type: "image_url", image_url: { url: "data:${mime};base64,${data}" } }`
+- **Ollama native** -&gt; `images: [data]` on the message object
+- **ACP** -&gt; `{ type: "image", data, mimeType }`
 
 ### C. ChatMessage Model Change
 
 Currently `ChatMessage.content` is a `string`. Options:
 
-1. **New `attachments` field** (recommended — simpler, backward compatible):
+1. **New** `attachments` **field** (recommended — simpler, backward compatible):
+
    ```typescript
    interface ChatMessage {
      role: string;
@@ -366,12 +378,15 @@ Currently `ChatMessage.content` is a `string`. Options:
      // ... existing fields
    }
    ```
+
    Provider serializers merge `content` + `attachments` into the provider-specific content array format at send time. Zustand persist handles it naturally. Old messages without `attachments` work unchanged.
 
-2. **Change `content` to union type** (matches API shape but invasive):
+2. **Change** `content` **to union type** (matches API shape but invasive):
+
    ```typescript
    content: string | ContentBlock[];
    ```
+
    Requires updating every place that reads `content` as a string. High risk, low reward.
 
 **Pattern from Cline/Continue:** They use a separate `images` or `attachments` array alongside text content, and the provider serializer merges them. This is the recommended approach.
@@ -382,9 +397,9 @@ Before base64 encoding, process images client-side:
 
 1. Load into an `HTMLCanvasElement` or `OffscreenCanvas`
 2. If PNG with no transparency needed, convert to JPEG
-3. Resize so longest edge <= 1568px (Anthropic's optimal; anything larger is resized server-side anyway)
+3. Resize so longest edge &lt;= 1568px (Anthropic's optimal; anything larger is resized server-side anyway)
 4. Export as JPEG at 80% quality (or keep PNG if transparency is needed)
-5. Validate resulting base64 is < 5 MB (Anthropic's limit, the most restrictive)
+5. Validate resulting base64 is &lt; 5 MB (Anthropic's limit, the most restrictive)
 6. If still too large, reduce quality to 60% and retry
 
 This can be done entirely in the frontend with `canvas.toBlob()` / `canvas.toDataURL()`.
@@ -411,7 +426,7 @@ pub struct ImageData {
 1. **Clipboard paste** into chat input (Cmd+V) — highest ROI, most used pattern
 2. **Drag and drop** onto chat input area
 3. **Paperclip/attachment button** with native file picker dialog
-4. **Right-click image in editor -> "Ask AI"** — Notesage differentiator
+4. **Right-click image in editor -&gt; "Ask AI"** — Notesage differentiator
 5. **Screenshot capture** — future enhancement
 
 ### G. UI When Model Doesn't Support Images
@@ -428,8 +443,9 @@ A critical cost consideration: **base64 images are re-sent on every API turn** i
 
 ### The problem
 
-A 1568x1568 JPEG at 80% quality is ~200-400 KB base64. In a 10-turn conversation with 2 images, that's 4-8 MB re-sent per turn. This is:
-- Expensive (token cost: ~3,280 tokens per 1568x1568 image on Anthropic)
+A 1568x1568 JPEG at 80% quality is \~200-400 KB base64. In a 10-turn conversation with 2 images, that's 4-8 MB re-sent per turn. This is:
+
+- Expensive (token cost: \~3,280 tokens per 1568x1568 image on Anthropic)
 - Slow (large request payloads)
 
 ### How others handle it

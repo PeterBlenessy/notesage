@@ -1,6 +1,6 @@
 # VFS-Based Vault Security for AI Agent Sandboxing
 
-**Date:** 2026-04-04  **Status:** Research complete
+**Date:** 2026-04-04 **Status:** Research complete
 
 ## Motivation
 
@@ -13,6 +13,7 @@ This research explores how a virtual filesystem approach — inspired by [Mintli
 Mintlify replaced per-conversation sandboxed environments with ChromaFs — a virtual filesystem backed by their Chroma vector database.
 
 **Architecture:**
+
 - Built on [just-bash](https://github.com/nicolo-ribaudo/just-bash) (Vercel Labs) — a TypeScript bash reimplementation with a pluggable `IFileSystem` interface
 - UNIX commands (`cat`, `ls`, `grep`, `find`) translated into Chroma vector DB queries
 - `cat /auth/oauth.mdx` fetches chunks by page slug, sorts by `chunk_index`, joins into full page
@@ -22,7 +23,8 @@ Mintlify replaced per-conversation sandboxed environments with ChromaFs — a vi
 - RBAC inherited from the database layer — no separate access control system
 
 **Results:**
-- Session creation: ~46s (sandbox spin-up) → ~100ms
+
+- Session creation: \~46s (sandbox spin-up) → \~100ms
 - Zero marginal per-conversation compute cost
 - 30,000+ daily conversations across hundreds of thousands of users
 
@@ -46,7 +48,7 @@ However, the underlying principle — **control the filesystem the agent sees** 
 ### Why application-layer filtering fails
 
 | Approach | How the agent bypasses it |
-|---|---|
+| --- | --- |
 | Filter in `tool-executor.ts` | ACP agent uses its own bash tool, never calls our executor |
 | Filter in Rust `read_file` command | Agent calls `cat` via OS syscall, never calls our IPC |
 | Policy in `.notesage/ai-policy.json` | Agent runs `cat .notesage/ai-policy.json`, then `echo '{}' > .notesage/ai-policy.json` |
@@ -74,6 +76,7 @@ However, the underlying principle — **control the filesystem the agent sees** 
 ```
 
 **Properties:**
+
 - No root required. Any process can sandbox its children.
 - Kernel-enforced, inherits to all child processes.
 - **Files are unreadable (EACCES), not invisible.** `ls` still shows filenames. `cat` returns "Operation denied". Agent knows the file exists but cannot read content.
@@ -102,6 +105,7 @@ bwrap \
 ```
 
 **Properties:**
+
 - **True invisibility.** Files not bind-mounted simply do not exist. `ls` shows nothing. `stat` returns ENOENT. The agent cannot discover hidden files exist.
 - No root required (unprivileged user namespaces, default on Ubuntu, Fedora, Arch, kernel 3.8+).
 - Near-zero performance overhead — bind mounts are free kernel-level path redirections.
@@ -125,6 +129,7 @@ Ruleset::default()
 ```
 
 **Properties:**
+
 - No root required. Process sandboxes itself.
 - Files are inaccessible (EACCES), not invisible — same limitation as Seatbelt.
 - Stackable with other LSMs (AppArmor, SELinux).
@@ -136,7 +141,7 @@ Ruleset::default()
 ### Approaches That Do NOT Work
 
 | Approach | Fatal flaw |
-|---|---|
+| --- | --- |
 | **Symlink staging directory** | Agent escapes via `../` traversal or `readlink`. CVE-2026-27976 (Zed editor) was exactly this pattern. |
 | **FUSE virtual filesystem** | Best theoretical solution (true invisibility on both platforms), but `fuser` Rust crate is untested on macOS, FUSE-T has no Rust bindings, and implementing a full FUSE filesystem is very high effort. Not production-ready today. |
 | **chroot** | Requires root on macOS. Escapable by root processes on Linux. Bubblewrap is strictly better. |
@@ -246,7 +251,7 @@ This handles direct API tool calling (Path 1 agents that go through our tool exe
 ## Visibility Levels
 
 | Level | `ls` (macOS) | `ls` (Linux) | `cat` | `write` | Use case |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | `visible` | Shows file | Shows file | Full content | Allowed | Default for all files |
 | `read-only` | Shows file | Shows file | Full content | EACCES / EROFS | Source code agent shouldn't modify |
 | `redacted` | Shows file | Shows file | `[restricted]` | Denied | Agent sees metadata only |
@@ -257,7 +262,7 @@ The macOS visibility gap (hidden files still appear in `ls`) is a known limitati
 ## Integration with Existing Notesage Systems
 
 | System | Integration point |
-|---|---|
+| --- | --- |
 | Seatbelt profiles (`sandbox_monitor.rs`) | Extend with `file-read-data` / `file-write-data` rules per policy |
 | Connection config (`Connection.sandboxEnabled`, `extraWritablePaths`) | Add `vaultEnabled`, `fileVisibilityPolicy` fields |
 | Agent spawn (`acp.rs`) | Generate platform-specific sandbox with file rules before spawn |

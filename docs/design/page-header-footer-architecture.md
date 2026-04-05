@@ -193,7 +193,7 @@ The `PageHeaderFooterEditor` React component is portaled into the zone element (
 
 1. **Pointer/clipboard/drag events** — stopped at the zone element (outside React's tree) in bubble phase. This prevents ProseMirror from acting on them while allowing React's capture-phase delegation to fire synthetic events (critical for Radix dropdown menus).
 2. **Keyboard events** — stopped at the container element (`.page-hf-editor`) in bubble phase. Escape closes the editor; all other keys stay in the inputs.
-3. **`pointer-events: none`** on margin containers — prevents ProseMirror from placing a cursor in the margin area. Zones override with `pointer-events: auto`.
+3. `pointer-events: none` on margin containers — prevents ProseMirror from placing a cursor in the margin area. Zones override with `pointer-events: auto`.
 
 Earlier approaches that stopped propagation on the React container itself killed React synthetic events (React 18 delegates from the root via capture phase — if native bubble propagation is stopped before reaching the root, synthetic events never fire).
 

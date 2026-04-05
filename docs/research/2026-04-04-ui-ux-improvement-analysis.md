@@ -1,8 +1,11 @@
 # Notesage UI/UX Improvement Analysis
 
-**Date:** 2026-04-04
-**Scope:** 30+ components across sidebar, editor, chat, settings, and dialog layers
-**Findings:** 42 improvement opportunities in 9 categories
+**Date:** 2026-04-04 **Scope:** 30+ components across sidebar, editor, chat, settings, and dialog layers **Findings:** 42 improvement opportunities in 9 categories
+
+| Stage | Link | Status |
+| --- | --- | --- |
+| PRD | [ui-ux-polish](../prds/2026-04-05-ui-ux-polish.md) | Draft |
+| Tasks | [ui-ux-polish-tasks](../tasks/2026-04-05-ui-ux-polish-tasks.md) | Not started |
 
 ## Executive Summary
 
@@ -17,8 +20,8 @@ Notesage has a sophisticated, well-structured UI, but it **prioritizes power use
 ### Current State
 
 | Component | File:Line | Current Text | Issue |
-|-----------|-----------|-------------|-------|
-| Quick Notes | `QuickNotesSection.tsx:58` | "Notes in ~/Notesage" | Just shows a path — no call to action |
+| --- | --- | --- | --- |
+| Quick Notes | `QuickNotesSection.tsx:58` | "Notes in \~/Notesage" | Just shows a path — no call to action |
 | Projects | `ProjectsSection.tsx:89` | "No projects open" | Minimal, no guidance |
 | Folders | `FoldersSection.tsx:83` | "Open a folder to browse files" | Better, but still just text |
 | Chat | `ChatMessageList.tsx:156-165` | "Start a conversation with AI." | Generic, unexplained `LocalAISetupCard` |
@@ -43,8 +46,8 @@ Notesage has a sophisticated, well-structured UI, but it **prioritizes power use
 ### Recommendations
 
 | Component | Recommendation |
-|-----------|---------------|
-| Sidebar sections | Replace passive `<p>` text with "No [items] yet." + underlined action link that triggers the same handler as the section's add button (pattern: VS Code sidebar) |
+| --- | --- |
+| Sidebar sections | Replace passive `<p>` text with "No \[items\] yet." + underlined action link that triggers the same handler as the section's add button (pattern: VS Code sidebar) |
 | Chat empty state | Add structured onboarding with 2-3 suggested prompt chips and a hint about `/` and `@` syntax (pattern: ChatGPT, Cursor) |
 | Command Palette | Mode-specific empty text: "Tags are created by typing #tagName in your notes", "Try a different search term", "Create research files with the download-webpage skill" |
 
@@ -57,14 +60,15 @@ Notesage has a sophisticated, well-structured UI, but it **prioritizes power use
 ### Current State
 
 | Location | File:Line | Issue |
-|----------|-----------|-------|
+| --- | --- | --- |
 | Template delete | `ExportDialog.tsx:156,312` | `handleDeleteTemplate` deletes immediately on click — zero confirmation |
 | Tab close (dirty) | `TabBar.tsx:44` | `window.confirm("This file has unsaved changes. Close anyway?")` |
 | Prompt delete | `PromptsSettings.tsx:55` | `confirm('Are you sure you want to delete this prompt?')` |
 
 ### UX Pattern Research
 
-**Why `confirm()` is wrong for desktop apps:**
+**Why** `confirm()` **is wrong for desktop apps:**
+
 - Looks foreign — unstyled system chrome breaks visual consistency
 - Blocks the entire JS thread (synchronous)
 - Cannot be customized (no red destructive button, no icons, no rich content)
@@ -75,7 +79,7 @@ Notesage has a sophisticated, well-structured UI, but it **prioritizes power use
 
 **Material Design:** Same principle — "Allow undo" is preferred over "Ask for confirmation." Snackbar with undo action for deletions, confirmations reserved for truly irreversible operations (account deletion, publishing).
 
-**Linear:** Deletes issues immediately with an **undo toast** (bottom-left, ~5s). No confirmation dialog. "Delete permanently" from Trash uses a minimal dialog with a red "Delete" button.
+**Linear:** Deletes issues immediately with an **undo toast** (bottom-left, \~5s). No confirmation dialog. "Delete permanently" from Trash uses a minimal dialog with a red "Delete" button.
 
 **VS Code:** Closing unsaved files shows a **three-button dialog**: Save / Don't Save / Cancel. File delete from Explorer shows confirmation with the filename visible.
 
@@ -86,7 +90,7 @@ Notesage has a sophisticated, well-structured UI, but it **prioritizes power use
 ### Recommendations
 
 | Location | Fix |
-|----------|-----|
+| --- | --- |
 | `ExportDialog.tsx` | Add `AlertDialog` confirmation before `handleDeleteTemplate`: "Remove template '{name}'? This cannot be undone." with Cancel / Remove buttons |
 | `TabBar.tsx` | Replace `window.confirm` with an `AlertDialog` using three actions: **Save & Close** / **Discard** (destructive) / **Cancel** |
 | `PromptsSettings.tsx` | Replace `confirm()` with `AlertDialog`: "Delete '{promptName}'?" with Cancel / **Delete** (destructive styling) |
@@ -102,7 +106,7 @@ All three should use the existing shadcn `AlertDialog` already imported in `File
 ### Current State
 
 | Component | File:Line | Gap |
-|-----------|-----------|-----|
+| --- | --- | --- |
 | FileTreeItem | `:307-308` | Has `tabIndex={0}` and `aria-current` but missing `role="treeitem"`, `aria-expanded`, `aria-label` |
 | Chevron icons | `:322-332` | Decorative icons lack `aria-hidden="true"` |
 | ChatMessage actions | `ChatMessage.tsx` | Edit/resend/copy/branch buttons use `opacity-0 group-hover:opacity-100` — invisible to keyboard and screen reader users |
@@ -112,6 +116,7 @@ All three should use the existing shadcn `AlertDialog` already imported in `File
 ### UX Pattern Research
 
 **W3C APG Tree View Pattern (the standard):**
+
 - Container: `role="tree"`
 - Each node: `role="treeitem"`
 - Nested groups: `role="group"` on wrapper
@@ -127,7 +132,7 @@ All three should use the existing shadcn `AlertDialog` already imported in `File
 ### Recommendations
 
 | Fix | Details |
-|-----|---------|
+| --- | --- |
 | Add `role="treeitem"` | On each `FileTreeItem`'s interactive div |
 | Add `aria-expanded` | `aria-expanded={expanded}` on folder items, omit for files |
 | Add `aria-label` | `"${entry.name}, folder"` for directories, `entry.name` for files |
@@ -144,7 +149,7 @@ All three should use the existing shadcn `AlertDialog` already imported in `File
 ### Current State
 
 | Feature | File:Line | Discovery Method |
-|---------|-----------|-----------------|
+| --- | --- | --- |
 | Skill menu | `ChatInput.tsx:87-94` | Type `/` as first character — no hint |
 | Agent menu | `ChatInput.tsx:97-103` | Type `@` as first character — no hint |
 | Palette tag mode | `CommandPalette.tsx:667-703` | Footer hint only visible in default mode |
@@ -168,7 +173,7 @@ All three should use the existing shadcn `AlertDialog` already imported in `File
 ### Recommendations
 
 | Fix | Pattern Source |
-|-----|---------------|
+| --- | --- |
 | Add hint text below ChatInput textarea: "Type `/` for skills, `@` for agents" in muted text, auto-hide after first use | Cursor's fade-after-first-use hint |
 | Rotate placeholder text: "Ask anything...", "Type / for skills...", "Type @ to address an agent..." | ChatGPT placeholder rotation |
 | Keep Command Palette mode hints visible in all modes, showing "Backspace to return" when in a prefix mode | Notion's persistent affordances |
@@ -182,7 +187,7 @@ All three should use the existing shadcn `AlertDialog` already imported in `File
 ### Current State
 
 | Location | File | Gap |
-|----------|------|-----|
+| --- | --- | --- |
 | Tab switching | `Editor.tsx` | No visual indicator when restoring EditorState from cache |
 | BubbleMenu AI actions | `BubbleMenu.tsx` | `disabled={loadingAction !== null}` blocks ALL actions when any single one is loading |
 | Slash command `/image` | `SlashCommand.tsx` | Triggers async dialog — user sees nothing for a moment |
@@ -191,7 +196,7 @@ All three should use the existing shadcn `AlertDialog` already imported in `File
 
 ### UX Pattern Research
 
-**Nielsen Norman Group:** Users perceive waits >100ms as a delay and >1000ms as requiring explicit feedback. The 600ms drag-expand timeout sits right in the "needs feedback" zone.
+**Nielsen Norman Group:** Users perceive waits &gt;100ms as a delay and &gt;1000ms as requiring explicit feedback. The 600ms drag-expand timeout sits right in the "needs feedback" zone.
 
 **VS Code:** Tab switching shows a brief loading indicator in the editor area. File tree drag-over shows a highlighted drop target with an expand timer visualized as a subtle pulse.
 
@@ -199,9 +204,11 @@ All three should use the existing shadcn `AlertDialog` already imported in `File
 
 ### Recommendations
 
-- Disable only the specific loading action in BubbleMenu, not all actions
+- ~~Disable only the specific loading action in BubbleMenu, not all actions~~
+  - The bubble menu actions use the same AI agent and should wait for it to finish. Only one action allowed. Keep as is.
 - Add a subtle pulse or highlight animation during the drag-expand 600ms timer
-- Show a brief loading state on the send button while skill content is being resolved
+- ~~Show a brief loading state on the send button while skill content is being resolved~~
+  - Skip. There are loading states in teh chat conversation area.
 
 ---
 
@@ -212,7 +219,7 @@ All three should use the existing shadcn `AlertDialog` already imported in `File
 ### Current State
 
 | Component | File | Issue |
-|-----------|------|-------|
+| --- | --- | --- |
 | StatusBar | `StatusBar.tsx` | 11 indicator types possible — overwhelming density |
 | Table toolbar | `Toolbar.tsx` | `TableToolsPopover` appears/disappears abruptly when cursor enters/leaves a table |
 | FindBar | `FindBar.tsx:132-133` | Zero matches shows "No results" text but no visual styling change |
@@ -230,7 +237,7 @@ All three should use the existing shadcn `AlertDialog` already imported in `File
 ### Recommendations
 
 | Fix | Details |
-|-----|---------|
+| --- | --- |
 | FindBar zero-match styling | Add `border-destructive/50` class to search input when `matchCount === 0 && query.length > 0` |
 | Table toolbar transition | Add `animate-in fade-in` to table tools popover, matching the existing FindBar animation |
 | StatusBar density | Consider grouping secondary indicators (reading time, word count) behind a hover/click expansion |
@@ -244,9 +251,9 @@ All three should use the existing shadcn `AlertDialog` already imported in `File
 ### Current State
 
 | Location | File:Line | Issue |
-|----------|-----------|-------|
+| --- | --- | --- |
 | File delete | `FileTreeItem.tsx:164` | `` toast.error(`Failed to delete: ${error}`) `` — raw error object |
-| AI actions | `BubbleMenu.tsx` | Failure toast with no guidance to check Settings > Connections |
+| AI actions | `BubbleMenu.tsx` | Failure toast with no guidance to check Settings &gt; Connections |
 | Rename | `FileTreeItem.tsx:148` | Silently closes input + console.error only |
 | Delete dialog | `FileTreeItem.tsx:604` | No indication of how many files a folder contains |
 | All error toasts | Everywhere | No retry button on any error toast |
@@ -271,7 +278,7 @@ All three should use the existing shadcn `AlertDialog` already imported in `File
 ## 8. Consistency Gaps
 
 | Pattern | Inconsistency | Where |
-|---------|--------------|-------|
+| --- | --- | --- |
 | Disabled opacity | `opacity-30` vs `opacity-50` vs `disabled:opacity-50` | Toolbar, ChatInput, various |
 | Confirm dialogs | `window.confirm()` vs `AlertDialog` vs no-confirmation | TabBar, PromptsSettings, ExportDialog |
 | Button sizing | `h-6 w-6` vs `size="sm"` vs custom className | ChatInput, Settings, Toolbar |
@@ -281,6 +288,7 @@ All three should use the existing shadcn `AlertDialog` already imported in `File
 ### Recommendation
 
 Establish a component usage guide in the design system doc:
+
 - Disabled state: always `disabled:opacity-50`
 - Confirm dialogs: always shadcn `AlertDialog`, never `window.confirm()`
 - Icon button sizing: `h-7 w-7 p-0` for toolbar-density, `h-8 w-8 p-0` for settings-density
@@ -291,7 +299,7 @@ Establish a component usage guide in the design system doc:
 ## 9. Performance Considerations
 
 | Location | Issue | Severity |
-|----------|-------|----------|
+| --- | --- | --- |
 | Sidebar FileTree | No virtual scrolling — all items in DOM | Low (only impacts 1000+ file projects) |
 | Sidebar overlay | DOM sniffing via `document.querySelector('[data-state="open"]')` for menu detection — fragile, relies on Radix internals | Low (stability risk) |
 | `FileTreeItem.tsx` memo | Custom equality check is thorough but parent re-renders cascade | Low |
@@ -302,8 +310,8 @@ These can be deferred. Virtual scrolling only matters for unusually large projec
 
 ## Implementation Priority Matrix
 
-| # | Change | Impact | Effort | Pattern Source |
-|---|--------|--------|--------|---------------|
+| \# | Change | Impact | Effort | Pattern Source |
+| --- | --- | --- | --- | --- |
 | 1 | Replace `window.confirm()` with `AlertDialog` in TabBar + PromptsSettings | High | Low | VS Code, Apple HIG |
 | 2 | Add confirmation dialog for PPTX template delete in ExportDialog | High | Low | Figma, Linear |
 | 3 | Add `aria-expanded`, `aria-label`, `role="treeitem"` to FileTreeItem | High | Low | W3C APG, VS Code |

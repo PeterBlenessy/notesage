@@ -1,6 +1,6 @@
 # ACP Skill Integration Patterns
 
-**Date:** 2026-04-02  
+**Date:** 2026-04-02\
 **Status:** Research complete
 
 | Stage | Link | Status |
@@ -25,10 +25,10 @@ The Agent Client Protocol (v0.10/0.11, built by JetBrains and Zed) uses JSON-RPC
 
 The ACP spec has **no method for the client to register tools or inject skills into the agent**. Specifically:
 
-- **No `tools/register` method** — tools are agent-defined and agent-executed. The client sees tool calls via `session/update` notifications but never defines what tools the agent has.
+- **No** `tools/register` **method** — tools are agent-defined and agent-executed. The client sees tool calls via `session/update` notifications but never defines what tools the agent has.
 - **No system prompt injection** — the `session/prompt` method accepts `ContentBlock[]` (text, resources, images) but there is no dedicated system message or context field. The only way to inject context is to prepend it to the user's prompt content.
 - **No skill discovery protocol** — skills are entirely a filesystem concern, handled by each agent independently.
-- **No `available_commands` registration** — slash commands are agent-defined only. The agent advertises them; the client cannot add its own.
+- **No** `available_commands` **registration** — slash commands are agent-defined only. The agent advertises them; the client cannot add its own.
 
 ### What ACP DOES provide for tool/context flow
 
@@ -49,6 +49,7 @@ Session configuration supports only three reserved categories: `mode`, `model`, 
 **ACP treats the agent as a black box with its own tools.** The protocol is designed so that agents discover and manage their own tools/skills from the filesystem. The client's role is limited to: (a) showing tool call status to the user, (b) granting/denying permission, and (c) optionally providing MCP server connections.
 
 Sources:
+
 - [ACP Specification](https://agentclientprotocol.com/)
 - [ACP GitHub](https://github.com/agentclientprotocol/agent-client-protocol)
 - [ACP Tool Calls spec](https://agentclientprotocol.com/protocol/tool-calls)
@@ -78,6 +79,7 @@ Zed co-created ACP and is the reference client implementation. Based on their do
 Zed uses `_`-prefixed extension methods (e.g., `_zed.dev/workspace/buffers`) for editor-specific features, but none relate to skill injection.
 
 Sources:
+
 - [Zed External Agents docs](https://zed.dev/docs/ai/external-agents)
 - [Zed ACP page](https://zed.dev/acp)
 - [GitHub Discussion #50422](https://github.com/zed-industries/zed/discussions/50422)
@@ -89,6 +91,7 @@ Sources:
 Claude Code (the CLI, which also runs as `claude-agent-acp`) has the most mature skill implementation:
 
 **Discovery directories (in priority order):**
+
 1. Enterprise managed settings
 2. `~/.claude/skills/<name>/SKILL.md` — personal skills
 3. `.claude/skills/<name>/SKILL.md` — project skills
@@ -97,7 +100,8 @@ Claude Code (the CLI, which also runs as `claude-agent-acp`) has the most mature
 6. `--add-dir` additional directories
 
 **Progressive disclosure:**
-1. **Startup:** All skill names + descriptions injected into context (~50-100 tokens each)
+
+1. **Startup:** All skill names + descriptions injected into context (\~50-100 tokens each)
 2. **Activation:** Full `SKILL.md` body loaded when the model decides a skill is relevant OR user invokes `/skill-name`
 3. **Resources:** Scripts, references, assets loaded on-demand when referenced
 
@@ -106,6 +110,7 @@ Claude Code (the CLI, which also runs as `claude-agent-acp`) has the most mature
 ### How Claude Code operates in ACP mode
 
 When running as `claude-agent-acp`, Claude Code:
+
 - **Discovers skills from its own filesystem** — the same directories as CLI mode
 - **Does NOT receive skills from the ACP client** — skills are entirely agent-side
 - **Exposes its tools (including skill activation) via ACP tool call updates** — the client sees tool calls but doesn't define them
@@ -116,6 +121,7 @@ When running as `claude-agent-acp`, Claude Code:
 When Notesage spawns `claude-agent-acp`, the agent already has access to `~/.claude/skills/` and project `.claude/skills/`. Any skills in those directories are automatically available. However, **Notesage-specific skills** (in `.notesage/skills/` or `~/.notesage/skills/`) are invisible to the agent because Claude Code doesn't scan those paths.
 
 Sources:
+
 - [Claude Code Skills docs](https://code.claude.com/docs/en/skills)
 - [Agent Skills spec](https://agentskills.io/specification)
 
@@ -150,6 +156,7 @@ Sources:
 - No public documentation on skill injection from IDE to agent
 
 Sources:
+
 - [Codex-ACP GitHub](https://github.com/cola-io/codex-acp)
 - [Codex Skills docs](https://developers.openai.com/codex/skills)
 - [Gemini CLI ACP Mode](https://geminicli.com/docs/cli/acp-mode/)
@@ -191,6 +198,7 @@ An RFD proposes a new transport type where the client itself acts as an MCP serv
 4. No separate process needed — tools handled directly by the client
 
 This would enable:
+
 - **Client-injected tools** without spawning MCP server processes
 - **WASM-based tools** provided over the ACP channel
 - **Transparent bridging** for agents that don't support ACP transport natively
@@ -224,7 +232,7 @@ The `.agents/skills/` directory has emerged as the cross-client standard:
 | VS Code Copilot | `.github/skills/`, `.claude/skills/`, `.agents/skills/` | `~/.copilot/skills/`, `~/.claude/skills/`, `~/.agents/skills/` |
 | Notesage | `.notesage/skills/` | `~/.notesage/skills/` |
 
-**All tools also scan `.agents/skills/` for cross-client interoperability** (except Notesage, which uses its own `.notesage/skills/` paths).
+**All tools also scan** `.agents/skills/` **for cross-client interoperability** (except Notesage, which uses its own `.notesage/skills/` paths).
 
 ### Client implementation guide (agentskills.io)
 
@@ -232,7 +240,7 @@ The official guide recommends:
 
 1. **Scan** both client-specific and `.agents/skills/` directories
 2. **Parse** SKILL.md with lenient YAML validation
-3. **Disclose** name + description in system prompt or tool description (~50-100 tokens each)
+3. **Disclose** name + description in system prompt or tool description (\~50-100 tokens each)
 4. **Activate** via file-read tool OR dedicated `activate_skill` tool
 5. **Protect** skill content from context compaction
 6. **Deduplicate** activations within a session
@@ -242,6 +250,7 @@ The official guide recommends:
 The skill standard is designed for **agent-side discovery**. Each agent scans its own directories and manages its own skill lifecycle. The standard does NOT define how a host app should make skills available to agents over a protocol like ACP. This is an intentional gap — skills are filesystem-based, and the assumption is that agents and host apps share filesystem access.
 
 Sources:
+
 - [Agent Skills Specification](https://agentskills.io/specification)
 - [Client Implementation Guide](https://agentskills.io/client-implementation/adding-skills-support)
 - [Anthropic Skills Repository](https://github.com/anthropics/skills)
@@ -255,6 +264,7 @@ Notesage currently handles skills in two separate paths:
 1. **Direct API path:** Skills are injected as system prompt text (descriptions) and converted to tool definitions (`skill__` prefix tools). The model can discover and call skills directly. This works well.
 
 2. **ACP path:** Notesage prepends a system message (including Notesage-specific skill descriptions) to the first `session/prompt`. This is a text-only hint — the ACP agent cannot actually read or execute Notesage skills because:
+
    - ACP agents discover skills from their own filesystem paths (e.g., `~/.claude/skills/`)
    - Notesage-specific skills live in `.notesage/skills/` which agents don't scan
    - The agent has no tool to load Notesage skill content
@@ -264,7 +274,7 @@ Notesage currently handles skills in two separate paths:
 
 #### Short-term (no protocol changes needed)
 
-1. **Scan `.agents/skills/` directories.** Add `.agents/skills/` (project-level) and `~/.agents/skills/` (user-level) to Notesage's skill discovery paths. This makes skills installed by Claude Code, Codex, Gemini CLI, and VS Code Copilot visible in Notesage, and vice versa if skills are placed there.
+1. **Scan** `.agents/skills/` **directories.** Add `.agents/skills/` (project-level) and `~/.agents/skills/` (user-level) to Notesage's skill discovery paths. This makes skills installed by Claude Code, Codex, Gemini CLI, and VS Code Copilot visible in Notesage, and vice versa if skills are placed there.
 
 2. **Symlink/copy Notesage skills into agent-visible directories.** When a user installs a skill in Notesage, also place it (or symlink it) in `.agents/skills/` so ACP agents can discover it from the filesystem. This bridges the gap without protocol changes.
 
@@ -273,6 +283,7 @@ Notesage currently handles skills in two separate paths:
 #### Medium-term (use MCP passthrough)
 
 4. **Run a Notesage MCP server.** Create a lightweight MCP server (stdio) that exposes Notesage-specific tools:
+
    - `read_skill_content` — load skill instructions
    - `execute_skill_script` — run skill scripts in Notesage's sandbox
    - `list_skills` — enumerate available skills
