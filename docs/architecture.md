@@ -38,7 +38,9 @@ note-sage/
 │   │   │   ├── export.rs   # PDF export commands
 │   │   │   ├── git.rs      # Git operations
 │   │   │   ├── watcher.rs  # Filesystem watcher (notify crate)
-│   │   │   ├── ai_streaming.rs # AI streaming helpers (Ollama thinking detection)
+│   │   │   ├── ai_streaming.rs # AI streaming orchestrators (Anthropic, OpenAI, Ollama, compatible)
+│   │   │   ├── tool_execution.rs # Tool call parsing, accumulators (extracted from ai_streaming)
+│   │   │   ├── segment_builder.rs # Thinking tag detection, template extraction (extracted from ai_streaming)
 │   │   │   ├── actions.rs  # Actions dashboard (task/goal scanning)
 │   │   │   ├── health.rs   # Backend health check
 │   │   │   ├── logging.rs  # Debug logging control
@@ -55,7 +57,10 @@ note-sage/
 │   │   │   ├── acp_binary.rs   # ACP agent binary path resolution (PATH, Homebrew, npm, bundled)
 │   │   │   ├── acp_client.rs   # ACP Client trait impl (Tauri event forwarding, permission channels)
 │   │   │   ├── agent_manager.rs # Agent binary installation, versioning, progress tracking
-│   │   │   ├── model_management.rs # Local LLM model lifecycle (catalog, download, RAM, capabilities)
+│   │   │   ├── model_management.rs # Local LLM model lifecycle (catalog, download, custom models)
+│   │   │   ├── model_providers/   # Extracted from model_management
+│   │   │   │   ├── hf_search.rs   # HuggingFace model search & details API
+│   │   │   │   └── binary_resolution.rs # llama-server binary resolution & diagnostics
 │   │   │   ├── thinking_tags.rs # Thinking tag detection from llama-server Jinja2 chat templates
 │   │   │   └── fonts.rs    # System font enumeration (font-kit crate)
 │   │   ├── index/          # SQLite document index (tags, mentions, tasks, goals, FTS5)
@@ -99,11 +104,11 @@ note-sage/
 │   │   ├── settings/       # SettingsDialog, ConnectionsSettings, LocalAISettings, TranscriptionSettings, etc.
 │   │   ├── chat/           # ChatPanel, ChatMessage, ChatInput, BranchSwitcher, PermissionCard, DomainApprovalCard, AgentSwitchCard, segments/, etc.
 │   │   ├── activity/       # ActivityStrip.tsx, ActivityTaskCard.tsx
-│   │   ├── editor/viewers/ # EpubViewer, PdfViewer, DocxViewer, PlainTextViewer, CodeEditor
+│   │   ├── editor/viewers/ # EpubViewer, PdfViewer, DocxViewer, PlainTextViewer, CodeEditor, PptxViewer (+ PptxSlideRenderer, PptxChartRenderer, PptxSearchBar, PptxZoomControls)
 │   │   └── ui/             # shadcn/ui components (auto-generated)
 │   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, etc.)
 │   ├── stores/             # Zustand stores (editor, workspace, ai, chat, skill, etc.)
-│   ├── lib/                # Utilities (markdown, tauri, ai/{context,errors}, dom-search, chat-tree, etc.)
+│   ├── lib/                # Utilities (markdown, tauri, ai/{context,errors}, dom-search, chat-tree, conversationOps, segmentOps, etc.)
 │   └── styles/             # globals.css, editor.css
 ├── public/
 │   ├── foliate-js/         # Vendored EPUB renderer (MIT)

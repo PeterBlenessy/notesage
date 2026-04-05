@@ -479,7 +479,7 @@ Use `tempfile::tempdir()` + `git init` for test fixtures.
 
 ## Tier 5: Large File Decomposition (if time permits)
 
-### #37 — Decompose ai_streaming.rs (1,603 lines)
+### #37 — Decompose ai_streaming.rs (1,603 lines) ✅
 
 **Description:** Extract from `ai_streaming.rs`:
 - `tool_execution.rs` — Tool call parsing, execution, result aggregation
@@ -493,7 +493,7 @@ Keep `ai_streaming.rs` as the orchestrator (~800 lines). Update `mod.rs` and imp
 
 ---
 
-### #38 — Decompose model_management.rs (1,582 lines)
+### #38 — Decompose model_management.rs (1,582 lines) ✅
 
 **Description:** Extract per-provider model metadata fetchers into separate modules. Create `src-tauri/src/commands/model_providers/` with `openai.rs`, `anthropic.rs`, `ollama.rs`. Keep cache management in `model_management.rs`.
 
@@ -503,7 +503,7 @@ Keep `ai_streaming.rs` as the orchestrator (~800 lines). Update `mod.rs` and imp
 
 ---
 
-### #39 — Decompose PptxViewer.tsx (1,088 lines)
+### #39 — Decompose PptxViewer.tsx (1,088 lines) ✅
 
 **Description:** Extract sub-components:
 - `PptxSlideRenderer.tsx` (~200 lines) — Slide canvas rendering
@@ -519,7 +519,7 @@ Keep PptxViewer.tsx as orchestrator (~400 lines).
 
 ---
 
-### #40 — Decompose chat-store.ts (906 lines)
+### #40 — Decompose chat-store.ts (906 lines) ✅
 
 **Description:** Extract utility functions:
 - `conversationOps.ts` — Conversation CRUD, pruning, auto-title

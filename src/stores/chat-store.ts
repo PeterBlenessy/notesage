@@ -3,6 +3,14 @@ import { persist } from 'zustand/middleware';
 import type { ChatMessage, Citation, AgentActivity, ToolCall, ToolCallActivity, SystemStatusType, Segment } from '@/lib/ai/types';
 import { createTauriStorage } from '@/lib/tauri-storage';
 import { getThread, getDescendants, getChildren, getLeaves } from '@/lib/chat-tree';
+import { autoTitle, pruneConversations, pruneStaleProjectPaths as pruneStaleProjectPathsUtil } from '@/lib/conversationOps';
+import {
+  appendTextSegment as appendTextSegmentUtil,
+  pushSegment as pushSegmentUtil,
+  updateSegment as updateSegmentUtil,
+  finalizeSegments as finalizeSegmentsUtil,
+  resetAssistantMessage as resetAssistantMessageUtil,
+} from '@/lib/segmentOps';
 
 /** Tracks a project context boundary within a conversation */
 export interface ConversationSegment {
@@ -167,30 +175,7 @@ function updateActiveConv(
   };
 }
 
-function autoTitle(content: string): string {
-  const first = content.split('\n')[0] || content;
-  return first.length > 50 ? first.slice(0, 50) + '\u2026' : first;
-}
-
-/** Remove the oldest inactive conversations until count <= MAX_CONVERSATIONS. */
-function pruneConversations(
-  conversations: Conversation[],
-  activeId: string | null,
-): Conversation[] {
-  if (conversations.length <= MAX_CONVERSATIONS) return conversations;
-  // Sort by updatedAt ascending (oldest first) to find prune candidates
-  const sorted = [...conversations].sort((a, b) => a.updatedAt - b.updatedAt);
-  const toRemove = new Set<string>();
-  for (const conv of sorted) {
-    if (conversations.length - toRemove.size <= MAX_CONVERSATIONS) break;
-    if (conv.id !== activeId) {
-      toRemove.add(conv.id);
-    }
-  }
-  return toRemove.size > 0
-    ? conversations.filter((c) => !toRemove.has(c.id))
-    : conversations;
-}
+// autoTitle and pruneConversations extracted to @/lib/conversationOps
 
 // ---------------------------------------------------------------------------
 // Store
@@ -234,7 +219,7 @@ export const useChatStore = create<ChatStore>()(
         set((state) => {
           const updated = [conv, ...state.conversations];
           return {
-            conversations: pruneConversations(updated, id),
+            conversations: pruneConversations(updated, id, MAX_CONVERSATIONS),
             activeConversationId: id,
           };
         });
@@ -291,7 +276,7 @@ export const useChatStore = create<ChatStore>()(
             }
             return { ...c, messages, updatedAt: Date.now(), title, activeLeafId: msgId };
           });
-          return { conversations: pruneConversations(conversations, activeId) };
+          return { conversations: pruneConversations(conversations, activeId, MAX_CONVERSATIONS) };
         });
       },
 
@@ -439,17 +424,9 @@ export const useChatStore = create<ChatStore>()(
         set((state) => updateActiveConv(state, (c) => ({
           ...c,
           updatedAt: Date.now(),
-          messages: c.messages.map((msg) => {
-            if (msg.timestamp !== messageTimestamp) return msg;
-            const segments = [...(msg.segments || [])];
-            const last = segments[segments.length - 1];
-            if (last && last.type === 'text') {
-              segments[segments.length - 1] = { ...last, content: last.content + text };
-            } else {
-              segments.push({ type: 'text', content: text, timestamp: Date.now() });
-            }
-            return { ...msg, segments };
-          }),
+          messages: c.messages.map((msg) =>
+            msg.timestamp === messageTimestamp ? appendTextSegmentUtil(msg, text) : msg
+          ),
         }))),
 
       pushSegment: (messageTimestamp, segment) =>
@@ -457,9 +434,7 @@ export const useChatStore = create<ChatStore>()(
           ...c,
           updatedAt: Date.now(),
           messages: c.messages.map((msg) =>
-            msg.timestamp === messageTimestamp
-              ? { ...msg, segments: [...(msg.segments || []), segment] }
-              : msg
+            msg.timestamp === messageTimestamp ? pushSegmentUtil(msg, segment) : msg
           ),
         }))),
 
@@ -467,29 +442,18 @@ export const useChatStore = create<ChatStore>()(
         set((state) => updateActiveConv(state, (c) => ({
           ...c,
           updatedAt: Date.now(),
-          messages: c.messages.map((msg) => {
-            if (msg.timestamp !== messageTimestamp || !msg.segments) return msg;
-            if (index < 0 || index >= msg.segments.length) return msg;
-            const segments = msg.segments.map((s, i) =>
-              i === index ? { ...s, ...patch } as Segment : s
-            );
-            return { ...msg, segments };
-          }),
+          messages: c.messages.map((msg) =>
+            msg.timestamp === messageTimestamp ? updateSegmentUtil(msg, index, patch) : msg
+          ),
         }))),
 
       finalizeSegments: (messageTimestamp) =>
         set((state) => updateActiveConv(state, (c) => ({
           ...c,
           updatedAt: Date.now(),
-          messages: c.messages.map((msg) => {
-            if (msg.timestamp !== messageTimestamp || !msg.segments) return msg;
-            const segments = msg.segments.map((s) => {
-              if (s.type === 'thinking') return { ...s, collapsed: true };
-              if (s.type === 'tool_call' && s.status === 'running') return { ...s, status: 'done' as const };
-              return s;
-            });
-            return { ...msg, segments };
-          }),
+          messages: c.messages.map((msg) =>
+            msg.timestamp === messageTimestamp ? finalizeSegmentsUtil(msg) : msg
+          ),
         }))),
 
       resetAssistantMessage: (messageTimestamp) =>
@@ -497,9 +461,7 @@ export const useChatStore = create<ChatStore>()(
           ...c,
           updatedAt: Date.now(),
           messages: c.messages.map((msg) =>
-            msg.timestamp === messageTimestamp
-              ? { ...msg, content: '', segments: [], isError: false, thinking: '', activities: [], toolCallActivities: [] }
-              : msg
+            msg.timestamp === messageTimestamp ? resetAssistantMessageUtil(msg) : msg
           ),
         }))),
 
@@ -696,14 +658,8 @@ export const useChatStore = create<ChatStore>()(
 
       pruneStaleProjectPaths: (validPaths) =>
         set((state) => {
-          let changed = false;
-          const conversations = state.conversations.map((c) => {
-            const filtered = c.projectPaths.filter((p) => validPaths.has(p));
-            if (filtered.length === c.projectPaths.length) return c;
-            changed = true;
-            return { ...c, projectPaths: filtered };
-          });
-          return changed ? { conversations } : {};
+          const result = pruneStaleProjectPathsUtil(state.conversations, validPaths);
+          return result.changed ? { conversations: result.conversations } : {};
         }),
     }),
     {
