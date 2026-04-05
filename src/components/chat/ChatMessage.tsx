@@ -222,7 +222,7 @@ function UserActionButtons({ isUser, onEdit, onResend, onBranch, onCopy, copied 
 
     if (collapsed) {
       return (
-        <div ref={bubbleRef} className="absolute -bottom-3 left-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div ref={bubbleRef} className="absolute -bottom-3 left-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -264,7 +264,7 @@ function UserActionButtons({ isUser, onEdit, onResend, onBranch, onCopy, copied 
     }
 
     return (
-      <div ref={bubbleRef} className="absolute -bottom-3 left-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div ref={bubbleRef} className="absolute -bottom-3 left-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
         {onEdit && (
           <button
             className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
@@ -309,7 +309,7 @@ function UserActionButtons({ isUser, onEdit, onResend, onBranch, onCopy, copied 
 
   // Assistant messages — always inline
   return (
-    <div className="absolute -bottom-3 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+    <div className="absolute -bottom-3 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
       {onBranch && (
         <button
           className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
@@ -689,7 +689,7 @@ export function ChatMessage({ message, isLast = false, branchCount, onBranch, on
         {/* Delete button — circular, positioned like macOS notification dismiss */}
         {!isLoading && message.timestamp && (
           <button
-            className={`absolute -top-2 ${isUser ? '-left-2' : '-right-2'} h-5 w-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-card border border-border`}
+            className={`absolute -top-2 ${isUser ? '-left-2' : '-right-2'} h-5 w-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity bg-card border border-border`}
             onClick={() => deleteMessage(message.timestamp!)}
             title="Delete message"
           >

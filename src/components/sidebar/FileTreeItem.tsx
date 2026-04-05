@@ -374,6 +374,9 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
             style={{ paddingLeft }}
             onClick={handleClick}
             tabIndex={0}
+            role="treeitem"
+            aria-label={entry.is_directory ? `${entry.name}, folder` : entry.name}
+            aria-expanded={entry.is_directory ? expanded : undefined}
             aria-current={isActive ? "page" : undefined}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
@@ -389,7 +392,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
             }}
           >
             {entry.is_directory ? (
-              <span className="shrink-0 text-muted-foreground">
+              <span className="shrink-0 text-muted-foreground" aria-hidden="true">
                 {expanded ? (
                   <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.5} />
                 ) : (
@@ -397,14 +400,16 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
                 )}
               </span>
             ) : (
-              <span className="w-3.5 shrink-0" />
+              <span className="w-3.5 shrink-0" aria-hidden="true" />
             )}
 
-            {entry.is_directory ? (
-              <SyncedIcon icon={isProjectFolder ? FolderDot : Folder} synced={isCloudFile} folder />
-            ) : (
-              <SyncedIcon icon={File} synced={isCloudFile} />
-            )}
+            <span aria-hidden="true">
+              {entry.is_directory ? (
+                <SyncedIcon icon={isProjectFolder ? FolderDot : Folder} synced={isCloudFile} folder />
+              ) : (
+                <SyncedIcon icon={File} synced={isCloudFile} />
+              )}
+            </span>
 
             {isRenaming ? (
               <input
@@ -475,12 +480,12 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
         </ContextMenuTrigger>
         <ContextMenuContent>
           <ContextMenuItem onClick={handleNewFile}>
-            <FilePlus className="h-4 w-4" strokeWidth={1.5} />
+            <FilePlus className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             New File
           </ContextMenuItem>
           {entry.is_directory && (
             <ContextMenuItem onClick={handleNewFolder}>
-              <FolderPlus className="h-4 w-4" strokeWidth={1.5} />
+              <FolderPlus className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
               New Folder
             </ContextMenuItem>
           )}
@@ -488,7 +493,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
             <>
               <ContextMenuSeparator />
               <ContextMenuItem onClick={handleMakeProject}>
-                <FolderDot className="h-4 w-4" strokeWidth={1.5} />
+                <FolderDot className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
                 {isProjectFolder ? "Open as Project" : "Make Project"}
               </ContextMenuItem>
             </>
@@ -540,7 +545,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
                 <ContextMenuSeparator />
                 <ContextMenuSub>
                   <ContextMenuSubTrigger>
-                    <FolderInput className="mr-2 h-4 w-4" strokeWidth={1.5} />
+                    <FolderInput className="mr-2 h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
                     Move to...
                   </ContextMenuSubTrigger>
                   <ContextMenuSubContent>
@@ -575,7 +580,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
           })()}
           <ContextMenuSeparator />
           <ContextMenuItem onClick={handleRevealInFinder}>
-            <ExternalLink className="h-4 w-4" strokeWidth={1.5} />
+            <ExternalLink className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             Reveal in Finder
           </ContextMenuItem>
           {!entry.is_directory && entry.name.endsWith(".md") && onExportFile && (
@@ -583,7 +588,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
               <ContextMenuSeparator />
               <ContextMenuSub>
                 <ContextMenuSubTrigger>
-                  <FileDown className="mr-2 h-4 w-4" strokeWidth={1.5} />
+                  <FileDown className="mr-2 h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
                   Export as...
                 </ContextMenuSubTrigger>
                 <ContextMenuSubContent>
@@ -602,7 +607,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
                 </ContextMenuSubContent>
               </ContextMenuSub>
               <ContextMenuItem onClick={handlePreviewAsHtml}>
-                <Eye className="h-4 w-4" strokeWidth={1.5} />
+                <Eye className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
                 Preview as HTML
               </ContextMenuItem>
             </>
@@ -611,18 +616,18 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
             <>
               <ContextMenuSeparator />
               <ContextMenuItem onClick={handleCommitFile}>
-                <GitCommitVertical className="h-4 w-4" strokeWidth={1.5} />
+                <GitCommitVertical className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
                 Commit...
               </ContextMenuItem>
             </>
           )}
           <ContextMenuSeparator />
           <ContextMenuItem onClick={startRename}>
-            <Pencil className="h-4 w-4" strokeWidth={1.5} />
+            <Pencil className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             Rename
           </ContextMenuItem>
           <ContextMenuItem onClick={handleOpenDeleteDialog}>
-            <Trash2 className="h-4 w-4 text-destructive" strokeWidth={1.5} />
+            <Trash2 className="h-4 w-4 text-destructive" strokeWidth={1.5} aria-hidden="true" />
             Delete
           </ContextMenuItem>
         </ContextMenuContent>
@@ -660,7 +665,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
       )}
 
       {entry.is_directory && expanded && entry.children && (
-        <div>
+        <div role="group">
           {entry.children.map((child) => (
             <FileTreeItem
               key={child.path}

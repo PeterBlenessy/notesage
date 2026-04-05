@@ -144,6 +144,7 @@ export function ProjectItem({
                 "h-3 w-3 shrink-0 text-muted-foreground transition-transform duration-150",
                 expanded && "rotate-90"
               )}
+              aria-hidden="true"
             />
             <SyncedIcon icon={expanded ? FolderOpen : Folder} synced={isSynced} folder />
             <span className="truncate flex-1">{displayName}</span>
@@ -161,20 +162,20 @@ export function ProjectItem({
         </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onClick={() => onOpenProjectSettings?.(projectPath)}>
-          <Settings className="mr-2 h-4 w-4" />
+          <Settings className="mr-2 h-4 w-4" aria-hidden="true" />
           Project Settings
         </ContextMenuItem>
         <ContextMenuItem onClick={() => setGoalsDialogOpen(true)}>
-          <Target className="mr-2 h-4 w-4" />
+          <Target className="mr-2 h-4 w-4" aria-hidden="true" />
           New Goals File...
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => onNewNote?.(projectPath)}>
-          <FilePlus className="mr-2 h-4 w-4" strokeWidth={1.5} />
+          <FilePlus className="mr-2 h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
           New File
         </ContextMenuItem>
         <ContextMenuItem onClick={handleNewFolder}>
-          <FolderPlus className="mr-2 h-4 w-4" strokeWidth={1.5} />
+          <FolderPlus className="mr-2 h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
           New Folder
         </ContextMenuItem>
         {gitEnabled && !isGitActive && (
@@ -187,7 +188,7 @@ export function ProjectItem({
                 console.error("Failed to initialize git repository:", error);
               }
             }}>
-              <GitBranch className="mr-2 h-4 w-4" />
+              <GitBranch className="mr-2 h-4 w-4" aria-hidden="true" />
               Initialize Git Repository
             </ContextMenuItem>
           </>
@@ -199,19 +200,19 @@ export function ProjectItem({
               setCommitPreSelected([]);
               setCommitDialogOpen(true);
             }}>
-              <GitCommitVertical className="mr-2 h-4 w-4" />
+              <GitCommitVertical className="mr-2 h-4 w-4" aria-hidden="true" />
               Commit...
             </ContextMenuItem>
           </>
         )}
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => tauriApi.revealInFinder(projectPath)}>
-          <ExternalLink className="mr-2 h-4 w-4" />
+          <ExternalLink className="mr-2 h-4 w-4" aria-hidden="true" />
           Reveal in Finder
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => onCloseProject?.(projectPath)}>
-          <X className="mr-2 h-4 w-4" />
+          <X className="mr-2 h-4 w-4" aria-hidden="true" />
           Close Project
         </ContextMenuItem>
       </ContextMenuContent>

@@ -3,6 +3,7 @@
 import '@/test/tauri-mock';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderWithProviders, screen, fireEvent, registerDefaultHandlers } from '@/test/component-harness';
+import { FileTree } from '@/components/sidebar/FileTree';
 import { FileTreeItem } from '@/components/sidebar/FileTreeItem';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -355,6 +356,123 @@ describe('FileTreeItem', () => {
     expect(screen.queryByText('Export as...')).toBeNull();
   });
 
+  // -----------------------------------------------------------------------
+  // ARIA tree view tests (#5, #7)
+  // -----------------------------------------------------------------------
+
+  it('has role="treeitem" on interactive elements', () => {
+    const entry = createMockFileEntry({ name: 'note.md', path: '/test/note.md' });
+
+    renderWithProviders(
+      <FileTreeItem entry={entry} {...defaultProps} />,
+    );
+
+    const item = screen.getByRole('treeitem');
+    expect(item).toBeTruthy();
+    expect(item.getAttribute('aria-label')).toBe('note.md');
+  });
+
+  it('sets aria-label with folder type for directories', () => {
+    const entry = createMockFileEntry({
+      name: 'docs',
+      path: '/test/docs',
+      is_directory: true,
+      children: [],
+    });
+
+    renderWithProviders(
+      <FileTreeItem entry={entry} {...defaultProps} />,
+    );
+
+    const item = screen.getByRole('treeitem');
+    expect(item.getAttribute('aria-label')).toBe('docs, folder');
+  });
+
+  it('sets aria-expanded=false on collapsed folders', () => {
+    const entry = createMockFileEntry({
+      name: 'docs',
+      path: '/test/docs',
+      is_directory: true,
+      children: [],
+    });
+
+    renderWithProviders(
+      <FileTreeItem entry={entry} {...defaultProps} />,
+    );
+
+    const item = screen.getByRole('treeitem');
+    expect(item.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('sets aria-expanded=true on expanded folders', () => {
+    const entry = createMockFileEntry({
+      name: 'docs',
+      path: '/test/docs',
+      is_directory: true,
+      children: [createMockFileEntry({ name: 'child.md', path: '/test/docs/child.md' })],
+    });
+
+    useWorkspaceStore.setState({
+      expandedFolders: new Set(['/test/docs']),
+    });
+
+    renderWithProviders(
+      <FileTreeItem entry={entry} {...defaultProps} />,
+    );
+
+    const items = screen.getAllByRole('treeitem');
+    const folderItem = items.find((el) => el.getAttribute('aria-label') === 'docs, folder')!;
+    expect(folderItem.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('does not set aria-expanded on file entries', () => {
+    const entry = createMockFileEntry({ name: 'note.md', path: '/test/note.md' });
+
+    renderWithProviders(
+      <FileTreeItem entry={entry} {...defaultProps} />,
+    );
+
+    const item = screen.getByRole('treeitem');
+    expect(item.hasAttribute('aria-expanded')).toBe(false);
+  });
+
+  it('renders children wrapper with role="group"', () => {
+    const entry = createMockFileEntry({
+      name: 'docs',
+      path: '/test/docs',
+      is_directory: true,
+      children: [createMockFileEntry({ name: 'child.md', path: '/test/docs/child.md' })],
+    });
+
+    useWorkspaceStore.setState({
+      expandedFolders: new Set(['/test/docs']),
+    });
+
+    renderWithProviders(
+      <FileTreeItem entry={entry} {...defaultProps} />,
+    );
+
+    const group = screen.getByRole('group');
+    expect(group).toBeTruthy();
+  });
+
+  it('marks decorative icons with aria-hidden', () => {
+    const entry = createMockFileEntry({
+      name: 'docs',
+      path: '/test/docs',
+      is_directory: true,
+      children: [],
+    });
+
+    renderWithProviders(
+      <FileTreeItem entry={entry} {...defaultProps} />,
+    );
+
+    // The chevron span and the file icon wrapper should have aria-hidden
+    const hiddenElements = document.querySelectorAll('[aria-hidden="true"]');
+    expect(hiddenElements.length).toBeGreaterThanOrEqual(2);
+  });
+
   it('uses expandKeyPrefix in folder toggle key', () => {
     const entry = createMockFileEntry({
       name: 'docs',
@@ -370,5 +488,23 @@ describe('FileTreeItem', () => {
     fireEvent.click(screen.getByText('docs'));
 
     expect(useWorkspaceStore.getState().expandedFolders.has('project:/test/docs')).toBe(true);
+  });
+});
+
+describe('FileTree', () => {
+  it('has role="tree" and aria-label on the container', () => {
+    registerDefaultHandlers();
+
+    const tree = [
+      createMockFileEntry({ name: 'note.md', path: '/test/note.md' }),
+    ];
+
+    renderWithProviders(
+      <FileTree tree={tree} onFileClick={vi.fn()} />,
+    );
+
+    const treeEl = screen.getByRole('tree');
+    expect(treeEl).toBeTruthy();
+    expect(treeEl.getAttribute('aria-label')).toBe('File explorer');
   });
 });

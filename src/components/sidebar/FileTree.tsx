@@ -14,7 +14,7 @@ interface FileTreeProps {
 
 export function FileTree({ tree, onFileClick, onNewNote, onMakeProject, expandKeyPrefix, gitRepoRoot, onCommitFile, onExportFile }: FileTreeProps) {
   return (
-    <div className="space-y-0.5">
+    <div className="space-y-0.5" role="tree" aria-label="File explorer">
       {tree.map((entry) => (
         <FileTreeItem
           key={entry.path}

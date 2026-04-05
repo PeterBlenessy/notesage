@@ -121,11 +121,12 @@ export function ExplorerFolderItem({
                 "h-3 w-3 shrink-0 text-muted-foreground transition-transform duration-150",
                 expanded && "rotate-90"
               )}
+              aria-hidden="true"
             />
             {expanded ? (
-              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
             ) : (
-              <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+              <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
             )}
             <span className="truncate flex-1">{folderName}</span>
             <button
@@ -142,30 +143,30 @@ export function ExplorerFolderItem({
         </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onClick={() => onNewNote?.(folderPath)}>
-          <FilePlus className="mr-2 h-4 w-4" strokeWidth={1.5} />
+          <FilePlus className="mr-2 h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
           New File
         </ContextMenuItem>
         <ContextMenuItem onClick={handleNewFolder}>
-          <FolderPlus className="mr-2 h-4 w-4" strokeWidth={1.5} />
+          <FolderPlus className="mr-2 h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
           New Folder
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => tauriApi.revealInFinder(folderPath)}>
-          <ExternalLink className="mr-2 h-4 w-4" />
+          <ExternalLink className="mr-2 h-4 w-4" aria-hidden="true" />
           Reveal in Finder
         </ContextMenuItem>
         {onMakeProject && (
           <>
             <ContextMenuSeparator />
             <ContextMenuItem onClick={() => onMakeProject(folderPath)}>
-              <FolderDot className="mr-2 h-4 w-4" strokeWidth={1.5} />
+              <FolderDot className="mr-2 h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
               {isProjectFolder ? "Open as Project" : "Make Project"}
             </ContextMenuItem>
           </>
         )}
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => removeExplorerFolder(folderPath)}>
-          <X className="mr-2 h-4 w-4" />
+          <X className="mr-2 h-4 w-4" aria-hidden="true" />
           Close Folder
         </ContextMenuItem>
       </ContextMenuContent>
