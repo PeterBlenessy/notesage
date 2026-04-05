@@ -328,7 +328,11 @@ View PowerPoint presentations directly in Notesage with slide-by-slide navigatio
 | `src/components/editor/viewers/EpubViewer.tsx` | EPUB reader |
 | `src/components/editor/viewers/PdfViewer.tsx` | PDF viewer |
 | `src/components/editor/viewers/DocxViewer.tsx` | DOCX viewer |
-| `src/components/editor/viewers/PptxViewer.tsx` | PPTX slide viewer |
+| `src/components/editor/viewers/PptxViewer.tsx` | PPTX slide viewer (orchestrator) |
+| `src/components/editor/viewers/PptxSlideRenderer.tsx` | Slide element renderers (text, image, shape, table, group) |
+| `src/components/editor/viewers/PptxChartRenderer.tsx` | Recharts-based chart rendering |
+| `src/components/editor/viewers/PptxSearchBar.tsx` | Search hook + find bar UI |
+| `src/components/editor/viewers/PptxZoomControls.tsx` | Zoom hook + toolbar controls |
 | `src/lib/pptx-parser.ts` | PPTX ZIP extraction and XML parsing |
 | `src/lib/pptx-types.ts` | PPTX parsed data model types |
 | `src/components/editor/viewers/CodeEditor.tsx` | Editable CodeMirror 6 code file editor |

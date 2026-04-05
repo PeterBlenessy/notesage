@@ -92,3 +92,4 @@ Chronological log of major implementation milestones and changes.
 | 086 | [Release v0.28.1](086-release-v0.28.1.md) | Chronological chat segments, tool call grouping, ACP session resilience |
 | 087 | [Release v0.28.2](087-release-v0.28.2.md) | ACP skill discovery, color tint system, Dependabot fixes |
 | 088 | [Release v0.28.3](088-release-v0.28.3.md) | Gemma 4, HF model search, catalog management, llama.cpp b8648 |
+| 089 | [Release v0.28.4](089-release-v0.28.4.md) | Audit v3: 39 fixes — async races, accessibility, type safety, decomposition, 70+ new tests |

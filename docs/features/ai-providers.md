@@ -123,7 +123,7 @@ Privacy-focused offline AI with zero setup — no API keys, no external software
 - Fallback to `<think>...</think>` for models with reasoning in name/family
 - Non-reasoning models: content passed through without tag parsing
 - Thinking content displayed in a collapsible section above the assistant response
-- Detection code: `detect_thinking_support()` in `ai_streaming.rs`
+- Detection code: `detect_thinking_support()` in `segment_builder.rs`
 
 ## Network Sandboxing
 

@@ -202,6 +202,8 @@ Assistant messages render as an ordered stream of typed segments, matching the U
 | `src/lib/ai/types.ts` | `Segment` union type, segment interfaces |
 | `src/lib/ai/acp-utils.ts` | `formatToolLabel`, `parseRawInput` |
 | `src/stores/chat-store.ts` | Segment store actions |
+| `src/lib/conversationOps.ts` | Pure conversation utilities (autoTitle, prune, stale path cleanup) |
+| `src/lib/segmentOps.ts` | Pure segment utilities (append, push, update, finalize, reset) |
 | `src/hooks/useDirectApiChat.ts` | Segment dual-write (direct API streaming) |
 | `src/hooks/useAcpSessionListeners.ts` | Segment dual-write (ACP streaming) |
 | `src/components/chat/segments/` | `TextSegmentView`, `ThinkingSegmentView`, `ToolCallSegmentView`, `ToolResultSegmentView` |
