@@ -119,11 +119,22 @@ export function BarChartRenderer({
         {chartData.config.showLegend && (
           <ChartLegend content={<ChartLegendContent />} />
         )}
-        <Bar
-          dataKey="value"
-          fill="var(--color-value)"
-          radius={[4, 4, 0, 0]}
-        />
+        {chartData.series && chartData.series.length > 0 ? (
+          chartData.series.map((s) => (
+            <Bar
+              key={s.key}
+              dataKey={s.key}
+              fill={`var(--color-${CSS.escape(s.key)})`}
+              radius={[4, 4, 0, 0]}
+            />
+          ))
+        ) : (
+          <Bar
+            dataKey="value"
+            fill="var(--color-value)"
+            radius={[4, 4, 0, 0]}
+          />
+        )}
       </BarChart>
     </ChartContainer>
   );
