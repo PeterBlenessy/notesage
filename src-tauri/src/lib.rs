@@ -295,6 +295,7 @@ pub fn run() {
                     // Stop sandbox violation monitor
                     app_handle.state::<SandboxMonitorState>().stop_sync();
                 }
+                #[cfg(target_os = "macos")]
                 RunEvent::Opened { urls } => {
                     // Handle file associations — macOS sends file:// URLs when opening .md files
                     let paths: Vec<String> = urls
