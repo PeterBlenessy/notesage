@@ -48,12 +48,19 @@ When the editor sees this markdown pattern, it renders an interactive chart. The
 
 ## Tips
 
+- **Start with minimal data** — verify rendering with a simple 3-point single-series chart before building the full dataset. This catches format issues early.
 - Keep data arrays reasonable (5–30 points for readability)
 - Use `"line"` or `"area"` for time series data
 - Use `"pie"` or `"donut"` only when showing parts of a whole (typically 3–8 slices)
-- Multi-series charts need the `series` array — see the schema and examples
+- Multi-series charts need the `series` array — see the schema and examples. Set `showLegend: true` so series are distinguishable.
 - The `colorScheme` options are `"neutral"`, `"monochrome"`, `"warm"`, and `"cool"`
 - If you need to look at existing charts in the project for reference, check `.notesage/charts/*.json`
+
+## Troubleshooting
+
+- **Chart renders empty (axes only, no bars/lines):** Check that the `dataKey` values match. For single-series, each data point needs a `value` field. For multi-series, each data point must contain all series keys as numeric properties, and the `series` array must list them.
+- **Chart disappears after switching tabs:** If the chart markdown reference (`![chart](...)`) was removed from the document (e.g., by an undo or failed edit), the editor deletes the orphaned sidecar file after 5 seconds. Re-insert the markdown line and re-create the JSON file.
+- **Chart shows placeholder instead of rendering:** The sidecar JSON file may be missing or contain invalid JSON. Check that `.notesage/charts/{id}.json` exists and is valid JSON matching the schema.
 
 ## References
 

@@ -86,14 +86,28 @@ export function LineChartRenderer({
           margin={{ top: 8, right: 16, bottom: 8, left: 8 }}
         >
           {axisElements}
-          <Area
-            type="monotone"
-            dataKey="value"
-            stroke="var(--color-value)"
-            fill="var(--color-value)"
-            fillOpacity={0.2}
-            strokeWidth={2}
-          />
+          {chartData.series && chartData.series.length > 0 ? (
+            chartData.series.map((s) => (
+              <Area
+                key={s.key}
+                type="monotone"
+                dataKey={s.key}
+                stroke={`var(--color-${CSS.escape(s.key)})`}
+                fill={`var(--color-${CSS.escape(s.key)})`}
+                fillOpacity={0.2}
+                strokeWidth={2}
+              />
+            ))
+          ) : (
+            <Area
+              type="monotone"
+              dataKey="value"
+              stroke="var(--color-value)"
+              fill="var(--color-value)"
+              fillOpacity={0.2}
+              strokeWidth={2}
+            />
+          )}
         </AreaChart>
       </ChartContainer>
     );
@@ -106,14 +120,28 @@ export function LineChartRenderer({
         margin={{ top: 8, right: 16, bottom: 8, left: 8 }}
       >
         {axisElements}
-        <Line
-          type="monotone"
-          dataKey="value"
-          stroke="var(--color-value)"
-          strokeWidth={2}
-          dot={{ r: 3, fill: "var(--color-value)" }}
-          activeDot={{ r: 5 }}
-        />
+        {chartData.series && chartData.series.length > 0 ? (
+          chartData.series.map((s) => (
+            <Line
+              key={s.key}
+              type="monotone"
+              dataKey={s.key}
+              stroke={`var(--color-${CSS.escape(s.key)})`}
+              strokeWidth={2}
+              dot={{ r: 3, fill: `var(--color-${CSS.escape(s.key)})` }}
+              activeDot={{ r: 5 }}
+            />
+          ))
+        ) : (
+          <Line
+            type="monotone"
+            dataKey="value"
+            stroke="var(--color-value)"
+            strokeWidth={2}
+            dot={{ r: 3, fill: "var(--color-value)" }}
+            activeDot={{ r: 5 }}
+          />
+        )}
       </LineChart>
     </ChartContainer>
   );

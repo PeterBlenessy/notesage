@@ -103,7 +103,40 @@ Note: For pie and donut charts, `xLabel`, `yLabel`, and `showGrid` are ignored b
 
 ---
 
-## Example 4: Multi-Series Line Chart — Revenue vs Expenses
+## Example 4: Horizontal Bar Chart — Programming Languages
+
+**Markdown to insert:**
+```markdown
+![chart](/.notesage/charts/languages-example.json)
+```
+
+**Sidecar JSON** (`.notesage/charts/languages-example.json`):
+```json
+{
+  "type": "horizontal_bar",
+  "title": "Top Programming Languages (2025)",
+  "data": [
+    { "category": "Python", "value": 28 },
+    { "category": "JavaScript", "value": 22 },
+    { "category": "TypeScript", "value": 15 },
+    { "category": "Java", "value": 12 },
+    { "category": "Rust", "value": 8 }
+  ],
+  "config": {
+    "xLabel": "Usage (%)",
+    "yLabel": "",
+    "showGrid": true,
+    "showLegend": false,
+    "colorScheme": "cool"
+  }
+}
+```
+
+Note: Horizontal bar charts work like vertical bar charts but with `"type": "horizontal_bar"`. Category labels appear on the Y-axis, values on the X-axis. Good for long category names.
+
+---
+
+## Example 5: Multi-Series Line Chart — Revenue vs Expenses
 
 **Markdown to insert:**
 ```markdown
