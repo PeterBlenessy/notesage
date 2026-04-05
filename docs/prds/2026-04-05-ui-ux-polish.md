@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-05 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | High |
 | **Impact** | Elevate Notesage from "power-user tool" to "polished premium app" across 30+ components |
 | **Research** | [UI/UX Improvement Analysis](../research/2026-04-04-ui-ux-improvement-analysis.md) |
@@ -249,41 +249,41 @@ None — all changes use existing libraries (shadcn/ui AlertDialog, Sonner toast
 
 - [x] Chat message actions reachable via Tab key
 
-- [ ] Chat empty state shows prompt chips and syntax hints
+- [x] Chat empty state shows prompt chips and syntax hints
 
-- [ ] Command palette shows mode-specific empty state guidance
+- [x] Command palette shows mode-specific empty state guidance
 
-- [ ] Sidebar empty states have action links that work
+- [x] Sidebar empty states have action links that work
 
-- [ ] FindBar input turns red-bordered on zero matches
+- [x] FindBar input turns red-bordered on zero matches
 
-- [ ] Error toasts show parsed messages, not raw error objects
+- [x] Error toasts show parsed messages, not raw error objects
 
-- [ ] Folder delete dialog shows child file count
+- [x] Folder delete dialog shows child file count
 
 ### Design
 
-- [ ] All changes look correct in both light and dark mode
+- [x] All changes look correct in both light and dark mode
 
-- [ ] All changes look correct with soft contrast enabled
+- [x] All changes look correct with soft contrast enabled
 
-- [ ] Disabled states use consistent `opacity-50` across all components
+- [x] Disabled states use consistent `opacity-50` across all components
 
-- [ ] AlertDialogs match existing dialog styling (see FileTreeItem delete dialog)
+- [x] AlertDialogs match existing dialog styling (see FileTreeItem delete dialog)
 
-- [ ] Chat prompt chips follow button/badge styling from design system
+- [x] Chat prompt chips follow button/badge styling from design system
 
-- [ ] Transitions are smooth (150ms ease) on all new interactive states
+- [x] Transitions are smooth (150ms ease) on all new interactive states
 
 ### Testing
 
-- [ ] All existing tests pass (`pnpm test`)
+- [x] All existing tests pass (`pnpm test`)
 
-- [ ] TypeScript type check passes (`pnpm typecheck`)
+- [x] TypeScript type check passes (`pnpm typecheck`)
 
-- [ ] New AlertDialog flows have unit tests (render, user choice, callback)
+- [x] New AlertDialog flows have unit tests (render, user choice, callback)
 
-- [ ] ARIA attributes verified in component tests
+- [x] ARIA attributes verified in component tests
 
 ## Out of Scope
 
