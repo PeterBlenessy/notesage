@@ -55,15 +55,18 @@ export const QuickNotesSection = React.memo(function QuickNotesSection({
           expandKeyPrefix="notes:"
         />
       ) : (
-        <div className="py-1.5">
-          <p className="text-xs text-muted-foreground">No notes yet</p>
+        <div className="rounded-md border border-border bg-muted/40 px-3 py-2.5 mr-1">
+          <p className="text-xs text-muted-foreground leading-relaxed">Jot down ideas and drafts that haven't grown into a project yet. Notes are stored in <span className="font-mono text-[10px]">~/Notesage</span>.</p>
           {onNewNote && (
-            <span
-              className="text-xs underline cursor-pointer text-muted-foreground"
-              onClick={() => onNewNote(notesRootPath)}
-            >
-              Create a note
-            </span>
+            <div className="flex justify-end mt-2">
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={() => onNewNote(notesRootPath)}
+              >
+                Create a note
+              </Button>
+            </div>
           )}
         </div>
       )}

@@ -86,15 +86,18 @@ export const ProjectsSection = React.memo(function ProjectsSection({
           ))}
         </div>
       ) : (
-        <div className="py-1.5">
-          <p className="text-xs text-muted-foreground">No projects yet</p>
+        <div className="rounded-md border border-border bg-muted/40 px-3 py-2.5 mr-1">
+          <p className="text-xs text-muted-foreground leading-relaxed">Organize related notes with their own folder, settings, and AI context. Projects can be synced to iCloud.</p>
           {onNewProject && (
-            <span
-              className="text-xs underline cursor-pointer text-muted-foreground"
-              onClick={onNewProject}
-            >
-              New Project
-            </span>
+            <div className="flex justify-end mt-2">
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={onNewProject}
+              >
+                New Project
+              </Button>
+            </div>
           )}
         </div>
       )}
