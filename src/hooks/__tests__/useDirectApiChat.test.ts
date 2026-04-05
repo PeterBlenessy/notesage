@@ -162,6 +162,11 @@ describe('useDirectApiChat — listener lifecycle (#9, #15)', () => {
       await result.current.sendChatMessage('hello', []);
     });
 
+    // Allow any pending microtasks/timers to flush
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
     // All listeners should be cleaned up after done
     expect(getListenerCount('ai-stream-chunk')).toBe(0);
     expect(getListenerCount('ai-stream-thinking-chunk')).toBe(0);
