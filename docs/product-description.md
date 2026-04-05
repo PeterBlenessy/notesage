@@ -74,6 +74,20 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 - 5-minute unresponsive timer (shows banner, not kill), 30-minute backend hard timeout
 - PRD: `docs/prds/2026-04-02-acp-session-resilience.md`
 
+### System Tray & Background Intelligence (Completed)
+
+**Goal:** Persistent menu bar presence with quick actions, notifications, and background behavior.
+
+- System tray icon (italic "N" template image, adapts to light/dark menu bar)
+- Tray menu: New Note, New Quick Note, Open Actions (badge count), Recent files, Show/Quit
+- Click tray icon to toggle window visibility
+- Close-to-tray: optional hide-on-close instead of quit
+- Desktop notifications for agent task completion/errors (via `tauri-plugin-notification`)
+- Quick Capture window (`Cmd+Shift+Space`) — floating 480x320 textarea with destination picker
+- Start at login via `tauri-plugin-autostart` (macOS LaunchAgent)
+- Settings: System Tray section (show in tray, close to tray, start at login) + Notification toggles
+- PRD: `docs/prds/2026-03-11-system-tray.md`
+
 ### Beyond — Ideas
 
 - **Workflows & Automation:** User-defined YAML workflows as skills

@@ -11,7 +11,7 @@
 
 ---
 
-## 1. Add Tauri tray/notification/autostart/global-shortcut plugin dependencies
+## 1. Add Tauri tray/notification/autostart/global-shortcut plugin dependencies ✅
 
 **Complexity:** S | **Category:** backend | **Dependencies:** None
 
@@ -32,7 +32,7 @@
 
 ---
 
-## 2. Add frontend npm dependencies for new Tauri plugins
+## 2. Add frontend npm dependencies for new Tauri plugins ✅
 
 **Complexity:** S | **Category:** frontend | **Dependencies:** None
 
@@ -49,7 +49,7 @@
 
 ---
 
-## 3. Create tray icon assets
+## 3. Create tray icon assets ✅
 
 **Complexity:** S | **Category:** both | **Dependencies:** None
 
@@ -68,7 +68,7 @@
 
 ---
 
-## 4. Implement tray module with menu and event handling
+## 4. Implement tray module with menu and event handling ✅
 
 **Complexity:** L | **Category:** backend | **Dependencies:** #1, #3
 
@@ -119,7 +119,7 @@
 
 ---
 
-## 5. Wire tray events to frontend actions
+## 5. Wire tray events to frontend actions ✅
 
 **Complexity:** M | **Category:** frontend | **Dependencies:** #4
 
@@ -140,7 +140,7 @@
 
 ---
 
-## 6. Implement close-to-tray window management
+## 6. Implement close-to-tray window management ✅
 
 **Complexity:** M | **Category:** both | **Dependencies:** #4
 
@@ -172,7 +172,7 @@
 
 ---
 
-## 7. Add tray & notification settings to Settings dialog
+## 7. Add tray & notification settings to Settings dialog ✅
 
 **Complexity:** M | **Category:** frontend | **Dependencies:** #6
 
@@ -200,7 +200,7 @@ Follow existing settings pattern — use shadcn/ui Switch components, consistent
 
 ---
 
-## 8. Implement desktop notifications
+## 8. Implement desktop notifications ✅
 
 **Complexity:** M | **Category:** both | **Dependencies:** #1, #2, #7
 
@@ -235,7 +235,7 @@ Follow existing settings pattern — use shadcn/ui Switch components, consistent
 
 ---
 
-## 9. Sync tray badge with open action count
+## 9. Sync tray badge with open action count ✅
 
 **Complexity:** M | **Category:** frontend | **Dependencies:** #4
 
@@ -261,7 +261,7 @@ Follow existing settings pattern — use shadcn/ui Switch components, consistent
 
 ---
 
-## 10. Sync tray recent files from editor-store
+## 10. Sync tray recent files from editor-store ✅
 
 **Complexity:** S | **Category:** frontend | **Dependencies:** #4, #9
 
@@ -285,7 +285,7 @@ Follow existing settings pattern — use shadcn/ui Switch components, consistent
 
 ---
 
-## 11. Create Quick Capture window (backend)
+## 11. Create Quick Capture window (backend) ✅
 
 **Complexity:** M | **Category:** backend | **Dependencies:** #1
 
@@ -324,7 +324,7 @@ Follow existing settings pattern — use shadcn/ui Switch components, consistent
 
 ---
 
-## 12. Create Quick Capture window (frontend)
+## 12. Create Quick Capture window (frontend) ✅
 
 **Complexity:** L | **Category:** frontend | **Dependencies:** #11
 
@@ -366,7 +366,7 @@ Follow existing settings pattern — use shadcn/ui Switch components, consistent
 
 ---
 
-## 13. Implement start-at-login via autostart plugin
+## 13. Implement start-at-login via autostart plugin ✅
 
 **Complexity:** L | **Category:** both | **Dependencies:** #1, #2, #7
 

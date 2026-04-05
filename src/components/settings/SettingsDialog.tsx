@@ -14,6 +14,7 @@ import { SkillsSettings } from './SkillsSettings';
 import { TranscriptionSettings } from './TranscriptionSettings';
 import { LocalAISettings } from './LocalAISettings';
 import { ChangelogDialog } from './ChangelogDialog';
+import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore, type MeasurementUnit } from '@/stores/settings-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
@@ -166,6 +167,11 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
     logLevel, setLogLevel,
     autoCheckUpdates, setAutoCheckUpdates,
     lastUpdateCheck,
+    showInTray, setShowInTray,
+    closeToTray, setCloseToTray,
+    startAtLogin, setStartAtLogin,
+    notifyAgentCompletion, setNotifyAgentCompletion,
+    notifyExternalChanges, setNotifyExternalChanges,
   } = useSettingsStore();
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'general');
   const [gitNotAvailable, setGitNotAvailable] = useState(false);
@@ -493,6 +499,131 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                         />
                       </>
                     )}
+                  </div>
+                </div>
+
+                <div className="h-px bg-border" />
+
+                {/* System Tray */}
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-semibold">System Tray</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Menu bar icon and background behavior
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label htmlFor="show-in-tray" className="text-sm font-medium cursor-pointer">
+                          Show in menu bar
+                        </Label>
+                        <Switch
+                          id="show-in-tray"
+                          checked={showInTray}
+                          onCheckedChange={(checked) => {
+                            setShowInTray(checked);
+                            invoke('set_tray_visible', { visible: checked }).catch(() => {});
+                          }}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1.5">
+                        Keep Notesage accessible from the menu bar
+                      </p>
+                    </div>
+
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label htmlFor="close-to-tray" className="text-sm font-medium cursor-pointer">
+                          Close window to tray
+                        </Label>
+                        <Switch
+                          id="close-to-tray"
+                          checked={closeToTray}
+                          onCheckedChange={(checked) => {
+                            setCloseToTray(checked);
+                            invoke('set_close_to_tray', { enabled: checked }).catch(() => {});
+                          }}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1.5">
+                        Closing the window hides it instead of quitting the app
+                      </p>
+                    </div>
+
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label htmlFor="start-at-login" className="text-sm font-medium cursor-pointer">
+                          Start at login
+                        </Label>
+                        <Switch
+                          id="start-at-login"
+                          checked={startAtLogin}
+                          onCheckedChange={async (checked) => {
+                            try {
+                              if (checked) {
+                                await import('@tauri-apps/plugin-autostart').then(m => m.enable());
+                              } else {
+                                await import('@tauri-apps/plugin-autostart').then(m => m.disable());
+                              }
+                              setStartAtLogin(checked);
+                            } catch (e) {
+                              console.error('Failed to toggle autostart:', e);
+                            }
+                          }}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1.5">
+                        Launch Notesage automatically when you log in
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="h-px bg-border" />
+
+                {/* Notifications */}
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-semibold">Notifications</Label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Choose which desktop notifications to receive
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label htmlFor="notify-agent" className="text-sm font-medium cursor-pointer">
+                          Agent task completion
+                        </Label>
+                        <Switch
+                          id="notify-agent"
+                          checked={notifyAgentCompletion}
+                          onCheckedChange={setNotifyAgentCompletion}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1.5">
+                        Notify when an agent finishes or encounters an error
+                      </p>
+                    </div>
+
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label htmlFor="notify-external" className="text-sm font-medium cursor-pointer">
+                          External file changes
+                        </Label>
+                        <Switch
+                          id="notify-external"
+                          checked={notifyExternalChanges}
+                          onCheckedChange={setNotifyExternalChanges}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1.5">
+                        Notify when files are modified externally
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>

@@ -349,6 +349,10 @@ async function startAcpTask(
         activityStore.updateTaskStatus(taskId, 'done');
         activityStore.setFinalOutput(taskId, current.output);
       }
+      // Send desktop notification for agent completion
+      import('@/lib/notifications').then(({ notify }) => {
+        notify('agent_completion', 'Agent completed', responsePreview);
+      }).catch(() => {});
       const c = cleanupMap.get(taskId);
       if (c) { c(); cleanupMap.delete(taskId); }
     }
@@ -409,6 +413,10 @@ async function startAcpTask(
           : t.output || '(empty response)';
         onActivity?.({ kind: 'agent_complete', label: 'Agent finished', detail: responsePreview, event: 'agent_complete' });
         onComplete?.(t.output);
+        // Send desktop notification for agent completion
+        import('@/lib/notifications').then(({ notify }) => {
+          notify('agent_completion', 'Agent completed', responsePreview);
+        }).catch(() => {});
         if (track) {
           const as = useActivityStore.getState();
           as.completeAllActivities(taskId);
@@ -419,11 +427,16 @@ async function startAcpTask(
     })
     .catch((error) => {
       const t = tasksMap.get(taskId);
+      const errorMsg = error instanceof Error ? error.message : String(error);
       if (t) {
         t.status = 'failed';
-        t.error = error instanceof Error ? error.message : String(error);
+        t.error = errorMsg;
       }
-      onError?.(error instanceof Error ? error.message : String(error));
+      onError?.(errorMsg);
+      // Send desktop notification for agent error
+      import('@/lib/notifications').then(({ notify }) => {
+        notify('agent_error', 'Agent failed', errorMsg);
+      }).catch(() => {});
       if (track) {
         const as = useActivityStore.getState();
         as.completeAllActivities(taskId);

@@ -64,6 +64,13 @@ interface SettingsStore {
   chatHintsShown: boolean;
   /** Show dotfiles and dot-directories in the sidebar file tree */
   showHiddenFiles: boolean;
+  // System tray settings
+  showInTray: boolean;
+  closeToTray: boolean;
+  startAtLogin: boolean;
+  // Notification settings
+  notifyAgentCompletion: boolean;
+  notifyExternalChanges: boolean;
   // Runtime-only (not persisted) — detected on startup
   startupReady: boolean;
   icloudAvailable: boolean;
@@ -113,6 +120,11 @@ interface SettingsStore {
   setPersonasMigrated: (migrated: boolean) => void;
   setChatHintsShown: (shown: boolean) => void;
   setShowHiddenFiles: (show: boolean) => void;
+  setShowInTray: (show: boolean) => void;
+  setCloseToTray: (close: boolean) => void;
+  setStartAtLogin: (start: boolean) => void;
+  setNotifyAgentCompletion: (notify: boolean) => void;
+  setNotifyExternalChanges: (notify: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -139,6 +151,11 @@ export const useSettingsStore = create<SettingsStore>()(
       personasMigrated: false,
       chatHintsShown: false,
       showHiddenFiles: false,
+      showInTray: true,
+      closeToTray: false,
+      startAtLogin: false,
+      notifyAgentCompletion: true,
+      notifyExternalChanges: false,
       startupReady: false,
       icloudAvailable: false,
       icloudNotesagePath: null,
@@ -338,6 +355,26 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setShowHiddenFiles: (show: boolean) => {
         set({ showHiddenFiles: show });
+      },
+
+      setShowInTray: (show: boolean) => {
+        set({ showInTray: show });
+      },
+
+      setCloseToTray: (close: boolean) => {
+        set({ closeToTray: close });
+      },
+
+      setStartAtLogin: (start: boolean) => {
+        set({ startAtLogin: start });
+      },
+
+      setNotifyAgentCompletion: (notify: boolean) => {
+        set({ notifyAgentCompletion: notify });
+      },
+
+      setNotifyExternalChanges: (notify: boolean) => {
+        set({ notifyExternalChanges: notify });
       },
     }),
     {

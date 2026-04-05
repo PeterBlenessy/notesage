@@ -1,6 +1,6 @@
 # PRD: System Tray & Background Intelligence
 
-**Date:** 2026-03-11 **Phase:** 13 **Status:** Draft
+**Date:** 2026-03-11 **Phase:** 13 **Status:** Complete
 
 ---
 
@@ -342,53 +342,53 @@ Read from existing `editor-store` tab history — no new storage needed.
 
 ### Functional
 
-- [ ] Tray icon appears in macOS menu bar
+- [x] Tray icon appears in macOS menu bar
 
-- [ ] Tray menu shows correct items (New Note, Quick Note, Open Actions, Recent, Show, Quit)
+- [x] Tray menu shows correct items (New Note, Quick Note, Open Actions, Recent, Show, Quit)
 
-- [ ] Clicking "New Note" opens new note dialog (shows main window if hidden)
+- [x] Clicking "New Note" opens new note dialog (shows main window if hidden)
 
-- [ ] Clicking "Open Actions" opens the actions dashboard
+- [x] Clicking "Open Actions" opens the actions dashboard
 
-- [ ] Recent files list shows last 3 opened files
+- [x] Recent files list shows last 3 opened files
 
-- [ ] Badge count updates when action count changes
+- [x] Badge count updates when action count changes
 
-- [ ] Clicking tray icon toggles main window visibility
+- [x] Clicking tray icon toggles main window visibility
 
-- [ ] Close-to-tray keeps app running in background
+- [x] Close-to-tray keeps app running in background
 
-- [ ] Start at login works correctly
+- [x] Start at login works correctly
 
-- [ ] Global shortcut opens quick capture window
+- [x] Global shortcut opens quick capture window
 
-- [ ] Quick capture saves note to selected destination
+- [x] Quick capture saves note to selected destination
 
-- [ ] Agent completion notification appears
+- [x] Agent completion notification appears
 
-- [ ] Clicking notification shows main window and navigates to relevant content
+- [x] Clicking notification shows main window and navigates to relevant content
 
-- [ ] Notification preferences are respected (can disable per type)
+- [x] Notification preferences are respected (can disable per type)
 
-- [ ] Quit from tray menu fully exits the app (including local AI server)
+- [x] Quit from tray menu fully exits the app (including local AI server)
 
 ### Performance
 
-- [ ] Tray icon and menu render instantly
+- [x] Tray icon and menu render instantly
 
-- [ ] Badge count updates in &lt; 100ms
+- [x] Badge count updates in &lt; 100ms
 
-- [ ] Quick capture window appears in &lt; 300ms after shortcut
+- [x] Quick capture window appears in &lt; 300ms after shortcut
 
 ### Design
 
-- [ ] Tray icon fits macOS menu bar aesthetic (template image for dark/light)
+- [x] Tray icon fits macOS menu bar aesthetic (template image for dark/light)
 
-- [ ] Tray menu follows macOS HIG conventions
+- [x] Tray menu follows macOS HIG conventions
 
-- [ ] Quick capture window is minimal and focused
+- [x] Quick capture window is minimal and focused
 
-- [ ] Notifications follow macOS notification style
+- [x] Notifications follow macOS notification style
 
 ---
 

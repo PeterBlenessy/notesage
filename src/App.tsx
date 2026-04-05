@@ -26,6 +26,8 @@ import { useSandboxViolations } from "@/hooks/useSandboxViolations";
 import { useAgentTaskOperations } from "@/hooks/useAgentTaskOperations";
 import { useActivityNavigation } from "@/hooks/useActivityNavigation";
 import { useAppLifecycle } from "@/hooks/useAppLifecycle";
+import { useTrayEvents } from "@/hooks/useTrayEvents";
+import { useTraySync } from "@/hooks/useTraySync";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -73,6 +75,7 @@ function App() {
   useLocalAI();
   useSandboxViolations();
   useActionScanner();
+  useTraySync();
 
   // Consolidated startup effects and event listeners
   const onOpenPalette = useCallback((mode: PaletteMode, drilldown: string) => {
@@ -120,6 +123,18 @@ function App() {
 
   const { openFile, openFileAtTag, openFileAtText, refreshFileTree } = useFileOperations();
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
+
+  // Tray menu event handlers
+  const handleTrayOpenFile = useCallback((path: string) => {
+    const name = path.split("/").pop() ?? path;
+    openFile(path, name);
+  }, [openFile]);
+  useTrayEvents({
+    onNewNote: useCallback(() => setNewNoteOpen(true), []),
+    onQuickNote: useCallback(() => setNewNoteOpen(true), []),
+    onOpenActions: useCallback(() => setActionsDialogOpen(true), []),
+    onOpenFile: handleTrayOpenFile,
+  });
 
   // Handle file-open events from macOS file association
   useEffect(() => {

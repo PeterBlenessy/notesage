@@ -63,6 +63,7 @@ note-sage/
 │   │   │   │   └── binary_resolution.rs # llama-server binary resolution & diagnostics
 │   │   │   ├── thinking_tags.rs # Thinking tag detection from llama-server Jinja2 chat templates
 │   │   │   └── fonts.rs    # System font enumeration (font-kit crate)
+│   │   ├── tray.rs         # System tray icon, menu, quick capture, close-to-tray
 │   │   ├── index/          # SQLite document index (tags, mentions, tasks, goals, FTS5)
 │   │   │   ├── mod.rs      # IndexState, Tauri commands, indexing pipeline
 │   │   │   ├── db.rs       # Schema creation, migrations, connection management
@@ -106,7 +107,7 @@ note-sage/
 │   │   ├── activity/       # ActivityStrip.tsx, ActivityTaskCard.tsx
 │   │   ├── editor/viewers/ # EpubViewer, PdfViewer, DocxViewer, PlainTextViewer, CodeEditor, PptxViewer (+ PptxSlideRenderer, PptxChartRenderer, PptxSearchBar, PptxZoomControls)
 │   │   └── ui/             # shadcn/ui components (auto-generated)
-│   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, etc.)
+│   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, useTrayEvents, useTraySync, etc.)
 │   ├── stores/             # Zustand stores (editor, workspace, ai, chat, skill, etc.)
 │   ├── lib/                # Utilities (markdown, tauri, ai/{context,errors,vision}, dom-search, chat-tree, conversationOps, segmentOps, image-compress, etc.)
 │   └── styles/             # globals.css, editor.css
@@ -201,7 +202,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `editor-store` | Open tabs, active tab, per-tab flags | Full |
 | `workspace-store` | Explorer folders, projects, notes tree | Full |
 | `project-metadata-store` | Project metadata from `.notesage/project.json` | Full |
-| `settings-store` | Theme, soft contrast mode, UI preferences, `startupReady` flag, `toolCallingEnabled`, `searchProvider`, `showHiddenFiles` | Full (except `startupReady`) |
+| `settings-store` | Theme, soft contrast mode, UI preferences, `startupReady` flag, `toolCallingEnabled`, `searchProvider`, `showHiddenFiles`, tray settings (`showInTray`, `closeToTray`, `startAtLogin`), notification settings (`notifyAgentCompletion`, `notifyExternalChanges`) | Full (except `startupReady`) |
 | `ai-store` | AI provider config (legacy, fallback) | Full |
 | `skill-store` | Skills registry, agents, instructions, active agent | Partial (overrides + active agent) |
 | `connections-store` | Multi-provider connections, sandbox/network config, kernel enforcement, writable paths | Full |

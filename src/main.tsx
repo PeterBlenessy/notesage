@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { QuickCapture } from "@/components/QuickCapture";
 import "@/styles/globals.css";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -14,8 +15,12 @@ if (import.meta.env.DEV) {
   (window as unknown as Record<string, unknown>).__E2E_SETTINGS_STORE__ = useSettingsStore;
 }
 
+// Route to QuickCapture for the quick-capture window, otherwise full app
+const params = new URLSearchParams(window.location.search);
+const isQuickCapture = params.get("window") === "quick-capture";
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    {isQuickCapture ? <QuickCapture /> : <App />}
   </React.StrictMode>,
 );

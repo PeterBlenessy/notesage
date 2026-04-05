@@ -1,6 +1,7 @@
 mod commands;
 mod export;
 mod index;
+mod tray;
 
 use commands::*;
 use index::IndexState;
@@ -35,7 +36,13 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_http::init());
+        .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ));
 
     // WebDriver plugin for real E2E testing (only when compiled with `--features e2e-testing`)
     #[cfg(feature = "e2e-testing")]
@@ -68,6 +75,7 @@ pub fn run() {
         .manage(NetworkProxyState::new())
         .manage(SandboxMonitorState::new())
         .manage(IndexState::new())
+        .manage(tray::TrayState::new())
         .invoke_handler(tauri::generate_handler![
             open_devtools,
             set_log_level,
@@ -257,6 +265,13 @@ pub fn run() {
             fetch_link_metadata,
             // System font enumeration
             list_system_fonts,
+            // System tray
+            tray::update_tray_badge,
+            tray::update_tray_recent,
+            tray::set_tray_visible,
+            tray::set_close_to_tray,
+            tray::show_quick_capture,
+            tray::hide_quick_capture,
         ])
         .setup(|app| {
             // Log startup at Info before restricting to Warn — this line always appears.
@@ -278,6 +293,11 @@ pub fn run() {
             sandbox::cleanup_legacy_profiles();
             log::debug!(target: "notesage::lifecycle", "Cleaned up orphaned agent processes");
 
+            // Set up system tray
+            if let Err(e) = tray::setup_tray(app) {
+                log::error!(target: "notesage::tray", "Failed to set up tray: {}", e);
+            }
+
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -296,6 +316,16 @@ pub fn run() {
                     app_handle.state::<LocalInferenceState>().stop_sync();
                     // Stop sandbox violation monitor
                     app_handle.state::<SandboxMonitorState>().stop_sync();
+                }
+                RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { api, .. }, .. } => {
+                    if label == "main" && tray::is_close_to_tray(app_handle) {
+                        // Hide window instead of closing when close-to-tray is enabled
+                        api.prevent_close();
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.hide();
+                        }
+                        log::debug!(target: "notesage::tray", "Window hidden to tray");
+                    }
                 }
                 #[cfg(target_os = "macos")]
                 RunEvent::Opened { urls } => {
