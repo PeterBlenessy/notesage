@@ -66,6 +66,8 @@ pub struct LocalModelInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mmproj_url: Option<String>,
     #[serde(default)]
+    pub mmproj_size_bytes: Option<u64>,
+    #[serde(default)]
     pub multilingual: bool,
     #[serde(default)]
     pub recommended_for: Vec<String>,
@@ -121,6 +123,8 @@ pub struct CatalogEntry {
     pub mmproj_filename: Option<String>,
     #[serde(default)]
     pub mmproj_url: Option<String>,
+    #[serde(default)]
+    pub mmproj_size_bytes: Option<u64>,
     #[serde(default)]
     pub multilingual: bool,
     #[serde(default)]
@@ -254,6 +258,7 @@ pub async fn list_local_models(
                 supports_vision: entry.supports_vision,
                 mmproj_filename: entry.mmproj_filename,
                 mmproj_url: entry.mmproj_url,
+                mmproj_size_bytes: entry.mmproj_size_bytes,
                 multilingual: entry.multilingual,
                 recommended_for: entry.recommended_for,
             }
@@ -552,6 +557,7 @@ pub async fn add_custom_local_model(
         supports_vision: supports_vision.unwrap_or(false),
         mmproj_filename: None,
         mmproj_url: None,
+        mmproj_size_bytes: None,
         multilingual: multilingual.unwrap_or(false),
         recommended_for: vec![],
     };
@@ -589,6 +595,7 @@ pub async fn add_custom_local_model(
         supports_vision: entry.supports_vision,
         mmproj_filename: entry.mmproj_filename,
         mmproj_url: entry.mmproj_url,
+        mmproj_size_bytes: entry.mmproj_size_bytes,
         multilingual: entry.multilingual,
         recommended_for: entry.recommended_for,
     })

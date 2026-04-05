@@ -306,6 +306,7 @@ export interface LocalModelInfo {
   supports_vision: boolean;
   mmproj_filename?: string;
   mmproj_url?: string;
+  mmproj_size_bytes?: number;
   multilingual: boolean;
   recommended_for: string[];
 }

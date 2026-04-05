@@ -627,7 +627,7 @@ function ModelCard({
             )}
             <span className="text-sm font-medium">{model.name}</span>
             <span className="text-[10px] text-muted-foreground/50">
-              {model.size_bytes > 0 && formatBytes(model.size_bytes)}
+              {model.size_bytes > 0 && formatBytes(model.size_bytes + (model.mmproj_size_bytes ?? 0))}
               {model.size_bytes > 0 && model.ram_required_bytes > 0 && ' · '}
               {model.ram_required_bytes > 0 && `~${formatBytes(model.ram_required_bytes)} RAM`}
             </span>
@@ -864,7 +864,7 @@ export function LocalAISettings() {
           </span>
           {systemMemory && activeModel && serverStatus === 'running' && (
             <span className="text-muted-foreground/60 shrink-0">
-              · ~{formatBytes(activeModel.ram_required_bytes)} / {totalMemGB} GB RAM
+              · {formatBytes(activeModel.size_bytes + (activeModel.mmproj_size_bytes ?? 0))} · ~{formatBytes(activeModel.ram_required_bytes)} RAM
             </span>
           )}
         </div>
