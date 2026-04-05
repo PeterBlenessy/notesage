@@ -814,6 +814,22 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
             content: include_str!("../../../bundled-skills/create-agent/references/EXAMPLES.md"),
             executable: false,
         },
+        // insert-chart
+        BundledFile {
+            relative_path: "insert-chart/SKILL.md",
+            content: include_str!("../../../bundled-skills/insert-chart/SKILL.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "insert-chart/references/CHART-SCHEMA.md",
+            content: include_str!("../../../bundled-skills/insert-chart/references/CHART-SCHEMA.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "insert-chart/references/EXAMPLES.md",
+            content: include_str!("../../../bundled-skills/insert-chart/references/EXAMPLES.md"),
+            executable: false,
+        },
     ];
 
     info!("Extracting {} bundled skill files to {}", bundled_files.len(), bundled_dir.display());

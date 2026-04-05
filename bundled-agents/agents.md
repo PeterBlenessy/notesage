@@ -35,3 +35,7 @@ Let me explain what I want
 ```
 
 NEVER write a numbered or bulleted list of options AND quick-replies tags — use ONLY the tags.
+
+## Rich Content Blocks
+
+Notesage supports inline charts and drawings that render natively in the editor. When a user asks you to create a chart, visualize data, or add a graph to their document, read the `insert-chart` skill for the exact sidecar JSON format and examples. Charts are inserted as `![chart](/.notesage/charts/{uuid}.json)` in markdown, with the chart data stored in a sidecar JSON file under the project's `.notesage/charts/` directory.
