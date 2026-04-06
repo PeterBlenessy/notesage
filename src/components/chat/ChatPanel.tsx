@@ -276,20 +276,25 @@ export function ChatPanel() {
             <MessageSquare className="h-3 w-3" strokeWidth={1.5} />
             <span className="truncate max-w-[120px]">{activeConvTitle}</span>
           </button>
-          <button
-            onClick={() => setChatView('history')}
-            className={`h-7 px-2 flex items-center gap-1.5 rounded text-xs font-medium transition-colors ${
-              chatView === 'history'
-                ? 'bg-accent text-accent-foreground'
-                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-            }`}
-          >
-            <History className="h-3 w-3" strokeWidth={1.5} />
-            History
-          </button>
         </div>
         <div className="flex items-center gap-0.5">
           <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => setChatView(chatView === 'history' ? 'chat' : 'history')}
+                  className={`h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors duration-150 active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                    chatView === 'history'
+                      ? 'bg-accent text-accent-foreground'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                  }`}
+                >
+                  <History className="h-3.5 w-3.5" strokeWidth={1.5} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">Chat History</TooltipContent>
+            </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
