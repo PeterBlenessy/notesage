@@ -97,10 +97,9 @@ urlencoding = "2"
 # System font enumeration
 font-kit = "0.14"
 
-# System tray, notifications, autostart, global shortcuts (Phase 13)
+# System tray, notifications, autostart (Phase 13)
 tauri-plugin-notification = "2"
 tauri-plugin-autostart = "2"
-tauri-plugin-global-shortcut = "2"
 
 # HTML parsing for link preview metadata extraction
 scraper = "0.23"

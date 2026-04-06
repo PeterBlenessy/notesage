@@ -46,17 +46,6 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .on_tray_icon_event(handle_tray_icon_event)
         .build(app)?;
 
-    // Register global shortcut for quick capture (Cmd+Shift+Space)
-    use tauri_plugin_global_shortcut::GlobalShortcutExt;
-    let _ = app.global_shortcut().on_shortcut("CmdOrCtrl+Shift+Space", |app, _shortcut, event| {
-        if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-            let app = app.clone();
-            tauri::async_runtime::spawn(async move {
-                let _ = show_quick_capture(app).await;
-            });
-        }
-    });
-
     Ok(())
 }
 
@@ -68,12 +57,6 @@ fn handle_menu_event(app: &AppHandle<Wry>, event: tauri::menu::MenuEvent) {
         "new-note" => {
             show_main_window(app);
             let _ = app.emit("tray-new-note", ());
-        }
-        "new-quick-note" => {
-            let app = app.clone();
-            tauri::async_runtime::spawn(async move {
-                let _ = show_quick_capture(app).await;
-            });
         }
         "open-actions" => {
             show_main_window(app);
@@ -148,7 +131,6 @@ fn build_tray_menu(
         app,
         &[
             &MenuItem::with_id(app, "new-note", "New Note", true, Some("CmdOrCtrl+N"))?,
-            &MenuItem::with_id(app, "new-quick-note", "New Quick Note", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "open-actions", &actions_label, true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
@@ -227,47 +209,6 @@ pub async fn update_tray_recent(app: AppHandle, files: Vec<RecentFile>) -> Resul
 pub async fn set_close_to_tray(app: AppHandle, enabled: bool) -> Result<(), String> {
     let state = app.state::<TrayState>();
     *state.close_to_tray.lock().map_err(|e| e.to_string())? = enabled;
-    Ok(())
-}
-
-/// Show the quick capture window. Creates it if it doesn't exist.
-#[tauri::command]
-pub async fn show_quick_capture(app: AppHandle) -> Result<(), String> {
-    use tauri::WebviewUrl;
-
-    if let Some(window) = app.get_webview_window("quick-capture") {
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
-        let _ = window.emit("quick-capture-reset", ());
-        return Ok(());
-    }
-
-    // Create a new quick capture window
-    let _window = tauri::WebviewWindowBuilder::new(
-        &app,
-        "quick-capture",
-        WebviewUrl::App("index.html?window=quick-capture".into()),
-    )
-    .title("Quick Note")
-    .inner_size(480.0, 320.0)
-    .resizable(false)
-    .always_on_top(true)
-    .center()
-    .decorations(true)
-    .visible(false)
-    .skip_taskbar(true)
-    .build()
-    .map_err(|e| e.to_string())?;
-
-    Ok(())
-}
-
-/// Hide the quick capture window.
-#[tauri::command]
-pub async fn hide_quick_capture(app: AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("quick-capture") {
-        window.hide().map_err(|e| e.to_string())?;
-    }
     Ok(())
 }
 

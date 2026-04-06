@@ -38,7 +38,6 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -270,8 +269,6 @@ pub fn run() {
             tray::update_tray_recent,
             tray::set_tray_visible,
             tray::set_close_to_tray,
-            tray::show_quick_capture,
-            tray::hide_quick_capture,
         ])
         .setup(|app| {
             // Log startup at Info before restricting to Warn — this line always appears.
