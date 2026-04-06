@@ -202,16 +202,16 @@ export const ChatHistoryView = memo(function ChatHistoryView({ onSelectConversat
                     )}
                   </div>
                 </div>
-                <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
+                <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity mr-[-6px]">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
                         onClick={(e) => e.stopPropagation()}
-                        className="h-6 w-6 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground active:opacity-75"
+                        className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors active:opacity-75"
                         title="Export conversation"
                       >
-                        <Download className="h-3 w-3" strokeWidth={1.5} />
+                        <Download className="h-3.5 w-3.5" strokeWidth={1.5} />
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="min-w-[180px]">
@@ -232,10 +232,10 @@ export const ChatHistoryView = memo(function ChatHistoryView({ onSelectConversat
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
-                    className="h-6 w-6 inline-flex items-center justify-center rounded text-muted-foreground hover:text-destructive active:opacity-75"
+                    className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors active:opacity-75"
                     title="Delete conversation"
                   >
-                    <Trash2 className="h-3 w-3" strokeWidth={1.5} />
+                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
                   </button>
                 </div>
               </div>
