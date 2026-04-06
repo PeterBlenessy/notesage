@@ -261,7 +261,7 @@ function UserActionButtons({ isUser, onEdit, onResend, onBranch, onCopy, copied 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
-                className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
+                className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
                 title="Message actions"
               >
                 <Ellipsis className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
@@ -302,7 +302,7 @@ function UserActionButtons({ isUser, onEdit, onResend, onBranch, onCopy, copied 
       <div ref={bubbleRef} className="absolute -bottom-3 left-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
         {onEdit && (
           <button
-            className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
+            className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
             onClick={onEdit}
             title="Edit message"
           >
@@ -311,7 +311,7 @@ function UserActionButtons({ isUser, onEdit, onResend, onBranch, onCopy, copied 
         )}
         {onResend && (
           <button
-            className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
+            className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
             onClick={onResend}
             title="Resend message"
           >
@@ -319,7 +319,7 @@ function UserActionButtons({ isUser, onEdit, onResend, onBranch, onCopy, copied 
           </button>
         )}
         <button
-          className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
+          className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
           onClick={onCopy}
           title="Copy message"
         >
@@ -331,7 +331,7 @@ function UserActionButtons({ isUser, onEdit, onResend, onBranch, onCopy, copied 
         </button>
         {onBranch && (
           <button
-            className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
+            className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
             onClick={onBranch}
             title="Branch from here"
           >
@@ -347,7 +347,7 @@ function UserActionButtons({ isUser, onEdit, onResend, onBranch, onCopy, copied 
     <div className="absolute -bottom-3 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
       {onBranch && (
         <button
-          className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
+          className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
           onClick={onBranch}
           title="Branch from here"
         >
@@ -355,7 +355,7 @@ function UserActionButtons({ isUser, onEdit, onResend, onBranch, onCopy, copied 
         </button>
       )}
       <button
-        className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border"
+        className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
         onClick={onCopy}
         title="Copy message"
       >
@@ -724,7 +724,7 @@ export function ChatMessage({ message, isLast = false, branchCount, onBranch, on
         {/* Delete button — circular, positioned like macOS notification dismiss */}
         {!isLoading && message.timestamp && (
           <button
-            className={`absolute -top-2 ${isUser ? '-left-2' : '-right-2'} h-5 w-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity bg-card border border-border`}
+            className={`absolute -top-2 ${isUser ? '-left-2' : '-right-2'} h-5 w-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all bg-card border border-border hover:bg-foreground/10 hover:text-foreground`}
             onClick={() => deleteMessage(message.timestamp!)}
             title="Delete message"
           >
