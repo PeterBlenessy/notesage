@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { CommandPalette } from "@/components/CommandPalette";
 import type { SettingsTab } from "@/components/settings/SettingsDialog";
@@ -63,6 +64,28 @@ function App() {
   const { state: updateState, checkForUpdate, downloadAndInstall, restartNow, dismiss: dismissUpdate } = useAutoUpdate();
   const { addProject, addExplorerFolder } = useWorkspaceStore();
   const { projectPath: activeProjectPath } = useActiveProject();
+
+  // --- Show main window after first themed paint (window starts hidden to prevent white flash) ---
+  useEffect(() => {
+    // Wait for ThemeProvider to apply the dark/light class and for Tailwind CSS
+    // to be loaded (the computed background-color will change from the inline
+    // fallback to the CSS variable value). Poll briefly to handle dev mode where
+    // Vite serves CSS on-demand. In production the first check succeeds immediately.
+    const showWhenReady = () => {
+      const root = document.documentElement;
+      const hasThemeClass = root.classList.contains("dark") || root.classList.contains("light");
+      const bg = getComputedStyle(document.body).backgroundColor;
+      const cssLoaded = bg !== "" && bg !== "rgba(0, 0, 0, 0)";
+      if (hasThemeClass && cssLoaded) {
+        requestAnimationFrame(() => {
+          invoke("show_main_window_command").catch(() => {});
+        });
+      } else {
+        requestAnimationFrame(showWhenReady);
+      }
+    };
+    requestAnimationFrame(showWhenReady);
+  }, []);
 
   // ============================================================
   // CRITICAL: All lifecycle hooks MUST remain mounted here.

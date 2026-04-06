@@ -212,6 +212,13 @@ pub async fn set_close_to_tray(app: AppHandle, enabled: bool) -> Result<(), Stri
     Ok(())
 }
 
+/// Show the main window. Called from the frontend after React has painted the themed UI.
+#[tauri::command]
+pub async fn show_main_window_command(app: AppHandle) -> Result<(), String> {
+    show_main_window(&app);
+    Ok(())
+}
+
 /// Show or hide the tray icon.
 #[tauri::command]
 pub async fn set_tray_visible(app: AppHandle, visible: bool) -> Result<(), String> {

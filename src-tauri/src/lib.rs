@@ -269,6 +269,7 @@ pub fn run() {
             tray::update_tray_recent,
             tray::set_tray_visible,
             tray::set_close_to_tray,
+            tray::show_main_window_command,
         ])
         .setup(|app| {
             // Log startup at Info before restricting to Warn — this line always appears.
