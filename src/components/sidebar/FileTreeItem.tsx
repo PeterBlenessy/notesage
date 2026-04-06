@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
-import { ChevronRight, ChevronDown, File, Folder, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown, Eye, MessageSquare } from "lucide-react";
-import { SyncedIcon } from "./SyncedIcon";
+import { ChevronRight, ChevronDown, Folder, FolderOpen, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown, Eye, MessageSquare } from "lucide-react";
+import { FileIcon } from "./FileIcon";
 import { FolderPickerItem } from "./FolderPickerItem";
 import { NewFolderDialog } from "./NewFolderDialog";
 import { invoke } from "@tauri-apps/api/core";
@@ -79,7 +79,7 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
   const notesRootPath = useSettingsStore((s) => s.notesRootPath);
 
   // Consolidated store computations via hook
-  const { isActive, hasExternalChange, isCloudFile, gitInfo } = useFileTreeItemState(
+  const { isActive, hasExternalChange, gitInfo } = useFileTreeItemState(
     entry.path,
     entry.is_directory,
     gitRepoRoot,
@@ -456,9 +456,13 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
 
             <span aria-hidden="true">
               {entry.is_directory ? (
-                <SyncedIcon icon={isProjectFolder ? FolderDot : Folder} synced={isCloudFile} folder />
+                isProjectFolder
+                  ? <FolderDot className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" strokeWidth={1.5} />
+                  : expanded
+                    ? <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" strokeWidth={1.5} />
+                    : <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" strokeWidth={1.5} />
               ) : (
-                <SyncedIcon icon={File} synced={isCloudFile} />
+                <FileIcon fileName={entry.name} />
               )}
             </span>
 
