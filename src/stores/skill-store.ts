@@ -83,6 +83,77 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
       required: ['path', 'content'],
     },
   },
+  {
+    name: 'add_comments',
+    description: 'Add inline comments to a document. Each comment is anchored to a specific text passage. The comments appear as highlighted decorations in the editor. Works on the active document or any file by path.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: 'Absolute path to the file to comment on. If omitted, uses the currently active document.' },
+        comments: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              anchor_text: { type: 'string', description: 'The exact text passage to attach the comment to. Must be a verbatim substring of the document.' },
+              body: { type: 'string', description: 'The comment text.' },
+              occurrence: { type: 'number', description: 'Which occurrence of the anchor text to use (1-based). Defaults to 1.' },
+            },
+            required: ['anchor_text', 'body'],
+          },
+          description: 'Array of comments to add.',
+        },
+      },
+      required: ['comments'],
+    },
+  },
+  {
+    name: 'list_comments',
+    description: 'List all comments on a document. Returns comment text, status, anchor text, and replies. Works on the active document or any file by path.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: 'Absolute path to the file. If omitted, uses the currently active document.' },
+      },
+    },
+  },
+  {
+    name: 'resolve_comments',
+    description: 'Mark one or more comments as resolved. Use after modifying the document to address the issues described in the comments. Works on the active document or any file by path.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: 'Absolute path to the file. If omitted, uses the currently active document.' },
+        comment_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Array of comment IDs to resolve. Use list_comments to get the IDs.',
+        },
+      },
+      required: ['comment_ids'],
+    },
+  },
+  {
+    name: 'generate_pptx',
+    description: 'Generate a PowerPoint presentation from the currently active document or from provided markdown content. If no template is specified, ask the user which template they prefer before calling this tool.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        template: {
+          type: 'string',
+          description: 'Template name: "simple", "business", "report", or a custom template name.',
+        },
+        output_path: {
+          type: 'string',
+          description: 'Absolute path for the output .pptx file. If omitted, saves next to the source document with .pptx extension.',
+        },
+        markdown: {
+          type: 'string',
+          description: 'Optional markdown content. If omitted, uses the currently active document.',
+        },
+      },
+    },
+  },
 ];
 
 // --- Store ---

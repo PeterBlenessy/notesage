@@ -82,14 +82,18 @@ describe('useDirectApiChat — tool calling', () => {
     expect(args.tools).not.toBeNull();
 
     const tools = args.tools as Array<{ name: string }>;
-    // 6 built-in tools always present
-    expect(tools).toHaveLength(6);
+    // 10 built-in tools always present (6 original + 4 document tools)
+    expect(tools).toHaveLength(10);
     expect(tools.map((t) => t.name)).toContain('read_file');
     expect(tools.map((t) => t.name)).toContain('write_file');
     expect(tools.map((t) => t.name)).toContain('read_skill_content');
     expect(tools.map((t) => t.name)).toContain('execute_skill_script');
     expect(tools.map((t) => t.name)).toContain('list_directory');
     expect(tools.map((t) => t.name)).toContain('web_search');
+    expect(tools.map((t) => t.name)).toContain('add_comments');
+    expect(tools.map((t) => t.name)).toContain('list_comments');
+    expect(tools.map((t) => t.name)).toContain('resolve_comments');
+    expect(tools.map((t) => t.name)).toContain('generate_pptx');
   });
 
   it('does not pass tools when toolCallingEnabled is false', async () => {

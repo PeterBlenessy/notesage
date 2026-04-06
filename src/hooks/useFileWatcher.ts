@@ -10,6 +10,7 @@ import { useSyncStore } from "@/stores/sync-store";
 import { useMcpStore } from "@/stores/mcp-store";
 import { useFileOperations, refreshGitForPath } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
+import { processPendingCommentFile } from "@/lib/pending-comments";
 import { log } from "@/lib/logger";
 
 /** Cached home dir for skill/agent path matching (set once on first event). */
@@ -148,6 +149,19 @@ export function useFileWatcher() {
             }, 500);
           }
         });
+      }
+
+      // Detect pending comment files from ACP agents
+      if ((kind === "create" || kind === "modify") && path.includes('/.notesage/pending-comments/') && path.endsWith('.json')) {
+        // Derive project root from the path (everything before /.notesage/)
+        const notesageIdx = path.indexOf('/.notesage/pending-comments/');
+        if (notesageIdx > 0) {
+          const projectRoot = path.slice(0, notesageIdx);
+          // Debounce slightly to let the file finish writing
+          setTimeout(() => {
+            processPendingCommentFile(path, projectRoot);
+          }, 300);
+        }
       }
 
       // For modify events on dotfiles when hidden files are not shown, skip the

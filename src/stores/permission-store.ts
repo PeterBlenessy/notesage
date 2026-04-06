@@ -275,7 +275,7 @@ export const usePermissionStore = create<PermissionStore>()(
         }),
 
       isToolAutoAllowed: (toolName) => {
-        return toolName === 'read_file' || toolName === 'read_skill_content' || toolName === 'list_directory' || toolName === 'web_search';
+        return toolName === 'read_file' || toolName === 'read_skill_content' || toolName === 'list_directory' || toolName === 'web_search' || toolName === 'list_comments';
       },
 
       allowToolSession: (toolName) =>

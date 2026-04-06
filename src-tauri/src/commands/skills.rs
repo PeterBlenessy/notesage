@@ -830,6 +830,80 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
             content: include_str!("../../../bundled-skills/insert-chart/references/EXAMPLES.md"),
             executable: false,
         },
+        // review-document
+        BundledFile {
+            relative_path: "review-document/SKILL.md",
+            content: include_str!("../../../bundled-skills/review-document/SKILL.md"),
+            executable: false,
+        },
+        // insert-drawing
+        BundledFile {
+            relative_path: "insert-drawing/SKILL.md",
+            content: include_str!("../../../bundled-skills/insert-drawing/SKILL.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "insert-drawing/references/EXCALIDRAW-SCHEMA.md",
+            content: include_str!("../../../bundled-skills/insert-drawing/references/EXCALIDRAW-SCHEMA.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "insert-drawing/references/EXAMPLES.md",
+            content: include_str!("../../../bundled-skills/insert-drawing/references/EXAMPLES.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "insert-drawing/references/examples/flowchart.md",
+            content: include_str!("../../../bundled-skills/insert-drawing/references/examples/flowchart.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "insert-drawing/references/examples/architecture.md",
+            content: include_str!("../../../bundled-skills/insert-drawing/references/examples/architecture.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "insert-drawing/references/examples/process-flow.md",
+            content: include_str!("../../../bundled-skills/insert-drawing/references/examples/process-flow.md"),
+            executable: false,
+        },
+        // insert-diagram
+        BundledFile {
+            relative_path: "insert-diagram/SKILL.md",
+            content: include_str!("../../../bundled-skills/insert-diagram/SKILL.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "insert-diagram/references/MERMAID-SYNTAX.md",
+            content: include_str!("../../../bundled-skills/insert-diagram/references/MERMAID-SYNTAX.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "insert-diagram/references/EXAMPLES.md",
+            content: include_str!("../../../bundled-skills/insert-diagram/references/EXAMPLES.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "insert-diagram/scripts/render-mermaid.mjs",
+            content: include_str!("../../../bundled-skills/insert-diagram/scripts/render-mermaid.mjs"),
+            executable: true,
+        },
+        BundledFile {
+            relative_path: "insert-diagram/scripts/package.json",
+            content: include_str!("../../../bundled-skills/insert-diagram/scripts/package.json"),
+            executable: false,
+        },
+        // generate-presentation
+        BundledFile {
+            relative_path: "generate-presentation/SKILL.md",
+            content: include_str!("../../../bundled-skills/generate-presentation/SKILL.md"),
+            executable: false,
+        },
+        BundledFile {
+            relative_path: "generate-presentation/references/TEMPLATES.md",
+            content: include_str!("../../../bundled-skills/generate-presentation/references/TEMPLATES.md"),
+            executable: false,
+        },
     ];
 
     info!("Extracting {} bundled skill files to {}", bundled_files.len(), bundled_dir.display());

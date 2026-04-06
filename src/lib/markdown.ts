@@ -463,6 +463,30 @@ export function convertChartsToHtml(markdown: string): string {
   );
 }
 
+/**
+ * Convert fenced mermaid code blocks to MermaidBlock node HTML elements
+ * before tiptap-markdown parses the content.
+ *
+ * Matches: ```mermaid\n...\n```
+ * Outputs: <div data-mermaid-source="..." data-type="mermaid" class="mermaid-block"></div>
+ *
+ * The source is HTML-escaped and stored as a data attribute.
+ */
+export function convertMermaidToHtml(markdown: string): string {
+  return markdown.replace(
+    /```mermaid\n([\s\S]*?)```/g,
+    (_match, source: string) => {
+      // HTML-escape the source for safe attribute embedding
+      const escaped = source.trimEnd()
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      return `<div data-mermaid-source="${escaped}" data-type="mermaid" class="mermaid-block"></div>`;
+    },
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Image path space encoding
 // ---------------------------------------------------------------------------
@@ -759,7 +783,7 @@ export function getMarkdownFromEditor(editor: Editor): string {
 
 export function setMarkdownInEditor(editor: Editor, markdown: string): void {
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(markdown);
-  const encoded = encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))));
+  const encoded = encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))));
   setContentWithoutHistory(editor, encoded);
 
   if (metadata.size > 0) {
@@ -795,7 +819,7 @@ export function loadRawMarkdownIntoEditor(
 ): void {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(cleaned);
-  const encoded = encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))));
+  const encoded = encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))));
   editor.chain().setMeta("addToHistory", false).setContent(encoded).run();
 
   // Clear undo/redo history — the loaded content is a fresh baseline.
@@ -832,7 +856,7 @@ export function prepareInitialContent(rawMarkdown: string): {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(cleaned);
   return {
-    content: encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))),
+    content: encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))))),
     annotations,
     tableMetadata: metadata,
   };

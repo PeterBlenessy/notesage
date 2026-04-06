@@ -1,0 +1,8 @@
+{
+  "name": "render-mermaid",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@mermaid-js/mermaid-cli": "^11.0.0"
+  }
+}

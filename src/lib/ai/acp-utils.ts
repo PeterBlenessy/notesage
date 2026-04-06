@@ -246,6 +246,22 @@ export function formatToolLabel(kind: string, args?: Record<string, unknown>, ti
       const skill = getArg('skill', 'name') ?? effectiveTitle;
       return skill ? `Loading skill: ${skill}` : 'Loading skill';
     }
+    case 'add_comments': {
+      const comments = args?.comments;
+      const count = Array.isArray(comments) ? comments.length : undefined;
+      return count ? `Adding ${count} comment${count !== 1 ? 's' : ''}` : 'Adding comments';
+    }
+    case 'list_comments':
+      return 'Reading comments';
+    case 'resolve_comments': {
+      const ids = args?.comment_ids;
+      const count = Array.isArray(ids) ? ids.length : undefined;
+      return count ? `Resolving ${count} comment${count !== 1 ? 's' : ''}` : 'Resolving comments';
+    }
+    case 'generate_pptx': {
+      const tmpl = getArg('template');
+      return tmpl ? `Generating presentation (${tmpl})` : 'Generating presentation';
+    }
     default: {
       // Use title if it's more descriptive than the raw kind
       if (effectiveTitle && effectiveTitle.length > 0) return effectiveTitle;

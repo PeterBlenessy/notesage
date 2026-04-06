@@ -9,6 +9,7 @@ import type { Comment } from '@/stores/comment-store';
 import { useActiveProject } from '@/hooks/useActiveProject';
 import { ensureDocumentId } from '@/lib/frontmatter';
 import { updateDocumentIndex } from '@/lib/document-index';
+import { findTextInDoc } from '@/lib/pm-text-search';
 import {
   setCommentDecorations,
   clearCommentDecorations,
@@ -79,8 +80,43 @@ export function useCommentOperations(editor: Editor | null) {
     if (commentKey === lastLoadedKeyRef.current) return;
     lastLoadedKeyRef.current = commentKey;
 
-    loadComments(commentKey, storageRoot);
-  }, [commentKey, storageRoot, editor, loadComments]);
+    loadComments(commentKey, storageRoot).then(() => {
+      // Re-anchor comments with stale positions (e.g., created on non-active files).
+      // Verifies that the text at stored from/to matches anchorText; if not, uses
+      // findTextInDoc to compute correct ProseMirror positions.
+      if (!editor) return;
+      const comments = useCommentStore.getState().commentsByDocument[commentKey] ?? [];
+      let updated = false;
+      const doc = editor.state.doc;
+
+      for (const c of comments) {
+        if (!c.anchorText || c.status === 'resolved') continue;
+        // Check if stored positions are valid and match the anchor text
+        const posValid = c.from >= 0 && c.to > c.from && c.to <= doc.content.size;
+        const textMatches = posValid && doc.textBetween(c.from, c.to, '\n') === c.anchorText;
+        if (textMatches) continue;
+
+        // Positions are stale — re-anchor via text search
+        const range = findTextInDoc(doc, c.anchorText);
+        if (range) {
+          c.from = range.from;
+          c.to = range.to;
+          updated = true;
+        }
+      }
+
+      if (updated) {
+        // Persist corrected positions
+        useCommentStore.getState().updateCommentPositions(
+          commentKey,
+          comments.filter((c) => c.from >= 0 && c.to > c.from).map((c) => ({
+            id: c.id, from: c.from, to: c.to, anchorText: c.anchorText,
+          })),
+        );
+        saveComments(commentKey, storageRoot);
+      }
+    });
+  }, [commentKey, storageRoot, editor, loadComments, saveComments]);
 
   // Sync remapped positions from plugin → store on every document change,
   // and debounce-save to disk so tab switches see current positions.

@@ -47,6 +47,7 @@ import { TableHeaderMenu } from "./TableHeaderMenu";
 import { PageHeaderFooterEditor } from "./PageHeaderFooterEditor";
 import { tauriApi } from "@/lib/tauri";
 import { isBinaryFileType } from "@/lib/file-utils";
+import { setEditorRef } from "@/lib/editor-bridge";
 import { log } from "@/lib/logger";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { setBinaryData } from "@/lib/binary-cache";
@@ -250,6 +251,12 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   useCopilotCompletion(editor);
   useCopilotCompletionCM(cmView);
   useLocalCompletion(editor);
+
+  // Expose editor instance for tool executor access (comment tools, etc.)
+  useEffect(() => {
+    setEditorRef(editor);
+    return () => setEditorRef(null);
+  }, [editor]);
 
   // Listen for header/footer zone click events from the decoration DOM
   useEffect(() => {

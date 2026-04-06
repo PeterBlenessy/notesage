@@ -1,7 +1,8 @@
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Pencil } from "lucide-react";
-import { loadSvgPreview } from "@/lib/drawing-storage";
+import { listen } from "@tauri-apps/api/event";
+import { loadSvgPreview, loadDrawing, saveSvgPreview } from "@/lib/drawing-storage";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { useSettingsStore } from "@/stores/settings-store";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,7 @@ export function DrawingPreview({ node, selected }: NodeViewProps) {
   const [svgContent, setSvgContent] = useState<string | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const { projectPath } = useActiveProject();
 
@@ -23,19 +25,89 @@ export function DrawingPreview({ node, selected }: NodeViewProps) {
       ? window.matchMedia("(prefers-color-scheme: dark)").matches
       : theme === "dark";
 
-  // Load the theme-appropriate SVG variant
+  // Regenerate SVG from .excalidraw JSON and save to disk
+  const regenerateSvg = useCallback(async (id: string, root: string, dark: boolean): Promise<string | null> => {
+    const sceneData = await loadDrawing(id, root);
+    if (!sceneData) return null;
+
+    try {
+      const scene = sceneData as { elements?: unknown[]; appState?: Record<string, unknown>; files?: Record<string, unknown> };
+      const elements = scene.elements ?? [];
+      if (elements.length === 0) return null;
+
+      const { exportToSvg } = await import("@excalidraw/excalidraw");
+
+      const renderSvg = async (darkMode: boolean) => {
+        const svgEl = await exportToSvg({
+          elements: elements as Parameters<typeof exportToSvg>[0]["elements"],
+          appState: {
+            ...(scene.appState ?? {}),
+            exportWithDarkMode: darkMode,
+            exportBackground: false,
+          },
+          files: (scene.files ?? {}) as Parameters<typeof exportToSvg>[0]["files"],
+        });
+        svgEl.removeAttribute("width");
+        svgEl.removeAttribute("height");
+        svgEl.style.width = "100%";
+        svgEl.style.height = "auto";
+        return svgEl.outerHTML;
+      };
+
+      const lightSvg = await renderSvg(false);
+      const darkSvg = await renderSvg(true);
+
+      await saveSvgPreview(id, root, lightSvg);
+      await saveSvgPreview(id + "-dark", root, darkSvg);
+
+      return dark ? darkSvg : lightSvg;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Always render from .excalidraw source (ensures agent edits are reflected).
+  // Falls back to cached SVG only when the .excalidraw file doesn't exist.
   useEffect(() => {
     if (!drawingId || !projectPath) return;
-    const svgId = isDark ? drawingId + "-dark" : drawingId;
-    loadSvgPreview(svgId, projectPath).then((svg) => {
-      // Fall back to the base SVG if the themed variant doesn't exist
-      if (svg) {
-        setSvgContent(svg);
-      } else {
-        loadSvgPreview(drawingId, projectPath).then(setSvgContent);
+    let cancelled = false;
+
+    (async () => {
+      // Try rendering directly from the .excalidraw source (authoritative)
+      const generated = await regenerateSvg(drawingId, projectPath, isDark);
+      if (!cancelled && generated) {
+        setSvgContent(generated);
+        return;
+      }
+
+      // Fallback: load cached SVG (e.g., .excalidraw file was deleted but SVG remains)
+      const svgId = isDark ? drawingId + "-dark" : drawingId;
+      let svg = await loadSvgPreview(svgId, projectPath);
+      if (!svg) svg = await loadSvgPreview(drawingId, projectPath);
+      if (!cancelled && svg) setSvgContent(svg);
+    })();
+
+    return () => { cancelled = true; };
+  }, [drawingId, projectPath, isDark, regenerateSvg, refreshKey]);
+
+  // Listen for .excalidraw file changes and trigger a re-render
+  useEffect(() => {
+    if (!drawingId) return;
+    const needle = drawingId + ".excalidraw";
+
+    const unlisten = listen<Array<{ path: string; kind: string }>>("file-changed-batch", (event) => {
+      const batch = event.payload;
+      if (!batch) return;
+      for (const { path, kind } of batch) {
+        if ((kind === "modify" || kind === "create") && path.includes(needle)) {
+          setRefreshKey((k) => k + 1);
+          break;
+        }
       }
     });
-  }, [drawingId, projectPath, isDark]);
+
+    return () => { unlisten.then((fn) => fn()); };
+  }, [drawingId]);
 
   return (
     <NodeViewWrapper className="drawing-node-view" data-drawing-id={drawingId} contentEditable={false}>

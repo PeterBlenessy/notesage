@@ -228,12 +228,15 @@ describe('skill-store', () => {
 
   describe('BUILT_IN_TOOLS', () => {
     it('contains contains all built-in tools', () => {
-      expect(BUILT_IN_TOOLS).toHaveLength(6);
+      expect(BUILT_IN_TOOLS).toHaveLength(10);
     });
 
     it('has correct tool names', () => {
       const names = BUILT_IN_TOOLS.map((t) => t.name);
-      expect(names).toEqual(['web_search', 'read_skill_content', 'execute_skill_script', 'list_directory', 'read_file', 'write_file']);
+      expect(names).toEqual([
+        'web_search', 'read_skill_content', 'execute_skill_script', 'list_directory', 'read_file', 'write_file',
+        'add_comments', 'list_comments', 'resolve_comments', 'generate_pptx',
+      ]);
     });
 
     it('each tool has name, description, and input_schema', () => {
@@ -245,7 +248,10 @@ describe('skill-store', () => {
         expect(tool.input_schema).toBeDefined();
         expect(tool.input_schema.type).toBe('object');
         expect(tool.input_schema.properties).toBeDefined();
-        expect(Array.isArray(tool.input_schema.required)).toBe(true);
+        // Some tools (list_comments, generate_pptx) have no required fields
+        if (tool.input_schema.required) {
+          expect(Array.isArray(tool.input_schema.required)).toBe(true);
+        }
       }
     });
   });
@@ -253,7 +259,7 @@ describe('skill-store', () => {
   describe('getToolDefinitions', () => {
     it('returns all built-in tools when no filter and no skill tools', () => {
       const tools = useSkillStore.getState().getToolDefinitions();
-      expect(tools).toHaveLength(6);
+      expect(tools).toHaveLength(10);
     });
 
     it('includes skill tools alongside built-in tools', () => {
@@ -262,7 +268,7 @@ describe('skill-store', () => {
       });
 
       const tools = useSkillStore.getState().getToolDefinitions();
-      expect(tools).toHaveLength(7);
+      expect(tools).toHaveLength(11);
       expect(tools.map((t) => t.name)).toContain('skill__download_webpage');
     });
 

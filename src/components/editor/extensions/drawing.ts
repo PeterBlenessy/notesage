@@ -192,6 +192,13 @@ export const Drawing = Node.create({
           const docChanged = transactions.some((tr) => tr.docChanged);
           if (!docChanged) return null;
 
+          // Skip cleanup for full content replacements (tab switches, external reloads)
+          // — these have addToHistory: false and replace the entire document
+          const isContentSwap = transactions.some(
+            (tr) => tr.docChanged && tr.getMeta("addToHistory") === false
+          );
+          if (isContentSwap) return null;
+
           // Collect drawingIds in old and new state
           const oldIds = new Set<string>();
           const newIds = new Set<string>();
