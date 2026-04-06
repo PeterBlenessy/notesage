@@ -34,7 +34,7 @@ const ONBOARDING_PROMPTS = [
 interface ChatMessageListProps {
   onSend: (content: string, attachments?: import('@/lib/ai/types').ImageAttachment[]) => void;
   selectedProjectPaths: string[];
-  onResend?: (message: { parentId?: string | null; content: string }) => void;
+  onResend?: (message: { id?: string; parentId?: string | null; content: string }) => void;
   onEdit?: (message: { parentId?: string | null; content: string }) => void;
   onPrefill?: (text: string) => void;
 }

@@ -230,12 +230,14 @@ export function ChatPanel() {
     await sendChatMessage(expandedContent, messages, sendOpts as Parameters<typeof sendChatMessage>[2]);
   }, [hasAIProvider, setActiveAgent, sendChatMessage, messages, attachedFilePaths, clearEditContext]);
 
-  const handleResend = useCallback((message: { parentId?: string | null; content: string }) => {
+  const handleResend = useCallback((message: { id?: string; parentId?: string | null; content: string }) => {
     if (!hasAIProvider) return;
-    const parentId = message.parentId !== undefined ? message.parentId : null;
-    updateEditContext({ parentId, originalContent: message.content });
+    // Delete the message and all responses after it, then resend the same text
+    if (message.id) {
+      useChatStore.getState().deleteMessageAndDescendants(message.id);
+    }
     handleSend(message.content);
-  }, [hasAIProvider, handleSend, updateEditContext]);
+  }, [hasAIProvider, handleSend]);
 
   const handleEdit = useCallback((message: { parentId?: string | null; content: string }) => {
     const parentId = message.parentId !== undefined ? message.parentId : null;

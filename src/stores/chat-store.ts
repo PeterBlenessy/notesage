@@ -75,6 +75,8 @@ interface ChatStore {
   addMessage: (message: ChatMessage) => void;
   updateMessage: (timestamp: number, content: string, citations?: Citation[]) => void;
   deleteMessage: (timestamp: number) => void;
+  /** Delete a message and all its descendants, reset activeLeafId to the message's parent. */
+  deleteMessageAndDescendants: (messageId: string) => void;
   clearMessages: () => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -297,6 +299,19 @@ export const useChatStore = create<ChatStore>()(
           messages: c.messages.filter((msg) => msg.timestamp !== timestamp),
           updatedAt: Date.now(),
         }))),
+
+      deleteMessageAndDescendants: (messageId) =>
+        set((state) => updateActiveConv(state, (c) => {
+          const msg = c.messages.find((m) => m.id === messageId);
+          if (!msg) return c;
+          const descendantIds = getDescendants(c.messages, messageId);
+          return {
+            ...c,
+            messages: c.messages.filter((m) => !m.id || !descendantIds.has(m.id)),
+            activeLeafId: msg.parentId ?? null,
+            updatedAt: Date.now(),
+          };
+        })),
 
       clearMessages: () => {
         // Delete the active conversation

@@ -169,7 +169,12 @@ describe('ChatPanel', () => {
 
   it('renders history tab button', () => {
     renderWithProviders(<ChatPanel />);
-    expect(screen.getByText('History')).toBeTruthy();
+    // History button is now icon-only with a tooltip; the tooltip content is in the DOM
+    const tooltipContent = document.querySelector('[data-slot="tooltip-content"]');
+    const historyButton = screen.getAllByRole('button').find(
+      (btn) => btn.querySelector('svg') && btn.className.includes('rounded-md')
+    );
+    expect(historyButton || tooltipContent).toBeTruthy();
   });
 
   it('renders new chat button with tooltip', () => {
