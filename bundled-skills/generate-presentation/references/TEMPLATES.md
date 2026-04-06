@@ -1,6 +1,6 @@
 # Presentation Templates
 
-Built-in PowerPoint templates available for `generate_pptx`. Each template applies different typography, colors, and layout conventions.
+PowerPoint templates for Notesage presentations. Three built-in templates are always available. Users can also add custom branded templates.
 
 ---
 
@@ -96,3 +96,16 @@ Built-in PowerPoint templates available for `generate_pptx`. Each template appli
 | "Heavy on text and data" | Report |
 
 When in doubt, ask the user about the audience and formality level. A quick team sync calls for Simple; a board presentation calls for Report.
+
+---
+
+## Custom Templates
+
+Users can add branded `.pptx` or `.potx` template files to:
+
+- **Global:** `~/.notesage/pptx-templates/` — available to all projects
+- **Project:** `<project>/.notesage/pptx-templates/` — project-specific, overrides global with same name
+
+Custom templates can be imported via the Export dialog (Cmd+Shift+E → Add Template button) or by placing files directly in these directories.
+
+When listing template options for the user, check both directories and include any custom templates alongside the built-in options. Custom templates often reflect company branding — always offer them first if they exist.
