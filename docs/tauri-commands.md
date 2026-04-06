@@ -451,7 +451,7 @@ pub async fn ai_chat(
 
 ### ai_chat_stream
 
-Streaming multi-turn chat with an AI provider. Emits events: `ai-stream-chunk` (text delta), `ai-stream-thinking-chunk` (thinking/reasoning delta), `ai-stream-done` (completion), `ai-tool-call` (tool call request), `ai-tool-use` (tool status), `ai-citation` (web search citations).
+Streaming multi-turn chat with an AI provider. Emits events: `ai-stream-chunk` (text delta), `ai-stream-thinking-chunk` (thinking/reasoning delta), `ai-stream-image` (image content block), `ai-stream-done` (completion), `ai-tool-call` (tool call request), `ai-tool-use` (tool status), `ai-citation` (web search citations).
 
 ```rust
 #[tauri::command]
@@ -485,6 +485,7 @@ pub async fn ai_chat_stream(
 
 - `ai-stream-chunk` (String): Text delta to append
 - `ai-stream-thinking-chunk` (String): Thinking/reasoning delta (for Ollama thinking models). Emitted when the model produces reasoning traces — either via native `message.thinking` field (`think: true`) or via tag-based parsing (`<think>...</think>` and similar tags detected from the model template at runtime)
+- `ai-stream-image` ({ data: string, mimeType: string }): Image content block (Anthropic image blocks, OpenAI image output items)
 - `ai-stream-done` (()): Stream completed
 - `ai-tool-call` ({ id: string, name: string, arguments: object }): Model requests a tool call — frontend handles execution and continuation
 - `ai-tool-use` ({ tool: string, status: string }): Tool usage (e.g., web_search started)

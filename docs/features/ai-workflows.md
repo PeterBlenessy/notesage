@@ -185,6 +185,7 @@ Assistant messages render as an ordered stream of typed segments, matching the U
 | `ThinkingSegment` | `content`, `collapsed` | Muted italic text, collapsible. Auto-expanded while streaming, auto-collapsed on turn complete. |
 | `ToolCallSegment` | `kind`, `label`, `detail`, `status` | Compact inline: icon + descriptive label (e.g. "Reading config.ts") + status indicator. Hover shows full arguments. |
 | `ToolResultSegment` | `result`, `error`, `collapsed` | Collapsible monospace output, collapsed by default. Error state in red. |
+| `ImageSegment` | `data`, `mimeType`, `alt` | Base64 image rendered inline with click-to-preview overlay (centered, backdrop blur, Escape to close). |
 
 **Descriptive tool labels:** `formatToolLabel(kind, args)` in `src/lib/ai/acp-utils.ts` extracts the most informative argument for each tool kind — file basenames for read/write, truncated commands for bash, quoted queries for search, hostnames for fetch. Falls back to generic labels when arguments are unavailable.
 
@@ -207,7 +208,7 @@ Assistant messages render as an ordered stream of typed segments, matching the U
 | `src/lib/segmentOps.ts` | Pure segment utilities (append, push, update, finalize, reset) |
 | `src/hooks/useDirectApiChat.ts` | Segment dual-write (direct API streaming) |
 | `src/hooks/useAcpSessionListeners.ts` | Segment dual-write (ACP streaming) |
-| `src/components/chat/segments/` | `TextSegmentView`, `ThinkingSegmentView`, `ToolCallSegmentView`, `ToolResultSegmentView` |
+| `src/components/chat/segments/` | `TextSegmentView`, `ThinkingSegmentView`, `ToolCallSegmentView`, `ToolResultSegmentView`, `ImageSegmentView` |
 | `src/components/chat/ChatMessage.tsx` | `SegmentRenderer` — renders segments or falls back to legacy |
 
 ## Key Files

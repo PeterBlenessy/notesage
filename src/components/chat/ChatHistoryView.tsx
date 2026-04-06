@@ -49,6 +49,9 @@ function formatMessagesAsMarkdown(messages: ChatMessage[]): string[] {
               lines.push(`> > ${truncated.replace(/\n/g, '\n> > ')}`, '');
             }
             break;
+          case 'image':
+            lines.push(`![${seg.alt || 'image'}](data:${seg.mimeType};base64,${seg.data})`, '');
+            break;
         }
       }
     } else {

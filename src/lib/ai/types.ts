@@ -69,7 +69,7 @@ export type SystemStatusType = 'reconnecting' | 'reconnected' | 'failed';
 // ---------------------------------------------------------------------------
 
 interface MessageSegmentBase {
-  type: 'text' | 'thinking' | 'tool_call' | 'tool_result';
+  type: 'text' | 'thinking' | 'tool_call' | 'tool_result' | 'image';
   timestamp: number;
 }
 
@@ -100,7 +100,14 @@ export interface ToolResultSegment extends MessageSegmentBase {
   collapsed: boolean;
 }
 
-export type Segment = TextSegment | ThinkingSegment | ToolCallSegment | ToolResultSegment;
+export interface ImageSegment extends MessageSegmentBase {
+  type: 'image';
+  data: string;       // base64-encoded image data
+  mimeType: string;   // e.g. "image/png", "image/jpeg"
+  alt?: string;       // optional alt text / description
+}
+
+export type Segment = TextSegment | ThinkingSegment | ToolCallSegment | ToolResultSegment | ImageSegment;
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'tool' | 'system-status';

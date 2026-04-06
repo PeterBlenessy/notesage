@@ -87,6 +87,17 @@ describe('pushSegment', () => {
     pushSegment(msg, seg);
     expect(msg.segments).toHaveLength(0);
   });
+
+  it('pushes an image segment', () => {
+    const msg = makeMsg({
+      segments: [{ type: 'text', content: 'Look:', timestamp: 1000 }],
+    });
+    const imgSeg: Segment = { type: 'image', data: 'abc', mimeType: 'image/png', timestamp: 1001 };
+    const result = pushSegment(msg, imgSeg);
+    expect(result.segments).toHaveLength(2);
+    expect(result.segments![1].type).toBe('image');
+    expect((result.segments![1] as { data: string }).data).toBe('abc');
+  });
 });
 
 describe('updateSegment', () => {
@@ -163,6 +174,19 @@ describe('finalizeSegments', () => {
     const result = finalizeSegments(msg);
     expect((result.segments![0] as { content: string }).content).toBe('hello');
     expect((result.segments![1] as { collapsed: boolean }).collapsed).toBe(true);
+  });
+
+  it('preserves image segments unchanged', () => {
+    const msg = makeMsg({
+      segments: [
+        { type: 'image', data: 'abc123', mimeType: 'image/png', timestamp: 1000 },
+        { type: 'tool_call', kind: 'bash', label: 'Run', status: 'running', timestamp: 1001 },
+      ],
+    });
+    const result = finalizeSegments(msg);
+    expect(result.segments![0].type).toBe('image');
+    expect((result.segments![0] as { data: string }).data).toBe('abc123');
+    expect((result.segments![1] as { status: string }).status).toBe('done');
   });
 });
 

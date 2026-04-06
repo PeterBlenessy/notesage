@@ -228,6 +228,20 @@ pub async fn anthropic_chat_stream(
                                         }))
                                         .map_err(|e| format!("Failed to emit tool event: {}", e))?;
                                 }
+                                "image" => {
+                                    // Anthropic image content block — extract base64 data and media type
+                                    let source = &block["source"];
+                                    let data = source["data"].as_str().unwrap_or("");
+                                    let media_type = source["media_type"].as_str().unwrap_or("image/png");
+                                    if !data.is_empty() {
+                                        window
+                                            .emit("ai-stream-image", serde_json::json!({
+                                                "data": data,
+                                                "mimeType": media_type
+                                            }))
+                                            .map_err(|e| format!("Failed to emit image event: {}", e))?;
+                                    }
+                                }
                                 "web_search_tool_result" => {
                                     // Extract citations from search results
                                     if let Some(content) = block["content"].as_array() {
@@ -507,7 +521,7 @@ pub async fn openai_chat_stream(
                         }
 
                         "response.output_item.added" => {
-                            // A new output item was added — check if it's a function_call
+                            // A new output item was added — check if it's a function_call or image
                             let item = &json["item"];
                             if item["type"].as_str() == Some("function_call") {
                                 let call_id = item["call_id"].as_str().unwrap_or("").to_string();
@@ -518,6 +532,22 @@ pub async fn openai_chat_stream(
                                     arguments: String::new(),
                                 });
                                 has_tool_calls = true;
+                            } else if item["type"].as_str() == Some("image") {
+                                // OpenAI image output — may contain base64 data or URL
+                                let data = item["image_data"].as_str()
+                                    .or_else(|| item["data"].as_str())
+                                    .unwrap_or("");
+                                let mime_type = item["content_type"].as_str()
+                                    .or_else(|| item["media_type"].as_str())
+                                    .unwrap_or("image/png");
+                                if !data.is_empty() {
+                                    window
+                                        .emit("ai-stream-image", serde_json::json!({
+                                            "data": data,
+                                            "mimeType": mime_type
+                                        }))
+                                        .map_err(|e| format!("Failed to emit image event: {}", e))?;
+                                }
                             }
                         }
 

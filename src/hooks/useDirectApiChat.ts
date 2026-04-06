@@ -367,6 +367,7 @@ export function useDirectApiChat({
         const [
           unlistenChunk,
           unlistenThinking,
+          unlistenImage,
           unlistenTool,
           unlistenCitation,
           unlistenToolCall,
@@ -404,6 +405,15 @@ export function useDirectApiChat({
                 content: thinkingSegmentContent,
               });
             }
+          }),
+          listen<{ data: string; mimeType: string }>('ai-stream-image', (event) => {
+            if (cancelled) return;
+            pushSegment(assistantMessageId, {
+              type: 'image',
+              data: event.payload.data,
+              mimeType: event.payload.mimeType,
+              timestamp: Date.now(),
+            });
           }),
           listen<{ tool: string; status: string }>('ai-tool-use', (event) => {
             if (cancelled) return;
@@ -453,6 +463,7 @@ export function useDirectApiChat({
           clearInterval(flushInterval);
           unlistenChunk();
           unlistenThinking();
+          unlistenImage();
           unlistenTool();
           unlistenCitation();
           unlistenToolCall();

@@ -30,7 +30,7 @@ export interface AcpSessionResult {
 
 export interface AcpSessionUpdate {
   sessionUpdate: string;
-  content?: { type: string; text?: string };
+  content?: { type: string; text?: string; data?: string; mimeType?: string };
   kind?: string;
   title?: string;
   rawInput?: string;

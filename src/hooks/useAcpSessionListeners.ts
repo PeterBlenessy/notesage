@@ -80,6 +80,17 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       streamedContent += update.content.text;
       deps.updateMessage(deps.assistantMessageId, streamedContent);
       deps.appendTextSegment(deps.assistantMessageId, update.content.text);
+    } else if (
+      update.sessionUpdate === 'agent_message_chunk' &&
+      update.content?.type === 'image' &&
+      update.content.data
+    ) {
+      deps.pushSegment(deps.assistantMessageId, {
+        type: 'image',
+        data: update.content.data,
+        mimeType: update.content.mimeType || 'image/png',
+        timestamp: Date.now(),
+      });
     } else if (update.sessionUpdate === 'tool_call') {
       const toolLabel = formatAcpToolName(update.kind, update.title);
       deps.setActiveTool(toolLabel);
