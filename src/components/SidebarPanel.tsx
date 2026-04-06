@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Settings, PanelLeft, GripVerticalIcon } from "lucide-react";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -10,6 +11,8 @@ const MIN_WIDTH = 200;
 const MAX_WIDTH = 400;
 const HOVER_DELAY = 150;
 const LEAVE_DELAY = 300;
+
+type SidebarSectionId = "notes" | "projects" | "folders";
 
 interface SidebarPanelProps {
   onOpenSettings: () => void;
@@ -51,17 +54,48 @@ export function SidebarPanel({
     clearTimeout(leaveTimerRef.current);
   }, [sidebarPinned]);
 
-  // Hover to expand when collapsed
-  const handleMouseEnter = useCallback(() => {
+  // Expand a specific section and collapse the others
+  const focusSection = useCallback((section: SidebarSectionId) => {
+    const ws = useWorkspaceStore.getState();
+    ws.setNotesCollapsed(section !== "notes");
+    ws.setProjectsCollapsed(section !== "projects");
+    ws.setExplorerCollapsed(section !== "folders");
+  }, []);
+
+  // Called when a section rail icon is hovered — expand sidebar showing that section
+  const handleSectionIconHover = useCallback((section: SidebarSectionId) => {
     if (sidebarPinned) return;
     clearTimeout(leaveTimerRef.current);
     if (!overlayVisible) {
       clearTimeout(hoverTimerRef.current);
       hoverTimerRef.current = setTimeout(() => {
+        focusSection(section);
         setOverlayVisible(true);
       }, HOVER_DELAY);
+    } else {
+      // Already open — just switch section
+      focusSection(section);
     }
-  }, [sidebarPinned, overlayVisible]);
+  }, [sidebarPinned, overlayVisible, focusSection]);
+
+  // Called when a section rail icon is clicked — expand sidebar + section, or toggle if already open
+  const handleSectionIconClick = useCallback((section: SidebarSectionId) => {
+    if (!expanded) {
+      focusSection(section);
+      if (sidebarPinned) {
+        // Pinned but collapsed via Cmd+Shift+L — re-pin
+        setSidebarPinned(true);
+      } else {
+        setOverlayVisible(true);
+      }
+    } else {
+      // Sidebar is already expanded — toggle the clicked section
+      const ws = useWorkspaceStore.getState();
+      if (section === "notes") ws.setNotesCollapsed(!ws.notesCollapsed);
+      else if (section === "projects") ws.setProjectsCollapsed(!ws.projectsCollapsed);
+      else if (section === "folders") ws.setExplorerCollapsed(!ws.explorerCollapsed);
+    }
+  }, [expanded, sidebarPinned, setSidebarPinned, focusSection]);
 
   const scheduleCollapse = useCallback(() => {
     clearTimeout(leaveTimerRef.current);
@@ -84,6 +118,12 @@ export function SidebarPanel({
     clearTimeout(hoverTimerRef.current);
     scheduleCollapse();
   }, [sidebarPinned, isResizing, scheduleCollapse]);
+
+  // Keep overlay alive while mouse is inside the expanded drawer
+  const handleDrawerMouseEnter = useCallback(() => {
+    if (sidebarPinned) return;
+    clearTimeout(leaveTimerRef.current);
+  }, [sidebarPinned]);
 
   const dismissOverlay = useCallback(() => {
     clearTimeout(hoverTimerRef.current);
@@ -191,7 +231,7 @@ export function SidebarPanel({
             !sidebarPinned && overlayVisible && "shadow-xl"
           )}
           style={panelStyle}
-          onMouseEnter={handleMouseEnter}
+          onMouseEnter={handleDrawerMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
           {/* Traffic-light spacer row */}
@@ -201,10 +241,15 @@ export function SidebarPanel({
           <div className="flex-1 flex flex-col min-h-0 border-r border-border">
             {/* Sidebar sections */}
             <div className="flex-1 min-h-0 overflow-hidden">
-              <Sidebar panelCollapsed={!expanded} {...sidebarProps} />
+              <Sidebar
+                panelCollapsed={!expanded}
+                onSectionIconHover={handleSectionIconHover}
+                onSectionIconClick={handleSectionIconClick}
+                {...sidebarProps}
+              />
             </div>
 
-            {/* Bottom: Settings */}
+            {/* Bottom: Settings — does NOT trigger sidebar expansion */}
             <button
               className="shrink-0 flex items-center h-10 w-full text-left hover:bg-accent transition-colors duration-150"
               onClick={onOpenSettings}

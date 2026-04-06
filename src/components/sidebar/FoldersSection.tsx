@@ -14,6 +14,8 @@ interface FoldersSectionProps {
   onMakeProject?: (path: string) => void;
   onExportFile?: (filePath: string, fileName: string, format?: 'pdf' | 'docx' | 'pptx' | 'html') => void;
   panelCollapsed?: boolean;
+  onIconHover?: () => void;
+  onIconClick?: () => void;
 }
 
 export const FoldersSection = React.memo(function FoldersSection({
@@ -22,6 +24,8 @@ export const FoldersSection = React.memo(function FoldersSection({
   onMakeProject,
   onExportFile,
   panelCollapsed,
+  onIconHover,
+  onIconClick,
 }: FoldersSectionProps) {
   const [isLoading, setIsLoading] = useState(false);
   const explorerFolders = useWorkspaceStore((s) => s.explorerFolders);
@@ -51,18 +55,20 @@ export const FoldersSection = React.memo(function FoldersSection({
       open={!explorerCollapsed}
       onOpenChange={(open) => setExplorerCollapsed(!open)}
       panelCollapsed={panelCollapsed}
+      onIconHover={onIconHover}
+      onIconClick={onIconClick}
       actions={
         <Button
           variant="ghost"
-          size="icon-xs"
+          size="icon-sm"
           onClick={handleOpenFolder}
           disabled={isLoading}
           title="Open Folder"
         >
           {isLoading ? (
-            <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.5} />
+            <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
           ) : (
-            <FolderOpen className="h-3 w-3" strokeWidth={1.5} />
+            <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.5} />
           )}
         </Button>
       }

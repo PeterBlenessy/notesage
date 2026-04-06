@@ -1,5 +1,5 @@
 import React, { useCallback } from "react";
-import { FolderKanban, FolderOpen, FolderPlus } from "lucide-react";
+import { FolderKanban, FolderOpen, Plus } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,8 @@ interface ProjectsSectionProps {
   onOpenProjectSettings?: (projectPath: string) => void;
   onExportFile?: (filePath: string, fileName: string, format?: 'pdf' | 'docx' | 'pptx' | 'html') => void;
   panelCollapsed?: boolean;
+  onIconHover?: () => void;
+  onIconClick?: () => void;
 }
 
 export const ProjectsSection = React.memo(function ProjectsSection({
@@ -24,6 +26,8 @@ export const ProjectsSection = React.memo(function ProjectsSection({
   onOpenProjectSettings,
   onExportFile,
   panelCollapsed,
+  onIconHover,
+  onIconClick,
 }: ProjectsSectionProps) {
   const projects = useWorkspaceStore((s) => s.projects);
   const removeProject = useWorkspaceStore((s) => s.removeProject);
@@ -46,26 +50,28 @@ export const ProjectsSection = React.memo(function ProjectsSection({
       open={!projectsCollapsed}
       onOpenChange={(open) => setProjectsCollapsed(!open)}
       panelCollapsed={panelCollapsed}
+      onIconHover={onIconHover}
+      onIconClick={onIconClick}
       actions={
         <>
           {onOpenExistingProject && (
             <Button
               variant="ghost"
-              size="icon-xs"
+              size="icon-sm"
               onClick={onOpenExistingProject}
               title="Open Project"
             >
-              <FolderOpen className="h-3 w-3" strokeWidth={1.5} />
+              <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.5} />
             </Button>
           )}
           {onNewProject && (
             <Button
               variant="ghost"
-              size="icon-xs"
+              size="icon-sm"
               onClick={onNewProject}
               title="New Project (Cmd+Shift+N)"
             >
-              <FolderPlus className="h-3 w-3" strokeWidth={1.5} />
+              <Plus className="h-3.5 w-3.5" strokeWidth={2} />
             </Button>
           )}
         </>

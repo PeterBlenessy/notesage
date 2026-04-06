@@ -13,9 +13,13 @@ interface SidebarProps {
   onMakeProject?: (path: string) => void;
   onExportFile?: (filePath: string, fileName: string, format?: 'pdf' | 'docx' | 'pptx' | 'html') => void;
   panelCollapsed?: boolean;
+  /** Called when a section rail icon is hovered. */
+  onSectionIconHover?: (section: "notes" | "projects" | "folders") => void;
+  /** Called when a section rail icon is clicked. */
+  onSectionIconClick?: (section: "notes" | "projects" | "folders") => void;
 }
 
-export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpenProjectSettings, onMakeProject, onExportFile, panelCollapsed }: SidebarProps) {
+export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpenProjectSettings, onMakeProject, onExportFile, panelCollapsed, onSectionIconHover, onSectionIconClick }: SidebarProps) {
   const { openFile } = useFileOperations();
 
   const handleFileClick = useCallback(
@@ -37,6 +41,8 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
           onNewNote={onNewNote}
           onExportFile={onExportFile}
           panelCollapsed={panelCollapsed}
+          onIconHover={() => onSectionIconHover?.("notes")}
+          onIconClick={() => onSectionIconClick?.("notes")}
         />
 
         <ProjectsSection
@@ -47,6 +53,8 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
           onOpenProjectSettings={onOpenProjectSettings}
           onExportFile={onExportFile}
           panelCollapsed={panelCollapsed}
+          onIconHover={() => onSectionIconHover?.("projects")}
+          onIconClick={() => onSectionIconClick?.("projects")}
         />
 
         <FoldersSection
@@ -55,6 +63,8 @@ export function Sidebar({ onNewNote, onNewProject, onOpenExistingProject, onOpen
           onMakeProject={onMakeProject}
           onExportFile={onExportFile}
           panelCollapsed={panelCollapsed}
+          onIconHover={() => onSectionIconHover?.("folders")}
+          onIconClick={() => onSectionIconClick?.("folders")}
         />
       </div>
     </div>
