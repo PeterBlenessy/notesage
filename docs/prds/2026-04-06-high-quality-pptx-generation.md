@@ -19,14 +19,14 @@ Specific issues:
 
 3. **No visual design.** No background colors, no accent lines, no shapes, no visual hierarchy beyond font size. The output would not be accepted in any professional context.
 
-4. **Agent-generated content isn't optimized for the exporter.** The `generate-presentation` skill teaches agents to structure markdown for slides, but the exporter doesn't use the mechanical rules (H1 = title, `---` = break, `> [!notes]` = speaker notes) reliably enough to produce good results.
+4. **Agent-generated content isn't optimized for the exporter.** The `generate-presentation` skill teaches agents to structure markdown for slides, but the exporter doesn't use the mechanical rules reliably enough to produce good results.
 
 ## Goals
 
 - **G1:** User-provided `.pptx`/`.potx` templates are read and respected — slide masters, layouts, color themes, fonts, and backgrounds are applied to generated slides.
 - **G2:** Built-in templates produce visually polished output comparable to Keynote/Google Slides/PowerPoint defaults — with proper backgrounds, color schemes, typography, and layout variety.
-- **G3:** The agent-generated markdown maps cleanly to slide layouts — the exporter correctly handles H1 titles, H2 subtitles, bullet lists, tables, images, speaker notes, and slide breaks.
-- **G4:** The `generate-presentation` skill includes mechanical formatting rules so agents produce markdown that the exporter handles optimally.
+- **G3:** The agent-generated markdown maps cleanly to slide layouts — the script correctly handles H1 titles, H2 subtitles, bullet lists, tables, images, speaker notes, and slide breaks.
+- **G4:** The `generate-presentation` skill includes mechanical formatting rules so agents produce markdown that the script handles optimally.
 
 ## Non-Goals
 
@@ -38,103 +38,132 @@ Specific issues:
 
 ## Technical Approach
 
-### Option A: Improve ppt-rs Integration (Recommended)
+### Option A: python-pptx Script Skill (Recommended)
 
-`ppt-rs` v0.2.8 already supports reading and modifying existing PPTX files, 100+ shape types, charts, SmartArt, gradient fills, and built-in templates. The current `markdown_to_pptx.rs` implementation only uses a fraction of these capabilities.
+Add a `scripts/generate.py` to the `generate-presentation` skill that uses `python-pptx` to generate slides. The agent writes a presentation-structured markdown file, then calls `execute_skill_script` to run the Python script with the markdown file and template path as arguments.
 
-**What needs to change:**
+**Why python-pptx:**
 
-1. **Template reading:** When a user-provided `.pptx` template is selected, open it with `ppt-rs`, enumerate its slide layouts (Title, Title and Content, Section Header, Two Content, Blank, etc.), and use the appropriate layout for each generated slide based on content type.
+- 10+ years of maturity, deep OOXML compliance
+- Reads any `.pptx` template and clones slide layouts — branded templates just work
+- Theme-aware: inherits colors, fonts, backgrounds from the template
+- Large community with well-documented patterns for every slide type
+- MIT license
+- Python ships with macOS, widely available
 
-2. **Layout selection logic:**
-   - Title slide (first H1 or document title) → "Title Slide" layout
-   - Section headers (H1 after content) → "Section Header" layout
-   - Content with title → "Title and Content" layout
-   - Two-column content → "Two Content" layout
-   - Full-bleed image → "Blank" layout with positioned image
-   - Default fallback → "Title and Content"
+**Architecture:**
 
-3. **Theme application:** Read the template's theme (colors, fonts) and apply them to generated content. Text should use the theme's body font, headings should use the heading font, accent colors should come from the theme palette.
+```
+Agent → structures markdown → writes presentation.md
+Agent → calls execute_skill_script("generate-presentation", "scripts/generate.py", [
+  "<input.md>",
+  "<output.pptx>",
+  "--template", "<template.pptx>"   // optional
+])
+Script → reads markdown, parses into slide model
+Script → opens template (or creates from scratch with built-in defaults)
+Script → maps content to slide layouts from the template
+Script → writes .pptx
+```
 
-4. **Built-in template improvements:** The three built-in templates (Simple, Business, Report) should define proper slide masters with:
-   - Background fills (not just white)
-   - Title formatting with accent colors
-   - Footer/page number styling
-   - Consistent typography scale
+**Script responsibilities:**
 
-5. **Content mapping improvements:**
-   - Tables → native PPTX tables with theme-colored headers
-   - Code blocks → monospace text box with background fill
-   - Images → properly sized and centered, respecting aspect ratio
-   - Charts → native PPTX charts (already partially supported by ppt-rs)
-   - Callout blocks → styled text boxes with accent background
+1. **Parse markdown into a slide model:**
+   - H1 → new slide (title)
+   - H2 → subtitle on same slide
+   - `---` → explicit slide break
+   - Bullet/numbered lists → content placeholders
+   - Tables → native PPTX tables
+   - Images → embedded images
+   - `> [!notes]` → speaker notes pane
+   - Code blocks → monospace text box with background
 
-### Option B: python-pptx Script Skill (Alternative)
+2. **Template handling:**
+   - If template provided: open it, enumerate slide layouts by name
+   - Map content types to layouts: "Title Slide", "Title and Content", "Section Header", "Two Content", "Blank"
+   - Fall back gracefully if a layout name doesn't exist
+   - If no template: create with sensible defaults (not plain white)
 
-Add a `scripts/generate.py` to the `generate-presentation` skill that uses `python-pptx` to generate slides. The agent writes the markdown, calls `execute_skill_script` to run the Python script with the markdown file and template path as arguments.
+3. **Built-in defaults (no template):**
+   - Three built-in styles matching our current Simple/Business/Report names
+   - Each with proper background, accent colors, font hierarchy
+   - Passed via `--style simple|business|report` flag
 
-**Advantages:**
-- `python-pptx` has 10+ years of maturity and deep OOXML compliance
-- Can read any `.pptx` template and clone slide layouts
-- Large community with well-documented patterns
-- Agent can iterate on the output by re-running the script
+4. **Content quality:**
+   - Tables with themed header row
+   - Code blocks with light grey background, monospace font
+   - Images properly sized (max 80% slide width, centered)
+   - Bullet indentation matching template's placeholder formatting
+   - Speaker notes in the notes pane
 
-**Disadvantages:**
-- Requires Python installed (available on most macOS, but not guaranteed)
-- Adds runtime dependency outside the Rust binary
-- Two PPTX generation paths (Rust built-in + Python skill) to maintain
-- `execute_skill_script` permission required for each run
+**Skill directory structure:**
 
-### Option C: Hybrid — Improved Built-in + python-pptx Fallback
+```
+bundled-skills/generate-presentation/
+├── SKILL.md                    # Agent instructions (already exists)
+├── references/
+│   └── TEMPLATES.md            # Template descriptions (already exists)
+└── scripts/
+    ├── generate.py             # Main generation script
+    └── requirements.txt        # python-pptx dependency
+```
 
-Use the improved ppt-rs exporter (Option A) for the built-in export dialog (Cmd+Shift+E), and offer the python-pptx script skill as a higher-quality option for agent-driven generation when Python is available.
+**Installation:** The script checks for `python-pptx` on first run and installs via `pip install python-pptx` if missing (into user site-packages). Or agent runs `pip install python-pptx` first.
+
+### Option B: Improve ppt-rs Built-in Exporter (Future)
+
+Keep the existing Rust-based exporter for the Cmd+Shift+E quick export flow, but improve it separately:
+
+- Read template slide layouts
+- Apply theme colors and fonts
+- Better built-in template designs
+
+This is higher effort (deep Rust/OOXML work) and can be done later. The python-pptx skill provides the high-quality path immediately.
 
 ## Recommendation
 
-**Start with Option A** — improve the built-in ppt-rs exporter. This benefits all users (not just those with Python) and improves the existing export flow. The key work is in `markdown_to_pptx.rs`: reading template slide layouts, applying themes, and selecting appropriate layouts per slide.
-
-If the ppt-rs capabilities prove insufficient for reading complex branded templates, pivot to Option C and add the python-pptx script as a complement.
+**Implement Option A now.** The python-pptx script skill gives us high-quality, template-aware PPTX generation with minimal implementation effort. The built-in exporter continues to work as a quick-and-dirty option via Cmd+Shift+E. Option B can improve the built-in exporter later.
 
 ## Quality Gates
 
 ### Functional
 
-- [ ] Built-in "Business" template produces slides with background color, accent line, and slide numbers
-- [ ] Built-in "Report" template produces a dark title slide with white text
-- [ ] User-provided `.pptx` template's slide masters are used for generated slides
-- [ ] User-provided template's theme colors and fonts are applied to text
-- [ ] H1 headings create proper title slides (using "Title Slide" layout from template)
-- [ ] H1 headings after content create section header slides
-- [ ] Bullet lists render with proper indentation and bullet styling from template
+- [ ] Script generates slides from markdown with proper title/content separation
+- [ ] User-provided `.pptx` template's slide masters and layouts are used
+- [ ] User-provided template's theme colors and fonts are applied
+- [ ] H1 headings create proper title slides (using template's "Title Slide" layout)
+- [ ] Section breaks (`---`) create new slides
+- [ ] Bullet lists render with proper indentation and styling from template
 - [ ] Tables render as native PPTX tables with header row styling
 - [ ] Images are properly sized and positioned
 - [ ] Speaker notes (`> [!notes]`) appear in the notes pane
-- [ ] `---` horizontal rules create slide breaks
 - [ ] Code blocks render in monospace with background fill
+- [ ] Works without a template (sensible built-in defaults)
+- [ ] Three built-in styles (simple, business, report) produce visually distinct results
 
 ### Design
 
 - [ ] Generated slides look professional — comparable to a human-made deck
-- [ ] Built-in templates are visually distinct from each other
+- [ ] Built-in styles are visually distinct from each other
 - [ ] User-provided branded templates are recognizable in the output
 - [ ] Text hierarchy is clear (title > subtitle > body > notes)
 
 ### Agent Integration
 
-- [ ] `generate-presentation` skill includes mechanical formatting rules for the exporter
+- [ ] `generate-presentation` skill documents the `execute_skill_script` call for the Python script
 - [ ] Agent-structured markdown produces well-formatted slides
-- [ ] Agent can iterate on content after seeing export results
+- [ ] Agent can iterate by re-running the script after adjustments
+- [ ] Skill works with Claude Code, Codex, Copilot, and Gemini CLI ACP agents
 
 ## Dependencies
 
-- `ppt-rs` v0.2.8+ (already in `Cargo.toml`)
-- No new runtime dependencies for Option A
+- `python-pptx` (MIT license, pip install)
+- Python 3 (ships with macOS, widely available)
 
 ## References
 
-- `ppt-rs` docs: https://docs.rs/ppt-rs
-- `ppt-rs` repo: https://github.com/yingkitw/ppt-rs
+- python-pptx docs: https://python-pptx.readthedocs.io
+- python-pptx repo: https://github.com/scanny/python-pptx
 - Current exporter: `src-tauri/src/export/markdown_to_pptx.rs`
-- Current templates: `src-tauri/src/export/templates.rs`
-- Anthropic PPTX skill (reference only, proprietary license): https://github.com/anthropics/skills/tree/main/skills/pptx
-- python-pptx (MIT, for Option B/C): https://python-pptx.readthedocs.io
+- Current skill: `bundled-skills/generate-presentation/`
+- Anthropic PPTX skill (reference patterns only, proprietary license): https://github.com/anthropics/skills/tree/main/skills/pptx
