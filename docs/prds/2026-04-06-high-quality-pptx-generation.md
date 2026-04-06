@@ -15,155 +15,215 @@ Specific issues:
 
 1. **Templates are ignored.** User-provided branded `.pptx` templates with custom slide masters, color schemes, fonts, and layouts are not read or applied. All output looks identical regardless of template selection.
 
-2. **No slide layout variety.** Every slide uses the same text-on-white layout. Real presentations use title slides, section headers, two-column layouts, image-with-caption layouts, blank layouts with positioned shapes, etc.
+2. **No slide layout variety.** Every slide uses the same text-on-white layout. Real presentations use title slides, section headers, two-column layouts, image-with-caption layouts, etc.
 
 3. **No visual design.** No background colors, no accent lines, no shapes, no visual hierarchy beyond font size. The output would not be accepted in any professional context.
 
-4. **Agent-generated content isn't optimized for the exporter.** The `generate-presentation` skill teaches agents to structure markdown for slides, but the exporter doesn't use the mechanical rules reliably enough to produce good results.
+4. **The built-in exporter (Cmd+Shift+E) is a quick-and-dirty path.** It stays as-is for now. This PRD focuses on the agent-driven high-quality path.
 
 ## Goals
 
-- **G1:** User-provided `.pptx`/`.potx` templates are read and respected — slide masters, layouts, color themes, fonts, and backgrounds are applied to generated slides.
-- **G2:** Built-in templates produce visually polished output comparable to Keynote/Google Slides/PowerPoint defaults — with proper backgrounds, color schemes, typography, and layout variety.
-- **G3:** The agent-generated markdown maps cleanly to slide layouts — the script correctly handles H1 titles, H2 subtitles, bullet lists, tables, images, speaker notes, and slide breaks.
-- **G4:** The `generate-presentation` skill includes mechanical formatting rules so agents produce markdown that the script handles optimally.
+- **G1:** A PptxGenJS-based script skill produces visually polished slides with proper backgrounds, color schemes, typography, and layout variety.
+- **G2:** User-provided `.pptx`/`.potx` templates are read and their theme (colors, fonts, backgrounds) is extracted and applied to the generated slides.
+- **G3:** The agent distills source material (documents, transcripts, notes, folders) into a well-structured presentation, then generates the PPTX via the script.
+- **G4:** The workflow is fully agent-driven — works with all ACP agents (Claude Code, Codex, Copilot, Gemini CLI) and direct API connections.
 
 ## Non-Goals
 
-- **Real-time preview** of slides in the editor (future feature)
-- **Slide animations and transitions** (basic support acceptable, not a priority)
-- **Keynote or Google Slides export** — PowerPoint only
-- **PPTX template creation** — users provide templates, we don't design them
-- **Replacing PowerPoint** — the output should be a solid starting point that users refine in PowerPoint
+- **Improving the built-in Rust exporter** — separate future work (Option B in earlier drafts)
+- **Real-time slide preview** in the editor
+- **Slide animations and transitions**
+- **Keynote or Google Slides export**
+- **Replacing PowerPoint** — the output is a solid starting point for refinement
 
 ## Technical Approach
 
-### Option A: python-pptx Script Skill (Recommended)
+### PptxGenJS Script Skill
 
-Add a `scripts/generate.py` to the `generate-presentation` skill that uses `python-pptx` to generate slides. The agent writes a presentation-structured markdown file, then calls `execute_skill_script` to run the Python script with the markdown file and template path as arguments.
+The `generate-presentation` skill gets a `scripts/generate.mjs` Node.js script that uses PptxGenJS to produce high-quality slides. The agent writes a presentation-structured markdown file, then calls `execute_skill_script` to generate the PPTX.
 
-**Why python-pptx:**
+**Why PptxGenJS:**
 
-- 10+ years of maturity, deep OOXML compliance
-- Reads any `.pptx` template and clones slide layouts — branded templates just work
-- Theme-aware: inherits colors, fonts, backgrounds from the template
-- Large community with well-documented patterns for every slide type
+- Both Anthropic and OpenAI chose PptxGenJS for their official presentation skills
+- Flat, declarative API that LLMs generate reliably (`slide.addText({...})`)
+- Zero dependencies, Node.js only
+- Produces clean OOXML with proper placeholder structure
+- Supports Slide Masters, charts, tables, images, shapes
 - MIT license
-- Python ships with macOS, widely available
+- Slides can be re-themed in PowerPoint after generation (proper placeholder structure enables "Apply Layout")
 
-**Architecture:**
+### Architecture
 
 ```
-Agent → structures markdown → writes presentation.md
-Agent → calls execute_skill_script("generate-presentation", "scripts/generate.py", [
-  "<input.md>",
-  "<output.pptx>",
-  "--template", "<template.pptx>"   // optional
-])
-Script → reads markdown, parses into slide model
-Script → opens template (or creates from scratch with built-in defaults)
-Script → maps content to slide layouts from the template
-Script → writes .pptx
+Agent reads source material (docs, transcripts, folders)
+  → Agent writes presentation.md (structured for slides)
+  → Agent calls execute_skill_script("generate-presentation", "scripts/generate.mjs", [
+      "presentation.md",
+      "output.pptx",
+      "--template", "template.pptx"    // optional user template
+      "--style", "business"            // or: simple, report (built-in)
+    ])
+  → Script reads markdown, parses into slide model
+  → If template provided: extracts theme (colors, fonts, backgrounds) from the .pptx ZIP
+  → Generates slides with PptxGenJS using the theme
+  → Writes .pptx
+  → Agent reports result to user
 ```
 
-**Script responsibilities:**
+### Template Theme Extraction
 
-1. **Parse markdown into a slide model:**
-   - H1 → new slide (title)
-   - H2 → subtitle on same slide
-   - `---` → explicit slide break
-   - Bullet/numbered lists → content placeholders
-   - Tables → native PPTX tables
-   - Images → embedded images
-   - `> [!notes]` → speaker notes pane
-   - Code blocks → monospace text box with background
+A `.pptx` file is a ZIP archive. The script reads the user's template directly (no Rust involvement):
 
-2. **Template handling:**
-   - If template provided: open it, enumerate slide layouts by name
-   - Map content types to layouts: "Title Slide", "Title and Content", "Section Header", "Two Content", "Blank"
-   - Fall back gracefully if a layout name doesn't exist
-   - If no template: create with sensible defaults (not plain white)
+1. Unzip the `.pptx` in memory
+2. Parse `ppt/theme/theme1.xml` → extract color scheme (`a:clrScheme`: dk1, dk2, lt1, lt2, accent1-6, hlink, folHlink) and font scheme (`a:fontScheme`: major/minor fonts)
+3. Parse `ppt/slideMasters/slideMaster1.xml` → extract background fill
+4. Parse `ppt/slideLayouts/*.xml` → enumerate layout names and placeholder positions
 
-3. **Built-in defaults (no template):**
-   - Three built-in styles matching our current Simple/Business/Report names
-   - Each with proper background, accent colors, font hierarchy
-   - Passed via `--style simple|business|report` flag
+The extracted theme drives PptxGenJS Slide Master definitions — same colors, fonts, and backgrounds as the user's branded template.
 
-4. **Content quality:**
-   - Tables with themed header row
-   - Code blocks with light grey background, monospace font
-   - Images properly sized (max 80% slide width, centered)
-   - Bullet indentation matching template's placeholder formatting
-   - Speaker notes in the notes pane
+### Markdown-to-Slide Parsing
 
-**Skill directory structure:**
+The script parses the agent's markdown into a slide model:
+
+| Markdown | Slide Result |
+|----------|-------------|
+| `# Heading` | New slide — title |
+| `## Subheading` | Subtitle on same slide |
+| `### Lower headings` | Bold body text |
+| `---` | Force new slide |
+| Bullet list | Content placeholder bullets |
+| Numbered list | Numbered content |
+| GFM table | Native PPTX table |
+| Code block | Monospace text box with background |
+| `![image](path)` | Embedded image |
+| `> [!notes]` callout | Speaker notes pane |
+| Other callouts | Styled text box |
+
+### Layout Selection
+
+Based on slide content, the script selects appropriate layouts:
+
+| Content Pattern | Layout |
+|----------------|--------|
+| Title only (first slide or after `---`) | Title Slide |
+| H1 after content | Section Header |
+| Title + bullets/text | Title and Content |
+| Title + image | Picture with Caption |
+| Title + two lists | Two Content |
+| Image only | Blank with centered image |
+| Default | Title and Content |
+
+### Built-in Styles (No Template)
+
+Three built-in styles when no user template is provided:
+
+**Simple:**
+- White background, dark text
+- Clean sans-serif font (Calibri)
+- No slide numbers, no footer
+- Minimal visual chrome
+
+**Business:**
+- Light grey background with dark header accent bar
+- Slide numbers in footer
+- Professional sans-serif (Calibri)
+- Accent color on titles
+
+**Report:**
+- Dark title area with white text, light content area
+- Title + date on title slide
+- Headers and footers throughout
+- Formal serif option (Cambria headings, Calibri body)
+
+### Skill Directory Structure
 
 ```
 bundled-skills/generate-presentation/
-├── SKILL.md                    # Agent instructions (already exists)
+├── SKILL.md                     # Agent instructions
 ├── references/
-│   └── TEMPLATES.md            # Template descriptions (already exists)
+│   └── TEMPLATES.md             # Template descriptions
 └── scripts/
-    ├── generate.py             # Main generation script
-    └── requirements.txt        # python-pptx dependency
+    ├── generate.mjs             # Main PptxGenJS generation script
+    └── package.json             # pptxgenjs + jszip dependencies
 ```
 
-**Installation:** The script checks for `python-pptx` on first run and installs via `pip install python-pptx` if missing (into user site-packages). Or agent runs `pip install python-pptx` first.
+### Script Dependencies
 
-### Option B: Improve ppt-rs Built-in Exporter (Future)
+- `pptxgenjs` — slide generation (MIT, zero-dependency at runtime)
+- `jszip` — reading user template ZIP (MIT, for theme extraction)
+- Both installed in the skill's `scripts/` directory
 
-Keep the existing Rust-based exporter for the Cmd+Shift+E quick export flow, but improve it separately:
+## User Workflow
 
-- Read template slide layouts
-- Apply theme colors and fonts
-- Better built-in template designs
+### With Custom Template
 
-This is higher effort (deep Rust/OOXML work) and can be done later. The python-pptx skill provides the high-quality path immediately.
+```
+User: Create a presentation from this document. Use my company template.
+Agent: Which template? I'll check for available templates.
+       [lists .pptx files in ~/.notesage/pptx-templates/ and project templates]
+User: Use the Acme-Corp.pptx template.
+Agent: [reads document, structures for slides, writes presentation.md]
+       [calls generate.mjs with --template Acme-Corp.pptx]
+       Presentation saved to document-slides.pptx using your Acme Corp branding.
+```
 
-## Recommendation
+### Without Template
 
-**Implement Option A now.** The python-pptx script skill gives us high-quality, template-aware PPTX generation with minimal implementation effort. The built-in exporter continues to work as a quick-and-dirty option via Cmd+Shift+E. Option B can improve the built-in exporter later.
+```
+User: Turn this meeting transcript into slides.
+Agent: Which style? Simple (minimal), Business (professional), or Report (formal)?
+User: Business.
+Agent: [reads transcript, distills key points, writes presentation.md]
+       [calls generate.mjs with --style business]
+       Created a 12-slide deck from the meeting. Saved to meeting-slides.pptx.
+```
 
 ## Quality Gates
 
 ### Functional
 
 - [ ] Script generates slides from markdown with proper title/content separation
-- [ ] User-provided `.pptx` template's slide masters and layouts are used
-- [ ] User-provided template's theme colors and fonts are applied
-- [ ] H1 headings create proper title slides (using template's "Title Slide" layout)
-- [ ] Section breaks (`---`) create new slides
-- [ ] Bullet lists render with proper indentation and styling from template
-- [ ] Tables render as native PPTX tables with header row styling
+- [ ] Built-in "simple" style produces clean, minimal slides (not plain white)
+- [ ] Built-in "business" style produces slides with accent bar, slide numbers
+- [ ] Built-in "report" style produces dark-title slides with formal typography
+- [ ] Three built-in styles are visually distinct from each other
+- [ ] User-provided `.pptx` template's color scheme is extracted and applied
+- [ ] User-provided template's fonts are extracted and applied
+- [ ] User-provided template's background is extracted and applied
+- [ ] H1 headings create title slides
+- [ ] H1 after content creates section header slides
+- [ ] Bullet lists render with proper indentation
+- [ ] Tables render as native PPTX tables with header styling
 - [ ] Images are properly sized and positioned
-- [ ] Speaker notes (`> [!notes]`) appear in the notes pane
 - [ ] Code blocks render in monospace with background fill
-- [ ] Works without a template (sensible built-in defaults)
-- [ ] Three built-in styles (simple, business, report) produce visually distinct results
+- [ ] Speaker notes (`> [!notes]`) appear in notes pane
+- [ ] `---` creates slide breaks
 
 ### Design
 
-- [ ] Generated slides look professional — comparable to a human-made deck
-- [ ] Built-in styles are visually distinct from each other
+- [ ] Generated slides look professional — a user would present these
 - [ ] User-provided branded templates are recognizable in the output
-- [ ] Text hierarchy is clear (title > subtitle > body > notes)
+- [ ] Text hierarchy is clear (title > subtitle > body)
+- [ ] Content doesn't overflow slide boundaries
 
 ### Agent Integration
 
-- [ ] `generate-presentation` skill documents the `execute_skill_script` call for the Python script
-- [ ] Agent-structured markdown produces well-formatted slides
-- [ ] Agent can iterate by re-running the script after adjustments
-- [ ] Skill works with Claude Code, Codex, Copilot, and Gemini CLI ACP agents
+- [ ] `generate-presentation` SKILL.md documents the script call with all flags
+- [ ] Works with Claude Code, Codex, Copilot, Gemini CLI ACP agents
+- [ ] Agent can iterate by modifying markdown and re-running the script
+- [ ] Script provides clear error messages when generation fails
 
 ## Dependencies
 
-- `python-pptx` (MIT license, pip install)
-- Python 3 (ships with macOS, widely available)
+- `pptxgenjs` (MIT) — slide generation
+- `jszip` (MIT) — template ZIP reading for theme extraction
+- Node.js (required by ACP agents anyway)
 
 ## References
 
-- python-pptx docs: https://python-pptx.readthedocs.io
-- python-pptx repo: https://github.com/scanny/python-pptx
-- Current exporter: `src-tauri/src/export/markdown_to_pptx.rs`
+- PptxGenJS docs: https://gitbrent.github.io/PptxGenJS/
+- PptxGenJS repo: https://github.com/gitbrent/PptxGenJS
+- OOXML theme spec: `a:clrScheme`, `a:fontScheme` in `ppt/theme/theme1.xml`
+- Anthropic PPTX skill (reference patterns, proprietary license): https://github.com/anthropics/skills/tree/main/skills/pptx
+- OpenAI slides skill (reference patterns): https://github.com/openai/skills/tree/main/skills/.curated/slides
 - Current skill: `bundled-skills/generate-presentation/`
-- Anthropic PPTX skill (reference patterns only, proprietary license): https://github.com/anthropics/skills/tree/main/skills/pptx
