@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-06 |
-| **Status** | Not started |
+| **Status** | In progress |
 | **PRD** | [high-quality-pptx-generation](../prds/2026-04-06-high-quality-pptx-generation.md) |
 | **Total** | 9 tasks: 2S, 4M, 3L |
 | **Suggested order** | Script foundation (#1-#3) → Template support (#4-#5) → Built-in styles (#6) → Skill update (#7) → Bundling (#8) → Testing (#9) |
@@ -16,7 +16,7 @@
 
 ---
 
-### #1 — Create package.json and scaffold generate.mjs
+### #1 — Create package.json and scaffold generate.mjs ✅
 
 **Description:** Create `bundled-skills/generate-presentation/scripts/package.json` with `pptxgenjs` and `jszip` dependencies. Create `scripts/generate.mjs` with CLI argument parsing, help text, and the basic flow skeleton (read markdown → parse → generate → write). No actual slide generation yet — just the entry point that validates inputs and exits cleanly.
 
@@ -39,7 +39,7 @@
 
 ---
 
-### #2 — Markdown-to-slide parser
+### #2 — Markdown-to-slide parser ✅
 
 **Description:** Implement the markdown parser in `generate.mjs` that converts the agent's markdown into a slide data model. Use a simple line-by-line parser (no heavy markdown AST library needed).
 
@@ -79,7 +79,7 @@ Output: array of slide objects, each with `{ title?, subtitle?, content: Content
 
 ---
 
-### #3 — PptxGenJS slide generation (core)
+### #3 — PptxGenJS slide generation (core) ✅
 
 **Description:** Implement the core slide generation: take the parsed slide model and produce a `.pptx` using PptxGenJS. This task handles the default style (no template, no built-in styles yet — just clean, well-structured output).
 
@@ -117,7 +117,7 @@ Default styling: Calibri font, dark text on white, 44pt titles, 24pt body, 18pt 
 
 ---
 
-### #4 — Template theme extraction
+### #4 — Template theme extraction ✅
 
 **Description:** Implement reading a user-provided `.pptx` template to extract the theme. Use `jszip` to open the ZIP, then parse the XML files.
 
@@ -147,7 +147,7 @@ Output: a theme object `{ colors: { dk1, dk2, lt1, lt2, accent1-6 }, fonts: { he
 
 ---
 
-### #5 — Apply extracted theme to generated slides
+### #5 — Apply extracted theme to generated slides ✅
 
 **Description:** Wire the theme extraction (#4) into the slide generation (#3). When `--template` is provided:
 
@@ -181,7 +181,7 @@ Map the 12 OOXML theme colors to PptxGenJS usage:
 
 ---
 
-### #6 — Built-in styles (simple, business, report)
+### #6 — Built-in styles (simple, business, report) ✅
 
 **Description:** Implement the three built-in styles as hardcoded theme configurations (same shape as the extracted theme object). Selected via `--style simple|business|report`.
 
@@ -225,7 +225,7 @@ Map the 12 OOXML theme colors to PptxGenJS usage:
 
 ---
 
-### #7 — Update SKILL.md with script usage
+### #7 — Update SKILL.md with script usage ✅
 
 **Description:** Update the `generate-presentation` SKILL.md to document the `execute_skill_script` call for the `generate.mjs` script. Include:
 
@@ -255,7 +255,7 @@ Also update `references/TEMPLATES.md` to describe the built-in styles and custom
 
 ---
 
-### #8 — Bundle scripts in Rust extraction
+### #8 — Bundle scripts in Rust extraction ✅
 
 **Description:** Add the new script files (`generate.mjs`, `package.json`) to the `extract_bundled_skills()` function in `src-tauri/src/commands/skills.rs` via `include_str!()`. Delete the old deployed copies at `~/.notesage/skills/generate-presentation/` so the new version gets extracted on restart.
 

@@ -1,6 +1,6 @@
 # Presentation Templates
 
-PowerPoint templates for Notesage presentations. Three built-in templates are always available. Users can also add custom branded templates.
+Three built-in styles are available via `--style`. Users can also provide custom branded templates via `--template`.
 
 ---
 
@@ -10,23 +10,20 @@ PowerPoint templates for Notesage presentations. Three built-in templates are al
 
 | Property | Value |
 |----------|-------|
-| Title font size | 44pt |
-| Body font size | 24pt |
-| Colors | Neutral (dark text on white) |
+| Title font | Calibri, 44pt |
+| Body font | Calibri, 20pt |
+| Background | White (`FFFFFF`) |
+| Text color | Dark grey (`333333`) |
 | Slide numbers | No |
 | Header/footer | No |
 
 **Best for:**
-- Informal presentations
-- Quick decks and drafts
+- Informal presentations and drafts
 - Internal team updates
 - Brainstorming sessions
-- When content should speak for itself
+- Image-heavy slides (no competing chrome)
 
-**Tips:**
-- Works well with image-heavy slides since there's no competing chrome
-- Good default choice when unsure — the minimal style fits most contexts
-- Pair with large font sizes and generous whitespace for maximum impact
+**Flag:** `--style simple` (default)
 
 ---
 
@@ -36,23 +33,20 @@ PowerPoint templates for Notesage presentations. Three built-in templates are al
 
 | Property | Value |
 |----------|-------|
-| Title font size | 40pt |
-| Body font size | 22pt |
-| Colors | Neutral with header accent line |
+| Title font | Calibri, 36pt |
+| Body font | Calibri, 20pt |
+| Background | Light grey (`F2F2F2`) |
+| Title slide | Dark accent background (`2D2D2D`), white text |
+| Accent bar | Dark horizontal line below title area |
 | Slide numbers | Yes (bottom right) |
-| Header/footer | Thin header line below title |
 
 **Best for:**
 - Client presentations
 - Corporate meetings
 - Project status updates
 - Quarterly reviews
-- Any audience expecting a polished, professional look
 
-**Tips:**
-- The header line adds visual hierarchy without being distracting
-- Slide numbers help during Q&A ("go back to slide 7")
-- Slightly smaller font sizes allow more content per slide, but resist the urge to overcrowd
+**Flag:** `--style business`
 
 ---
 
@@ -62,50 +56,53 @@ PowerPoint templates for Notesage presentations. Three built-in templates are al
 
 | Property | Value |
 |----------|-------|
-| Title font size | 44pt |
-| Title color | White on dark background |
-| Body font size | 22pt |
-| Colors | Dark title bar, light body area |
+| Title font | Cambria, 36pt |
+| Body font | Calibri, 20pt |
+| Title slide | Dark background (`1A1A1A`), white text |
+| Content slides | White background, dark text |
+| Accent | Medium dark (`404040`) |
 | Slide numbers | Yes (bottom right) |
-| Header/footer | Title in header, page number in footer |
+| Footer | Document title (bottom left) |
 
 **Best for:**
 - Executive summaries
-- Formal reports and findings
 - Board presentations
-- Academic or research presentations
-- Deliverables for external stakeholders
+- Formal reports and findings
+- Academic presentations
 
-**Tips:**
-- The dark title bar creates strong visual separation between the title and body
-- Works especially well for data-heavy presentations where the title contextualizes each slide
-- Use H2 subtitles to add detail below the main title
+**Flag:** `--style report`
 
 ---
 
-## Choosing a Template
+## Choosing a Style
 
-| Situation | Recommended Template |
-|-----------|---------------------|
+| Situation | Recommended |
+|-----------|-------------|
 | "I just need slides quickly" | Simple |
-| "This is for a meeting with stakeholders" | Business |
+| "This is for stakeholders" | Business |
 | "This is a formal deliverable" | Report |
-| "I'm presenting to my team" | Simple or Business |
-| "The audience expects polish" | Business or Report |
-| "Heavy on images and diagrams" | Simple |
-| "Heavy on text and data" | Report |
+| "Presenting to my team" | Simple or Business |
+| "Heavy on images" | Simple |
+| "Heavy on data and text" | Report |
 
-When in doubt, ask the user about the audience and formality level. A quick team sync calls for Simple; a board presentation calls for Report.
+When in doubt, ask about the audience and formality level.
 
 ---
 
 ## Custom Templates
 
-Users can add branded `.pptx` or `.potx` template files to:
+Users can provide their own branded `.pptx` or `.potx` template via the `--template` flag. The script extracts the template's:
 
-- **Global:** `~/.notesage/pptx-templates/` — available to all projects
-- **Project:** `<project>/.notesage/pptx-templates/` — project-specific, overrides global with same name
+- **Color scheme** — 12 OOXML theme colors (dk1, dk2, lt1, lt2, accent1-6)
+- **Fonts** — heading and body typefaces
+- **Background** — slide master background fill
 
-Custom templates can be imported via the Export dialog (Cmd+Shift+E → Add Template button) or by placing files directly in these directories.
+These are applied to all generated slides, preserving the brand's visual identity.
 
-When listing template options for the user, check both directories and include any custom templates alongside the built-in options. Custom templates often reflect company branding — always offer them first if they exist.
+**Template locations:**
+- **Global:** `~/.notesage/pptx-templates/`
+- **Project:** `<project>/.notesage/pptx-templates/`
+
+Templates can be added by placing `.pptx`/`.potx` files in these directories.
+
+When listing options for the user, check both directories and offer custom templates first if they exist.

@@ -904,6 +904,16 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
             content: include_str!("../../../bundled-skills/generate-presentation/references/TEMPLATES.md"),
             executable: false,
         },
+        BundledFile {
+            relative_path: "generate-presentation/scripts/generate.mjs",
+            content: include_str!("../../../bundled-skills/generate-presentation/scripts/generate.mjs"),
+            executable: true,
+        },
+        BundledFile {
+            relative_path: "generate-presentation/scripts/package.json",
+            content: include_str!("../../../bundled-skills/generate-presentation/scripts/package.json"),
+            executable: false,
+        },
     ];
 
     info!("Extracting {} bundled skill files to {}", bundled_files.len(), bundled_dir.display());
