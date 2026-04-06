@@ -46,7 +46,9 @@ Collapsible right sidebar (Cmd+Shift+C) with streaming AI responses.
 **Provider context isolation:**
 
 - When switching AI provider mid-conversation, an `AgentSwitchCard` prompts the user to start fresh or include previous history
-- Starting fresh clears conversation state; including history carries messages forward to the new provider
+- Starting fresh creates a segment boundary — messages before the boundary are excluded from API calls to the new provider
+- Including history carries all messages forward to the new provider
+- Segment filtering applied at send time in `ChatPanel.tsx` using `ConversationSegment.startMessageIndex` and `historyIncluded`
 
 ## Addressable Agents
 

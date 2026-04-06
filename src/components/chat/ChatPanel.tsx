@@ -227,8 +227,24 @@ export function ChatPanel() {
       sendOpts.parentId = editContextRef.current.parentId;
       clearEditContext();
     }
-    await sendChatMessage(expandedContent, messages, sendOpts as Parameters<typeof sendChatMessage>[2]);
-  }, [hasAIProvider, setActiveAgent, sendChatMessage, messages, attachedFilePaths, clearEditContext]);
+
+    // Read fresh messages from the store (not the stale closure) — critical for
+    // handleResend which deletes messages then immediately calls handleSend.
+    const freshMessages = selectMessages(useChatStore.getState());
+
+    // Apply provider context isolation: if the active segment says "start fresh",
+    // only include messages from the segment boundary onward.
+    const segment = useChatStore.getState().getActiveSegment();
+    let filteredMessages = freshMessages;
+    if (segment && !segment.historyIncluded && segment.startMessageIndex > 0) {
+      // startMessageIndex is based on conversation.messages array length at the time
+      // of the switch. For branching threads, clamp to current thread length.
+      const dropCount = Math.min(segment.startMessageIndex, freshMessages.length);
+      filteredMessages = freshMessages.slice(dropCount);
+    }
+
+    await sendChatMessage(expandedContent, filteredMessages, sendOpts as Parameters<typeof sendChatMessage>[2]);
+  }, [hasAIProvider, setActiveAgent, sendChatMessage, attachedFilePaths, clearEditContext]);
 
   const handleResend = useCallback((message: { id?: string; parentId?: string | null; content: string }) => {
     if (!hasAIProvider) return;
