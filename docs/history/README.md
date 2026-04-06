@@ -94,3 +94,4 @@ Chronological log of major implementation milestones and changes.
 | 088 | [Release v0.28.3](088-release-v0.28.3.md) | Gemma 4, HF model search, catalog management, llama.cpp b8648 |
 | 089 | [Release v0.28.4](089-release-v0.28.4.md) | Audit v3: 39 fixes — async races, accessibility, type safety, decomposition, 70+ new tests |
 | 090 | [Release v0.29.0](090-release-v0.29.0.md) | System tray, notifications, quick capture, autostart, image attachments, UI polish |
+| 091 | [Release v0.30.0](091-release-v0.30.0.md) | PptxGenJS presentation skill, response image rendering, sidebar UX, agent tools |
