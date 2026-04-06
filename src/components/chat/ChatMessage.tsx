@@ -280,18 +280,18 @@ function UserActionButtons({ isUser, onEdit, onResend, onBranch, onCopy, copied 
                   Resend
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onClick={onCopy} className="text-xs h-7 px-2">
-                {copied
-                  ? <Check className="h-3 w-3 mr-1.5" strokeWidth={1.5} />
-                  : <Copy className="h-3 w-3 mr-1.5" strokeWidth={1.5} />}
-                {copied ? 'Copied' : 'Copy'}
-              </DropdownMenuItem>
               {onBranch && (
                 <DropdownMenuItem onClick={onBranch} className="text-xs h-7 px-2">
                   <GitBranch className="h-3 w-3 mr-1.5" strokeWidth={1.5} />
                   Branch
                 </DropdownMenuItem>
               )}
+              <DropdownMenuItem onClick={onCopy} className="text-xs h-7 px-2">
+                {copied
+                  ? <Check className="h-3 w-3 mr-1.5" strokeWidth={1.5} />
+                  : <Copy className="h-3 w-3 mr-1.5" strokeWidth={1.5} />}
+                {copied ? 'Copied' : 'Copy'}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -318,6 +318,15 @@ function UserActionButtons({ isUser, onEdit, onResend, onBranch, onCopy, copied 
             <RotateCcw className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
           </button>
         )}
+        {onBranch && (
+          <button
+            className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
+            onClick={onBranch}
+            title="Branch from here"
+          >
+            <GitBranch className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
+          </button>
+        )}
         <button
           className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
           onClick={onCopy}
@@ -329,15 +338,6 @@ function UserActionButtons({ isUser, onEdit, onResend, onBranch, onCopy, copied 
             <Copy className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
           )}
         </button>
-        {onBranch && (
-          <button
-            className="h-6 w-6 rounded-md flex items-center justify-center bg-card border border-border hover:bg-foreground/10 hover:text-foreground transition-colors"
-            onClick={onBranch}
-            title="Branch from here"
-          >
-            <GitBranch className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
-          </button>
-        )}
       </div>
     );
   }
