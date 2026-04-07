@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-06 |
-| **Status** | In progress |
+| **Status** | Complete |
 | **PRD** | [high-quality-pptx-generation](../prds/2026-04-06-high-quality-pptx-generation.md) |
 | **Total** | 9 tasks: 2S, 4M, 3L |
 | **Suggested order** | Script foundation (#1-#3) → Template support (#4-#5) → Built-in styles (#6) → Skill update (#7) → Bundling (#8) → Testing (#9) |
@@ -29,10 +29,7 @@
 - Missing input file produces a clear error message
 - Missing npm dependencies produce a clear "run npm install" error
 
-**Complexity:** S
-**Category:** frontend
-**Dependencies:** None
-**Files:**
+**Complexity:** S **Category:** frontend **Dependencies:** None **Files:**
 
 - Create: `bundled-skills/generate-presentation/scripts/generate.mjs`
 - Create: `bundled-skills/generate-presentation/scripts/package.json`
@@ -44,6 +41,7 @@
 **Description:** Implement the markdown parser in `generate.mjs` that converts the agent's markdown into a slide data model. Use a simple line-by-line parser (no heavy markdown AST library needed).
 
 Parsing rules:
+
 - `# Heading` → new slide with title
 - `## Subheading` → subtitle on current slide
 - `### Lower` → bold body text line
@@ -51,10 +49,10 @@ Parsing rules:
 - `- item` / `* item` → bullet list items (track nesting via indentation)
 - `1. item` → numbered list items
 - `| col | col |` → table (collect rows until non-table line)
-- `` ```lang `` → code block (collect until closing ``` )
+- ```` ```lang ```` → code block (collect until closing \`\`\` )
 - `![alt](path)` → image reference
 - `> [!notes]` → speaker notes (collect until end of blockquote)
-- Other `> ` lines → blockquote/callout text
+- Other `> `lines → blockquote/callout text
 - Plain paragraphs → body text
 
 Output: array of slide objects, each with `{ title?, subtitle?, content: ContentItem[], notes?, layout }` where `ContentItem` is `{ type: 'bullets' | 'numbered' | 'text' | 'table' | 'code' | 'image' | 'callout', data }`.
@@ -70,10 +68,7 @@ Output: array of slide objects, each with `{ title?, subtitle?, content: Content
 - `---` creates slide breaks
 - Images captured with path and alt text
 
-**Complexity:** L
-**Category:** frontend
-**Dependencies:** Depends on #1
-**Files:**
+**Complexity:** L **Category:** frontend **Dependencies:** Depends on #1 **Files:**
 
 - Modify: `bundled-skills/generate-presentation/scripts/generate.mjs`
 
@@ -84,6 +79,7 @@ Output: array of slide objects, each with `{ title?, subtitle?, content: Content
 **Description:** Implement the core slide generation: take the parsed slide model and produce a `.pptx` using PptxGenJS. This task handles the default style (no template, no built-in styles yet — just clean, well-structured output).
 
 For each slide:
+
 - Select layout based on content (title-only → title slide, title+content → standard, image-only → blank with image, etc.)
 - Render title in the title placeholder area
 - Render subtitle below title
@@ -108,10 +104,7 @@ Default styling: Calibri font, dark text on white, 44pt titles, 24pt body, 18pt 
 - Speaker notes appear in notes pane
 - Slides are correctly separated by H1 and `---`
 
-**Complexity:** L
-**Category:** frontend
-**Dependencies:** Depends on #2
-**Files:**
+**Complexity:** L **Category:** frontend **Dependencies:** Depends on #2 **Files:**
 
 - Modify: `bundled-skills/generate-presentation/scripts/generate.mjs`
 
@@ -122,6 +115,7 @@ Default styling: Calibri font, dark text on white, 44pt titles, 24pt body, 18pt 
 **Description:** Implement reading a user-provided `.pptx` template to extract the theme. Use `jszip` to open the ZIP, then parse the XML files.
 
 Extract from the template:
+
 - `ppt/theme/theme1.xml` → color scheme (`a:clrScheme` children: dk1, dk2, lt1, lt2, accent1-6, hlink, folHlink — each has `a:srgbClr` or `a:sysClr` with a hex value) and font scheme (`a:fontScheme` → `a:majorFont`/`a:minorFont` → `a:latin` typeface)
 - `ppt/slideMasters/slideMaster1.xml` → background fill (solid color, gradient, or image)
 - `ppt/slideLayouts/*.xml` → layout names (from `p:cSld` name attribute or relationship type) and placeholder positions
@@ -138,10 +132,7 @@ Output: a theme object `{ colors: { dk1, dk2, lt1, lt2, accent1-6 }, fonts: { he
 - Returns a clean theme object usable by the generator
 - Handles missing/malformed theme files gracefully (falls back to defaults)
 
-**Complexity:** M
-**Category:** frontend
-**Dependencies:** Depends on #1
-**Files:**
+**Complexity:** M **Category:** frontend **Dependencies:** Depends on #1 **Files:**
 
 - Modify: `bundled-skills/generate-presentation/scripts/generate.mjs`
 
@@ -156,6 +147,7 @@ Output: a theme object `{ colors: { dk1, dk2, lt1, lt2, accent1-6 }, fonts: { he
 3. Apply the theme to all generated slides: title font = heading font from theme, body font = body font, accent colors on title backgrounds, table headers use accent1, etc.
 
 Map the 12 OOXML theme colors to PptxGenJS usage:
+
 - `dk1` → primary text color
 - `lt1` → slide background (or extracted background)
 - `accent1` → title accent, table headers, section headers
@@ -172,10 +164,7 @@ Map the 12 OOXML theme colors to PptxGenJS usage:
 - Tables use accent-colored header row
 - Falls back to defaults if theme extraction fails partially
 
-**Complexity:** M
-**Category:** frontend
-**Dependencies:** Depends on #3, #4
-**Files:**
+**Complexity:** M **Category:** frontend **Dependencies:** Depends on #3, #4 **Files:**
 
 - Modify: `bundled-skills/generate-presentation/scripts/generate.mjs`
 
@@ -186,6 +175,7 @@ Map the 12 OOXML theme colors to PptxGenJS usage:
 **Description:** Implement the three built-in styles as hardcoded theme configurations (same shape as the extracted theme object). Selected via `--style simple|business|report`.
 
 **Simple:**
+
 - Background: white (`FFFFFF`)
 - Text: dark grey (`333333`)
 - Accent: medium grey (`666666`)
@@ -193,6 +183,7 @@ Map the 12 OOXML theme colors to PptxGenJS usage:
 - No slide numbers, no footer
 
 **Business:**
+
 - Background: light grey (`F2F2F2`)
 - Title area: dark accent bar (`2D2D2D`) with white title text
 - Body text: dark (`333333`)
@@ -201,6 +192,7 @@ Map the 12 OOXML theme colors to PptxGenJS usage:
 - Slide numbers bottom-right
 
 **Report:**
+
 - Title slide: dark background (`1A1A1A`), white text
 - Content slides: white background, dark text
 - Accent: medium dark (`404040`)
@@ -216,10 +208,7 @@ Map the 12 OOXML theme colors to PptxGenJS usage:
 - Default (no --style, no --template) uses `simple`
 - Styles produce slides a user would actually present (not plain white)
 
-**Complexity:** M
-**Category:** frontend
-**Dependencies:** Depends on #3
-**Files:**
+**Complexity:** M **Category:** frontend **Dependencies:** Depends on #3 **Files:**
 
 - Modify: `bundled-skills/generate-presentation/scripts/generate.mjs`
 
@@ -245,10 +234,7 @@ Also update `references/TEMPLATES.md` to describe the built-in styles and custom
 - Agent can follow instructions to produce slides end-to-end
 - Works for ACP agents (no built-in tool references)
 
-**Complexity:** S
-**Category:** frontend
-**Dependencies:** Depends on #3, #6
-**Files:**
+**Complexity:** S **Category:** frontend **Dependencies:** Depends on #3, #6 **Files:**
 
 - Modify: `bundled-skills/generate-presentation/SKILL.md`
 - Modify: `bundled-skills/generate-presentation/references/TEMPLATES.md`
@@ -262,19 +248,16 @@ Also update `references/TEMPLATES.md` to describe the built-in styles and custom
 **Acceptance criteria:**
 
 - `generate.mjs` and `package.json` appear in `~/.notesage/skills/generate-presentation/scripts/` after app restart
-- Skill appears in Settings > Skills & Agents with the scripts directory listed
+- Skill appears in Settings &gt; Skills & Agents with the scripts directory listed
 - `execute_skill_script` can run the script
 
-**Complexity:** S
-**Category:** backend
-**Dependencies:** Depends on #1, #7
-**Files:**
+**Complexity:** S **Category:** backend **Dependencies:** Depends on #1, #7 **Files:**
 
 - Modify: `src-tauri/src/commands/skills.rs`
 
 ---
 
-### #9 — End-to-end testing with ACP agents
+### #9 — End-to-end testing with ACP agents ✅
 
 **Description:** Test the full workflow with at least two ACP agents (Claude Code + one other). Create test cases:
 
@@ -292,9 +275,6 @@ Also update `references/TEMPLATES.md` to describe the built-in styles and custom
 - Error messages are clear and actionable
 - Generated `.pptx` files open correctly in PowerPoint, Keynote, and Google Slides
 
-**Complexity:** L
-**Category:** frontend
-**Dependencies:** Depends on #6, #7, #8
-**Files:**
+**Complexity:** L **Category:** frontend **Dependencies:** Depends on #6, #7, #8 **Files:**
 
 - No file changes — manual testing with verification

@@ -2,7 +2,7 @@
 
 **Reported:** 2026-04-07
 **Severity:** Medium
-**Status:** Fixed (pending manual verification)
+**Status:** Fixed
 **Affects:** All versions with SQLite document index
 
 ## Symptoms

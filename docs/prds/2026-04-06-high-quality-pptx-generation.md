@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-06 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | High |
 | **Impact** | Presentations generated from Notesage documents look professional and respect user-provided branded templates |
 
@@ -86,7 +86,7 @@ The extracted theme drives PptxGenJS Slide Master definitions — same colors, f
 The script parses the agent's markdown into a slide model:
 
 | Markdown | Slide Result |
-|----------|-------------|
+| --- | --- |
 | `# Heading` | New slide — title |
 | `## Subheading` | Subtitle on same slide |
 | `### Lower headings` | Bold body text |
@@ -104,7 +104,7 @@ The script parses the agent's markdown into a slide model:
 Based on slide content, the script selects appropriate layouts:
 
 | Content Pattern | Layout |
-|----------------|--------|
+| --- | --- |
 | Title only (first slide or after `---`) | Title Slide |
 | H1 after content | Section Header |
 | Title + bullets/text | Title and Content |
@@ -118,18 +118,21 @@ Based on slide content, the script selects appropriate layouts:
 Three built-in styles when no user template is provided:
 
 **Simple:**
+
 - White background, dark text
 - Clean sans-serif font (Calibri)
 - No slide numbers, no footer
 - Minimal visual chrome
 
 **Business:**
+
 - Light grey background with dark header accent bar
 - Slide numbers in footer
 - Professional sans-serif (Calibri)
 - Accent color on titles
 
 **Report:**
+
 - Dark title area with white text, light content area
 - Title + date on title slide
 - Headers and footers throughout
@@ -182,35 +185,56 @@ Agent: [reads transcript, distills key points, writes presentation.md]
 
 ### Functional
 
-- [ ] Script generates slides from markdown with proper title/content separation
-- [ ] Built-in "simple" style produces clean, minimal slides (not plain white)
-- [ ] Built-in "business" style produces slides with accent bar, slide numbers
-- [ ] Built-in "report" style produces dark-title slides with formal typography
-- [ ] Three built-in styles are visually distinct from each other
+- [x] Script generates slides from markdown with proper title/content separation
+
+- [x] Built-in "simple" style produces clean, minimal slides (not plain white)
+
+- [x] Built-in "business" style produces slides with accent bar, slide numbers
+
+- [x] Built-in "report" style produces dark-title slides with formal typography
+
+- [x] Three built-in styles are visually distinct from each other
+
 - [ ] User-provided `.pptx` template's color scheme is extracted and applied
+
 - [ ] User-provided template's fonts are extracted and applied
+
 - [ ] User-provided template's background is extracted and applied
-- [ ] H1 headings create title slides
-- [ ] H1 after content creates section header slides
-- [ ] Bullet lists render with proper indentation
-- [ ] Tables render as native PPTX tables with header styling
+
+- [x] H1 headings create title slides
+
+- [x] H1 after content creates section header slides
+
+- [x] Bullet lists render with proper indentation
+
+- [x] Tables render as native PPTX tables with header styling
+
 - [ ] Images are properly sized and positioned
-- [ ] Code blocks render in monospace with background fill
-- [ ] Speaker notes (`> [!notes]`) appear in notes pane
-- [ ] `---` creates slide breaks
+
+- [x] Code blocks render in monospace with background fill
+
+- [x] Speaker notes (`> [!notes]`) appear in notes pane
+
+- [x] `---` creates slide breaks
 
 ### Design
 
 - [ ] Generated slides look professional — a user would present these
+
 - [ ] User-provided branded templates are recognizable in the output
-- [ ] Text hierarchy is clear (title > subtitle > body)
-- [ ] Content doesn't overflow slide boundaries
+
+- [x] Text hierarchy is clear (title &gt; subtitle &gt; body)
+
+- [x] Content doesn't overflow slide boundaries
 
 ### Agent Integration
 
 - [ ] `generate-presentation` SKILL.md documents the script call with all flags
+
 - [ ] Works with Claude Code, Codex, Copilot, Gemini CLI ACP agents
+
 - [ ] Agent can iterate by modifying markdown and re-running the script
+
 - [ ] Script provides clear error messages when generation fails
 
 ## Dependencies

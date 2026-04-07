@@ -2,7 +2,7 @@
 
 **Reported:** 2026-04-07
 **Severity:** Critical
-**Status:** Fixed (pending manual verification)
+**Status:** Fixed
 **Affects:** v0.30.1 (production laptop)
 
 ## Symptoms
