@@ -7,7 +7,7 @@
 | **Current coverage** | 46 fully / 19 partially / 98 not supported (of 163 inventoried OOXML features) |
 | **Code size** | ~1555 lines across 5 files |
 | **PRD** | [pptx-viewer-v2](../prds/2026-04-07-pptx-viewer-v2.md) (Draft) |
-| **Tasks** | Linked per feature from PRD feature table |
+| **Tasks** | [pptx-viewer-v2-tasks](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) (21 tasks: 10S, 8M, 3L) |
 
 ## Context
 
