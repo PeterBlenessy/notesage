@@ -66,10 +66,12 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 **Rust backend (**`watcher.rs`**):**
 
 1. `watch_directory(path)` starts recursive watching via `notify` crate with `notify_debouncer_full` (500ms debounce)
-2. Self-write filter: `mark_self_write(path)` records a timestamp; events suppressed for 5 seconds
-3. Events filtered: `.git/` internals and `.DS_Store` silently dropped
-4. macOS FSEvents quirk: file deletions often arrive as `Modify` events — reclassified as `delete`
-5. Surviving events emitted as `file-changed` Tauri events with `{ path, kind }` payload
+2. All events (including self-writes) queue a reindex entry for the SQLite document index
+3. Self-write filter: `mark_self_write(path)` records a timestamp; self-write events are excluded from the frontend batch (prevents false "external change" detection) but still trigger reindexing
+4. Events filtered: `.git/` internals and `.DS_Store` silently dropped
+5. macOS FSEvents quirk: file deletions often arrive as `Modify` events — reclassified as `delete`
+6. Reindex queue always drained after event processing (unconditionally, not gated on frontend batch)
+7. Non-self-write events emitted as `file-changed-batch` Tauri events with `[{ path, kind }]` payload
 
 **Frontend event handler (**`useFileWatcher.ts`**):**
 
@@ -86,7 +88,7 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 - **Self-write TTL (5s)**: Covers debounce + macOS FSEvents re-reporting + iCloud sync latency
 - **Path normalization**: macOS FSEvents canonicalizes `/var` → `/private/var`; frontend strips `/private/` prefix
 - **Toast dedup**: Stable `id: "external-change"` prevents duplicate notifications
-- **Startup gating (**`startupReady`**)**: Watchers wait for startup validation to complete
+- **Startup gating (**`startupReady`**)**: Watchers wait for startup validation to complete. Startup has a 30s global timeout and 10s per-step timeouts for cloud storage operations, ensuring `startupReady` is always set even if cloud paths hang.
 
 ## Key Files
 

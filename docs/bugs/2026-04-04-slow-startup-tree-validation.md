@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date observed** | 2026-04-04 |
-| **Status** | Open |
+| **Status** | Partially addressed (see [2026-04-07 startup fix](2026-04-07-startup-ready-never-set.md)) |
 | **Severity** | Medium |
 | **Impact** | Chat tools dropdown shows 6/13 tools for ~6 seconds on startup; skill tools appear delayed |
 | **Versions affected** | v0.28.3 (and earlier) |

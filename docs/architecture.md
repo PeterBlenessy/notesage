@@ -291,7 +291,7 @@ Structured performance logging embedded in production code via `src/lib/logger.t
 
 | Category | Location | What it measures |
 | --- | --- | --- |
-| `[perf:startup]` | `useAppLifecycle.ts` | Tree validation, index init (per-project + total), tab restoration, total startup time |
+| `[perf:startup]` | `useAppLifecycle.ts` | Tree validation, index init (per-project + total), tab restoration, total startup time. Also `log.info("startup", ...)` at each major step (forwarded to backend log) for production debugging. 30s global timeout + 10s per-step timeouts for cloud storage paths. |
 | `[perf:save]` | `useFileOperations.ts` | Serialization time, Tauri write time, total save time per file |
 | `[perf:tree]` | `useFileOperations.ts`, `workspace-store.ts` | Per-directory load time, entry count, total tree refresh |
 | `[perf:find]` | `search-highlight.ts` | Query, match count, doc node size, elapsed time |
