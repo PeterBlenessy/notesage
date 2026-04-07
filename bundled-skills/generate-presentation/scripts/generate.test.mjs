@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseMarkdown, parseInlineFormatting, stripMarkdownFormatting, parseSimpleYaml, parseYamlValue, inferLayout, estimateContentHeight, STYLES, MASTER_MAP } from "./generate.mjs";
+import { parseMarkdown, parseInlineFormatting, stripMarkdownFormatting, parseSimpleYaml, parseYamlValue, inferLayout, estimateContentHeight, parseHtmlTable, STYLES, MASTER_MAP } from "./generate.mjs";
 
 // ---------------------------------------------------------------------------
 // #1 — Hyperlink support
@@ -568,5 +568,73 @@ describe("parseMarkdown — scatter/radar/bubble charts", () => {
     const md = "# S\n\n```chart\ntype: bubble\nseries:\n  - name: B\n    values: [10, 20, 30]\n```";
     const { slides } = parseMarkdown(md);
     expect(slides[0].content[0].data.type).toBe("bubble");
+  });
+});
+
+// ===========================================================================
+// TIER 4 TESTS
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// #17 — YouTube embedding
+// ---------------------------------------------------------------------------
+
+describe("parseMarkdown — YouTube embedding", () => {
+  it("parses <!-- youtube: URL --> with standard URL", () => {
+    const md = "# Slide\n\n<!-- youtube: https://www.youtube.com/watch?v=dQw4w9WgXcQ -->";
+    const { slides } = parseMarkdown(md);
+    const yt = slides[0].content.find((c) => c.type === "youtube");
+    expect(yt).toBeDefined();
+    expect(yt.data.videoId).toBe("dQw4w9WgXcQ");
+    expect(yt.data.embedUrl).toBe("https://www.youtube.com/embed/dQw4w9WgXcQ");
+  });
+
+  it("parses youtu.be short URL", () => {
+    const md = "# Slide\n\n<!-- youtube: https://youtu.be/dQw4w9WgXcQ -->";
+    const { slides } = parseMarkdown(md);
+    const yt = slides[0].content.find((c) => c.type === "youtube");
+    expect(yt).toBeDefined();
+    expect(yt.data.videoId).toBe("dQw4w9WgXcQ");
+  });
+
+  it("ignores invalid YouTube URL", () => {
+    const md = "# Slide\n\n<!-- youtube: https://example.com/not-youtube -->";
+    const { slides } = parseMarkdown(md);
+    const yt = slides[0].content.find((c) => c.type === "youtube");
+    expect(yt).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #18 — HTML table import
+// ---------------------------------------------------------------------------
+
+describe("parseHtmlTable", () => {
+  it("parses basic HTML table", () => {
+    const html = "<table><tr><th>Name</th><th>Value</th></tr><tr><td>A</td><td>1</td></tr></table>";
+    const rows = parseHtmlTable(html);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual(["Name", "Value"]);
+    expect(rows[1]).toEqual(["A", "1"]);
+  });
+
+  it("strips inner HTML tags", () => {
+    const html = "<table><tr><td><strong>Bold</strong> text</td></tr></table>";
+    const rows = parseHtmlTable(html);
+    expect(rows[0][0]).toBe("Bold text");
+  });
+
+  it("returns empty array for non-table HTML", () => {
+    expect(parseHtmlTable("<div>not a table</div>")).toEqual([]);
+  });
+});
+
+describe("parseMarkdown — HTML tables", () => {
+  it("parses <table> block as htmlTable content", () => {
+    const md = "# Slide\n\n<table><tr><th>A</th></tr><tr><td>1</td></tr></table>";
+    const { slides } = parseMarkdown(md);
+    const ht = slides[0].content.find((c) => c.type === "htmlTable");
+    expect(ht).toBeDefined();
+    expect(ht.data.rows).toHaveLength(2);
   });
 });

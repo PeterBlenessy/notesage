@@ -35,9 +35,9 @@
 | G13 — Image enhancements | 3 | #14 | Done |
 | G14 — Table enhancements | 3 | #15 | Done |
 | G15 — Scatter/radar/bubble | 3 | #16 | Done |
-| G16 — YouTube embedding | 4 | #17 | Not started |
+| G16 — YouTube embedding | 4 | #17 | Done |
 | G17 — Custom geometry | 4 | \- | Not planned |
-| G18 — HTML table import | 4 | #18 | Not started |
+| G18 — HTML table import | 4 | #18 | Done |
 
 ---
 
@@ -349,7 +349,7 @@ Split bullet lists at item boundaries (never mid-item).
 
 ---
 
-### #17 — Add YouTube video embedding (G16)
+### #17 — Add YouTube video embedding (G16) ✅
 
 **Description:** Detect YouTube URLs in `<!-- youtube: URL -->` HTML comments. Convert to embed format and add via `slide.addMedia({ type: "online", link })`.
 
@@ -366,7 +366,7 @@ Split bullet lists at item boundaries (never mid-item).
 
 ---
 
-### #18 — Add HTML table import support (G18)
+### #18 — Add HTML table import support (G18) ✅
 
 **Description:** Implement `pptx.tableToSlides()` support for converting HTML table strings to slides. Requires a minimal DOM via `jsdom` or `linkedom`. Low priority — markdown tables already work well.
 

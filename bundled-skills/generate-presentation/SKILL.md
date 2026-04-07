@@ -86,6 +86,8 @@ When writing the markdown file, these rules control how the script converts it t
 | `![alt](path "cover")` | Image with crop-to-fill sizing |
 | `![alt](path "round")` | Image with circular crop |
 | `<!-- background: path -->` | Slide background image (optional `overlay=0.4` for dimming) |
+| `<!-- youtube: URL -->` | Embedded YouTube video (click to play in PowerPoint) |
+| `<table>...</table>` | HTML table converted to native PowerPoint table |
 | `[text](url)` | Clickable hyperlink — opens in browser from PowerPoint |
 | `[text](#slide-N)` | Cross-slide link — navigates to slide N within the deck |
 | `~text~` | Subscript (e.g., `H~2~O` → H₂O) |

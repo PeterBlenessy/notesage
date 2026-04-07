@@ -182,6 +182,29 @@ function parseSimpleYaml(text) {
 }
 
 // ---------------------------------------------------------------------------
+// Simple HTML table parser (#18) — regex-based, no DOM dependency
+// ---------------------------------------------------------------------------
+
+function parseHtmlTable(html) {
+  const rows = [];
+  // Extract rows
+  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let rowMatch;
+  while ((rowMatch = rowRegex.exec(html)) !== null) {
+    const cells = [];
+    const cellRegex = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
+    let cellMatch;
+    while ((cellMatch = cellRegex.exec(rowMatch[1])) !== null) {
+      // Strip HTML tags from cell content
+      const text = cellMatch[1].replace(/<[^>]+>/g, "").trim();
+      cells.push(text);
+    }
+    if (cells.length > 0) rows.push(cells);
+  }
+  return rows;
+}
+
+// ---------------------------------------------------------------------------
 // Markdown parser — converts markdown text into slide data model
 // ---------------------------------------------------------------------------
 
@@ -233,6 +256,24 @@ function parseMarkdown(md) {
       const bgPath = bgMatch[1].trim();
       const overlay = bgMatch[2] ? parseFloat(bgMatch[2]) : null;
       ensureSlide()._background = { path: bgPath, overlay };
+      i++;
+      continue;
+    }
+
+    // YouTube embed: <!-- youtube: URL -->
+    const ytMatch = trimmed.match(/^<!--\s*youtube:\s*(\S+)\s*-->$/);
+    if (ytMatch) {
+      const rawUrl = ytMatch[1];
+      // Normalize to embed URL
+      let videoId = null;
+      const longMatch = rawUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
+      if (longMatch) videoId = longMatch[1];
+      if (videoId) {
+        ensureSlide().content.push({
+          type: "youtube",
+          data: { url: rawUrl, videoId, embedUrl: `https://www.youtube.com/embed/${videoId}` },
+        });
+      }
       i++;
       continue;
     }
@@ -428,6 +469,22 @@ function parseMarkdown(md) {
         i++;
       }
       ensureSlide().content.push({ type: "numbered", data: { items } });
+      continue;
+    }
+
+    // HTML table (#18)
+    if (/^<table/i.test(trimmed)) {
+      const htmlLines = [trimmed];
+      i++;
+      while (i < lines.length && !/<\/table>/i.test(htmlLines[htmlLines.length - 1])) {
+        htmlLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length && /<\/table>/i.test(lines[i])) { htmlLines.push(lines[i]); i++; }
+      const tableRows = parseHtmlTable(htmlLines.join("\n"));
+      if (tableRows.length > 0) {
+        ensureSlide().content.push({ type: "htmlTable", data: { rows: tableRows } });
+      }
       continue;
     }
 
@@ -1200,6 +1257,52 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
           curY += colH + 0.2;
           break;
         }
+
+        case "youtube": {
+          const ytH = 4.0;
+          curSlide.addMedia({
+            type: "online",
+            link: item.data.embedUrl,
+            x: MARGIN_LEFT,
+            y: curY,
+            w: CONTENT_WIDTH * 0.75,
+            h: ytH,
+          });
+          curY += ytH + 0.2;
+          break;
+        }
+
+        case "htmlTable": {
+          // Render pre-parsed HTML table rows (#18)
+          const numCols = item.data.rows[0]?.length || 1;
+          const rows = item.data.rows.map((row, ri) =>
+            row.map((cell) => ({
+              text: cell,
+              options: {
+                fontSize: 14,
+                fontFace: theme.fonts.body,
+                color: ri === 0 ? theme.colors.lt1 : theme.colors.dk1,
+                bold: ri === 0,
+                fill: ri === 0 ? { color: theme.colors.accent1 } : ri % 2 === 0 ? { color: theme.colors.lt2 } : undefined,
+                border: [
+                  { type: "solid", pt: ri === 0 ? 0 : 0.25, color: ri === 0 ? "FFFFFF" : "DDDDDD" },
+                  { type: "solid", pt: 0.25, color: "DDDDDD" },
+                  { type: "solid", pt: ri === 0 ? 1.5 : 0.25, color: ri === 0 ? theme.colors.accent1 : "DDDDDD" },
+                  { type: "solid", pt: 0.25, color: "DDDDDD" },
+                ],
+                valign: "middle",
+                margin: [4, 6, 4, 6],
+              },
+            }))
+          );
+          curSlide.addTable(rows, {
+            x: MARGIN_LEFT, y: curY, w: CONTENT_WIDTH,
+            colW: Array(numCols).fill(CONTENT_WIDTH / numCols),
+            autoPage: true, autoPageRepeatHeader: true, autoPageHeaderRows: 1,
+          });
+          curY += Math.min(rows.length * 0.4, MAX_CONTENT_BOTTOM - curY) + 0.2;
+          break;
+        }
       }
     }
 
@@ -1268,7 +1371,7 @@ async function main() {
 }
 
 // Export for testing
-export { parseMarkdown, parseInlineFormatting, stripMarkdownFormatting, inferLayout, parseSimpleYaml, parseYamlValue, estimateContentHeight, STYLES, MASTER_MAP };
+export { parseMarkdown, parseInlineFormatting, stripMarkdownFormatting, inferLayout, parseSimpleYaml, parseYamlValue, estimateContentHeight, parseHtmlTable, STYLES, MASTER_MAP };
 
 if (__isMain) {
   main().catch((err) => {
