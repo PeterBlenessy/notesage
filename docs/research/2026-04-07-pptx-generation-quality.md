@@ -8,7 +8,7 @@
 | **Current usage** | \~5% of library capabilities |
 | **Script** | `bundled-skills/generate-presentation/scripts/generate.mjs` (782 lines) |
 | **PRD** | [rich-pptx-generation](../prds/2026-04-07-rich-pptx-generation.md) (Draft) |
-| **Tasks** | Linked per feature from PRD feature table |
+| **Tasks** | [rich-pptx-generation-tasks](../tasks/2026-04-07-rich-pptx-generation-tasks.md) (18 tasks: 9S, 7M, 2L) |
 
 ## Context
 
