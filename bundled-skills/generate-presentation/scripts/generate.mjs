@@ -184,9 +184,12 @@ function parseMarkdown(md) {
       continue;
     }
 
-    // Speaker notes callout: > [!notes]
-    if (/^>\s*\[!notes\]/i.test(trimmed)) {
+    // Speaker notes callout: > [!notes] or > \[!notes\] (escaped brackets)
+    if (/^>\s*\\?\[!notes\\?\]/i.test(trimmed)) {
       const noteLines = [];
+      // Check if the notes text continues on the same line after the tag
+      const inlineNotes = trimmed.replace(/^>\s*\\?\[!notes\\?\]\s*/i, "");
+      if (inlineNotes) noteLines.push(inlineNotes);
       i++;
       while (i < lines.length && /^>\s?/.test(lines[i])) {
         noteLines.push(lines[i].replace(/^>\s?/, ""));
@@ -196,8 +199,8 @@ function parseMarkdown(md) {
       continue;
     }
 
-    // Other callout: > [!type]
-    const calloutMatch = trimmed.match(/^>\s*\[!(\w+)\]/i);
+    // Other callout: > [!type] or > \[!type\] (escaped brackets)
+    const calloutMatch = trimmed.match(/^>\s*\\?\[!(\w+)\\?\]/i);
     if (calloutMatch) {
       const calloutType = calloutMatch[1];
       const calloutLines = [];
