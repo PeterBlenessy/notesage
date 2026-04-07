@@ -899,6 +899,7 @@
   border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 0.05em 0.45em;
+  margin-inline: 0.1em;
   font-size: 0.88em;
   font-weight: 500;
   cursor: pointer;
@@ -909,28 +910,13 @@
   background-color: var(--color-accent);
 }
 
-/* When cursor is inside a tag, ProseMirror splits the decoration into two
-   adjacent spans. Merge them visually so the badge looks intact. */
-.tag-badge:has(+ .tag-badge) {
-  border-right: 0;
-  padding-right: 0;
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-}
-
-.tag-badge + .tag-badge {
-  border-left: 0;
-  padding-left: 0;
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
-}
-
 /* Mention badges */
 .mention-badge {
   background-color: var(--color-muted);
   border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 0.05em 0.45em;
+  margin-inline: 0.1em;
   font-size: 0.88em;
   font-weight: 500;
   cursor: pointer;
@@ -940,22 +926,6 @@
 
 .mention-badge:hover {
   background-color: var(--color-accent);
-}
-
-/* When cursor is inside a mention, ProseMirror splits the decoration into two
-   adjacent spans. Merge them visually so the badge looks intact. */
-.mention-badge:has(+ .mention-badge) {
-  border-right: 0;
-  padding-right: 0;
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-}
-
-.mention-badge + .mention-badge {
-  border-left: 0;
-  padding-left: 0;
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
 }
 
 /* Date badges — hide the "//" prefix visually.
@@ -976,6 +946,7 @@
   border: 1px solid var(--color-date-badge-border);
   border-radius: 6px;
   padding: 0.05em 0.45em 0.05em 0.45em;
+  margin-inline: 0.1em;
   font-size: 0.88em;
   font-weight: 500;
   cursor: pointer;
@@ -984,22 +955,6 @@
 
 .date-badge:hover {
   background-color: var(--color-date-badge-bg-hover);
-}
-
-/* When cursor is inside a date, ProseMirror splits the decoration into
-   adjacent spans. Merge them visually so the badge looks intact. */
-.date-badge:has(+ .date-badge) {
-  border-right: 0;
-  padding-right: 0;
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-}
-
-.date-badge + .date-badge {
-  border-left: 0;
-  padding-left: 0;
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
 }
 
 /* Find in document */

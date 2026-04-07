@@ -56,7 +56,9 @@ impl IndexState {
     }
 }
 
-/// Process the reindex queue (called from watcher integration).
+/// Process the reindex queue (called from watcher event handler —
+/// must run unconditionally, not gated on frontend batch emptiness,
+/// so that self-write reindex entries are drained).
 pub fn process_reindex_queue(app: &AppHandle) {
     let state = match app.try_state::<IndexState>() {
         Some(s) => s,
@@ -99,4 +101,72 @@ pub fn process_reindex_queue(app: &AppHandle) {
     }
 
     *state.processing.lock() = false;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn queue_reindex_adds_entry() {
+        let state = IndexState::new();
+        assert_eq!(state.reindex_queue.lock().len(), 0);
+
+        state.queue_reindex("/tmp/test.md".to_string(), FileChangeKind::Modify);
+        assert_eq!(state.reindex_queue.lock().len(), 1);
+
+        state.queue_reindex("/tmp/test2.md".to_string(), FileChangeKind::Create);
+        assert_eq!(state.reindex_queue.lock().len(), 2);
+    }
+
+    #[test]
+    fn circuit_breaker_allows_up_to_max() {
+        let state = IndexState::new();
+        let path = "/tmp/rapid.md";
+
+        // First REINDEX_CIRCUIT_BREAKER_MAX calls should not be throttled
+        for _ in 0..REINDEX_CIRCUIT_BREAKER_MAX {
+            assert!(!state.is_reindex_throttled(path));
+        }
+
+        // The next call should be throttled
+        assert!(state.is_reindex_throttled(path));
+    }
+
+    #[test]
+    fn circuit_breaker_resets_after_window() {
+        let state = IndexState::new();
+        let path = "/tmp/window.md";
+
+        // Exhaust the circuit breaker
+        for _ in 0..REINDEX_CIRCUIT_BREAKER_MAX {
+            state.is_reindex_throttled(path);
+        }
+        assert!(state.is_reindex_throttled(path));
+
+        // Simulate window expiry by manually resetting the timestamp
+        {
+            let mut counts = state.reindex_counts.lock();
+            if let Some((_, window_start)) = counts.get_mut(path) {
+                *window_start = Instant::now() - REINDEX_CIRCUIT_BREAKER_WINDOW - Duration::from_secs(1);
+            }
+        }
+
+        // Should be allowed again after window expires
+        assert!(!state.is_reindex_throttled(path));
+    }
+
+    #[test]
+    fn circuit_breaker_independent_per_file() {
+        let state = IndexState::new();
+
+        // Exhaust breaker for file A
+        for _ in 0..REINDEX_CIRCUIT_BREAKER_MAX {
+            state.is_reindex_throttled("/tmp/a.md");
+        }
+        assert!(state.is_reindex_throttled("/tmp/a.md"));
+
+        // File B should still be allowed
+        assert!(!state.is_reindex_throttled("/tmp/b.md"));
+    }
 }

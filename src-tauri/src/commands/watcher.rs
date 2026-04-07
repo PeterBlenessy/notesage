@@ -215,14 +215,16 @@ fn ensure_watcher(app: &AppHandle) -> Result<(), String> {
                 }
             }
 
-            // Emit batch event with all filtered events at once
+            // Always drain the reindex queue — self-write events are filtered
+            // from the frontend batch but still queue reindex entries that need
+            // processing for tag/mention autocomplete to stay current.
+            crate::index::process_reindex_queue(&app_handle);
+
+            // Emit batch event with non-self-write changes to the frontend
             if !batch.is_empty() {
                 if let Err(e) = app_handle.emit("file-changed-batch", &batch) {
                     log::error!(target: "notesage::watcher", "Failed to emit file-changed-batch event: {:?}", e);
                 }
-
-                // Process the reindex queue after emitting events
-                crate::index::process_reindex_queue(&app_handle);
             }
         },
     )

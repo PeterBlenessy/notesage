@@ -178,8 +178,58 @@ export function useAppLifecycle({ onOpenPalette }: UseAppLifecycleOptions) {
 
   // --- Reload file trees on startup ---
   useEffect(() => {
-    reloadTrees();
+    const STARTUP_TIMEOUT_MS = 30_000;
+    let timedOut = false;
+
+    const startupWithTimeout = async () => {
+      try {
+        await Promise.race([
+          reloadTrees(),
+          new Promise<void>((resolve) =>
+            setTimeout(() => {
+              timedOut = true;
+              resolve();
+            }, STARTUP_TIMEOUT_MS)
+          ),
+        ]);
+      } catch (err) {
+        log.error("startup", "Startup tree reload failed", err);
+      } finally {
+        const settings = useSettingsStore.getState();
+        if (!settings.startupReady) {
+          if (timedOut) {
+            log.warn(
+              "startup",
+              `Startup timed out after ${STARTUP_TIMEOUT_MS / 1000}s — setting startupReady to unblock skill discovery`
+            );
+          }
+          settings.setStartupReady(true);
+        }
+      }
+    };
+
+    startupWithTimeout();
   }, []);
+}
+
+/** Race a promise against a per-step timeout. Returns undefined on timeout. */
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => {
+      log.warn("startup", `${label} timed out after ${ms / 1000}s — skipping`);
+      resolve(undefined);
+    }, ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
 }
 
 /**
@@ -188,6 +238,7 @@ export function useAppLifecycle({ onOpenPalette }: UseAppLifecycleOptions) {
  */
 async function reloadTrees() {
   const t0 = performance.now();
+  log.info("startup", "reloadTrees started");
   const ws = useWorkspaceStore.getState();
   const settings = useSettingsStore.getState();
 
@@ -210,12 +261,22 @@ async function reloadTrees() {
   const tabRestorePromise = restorePersistedTabs();
 
   // Reload explorer folder trees (remove invalid ones)
+  log.info("startup", `Validating ${ws.explorerFolders.length} explorer folders, ${ws.projects.length} projects`);
+  const STEP_TIMEOUT_MS = 10_000;
   const validFolders: string[] = [];
   for (const folder of ws.explorerFolders) {
     try {
-      const tree = await tauriApi.listDirectory(folder.path, settings.showHiddenFiles);
-      ws.updateExplorerTree(folder.path, tree);
-      validFolders.push(folder.path);
+      const tree = await withTimeout(
+        tauriApi.listDirectory(folder.path, settings.showHiddenFiles),
+        STEP_TIMEOUT_MS,
+        `listDirectory(${folder.path.split('/').pop()})`,
+      );
+      if (tree) {
+        ws.updateExplorerTree(folder.path, tree);
+        validFolders.push(folder.path);
+      } else {
+        validFolders.push(folder.path); // Keep on timeout — don't remove
+      }
     } catch {
       // Expected: folder no longer exists — will be removed below
     }
@@ -229,8 +290,15 @@ async function reloadTrees() {
   // Reload all project trees
   for (const project of ws.projects) {
     try {
-      const tree = await tauriApi.listDirectory(project.path, settings.showHiddenFiles);
-      ws.updateProjectTree(project.path, tree);
+      const tree = await withTimeout(
+        tauriApi.listDirectory(project.path, settings.showHiddenFiles),
+        STEP_TIMEOUT_MS,
+        `listDirectory(${project.path.split('/').pop()})`,
+      );
+      if (tree) {
+        ws.updateProjectTree(project.path, tree);
+      }
+      // On timeout: keep the project, just skip tree refresh
     } catch {
       // Expected: project directory may have been deleted or moved
       const projectName = project.path.split('/').pop() || project.path;
@@ -276,6 +344,7 @@ async function reloadTrees() {
   useEditorStylesStore.getState().loadSystemFonts();
 
   // Detect iCloud availability
+  log.info("startup", `Trees validated in ${Math.round(performance.now() - t0)}ms, starting iCloud detection`);
   try {
     const icloudRoot = await tauriApi.getICloudPath();
     if (icloudRoot) {
@@ -301,8 +370,15 @@ async function reloadTrees() {
       } else {
         for (const syncedPath of syncStore.syncedProjectPaths) {
           try {
-            const tree = await tauriApi.listDirectory(syncedPath, settings.showHiddenFiles);
-            ws.addProject(syncedPath, tree);
+            const tree = await withTimeout(
+              tauriApi.listDirectory(syncedPath, settings.showHiddenFiles),
+              STEP_TIMEOUT_MS,
+              `listDirectory(synced:${syncedPath.split('/').pop()})`,
+            );
+            if (tree) {
+              ws.addProject(syncedPath, tree);
+            }
+            // On timeout: skip this synced project but don't remove it
           } catch {
             // Expected: synced project directory may have been removed from iCloud
             syncStore.removeSyncedProject(syncedPath);
@@ -310,10 +386,16 @@ async function reloadTrees() {
         }
 
         try {
-          const found = await scanICloudForProjects(icloudNotesagePath);
-          if (found) {
-            await syncStore.saveSettings(notesRoot);
-          }
+          await withTimeout(
+            (async () => {
+              const found = await scanICloudForProjects(icloudNotesagePath);
+              if (found) {
+                await syncStore.saveSettings(notesRoot);
+              }
+            })(),
+            STEP_TIMEOUT_MS,
+            "scanICloudForProjects",
+          );
         } catch {
           // Expected: iCloud scan may fail if cloud storage is temporarily unavailable
         }
@@ -334,9 +416,11 @@ async function reloadTrees() {
   }
 
   // Load Quick Notes tree
+  log.info("startup", `iCloud/sync complete in ${Math.round(performance.now() - t0)}ms, loading notes tree`);
   await refreshNotesTree();
 
   // Initialize the SQLite document index
+  log.info("startup", `Notes tree loaded in ${Math.round(performance.now() - t0)}ms, initializing index`);
   try {
     const tIndex0 = performance.now();
     await tauriApi.indexInit();
@@ -360,6 +444,7 @@ async function reloadTrees() {
   }
 
   // Signal that startup tree validation is complete
+  log.info("startup", `Startup complete in ${Math.round(performance.now() - t0)}ms, setting startupReady`);
   settings.setStartupReady(true);
   console.log('[perf:startup] ready', { totalMs: Math.round(performance.now() - t0) });
 
