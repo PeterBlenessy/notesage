@@ -6,6 +6,9 @@
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 
+// Detect if running as the main script (vs. imported for testing)
+const __isMain = process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pathname;
+
 // ---------------------------------------------------------------------------
 // Dependency check
 // ---------------------------------------------------------------------------
@@ -14,20 +17,24 @@ let PptxGenJS, JSZip;
 try {
   PptxGenJS = (await import("pptxgenjs")).default;
 } catch {
-  console.error(
-    "Error: pptxgenjs not installed. Run `npm install` in this directory:\n  " +
-      dirname(new URL(import.meta.url).pathname)
-  );
-  process.exit(1);
+  if (__isMain) {
+    console.error(
+      "Error: pptxgenjs not installed. Run `npm install` in this directory:\n  " +
+        dirname(new URL(import.meta.url).pathname)
+    );
+    process.exit(1);
+  }
 }
 try {
   JSZip = (await import("jszip")).default;
 } catch {
-  console.error(
-    "Error: jszip not installed. Run `npm install` in this directory:\n  " +
-      dirname(new URL(import.meta.url).pathname)
-  );
-  process.exit(1);
+  if (__isMain) {
+    console.error(
+      "Error: jszip not installed. Run `npm install` in this directory:\n  " +
+        dirname(new URL(import.meta.url).pathname)
+    );
+    process.exit(1);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -126,11 +133,16 @@ function parseMarkdown(md) {
   }
 
   let i = 0;
+  const metadata = {};
 
-  // Skip YAML frontmatter
+  // Parse YAML frontmatter
   if (lines[0] && lines[0].trim() === "---") {
     i = 1;
-    while (i < lines.length && lines[i].trim() !== "---") i++;
+    while (i < lines.length && lines[i].trim() !== "---") {
+      const fmMatch = lines[i].match(/^(\w[\w\s]*?):\s*(.+)/);
+      if (fmMatch) metadata[fmMatch[1].trim().toLowerCase()] = fmMatch[2].trim();
+      i++;
+    }
     i++; // skip closing ---
   }
 
@@ -316,7 +328,7 @@ function parseMarkdown(md) {
     slide.layout = inferLayout(slide);
   }
 
-  return slides;
+  return { slides, metadata };
 }
 
 function inferLayout(slide) {
@@ -361,6 +373,7 @@ const STYLES = {
     footer: null,
     titleSlide: { bgColor: "2D2D2D", titleColor: "FFFFFF" },
     accentBar: { color: "2D2D2D", height: 0.06 },
+    titleShadow: { type: "outer", blur: 3, offset: 1, opacity: 0.25, angle: 45, color: "000000" },
   },
   report: {
     colors: {
@@ -373,6 +386,7 @@ const STYLES = {
     slideNumbers: true,
     footer: "title",
     titleSlide: { bgColor: "1A1A1A", titleColor: "FFFFFF" },
+    titleShadow: { type: "outer", blur: 3, offset: 1, opacity: 0.25, angle: 45, color: "000000" },
   },
 };
 
@@ -448,14 +462,16 @@ function stripMarkdownFormatting(text) {
     .replace(/__(.+?)__/g, "$1")
     .replace(/_(.+?)_/g, "$1")
     .replace(/~~(.+?)~~/g, "$1")
+    .replace(/~([^~]+?)~/g, "$1")
+    .replace(/\^([^^]+?)\^/g, "$1")
     .replace(/`(.+?)`/g, "$1")
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
 }
 
 function parseInlineFormatting(text) {
-  // Returns an array of PptxGenJS text objects with bold/italic/code formatting
+  // Returns an array of PptxGenJS text objects with bold/italic/code/hyperlink/sub/superscript formatting
   const parts = [];
-  const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|__(.+?)__|_(.+?)_|~~(.+?)~~|`(.+?)`|\[([^\]]+)\]\(([^)]+)\)|[^*_~`\[]+)/g;
+  const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|__(.+?)__|_(.+?)_|~~(.+?)~~|~([^~]+?)~|`(.+?)`|\^([^^]+?)\^|\[([^\]]+)\]\(([^)]+)\)|[^*_~`\[^]+)/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
     const full = match[0];
@@ -464,16 +480,33 @@ function parseInlineFormatting(text) {
     else if (match[4]) parts.push({ text: match[4], options: { bold: true } });
     else if (match[5]) parts.push({ text: match[5], options: { italic: true } });
     else if (match[6]) parts.push({ text: match[6], options: { strike: true } });
-    else if (match[7]) parts.push({ text: match[7], options: { fontFace: "Courier New", fontSize: 10 } });
-    else if (match[8]) parts.push({ text: match[8], options: { underline: { style: "sng" } } });
+    else if (match[7]) parts.push({ text: match[7], options: { subscript: true } });
+    else if (match[8]) parts.push({ text: match[8], options: { fontFace: "Courier New", fontSize: 10 } });
+    else if (match[9]) parts.push({ text: match[9], options: { superscript: true } });
+    else if (match[10]) {
+      // Hyperlink: external URL or cross-slide reference (#slide-N)
+      const url = match[11];
+      const slideRef = url.match(/^#slide-(\d+)$/);
+      if (slideRef) {
+        parts.push({ text: match[10], options: { hyperlink: { slide: slideRef[1] } } });
+      } else {
+        parts.push({ text: match[10], options: { hyperlink: { url } } });
+      }
+    }
     else parts.push({ text: full });
   }
   return parts.length > 0 ? parts : [{ text }];
 }
 
-async function generatePptx(slides, theme, inputDir, outputPath) {
+async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) {
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE"; // 13.33 x 7.5 inches
+
+  // Apply presentation metadata (#2)
+  pptx.title = metadata.title || stripMarkdownFormatting(slides[0]?.title || "");
+  if (metadata.author) pptx.author = metadata.author;
+  if (metadata.company) pptx.company = metadata.company;
+  if (metadata.subject) pptx.subject = metadata.subject;
 
   const SLIDE_W = 13.33;
   const MARGIN_LEFT = 0.8;
@@ -517,7 +550,7 @@ async function generatePptx(slides, theme, inputDir, outputPath) {
       const titleFontSize = isTitleOnly ? 44 : 36;
       const titleY = isTitleOnly ? 2.5 : TITLE_Y;
 
-      slide.addText(stripMarkdownFormatting(slideData.title), {
+      const titleOpts = {
         x: MARGIN_LEFT,
         y: titleY,
         w: CONTENT_WIDTH,
@@ -528,7 +561,12 @@ async function generatePptx(slides, theme, inputDir, outputPath) {
         bold: true,
         align: isTitleOnly ? "center" : "left",
         valign: "bottom",
-      });
+      };
+      // Subtle shadow on content slide titles for business/report styles (#5)
+      if (theme.titleShadow && !isTitleOnly) {
+        titleOpts.shadow = theme.titleShadow;
+      }
+      slide.addText(stripMarkdownFormatting(slideData.title), titleOpts);
     }
 
     // Subtitle
@@ -611,9 +649,8 @@ async function generatePptx(slides, theme, inputDir, outputPath) {
 
         case "table": {
           const rows = item.data.rows.map((row, ri) =>
-            row.map((cell) => ({
-              text: stripMarkdownFormatting(cell),
-              options: {
+            row.map((cell) => {
+              const cellOpts = {
                 fontSize: 14,
                 fontFace: theme.fonts.body,
                 color: ri === 0 ? theme.colors.lt1 : theme.colors.dk1,
@@ -622,8 +659,16 @@ async function generatePptx(slides, theme, inputDir, outputPath) {
                 border: { type: "solid", pt: 0.5, color: "CCCCCC" },
                 valign: "middle",
                 margin: [4, 6, 4, 6],
-              },
-            }))
+              };
+              // Detect hyperlinks in table cells (#1)
+              const linkMatch = cell.match(/\[([^\]]+)\]\(([^)]+)\)/);
+              if (linkMatch) {
+                const slideRef = linkMatch[2].match(/^#slide-(\d+)$/);
+                if (slideRef) cellOpts.hyperlink = { slide: slideRef[1] };
+                else cellOpts.hyperlink = { url: linkMatch[2] };
+              }
+              return { text: stripMarkdownFormatting(cell), options: cellOpts };
+            })
           );
           const tableH = Math.min(rows.length * 0.4, 3.5);
           slide.addTable(rows, {
@@ -713,13 +758,12 @@ async function generatePptx(slides, theme, inputDir, outputPath) {
       slide.addNotes(slideData.notes);
     }
 
-    // Slide number
+    // Slide number via PptxGenJS API (#3) — renders as <p:sldNum> in OOXML
     if (theme.slideNumbers && !isTitleOnly) {
-      slide.addText(`${si + 1}`, {
+      slide.slideNumber = {
         x: 12.2, y: 6.9, w: 0.8, h: 0.4,
         fontSize: 10, fontFace: theme.fonts.body, color: theme.colors.dk2,
-        align: "right",
-      });
+      };
     }
 
     // Footer with title
@@ -747,7 +791,7 @@ async function main() {
   const markdown = readFileSync(inputPath, "utf-8");
 
   // Parse into slide model
-  const slides = parseMarkdown(markdown);
+  const { slides, metadata } = parseMarkdown(markdown);
   if (slides.length === 0) {
     console.error("Error: No slides parsed from input. Make sure markdown has at least one # heading or content.");
     process.exit(1);
@@ -771,11 +815,16 @@ async function main() {
 
   // Generate PPTX
   console.log(`Generating ${slides.length} slides with "${template ? "custom template" : style}" style...`);
-  await generatePptx(slides, theme, inputDir, outputPath);
+  await generatePptx(slides, theme, inputDir, outputPath, metadata);
   console.log(`Presentation saved to: ${outputPath}`);
 }
 
-main().catch((err) => {
-  console.error(`Error: ${err.message}`);
-  process.exit(1);
-});
+// Export for testing
+export { parseMarkdown, parseInlineFormatting, stripMarkdownFormatting, inferLayout, STYLES };
+
+if (__isMain) {
+  main().catch((err) => {
+    console.error(`Error: ${err.message}`);
+    process.exit(1);
+  });
+}

@@ -79,9 +79,28 @@ When writing the markdown file, these rules control how the script converts it t
 | GFM table (`\| col \| col \|`) | Native PowerPoint table with styled header row |
 | Code block (triple backticks) | Monospace text with grey background |
 | `![alt](path)` | Embedded image (local paths only) |
+| `[text](url)` | Clickable hyperlink — opens in browser from PowerPoint |
+| `[text](#slide-N)` | Cross-slide link — navigates to slide N within the deck |
+| `~text~` | Subscript (e.g., `H~2~O` → H₂O) |
+| `^text^` | Superscript (e.g., `x^2^` → x²) |
 | `> [!notes]` callout | Speaker notes (not visible on the slide) |
 | `> [!tip]`, `> [!warning]`, etc. | Styled callout text |
 | `> plain quote` | Italic body text |
+
+### Frontmatter Metadata
+
+Optional YAML frontmatter at the top of the markdown sets PowerPoint document properties:
+
+```markdown
+---
+author: Jane Doe
+company: Acme Corp
+title: Q4 Review
+subject: Quarterly business review
+---
+```
+
+All fields are optional. If `title` is omitted, it defaults to the first `# Heading`. These values appear in PowerPoint's File > Properties.
 
 ### Example Markdown Structure
 
