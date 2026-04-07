@@ -127,6 +127,8 @@ function makeMockPresentation(overrides?: Partial<PptxPresentation>): PptxPresen
         searchText: "Third slide notes",
       },
     ],
+    masters: [],
+    layouts: [],
     ...overrides,
   };
 }

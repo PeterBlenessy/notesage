@@ -255,7 +255,7 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
                     transformOrigin: "top left",
                   }}
                 >
-                  <SlideRenderer slide={slide} theme={presentation!.theme} />
+                  <SlideRenderer slide={slide} theme={presentation!.theme} onSlideNavigate={goToSlide} />
                 </div>
               </div>
             </div>

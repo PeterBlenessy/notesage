@@ -245,27 +245,33 @@ Preview and export markdown documents as self-contained HTML files with full fea
 
 ## PPTX Viewer
 
-View PowerPoint presentations directly in Notesage with slide-by-slide navigation, chart rendering, and search.
+View PowerPoint presentations directly in Notesage with high-fidelity slide rendering, master/layout inheritance, chart rendering, and search.
 
 **Rendering:**
 
 - Powered by JSZip (ZIP extraction) and browser-native DOMParser (XML parsing)
 - Frontend-only — no Rust backend dependency for viewing
 - Each slide rendered as positioned HTML/CSS elements preserving the PPTX coordinate system
+- Slide master and layout inheritance: backgrounds, placeholder positions, and shape trees merged with correct z-order
 - Aspect ratio detection (16:9 vs 4:3) from PPTX metadata
 
 **Supported elements:**
 
 | PPTX Element | Rendering |
 | --- | --- |
-| Text boxes | Styled `<div>` with paragraph/run formatting (bold, italic, underline, font, size, color, alignment, bullets) |
+| Text boxes | Styled `<div>` with paragraph/run formatting (bold, italic, underline, strikethrough, superscript/subscript, font, size, color, alignment, bullets). `bodyPr` respected: vertical alignment (top/center/bottom), internal margins, font scaling (`normAutofit`), auto-fit overflow, no-wrap mode. Line/paragraph spacing (`lnSpc`, `spcBef`, `spcAft`), first-line indent, left margin. Auto-numbered bullets (`buAutoNum`: arabic, alpha, roman formats) with bullet font, color, and size |
 | Images | `<img>` with base64 data URLs extracted from ZIP media/ |
-| Shapes (rect, ellipse, roundRect) | `<div>` with CSS border-radius, background, border |
-| Lines and arrows | `<svg>` with `<line>` and arrowhead markers |
-| Tables | HTML `<table>` with cell styling, colspan/rowspan, background colors |
-| Charts (bar, line, pie, area, scatter, doughnut) | recharts components rendered at chart position |
+| Shapes (rect, ellipse, roundRect, + 44 presets) | `<div>` or SVG `<path>` with CSS border-radius, background, border. `flipH`/`flipV` combined with rotation. 11 OOXML dash presets mapped to CSS `border-style` and SVG `stroke-dasharray` |
+| Lines and arrows | `<svg>` with `<line>` and arrowhead markers. Dash styles supported |
+| Tables | HTML `<table>` with cell styling, colspan/rowspan, background colors, per-cell borders (width, color, dash style, noFill), per-cell margins, vertical alignment |
+| Charts (bar, line, pie, area, scatter, doughnut, radar, bubble) | recharts components with titles, legends (positioned), axis labels/titles, and data labels |
 | Groups | Nested container with offset child elements |
-| Gradient fills (linear, radial) | CSS `linear-gradient()` / `radial-gradient()` from DrawingML `a:gradFill` |
+| Gradient fills (linear, radial) | CSS `linear-gradient()` / `radial-gradient()` from DrawingML `a:gradFill`, alpha transparency on stops |
+| Preset geometries (44 shapes) | SVG `<path>` rendering for arrows, stars, polygons, flowchart symbols, callouts, etc. — replaces generic rectangles |
+| Hyperlinks | External URLs open in system browser, internal slide links navigate within the viewer. Text run and shape-level `hlinkClick` supported |
+| Shape shadows | `outerShdw` parsed (blur, distance/direction, color with alpha) → CSS `box-shadow` or SVG `drop-shadow` filter |
+| Image crop | `srcRect` and `fillRect` crop percentages rendered as CSS `clip-path: inset()` |
+| Master/layout slides | Slide masters and layouts parsed. Shape trees merged (master → layout → slide z-order). Background and placeholder positions inherited. Placeholder deduplication |
 | SmartArt | Fallback rasterized image, or placeholder if no fallback |
 
 **Navigation:**
@@ -307,8 +313,11 @@ View PowerPoint presentations directly in Notesage with slide-by-slide navigatio
 
 - `pptx-parser.ts` — pure TypeScript module: `parsePptx(Uint8Array) → PptxPresentation`
 - Uses JSZip for ZIP extraction, DOMParser for XML parsing
-- Theme color resolution: `schemeClr` → theme hex values
+- Theme color resolution: `schemeClr` → theme hex values with tint, shade, and luminance transforms. Alpha transparency on fills and gradient stops
+- Master/layout inheritance: slide masters and layouts parsed and merged into each slide's shape tree with correct z-order and placeholder deduplication
+- Preset geometry engine: 44 DrawingML preset shapes rendered as computed SVG paths
 - EMU to pixel conversion: 1 pixel = 9525 EMU at 96 DPI
+- 62 unit tests covering color transforms (26 tests) and bullet numbering (36 tests)
 
 ## Key Files
 

@@ -4,6 +4,8 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   AreaChart, Area, ScatterChart, Scatter,
   XAxis, YAxis, CartesianGrid, ResponsiveContainer,
+  Legend, Tooltip, LabelList, ZAxis,
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from "recharts";
 import type { PptxChart } from "@/lib/pptx-types";
 
@@ -72,12 +74,33 @@ export function ChartRenderer({ el, px }: ChartRendererProps) {
   });
 
   return (
-    <div style={{ ...positionStyle(el, px), overflow: "hidden" }}>
-      <ResponsiveContainer width="100%" height="100%">
-        {renderChart(el, chartData)}
-      </ResponsiveContainer>
+    <div style={{ ...positionStyle(el, px), overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      {el.title && (
+        <div style={{ textAlign: "center", fontSize: 12, fontWeight: 600, marginBottom: 4, flexShrink: 0 }}>
+          {el.title}
+        </div>
+      )}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          {renderChart(el, chartData)}
+        </ResponsiveContainer>
+      </div>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Shared axis label helpers
+// ---------------------------------------------------------------------------
+
+function xAxisLabel(el: PptxChart): Record<string, unknown> | undefined {
+  if (!el.axes?.categoryAxis?.title) return undefined;
+  return { value: el.axes.categoryAxis.title, position: "insideBottom", offset: -5, fontSize: 10 };
+}
+
+function yAxisLabel(el: PptxChart): Record<string, unknown> | undefined {
+  if (!el.axes?.valueAxis?.title) return undefined;
+  return { value: el.axes.valueAxis.title, angle: -90, position: "insideLeft", fontSize: 10 };
 }
 
 // ---------------------------------------------------------------------------
@@ -95,10 +118,14 @@ function renderChart(
       return (
         <BarChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-          <YAxis tick={{ fontSize: 10 }} />
-          {el.series.map((_, i) => (
-            <Bar key={i} dataKey={`s${i}`} fill={seriesColors[i]} />
+          <XAxis dataKey="name" tick={{ fontSize: 10 }} label={xAxisLabel(el)} />
+          <YAxis tick={{ fontSize: 10 }} label={yAxisLabel(el)} />
+          <Tooltip />
+          {el.legend && <Legend verticalAlign={el.legend.position === "top" ? "top" : "bottom"} />}
+          {el.series.map((s, i) => (
+            <Bar key={i} dataKey={`s${i}`} name={s.name || `Series ${i + 1}`} fill={seriesColors[i]}>
+              {el.showDataLabels && <LabelList dataKey={`s${i}`} position="top" fontSize={9} />}
+            </Bar>
           ))}
         </BarChart>
       );
@@ -106,10 +133,14 @@ function renderChart(
       return (
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-          <YAxis tick={{ fontSize: 10 }} />
-          {el.series.map((_, i) => (
-            <Line key={i} dataKey={`s${i}`} stroke={seriesColors[i]} dot={false} />
+          <XAxis dataKey="name" tick={{ fontSize: 10 }} label={xAxisLabel(el)} />
+          <YAxis tick={{ fontSize: 10 }} label={yAxisLabel(el)} />
+          <Tooltip />
+          {el.legend && <Legend verticalAlign={el.legend.position === "top" ? "top" : "bottom"} />}
+          {el.series.map((s, i) => (
+            <Line key={i} dataKey={`s${i}`} name={s.name || `Series ${i + 1}`} stroke={seriesColors[i]} dot={false}>
+              {el.showDataLabels && <LabelList dataKey={`s${i}`} position="top" fontSize={9} />}
+            </Line>
           ))}
         </LineChart>
       );
@@ -117,10 +148,14 @@ function renderChart(
       return (
         <AreaChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-          <YAxis tick={{ fontSize: 10 }} />
-          {el.series.map((_, i) => (
-            <Area key={i} dataKey={`s${i}`} fill={seriesColors[i]} stroke={seriesColors[i]} fillOpacity={0.3} />
+          <XAxis dataKey="name" tick={{ fontSize: 10 }} label={xAxisLabel(el)} />
+          <YAxis tick={{ fontSize: 10 }} label={yAxisLabel(el)} />
+          <Tooltip />
+          {el.legend && <Legend verticalAlign={el.legend.position === "top" ? "top" : "bottom"} />}
+          {el.series.map((s, i) => (
+            <Area key={i} dataKey={`s${i}`} name={s.name || `Series ${i + 1}`} fill={seriesColors[i]} stroke={seriesColors[i]} fillOpacity={0.3}>
+              {el.showDataLabels && <LabelList dataKey={`s${i}`} position="top" fontSize={9} />}
+            </Area>
           ))}
         </AreaChart>
       );
@@ -128,10 +163,12 @@ function renderChart(
       return (
         <ScatterChart>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-          <YAxis tick={{ fontSize: 10 }} />
-          {el.series.map((_, i) => (
-            <Scatter key={i} data={data} dataKey={`s${i}`} fill={seriesColors[i]} />
+          <XAxis dataKey="name" tick={{ fontSize: 10 }} label={xAxisLabel(el)} />
+          <YAxis tick={{ fontSize: 10 }} label={yAxisLabel(el)} />
+          <Tooltip />
+          {el.legend && <Legend verticalAlign={el.legend.position === "top" ? "top" : "bottom"} />}
+          {el.series.map((s, i) => (
+            <Scatter key={i} name={s.name || `Series ${i + 1}`} data={data} dataKey={`s${i}`} fill={seriesColors[i]} />
           ))}
         </ScatterChart>
       );
@@ -150,12 +187,65 @@ function renderChart(
             innerRadius={el.chartType === "doughnut" ? "40%" : 0}
             outerRadius="80%"
             dataKey="value"
+            label={el.showDataLabels ? { fontSize: 9 } : false}
           >
             {pieData.map((_, i) => (
               <Cell key={i} fill={seriesColors[i % seriesColors.length]} />
             ))}
           </Pie>
+          <Tooltip />
+          {el.legend && <Legend verticalAlign={el.legend.position === "top" ? "top" : "bottom"} />}
         </PieChart>
+      );
+    }
+    case "radar": {
+      const radarData = el.categories.map((cat, i) => {
+        const point: Record<string, unknown> = { subject: cat };
+        el.series.forEach((s, si) => {
+          point[`s${si}`] = s.values[i] ?? 0;
+        });
+        return point;
+      });
+      return (
+        <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="70%">
+          <PolarGrid stroke="#e5e7eb" />
+          <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9 }} />
+          <PolarRadiusAxis tick={{ fontSize: 8 }} />
+          <Tooltip />
+          {el.series.map((s, i) => (
+            <Radar
+              key={i}
+              dataKey={`s${i}`}
+              name={s.name || `Series ${i + 1}`}
+              stroke={seriesColors[i]}
+              fill={seriesColors[i]}
+              fillOpacity={0.3}
+            />
+          ))}
+          {el.legend && <Legend />}
+        </RadarChart>
+      );
+    }
+    case "bubble": {
+      const bubbleSeriesData = el.series.map((s) => {
+        return (s.xValues ?? s.values).map((x, i) => ({
+          x,
+          y: s.values[i] ?? 0,
+          z: s.bubbleSizes?.[i] ?? 10,
+        }));
+      });
+      return (
+        <ScatterChart>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis dataKey="x" type="number" tick={{ fontSize: 10 }} name="X" label={xAxisLabel(el)} />
+          <YAxis dataKey="y" type="number" tick={{ fontSize: 10 }} name="Y" label={yAxisLabel(el)} />
+          <ZAxis dataKey="z" range={[20, 400]} name="Size" />
+          <Tooltip cursor={{ strokeDasharray: "3 3" }} />
+          {el.series.map((s, i) => (
+            <Scatter key={i} name={s.name || `Series ${i + 1}`} data={bubbleSeriesData[i]} fill={seriesColors[i]} />
+          ))}
+          {el.legend && <Legend />}
+        </ScatterChart>
       );
     }
     default:
