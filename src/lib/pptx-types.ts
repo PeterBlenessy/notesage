@@ -18,6 +18,11 @@ export interface PptxSlide {
   background: PptxBackground | null;
   notes: string;
   searchText: string;
+  headerFooter?: {
+    showDate: boolean;
+    showFooter: boolean;
+    showSlideNum: boolean;
+  };
   layoutIndex?: number;
   masterIndex?: number;
   masterShapes?: PptxElement[];
@@ -89,6 +94,8 @@ export interface PptxTextRun {
   fontSize: number;
   fontFamily: string;
   color: string;
+  letterSpacing?: number;
+  caps?: "all" | "small";
   hyperlink?: string; // external URL or "slide:N" for internal links
 }
 
@@ -102,6 +109,7 @@ export interface PptxImage {
   flipH?: boolean;
   flipV?: boolean;
   dataUrl: string;
+  opacity?: number;
   hyperlink?: string;
   crop?: {
     left: number;    // percentage 0-100
@@ -110,6 +118,12 @@ export interface PptxImage {
     bottom: number;  // percentage 0-100
   };
   shadow?: PptxShadow;
+}
+
+export interface ArrowHead {
+  type: "triangle" | "stealth" | "diamond" | "oval" | "arrow";
+  width?: "sm" | "med" | "lg";
+  length?: "sm" | "med" | "lg";
 }
 
 export interface PptxShape {
@@ -128,6 +142,8 @@ export interface PptxShape {
   strokeWidth: number;
   dashStyle?: string;
   text: PptxParagraph[];
+  headArrow?: ArrowHead;
+  tailArrow?: ArrowHead;
   bodyProps?: BodyProperties;
   hyperlink?: string;
   shadow?: PptxShadow;
@@ -243,6 +259,7 @@ export interface PptxGroup {
 export interface PptxBackground {
   fill: PptxFill | null;
   imageDataUrl: string | null;
+  tiled?: boolean;
 }
 
 export interface PptxTheme {

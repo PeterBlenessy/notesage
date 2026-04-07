@@ -109,7 +109,9 @@ pptx.revision = "1";
   subject: Business Performance
   ---
   ```
+
 - If no frontmatter, derive `title` from the first H1 heading
+
 - Apply metadata to the `pptx` instance before generating slides
 
 **SKILL.md update:** Document optional YAML frontmatter fields for presentation metadata.
@@ -277,6 +279,7 @@ options:
   showValue: false
   barDir: col
 ```
+
 ```
 
 **Supported chart types (initial):** `bar`, `line`, `pie`, `doughnut`, `area`
@@ -634,6 +637,7 @@ series:
       - 
       - 
 ```
+
 ```
 
 ```markdown
@@ -646,6 +650,7 @@ series:
       - 
       - 
 ```
+
 ```
 
 **Changes to** `generate.mjs`**:**
@@ -741,6 +746,7 @@ options:
   showValue: false
   barDir: col
 ```
+
 ```
 
 ### Schema
@@ -927,3 +933,4 @@ No Rust backend changes required. No new Tauri commands. All changes are confine
 - PptxGenJS TypeScript definitions: `node_modules/pptxgenjs/types/index.d.ts`
 - Research doc: [2026-04-07-pptx-generation-quality](../research/2026-04-07-pptx-generation-quality.md)
 - Previous PRD: [2026-04-06-high-quality-pptx-generation](2026-04-06-high-quality-pptx-generation.md)
+```

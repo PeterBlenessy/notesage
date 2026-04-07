@@ -259,10 +259,10 @@ View PowerPoint presentations directly in Notesage with high-fidelity slide rend
 
 | PPTX Element | Rendering |
 | --- | --- |
-| Text boxes | Styled `<div>` with paragraph/run formatting (bold, italic, underline, strikethrough, superscript/subscript, font, size, color, alignment, bullets). `bodyPr` respected: vertical alignment (top/center/bottom), internal margins, font scaling (`normAutofit`), auto-fit overflow, no-wrap mode. Line/paragraph spacing (`lnSpc`, `spcBef`, `spcAft`), first-line indent, left margin. Auto-numbered bullets (`buAutoNum`: arabic, alpha, roman formats) with bullet font, color, and size |
-| Images | `<img>` with base64 data URLs extracted from ZIP media/ |
+| Text boxes | Styled `<div>` with paragraph/run formatting (bold, italic, underline, strikethrough, superscript/subscript, font, size, color, alignment, bullets, character spacing, text caps). `bodyPr` respected: vertical alignment (top/center/bottom), internal margins, font scaling (`normAutofit`), auto-fit overflow, no-wrap mode. Line/paragraph spacing (`lnSpc`, `spcBef`, `spcAft`), first-line indent, left margin. Auto-numbered bullets (`buAutoNum`: arabic, alpha, roman formats) with bullet font, color, and size |
+| Images | `<img>` with base64 data URLs extracted from ZIP media/. `alphaModFix` opacity support |
 | Shapes (rect, ellipse, roundRect, + 44 presets) | `<div>` or SVG `<path>` with CSS border-radius, background, border. `flipH`/`flipV` combined with rotation. 11 OOXML dash presets mapped to CSS `border-style` and SVG `stroke-dasharray` |
-| Lines and arrows | `<svg>` with `<line>` and arrowhead markers. Dash styles supported |
+| Lines and arrows | `<svg>` with `<line>` and arrowhead markers (head/tail, 5 arrow types: triangle, stealth, diamond, oval, arrow). Dash styles supported |
 | Tables | HTML `<table>` with cell styling, colspan/rowspan, background colors, per-cell borders (width, color, dash style, noFill), per-cell margins, vertical alignment |
 | Charts (bar, line, pie, area, scatter, doughnut, radar, bubble) | recharts components with titles, legends (positioned), axis labels/titles, and data labels |
 | Groups | Nested container with offset child elements |
@@ -271,7 +271,8 @@ View PowerPoint presentations directly in Notesage with high-fidelity slide rend
 | Hyperlinks | External URLs open in system browser, internal slide links navigate within the viewer. Text run and shape-level `hlinkClick` supported |
 | Shape shadows | `outerShdw` parsed (blur, distance/direction, color with alpha) → CSS `box-shadow` or SVG `drop-shadow` filter |
 | Image crop | `srcRect` and `fillRect` crop percentages rendered as CSS `clip-path: inset()` |
-| Master/layout slides | Slide masters and layouts parsed. Shape trees merged (master → layout → slide z-order). Background and placeholder positions inherited. Placeholder deduplication |
+| Master/layout slides | Slide masters and layouts parsed. Shape trees merged (master → layout → slide z-order). Background and placeholder positions inherited (including image backgrounds with tile/stretch modes). Placeholder deduplication |
+| Slide headers/footers | `p:hf` visibility-aware rendering of date, footer, and slide number chrome placeholders. Slide numbers auto-populated from slide index |
 | SmartArt | Fallback rasterized image, or placeholder if no fallback |
 
 **Navigation:**
@@ -317,7 +318,7 @@ View PowerPoint presentations directly in Notesage with high-fidelity slide rend
 - Master/layout inheritance: slide masters and layouts parsed and merged into each slide's shape tree with correct z-order and placeholder deduplication
 - Preset geometry engine: 44 DrawingML preset shapes rendered as computed SVG paths
 - EMU to pixel conversion: 1 pixel = 9525 EMU at 96 DPI
-- 62 unit tests covering color transforms (26 tests) and bullet numbering (36 tests)
+- 79 unit tests covering color transforms (26 tests), bullet numbering (36 tests), and tier 4 features (17 tests: character spacing, text caps, image transparency, arrow heads)
 
 ## Key Files
 

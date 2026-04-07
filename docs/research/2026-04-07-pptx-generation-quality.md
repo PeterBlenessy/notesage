@@ -27,7 +27,7 @@ There is also a **Rust built-in exporter** (`markdown_to_pptx.rs` using `ppt-rs`
 | Font face, size, color | `fontFace`, `fontSize`, `color` | Yes | \- |
 | Bold, italic | `bold`, `italic` | Yes | \- |
 | Underline (with style + color) | `underline: { style, color }` | Partial — `sng` only | S |
-| Strikethrough | `strike: boolean | 'sngStrike' | 'dblStrike'` | Yes | \- |
+| Strikethrough | \`strike: boolean | 'sngStrike' | 'dblStrike'\` |
 | **Subscript / superscript** | `subscript`, `superscript` | No | S |
 | **Character spacing** | `charSpacing` (number) | No | S |
 | **Line spacing** | `lineSpacing` (pt), `lineSpacingMultiple` (0-9.99) | No | S |
@@ -38,7 +38,7 @@ There is also a **Rust built-in exporter** (`markdown_to_pptx.rs` using `ppt-rs`
 | Text outline | `outline: { color, size }` | No | S |
 | Text glow | `glow: { color, opacity, size }` | No | S |
 | **Text shadow** | `shadow: { type, opacity, blur, angle, offset, color }` | No | S |
-| Text fit (shrink/resize) | `fit: 'none' | 'shrink' | 'resize'` | No | S |
+| Text fit (shrink/resize) | \`fit: 'none' | 'shrink' | 'resize'\` |
 | Text rotation | `rotate` (-360 to 360) | No | S |
 | Vertical text | `vert` (7 orientations: horz, vert, vert270, eaVert, etc.) | No | S |
 | RTL mode | `rtlMode` (per-text or global) | No | S |
@@ -124,7 +124,7 @@ There is also a **Rust built-in exporter** (`markdown_to_pptx.rs` using `ppt-rs`
 | --- | --- | --- | --- |
 | Basic table | `addTable(rows, opts)` | Yes | \- |
 | Column widths | `colW: number[]` | Yes | \- |
-| Row heights | `rowH: number | number[]` | No | S |
+| Row heights | \`rowH: number | number\[\]\` | No |
 | Cell fill (solid) | `fill: { color }` | Yes | \- |
 | Cell border (uniform) | `border: { type, pt, color }` | Yes | \- |
 | **Cell border (per-side)** | `border: [top, right, bottom, left]` | No | S |
@@ -176,7 +176,7 @@ There is also a **Rust built-in exporter** (`markdown_to_pptx.rs` using `ppt-rs`
 | Feature | PptxGenJS API | Used Today? | Effort to Add |
 | --- | --- | --- | --- |
 | Background color | `slide.background = { color }` | Yes | \- |
-| Background image | `slide.background = { path | data }` | No | S |
+| Background image | \`slide.background = { path | data }\` | No |
 | Background transparency | `slide.background = { fill: { transparency } }` | No | S |
 | **Built-in slide numbers** | `slide.slideNumber = { x, y, fontSize, color, ... }` | No — manual text used | **S** |
 | Default text color | `slide.color` | No | S |
@@ -200,7 +200,7 @@ There is also a **Rust built-in exporter** (`markdown_to_pptx.rs` using `ppt-rs`
 
 | Property | Type | Used? |
 | --- | --- | --- |
-| `type` | `'outer' | 'inner' | 'none'` | No |
+| `type` | \`'outer' | 'inner' |
 | `opacity` | 0.0-1.0 | No |
 | `blur` | 0-100 pt | No |
 | `angle` | 0-359 degrees | No |
@@ -276,6 +276,7 @@ series:
   - name: Product B
     values: [90, 110, 140]
 ```
+
 ```
 
 **Option B: JSON code block** (simpler for LLMs)
@@ -292,6 +293,7 @@ series:
   ]
 }
 ```
+
 ```
 
 Recommend **Option A** (YAML) — more readable, and agents generate YAML naturally.
@@ -307,3 +309,4 @@ Recommend **Option A** (YAML) — more readable, and agents generate YAML natura
 | `src-tauri/src/export/markdown_to_pptx.rs` | 1653 | Rust built-in exporter (ppt-rs) |
 | `src-tauri/src/export/templates.rs` | \~200 | Rust template configurations |
 | `node_modules/pptxgenjs/types/index.d.ts` | \~1500 | Full PptxGenJS TypeScript API |
+```

@@ -25,6 +25,7 @@ import type {
   PptxPlaceholder,
   PptxTextStyle,
   PptxShadow,
+  ArrowHead,
 } from "./pptx-types";
 
 // ---------------------------------------------------------------------------
@@ -313,12 +314,35 @@ async function parseSlide(
   const rels = await readRels(zip, slidePath);
   const slideDir = slidePath.substring(0, slidePath.lastIndexOf("/"));
 
-  const elements = await parseElements(doc.documentElement, rels, zip, slideDir, theme);
-  const background = parseBackground(doc, theme);
+  const elements = await parseElements(doc.documentElement, rels, zip, slideDir, theme, index);
+  const background = await parseBackground(doc, theme, rels, zip);
   const notes = await parseNotes(zip, slidePath, rels);
   const searchText = extractSearchText(elements, notes);
 
-  return { index, elements, background, notes, searchText };
+  // Parse header/footer visibility from <p:hf> element
+  const headerFooter = parseHeaderFooter(doc);
+
+  return { index, elements, background, notes, searchText, headerFooter };
+}
+
+/**
+ * Parse `<p:hf>` element from slide XML to determine header/footer visibility.
+ * In OOXML, absent attribute or "1" = visible, "0" = hidden.
+ * Safe default when no `<p:hf>` element exists: all hidden (preserve current behavior).
+ */
+function parseHeaderFooter(doc: Document): PptxSlide["headerFooter"] | undefined {
+  const hf = qs(doc.documentElement, "hf");
+  if (!hf) return undefined;
+
+  const dtAttr = getAttr(hf, "dt");
+  const ftrAttr = getAttr(hf, "ftr");
+  const sldNumAttr = getAttr(hf, "sldNum");
+
+  return {
+    showDate: dtAttr !== "0",
+    showFooter: ftrAttr !== "0",
+    showSlideNum: sldNumAttr !== "0",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -331,6 +355,7 @@ async function parseElements(
   zip: JSZip,
   slideDir: string,
   theme: PptxTheme,
+  slideIndex = 0,
 ): Promise<PptxElement[]> {
   const elements: PptxElement[] = [];
 
@@ -342,7 +367,7 @@ async function parseElements(
     const ln = child.localName;
 
     if (ln === "sp") {
-      const el = parseShapeOrTextBox(child, theme, rels);
+      const el = parseShapeOrTextBox(child, theme, rels, slideIndex);
       if (el) elements.push(el);
     } else if (ln === "pic") {
       const el = await parsePicture(child, rels, zip, slideDir, theme);
@@ -351,7 +376,7 @@ async function parseElements(
       const el = await parseGraphicFrame(child, rels, zip, slideDir, theme);
       if (el) elements.push(el);
     } else if (ln === "grpSp") {
-      const el = await parseGroup(child, rels, zip, slideDir, theme);
+      const el = await parseGroup(child, rels, zip, slideDir, theme, slideIndex);
       if (el) elements.push(el);
     }
   }
@@ -381,7 +406,7 @@ function getTransform(el: Element): { x: number; y: number; width: number; heigh
 // Text box / shape
 // ---------------------------------------------------------------------------
 
-function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<string, string>): PptxTextBox | PptxShape | null {
+function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<string, string>, slideIndex = 0): PptxTextBox | PptxShape | null {
   const txBody = qs(el, "txBody");
   const spPr = qs(el, "spPr");
   const prstGeom = spPr ? qs(spPr, "prstGeom") : null;
@@ -415,16 +440,24 @@ function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<string
 
   // If it has text and no geometry preset, treat as textbox
   if (txBody && !preset) {
-    const paragraphs = parseParagraphs(txBody, theme, rels);
-    if (paragraphs.length === 0) return null;
+    let paragraphs = parseParagraphs(txBody, theme, rels);
+    if (placeholderType === "sldNum") {
+      paragraphs = injectSlideNumber(paragraphs, slideIndex);
+    }
+    if (paragraphs.length === 0 && !placeholderType) return null;
     return { type: "textbox", ...transform, paragraphs, bodyProps, hyperlink: shapeHyperlink, placeholderType, placeholderIdx, shadow };
   }
 
   // Shape
   const shapeType = mapPresetGeometry(preset);
   const fill = spPr ? parseFill(spPr, theme) : null;
-  const { stroke, strokeWidth, dashStyle } = spPr ? parseStroke(spPr, theme) : { stroke: null, strokeWidth: 0, dashStyle: undefined };
-  const text = txBody ? parseParagraphs(txBody, theme, rels) : [];
+  const { stroke, strokeWidth, dashStyle, headArrow, tailArrow } = spPr
+    ? parseStroke(spPr, theme)
+    : { stroke: null, strokeWidth: 0, dashStyle: undefined, headArrow: undefined, tailArrow: undefined };
+  let text = txBody ? parseParagraphs(txBody, theme, rels) : [];
+  if (placeholderType === "sldNum") {
+    text = injectSlideNumber(text, slideIndex);
+  }
 
   return {
     type: "shape",
@@ -436,12 +469,39 @@ function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<string
     strokeWidth,
     dashStyle,
     text,
+    ...(headArrow ? { headArrow } : {}),
+    ...(tailArrow ? { tailArrow } : {}),
     bodyProps,
     hyperlink: shapeHyperlink,
     placeholderType,
     placeholderIdx,
     shadow,
   };
+}
+
+/**
+ * For sldNum placeholders: if text runs are empty, inject the 1-based slide number.
+ */
+function injectSlideNumber(paragraphs: PptxParagraph[], slideIndex: number): PptxParagraph[] {
+  const slideNum = String(slideIndex + 1);
+  const hasText = paragraphs.some(p => p.runs.some(r => r.text.trim().length > 0));
+  if (!hasText) {
+    if (paragraphs.length === 0) {
+      return [{
+        alignment: "center",
+        runs: [{ text: slideNum, bold: false, italic: false, underline: false, fontSize: 10, fontFamily: "", color: "#666666" }],
+        bulletChar: null,
+        bulletLevel: 0,
+      }];
+    }
+    const baseParagraph = paragraphs[0];
+    const baseRun = baseParagraph.runs[0];
+    return [{
+      ...baseParagraph,
+      runs: [{ ...(baseRun ?? { text: "", bold: false, italic: false, underline: false, fontSize: 10, fontFamily: "", color: "#666666" }), text: slideNum }],
+    }];
+  }
+  return paragraphs;
 }
 
 function mapPresetGeometry(preset: string | null): PptxShape["shapeType"] {
@@ -669,7 +729,7 @@ function parseBullet(pPr: Element | null, theme: PptxTheme): BulletInfo {
   return { bulletChar: null, bulletLevel: level };
 }
 
-function parseTextRuns(pEl: Element, theme: PptxTheme, rels?: Record<string, string>): PptxTextRun[] {
+export function parseTextRuns(pEl: Element, theme: PptxTheme, rels?: Record<string, string>): PptxTextRun[] {
   const runs: PptxTextRun[] = [];
 
   for (let i = 0; i < pEl.children.length; i++) {
@@ -682,6 +742,15 @@ function parseTextRuns(pEl: Element, theme: PptxTheme, rels?: Record<string, str
       if (!text) continue;
 
       const rPr = qs(child, "rPr");
+
+      // Character spacing (spc is in 1/100ths of a point)
+      const spc = rPr ? intAttr(rPr, "spc", 0) : 0;
+
+      // Text caps
+      const capAttr = rPr ? getAttr(rPr, "cap") : null;
+      const caps = capAttr === "all" ? "all" as const
+        : capAttr === "small" ? "small" as const
+        : undefined;
 
       // Strikethrough
       const strike = rPr ? getAttr(rPr, "strike") : null;
@@ -706,6 +775,8 @@ function parseTextRuns(pEl: Element, theme: PptxTheme, rels?: Record<string, str
         fontSize: rPr ? intAttr(rPr, "sz", 1800) / 100 : 18,
         fontFamily: parseFontFamily(rPr, theme),
         color: parseRunColor(rPr, theme),
+        ...(spc !== 0 ? { letterSpacing: spc / 100 } : {}),
+        ...(caps ? { caps } : {}),
         hyperlink,
       });
     } else if (ln === "br") {
@@ -1001,7 +1072,15 @@ function parseGradientFill(gradFill: Element, theme: PptxTheme): PptxFill {
   return { type: "linear", angle: 0, stops };
 }
 
-function parseStroke(spPr: Element, theme: PptxTheme): { stroke: string | null; strokeWidth: number; dashStyle?: string } {
+interface StrokeResult {
+  stroke: string | null;
+  strokeWidth: number;
+  dashStyle?: string;
+  headArrow?: ArrowHead;
+  tailArrow?: ArrowHead;
+}
+
+export function parseStroke(spPr: Element, theme: PptxTheme): StrokeResult {
   const ln = qs(spPr, "ln");
   if (!ln) return { stroke: null, strokeWidth: 0 };
 
@@ -1015,7 +1094,42 @@ function parseStroke(spPr: Element, theme: PptxTheme): { stroke: string | null; 
   const prstDash = qs(ln, "prstDash");
   const dashVal = prstDash ? getAttr(prstDash, "val") : null;
 
-  return { stroke: color, strokeWidth: width, dashStyle: dashVal ?? undefined };
+  const headArrow = parseArrowEnd(ln, "headEnd");
+  const tailArrow = parseArrowEnd(ln, "tailEnd");
+
+  return { stroke: color, strokeWidth: width, dashStyle: dashVal ?? undefined, headArrow, tailArrow };
+}
+
+const ARROW_TYPE_MAP: Record<string, ArrowHead["type"]> = {
+  triangle: "triangle",
+  stealth: "stealth",
+  diamond: "diamond",
+  oval: "oval",
+  arrow: "arrow",
+};
+
+const ARROW_SIZE_MAP: Record<string, "sm" | "med" | "lg"> = {
+  sm: "sm",
+  med: "med",
+  lg: "lg",
+};
+
+function parseArrowEnd(ln: Element, tagSuffix: string): ArrowHead | undefined {
+  const el = qs(ln, tagSuffix);
+  if (!el) return undefined;
+
+  const rawType = getAttr(el, "type");
+  if (!rawType || rawType === "none") return undefined;
+
+  const type = ARROW_TYPE_MAP[rawType] ?? "triangle";
+  const rawW = getAttr(el, "w");
+  const rawLen = getAttr(el, "len");
+
+  const arrow: ArrowHead = { type };
+  if (rawW && ARROW_SIZE_MAP[rawW]) arrow.width = ARROW_SIZE_MAP[rawW];
+  if (rawLen && ARROW_SIZE_MAP[rawLen]) arrow.length = ARROW_SIZE_MAP[rawLen];
+
+  return arrow;
 }
 
 // ---------------------------------------------------------------------------
@@ -1076,6 +1190,16 @@ async function parsePicture(
     }
   }
 
+  // Image transparency via alphaModFix on blip (amt is in 1/100000ths, e.g., 50000 = 50%)
+  let opacity: number | undefined;
+  const alphaModFix = qs(blip, "alphaModFix");
+  if (alphaModFix) {
+    const amt = alphaModFix.getAttribute("amt");
+    if (amt) {
+      opacity = parseInt(amt, 10) / 100000;
+    }
+  }
+
   // Check for hyperlink on the picture element
   const nvPicPr = qs(el, "nvPicPr");
   const picCNvPr = nvPicPr ? qs(nvPicPr, "cNvPr") : null;
@@ -1085,7 +1209,7 @@ async function parsePicture(
   const picSpPr = qs(el, "spPr");
   const picShadow = picSpPr ? parseShadow(picSpPr, theme) : undefined;
 
-  return { type: "image", ...transform, dataUrl, crop, hyperlink: picHyperlink, shadow: picShadow };
+  return { type: "image", ...transform, dataUrl, ...(opacity !== undefined ? { opacity } : {}), crop, hyperlink: picHyperlink, shadow: picShadow };
 }
 
 async function extractImageDataUrl(zip: JSZip, path: string): Promise<string | null> {
@@ -1569,6 +1693,7 @@ async function parseGroup(
   zip: JSZip,
   slideDir: string,
   theme: PptxTheme,
+  slideIndex = 0,
 ): Promise<PptxGroup> {
   const grpSpPr = qs(el, "grpSpPr");
   const xfrm = grpSpPr ? qs(grpSpPr, "xfrm") : null;
@@ -1587,7 +1712,7 @@ async function parseGroup(
   const chOffX = chOff ? intAttr(chOff, "x") : 0;
   const chOffY = chOff ? intAttr(chOff, "y") : 0;
 
-  const children = await parseElements(el, rels, zip, slideDir, theme);
+  const children = await parseElements(el, rels, zip, slideDir, theme, slideIndex);
 
   // Offset children by group origin
   for (const child of children) {
@@ -1602,12 +1727,33 @@ async function parseGroup(
 // Background
 // ---------------------------------------------------------------------------
 
-function parseBackground(doc: Document, theme: PptxTheme): PptxBackground | null {
+async function parseBackground(
+  doc: Document,
+  theme: PptxTheme,
+  rels?: Record<string, string>,
+  zip?: JSZip,
+): Promise<PptxBackground | null> {
   const bg = qs(doc, "bg");
   if (!bg) return null;
 
   const bgPr = qs(bg, "bgPr");
   if (bgPr) {
+    // Check for image background (blipFill)
+    const blipFill = qs(bgPr, "blipFill");
+    if (blipFill && rels && zip) {
+      const blip = qs(blipFill, "blip");
+      const embedId = blip ? getAttr(blip, "r:embed") : null;
+      if (embedId && rels[embedId]) {
+        const mediaPath = `ppt/${rels[embedId].replace(/^\.\.\//, "").replace(/^\.\//, "")}`;
+        const imageDataUrl = await extractImageDataUrl(zip, mediaPath);
+        if (imageDataUrl) {
+          // Check for tile fill mode
+          const tile = qs(blipFill, "tile");
+          return { fill: null, imageDataUrl, tiled: !!tile };
+        }
+      }
+    }
+
     const fill = parseFill(bgPr, theme);
     return { fill, imageDataUrl: null };
   }
@@ -1808,7 +1954,7 @@ async function parseSlideMaster(
     ? await parseElements(doc.documentElement, rels, zip, masterDir, theme)
     : [];
   const placeholders = spTree ? extractPlaceholders(spTree) : [];
-  const background = parseBackground(doc, theme);
+  const background = await parseBackground(doc, theme, rels, zip);
   const { titleStyle, bodyStyle } = parseTextStyles(doc, theme);
 
   return { shapes, placeholders, background, titleStyle, bodyStyle };
@@ -1835,7 +1981,7 @@ async function parseSlideLayout(
     ? await parseElements(doc.documentElement, rels, zip, layoutDir, theme)
     : [];
   const placeholders = spTree ? extractPlaceholders(spTree) : [];
-  const background = parseBackground(doc, theme);
+  const background = await parseBackground(doc, theme, rels, zip);
 
   return { name, shapes, placeholders, background };
 }

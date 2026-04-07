@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-07 |
-| **Status** | Draft |
+| **Status** | Complete (all tiers) |
 | **Priority** | High |
 | **Impact** | PPTX viewer renders themed presentations with correct colors, text layout, tables, charts, and master slide elements — usable as a real preview tool |
 | **Research** | [pptx-viewer-quality](../research/2026-04-07-pptx-viewer-quality.md) |
@@ -435,100 +435,100 @@ Complete arrow head rendering (currently only tail arrows work). Parse `a:headEn
 
 | \# | Feature | Tier | Effort | Status | Tasks |
 | --- | --- | --- | --- | --- | --- |
-| V1 | Color transforms (lumMod/lumOff/tint/shade/alpha) | 1 - Critical | M | Not started | [V1-tasks](../tasks/2026-04-07-pptx-viewer-v1-color-transforms-tasks.md) |
-| V2 | Slide master/layout inheritance | 1 - Critical | L | Not started | [V2-tasks](../tasks/2026-04-07-pptx-viewer-v2-master-inheritance-tasks.md) |
-| V3 | Body properties (autofit, anchoring, margins) | 1 - Critical | M | Not started | [V3-tasks](../tasks/2026-04-07-pptx-viewer-v3-body-properties-tasks.md) |
-| V4 | Line and paragraph spacing | 2 - High | S | Not started | [V4-tasks](../tasks/2026-04-07-pptx-viewer-v4-spacing-tasks.md) |
-| V5 | Auto-numbered bullets | 2 - High | S | Not started | [V5-tasks](../tasks/2026-04-07-pptx-viewer-v5-numbered-bullets-tasks.md) |
-| V6 | Table cell borders and margins | 2 - High | M | Not started | [V6-tasks](../tasks/2026-04-07-pptx-viewer-v6-table-styles-tasks.md) |
-| V7 | Chart titles, legends, axis labels, data labels | 2 - High | M | Not started | [V7-tasks](../tasks/2026-04-07-pptx-viewer-v7-chart-labels-tasks.md) |
-| V8 | Shape shadow (outer) | 2 - High | M | Not started | [V8-tasks](../tasks/2026-04-07-pptx-viewer-v8-shape-shadow-tasks.md) |
-| V9 | Image crop | 2 - High | M | Not started | [V9-tasks](../tasks/2026-04-07-pptx-viewer-v9-image-crop-tasks.md) |
-| V10 | Hyperlinks | 2 - High | S | Not started | [V10-tasks](../tasks/2026-04-07-pptx-viewer-v10-hyperlinks-tasks.md) |
-| V11 | Preset geometries (\~30 common shapes) | 3 - Medium | L | Not started | [V11-tasks](../tasks/2026-04-07-pptx-viewer-v11-preset-geometries-tasks.md) |
-| V12 | Strikethrough, superscript, subscript | 3 - Medium | S | Not started | [V12-tasks](../tasks/2026-04-07-pptx-viewer-v12-text-decorations-tasks.md) |
-| V13 | Flip transforms | 3 - Medium | S | Not started | [V13-tasks](../tasks/2026-04-07-pptx-viewer-v13-flip-transforms-tasks.md) |
-| V14 | Dash styles on lines | 3 - Medium | S | Not started | [V14-tasks](../tasks/2026-04-07-pptx-viewer-v14-dash-styles-tasks.md) |
-| V15 | Radar and bubble charts | 3 - Medium | M | Not started | [V15-tasks](../tasks/2026-04-07-pptx-viewer-v15-radar-bubble-charts-tasks.md) |
+| V1 | Color transforms (lumMod/lumOff/tint/shade/alpha) | 1 - Critical | M | **Complete** | [v2-tasks #1-#2](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) |
+| V2 | Slide master/layout inheritance | 1 - Critical | L | **Complete** | [v2-tasks #11-#13](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) |
+| V3 | Body properties (autofit, anchoring, margins) | 1 - Critical | M | **Complete** | [v2-tasks #3](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) |
+| V4 | Line and paragraph spacing | 2 - High | S | **Complete** | [v2-tasks #4](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) |
+| V5 | Auto-numbered bullets | 2 - High | S | **Complete** | [v2-tasks #5](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) |
+| V6 | Table cell borders and margins | 2 - High | M | **Complete** | [v2-tasks #6](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) |
+| V7 | Chart titles, legends, axis labels, data labels | 2 - High | M | **Complete** | [v2-tasks #14](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) |
+| V8 | Shape shadow (outer) | 2 - High | M | **Complete** | [v2-tasks #15](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) |
+| V9 | Image crop | 2 - High | M | **Complete** | [v2-tasks #16](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) |
+| V10 | Hyperlinks | 2 - High | S | **Complete** | [v2-tasks #7](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) |
+| V11 | Preset geometries (44 shapes) | 3 - Medium | L | **Complete** | [v2-tasks #17-#18](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) |
+| V12 | Strikethrough, superscript, subscript | 3 - Medium | S | **Complete** | [v2-tasks #8](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) |
+| V13 | Flip transforms | 3 - Medium | S | **Complete** | [v2-tasks #9](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) |
+| V14 | Dash styles on lines | 3 - Medium | S | **Complete** | [v2-tasks #10](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) |
+| V15 | Radar and bubble charts | 3 - Medium | M | **Complete** | [v2-tasks #19](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) |
 | V16 | Slide transitions | 4 - Low | L | Not planned | \- |
 | V17 | Additional chart types (combo, stock, surface) | 4 - Low | L | Not planned | \- |
-| V18 | Character spacing | 4 - Low | S | Not planned | \- |
-| V19 | Image backgrounds | 4 - Low | M | Not planned | \- |
-| V20 | Bullet font, color, and size | 4 - Low | S | Not planned | \- |
-| V21 | Text caps (all caps, small caps) | 4 - Low | S | Not planned | \- |
-| V22 | Slide headers and footers | 4 - Low | M | Not planned | \- |
-| V23 | Image transparency | 4 - Low | S | Not planned | \- |
-| V24 | Line head arrows | 4 - Low | S | Not planned | \- |
+| V18 | Character spacing | 4 - Low | S | **Complete** | [tier4-tasks #1](../tasks/2026-04-07-pptx-viewer-v2-tier4-tasks.md) |
+| V19 | Image backgrounds | 4 - Low | M | **Complete** | [tier4-tasks #5-#6](../tasks/2026-04-07-pptx-viewer-v2-tier4-tasks.md) |
+| V20 | Bullet font, color, and size | 4 - Low | S | **Complete** (done as part of V5) | [v2-tasks #5](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) |
+| V21 | Text caps (all caps, small caps) | 4 - Low | S | **Complete** | [tier4-tasks #2](../tasks/2026-04-07-pptx-viewer-v2-tier4-tasks.md) |
+| V22 | Slide headers and footers | 4 - Low | M | **Complete** | [tier4-tasks #7](../tasks/2026-04-07-pptx-viewer-v2-tier4-tasks.md) |
+| V23 | Image transparency | 4 - Low | S | **Complete** | [tier4-tasks #3](../tasks/2026-04-07-pptx-viewer-v2-tier4-tasks.md) |
+| V24 | Line head arrows | 4 - Low | S | **Complete** | [tier4-tasks #4](../tasks/2026-04-07-pptx-viewer-v2-tier4-tasks.md) |
 
 ## Quality Gates
 
 ### Tier 1 Complete
 
-- [ ] Theme deck with `lumMod`/`lumOff` colors renders correct shades (compare against PowerPoint screenshot)
+- [x] Theme deck with `lumMod`/`lumOff` colors renders correct shades (compare against PowerPoint screenshot)
 
-- [ ] Theme deck with `tint`/`shade` colors renders correct values
+- [x] Theme deck with `tint`/`shade` colors renders correct values
 
-- [ ] Slide master logos and decorative shapes appear on all slides
+- [x] Slide master logos and decorative shapes appear on all slides
 
-- [ ] Slide layout placeholder positions are inherited (title and body content in correct locations)
+- [x] Slide layout placeholder positions are inherited (title and body content in correct locations)
 
-- [ ] Master background appears when slide has no explicit background
+- [x] Master background appears when slide has no explicit background
 
-- [ ] Text with `anchor="ctr"` is vertically centered in its container
+- [x] Text with `anchor="ctr"` is vertically centered in its container
 
-- [ ] Text with `normAutofit` shrinks to fit its bounding box
+- [x] Text with `normAutofit` shrinks to fit its bounding box
 
-- [ ] Internal margins (`lIns/tIns/rIns/bIns`) provide correct padding inside text boxes
+- [x] Internal margins (`lIns/tIns/rIns/bIns`) provide correct padding inside text boxes
 
 ### Tier 2 Complete
 
-- [ ] Line spacing set to 150% renders visibly more spaced than default
+- [x] Line spacing set to 150% renders visibly more spaced than default
 
-- [ ] Space before/after paragraphs creates visible gaps between paragraphs
+- [x] Space before/after paragraphs creates visible gaps between paragraphs
 
-- [ ] Numbered lists (`buAutoNum`) display correct numbers (1, 2, 3 or a, b, c or I, II, III)
+- [x] Numbered lists (`buAutoNum`) display correct numbers (1, 2, 3 or a, b, c or I, II, III)
 
-- [ ] Table cell borders match authored width, color, and presence/absence
+- [x] Table cell borders match authored width, color, and presence/absence
 
-- [ ] Table cells with `anchor="ctr"` vertically center text
+- [x] Table cells with `anchor="ctr"` vertically center text
 
-- [ ] Chart titles appear above charts
+- [x] Chart titles appear above charts
 
-- [ ] Chart legends appear with series names and colors
+- [x] Chart legends appear with series names and colors
 
-- [ ] Axis labels render on both X and Y axes
+- [x] Axis labels render on both X and Y axes
 
-- [ ] Shapes with outer shadow have visible CSS box-shadow
+- [x] Shapes with outer shadow have visible CSS box-shadow
 
-- [ ] Cropped images show only the visible region
+- [x] Cropped images show only the visible region
 
-- [ ] Hyperlinks are rendered as clickable `<a>` elements
+- [x] Hyperlinks are rendered as clickable `<a>` elements
 
-- [ ] Internal slide links navigate to the correct slide
+- [x] Internal slide links navigate to the correct slide
 
 ### Tier 3 Complete
 
-- [ ] Common preset shapes (arrows, stars, chevrons, flowchart symbols) render as correct SVG paths
+- [x] Common preset shapes (arrows, stars, chevrons, flowchart symbols) render as correct SVG paths
 
-- [ ] Strikethrough text has a visible line-through decoration
+- [x] Strikethrough text has a visible line-through decoration
 
-- [ ] Superscript and subscript text is positioned correctly
+- [x] Superscript and subscript text is positioned correctly
 
-- [ ] Flipped shapes appear mirrored vs their unflipped version
+- [x] Flipped shapes appear mirrored vs their unflipped version
 
-- [ ] Dashed lines render with correct dash patterns
+- [x] Dashed lines render with correct dash patterns
 
-- [ ] Radar charts render with polar grid and category labels
+- [x] Radar charts render with polar grid and category labels
 
-- [ ] Bubble charts render with size-varying circles
+- [x] Bubble charts render with size-varying circles
 
 ### Visual Regression
 
-- [ ] All existing supported features (text, images, basic shapes, gradients, tables, charts) continue to render correctly
+- [x] All existing supported features (text, images, basic shapes, gradients, tables, charts) continue to render correctly
 
-- [ ] No regressions in rendering performance (slides render &lt; 100ms)
+- [x] No regressions in rendering performance (slides render &lt; 100ms)
 
-- [ ] Dark mode rendering unaffected (slide content uses authored colors, not theme)
+- [x] Dark mode rendering unaffected (slide content uses authored colors, not theme)
 
 ## Dependencies
 

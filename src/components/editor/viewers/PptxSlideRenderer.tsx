@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Play, BarChart3, Box } from "lucide-react";
 import type {
   PptxSlide,
@@ -15,6 +15,7 @@ import type {
   BodyProperties,
   PptxTextRun,
   PptxShadow,
+  ArrowHead,
 } from "@/lib/pptx-types";
 import { ChartRenderer } from "./PptxChartRenderer";
 import { PRESET_GEOMETRIES } from "@/lib/pptx-preset-geometries";
@@ -70,6 +71,8 @@ interface SlideRendererProps {
 }
 
 export function SlideRenderer({ slide, theme, onSlideNavigate }: SlideRendererProps) {
+  const hf = slide.headerFooter;
+
   // Build placeholder key sets for deduplication. Higher layers override lower:
   // slide overrides layout overrides master.  When a placeholder type+idx is
   // present on a higher layer, the lower layer version must not render.
@@ -78,6 +81,20 @@ export function SlideRenderer({ slide, theme, onSlideNavigate }: SlideRendererPr
       return el.placeholderType + (el.placeholderIdx !== undefined ? `:${el.placeholderIdx}` : "");
     }
     return null;
+  };
+
+  // Filter chrome placeholder elements based on header/footer visibility.
+  // When no <p:hf> element exists (headerFooter is undefined), all chrome
+  // placeholders are hidden — preserving the safe default behavior.
+  const isChromePlaceholderVisible = (el: PptxElement): boolean => {
+    const phType = (el as { placeholderType?: string }).placeholderType;
+    if (!phType) return true;
+
+    if (phType === "sldNum") return hf?.showSlideNum === true;
+    if (phType === "dt") return hf?.showDate === true;
+    if (phType === "ftr") return hf?.showFooter === true;
+
+    return true; // Other placeholder types (title, body, etc.) always show
   };
 
   // Placeholder keys on the slide itself
@@ -111,20 +128,15 @@ export function SlideRenderer({ slide, theme, onSlideNavigate }: SlideRendererPr
   return (
     <div className="w-full h-full relative" style={backgroundStyle(slide.background)}>
       {/* Master shapes (bottom layer) — filtered to hide overridden placeholders */}
-      {slide.masterShapes?.filter(shouldRenderMaster).map((el, i) => (
+      {slide.masterShapes?.filter(el => shouldRenderMaster(el) && isChromePlaceholderVisible(el)).map((el, i) => (
         <ElementRenderer key={`m${i}`} element={el} theme={theme} onSlideNavigate={onSlideNavigate} />
       ))}
       {/* Layout shapes (middle layer) — filtered to hide overridden placeholders */}
-      {slide.layoutShapes?.filter(shouldRenderLayout).map((el, i) => (
+      {slide.layoutShapes?.filter(el => shouldRenderLayout(el) && isChromePlaceholderVisible(el)).map((el, i) => (
         <ElementRenderer key={`l${i}`} element={el} theme={theme} onSlideNavigate={onSlideNavigate} />
       ))}
-      {/* Slide shapes (top layer) — chrome placeholders (sldNum, dt, ftr) hidden */}
-      {slide.elements.filter(el => {
-        if ((el.type === "textbox" || el.type === "shape") && el.placeholderType) {
-          if (el.placeholderType === "sldNum" || el.placeholderType === "dt" || el.placeholderType === "ftr") return false;
-        }
-        return true;
-      }).map((el, i) => (
+      {/* Slide shapes (top layer) — chrome placeholders filtered by headerFooter visibility */}
+      {slide.elements.filter(isChromePlaceholderVisible).map((el, i) => (
         <ElementRenderer key={i} element={el} theme={theme} onSlideNavigate={onSlideNavigate} />
       ))}
     </div>
@@ -139,7 +151,12 @@ function backgroundStyle(bg: PptxBackground | null): CSSProperties {
   const base: CSSProperties = { backgroundColor: "#ffffff" };
   if (!bg) return base;
   if (bg.imageDataUrl) {
-    return { ...base, backgroundImage: `url(${bg.imageDataUrl})`, backgroundSize: "cover" };
+    return {
+      ...base,
+      backgroundImage: `url(${bg.imageDataUrl})`,
+      backgroundSize: bg.tiled ? "auto" : "cover",
+      ...(bg.tiled ? { backgroundRepeat: "repeat" } : {}),
+    };
   }
   if (bg.fill) {
     return { ...base, ...fillToCSS(bg.fill) };
@@ -479,6 +496,9 @@ function RunRenderer({
     fontSize: r.fontSize,
     fontFamily: r.fontFamily,
     color: r.color,
+    ...(r.letterSpacing != null ? { letterSpacing: `${r.letterSpacing}pt` } : {}),
+    ...(r.caps === "all" ? { textTransform: "uppercase" as const } : {}),
+    ...(r.caps === "small" ? { fontVariant: "small-caps" as const } : {}),
     whiteSpace: "pre-wrap",
   };
 
@@ -550,6 +570,7 @@ function ImageRenderer({
   const style: CSSProperties = {
     ...positionStyle(el, px),
     objectFit: "contain",
+    ...(el.opacity !== undefined && el.opacity < 1 ? { opacity: el.opacity } : {}),
     boxShadow: shadowToCSS(el.shadow),
   };
 
@@ -753,12 +774,94 @@ function PlaceholderIcon({ text }: { text: PptxParagraph[] }) {
 // Line / arrow (with dash style from #9+#10)
 // ---------------------------------------------------------------------------
 
+// Monotonically increasing counter for unique SVG marker IDs
+let lineMarkerCounter = 0;
+
+/** Map ArrowHead size fields to pixel dimensions */
+function arrowSize(size: "sm" | "med" | "lg" | undefined): number {
+  switch (size) {
+    case "sm": return 6;
+    case "lg": return 12;
+    default: return 8; // "med" or undefined
+  }
+}
+
+/** Build SVG marker content for a given ArrowHead type */
+function arrowMarkerShape(
+  arrow: ArrowHead,
+  color: string,
+  markerW: number,
+  markerH: number,
+): ReactNode {
+  const midY = markerH / 2;
+  switch (arrow.type) {
+    case "triangle":
+      return <polygon points={`0 0, ${markerW} ${midY}, 0 ${markerH}`} fill={color} />;
+    case "stealth":
+      return (
+        <polygon
+          points={`0 0, ${markerW} ${midY}, 0 ${markerH}, ${markerW * 0.3} ${midY}`}
+          fill={color}
+        />
+      );
+    case "diamond":
+      return (
+        <polygon
+          points={`0 ${midY}, ${markerW / 2} 0, ${markerW} ${midY}, ${markerW / 2} ${markerH}`}
+          fill={color}
+        />
+      );
+    case "oval":
+      return (
+        <ellipse
+          cx={markerW / 2}
+          cy={midY}
+          rx={markerW / 2}
+          ry={midY}
+          fill={color}
+        />
+      );
+    case "arrow":
+      return (
+        <polyline
+          points={`0 0, ${markerW} ${midY}, 0 ${markerH}`}
+          fill="none"
+          stroke={color}
+          strokeWidth={1}
+        />
+      );
+    default:
+      return <polygon points={`0 0, ${markerW} ${midY}, 0 ${markerH}`} fill={color} />;
+  }
+}
+
 function LineRenderer({ el, px }: { el: PptxShape; px: (n: number) => number }) {
   const w = px(el.width);
   const h = px(el.height);
   const strokeColor = el.stroke ?? "#000000";
   const sw = Math.max(1, el.strokeWidth);
   const dashArray = el.dashStyle ? SVG_DASH_MAP[el.dashStyle] : undefined;
+
+  // Determine head/tail arrows — use parsed data, fall back to legacy shapeType
+  const headArrow: ArrowHead | undefined = el.headArrow;
+  const tailArrow: ArrowHead | undefined =
+    el.tailArrow ?? (el.shapeType === "arrow" && !el.headArrow
+      ? { type: "triangle" }
+      : undefined);
+
+  const hasHead = !!headArrow;
+  const hasTail = !!tailArrow;
+
+  // Generate unique IDs to avoid marker collisions on the same slide
+  const idSuffix = ++lineMarkerCounter;
+  const headMarkerId = `arrow-head-${idSuffix}`;
+  const tailMarkerId = `arrow-tail-${idSuffix}`;
+
+  // Compute marker dimensions
+  const headW = hasHead ? arrowSize(headArrow!.width) : 0;
+  const headH = hasHead ? arrowSize(headArrow!.length) : 0;
+  const tailW = hasTail ? arrowSize(tailArrow!.width) : 0;
+  const tailH = hasTail ? arrowSize(tailArrow!.length) : 0;
 
   return (
     <svg
@@ -772,11 +875,32 @@ function LineRenderer({ el, px }: { el: PptxShape; px: (n: number) => number }) 
         transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
       }}
     >
-      {el.shapeType === "arrow" && (
+      {(hasHead || hasTail) && (
         <defs>
-          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-            <polygon points="0 0, 10 3.5, 0 7" fill={strokeColor} />
-          </marker>
+          {hasHead && (
+            <marker
+              id={headMarkerId}
+              markerWidth={headW}
+              markerHeight={headH}
+              refX={0}
+              refY={headH / 2}
+              orient="auto-start-reverse"
+            >
+              {arrowMarkerShape(headArrow!, strokeColor, headW, headH)}
+            </marker>
+          )}
+          {hasTail && (
+            <marker
+              id={tailMarkerId}
+              markerWidth={tailW}
+              markerHeight={tailH}
+              refX={tailW}
+              refY={tailH / 2}
+              orient="auto"
+            >
+              {arrowMarkerShape(tailArrow!, strokeColor, tailW, tailH)}
+            </marker>
+          )}
         </defs>
       )}
       <line
@@ -787,7 +911,8 @@ function LineRenderer({ el, px }: { el: PptxShape; px: (n: number) => number }) 
         stroke={strokeColor}
         strokeWidth={sw}
         strokeDasharray={dashArray}
-        markerEnd={el.shapeType === "arrow" ? "url(#arrowhead)" : undefined}
+        markerStart={hasHead ? `url(#${headMarkerId})` : undefined}
+        markerEnd={hasTail ? `url(#${tailMarkerId})` : undefined}
       />
     </svg>
   );
