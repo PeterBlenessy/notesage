@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseMarkdown, parseInlineFormatting, stripMarkdownFormatting, parseSimpleYaml, parseYamlValue, inferLayout, STYLES, MASTER_MAP } from "./generate.mjs";
+import { parseMarkdown, parseInlineFormatting, stripMarkdownFormatting, parseSimpleYaml, parseYamlValue, inferLayout, estimateContentHeight, STYLES, MASTER_MAP } from "./generate.mjs";
 
 // ---------------------------------------------------------------------------
 // #1 — Hyperlink support
@@ -434,5 +434,139 @@ describe("STYLES — chartColors", () => {
       expect(STYLES[style].chartColors).toBeDefined();
       expect(STYLES[style].chartColors).toHaveLength(6);
     }
+  });
+});
+
+// ===========================================================================
+// TIER 3 TESTS
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// #12 — Content overflow and slide splitting
+// ---------------------------------------------------------------------------
+
+describe("estimateContentHeight", () => {
+  it("estimates bullet height based on item count", () => {
+    const h = estimateContentHeight({ type: "bullets", data: { items: [1, 2, 3, 4, 5] } });
+    expect(h).toBe(2.0); // 5 * 0.4
+  });
+
+  it("estimates text height", () => {
+    expect(estimateContentHeight({ type: "text", data: { text: "hello" } })).toBe(0.55);
+  });
+
+  it("estimates table height from row count", () => {
+    const h = estimateContentHeight({ type: "table", data: { rows: [["a"], ["b"], ["c"]] } });
+    expect(h).toBeCloseTo(1.2); // 3 * 0.4
+  });
+
+  it("estimates code height from line count", () => {
+    const h = estimateContentHeight({ type: "code", data: { text: "a\nb\nc" } });
+    expect(h).toBeCloseTo(1.3); // 3 * 0.3 + 0.4
+  });
+
+  it("estimates chart as fixed 4.7", () => {
+    expect(estimateContentHeight({ type: "chart", data: {} })).toBe(4.7);
+  });
+
+  it("estimates image as 3.7", () => {
+    expect(estimateContentHeight({ type: "image", data: {} })).toBe(3.7);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #13 — Background image support
+// ---------------------------------------------------------------------------
+
+describe("parseMarkdown — background images", () => {
+  it("parses <!-- background: path --> comment", () => {
+    const md = "<!-- background: ./bg.jpg -->\n# Slide Title";
+    const { slides } = parseMarkdown(md);
+    expect(slides[0]._background).toBeDefined();
+    expect(slides[0]._background.path).toBe("./bg.jpg");
+    expect(slides[0]._background.overlay).toBeNull();
+  });
+
+  it("parses background with overlay", () => {
+    const md = "<!-- background: ./bg.jpg overlay=0.4 -->\n# Slide Title";
+    const { slides } = parseMarkdown(md);
+    expect(slides[0]._background.overlay).toBe(0.4);
+  });
+
+  it("does not confuse regular comments", () => {
+    const md = "<!-- just a comment -->\n# Slide Title";
+    const { slides } = parseMarkdown(md);
+    expect(slides[0]._background).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #14 — Image enhancements
+// ---------------------------------------------------------------------------
+
+describe("parseMarkdown — image sizing keywords", () => {
+  it("parses image with cover keyword", () => {
+    const md = '# Slide\n\n![photo](img.jpg "cover")';
+    const { slides } = parseMarkdown(md);
+    const img = slides[0].content.find((c) => c.type === "image");
+    expect(img.data.sizing).toBe("cover");
+  });
+
+  it("parses image with round keyword", () => {
+    const md = '# Slide\n\n![avatar](me.png "round")';
+    const { slides } = parseMarkdown(md);
+    const img = slides[0].content.find((c) => c.type === "image");
+    expect(img.data.sizing).toBe("round");
+  });
+
+  it("parses image without keyword", () => {
+    const md = "# Slide\n\n![photo](img.jpg)";
+    const { slides } = parseMarkdown(md);
+    const img = slides[0].content.find((c) => c.type === "image");
+    expect(img.data.sizing).toBeNull();
+  });
+
+  it("preserves alt text", () => {
+    const md = '# Slide\n\n![A scenic view](photo.jpg "cover")';
+    const { slides } = parseMarkdown(md);
+    expect(slides[0].content[0].data.alt).toBe("A scenic view");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #15 — Table enhancements (colspan)
+// ---------------------------------------------------------------------------
+
+describe("parseMarkdown — table colspan", () => {
+  it("preserves empty cells for colspan detection", () => {
+    const md = "| A | B | C |\n|---|---|---|\n| Wide || Narrow |";
+    const { slides } = parseMarkdown(md);
+    const table = slides[0].content.find((c) => c.type === "table");
+    // Empty cell preserved for colspan detection in rendering
+    expect(table.data.rows[1]).toEqual(["Wide", "", "Narrow"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #16 — Scatter/radar/bubble chart types
+// ---------------------------------------------------------------------------
+
+describe("parseMarkdown — scatter/radar/bubble charts", () => {
+  it("parses scatter chart", () => {
+    const md = "# S\n\n```chart\ntype: scatter\nseries:\n  - name: Data\n    values: [1, 2, 3]\n```";
+    const { slides } = parseMarkdown(md);
+    expect(slides[0].content[0].data.type).toBe("scatter");
+  });
+
+  it("parses radar chart", () => {
+    const md = "# S\n\n```chart\ntype: radar\nlabels: [A, B, C]\nseries:\n  - name: S1\n    values: [1, 2, 3]\n```";
+    const { slides } = parseMarkdown(md);
+    expect(slides[0].content[0].data.type).toBe("radar");
+  });
+
+  it("parses bubble chart", () => {
+    const md = "# S\n\n```chart\ntype: bubble\nseries:\n  - name: B\n    values: [10, 20, 30]\n```";
+    const { slides } = parseMarkdown(md);
+    expect(slides[0].content[0].data.type).toBe("bubble");
   });
 });

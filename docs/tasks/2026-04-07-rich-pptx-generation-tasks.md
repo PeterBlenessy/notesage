@@ -30,11 +30,11 @@
 | G8 — Two-column layout | 2 | #9 | Done |
 | G9 — Callout / accent shapes | 2 | #10 | Done |
 | G10 — Auto-page tables | 2 | #11 | Done |
-| G11 — Content overflow | 3 | #12 | Not started |
-| G12 — Background images | 3 | #13 | Not started |
-| G13 — Image enhancements | 3 | #14 | Not started |
-| G14 — Table enhancements | 3 | #15 | Not started |
-| G15 — Scatter/radar/bubble | 3 | #16 | Not started |
+| G11 — Content overflow | 3 | #12 | Done |
+| G12 — Background images | 3 | #13 | Done |
+| G13 — Image enhancements | 3 | #14 | Done |
+| G14 — Table enhancements | 3 | #15 | Done |
+| G15 — Scatter/radar/bubble | 3 | #16 | Done |
 | G16 — YouTube embedding | 4 | #17 | Not started |
 | G17 — Custom geometry | 4 | \- | Not planned |
 | G18 — HTML table import | 4 | #18 | Not started |
@@ -251,7 +251,7 @@ Optionally auto-detect two consecutive bullet lists on the same slide as a two-c
 
 ---
 
-### #12 — Add content overflow detection and slide splitting (G11)
+### #12 — Add content overflow detection and slide splitting (G11) ✅
 
 **Description:** Track `curY` during content rendering. Before each content item, estimate its height. If `curY + height > MAX_CONTENT_BOTTOM`, create a continuation slide with title + "(cont.)". Reset `curY` and continue.
 
@@ -279,7 +279,7 @@ Split bullet lists at item boundaries (never mid-item).
 
 ---
 
-### #13 — Add background image support (G12)
+### #13 — Add background image support (G12) ✅
 
 **Description:** Parse `<!-- background: path -->` HTML comments as slide background directives. Resolve relative paths from the input markdown directory. Support `<!-- background: path overlay=0.4 -->` for semi-transparent overlay.
 
@@ -296,7 +296,7 @@ Split bullet lists at item boundaries (never mid-item).
 
 ---
 
-### #14 — Add image enhancements (G13)
+### #14 — Add image enhancements (G13) ✅
 
 **Description:** Pass `altText` from markdown image alt text. Add subtle shadow to images by default (style-dependent). Support sizing keywords: `![alt](path "cover")` for crop-to-fill, `![alt](path "round")` for circular crop.
 
@@ -314,7 +314,7 @@ Split bullet lists at item boundaries (never mid-item).
 
 ---
 
-### #15 — Add table enhancements (G14)
+### #15 — Add table enhancements (G14) ✅
 
 **Description:** Apply per-side borders (heavier bottom border on header row, lighter internal borders). Detect colspan via `||` empty adjacent cells in markdown tables. Better alternating row colors using theme colors with transparency.
 
@@ -331,7 +331,7 @@ Split bullet lists at item boundaries (never mid-item).
 
 ---
 
-### #16 — Add scatter, radar, and bubble chart types (G15)
+### #16 — Add scatter, radar, and bubble chart types (G15) ✅
 
 **Description:** Extend the chart renderer (#8) to support scatter, radar, and bubble chart types. Scatter/bubble use `{ x, y }` or `{ x, y, size }` value format. Radar uses `labels` + `values` like bar/line.
 

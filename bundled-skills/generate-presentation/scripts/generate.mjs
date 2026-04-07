@@ -227,6 +227,16 @@ function parseMarkdown(md) {
     const line = lines[i];
     const trimmed = line.trimEnd();
 
+    // HTML comment directives: <!-- background: path --> or <!-- youtube: url -->
+    const bgMatch = trimmed.match(/^<!--\s*background:\s*(.+?)(?:\s+overlay=([\d.]+))?\s*-->$/);
+    if (bgMatch) {
+      const bgPath = bgMatch[1].trim();
+      const overlay = bgMatch[2] ? parseFloat(bgMatch[2]) : null;
+      ensureSlide()._background = { path: bgPath, overlay };
+      i++;
+      continue;
+    }
+
     // Horizontal rule — force new slide
     if (/^---+\s*$/.test(trimmed) && i > 0) {
       current = null; // next content starts a new slide
@@ -380,12 +390,12 @@ function parseMarkdown(md) {
       continue;
     }
 
-    // Image
-    const imgMatch = trimmed.match(/^!\[([^\]]*)\]\(([^)]+)\)/);
+    // Image — ![alt](path) or ![alt](path "keyword")
+    const imgMatch = trimmed.match(/^!\[([^\]]*)\]\((\S+?)(?:\s+"([^"]*)")?\)/);
     if (imgMatch) {
       ensureSlide().content.push({
         type: "image",
-        data: { alt: imgMatch[1], path: imgMatch[2] },
+        data: { alt: imgMatch[1], path: imgMatch[2], sizing: imgMatch[3] || null },
       });
       i++;
       continue;
@@ -649,6 +659,38 @@ function defineSlideMasters(pptx, theme) {
 const MASTER_MAP = { title: "TITLE_SLIDE", content: "CONTENT", picture: "PICTURE", blank: "BLANK", columns: "TWO_CONTENT" };
 
 // ---------------------------------------------------------------------------
+// Content height estimation (#12)
+// ---------------------------------------------------------------------------
+
+function estimateContentHeight(item) {
+  switch (item.type) {
+    case "bullets":
+    case "numbered":
+      return item.data.items.length * 0.4;
+    case "text":
+      return 0.55;
+    case "table":
+      return item.data.rows.length * 0.4;
+    case "code":
+      return Math.min(item.data.text.split("\n").length * 0.3 + 0.4, 4.0);
+    case "image":
+      return 3.7;
+    case "chart":
+      return 4.7;
+    case "callout":
+      return 0.9;
+    case "accentCallout":
+      return 1.2;
+    case "highlight":
+      return 1.6;
+    case "columns":
+      return 3.0;
+    default:
+      return 0.5;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Chart rendering (#8)
 // ---------------------------------------------------------------------------
 
@@ -662,16 +704,30 @@ function renderChart(slide, chartItem, theme, pptx, x, y, w, h) {
     pie: pptx.charts.PIE,
     doughnut: pptx.charts.DOUGHNUT,
     area: pptx.charts.AREA,
+    scatter: pptx.charts.SCATTER,
+    radar: pptx.charts.RADAR,
+    bubble: pptx.charts.BUBBLE,
   };
 
   const pptxChartType = chartTypeMap[chartType];
   if (!pptxChartType) return false;
 
-  const chartData = (chartItem.series || []).map((s) => ({
-    name: s.name || "",
-    labels: chartItem.labels || s.labels || [],
-    values: s.values || [],
-  }));
+  // Scatter/bubble use { x, y [, size] } value format
+  const isXY = chartType === "scatter" || chartType === "bubble";
+  const chartData = (chartItem.series || []).map((s) => {
+    if (isXY && Array.isArray(s.values) && typeof s.values[0] === "object") {
+      return {
+        name: s.name || "",
+        values: s.values.map((v) => (typeof v === "object" ? [v.x, v.y] : v)),
+        sizes: chartType === "bubble" ? s.values.map((v) => (typeof v === "object" ? v.size || 1 : 1)) : undefined,
+      };
+    }
+    return {
+      name: s.name || "",
+      labels: chartItem.labels || s.labels || [],
+      values: s.values || [],
+    };
+  });
 
   const chartOpts = {
     x, y, w, h,
@@ -700,6 +756,13 @@ function renderChart(slide, chartItem, theme, pptx, x, y, w, h) {
   }
   if (chartType === "doughnut") {
     chartOpts.holeSize = opts.holeSize || 50;
+  }
+  if (chartType === "radar") {
+    chartOpts.radarStyle = opts.radarStyle || "standard";
+  }
+  if (chartType === "scatter") {
+    chartOpts.lineDataSymbol = opts.lineDataSymbol || "circle";
+    chartOpts.lineSize = 0; // no connecting lines by default
   }
 
   slide.addChart(pptxChartType, chartData, chartOpts);
@@ -741,6 +804,23 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
     const isTitleOnly = slideData.layout === "title" || (isFirstSlide && slideData.content.length === 0);
     const masterName = MASTER_MAP[slideData.layout] || "CONTENT";
     const slide = pptx.addSlide({ masterName: isTitleOnly ? "TITLE_SLIDE" : masterName });
+
+    // Background image (#13)
+    if (slideData._background) {
+      let bgPath = slideData._background.path;
+      if (!bgPath.startsWith("/") && !bgPath.startsWith("http")) bgPath = resolve(inputDir, bgPath);
+      if (existsSync(bgPath)) {
+        slide.background = { path: bgPath };
+        if (slideData._background.overlay) {
+          slide.addShape(pptx.ShapeType.rect, {
+            x: 0, y: 0, w: SLIDE_W, h: 7.5,
+            fill: { color: "000000", transparency: (1 - slideData._background.overlay) * 100 },
+          });
+        }
+      } else {
+        console.warn(`Warning: Background image not found: ${bgPath}`);
+      }
+    }
 
     // Title
     if (slideData.title) {
@@ -796,39 +876,66 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
       });
     }
 
-    // Content
+    // Content with overflow detection (#12)
     let curY = slideData.subtitle ? CONTENT_Y_WITH_SUB : CONTENT_Y_BASE;
+    let curSlide = slide;
+
+    function createContinuationSlide() {
+      const contSlide = pptx.addSlide({ masterName: MASTER_MAP[slideData.layout] || "CONTENT" });
+      if (slideData.title) {
+        const contTitleOpts = {
+          x: MARGIN_LEFT, y: TITLE_Y, w: CONTENT_WIDTH, h: TITLE_H,
+          fontSize: 36, fontFace: theme.fonts.heading, color: theme.colors.dk1,
+          bold: true, align: "left", valign: "bottom",
+        };
+        if (theme.titleShadow) contTitleOpts.shadow = theme.titleShadow;
+        contSlide.addText(stripMarkdownFormatting(slideData.title) + " (cont.)", contTitleOpts);
+      }
+      curY = CONTENT_Y_BASE;
+      curSlide = contSlide;
+      return contSlide;
+    }
 
     for (const item of slideData.content) {
+      // Overflow check: create continuation slide if content won't fit (#12)
+      const estH = estimateContentHeight(item);
+      if (curY + estH > MAX_CONTENT_BOTTOM && curY > CONTENT_Y_BASE + 0.5) {
+        createContinuationSlide();
+      }
+
       switch (item.type) {
         case "bullets":
         case "numbered": {
-          // PptxGenJS addText for bullets: flat array of { text: string, options: { bullet, indentLevel, ... } }
-          const textRows = item.data.items.map((it, idx) => ({
-            text: stripMarkdownFormatting(it.text),
-            options: {
-              fontSize: 20,
-              fontFace: theme.fonts.body,
-              color: theme.colors.dk1,
-              indentLevel: it.level,
-              bullet: item.type === "bullets" ? { code: "2022" } : { type: "number" },
-              paraSpaceAfter: 6,
-            },
-          }));
-          const listH = Math.min(textRows.length * 0.45, MAX_CONTENT_BOTTOM - curY);
-          slide.addText(textRows, {
-            x: MARGIN_LEFT,
-            y: curY,
-            w: CONTENT_WIDTH,
-            h: listH,
-            valign: "top",
-          });
-          curY += listH + 0.1;
+          const allItems = item.data.items;
+          let startIdx = 0;
+          while (startIdx < allItems.length) {
+            const remaining = MAX_CONTENT_BOTTOM - curY;
+            const maxItems = Math.max(1, Math.floor(remaining / 0.4));
+            const batch = allItems.slice(startIdx, startIdx + maxItems);
+            const textRows = batch.map((it) => ({
+              text: stripMarkdownFormatting(it.text),
+              options: {
+                fontSize: 20,
+                fontFace: theme.fonts.body,
+                color: theme.colors.dk1,
+                indentLevel: it.level,
+                bullet: item.type === "bullets" ? { code: "2022" } : { type: "number" },
+                paraSpaceAfter: 6,
+              },
+            }));
+            const listH = Math.min(textRows.length * 0.45, MAX_CONTENT_BOTTOM - curY);
+            curSlide.addText(textRows, {
+              x: MARGIN_LEFT, y: curY, w: CONTENT_WIDTH, h: listH, valign: "top",
+            });
+            curY += listH + 0.1;
+            startIdx += batch.length;
+            if (startIdx < allItems.length) createContinuationSlide();
+          }
           break;
         }
 
         case "text": {
-          slide.addText(stripMarkdownFormatting(item.data.text), {
+          curSlide.addText(stripMarkdownFormatting(item.data.text), {
             x: MARGIN_LEFT,
             y: curY,
             w: CONTENT_WIDTH,
@@ -846,34 +953,62 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
         }
 
         case "table": {
-          const rows = item.data.rows.map((row, ri) =>
-            row.map((cell) => {
+          const numCols = item.data.rows[0]?.length || 1;
+          const rows = item.data.rows.map((row, ri) => {
+            const isHeader = ri === 0;
+            const cells = [];
+            for (let ci = 0; ci < row.length; ci++) {
+              const cell = row[ci];
+              // Colspan: empty cells after || merge with previous (#15)
+              if (cell === "" && ci > 0 && cells.length > 0) {
+                const prev = cells[cells.length - 1];
+                prev.options.colspan = (prev.options.colspan || 1) + 1;
+                continue;
+              }
+              // Per-side borders (#15)
+              const border = isHeader
+                ? [
+                    { type: "solid", pt: 0, color: "FFFFFF" },         // top
+                    { type: "solid", pt: 0.25, color: "CCCCCC" },      // right
+                    { type: "solid", pt: 1.5, color: theme.colors.accent1 }, // bottom (heavy)
+                    { type: "solid", pt: 0.25, color: "CCCCCC" },      // left
+                  ]
+                : [
+                    { type: "solid", pt: 0.25, color: "DDDDDD" },      // top (light)
+                    { type: "solid", pt: 0.25, color: "DDDDDD" },      // right (light)
+                    { type: "solid", pt: 0.25, color: "DDDDDD" },      // bottom (light)
+                    { type: "solid", pt: 0.25, color: "DDDDDD" },      // left (light)
+                  ];
+              // Alternating rows using theme colors with transparency (#15)
+              let fill;
+              if (isHeader) fill = { color: theme.colors.accent1 };
+              else if (ri % 2 === 0) fill = { color: theme.colors.lt2 };
               const cellOpts = {
                 fontSize: 14,
                 fontFace: theme.fonts.body,
-                color: ri === 0 ? theme.colors.lt1 : theme.colors.dk1,
-                bold: ri === 0,
-                fill: ri === 0 ? { color: theme.colors.accent1 } : ri % 2 === 0 ? { color: theme.colors.lt2 } : undefined,
-                border: { type: "solid", pt: 0.5, color: "CCCCCC" },
+                color: isHeader ? theme.colors.lt1 : theme.colors.dk1,
+                bold: isHeader,
+                fill,
+                border,
                 valign: "middle",
                 margin: [4, 6, 4, 6],
               };
-              // Detect hyperlinks in table cells (#1)
               const linkMatch = cell.match(/\[([^\]]+)\]\(([^)]+)\)/);
               if (linkMatch) {
                 const slideRef = linkMatch[2].match(/^#slide-(\d+)$/);
                 if (slideRef) cellOpts.hyperlink = { slide: slideRef[1] };
                 else cellOpts.hyperlink = { url: linkMatch[2] };
               }
-              return { text: stripMarkdownFormatting(cell), options: cellOpts };
-            })
-          );
+              cells.push({ text: stripMarkdownFormatting(cell), options: cellOpts });
+            }
+            return cells;
+          });
           const tableH = rows.length * 0.4;
-          slide.addTable(rows, {
+          curSlide.addTable(rows, {
             x: MARGIN_LEFT,
             y: curY,
             w: CONTENT_WIDTH,
-            colW: Array(rows[0]?.length || 1).fill(CONTENT_WIDTH / (rows[0]?.length || 1)),
+            colW: Array(numCols).fill(CONTENT_WIDTH / numCols),
             autoPage: true,
             autoPageRepeatHeader: true,
             autoPageHeaderRows: 1,
@@ -884,7 +1019,7 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
 
         case "code": {
           const codeH = Math.min(item.data.text.split("\n").length * 0.3 + 0.4, 4.0);
-          slide.addText(item.data.text, {
+          curSlide.addText(item.data.text, {
             x: MARGIN_LEFT,
             y: curY,
             w: CONTENT_WIDTH,
@@ -903,27 +1038,44 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
 
         case "image": {
           let imgPath = item.data.path;
-          // Resolve relative paths from input markdown directory
           if (!imgPath.startsWith("/") && !imgPath.startsWith("http")) {
             imgPath = resolve(inputDir, imgPath);
           }
           if (imgPath.startsWith("http")) {
-            // Skip remote images — PptxGenJS can handle URLs but it's unreliable in scripts
-            slide.addText(`[Image: ${item.data.alt || imgPath}]`, {
+            curSlide.addText(`[Image: ${item.data.alt || imgPath}]`, {
               x: MARGIN_LEFT, y: curY, w: CONTENT_WIDTH, h: 0.5,
               fontSize: 14, fontFace: theme.fonts.body, color: "999999", italic: true,
             });
             curY += 0.6;
           } else if (existsSync(imgPath)) {
             const imgH = 3.5;
-            slide.addImage({
+            const imgW = CONTENT_WIDTH * 0.8;
+            const keyword = item.data.sizing;
+            const imgOpts = {
               path: imgPath,
               x: MARGIN_LEFT,
               y: curY,
-              w: CONTENT_WIDTH * 0.8,
+              w: imgW,
               h: imgH,
-              sizing: { type: "contain", w: CONTENT_WIDTH * 0.8, h: imgH },
-            });
+            };
+            // Alt text for accessibility (#14)
+            if (item.data.alt) imgOpts.altText = item.data.alt;
+            // Sizing keywords (#14)
+            if (keyword === "cover") {
+              imgOpts.sizing = { type: "cover", w: imgW, h: imgH };
+            } else if (keyword === "round") {
+              imgOpts.sizing = { type: "cover", w: imgH, h: imgH };
+              imgOpts.w = imgH; // square for circular crop
+              imgOpts.x = MARGIN_LEFT + (imgW - imgH) / 2; // center
+              imgOpts.rounding = true;
+            } else {
+              imgOpts.sizing = { type: "contain", w: imgW, h: imgH };
+            }
+            // Subtle shadow for business/report styles (#14)
+            if (theme.titleShadow) {
+              imgOpts.shadow = { type: "outer", blur: 3, offset: 1, opacity: 0.2, angle: 45, color: "000000" };
+            }
+            curSlide.addImage(imgOpts);
             curY += imgH + 0.2;
           }
           break;
@@ -931,7 +1083,7 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
 
         case "callout": {
           const label = item.data.calloutType.charAt(0).toUpperCase() + item.data.calloutType.slice(1);
-          slide.addText(
+          curSlide.addText(
             [
               { text: `${label}: `, options: { bold: true, fontSize: 18, fontFace: theme.fonts.body, color: theme.colors.accent1 } },
               { text: stripMarkdownFormatting(item.data.text), options: { fontSize: 18, fontFace: theme.fonts.body, color: theme.colors.dk1 } },
@@ -952,14 +1104,14 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
 
         case "chart": {
           const chartH = 4.5;
-          renderChart(slide, item.data, theme, pptx, MARGIN_LEFT, curY, CONTENT_WIDTH, chartH);
+          renderChart(curSlide, item.data, theme, pptx, MARGIN_LEFT, curY, CONTENT_WIDTH, chartH);
           curY += chartH + 0.2;
           break;
         }
 
         case "accentCallout": {
           const calloutH = 1.0;
-          slide.addShape(pptx.ShapeType.roundRect, {
+          curSlide.addShape(pptx.ShapeType.roundRect, {
             x: MARGIN_LEFT + 0.2,
             y: curY,
             w: CONTENT_WIDTH - 0.4,
@@ -969,7 +1121,7 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
             rectRadius: 0.1,
             shadow: { type: "outer", blur: 2, offset: 1, opacity: 0.15, angle: 45, color: "000000" },
           });
-          slide.addText(parseInlineFormatting(item.data.text), {
+          curSlide.addText(parseInlineFormatting(item.data.text), {
             x: MARGIN_LEFT + 0.5,
             y: curY + 0.1,
             w: CONTENT_WIDTH - 1.0,
@@ -985,7 +1137,7 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
 
         case "highlight": {
           const highlightH = 1.4;
-          slide.addShape(pptx.ShapeType.roundRect, {
+          curSlide.addShape(pptx.ShapeType.roundRect, {
             x: MARGIN_LEFT + 1.0,
             y: curY,
             w: CONTENT_WIDTH - 2.0,
@@ -994,7 +1146,7 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
             rectRadius: 0.1,
             shadow: { type: "outer", blur: 3, offset: 1, opacity: 0.2, angle: 45, color: "000000" },
           });
-          slide.addText(stripMarkdownFormatting(item.data.text), {
+          curSlide.addText(stripMarkdownFormatting(item.data.text), {
             x: MARGIN_LEFT + 1.3,
             y: curY + 0.1,
             w: CONTENT_WIDTH - 2.6,
@@ -1040,10 +1192,10 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
           const colH = Math.min(Math.max(leftRows.length, rightRows.length) * 0.4 + 0.2, MAX_CONTENT_BOTTOM - curY);
 
           if (leftRows.length > 0) {
-            slide.addText(leftRows, { x: leftX, y: curY, w: colW, h: colH, valign: "top" });
+            curSlide.addText(leftRows, { x: leftX, y: curY, w: colW, h: colH, valign: "top" });
           }
           if (rightRows.length > 0) {
-            slide.addText(rightRows, { x: rightX, y: curY, w: colW, h: colH, valign: "top" });
+            curSlide.addText(rightRows, { x: rightX, y: curY, w: colW, h: colH, valign: "top" });
           }
           curY += colH + 0.2;
           break;
@@ -1058,7 +1210,7 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
 
     // Footer with title (slide numbers now handled by master definitions)
     if (theme.footer === "title" && slideData.title && !isTitleOnly) {
-      slide.addText(stripMarkdownFormatting(slides[0]?.title || ""), {
+      curSlide.addText(stripMarkdownFormatting(slides[0]?.title || ""), {
         x: MARGIN_LEFT, y: 6.9, w: 6, h: 0.4,
         fontSize: 10, fontFace: theme.fonts.body, color: theme.colors.dk2,
       });
@@ -1116,7 +1268,7 @@ async function main() {
 }
 
 // Export for testing
-export { parseMarkdown, parseInlineFormatting, stripMarkdownFormatting, inferLayout, parseSimpleYaml, parseYamlValue, STYLES, MASTER_MAP };
+export { parseMarkdown, parseInlineFormatting, stripMarkdownFormatting, inferLayout, parseSimpleYaml, parseYamlValue, estimateContentHeight, STYLES, MASTER_MAP };
 
 if (__isMain) {
   main().catch((err) => {

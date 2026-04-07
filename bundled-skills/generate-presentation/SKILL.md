@@ -83,6 +83,9 @@ When writing the markdown file, these rules control how the script converts it t
 | `:::callout` ... `:::` | Rounded accent box with border and shadow |
 | `:::highlight` ... `:::` | Large centered metric box with accent background |
 | `![alt](path)` | Embedded image (local paths only) |
+| `![alt](path "cover")` | Image with crop-to-fill sizing |
+| `![alt](path "round")` | Image with circular crop |
+| `<!-- background: path -->` | Slide background image (optional `overlay=0.4` for dimming) |
 | `[text](url)` | Clickable hyperlink — opens in browser from PowerPoint |
 | `[text](#slide-N)` | Cross-slide link — navigates to slide N within the deck |
 | `~text~` | Subscript (e.g., `H~2~O` → H₂O) |
@@ -127,13 +130,14 @@ options:
 ```
 ````
 
-**Supported chart types:** `bar`, `line`, `pie`, `doughnut`, `area`
+**Supported chart types:** `bar`, `line`, `pie`, `doughnut`, `area`, `scatter`, `radar`, `bubble`
 
 **Chart options** (all optional):
 - `barDir`: `col` (vertical) or `bar` (horizontal) — bar charts only
 - `barGrouping`: `clustered` or `stacked` — bar charts only
 - `lineSmooth`: `true` or `false` — line charts only
 - `holeSize`: 0-100 — doughnut charts only
+- `radarStyle`: `standard`, `marker`, or `filled` — radar charts only
 
 Charts use theme-matched color palettes. Invalid YAML falls back to a regular code block.
 
