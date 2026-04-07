@@ -76,8 +76,12 @@ When writing the markdown file, these rules control how the script converts it t
 | `---` | Force a new slide (even without a heading) |
 | `- item` / `* item` | Bullet points (indent with spaces for nesting) |
 | `1. item` | Numbered points |
-| GFM table (`\| col \| col \|`) | Native PowerPoint table with styled header row |
+| GFM table (`\| col \| col \|`) | Native PowerPoint table with styled header row (auto-pages for large tables) |
 | Code block (triple backticks) | Monospace text with grey background |
+| ` ```chart ` code block | Native PowerPoint chart (bar, line, pie, doughnut, area) — see Charts section |
+| `:::columns` ... `:::` | Two-column side-by-side layout — see Columns section |
+| `:::callout` ... `:::` | Rounded accent box with border and shadow |
+| `:::highlight` ... `:::` | Large centered metric box with accent background |
 | `![alt](path)` | Embedded image (local paths only) |
 | `[text](url)` | Clickable hyperlink — opens in browser from PowerPoint |
 | `[text](#slide-N)` | Cross-slide link — navigates to slide N within the deck |
@@ -86,6 +90,8 @@ When writing the markdown file, these rules control how the script converts it t
 | `> [!notes]` callout | Speaker notes (not visible on the slide) |
 | `> [!tip]`, `> [!warning]`, etc. | Styled callout text |
 | `> plain quote` | Italic body text |
+
+**Note on escaped brackets:** The script accepts both `> [!notes]` and `> \[!notes\]` (escaped brackets). Some markdown editors auto-escape square brackets — this is handled automatically. A warning is logged when escaped brackets are detected.
 
 ### Frontmatter Metadata
 
@@ -101,6 +107,71 @@ subject: Quarterly business review
 ```
 
 All fields are optional. If `title` is omitted, it defaults to the first `# Heading`. These values appear in PowerPoint's File > Properties.
+
+### Charts
+
+Embed native PowerPoint charts using a `chart` code block with YAML data:
+
+````markdown
+```chart
+type: bar
+title: Revenue by Quarter
+labels: [Q1, Q2, Q3, Q4]
+series:
+  - name: Revenue
+    values: [12, 15, 18, 22]
+  - name: Expenses
+    values: [8, 10, 12, 14]
+options:
+  barDir: col
+```
+````
+
+**Supported chart types:** `bar`, `line`, `pie`, `doughnut`, `area`
+
+**Chart options** (all optional):
+- `barDir`: `col` (vertical) or `bar` (horizontal) — bar charts only
+- `barGrouping`: `clustered` or `stacked` — bar charts only
+- `lineSmooth`: `true` or `false` — line charts only
+- `holeSize`: 0-100 — doughnut charts only
+
+Charts use theme-matched color palettes. Invalid YAML falls back to a regular code block.
+
+### Two-Column Layout
+
+Use `:::columns` with a `---column---` separator for side-by-side content:
+
+```markdown
+:::columns
+- Left point 1
+- Left point 2
+- Left point 3
+---column---
+- Right point 1
+- Right point 2
+- Right point 3
+:::
+```
+
+Each column independently supports bullet points, numbered lists, and plain text.
+
+### Callout and Highlight Boxes
+
+**Callout** — rounded accent box for important notes:
+
+```markdown
+:::callout
+This is an important takeaway that should stand out.
+:::
+```
+
+**Highlight** — large centered metric box with accent background:
+
+```markdown
+:::highlight
+$12.5M Total Revenue (+18% YoY)
+:::
+```
 
 ### Example Markdown Structure
 

@@ -105,6 +105,83 @@ function parseArgs(argv) {
 }
 
 // ---------------------------------------------------------------------------
+// Simple YAML parser (for chart blocks — no external dependency)
+// ---------------------------------------------------------------------------
+
+function parseYamlValue(str) {
+  str = str.trim();
+  if (str.startsWith("[") && str.endsWith("]")) {
+    return str.slice(1, -1).split(",").map((s) => {
+      s = s.trim();
+      if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) return s.slice(1, -1);
+      const num = Number(s);
+      return isNaN(num) ? s : num;
+    });
+  }
+  if (str === "true") return true;
+  if (str === "false") return false;
+  const num = Number(str);
+  if (!isNaN(num) && str !== "") return num;
+  if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) return str.slice(1, -1);
+  return str;
+}
+
+function parseSimpleYaml(text) {
+  const result = {};
+  const lines = text.split("\n");
+  let currentKey = null;
+  let currentArray = null;
+  let currentObj = null;
+
+  for (const line of lines) {
+    if (!line.trim() || line.trim().startsWith("#")) continue;
+
+    // Array item start: "  - key: value"
+    if (/^\s+-\s/.test(line) && currentKey) {
+      if (!currentArray) {
+        currentArray = [];
+        result[currentKey] = currentArray;
+      }
+      currentObj = {};
+      currentArray.push(currentObj);
+      const kvMatch = line.match(/^\s+-\s+(\w+):\s*(.+)/);
+      if (kvMatch) currentObj[kvMatch[1]] = parseYamlValue(kvMatch[2]);
+      continue;
+    }
+
+    // Indented key: value (continuation of array item or nested object)
+    if (/^\s+\w/.test(line) && !/^\s+-/.test(line)) {
+      const kvMatch = line.match(/^\s+(\w+):\s*(.+)/);
+      if (kvMatch) {
+        if (currentObj) {
+          currentObj[kvMatch[1]] = parseYamlValue(kvMatch[2]);
+        } else if (currentKey) {
+          if (typeof result[currentKey] !== "object" || Array.isArray(result[currentKey])) result[currentKey] = {};
+          result[currentKey][kvMatch[1]] = parseYamlValue(kvMatch[2]);
+        }
+      }
+      continue;
+    }
+
+    // Top-level key: value
+    const topMatch = line.match(/^(\w+):\s*(.*)/);
+    if (topMatch) {
+      const key = topMatch[1];
+      const value = topMatch[2].trim();
+      currentArray = null;
+      currentObj = null;
+      if (value) {
+        result[key] = parseYamlValue(value);
+        currentKey = null;
+      } else {
+        currentKey = key;
+      }
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Markdown parser — converts markdown text into slide data model
 // ---------------------------------------------------------------------------
 
@@ -181,7 +258,38 @@ function parseMarkdown(md) {
       continue;
     }
 
-    // Code block
+    // Fenced div blocks (:::type ... :::) — columns, callout, highlight
+    const fencedMatch = trimmed.match(/^:::(\w+)/);
+    if (fencedMatch) {
+      const blockType = fencedMatch[1].toLowerCase();
+      const blockLines = [];
+      i++;
+      while (i < lines.length && lines[i].trimEnd() !== ":::") {
+        blockLines.push(lines[i]);
+        i++;
+      }
+      i++; // skip closing :::
+      if (blockType === "columns") {
+        const parts = blockLines.join("\n").split(/^---column---$/m);
+        ensureSlide().content.push({
+          type: "columns",
+          data: { left: parts[0]?.trim() || "", right: parts[1]?.trim() || "" },
+        });
+      } else if (blockType === "callout") {
+        ensureSlide().content.push({
+          type: "accentCallout",
+          data: { text: blockLines.join("\n").trim() },
+        });
+      } else if (blockType === "highlight") {
+        ensureSlide().content.push({
+          type: "highlight",
+          data: { text: blockLines.join("\n").trim() },
+        });
+      }
+      continue;
+    }
+
+    // Code block (including ```chart for chart YAML)
     const codeMatch = trimmed.match(/^```(\w*)/);
     if (codeMatch) {
       const lang = codeMatch[1] || "";
@@ -192,7 +300,16 @@ function parseMarkdown(md) {
         i++;
       }
       i++; // skip closing ```
-      ensureSlide().content.push({ type: "code", data: { lang, text: codeLines.join("\n") } });
+      if (lang === "chart") {
+        const chartData = parseSimpleYaml(codeLines.join("\n"));
+        if (chartData.type && chartData.series) {
+          ensureSlide().content.push({ type: "chart", data: chartData });
+        } else {
+          ensureSlide().content.push({ type: "code", data: { lang, text: codeLines.join("\n") } });
+        }
+      } else {
+        ensureSlide().content.push({ type: "code", data: { lang, text: codeLines.join("\n") } });
+      }
       continue;
     }
 
@@ -335,8 +452,9 @@ function inferLayout(slide) {
   const hasTitle = !!slide.title;
   const hasContent = slide.content.length > 0;
   const hasImage = slide.content.some((c) => c.type === "image");
-  const isFirst = false; // caller can override for first slide
+  const hasColumns = slide.content.some((c) => c.type === "columns");
 
+  if (hasColumns) return "columns";
   if (hasTitle && !hasContent) return "title";
   if (hasTitle && hasImage && slide.content.length === 1) return "picture";
   if (hasTitle && hasContent) return "content";
@@ -360,6 +478,7 @@ const STYLES = {
     slideNumbers: false,
     footer: null,
     titleSlide: { bgColor: "FFFFFF", titleColor: "333333" },
+    chartColors: ["666666", "999999", "BBBBBB", "DDDDDD", "444444", "777777"],
   },
   business: {
     colors: {
@@ -374,6 +493,7 @@ const STYLES = {
     titleSlide: { bgColor: "2D2D2D", titleColor: "FFFFFF" },
     accentBar: { color: "2D2D2D", height: 0.06 },
     titleShadow: { type: "outer", blur: 3, offset: 1, opacity: 0.25, angle: 45, color: "000000" },
+    chartColors: ["2D2D2D", "555555", "888888", "AAAAAA", "333333", "666666"],
   },
   report: {
     colors: {
@@ -387,6 +507,7 @@ const STYLES = {
     footer: "title",
     titleSlide: { bgColor: "1A1A1A", titleColor: "FFFFFF" },
     titleShadow: { type: "outer", blur: 3, offset: 1, opacity: 0.25, angle: 45, color: "000000" },
+    chartColors: ["404040", "666666", "888888", "AAAAAA", "333333", "555555"],
   },
 };
 
@@ -498,6 +619,97 @@ function parseInlineFormatting(text) {
   return parts.length > 0 ? parts : [{ text }];
 }
 
+// ---------------------------------------------------------------------------
+// Slide master definitions (#6)
+// ---------------------------------------------------------------------------
+
+function defineSlideMasters(pptx, theme) {
+  const MARGIN_LEFT = 0.8;
+  const CONTENT_WIDTH = 13.33 - MARGIN_LEFT - 0.8;
+  const slideNumberDef = theme.slideNumbers
+    ? { x: 12.2, y: 6.9, w: 0.8, h: 0.4, fontSize: 10, fontFace: theme.fonts.body, color: theme.colors.dk2 }
+    : undefined;
+
+  // Content slide objects (accent bar for business style)
+  const contentObjects = [];
+  if (theme.accentBar) {
+    contentObjects.push({
+      rect: { x: MARGIN_LEFT, y: 1.3, w: CONTENT_WIDTH, h: theme.accentBar.height, fill: { color: theme.accentBar.color } },
+    });
+  }
+
+  pptx.defineSlideMaster({ title: "TITLE_SLIDE", background: { color: theme.titleSlide.bgColor } });
+  pptx.defineSlideMaster({ title: "SECTION_HEADER", background: { color: theme.titleSlide.bgColor } });
+  pptx.defineSlideMaster({ title: "CONTENT", background: { color: theme.background.color }, objects: contentObjects, slideNumber: slideNumberDef });
+  pptx.defineSlideMaster({ title: "TWO_CONTENT", background: { color: theme.background.color }, objects: [...contentObjects], slideNumber: slideNumberDef });
+  pptx.defineSlideMaster({ title: "PICTURE", background: { color: theme.background.color }, objects: [...contentObjects], slideNumber: slideNumberDef });
+  pptx.defineSlideMaster({ title: "BLANK", background: { color: theme.background.color } });
+}
+
+const MASTER_MAP = { title: "TITLE_SLIDE", content: "CONTENT", picture: "PICTURE", blank: "BLANK", columns: "TWO_CONTENT" };
+
+// ---------------------------------------------------------------------------
+// Chart rendering (#8)
+// ---------------------------------------------------------------------------
+
+function renderChart(slide, chartItem, theme, pptx, x, y, w, h) {
+  const chartType = chartItem.type?.toLowerCase();
+  const chartColors = theme.chartColors || ["666666", "999999", "BBBBBB", "DDDDDD", "444444", "777777"];
+
+  const chartTypeMap = {
+    bar: pptx.charts.BAR,
+    line: pptx.charts.LINE,
+    pie: pptx.charts.PIE,
+    doughnut: pptx.charts.DOUGHNUT,
+    area: pptx.charts.AREA,
+  };
+
+  const pptxChartType = chartTypeMap[chartType];
+  if (!pptxChartType) return false;
+
+  const chartData = (chartItem.series || []).map((s) => ({
+    name: s.name || "",
+    labels: chartItem.labels || s.labels || [],
+    values: s.values || [],
+  }));
+
+  const chartOpts = {
+    x, y, w, h,
+    showTitle: !!chartItem.title,
+    title: chartItem.title || "",
+    titleFontSize: 14,
+    titleColor: theme.colors.dk1,
+    chartColors,
+    showLegend: chartData.length > 1,
+    legendPos: "b",
+    legendFontSize: 10,
+  };
+
+  const opts = chartItem.options || {};
+  if (chartType === "bar") {
+    chartOpts.barDir = opts.barDir || "col";
+    chartOpts.barGrouping = opts.barGrouping || "clustered";
+  }
+  if (chartType === "line") {
+    chartOpts.lineSmooth = opts.lineSmooth !== undefined ? opts.lineSmooth : false;
+    chartOpts.lineDataSymbol = opts.lineDataSymbol || "circle";
+  }
+  if (chartType === "pie" || chartType === "doughnut") {
+    chartOpts.showPercent = true;
+    chartOpts.showLegend = true;
+  }
+  if (chartType === "doughnut") {
+    chartOpts.holeSize = opts.holeSize || 50;
+  }
+
+  slide.addChart(pptxChartType, chartData, chartOpts);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Slide generation — PptxGenJS
+// ---------------------------------------------------------------------------
+
 async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) {
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE"; // 13.33 x 7.5 inches
@@ -507,6 +719,9 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
   if (metadata.author) pptx.author = metadata.author;
   if (metadata.company) pptx.company = metadata.company;
   if (metadata.subject) pptx.subject = metadata.subject;
+
+  // Define slide masters (#6)
+  defineSlideMasters(pptx, theme);
 
   const SLIDE_W = 13.33;
   const MARGIN_LEFT = 0.8;
@@ -522,27 +737,10 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
 
   for (let si = 0; si < slides.length; si++) {
     const slideData = slides[si];
-    const slide = pptx.addSlide();
     const isFirstSlide = si === 0;
     const isTitleOnly = slideData.layout === "title" || (isFirstSlide && slideData.content.length === 0);
-
-    // Background
-    if (isTitleOnly) {
-      slide.background = { color: theme.titleSlide.bgColor };
-    } else {
-      slide.background = { color: theme.background.color };
-    }
-
-    // Accent bar for business style — thin line below title area
-    if (theme.accentBar && !isTitleOnly) {
-      slide.addShape(pptx.ShapeType.rect, {
-        x: MARGIN_LEFT,
-        y: TITLE_Y + TITLE_H + 0.1,
-        w: CONTENT_WIDTH,
-        h: theme.accentBar.height,
-        fill: { color: theme.accentBar.color },
-      });
-    }
+    const masterName = MASTER_MAP[slideData.layout] || "CONTENT";
+    const slide = pptx.addSlide({ masterName: isTitleOnly ? "TITLE_SLIDE" : masterName });
 
     // Title
     if (slideData.title) {
@@ -670,16 +868,17 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
               return { text: stripMarkdownFormatting(cell), options: cellOpts };
             })
           );
-          const tableH = Math.min(rows.length * 0.4, 3.5);
+          const tableH = rows.length * 0.4;
           slide.addTable(rows, {
             x: MARGIN_LEFT,
             y: curY,
             w: CONTENT_WIDTH,
-            h: tableH,
             colW: Array(rows[0]?.length || 1).fill(CONTENT_WIDTH / (rows[0]?.length || 1)),
-            autoPage: false,
+            autoPage: true,
+            autoPageRepeatHeader: true,
+            autoPageHeaderRows: 1,
           });
-          curY += tableH + 0.2;
+          curY += Math.min(tableH, MAX_CONTENT_BOTTOM - curY) + 0.2;
           break;
         }
 
@@ -750,6 +949,105 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
           curY += 0.9;
           break;
         }
+
+        case "chart": {
+          const chartH = 4.5;
+          renderChart(slide, item.data, theme, pptx, MARGIN_LEFT, curY, CONTENT_WIDTH, chartH);
+          curY += chartH + 0.2;
+          break;
+        }
+
+        case "accentCallout": {
+          const calloutH = 1.0;
+          slide.addShape(pptx.ShapeType.roundRect, {
+            x: MARGIN_LEFT + 0.2,
+            y: curY,
+            w: CONTENT_WIDTH - 0.4,
+            h: calloutH,
+            fill: { color: theme.colors.lt2 },
+            line: { color: theme.colors.accent1, width: 1.5 },
+            rectRadius: 0.1,
+            shadow: { type: "outer", blur: 2, offset: 1, opacity: 0.15, angle: 45, color: "000000" },
+          });
+          slide.addText(parseInlineFormatting(item.data.text), {
+            x: MARGIN_LEFT + 0.5,
+            y: curY + 0.1,
+            w: CONTENT_WIDTH - 1.0,
+            h: calloutH - 0.2,
+            fontSize: 18,
+            fontFace: theme.fonts.body,
+            color: theme.colors.dk1,
+            valign: "middle",
+          });
+          curY += calloutH + 0.2;
+          break;
+        }
+
+        case "highlight": {
+          const highlightH = 1.4;
+          slide.addShape(pptx.ShapeType.roundRect, {
+            x: MARGIN_LEFT + 1.0,
+            y: curY,
+            w: CONTENT_WIDTH - 2.0,
+            h: highlightH,
+            fill: { color: theme.colors.accent1 },
+            rectRadius: 0.1,
+            shadow: { type: "outer", blur: 3, offset: 1, opacity: 0.2, angle: 45, color: "000000" },
+          });
+          slide.addText(stripMarkdownFormatting(item.data.text), {
+            x: MARGIN_LEFT + 1.3,
+            y: curY + 0.1,
+            w: CONTENT_WIDTH - 2.6,
+            h: highlightH - 0.2,
+            fontSize: 28,
+            fontFace: theme.fonts.heading,
+            color: theme.colors.lt1,
+            bold: true,
+            align: "center",
+            valign: "middle",
+          });
+          curY += highlightH + 0.2;
+          break;
+        }
+
+        case "columns": {
+          const colW = 5.5;
+          const leftX = MARGIN_LEFT;
+          const rightX = 7.0;
+
+          function parseColumnLines(text) {
+            return text.split("\n").filter((l) => l.trim()).map((l) => {
+              const bm = l.match(/^(\s*)[*-]\s+(.+)/);
+              if (bm) {
+                return {
+                  text: stripMarkdownFormatting(bm[2].trim()),
+                  options: { fontSize: 18, fontFace: theme.fonts.body, color: theme.colors.dk1, bullet: { code: "2022" }, indentLevel: Math.floor(bm[1].length / 2), paraSpaceAfter: 4 },
+                };
+              }
+              const nm = l.match(/^(\s*)\d+\.\s+(.+)/);
+              if (nm) {
+                return {
+                  text: stripMarkdownFormatting(nm[2].trim()),
+                  options: { fontSize: 18, fontFace: theme.fonts.body, color: theme.colors.dk1, bullet: { type: "number" }, indentLevel: Math.floor(nm[1].length / 3), paraSpaceAfter: 4 },
+                };
+              }
+              return { text: stripMarkdownFormatting(l.trim()), options: { fontSize: 18, fontFace: theme.fonts.body, color: theme.colors.dk1, paraSpaceAfter: 6 } };
+            });
+          }
+
+          const leftRows = parseColumnLines(item.data.left);
+          const rightRows = parseColumnLines(item.data.right);
+          const colH = Math.min(Math.max(leftRows.length, rightRows.length) * 0.4 + 0.2, MAX_CONTENT_BOTTOM - curY);
+
+          if (leftRows.length > 0) {
+            slide.addText(leftRows, { x: leftX, y: curY, w: colW, h: colH, valign: "top" });
+          }
+          if (rightRows.length > 0) {
+            slide.addText(rightRows, { x: rightX, y: curY, w: colW, h: colH, valign: "top" });
+          }
+          curY += colH + 0.2;
+          break;
+        }
       }
     }
 
@@ -758,15 +1056,7 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
       slide.addNotes(slideData.notes);
     }
 
-    // Slide number via PptxGenJS API (#3) — renders as <p:sldNum> in OOXML
-    if (theme.slideNumbers && !isTitleOnly) {
-      slide.slideNumber = {
-        x: 12.2, y: 6.9, w: 0.8, h: 0.4,
-        fontSize: 10, fontFace: theme.fonts.body, color: theme.colors.dk2,
-      };
-    }
-
-    // Footer with title
+    // Footer with title (slide numbers now handled by master definitions)
     if (theme.footer === "title" && slideData.title && !isTitleOnly) {
       slide.addText(stripMarkdownFormatting(slides[0]?.title || ""), {
         x: MARGIN_LEFT, y: 6.9, w: 6, h: 0.4,
@@ -789,6 +1079,12 @@ async function main() {
 
   // Read markdown
   const markdown = readFileSync(inputPath, "utf-8");
+
+  // Warn about escaped callout brackets (they still work, but signal source markdown issues)
+  const escapedCallouts = markdown.match(/^>\s*\\\[!(\w+)\\\]/gm);
+  if (escapedCallouts) {
+    console.warn(`Warning: Found ${escapedCallouts.length} escaped callout tag(s) (e.g., \\[!notes\\]) — treating as callouts. Consider removing backslashes for cleaner markdown.`);
+  }
 
   // Parse into slide model
   const { slides, metadata } = parseMarkdown(markdown);
@@ -820,7 +1116,7 @@ async function main() {
 }
 
 // Export for testing
-export { parseMarkdown, parseInlineFormatting, stripMarkdownFormatting, inferLayout, STYLES };
+export { parseMarkdown, parseInlineFormatting, stripMarkdownFormatting, inferLayout, parseSimpleYaml, parseYamlValue, STYLES, MASTER_MAP };
 
 if (__isMain) {
   main().catch((err) => {

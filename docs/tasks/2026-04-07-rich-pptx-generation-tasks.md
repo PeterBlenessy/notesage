@@ -25,11 +25,11 @@
 | G3 — Built-in slide numbers | 1 | #3 | Done |
 | G4 — Subscript / superscript | 1 | #4 | Done |
 | G5 — Title shadows | 1 | #5 | Done |
-| G6 — Charts from YAML | 2 | #7-#8 | Not started |
-| G7 — Slide masters | 2 | #6 | Not started |
-| G8 — Two-column layout | 2 | #9 | Not started |
-| G9 — Callout / accent shapes | 2 | #10 | Not started |
-| G10 — Auto-page tables | 2 | #11 | Not started |
+| G6 — Charts from YAML | 2 | #7-#8 | Done |
+| G7 — Slide masters | 2 | #6 | Done |
+| G8 — Two-column layout | 2 | #9 | Done |
+| G9 — Callout / accent shapes | 2 | #10 | Done |
+| G10 — Auto-page tables | 2 | #11 | Done |
 | G11 — Content overflow | 3 | #12 | Not started |
 | G12 — Background images | 3 | #13 | Not started |
 | G13 — Image enhancements | 3 | #14 | Not started |
@@ -125,7 +125,7 @@
 
 ---
 
-### #6 — Implement slide master definitions (G7)
+### #6 — Implement slide master definitions (G7) ✅
 
 **Description:** Add `defineSlideMasters(pptx, theme)` function that creates reusable masters: `TITLE_SLIDE`, `SECTION_HEADER`, `CONTENT`, `TWO_CONTENT`, `PICTURE`, `BLANK`. Each master defines background, placeholders (title, body, picture), slide numbers, and accent elements (bar for business style).
 
@@ -145,7 +145,7 @@ Refactor `generatePptx()` to use `pptx.addSlide({ masterName })` instead of manu
 
 ---
 
-### #7 — Add chart YAML parser (G6 — parsing)
+### #7 — Add chart YAML parser (G6 — parsing) ✅
 
 **Description:** Detect ```` ```chart ```` code blocks in the markdown parser. Parse the YAML content into a chart data model: `{ type, title, labels, series, options }`. Add `chart` content type to the slide model.
 
@@ -167,7 +167,7 @@ Validate required fields (`type`, `series`). On parse failure, fall back to rend
 
 ---
 
-### #8 — Render charts via PptxGenJS (G6 — rendering)
+### #8 — Render charts via PptxGenJS (G6 — rendering) ✅
 
 **Description:** Implement `renderChart(slide, chartItem, theme, pptx)` function that maps the parsed chart data to PptxGenJS `addChart()` calls.
 
@@ -198,7 +198,7 @@ Initial chart types: `bar`, `line`, `pie`, `doughnut`, `area`.
 
 ---
 
-### #9 — Add two-column layout support (G8)
+### #9 — Add two-column layout support (G8) ✅
 
 **Description:** Detect `:::columns` / `:::` block syntax in the markdown parser. `---column---` separator splits content into left and right columns. Map to `TWO_CONTENT` slide master. Left column: `x: 0.8, w: 5.5`, right column: `x: 7.0, w: 5.5`. Each column independently supports bullets, text, images, tables.
 
@@ -217,7 +217,7 @@ Optionally auto-detect two consecutive bullet lists on the same slide as a two-c
 
 ---
 
-### #10 — Add callout and accent shapes (G9)
+### #10 — Add callout and accent shapes (G9) ✅
 
 **Description:** Detect `:::callout` block syntax in the markdown parser. Render as `roundRect` shapes with theme-colored fill, border, and optional shadow. Support `:::highlight` for key metric boxes (larger font, centered, accent background).
 
@@ -235,7 +235,7 @@ Optionally auto-detect two consecutive bullet lists on the same slide as a two-c
 
 ---
 
-### #11 — Enable auto-page for large tables (G10)
+### #11 — Enable auto-page for large tables (G10) ✅
 
 **Description:** Enable `autoPage: true` on all table `addTable()` calls. Set `autoPageRepeatHeader: true` and `autoPageHeaderRows: 1`. Remove the manual height capping (`Math.min(rows.length * 0.4, 3.5)`). Continuation slides inherit background and style.
 

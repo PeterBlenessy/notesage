@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseMarkdown, parseInlineFormatting, stripMarkdownFormatting, STYLES } from "./generate.mjs";
+import { parseMarkdown, parseInlineFormatting, stripMarkdownFormatting, parseSimpleYaml, parseYamlValue, inferLayout, STYLES, MASTER_MAP } from "./generate.mjs";
 
 // ---------------------------------------------------------------------------
 // #1 — Hyperlink support
@@ -81,6 +81,41 @@ describe("parseMarkdown — frontmatter metadata", () => {
     expect(metadata.author).toBe("Only Author");
     expect(metadata.company).toBeUndefined();
     expect(metadata.title).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Escaped brackets in callouts
+// ---------------------------------------------------------------------------
+
+describe("parseMarkdown — escaped bracket callouts", () => {
+  it("parses > \\[!notes\\] as speaker notes", () => {
+    const md = "# Slide\n\n> \\[!notes\\]\n> These are speaker notes";
+    const { slides } = parseMarkdown(md);
+    expect(slides[0].notes).toBe("These are speaker notes");
+  });
+
+  it("parses > [!notes] (unescaped) as speaker notes", () => {
+    const md = "# Slide\n\n> [!notes]\n> These are speaker notes";
+    const { slides } = parseMarkdown(md);
+    expect(slides[0].notes).toBe("These are speaker notes");
+  });
+
+  it("parses > \\[!tip\\] as callout", () => {
+    const md = "# Slide\n\n> \\[!tip\\]\n> A useful tip";
+    const { slides } = parseMarkdown(md);
+    const callout = slides[0].content.find((c) => c.type === "callout");
+    expect(callout).toBeDefined();
+    expect(callout.data.calloutType).toBe("tip");
+    expect(callout.data.text).toBe("A useful tip");
+  });
+
+  it("parses > \\[!warning\\] as callout", () => {
+    const md = "# Slide\n\n> \\[!warning\\]\n> Be careful";
+    const { slides } = parseMarkdown(md);
+    const callout = slides[0].content.find((c) => c.type === "callout");
+    expect(callout).toBeDefined();
+    expect(callout.data.calloutType).toBe("warning");
   });
 });
 
@@ -193,5 +228,211 @@ describe("parseInlineFormatting — existing formatting", () => {
   it("handles plain text", () => {
     const result = parseInlineFormatting("just text");
     expect(result).toEqual([{ text: "just text" }]);
+  });
+});
+
+// ===========================================================================
+// TIER 2 TESTS
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// #7 — Chart YAML parser
+// ---------------------------------------------------------------------------
+
+describe("parseSimpleYaml", () => {
+  it("parses top-level key-value pairs", () => {
+    const result = parseSimpleYaml("type: bar\ntitle: Revenue");
+    expect(result.type).toBe("bar");
+    expect(result.title).toBe("Revenue");
+  });
+
+  it("parses inline arrays", () => {
+    const result = parseSimpleYaml("labels: [Q1, Q2, Q3, Q4]");
+    expect(result.labels).toEqual(["Q1", "Q2", "Q3", "Q4"]);
+  });
+
+  it("parses numeric arrays", () => {
+    const result = parseSimpleYaml("values: [12, 15, 18, 22]");
+    expect(result.values).toEqual([12, 15, 18, 22]);
+  });
+
+  it("parses nested array of objects (series)", () => {
+    const yaml = `series:
+  - name: Revenue
+    values: [12, 15]
+  - name: Expenses
+    values: [8, 10]`;
+    const result = parseSimpleYaml(yaml);
+    expect(result.series).toHaveLength(2);
+    expect(result.series[0].name).toBe("Revenue");
+    expect(result.series[0].values).toEqual([12, 15]);
+    expect(result.series[1].name).toBe("Expenses");
+  });
+
+  it("parses nested plain objects (options)", () => {
+    const yaml = `options:
+  barDir: bar
+  lineSmooth: true
+  holeSize: 50`;
+    const result = parseSimpleYaml(yaml);
+    expect(result.options.barDir).toBe("bar");
+    expect(result.options.lineSmooth).toBe(true);
+    expect(result.options.holeSize).toBe(50);
+  });
+
+  it("handles booleans and numbers", () => {
+    const result = parseSimpleYaml("enabled: true\ncount: 42\nlabel: hello");
+    expect(result.enabled).toBe(true);
+    expect(result.count).toBe(42);
+    expect(result.label).toBe("hello");
+  });
+
+  it("skips comments and blank lines", () => {
+    const result = parseSimpleYaml("# comment\ntype: pie\n\ntitle: Chart");
+    expect(result.type).toBe("pie");
+    expect(result.title).toBe("Chart");
+  });
+});
+
+describe("parseYamlValue", () => {
+  it("parses quoted strings", () => {
+    expect(parseYamlValue('"hello world"')).toBe("hello world");
+    expect(parseYamlValue("'hello world'")).toBe("hello world");
+  });
+
+  it("parses numbers", () => {
+    expect(parseYamlValue("42")).toBe(42);
+    expect(parseYamlValue("3.14")).toBe(3.14);
+  });
+
+  it("parses booleans", () => {
+    expect(parseYamlValue("true")).toBe(true);
+    expect(parseYamlValue("false")).toBe(false);
+  });
+});
+
+describe("parseMarkdown — chart blocks", () => {
+  it("parses ```chart block into chart content type", () => {
+    const md = "# Slide\n\n```chart\ntype: bar\ntitle: Revenue\nlabels: [Q1, Q2]\nseries:\n  - name: Rev\n    values: [10, 20]\n```";
+    const { slides } = parseMarkdown(md);
+    const chart = slides[0].content.find((c) => c.type === "chart");
+    expect(chart).toBeDefined();
+    expect(chart.data.type).toBe("bar");
+    expect(chart.data.title).toBe("Revenue");
+    expect(chart.data.series[0].values).toEqual([10, 20]);
+  });
+
+  it("falls back to code block on invalid chart YAML", () => {
+    const md = "# Slide\n\n```chart\ninvalid content without type or series\n```";
+    const { slides } = parseMarkdown(md);
+    const code = slides[0].content.find((c) => c.type === "code");
+    expect(code).toBeDefined();
+  });
+
+  it("recognizes all chart types", () => {
+    for (const type of ["bar", "line", "pie", "doughnut", "area"]) {
+      const md = `# S\n\n\`\`\`chart\ntype: ${type}\nseries:\n  - name: A\n    values: [1, 2]\n\`\`\``;
+      const { slides } = parseMarkdown(md);
+      expect(slides[0].content[0].type).toBe("chart");
+      expect(slides[0].content[0].data.type).toBe(type);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #10 — Callout and accent shapes
+// ---------------------------------------------------------------------------
+
+describe("parseMarkdown — fenced div blocks", () => {
+  it("parses :::callout block", () => {
+    const md = "# Slide\n\n:::callout\nThis is important\n:::";
+    const { slides } = parseMarkdown(md);
+    const callout = slides[0].content.find((c) => c.type === "accentCallout");
+    expect(callout).toBeDefined();
+    expect(callout.data.text).toBe("This is important");
+  });
+
+  it("parses :::highlight block", () => {
+    const md = "# Slide\n\n:::highlight\n$12.5M Revenue\n:::";
+    const { slides } = parseMarkdown(md);
+    const highlight = slides[0].content.find((c) => c.type === "highlight");
+    expect(highlight).toBeDefined();
+    expect(highlight.data.text).toBe("$12.5M Revenue");
+  });
+
+  it("handles multiline callout content", () => {
+    const md = "# Slide\n\n:::callout\nLine 1\nLine 2\n:::";
+    const { slides } = parseMarkdown(md);
+    expect(slides[0].content[0].data.text).toBe("Line 1\nLine 2");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #9 — Two-column layout
+// ---------------------------------------------------------------------------
+
+describe("parseMarkdown — columns", () => {
+  it("parses :::columns with ---column--- separator", () => {
+    const md = "# Slide\n\n:::columns\n- Left item 1\n- Left item 2\n---column---\n- Right item 1\n:::";
+    const { slides } = parseMarkdown(md);
+    const cols = slides[0].content.find((c) => c.type === "columns");
+    expect(cols).toBeDefined();
+    expect(cols.data.left).toContain("Left item 1");
+    expect(cols.data.right).toContain("Right item 1");
+  });
+
+  it("infers columns layout", () => {
+    const md = "# Slide\n\n:::columns\nLeft\n---column---\nRight\n:::";
+    const { slides } = parseMarkdown(md);
+    expect(slides[0].layout).toBe("columns");
+  });
+});
+
+describe("inferLayout", () => {
+  it("returns columns when columns content present", () => {
+    expect(inferLayout({ title: "T", content: [{ type: "columns" }] })).toBe("columns");
+  });
+
+  it("returns title for title-only slide", () => {
+    expect(inferLayout({ title: "T", content: [] })).toBe("title");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #6 — Slide masters
+// ---------------------------------------------------------------------------
+
+describe("MASTER_MAP", () => {
+  it("maps title to TITLE_SLIDE", () => {
+    expect(MASTER_MAP.title).toBe("TITLE_SLIDE");
+  });
+
+  it("maps content to CONTENT", () => {
+    expect(MASTER_MAP.content).toBe("CONTENT");
+  });
+
+  it("maps columns to TWO_CONTENT", () => {
+    expect(MASTER_MAP.columns).toBe("TWO_CONTENT");
+  });
+
+  it("maps picture to PICTURE", () => {
+    expect(MASTER_MAP.picture).toBe("PICTURE");
+  });
+
+  it("maps blank to BLANK", () => {
+    expect(MASTER_MAP.blank).toBe("BLANK");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #11 — Chart color palettes (structural)
+// ---------------------------------------------------------------------------
+
+describe("STYLES — chartColors", () => {
+  it("all styles have chartColors", () => {
+    for (const style of ["simple", "business", "report"]) {
+      expect(STYLES[style].chartColors).toBeDefined();
+      expect(STYLES[style].chartColors).toHaveLength(6);
+    }
   });
 });
