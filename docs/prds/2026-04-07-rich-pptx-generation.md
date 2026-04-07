@@ -6,6 +6,8 @@
 | **Status** | Draft |
 | **Priority** | High |
 | **Impact** | Generated presentations evolve from text-heavy decks to rich, data-driven presentations with charts, shapes, professional layouts, and proper hyperlinking |
+| **Research** | [pptx-generation-quality](../research/2026-04-07-pptx-generation-quality.md) |
+| **Tasks** | Linked per feature in status table below |
 
 ## Problem
 
@@ -57,6 +59,7 @@ Enable the PptxGenJS generation script to produce rich, professional presentatio
 **Problem:** `[text](url)` markdown links are currently stripped to plain text by `stripMarkdownFormatting()` and `parseInlineFormatting()`. URLs are lost.
 
 **PptxGenJS API:**
+
 ```javascript
 // On text runs:
 { text: "Click here", options: { hyperlink: { url: "https://example.com", tooltip: "Example" } } }
@@ -68,7 +71,8 @@ slide.addImage({ path: "img.png", hyperlink: { url: "https://example.com" } })
 { text: "See slide 3", options: { hyperlink: { slide: 3 } } }
 ```
 
-**Changes to `generate.mjs`:**
+**Changes to** `generate.mjs`**:**
+
 - Update `parseInlineFormatting()` to emit `hyperlink: { url }` on link text runs instead of stripping links
 - Update `stripMarkdownFormatting()` to preserve link text (already does) but also return link metadata when needed
 - Add hyperlink support to table cells via cell-level `hyperlink` option
@@ -82,9 +86,10 @@ slide.addImage({ path: "img.png", hyperlink: { url: "https://example.com" } })
 
 #### G2: Presentation Metadata
 
-**Problem:** Generated `.pptx` files have empty Author, Title, Subject, and Company fields in File > Properties.
+**Problem:** Generated `.pptx` files have empty Author, Title, Subject, and Company fields in File &gt; Properties.
 
 **PptxGenJS API:**
+
 ```javascript
 pptx.author = "Jane Doe";
 pptx.company = "Acme Corp";
@@ -93,8 +98,10 @@ pptx.subject = "Business Performance";
 pptx.revision = "1";
 ```
 
-**Changes to `generate.mjs`:**
+**Changes to** `generate.mjs`**:**
+
 - Parse YAML frontmatter from the input markdown for metadata fields:
+
   ```yaml
   ---
   author: Jane Doe
@@ -116,6 +123,7 @@ pptx.revision = "1";
 **Problem:** Slide numbers are rendered as manual `addText()` calls with hardcoded positioning. PptxGenJS has a dedicated `slideNumber` API that integrates with the slide master system.
 
 **PptxGenJS API:**
+
 ```javascript
 slide.slideNumber = {
   x: 12.2, y: 6.9, w: 0.8, h: 0.4,
@@ -124,7 +132,8 @@ slide.slideNumber = {
 };
 ```
 
-**Changes to `generate.mjs`:**
+**Changes to** `generate.mjs`**:**
+
 - Replace the manual `slide.addText(si + 1, ...)` slide number rendering with `slide.slideNumber = { ... }`
 - Position and style slide numbers using theme colors
 - Skip slide numbers on title-only slides (existing behavior preserved)
@@ -140,6 +149,7 @@ slide.slideNumber = {
 **Problem:** Scientific and mathematical notation (`H~2~O`, `x^2^`, `10^9^`) renders as plain text.
 
 **PptxGenJS API:**
+
 ```javascript
 // Subscript:
 { text: "2", options: { subscript: true } }
@@ -148,10 +158,12 @@ slide.slideNumber = {
 ```
 
 **Markdown syntax:**
+
 - Subscript: `H~2~O` (tilde-wrapped)
 - Superscript: `x^2^` (caret-wrapped)
 
-**Changes to `generate.mjs`:**
+**Changes to** `generate.mjs`**:**
+
 - Extend `parseInlineFormatting()` regex to detect `~text~` (subscript) and `^text^` (superscript) patterns
 - Emit text runs with `subscript: true` or `superscript: true` options
 
@@ -166,6 +178,7 @@ slide.slideNumber = {
 **Problem:** Title text is flat with no depth. A subtle shadow adds visual polish without complexity.
 
 **PptxGenJS API:**
+
 ```javascript
 slide.addText("Title", {
   shadow: {
@@ -179,7 +192,8 @@ slide.addText("Title", {
 });
 ```
 
-**Changes to `generate.mjs`:**
+**Changes to** `generate.mjs`**:**
+
 - Add a `shadow` property to title text options on non-title-only slides
 - Make shadow configurable per style (e.g., business and report get shadows, simple does not)
 - Shadow parameters: outer, blur 3-4pt, offset 1-2pt, opacity 0.2-0.4, angle 45
@@ -197,6 +211,7 @@ slide.addText("Title", {
 **Problem:** Data visualization is the most requested missing feature. Quarterly reviews, market analysis, and dashboards are text-only.
 
 **PptxGenJS API:**
+
 ```javascript
 // Bar chart:
 slide.addChart(pptx.charts.BAR, chartData, {
@@ -246,7 +261,7 @@ slide.addChart(pptx.charts.AREA, chartData, {
 
 **Markdown input format (YAML code block):**
 
-````markdown
+```markdown
 ```chart
 type: bar
 title: Q1 Revenue by Product
@@ -262,11 +277,12 @@ options:
   showValue: false
   barDir: col
 ```
-````
+```
 
 **Supported chart types (initial):** `bar`, `line`, `pie`, `doughnut`, `area`
 
-**Changes to `generate.mjs`:**
+**Changes to** `generate.mjs`**:**
+
 - Add YAML parsing dependency (`js-yaml`) or implement lightweight YAML parser for chart blocks
 - Detect ```` ```chart ```` code blocks in the markdown parser — parse as chart data instead of code text
 - Add `chart` content type to the slide data model: `{ type: "chart", data: { chartType, title, labels, series, options } }`
@@ -289,6 +305,7 @@ options:
 **Problem:** Every slide is built with manual `addText`/`addShape` positioning. Slide masters define reusable layouts with typed placeholders, producing cleaner OOXML that PowerPoint can re-theme.
 
 **PptxGenJS API:**
+
 ```javascript
 pptx.defineSlideMaster({
   title: "TITLE_SLIDE",
@@ -324,7 +341,8 @@ const slide = pptx.addSlide({ masterName: "CONTENT" });
 | `PICTURE` | title, body, picture | Image-heavy slides |
 | `BLANK` | (none) | Full-bleed images or custom layouts |
 
-**Changes to `generate.mjs`:**
+**Changes to** `generate.mjs`**:**
+
 - Add `defineSlidesMasters(pptx, theme)` function that creates all master definitions
 - Update `generatePptx()` to use `pptx.addSlide({ masterName })` instead of manual element placement
 - Refactor accent bar, slide number, and footer rendering into master definitions
@@ -341,6 +359,7 @@ const slide = pptx.addSlide({ masterName: "CONTENT" });
 **Problem:** All content is single-column. Comparison slides, pros/cons, and image-beside-text layouts are impossible.
 
 **Markdown syntax:**
+
 ```markdown
 # Feature Comparison
 
@@ -359,7 +378,8 @@ const slide = pptx.addSlide({ masterName: "CONTENT" });
 :::
 ```
 
-**Changes to `generate.mjs`:**
+**Changes to** `generate.mjs`**:**
+
 - Detect `:::columns` / `:::` block syntax in the markdown parser
 - `---column---` separator splits content into left and right columns
 - Map to `TWO_CONTENT` slide master (G7)
@@ -378,6 +398,7 @@ const slide = pptx.addSlide({ masterName: "CONTENT" });
 **Problem:** Slides lack visual hierarchy elements. Callout boxes, key metric highlights, and decorative shapes are missing.
 
 **PptxGenJS API:**
+
 ```javascript
 // Rounded rectangle callout:
 slide.addShape(pptx.ShapeType.roundRect, {
@@ -396,13 +417,15 @@ slide.addShape(pptx.ShapeType.rightArrow, { ... });
 ```
 
 **Markdown syntax:**
+
 ```markdown
 :::callout
 **Key Insight:** Revenue grew 18% YoY driven by enterprise expansion.
 :::
 ```
 
-**Changes to `generate.mjs`:**
+**Changes to** `generate.mjs`**:**
+
 - Add `:::callout` block detection to the markdown parser (new content type: `callout_box`)
 - Render callout boxes as `roundRect` shapes with theme-colored fill and border
 - Add optional shape type override: `:::callout shape=wedgeRectCallout`
@@ -417,9 +440,10 @@ slide.addShape(pptx.ShapeType.rightArrow, { ... });
 
 #### G10: Auto-Page Tables
 
-**Problem:** Large tables (more than ~8 rows) overflow the slide bottom. Content is clipped or invisible.
+**Problem:** Large tables (more than \~8 rows) overflow the slide bottom. Content is clipped or invisible.
 
 **PptxGenJS API:**
+
 ```javascript
 slide.addTable(rows, {
   autoPage: true,
@@ -431,7 +455,8 @@ slide.addTable(rows, {
 });
 ```
 
-**Changes to `generate.mjs`:**
+**Changes to** `generate.mjs`**:**
+
 - Enable `autoPage: true` on all table renders
 - Set `autoPageRepeatHeader: true` to repeat header row on continuation slides
 - Set `autoPageHeaderRows: 1` (default)
@@ -448,16 +473,18 @@ slide.addTable(rows, {
 
 #### G11: Content Overflow Handling
 
-**Problem:** Slides with many bullets, mixed content types, or verbose text overflow the bottom edge (Y > 6.8") with no detection or splitting.
+**Problem:** Slides with many bullets, mixed content types, or verbose text overflow the bottom edge (Y &gt; 6.8") with no detection or splitting.
 
 **Approach:**
+
 - Track `curY` during content rendering and detect when it would exceed `MAX_CONTENT_BOTTOM` (6.8")
 - When overflow is detected, create a continuation slide with the same title + "(cont.)" suffix
 - Reset `curY` on the continuation slide and continue rendering remaining content items
 - Apply to all content types: bullets, text, tables, code blocks, images
 - For bullet lists: split at the item boundary closest to the overflow point (never mid-item)
 
-**Changes to `generate.mjs`:**
+**Changes to** `generate.mjs`**:**
+
 - Add `estimateContentHeight(item, theme)` function for each content type
 - Before rendering each item, check if `curY + estimatedHeight > MAX_CONTENT_BOTTOM`
 - If overflow, call `createContinuationSlide(pptx, slideData, theme)` and reset positioning
@@ -474,6 +501,7 @@ slide.addTable(rows, {
 **Problem:** Slides only support solid-color backgrounds. Background images (from templates, agent instructions, or per-slide) are unsupported.
 
 **PptxGenJS API:**
+
 ```javascript
 // Image background:
 slide.background = { path: "/path/to/bg.jpg" };
@@ -484,12 +512,14 @@ slide.background = { fill: { color: "000000", transparency: 50 } };
 ```
 
 **Markdown syntax:**
+
 ```markdown
 # Section Title
 <!-- background: ./images/section-bg.jpg -->
 ```
 
-**Changes to `generate.mjs`:**
+**Changes to** `generate.mjs`**:**
+
 - Parse HTML comments `<!-- background: path -->` as slide background directives
 - Resolve relative paths from the input markdown directory
 - Add semi-transparent overlay option: `<!-- background: path overlay=0.4 -->`
@@ -506,6 +536,7 @@ slide.background = { fill: { color: "000000", transparency: 50 } };
 **Problem:** Images are rendered with basic `contain` sizing only. No rounding, shadows, alt text, or crop control.
 
 **PptxGenJS API:**
+
 ```javascript
 slide.addImage({
   path: "photo.jpg",
@@ -518,8 +549,9 @@ slide.addImage({
 });
 ```
 
-**Changes to `generate.mjs`:**
-- Pass `altText` from markdown image alt text: `![Team photo](path)` -> `altText: "Team photo"`
+**Changes to** `generate.mjs`**:**
+
+- Pass `altText` from markdown image alt text: `![Team photo](path)` -&gt; `altText: "Team photo"`
 - Add subtle shadow to images by default (consistent with title shadow style)
 - Support image sizing hints via markdown attributes: `![alt](path "cover")` or `![alt](path "round")`
 - Keyword detection in alt text or title: `round` triggers `rounding: true`, `cover` triggers `sizing.type: "cover"`
@@ -535,6 +567,7 @@ slide.addImage({
 **Problem:** Tables have uniform borders, no colspan/rowspan, and no row height control.
 
 **PptxGenJS API:**
+
 ```javascript
 // Per-side borders:
 border: [
@@ -552,7 +585,8 @@ border: [
 rowH: [0.6, 0.4, 0.4, 0.4]
 ```
 
-**Changes to `generate.mjs`:**
+**Changes to** `generate.mjs`**:**
+
 - Apply per-side borders: heavier bottom border on header row, lighter internal borders
 - Detect colspan syntax in markdown tables (cells with `||` empty adjacent cells)
 - Support explicit row height via HTML comment: `<!-- rowH: 0.6, 0.4, 0.4 -->`
@@ -569,6 +603,7 @@ rowH: [0.6, 0.4, 0.4, 0.4]
 **Problem:** Only basic chart types (bar, line, pie, doughnut, area) are covered by G6. Scientific and analytical presentations need scatter plots, radar charts, and bubble charts.
 
 **PptxGenJS API:**
+
 ```javascript
 // Scatter:
 slide.addChart(pptx.charts.SCATTER, [
@@ -588,32 +623,33 @@ slide.addChart(pptx.charts.BUBBLE, [
 
 **YAML input format:**
 
-````markdown
+```markdown
 ```chart
 type: scatter
 title: Price vs Performance
 series:
   - name: Product Line A
     values:
-      - { x: 100, y: 85 }
-      - { x: 200, y: 92 }
-      - { x: 300, y: 88 }
+      - 
+      - 
+      - 
 ```
-````
+```
 
-````markdown
+```markdown
 ```chart
 type: bubble
 title: Market Opportunity
 series:
   - name: Segment A
     values:
-      - { x: 50, y: 80, size: 30 }
-      - { x: 70, y: 60, size: 15 }
+      - 
+      - 
 ```
-````
+```
 
-**Changes to `generate.mjs`:**
+**Changes to** `generate.mjs`**:**
+
 - Extend chart type mapping to include `scatter`, `radar`, `bubble`
 - Scatter/bubble use `{ x, y }` or `{ x, y, size }` value format instead of flat arrays
 - Radar uses the same `labels` + `values` format as bar/line
@@ -629,6 +665,7 @@ series:
 #### G16: YouTube Video Embedding
 
 **PptxGenJS API:**
+
 ```javascript
 slide.addMedia({
   type: "online",
@@ -639,7 +676,7 @@ slide.addMedia({
 
 **Markdown syntax:** Standard YouTube URL in an embed directive: `<!-- youtube: https://youtube.com/watch?v=xxx -->`
 
-**Changes to `generate.mjs`:** Detect YouTube URLs, convert to embed format, add as online media.
+**Changes to** `generate.mjs`**:** Detect YouTube URLs, convert to embed format, add as online media.
 
 **Effort:** S
 
@@ -648,6 +685,7 @@ slide.addMedia({
 #### G17: Custom Geometry Paths
 
 **PptxGenJS API:**
+
 ```javascript
 slide.addShape(pptx.ShapeType.custGeom, {
   points: [
@@ -669,6 +707,7 @@ slide.addShape(pptx.ShapeType.custGeom, {
 #### G18: HTML Table Import
 
 **PptxGenJS API:**
+
 ```javascript
 pptx.tableToSlides("htmlTableElementId", {
   autoPage: true,
@@ -686,7 +725,7 @@ pptx.tableToSlides("htmlTableElementId", {
 
 Charts are specified as YAML inside fenced code blocks with the `chart` language tag:
 
-````markdown
+```markdown
 ```chart
 type: bar
 title: "Quarterly Revenue"
@@ -702,7 +741,7 @@ options:
   showValue: false
   barDir: col
 ```
-````
+```
 
 ### Schema
 
@@ -710,10 +749,10 @@ options:
 | --- | --- | --- | --- |
 | `type` | string | Yes | Chart type: `bar`, `line`, `pie`, `doughnut`, `area`, `scatter`, `radar`, `bubble` |
 | `title` | string | No | Chart title displayed above the chart |
-| `labels` | string[] | Yes (bar/line/area/radar) | Category axis labels |
+| `labels` | string\[\] | Yes (bar/line/area/radar) | Category axis labels |
 | `series` | array | Yes | One or more data series |
 | `series[].name` | string | Yes | Series name (legend label) |
-| `series[].values` | number[] or object[] | Yes | Data values — flat array for bar/line/pie/area/radar, `{ x, y }` for scatter, `{ x, y, size }` for bubble |
+| `series[].values` | number\[\] or object\[\] | Yes | Data values — flat array for bar/line/pie/area/radar, `{ x, y }` for scatter, `{ x, y, size }` for bubble |
 | `options` | object | No | Chart-specific options (passthrough to PptxGenJS) |
 
 ### Supported Options by Chart Type
@@ -756,7 +795,7 @@ Custom templates use accent1-accent6 from the extracted theme.
 
 ## Feature Status
 
-| # | Feature | Tier | Effort | Status | Tasks |
+| \# | Feature | Tier | Effort | Status | Tasks |
 | --- | --- | --- | --- | --- | --- |
 | G1 | Hyperlinks | 1 | S | Not started | [G1-tasks](../tasks/2026-04-07-pptx-gen-g1-hyperlinks-tasks.md) |
 | G2 | Presentation metadata | 1 | S | Not started | [G2-tasks](../tasks/2026-04-07-pptx-gen-g2-metadata-tasks.md) |
@@ -784,44 +823,75 @@ Custom templates use accent1-accent6 from the extracted theme.
 ### Tier 1 (G1-G5)
 
 - [ ] Markdown `[text](url)` links render as clickable hyperlinks in PowerPoint
+
 - [ ] Cross-slide links (`#slide-N`) navigate to the correct slide
-- [ ] YAML frontmatter `author`, `title`, `company`, `subject` appear in File > Properties
+
+- [ ] YAML frontmatter `author`, `title`, `company`, `subject` appear in File &gt; Properties
+
 - [ ] Title derived from first H1 when no frontmatter is present
+
 - [ ] Slide numbers use `slideNumber` API (verify in OOXML — `<p:sldNum>` element, not `<a:t>`)
+
 - [ ] Subscript `H~2~O` renders with lowered "2" in PowerPoint
+
 - [ ] Superscript `x^2^` renders with raised "2" in PowerPoint
+
 - [ ] Title text has subtle shadow on business and report styles
+
 - [ ] Simple style titles have no shadow
+
 - [ ] All Tier 1 features work with all three built-in styles and custom templates
 
 ### Tier 2 (G6-G10)
 
 - [ ] Bar chart renders from YAML code block with correct data, labels, and legend
+
 - [ ] Line chart renders with smooth/straight line options
+
 - [ ] Pie chart renders with percentage labels
+
 - [ ] Doughnut chart renders with configurable hole size
+
 - [ ] Area chart renders with proper fill opacity
+
 - [ ] Chart colors follow the active theme's palette
+
 - [ ] Slide masters are defined in the PPTX (verify `slideMaster*.xml` in ZIP)
+
 - [ ] Content slides use the `CONTENT` master
+
 - [ ] Title slides use the `TITLE_SLIDE` master
+
 - [ ] `:::columns` syntax produces two-column layout with equal-width columns
+
 - [ ] `---column---` correctly splits content between left and right
+
 - [ ] `:::callout` renders as a rounded rectangle with theme accent colors
-- [ ] Tables with >10 rows auto-page across multiple slides
+
+- [ ] Tables with &gt;10 rows auto-page across multiple slides
+
 - [ ] Auto-paged tables repeat the header row on each continuation slide
+
 - [ ] Invalid YAML in chart blocks falls back to code block rendering
 
 ### Tier 3 (G11-G15)
 
-- [ ] Slides with >8 bullet items split into continuation slides
+- [ ] Slides with &gt;8 bullet items split into continuation slides
+
 - [ ] Continuation slides have title with "(cont.)" suffix
+
 - [ ] `<!-- background: path -->` applies image as slide background
+
 - [ ] Image alt text appears in PowerPoint accessibility info
+
 - [ ] Images have subtle shadow by default
+
 - [ ] Table header row has heavier bottom border
+
 - [ ] Scatter chart renders XY data points correctly
+
 - [ ] Radar chart renders with filled/marker/standard styles
+
 - [ ] Bubble chart renders with sized data points
 
 ### Tier 4 (G16-G18)

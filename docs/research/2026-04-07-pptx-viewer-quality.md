@@ -6,6 +6,8 @@
 | **Status** | Research complete |
 | **Current coverage** | 46 fully / 19 partially / 98 not supported (of 163 inventoried OOXML features) |
 | **Code size** | ~1555 lines across 5 files |
+| **PRD** | [pptx-viewer-v2](../prds/2026-04-07-pptx-viewer-v2.md) (Draft) |
+| **Tasks** | Linked per feature from PRD feature table |
 
 ## Context
 
@@ -253,14 +255,6 @@ These cause noticeable quality loss but don't make slides unreadable:
 ### Tier 4 — Low priority
 
 Animations, SmartArt data model parsing, 3D effects, OLE objects, ink annotations, math equations.
-
-## Pipeline
-
-| Stage | Link | Status |
-| --- | --- | --- |
-| Research | (this document) | Complete |
-| PRD — All tiers (V1-V24) | [pptx-viewer-v2](../prds/2026-04-07-pptx-viewer-v2.md) | Draft |
-| Tasks — per feature | (linked from PRD feature table) | Not started |
 
 ## Key Files
 

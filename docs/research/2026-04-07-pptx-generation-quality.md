@@ -1,12 +1,14 @@
 # Research: Rich PPTX Generation (PptxGenJS)
 
-| | |
+|  |  |
 | --- | --- |
 | **Date** | 2026-04-07 |
 | **Status** | Research complete |
 | **Library** | PptxGenJS v3.12.0 |
-| **Current usage** | ~5% of library capabilities |
+| **Current usage** | \~5% of library capabilities |
 | **Script** | `bundled-skills/generate-presentation/scripts/generate.mjs` (782 lines) |
+| **PRD** | [rich-pptx-generation](../prds/2026-04-07-rich-pptx-generation.md) (Draft) |
+| **Tasks** | Linked per feature from PRD feature table |
 
 ## Context
 
@@ -22,10 +24,10 @@ There is also a **Rust built-in exporter** (`markdown_to_pptx.rs` using `ppt-rs`
 
 | Feature | PptxGenJS API | Used Today? | Effort to Add |
 | --- | --- | --- | --- |
-| Font face, size, color | `fontFace`, `fontSize`, `color` | Yes | - |
-| Bold, italic | `bold`, `italic` | Yes | - |
+| Font face, size, color | `fontFace`, `fontSize`, `color` | Yes | \- |
+| Bold, italic | `bold`, `italic` | Yes | \- |
 | Underline (with style + color) | `underline: { style, color }` | Partial — `sng` only | S |
-| Strikethrough | `strike: boolean \| 'sngStrike' \| 'dblStrike'` | Yes | - |
+| Strikethrough | `strike: boolean | 'sngStrike' | 'dblStrike'` | Yes | \- |
 | **Subscript / superscript** | `subscript`, `superscript` | No | S |
 | **Character spacing** | `charSpacing` (number) | No | S |
 | **Line spacing** | `lineSpacing` (pt), `lineSpacingMultiple` (0-9.99) | No | S |
@@ -36,25 +38,25 @@ There is also a **Rust built-in exporter** (`markdown_to_pptx.rs` using `ppt-rs`
 | Text outline | `outline: { color, size }` | No | S |
 | Text glow | `glow: { color, opacity, size }` | No | S |
 | **Text shadow** | `shadow: { type, opacity, blur, angle, offset, color }` | No | S |
-| Text fit (shrink/resize) | `fit: 'none' \| 'shrink' \| 'resize'` | No | S |
+| Text fit (shrink/resize) | `fit: 'none' | 'shrink' | 'resize'` | No | S |
 | Text rotation | `rotate` (-360 to 360) | No | S |
 | Vertical text | `vert` (7 orientations: horz, vert, vert270, eaVert, etc.) | No | S |
 | RTL mode | `rtlMode` (per-text or global) | No | S |
 | Tab stops | `tabStops: [{ position, alignment }]` | No | S |
 | Language tag | `lang` (ISO 639-1) | No | S |
-| Alignment (l/ctr/r/just) | `align` | Yes | - |
-| Vertical alignment | `valign` (top/middle/bottom) | Yes | - |
+| Alignment (l/ctr/r/just) | `align` | Yes | \- |
+| Vertical alignment | `valign` (top/middle/bottom) | Yes | \- |
 
 ### Bullet & List Formatting
 
 | Feature | PptxGenJS API | Used Today? | Effort to Add |
 | --- | --- | --- | --- |
-| Bullet character | `bullet: { characterCode }` | Yes | - |
-| Numbered bullets | `bullet: { type: 'number' }` | Yes | - |
+| Bullet character | `bullet: { characterCode }` | Yes | \- |
+| Numbered bullets | `bullet: { type: 'number' }` | Yes | \- |
 | **Number format variants** | `bullet: { numberType }` — 16 types (alphaLc, romanUc, etc.) | No | S |
 | Number start value | `bullet: { numberStartAt }` | No | S |
 | Bullet indent | `bullet: { indent }` | No | S |
-| Indent level | `indentLevel` (0-based) | Yes | - |
+| Indent level | `indentLevel` (0-based) | Yes | \- |
 | Break before paragraph | `softBreakBefore` | No | S |
 
 ### Shapes
@@ -62,7 +64,7 @@ There is also a **Rust built-in exporter** (`markdown_to_pptx.rs` using `ppt-rs`
 | Feature | PptxGenJS API | Used Today? | Effort to Add |
 | --- | --- | --- | --- |
 | **187 preset shape types** | `addShape(ShapeType.xxx, opts)` | Only `rect` (accent bar) | **M** |
-| Shape fill (solid color) | `fill: { color }` | Yes | - |
+| Shape fill (solid color) | `fill: { color }` | Yes | \- |
 | Shape fill (transparency) | `fill: { transparency }` | No | S |
 | Shape fill (gradient) | `fill: { colorGrad }` | No — templates don't extract gradients | M |
 | Shape line (color, width) | `line: { color, width }` | No | S |
@@ -77,6 +79,7 @@ There is also a **Rust built-in exporter** (`markdown_to_pptx.rs` using `ppt-rs`
 | Rounded rectangle radius | `rectRadius` (0-1.0) | No | S |
 
 **Key shape types available** (subset of 187):
+
 - Basic: `rect`, `roundRect`, `ellipse`, `triangle`, `diamond`, `pentagon`, `hexagon`, `octagon`, `trapezoid`, `parallelogram`
 - Arrows: `rightArrow`, `leftArrow`, `upArrow`, `downArrow`, `bentArrow`, `curvedArrow`, `uturnArrow`, `notchedRightArrow`, `chevron`
 - Callouts: `wedgeRectCallout`, `wedgeEllipseCallout`, `cloudCallout`, `borderCallout1-3`, `accentCallout1-3`
@@ -119,13 +122,13 @@ There is also a **Rust built-in exporter** (`markdown_to_pptx.rs` using `ppt-rs`
 
 | Feature | PptxGenJS API | Used Today? | Effort to Add |
 | --- | --- | --- | --- |
-| Basic table | `addTable(rows, opts)` | Yes | - |
-| Column widths | `colW: number[]` | Yes | - |
-| Row heights | `rowH: number \| number[]` | No | S |
-| Cell fill (solid) | `fill: { color }` | Yes | - |
-| Cell border (uniform) | `border: { type, pt, color }` | Yes | - |
+| Basic table | `addTable(rows, opts)` | Yes | \- |
+| Column widths | `colW: number[]` | Yes | \- |
+| Row heights | `rowH: number | number[]` | No | S |
+| Cell fill (solid) | `fill: { color }` | Yes | \- |
+| Cell border (uniform) | `border: { type, pt, color }` | Yes | \- |
 | **Cell border (per-side)** | `border: [top, right, bottom, left]` | No | S |
-| Cell margin | `margin: [T, R, B, L]` | Yes | - |
+| Cell margin | `margin: [T, R, B, L]` | Yes | \- |
 | **Colspan / rowspan** | `colspan`, `rowspan` | No | S |
 | **Auto-page (split across slides)** | `autoPage: true`, `autoPageRepeatHeader`, `autoPageHeaderRows` | No | **M** |
 | Auto-page start Y | `autoPageSlideStartY` | No | S |
@@ -136,7 +139,7 @@ There is also a **Rust built-in exporter** (`markdown_to_pptx.rs` using `ppt-rs`
 
 | Feature | PptxGenJS API | Used Today? | Effort to Add |
 | --- | --- | --- | --- |
-| Image from path | `path` | Yes | - |
+| Image from path | `path` | Yes | \- |
 | Image from base64 | `data` | No | S |
 | Image sizing (contain/cover/crop) | `sizing: { type, w, h, x?, y? }` | Partial — `contain` only | S |
 | Image rounding | `rounding: true` | No | S |
@@ -172,20 +175,20 @@ There is also a **Rust built-in exporter** (`markdown_to_pptx.rs` using `ppt-rs`
 
 | Feature | PptxGenJS API | Used Today? | Effort to Add |
 | --- | --- | --- | --- |
-| Background color | `slide.background = { color }` | Yes | - |
-| Background image | `slide.background = { path \| data }` | No | S |
+| Background color | `slide.background = { color }` | Yes | \- |
+| Background image | `slide.background = { path | data }` | No | S |
 | Background transparency | `slide.background = { fill: { transparency } }` | No | S |
 | **Built-in slide numbers** | `slide.slideNumber = { x, y, fontSize, color, ... }` | No — manual text used | **S** |
 | Default text color | `slide.color` | No | S |
 | Hidden slide | `slide.hidden = true` | No | S |
-| Speaker notes | `slide.addNotes(text)` | Yes | - |
+| Speaker notes | `slide.addNotes(text)` | Yes | \- |
 | **Slide transitions** | Not documented in TypeScript defs (may be unofficial) | No | Unknown |
 
 ### Presentation Options
 
 | Feature | PptxGenJS API | Used Today? | Effort to Add |
 | --- | --- | --- | --- |
-| Layout size | `pptx.layout` (4 presets) | Yes — `LAYOUT_WIDE` | - |
+| Layout size | `pptx.layout` (4 presets) | Yes — `LAYOUT_WIDE` | \- |
 | Custom layout | `pptx.defineLayout({ name, width, height })` | No | S |
 | **Metadata** (author, company, title, subject) | `pptx.author`, `.company`, `.title`, `.subject` | No | **S** |
 | Revision number | `pptx.revision` | No | S |
@@ -197,7 +200,7 @@ There is also a **Rust built-in exporter** (`markdown_to_pptx.rs` using `ppt-rs`
 
 | Property | Type | Used? |
 | --- | --- | --- |
-| `type` | `'outer' \| 'inner' \| 'none'` | No |
+| `type` | `'outer' | 'inner' | 'none'` | No |
 | `opacity` | 0.0-1.0 | No |
 | `blur` | 0-100 pt | No |
 | `angle` | 0-359 degrees | No |
@@ -224,7 +227,7 @@ There is also a **Rust built-in exporter** (`markdown_to_pptx.rs` using `ppt-rs`
 
 ### Tier 1 — High Impact, Low Effort (quick wins)
 
-| # | Feature | Effort | Value |
+| \# | Feature | Effort | Value |
 | --- | --- | --- | --- |
 | G1 | **Hyperlinks** — `[text](url)` → clickable links | S | High — URLs currently lost |
 | G2 | **Presentation metadata** — author, title, company from frontmatter | S | Medium — professional output |
@@ -234,7 +237,7 @@ There is also a **Rust built-in exporter** (`markdown_to_pptx.rs` using `ppt-rs`
 
 ### Tier 2 — High Impact, Medium Effort (core improvements)
 
-| # | Feature | Effort | Value |
+| \# | Feature | Effort | Value |
 | --- | --- | --- | --- |
 | G6 | **Charts** — bar, line, pie, doughnut from YAML/JSON code blocks | M-L | **High** — data visualization |
 | G7 | **Slide masters** — define reusable layouts (Title, Section, Content, Picture) | M | High — proper layout system |
@@ -244,7 +247,7 @@ There is also a **Rust built-in exporter** (`markdown_to_pptx.rs` using `ppt-rs`
 
 ### Tier 3 — Medium Impact (extended features)
 
-| # | Feature | Effort | Value |
+| \# | Feature | Effort | Value |
 | --- | --- | --- | --- |
 | G11 | **Content overflow handling** — detect + auto-split overflowing slides | M | High — prevents cut-off text |
 | G12 | **Background images** — from template or agent-specified | S | Medium |
@@ -261,7 +264,8 @@ Media embedding (video/YouTube/audio), animations, RTL support, custom geometry 
 Charts need an input format the agent can write in markdown. Two options:
 
 **Option A: YAML code block**
-````markdown
+
+```markdown
 ```chart
 type: bar
 title: Q1 Revenue
@@ -272,10 +276,11 @@ series:
   - name: Product B
     values: [90, 110, 140]
 ```
-````
+```
 
 **Option B: JSON code block** (simpler for LLMs)
-````markdown
+
+```markdown
 ```chart
 {
   "type": "bar",
@@ -287,26 +292,18 @@ series:
   ]
 }
 ```
-````
+```
 
 Recommend **Option A** (YAML) — more readable, and agents generate YAML naturally.
-
-## Pipeline
-
-| Stage | Link | Status |
-| --- | --- | --- |
-| Research | (this document) | Complete |
-| PRD — All tiers (G1-G18) | [rich-pptx-generation](../prds/2026-04-07-rich-pptx-generation.md) | Draft |
-| Tasks — per feature | (linked from PRD feature table) | Not started |
 
 ## Key Files
 
 | File | Lines | Purpose |
 | --- | --- | --- |
 | `bundled-skills/generate-presentation/scripts/generate.mjs` | 782 | PptxGenJS generation script |
-| `bundled-skills/generate-presentation/scripts/package.json` | ~10 | Dependencies (pptxgenjs, jszip) |
-| `bundled-skills/generate-presentation/SKILL.md` | ~200 | Agent instructions |
-| `bundled-skills/generate-presentation/references/TEMPLATES.md` | ~50 | Style/template documentation |
+| `bundled-skills/generate-presentation/scripts/package.json` | \~10 | Dependencies (pptxgenjs, jszip) |
+| `bundled-skills/generate-presentation/SKILL.md` | \~200 | Agent instructions |
+| `bundled-skills/generate-presentation/references/TEMPLATES.md` | \~50 | Style/template documentation |
 | `src-tauri/src/export/markdown_to_pptx.rs` | 1653 | Rust built-in exporter (ppt-rs) |
-| `src-tauri/src/export/templates.rs` | ~200 | Rust template configurations |
-| `node_modules/pptxgenjs/types/index.d.ts` | ~1500 | Full PptxGenJS TypeScript API |
+| `src-tauri/src/export/templates.rs` | \~200 | Rust template configurations |
+| `node_modules/pptxgenjs/types/index.d.ts` | \~1500 | Full PptxGenJS TypeScript API |
