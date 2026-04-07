@@ -259,8 +259,8 @@ Animations, SmartArt data model parsing, 3D effects, OLE objects, ink annotation
 | Stage | Link | Status |
 | --- | --- | --- |
 | Research | (this document) | Complete |
-| PRD — Tier 1+2 (V1-V10) | [pptx-viewer-v2](../prds/2026-04-07-pptx-viewer-v2.md) | Not started |
-| Tasks — per feature | (linked from PRD) | Not started |
+| PRD — All tiers (V1-V24) | [pptx-viewer-v2](../prds/2026-04-07-pptx-viewer-v2.md) | Draft |
+| Tasks — per feature | (linked from PRD feature table) | Not started |
 
 ## Key Files
 

@@ -296,8 +296,8 @@ Recommend **Option A** (YAML) — more readable, and agents generate YAML natura
 | Stage | Link | Status |
 | --- | --- | --- |
 | Research | (this document) | Complete |
-| PRD — Tier 1+2 (G1-G11) | [rich-pptx-generation](../prds/2026-04-07-rich-pptx-generation.md) | Not started |
-| Tasks — per feature | (linked from PRD) | Not started |
+| PRD — All tiers (G1-G18) | [rich-pptx-generation](../prds/2026-04-07-rich-pptx-generation.md) | Draft |
+| Tasks — per feature | (linked from PRD feature table) | Not started |
 
 ## Key Files
 
