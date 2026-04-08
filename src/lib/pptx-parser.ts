@@ -658,16 +658,7 @@ async function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<
       // Empty shape with no text — check if it has a visual fill (from spPr or <p:style>)
       // If so, render as a rect shape instead of skipping
       let styleFill: PptxFill | null = spPr ? parseFill(spPr, theme) : null;
-      if (!styleFill) {
-        const pStyle = qs(el, "style");
-        if (pStyle) {
-          const fillRef = qs(pStyle, "fillRef");
-          if (fillRef && intAttr(fillRef, "idx", 0) > 0) {
-            const fillColor = resolveColor(fillRef, theme);
-            if (fillColor) styleFill = { type: "solid", color: fillColor };
-          }
-        }
-      }
+      if (!styleFill) styleFill = parseStyleFillRef(el, theme);
       if (!styleFill) return null;
       // Render as a shape with fill
       return {
@@ -684,22 +675,8 @@ async function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<
   let fill = spPr ? parseFill(spPr, theme) : null;
 
   // Fallback: parse <p:style> fill reference when spPr has no fill
-  // <p:style> contains <a:fillRef idx="N"><a:schemeClr val="..."/> which references theme fill
   if (!fill) {
-    const pStyle = qs(el, "style");
-    if (pStyle) {
-      const fillRef = qs(pStyle, "fillRef");
-      if (fillRef) {
-        const idx = intAttr(fillRef, "idx", 0);
-        if (idx > 0) {
-          // fillRef idx > 0 means use the scheme color as a solid fill
-          const fillColor = resolveColor(fillRef, theme);
-          if (fillColor) {
-            fill = { type: "solid", color: fillColor };
-          }
-        }
-      }
-    }
+    fill = parseStyleFillRef(el, theme);
   }
 
   // Picture fill (blipFill inside spPr) — overrides other fills
@@ -1518,6 +1495,24 @@ export function parseReflection(spPr: Element): PptxImage['reflection'] | undefi
 // ---------------------------------------------------------------------------
 // Fill & stroke
 // ---------------------------------------------------------------------------
+
+/**
+ * Parse fill from a <p:style> fillRef element.
+ * fillRef idx determines the intensity: 1=subtle (20% alpha), 2=moderate (60%), 3=intense (full).
+ */
+function parseStyleFillRef(el: Element, theme: PptxTheme): PptxFill | null {
+  const pStyle = qs(el, "style");
+  if (!pStyle) return null;
+  const fillRef = qs(pStyle, "fillRef");
+  if (!fillRef) return null;
+  const idx = intAttr(fillRef, "idx", 0);
+  if (idx <= 0) return null;
+  const fillColor = resolveColor(fillRef, theme);
+  if (!fillColor) return null;
+  // Map idx to alpha: 1=subtle, 2=moderate, 3=intense
+  const alpha = idx === 1 ? 0.2 : idx === 2 ? 0.6 : 1.0;
+  return { type: "solid", color: fillColor, alpha: alpha < 1 ? alpha : undefined };
+}
 
 export function parseFill(spPr: Element, theme: PptxTheme): PptxFill | null {
   // Solid fill
