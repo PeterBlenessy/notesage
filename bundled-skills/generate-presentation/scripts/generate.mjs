@@ -899,7 +899,7 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
       };
       // Subtle shadow on content slide titles for business/report styles (#5)
       if (theme.titleShadow && !isTitleOnly) {
-        titleOpts.shadow = theme.titleShadow;
+        titleOpts.shadow = { ...theme.titleShadow };
       }
       slide.addText(stripMarkdownFormatting(slideData.title), titleOpts);
     }
@@ -945,7 +945,7 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
           fontSize: 36, fontFace: theme.fonts.heading, color: theme.colors.dk1,
           bold: true, align: "left", valign: "bottom",
         };
-        if (theme.titleShadow) contTitleOpts.shadow = theme.titleShadow;
+        if (theme.titleShadow) contTitleOpts.shadow = { ...theme.titleShadow };
         contSlide.addText(stripMarkdownFormatting(slideData.title) + " (cont.)", contTitleOpts);
       }
       curY = CONTENT_Y_BASE;
@@ -1130,7 +1130,7 @@ async function generatePptx(slides, theme, inputDir, outputPath, metadata = {}) 
             }
             // Subtle shadow for business/report styles (#14)
             if (theme.titleShadow) {
-              imgOpts.shadow = { type: "outer", blur: 3, offset: 1, opacity: 0.2, angle: 45, color: "000000" };
+              imgOpts.shadow = { type: "outer", blur: 3, offset: 1, opacity: 0.20, angle: 45, color: "000000" };
             }
             curSlide.addImage(imgOpts);
             curY += imgH + 0.2;
