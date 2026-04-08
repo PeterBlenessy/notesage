@@ -398,6 +398,52 @@ function parseTableStylesFromDoc(doc: Document, theme: PptxTheme): Map<string, P
   return styles;
 }
 
+/**
+ * Generate a table style for common built-in Office table styles.
+ * These styles aren't in tableStyles.xml — they're hardcoded in PowerPoint.
+ * We map the style GUID to an accent color and generate a reasonable approximation.
+ */
+function generateBuiltinTableStyle(styleId: string, theme: PptxTheme): PptxTableStyle | undefined {
+  // Map of built-in style GUIDs to accent color keys
+  // Medium Style 2 - Accent N
+  const mediumStyle2: Record<string, string> = {
+    "{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}": "accent1",
+    "{21E4AEA4-8DFA-4A89-87EB-49C32662AFE0}": "accent2",
+    "{C4B1156A-380E-4F78-BDF5-A137D16BA284}": "accent3",
+    "{7DF18680-E054-41AD-8BC1-D1AEF088D02A}": "accent4",
+    "{327F97BB-C833-4FB7-BDE5-3F7075034690}": "accent5",
+    "{638B1855-1B75-4FBE-930C-398BA8C253C6}": "accent6",
+  };
+  // Light Style 1 - Accent N
+  const lightStyle1: Record<string, string> = {
+    "{3B4B98B0-60AC-42C2-AFA5-B58CD77FA1E5}": "accent1",
+    "{0E3FDE45-AF77-4B5C-9715-49D594BDF05E}": "accent2",
+    "{C083E6E3-FA7D-4D7B-A595-EF9225AFEA82}": "accent3",
+    "{D27102A9-8310-4765-A935-A1911B00CA55}": "accent4",
+    "{5FD0F851-EC5A-4D38-B0AD-8093EC10F338}": "accent5",
+    "{68D230F3-CF80-4859-8CE7-A43EE81993B5}": "accent6",
+  };
+
+  let accent = mediumStyle2[styleId];
+  if (accent) {
+    const fillColor = theme.colors[accent] ?? "#4472C4";
+    return {
+      firstRow: { fill: fillColor, fontColor: "#FFFFFF", bold: true },
+      band1H: { fill: fillColor + "33" }, // 20% opacity
+    };
+  }
+
+  accent = lightStyle1[styleId];
+  if (accent) {
+    const fillColor = theme.colors[accent] ?? "#4472C4";
+    return {
+      firstRow: { fill: fillColor, fontColor: "#FFFFFF", bold: true },
+    };
+  }
+
+  return undefined;
+}
+
 export function parseTableStyleElement(styleEl: Element, theme: PptxTheme): PptxTableStyle {
   const result: PptxTableStyle = {};
   const parts: Array<keyof PptxTableStyle> = [
@@ -616,6 +662,25 @@ async function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<
   const shapeType = mapPresetGeometry(preset);
   let fill = spPr ? parseFill(spPr, theme) : null;
 
+  // Fallback: parse <p:style> fill reference when spPr has no fill
+  // <p:style> contains <a:fillRef idx="N"><a:schemeClr val="..."/> which references theme fill
+  if (!fill) {
+    const pStyle = qs(el, "style");
+    if (pStyle) {
+      const fillRef = qs(pStyle, "fillRef");
+      if (fillRef) {
+        const idx = intAttr(fillRef, "idx", 0);
+        if (idx > 0) {
+          // fillRef idx > 0 means use the scheme color as a solid fill
+          const fillColor = resolveColor(fillRef, theme);
+          if (fillColor) {
+            fill = { type: "solid", color: fillColor };
+          }
+        }
+      }
+    }
+  }
+
   // Picture fill (blipFill inside spPr) — overrides other fills
   if (spPr && zip && slideDir && rels) {
     const blipFillEl = qs(spPr, "blipFill");
@@ -637,9 +702,27 @@ async function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<
     }
   }
 
-  const { stroke, strokeWidth, dashStyle, headArrow, tailArrow } = spPr
+  let { stroke, strokeWidth, dashStyle, headArrow, tailArrow } = spPr
     ? parseStroke(spPr, theme)
     : { stroke: null, strokeWidth: 0, dashStyle: undefined, headArrow: undefined, tailArrow: undefined };
+
+  // Fallback: parse stroke from <p:style> lnRef when spPr has no stroke
+  if (!stroke) {
+    const pStyle = qs(el, "style");
+    if (pStyle) {
+      const lnRef = qs(pStyle, "lnRef");
+      if (lnRef) {
+        const idx = intAttr(lnRef, "idx", 0);
+        if (idx > 0) {
+          const lnColor = resolveColor(lnRef, theme);
+          if (lnColor) {
+            stroke = lnColor;
+            strokeWidth = Math.max(1, idx * 0.5); // approximate width from idx
+          }
+        }
+      }
+    }
+  }
   let text = txBody ? parseParagraphs(txBody, theme, rels) : [];
   if (placeholderType === "sldNum") {
     text = injectSlideNumber(text, slideIndex);
@@ -1860,6 +1943,11 @@ function parseTable(
     if (tblStyleId && theme.tableStyles) {
       style = theme.tableStyles.get(tblStyleId);
     }
+    // Fallback: generate a style from theme accent colors for common built-in table styles
+    // Built-in styles (Medium Style 2, etc.) aren't in tableStyles.xml — they're baked into PowerPoint.
+    if (!style && tblStyleId) {
+      style = generateBuiltinTableStyle(tblStyleId, theme);
+    }
     bandRow = getAttr(tblPr, "bandRow") === "1" ? true : undefined;
     bandCol = getAttr(tblPr, "bandCol") === "1" ? true : undefined;
     firstRowFlag = getAttr(tblPr, "firstRow") === "1" ? true : undefined;
@@ -2039,6 +2127,16 @@ async function parseChart(
 
   if (!chartEl) {
     return { type: "chart", ...transform, chartType: "other", series: [], categories: [] };
+  }
+
+  // Parse bar direction (barDir: "bar" = horizontal, "col" = vertical/column)
+  let barDirection: PptxChart["barDirection"];
+  if (chartType === "bar") {
+    const barDir = qs(chartEl, "barDir");
+    if (barDir) {
+      const dirVal = getAttr(barDir, "val");
+      barDirection = dirVal === "bar" ? "horizontal" : "vertical";
+    }
   }
 
   // Parse series from primary and additional chart type elements
@@ -2325,7 +2423,7 @@ async function parseChart(
   return {
     type: "chart", ...transform, chartType, series, categories,
     title, legend, axes, showDataLabels, dataLabelType,
-    dataLabelPosition, secondaryAxis,
+    dataLabelPosition, secondaryAxis, barDirection,
   };
 }
 
@@ -2911,13 +3009,16 @@ export function resolveInheritance(presentation: PptxPresentation): void {
         );
 
         // Apply cascade alignment only when the paragraph has NO explicit algn attribute.
-        // parseAlignment returns the theme default when no explicit algn is set.
-        if (!p.explicitAlignment && cascadeDefaults.alignment) {
+        // Skip for ctrTitle (always centered) and subTitle (uses theme default, not bodyStyle).
+        const skipAlignment = el.placeholderType === "ctrTitle" || el.placeholderType === "subTitle";
+        if (!skipAlignment && !p.explicitAlignment && cascadeDefaults.alignment) {
           p.alignment = cascadeDefaults.alignment;
         }
 
-        // Apply cascade bullets when paragraph has no explicit bullet
-        if (!p.bulletChar && !p.bulletAutoNum) {
+        // Apply cascade bullets when paragraph has no explicit bullet.
+        // Skip for title/subtitle placeholders — they don't use body bullets.
+        const skipBullets = isTitlePlaceholder || el.placeholderType === "subTitle";
+        if (!skipBullets && !p.bulletChar && !p.bulletAutoNum) {
           if (cascadeDefaults.bulletChar) {
             p.bulletChar = cascadeDefaults.bulletChar;
             if (cascadeDefaults.bulletFont) p.bulletFont = cascadeDefaults.bulletFont;

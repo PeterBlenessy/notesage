@@ -212,6 +212,8 @@ export interface PptxChart {
   width: number;
   height: number;
   chartType: "bar" | "line" | "pie" | "area" | "scatter" | "doughnut" | "radar" | "bubble" | "other";
+  /** Bar chart direction: "horizontal" for bars, "vertical" (default) for columns */
+  barDirection?: "horizontal" | "vertical";
   series: PptxChartSeries[];
   categories: string[];
   title?: string;

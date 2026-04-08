@@ -191,13 +191,23 @@ function renderChart(
   });
 
   switch (el.chartType) {
-    case "bar":
+    case "bar": {
+      const isHorizontal = el.barDirection === "horizontal";
       return (
-        <BarChart data={dataWithTrend}>
+        <BarChart data={dataWithTrend} layout={isHorizontal ? "vertical" : "horizontal"}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="name" tick={{ fontSize: 10 }} label={xAxisLabel(el)} />
-          <YAxis yAxisId="left" tick={{ fontSize: 10 }} label={yAxisLabel(el)} />
-          {hasSecondary && <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />}
+          {isHorizontal ? (
+            <>
+              <XAxis type="number" tick={{ fontSize: 10 }} label={xAxisLabel(el)} />
+              <YAxis dataKey="name" type="category" yAxisId="left" tick={{ fontSize: 10 }} label={yAxisLabel(el)} width={80} />
+            </>
+          ) : (
+            <>
+              <XAxis dataKey="name" tick={{ fontSize: 10 }} label={xAxisLabel(el)} />
+              <YAxis yAxisId="left" tick={{ fontSize: 10 }} label={yAxisLabel(el)} />
+              {hasSecondary && <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />}
+            </>
+          )}
           <Tooltip />
           {el.legend && <Legend verticalAlign={el.legend.position === "top" ? "top" : "bottom"} />}
           {el.series.map((s, i) => (
@@ -210,6 +220,7 @@ function renderChart(
           ))}
         </BarChart>
       );
+    }
     case "line":
       return (
         <LineChart data={dataWithTrend}>
@@ -248,19 +259,28 @@ function renderChart(
           ))}
         </AreaChart>
       );
-    case "scatter":
+    case "scatter": {
+      // Scatter charts need XY coordinate pairs, not category-based data
+      const scatterData = el.series.map((s, i) => {
+        const points = s.values.map((y, j) => ({
+          x: s.xValues?.[j] ?? j + 1,
+          y,
+        }));
+        return { name: s.name || `Series ${i + 1}`, points, color: seriesColors[i] };
+      });
       return (
         <ScatterChart>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="name" tick={{ fontSize: 10 }} label={xAxisLabel(el)} />
-          <YAxis tick={{ fontSize: 10 }} label={yAxisLabel(el)} />
+          <XAxis dataKey="x" type="number" tick={{ fontSize: 10 }} label={xAxisLabel(el)} />
+          <YAxis dataKey="y" type="number" tick={{ fontSize: 10 }} label={yAxisLabel(el)} />
           <Tooltip />
           {el.legend && <Legend verticalAlign={el.legend.position === "top" ? "top" : "bottom"} />}
-          {el.series.map((s, i) => (
-            <Scatter key={i} name={s.name || `Series ${i + 1}`} data={data} dataKey={`s${i}`} fill={seriesColors[i]} />
+          {scatterData.map((s, i) => (
+            <Scatter key={i} name={s.name} data={s.points} fill={s.color} />
           ))}
         </ScatterChart>
       );
+    }
     case "pie":
     case "doughnut": {
       const pieData = el.categories.map((cat, i) => ({
