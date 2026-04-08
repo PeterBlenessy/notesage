@@ -701,8 +701,9 @@ function mapPresetGeometry(preset: string | null): PptxShape["shapeType"] {
     ellipse: "ellipse",
     line: "line",
     straightConnector1: "line",
-    rightArrow: "arrow", leftArrow: "arrow", upArrow: "arrow", downArrow: "arrow",
-    bentArrow: "arrow", stripedRightArrow: "arrow",
+    // Note: rightArrow, leftArrow, upArrow, downArrow etc. are block arrow SHAPES
+    // (filled preset geometries), not lines. They fall through to "other" and get
+    // rendered via PresetShapeRenderer with SVG paths.
   };
   return map[preset] ?? "other";
 }
