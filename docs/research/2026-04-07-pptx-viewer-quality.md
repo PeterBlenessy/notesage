@@ -1,17 +1,19 @@
 # Research: PPTX Viewer Quality Improvements
 
-| | |
+|  |  |
 | --- | --- |
 | **Date** | 2026-04-07 |
 | **Status** | Research complete |
-| **Current coverage** | 46 fully / 19 partially / 98 not supported (of 163 inventoried OOXML features) |
-| **Code size** | ~1555 lines across 5 files |
-| **PRD** | [pptx-viewer-v2](../prds/2026-04-07-pptx-viewer-v2.md) (Draft) |
-| **Tasks** | [pptx-viewer-v2-tasks](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) (21 tasks: 10S, 8M, 3L) |
+| **Current coverage** | ~60% of 163 inventoried OOXML features (post v2) |
+| **Code size** | \~1555 lines across 5 files |
+| **PRD 1** | [pptx-viewer-v2](../prds/2026-04-07-pptx-viewer-v2.md) (Complete — 21/21 tasks) |
+| **Tasks 1** | [pptx-viewer-v2-tasks](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) (21 done) |
+| **PRD 2** | [pptx-viewer-polish](../prds/2026-04-08-pptx-viewer-polish.md) (Draft — 23 features across 7 tiers) |
+| **Tasks 2** | [pptx-viewer-polish-tasks](../tasks/2026-04-08-pptx-viewer-polish-tasks.md) (23 tasks: 12S, 8M, 3L) |
 
 ## Context
 
-The PPTX viewer renders slides by parsing OOXML XML from the `.pptx` ZIP and converting to React components. It covers ~28% of OOXML PresentationML/DrawingML features. The result: theme-based presentations have wrong colors, text spacing is off, most shapes render as rectangles, tables look generic, and charts lack labels/legends. The viewer is usable for simple text-heavy slides but breaks down on anything with visual design.
+The PPTX viewer renders slides by parsing OOXML XML from the `.pptx` ZIP and converting to React components. It covers \~28% of OOXML PresentationML/DrawingML features. The result: theme-based presentations have wrong colors, text spacing is off, most shapes render as rectangles, tables look generic, and charts lack labels/legends. The viewer is usable for simple text-heavy slides but breaks down on anything with visual design.
 
 ## Architecture
 
@@ -28,16 +30,16 @@ The PPTX viewer renders slides by parsing OOXML XML from the `.pptx` ZIP and con
 
 | Feature | OOXML Element | Status | Impact | Effort |
 | --- | --- | --- | --- | --- |
-| Bold | `rPr@b` | Supported | - | - |
-| Italic | `rPr@i` | Supported | - | - |
-| Underline (single) | `rPr@u` | Supported | - | - |
+| Bold | `rPr@b` | Supported | \- | \- |
+| Italic | `rPr@i` | Supported | \- | \- |
+| Underline (single) | `rPr@u` | Supported | \- | \- |
 | Underline styles (18 types) | `rPr@u` values | Not supported | Low | S |
-| Font size | `rPr@sz` | Supported | - | - |
-| Font family (Latin) | `a:latin@typeface` | Supported | - | - |
+| Font size | `rPr@sz` | Supported | \- | \- |
+| Font family (Latin) | `a:latin@typeface` | Supported | \- | \- |
 | Font family (East Asian, Complex Script) | `a:ea`, `a:cs` | Not supported | Medium (CJK decks) | S |
-| Theme font refs (`+mj-lt`, `+mn-lt`) | `a:latin@typeface` | Supported | - | - |
-| Font color (RGB) | `a:srgbClr` | Supported | - | - |
-| Font color (scheme) | `a:schemeClr` | Supported | - | - |
+| Theme font refs (`+mj-lt`, `+mn-lt`) | `a:latin@typeface` | Supported | \- | \- |
+| Font color (RGB) | `a:srgbClr` | Supported | \- | \- |
+| Font color (scheme) | `a:schemeClr` | Supported | \- | \- |
 | **Color transforms (lumMod/lumOff)** | `a:lumMod`, `a:lumOff` | **Stubbed** | **Critical** — wrong colors on most theme decks | **M** |
 | Color transforms (tint/shade/alpha) | `a:tint`, `a:shade`, `a:alpha` | Not supported | High | M |
 | **Strikethrough** | `rPr@strike` | Not supported | Medium | S |
@@ -49,16 +51,16 @@ The PPTX viewer renders slides by parsing OOXML XML from the `.pptx` ZIP and con
 | Text shadow | `a:effectLst` on run | Not supported | Low | M |
 | Text highlight | run fill | Not supported | Low | S |
 | Language tag | `rPr@lang` | Not supported | Low | S |
-| Line breaks | `a:br` | Supported | - | - |
+| Line breaks | `a:br` | Supported | \- | \- |
 
 ### Paragraph Properties
 
 | Feature | OOXML Element | Status | Impact | Effort |
 | --- | --- | --- | --- | --- |
-| Alignment (l/ctr/r/just) | `pPr@algn` | Supported | - | - |
-| Bullet character | `a:buChar` | Supported | - | - |
-| Bullet level | `pPr@lvl` | Supported | - | - |
-| Bullet none | `a:buNone` | Supported | - | - |
+| Alignment (l/ctr/r/just) | `pPr@algn` | Supported | \- | \- |
+| Bullet character | `a:buChar` | Supported | \- | \- |
+| Bullet level | `pPr@lvl` | Supported | \- | \- |
+| Bullet none | `a:buNone` | Supported | \- | \- |
 | **Auto-numbered bullets** | `a:buAutoNum` | **Partial** — all rendered as dots | **High** — numbered lists look wrong | **S** |
 | Bullet font / color / size | `a:buFont`, `a:buClr`, `a:buSzPct` | Not supported | Medium | S |
 | Picture bullets | `a:buBlip` | Not supported | Low | M |
@@ -85,19 +87,19 @@ The PPTX viewer renders slides by parsing OOXML XML from the `.pptx` ZIP and con
 
 | Feature | OOXML Element | Status | Impact | Effort |
 | --- | --- | --- | --- | --- |
-| Rectangle, rounded rect, ellipse | `a:prstGeom` | Supported | - | - |
-| Lines, connectors | `a:prstGeom` | Supported | - | - |
+| Rectangle, rounded rect, ellipse | `a:prstGeom` | Supported | \- | \- |
+| Lines, connectors | `a:prstGeom` | Supported | \- | \- |
 | Arrow shapes (6 variants) | `a:prstGeom` | Partial — rendered as lines | Medium | S |
-| **All other presets (~180)** | `a:prstGeom` | **Not supported** — rendered as rectangles | **High** — diagrams broken | **L** |
+| **All other presets (\~180)** | `a:prstGeom` | **Not supported** — rendered as rectangles | **High** — diagrams broken | **L** |
 | Custom geometries (paths) | `a:custGeom` | Not supported | Medium | L |
-| Solid fill | `a:solidFill` | Supported | - | - |
-| Linear gradient | `a:gradFill` + `a:lin` | Supported | - | - |
+| Solid fill | `a:solidFill` | Supported | \- | \- |
+| Linear gradient | `a:gradFill` + `a:lin` | Supported | \- | \- |
 | Radial gradient | `a:gradFill` + `a:path` | Partial — always centered ellipse | Low | S |
 | Pattern fill | `a:pattFill` | Partial — solid fallback only | Low | M |
 | Picture fill on shapes | `a:blipFill` | Not supported | Medium | M |
 | Group fill | `a:grpFill` | Not supported | Low | M |
-| No fill | `a:noFill` | Supported | - | - |
-| Line width + color | `a:ln@w`, fill | Supported | - | - |
+| No fill | `a:noFill` | Supported | \- | \- |
+| Line width + color | `a:ln@w`, fill | Supported | \- | \- |
 | **Dash styles** | `a:prstDash` | Not supported | Medium | S |
 | Line arrows (head/tail) | `a:headEnd`, `a:tailEnd` | Partial — tail only | Medium | S |
 | Compound lines, joins, caps | `a:cmpd`, `a:join`, `a:cap` | Not supported | Low | S |
@@ -112,12 +114,12 @@ The PPTX viewer renders slides by parsing OOXML XML from the `.pptx` ZIP and con
 
 | Feature | OOXML Element | Status | Impact | Effort |
 | --- | --- | --- | --- | --- |
-| Table structure (rows, cols) | `a:tbl`, `a:tr`, `a:tc` | Supported | - | - |
-| Column widths | `a:tblGrid` | Supported | - | - |
-| Row heights | `a:tr@h` | Supported | - | - |
-| Cell text | `a:txBody` | Supported | - | - |
-| Cell solid fill | `a:tcPr > solidFill` | Supported | - | - |
-| Cell merge (colspan, rowspan) | `gridSpan`, `rowSpan`, `vMerge` | Supported | - | - |
+| Table structure (rows, cols) | `a:tbl`, `a:tr`, `a:tc` | Supported | \- | \- |
+| Column widths | `a:tblGrid` | Supported | \- | \- |
+| Row heights | `a:tr@h` | Supported | \- | \- |
+| Cell text | `a:txBody` | Supported | \- | \- |
+| Cell solid fill | `a:tcPr > solidFill` | Supported | \- | \- |
+| Cell merge (colspan, rowspan) | `gridSpan`, `rowSpan`, `vMerge` | Supported | \- | \- |
 | **Cell borders (per-side)** | `a:lnL/lnR/lnT/lnB` | Not supported — hardcoded 1px grey | **High** | **M** |
 | **Cell margins** | `tcPr@marL/marT/marR/marB` | Not supported — hardcoded padding | Medium | S |
 | **Cell vertical alignment** | `tcPr@anchor` | Not supported | Medium | S |
@@ -131,11 +133,11 @@ The PPTX viewer renders slides by parsing OOXML XML from the `.pptx` ZIP and con
 
 | Feature | OOXML Element | Status | Impact | Effort |
 | --- | --- | --- | --- | --- |
-| Embedded images (PNG, JPEG, GIF) | `r:embed` | Supported | - | - |
+| Embedded images (PNG, JPEG, GIF) | `r:embed` | Supported | \- | \- |
 | SVG images | `r:embed` | Partial — browser-dependent | Low | S |
 | WMF/EMF metafiles | `r:embed` | Partial — browsers can't render | Medium | L (conversion) |
-| Image positioning + sizing | `a:xfrm` | Supported | - | - |
-| Image rotation | `a:xfrm@rot` | Supported | - | - |
+| Image positioning + sizing | `a:xfrm` | Supported | \- | \- |
+| Image rotation | `a:xfrm@rot` | Supported | \- | \- |
 | **Image crop / clip** | `a:srcRect` | Not supported | **High** — cropped images show full | **M** |
 | Image effects (shadow, etc.) | `a:effectLst` | Not supported | Medium | M |
 | Image transparency | `a:alphaModFix` | Not supported | Medium | S |
@@ -146,18 +148,18 @@ The PPTX viewer renders slides by parsing OOXML XML from the `.pptx` ZIP and con
 
 | Feature | OOXML Element | Status | Impact | Effort |
 | --- | --- | --- | --- | --- |
-| Bar chart (2D, 3D) | `c:barChart` | Supported (recharts) | - | - |
-| Line chart | `c:lineChart` | Supported | - | - |
-| Pie chart (2D, 3D) | `c:pieChart` | Supported | - | - |
-| Area chart | `c:areaChart` | Supported | - | - |
-| Scatter chart | `c:scatterChart` | Supported | - | - |
-| Doughnut chart | `c:doughnutChart` | Supported | - | - |
+| Bar chart (2D, 3D) | `c:barChart` | Supported (recharts) | \- | \- |
+| Line chart | `c:lineChart` | Supported | \- | \- |
+| Pie chart (2D, 3D) | `c:pieChart` | Supported | \- | \- |
+| Area chart | `c:areaChart` | Supported | \- | \- |
+| Scatter chart | `c:scatterChart` | Supported | \- | \- |
+| Doughnut chart | `c:doughnutChart` | Supported | \- | \- |
 | Radar chart | `c:radarChart` | Not supported | Medium | M |
 | Bubble chart | `c:bubbleChart` | Not supported | Low | M |
 | Stock chart | `c:stockChart` | Not supported | Low | L |
 | Surface chart | `c:surfaceChart` | Not supported | Low | L |
 | Combination charts | Multiple chart types | Not supported | Medium | M |
-| Series data + colors | `c:ser`, `c:val`, `c:cat` | Supported | - | - |
+| Series data + colors | `c:ser`, `c:val`, `c:cat` | Supported | \- | \- |
 | **Chart title** | `c:title` | Not supported | **High** — charts lack context | **S** |
 | **Axis labels + formatting** | `c:catAx`, `c:valAx` | Not supported | **High** — axes unreadable | **M** |
 | **Legend** | `c:legend` | Not supported | **High** — series unidentifiable | **S** |
@@ -172,8 +174,8 @@ The PPTX viewer renders slides by parsing OOXML XML from the `.pptx` ZIP and con
 
 | Feature | OOXML Element | Status | Impact | Effort |
 | --- | --- | --- | --- | --- |
-| Solid fill background | `p:bgPr > solidFill` | Supported | - | - |
-| Gradient background | `p:bgPr > gradFill` | Supported | - | - |
+| Solid fill background | `p:bgPr > solidFill` | Supported | \- | \- |
+| Gradient background | `p:bgPr > gradFill` | Supported | \- | \- |
 | Pattern background | `p:bgPr > pattFill` | Partial — solid fallback | Low | M |
 | Image background | `p:bgPr > blipFill` | Not supported | Medium | M |
 | **Slide master inheritance** | `p:sldMaster` | Not supported | **Critical** — master logos, footers, decorations missing | **L** |
@@ -186,8 +188,8 @@ The PPTX viewer renders slides by parsing OOXML XML from the `.pptx` ZIP and con
 
 | Feature | OOXML Element | Status | Impact | Effort |
 | --- | --- | --- | --- | --- |
-| Fallback image | `dgm:relIds` | Partial — extracts if available | - | - |
-| Placeholder for missing fallback | - | Partial — grey dashed box | - | - |
+| Fallback image | `dgm:relIds` | Partial — extracts if available | \- | \- |
+| Placeholder for missing fallback | \- | Partial — grey dashed box | \- | \- |
 | SmartArt data model | `dgm:dataModel` | Not supported | High | XL |
 | Layout / visual properties | `dgm:layoutDef` | Not supported | High | XL |
 
@@ -216,13 +218,13 @@ The PPTX viewer renders slides by parsing OOXML XML from the `.pptx` ZIP and con
 
 ## Recommended Approach
 
-The viewer is fundamentally a "best-effort preview" — matching PowerPoint fidelity is unrealistic. However, the top 10 gaps cover ~80% of the visual quality issues users will notice.
+The viewer is fundamentally a "best-effort preview" — matching PowerPoint fidelity is unrealistic. However, the top 10 gaps cover \~80% of the visual quality issues users will notice.
 
 ### Tier 1 — Critical (wrong output)
 
 These cause visibly incorrect rendering on most corporate/themed presentations:
 
-| # | Feature | Effort | Impact |
+| \# | Feature | Effort | Impact |
 | --- | --- | --- | --- |
 | V1 | Color transforms (lumMod/lumOff/tint/shade) | M | Colors wrong on every themed deck |
 | V2 | Slide master/layout inheritance | L | Master logos, footers, decorations missing |
@@ -232,7 +234,7 @@ These cause visibly incorrect rendering on most corporate/themed presentations:
 
 These cause noticeable quality loss but don't make slides unreadable:
 
-| # | Feature | Effort | Impact |
+| \# | Feature | Effort | Impact |
 | --- | --- | --- | --- |
 | V4 | Line/paragraph spacing | S | Text density wrong |
 | V5 | Auto-numbered bullets | S | Numbered lists show dots |
@@ -244,9 +246,9 @@ These cause noticeable quality loss but don't make slides unreadable:
 
 ### Tier 3 — Medium (nice-to-have)
 
-| # | Feature | Effort | Impact |
+| \# | Feature | Effort | Impact |
 | --- | --- | --- | --- |
-| V11 | Preset geometries (~180 shapes) | L | Diagrams render as rectangles |
+| V11 | Preset geometries (\~180 shapes) | L | Diagrams render as rectangles |
 | V12 | Strikethrough, super/subscript | S | Text formatting incomplete |
 | V13 | Flip transforms | S | Some shapes appear mirrored |
 | V14 | Dash styles on lines | S | All lines solid |
@@ -261,9 +263,9 @@ Animations, SmartArt data model parsing, 3D effects, OLE objects, ink annotation
 | File | Lines | Purpose |
 | --- | --- | --- |
 | `src/lib/pptx-parser.ts` | 1039 | XML parsing, element extraction, theme resolution |
-| `src/lib/pptx-types.ts` | ~80 | TypeScript data model |
+| `src/lib/pptx-types.ts` | \~80 | TypeScript data model |
 | `src/components/editor/viewers/PptxSlideRenderer.tsx` | 352 | React element rendering |
 | `src/components/editor/viewers/PptxChartRenderer.tsx` | 164 | Recharts-based chart rendering |
-| `src/components/editor/viewers/PptxViewer.tsx` | ~350 | Orchestrator, navigation, zoom, search, notes |
-| `src/components/editor/viewers/PptxSearchBar.tsx` | ~100 | Search hook + find bar |
-| `src/components/editor/viewers/PptxZoomControls.tsx` | ~100 | Zoom hook + toolbar |
+| `src/components/editor/viewers/PptxViewer.tsx` | \~350 | Orchestrator, navigation, zoom, search, notes |
+| `src/components/editor/viewers/PptxSearchBar.tsx` | \~100 | Search hook + find bar |
+| `src/components/editor/viewers/PptxZoomControls.tsx` | \~100 | Zoom hook + toolbar |
