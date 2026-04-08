@@ -329,6 +329,16 @@ async function parseTheme(zip: JSZip): Promise<PptxTheme> {
     if (latin) defaults.fonts.body = getAttr(latin, "typeface") ?? "Calibri";
   }
 
+  // Default font size from theme objectDefaults > spDef
+  const spDef = qs(doc, "spDef");
+  if (spDef) {
+    const spDefRPr = qs(spDef, "defRPr");
+    if (spDefRPr) {
+      const sz = getAttr(spDefRPr, "sz");
+      if (sz) defaults.defaultFontSize = parseInt(sz, 10);
+    }
+  }
+
   // Table styles from theme XML
   const tableStyles = parseTableStylesFromDoc(doc, defaults);
 
@@ -997,7 +1007,8 @@ export function parseTextRuns(pEl: Element, theme: PptxTheme, rels?: Record<stri
         : (defRPr ? getAttr(defRPr, "i") === "1" : false);
 
       // Font size with defRPr fallback
-      const defFontSize = defRPr ? intAttr(defRPr, "sz", 1800) : 1800;
+      const themeFontSize = theme.defaultFontSize ?? 1800;
+      const defFontSize = defRPr ? intAttr(defRPr, "sz", themeFontSize) : themeFontSize;
       const fontSize = rPr ? intAttr(rPr, "sz", defFontSize) / 100 : defFontSize / 100;
 
       const fontFamily = parseFontFamily(effectiveRPr, theme);
@@ -2809,8 +2820,9 @@ export function resolveInheritance(presentation: PptxPresentation): void {
           }
           if (!masterStyle) continue;
 
+          const defaultFs = (theme.defaultFontSize ?? 1800) / 100;
           for (const run of p.runs) {
-            if (run.fontSize === 18 && masterStyle.fontSize) run.fontSize = masterStyle.fontSize;
+            if (run.fontSize === defaultFs && masterStyle.fontSize) run.fontSize = masterStyle.fontSize;
             if (run.color === "#000000" && masterStyle.color) run.color = masterStyle.color;
             if (!run.bold && masterStyle.bold) run.bold = true;
             if (masterStyle.fontFamily && run.fontFamily === theme.fonts.body && masterStyle.fontFamily !== theme.fonts.body) {

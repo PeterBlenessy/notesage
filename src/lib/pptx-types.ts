@@ -337,6 +337,7 @@ export interface PptxBackground {
 export interface PptxTheme {
   colors: Record<string, string>;
   fonts: { heading: string; body: string };
+  defaultFontSize?: number;  // from theme objectDefaults, in hundredths of point (e.g., 2400 = 24pt)
   clrMap?: Record<string, string>;
   tableStyles?: Map<string, PptxTableStyle>;
 }
