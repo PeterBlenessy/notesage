@@ -675,10 +675,11 @@ async function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<
   let fill = spPr ? parseFill(spPr, theme) : null;
 
   // Fallback: parse <p:style> fill reference when spPr has no fill.
-  // Only apply for shapes with known preset geometry — shapes with custom geometry
-  // (custGeom) would render the fill on an incorrect rectangular fallback.
-  const hasCustGeom = spPr ? !!qs(spPr, "custGeom") : false;
-  if (!fill && !hasCustGeom) {
+  // Only apply for shapes with text — empty shapes with <p:style> fills are typically
+  // decorative background elements (circles, bars, overlays) that render incorrectly
+  // as solid rectangles when we can't reproduce their exact visual appearance.
+  const hasText = txBody && qsa(txBody, "r").length > 0;
+  if (!fill && hasText) {
     fill = parseStyleFillRef(el, theme);
   }
 
@@ -707,8 +708,8 @@ async function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<
     ? parseStroke(spPr, theme)
     : { stroke: null, strokeWidth: 0, dashStyle: undefined, headArrow: undefined, tailArrow: undefined };
 
-  // Fallback: parse stroke from <p:style> lnRef when spPr has no stroke
-  if (!stroke) {
+  // Fallback: parse stroke from <p:style> lnRef — only for shapes with text
+  if (!stroke && hasText) {
     const pStyle = qs(el, "style");
     if (pStyle) {
       const lnRef = qs(pStyle, "lnRef");
@@ -718,7 +719,7 @@ async function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<
           const lnColor = resolveColor(lnRef, theme);
           if (lnColor) {
             stroke = lnColor;
-            strokeWidth = Math.max(1, idx * 0.5); // approximate width from idx
+            strokeWidth = Math.max(1, idx * 0.5);
           }
         }
       }
