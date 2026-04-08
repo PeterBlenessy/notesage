@@ -674,8 +674,11 @@ async function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<
   const shapeType = mapPresetGeometry(preset);
   let fill = spPr ? parseFill(spPr, theme) : null;
 
-  // Fallback: parse <p:style> fill reference when spPr has no fill
-  if (!fill) {
+  // Fallback: parse <p:style> fill reference when spPr has no fill.
+  // Only apply for shapes with known preset geometry — shapes with custom geometry
+  // (custGeom) would render the fill on an incorrect rectangular fallback.
+  const hasCustGeom = spPr ? !!qs(spPr, "custGeom") : false;
+  if (!fill && !hasCustGeom) {
     fill = parseStyleFillRef(el, theme);
   }
 
