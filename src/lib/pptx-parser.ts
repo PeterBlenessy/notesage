@@ -3009,10 +3009,15 @@ export function resolveInheritance(presentation: PptxPresentation): void {
         );
 
         // Apply cascade alignment only when the paragraph has NO explicit algn attribute.
-        // Skip for ctrTitle (always centered) and subTitle (uses theme default, not bodyStyle).
-        const skipAlignment = el.placeholderType === "ctrTitle" || el.placeholderType === "subTitle";
-        if (!skipAlignment && !p.explicitAlignment && cascadeDefaults.alignment) {
-          p.alignment = cascadeDefaults.alignment;
+        if (!p.explicitAlignment) {
+          // Title, ctrTitle, subTitle placeholders default to centered in PowerPoint
+          // regardless of what the master txStyles say.
+          const isCenteredPlaceholder = isTitlePlaceholder || el.placeholderType === "subTitle";
+          if (isCenteredPlaceholder) {
+            p.alignment = "center";
+          } else if (cascadeDefaults.alignment) {
+            p.alignment = cascadeDefaults.alignment;
+          }
         }
 
         // Apply cascade bullets when paragraph has no explicit bullet.
