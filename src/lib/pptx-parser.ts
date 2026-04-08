@@ -159,7 +159,17 @@ export async function parsePptx(bytes: Uint8Array): Promise<PptxPresentation> {
   // --- Parse sections ---
   const sections = parseSections(presentationXml);
 
-  const presentation: PptxPresentation = { slideWidth, slideHeight, slides, theme, masters, layouts, ...(sections ? { sections } : {}) };
+  // --- Parse presentation-level default text style ---
+  const defaultTextStyleEl = qs(presentationXml, "defaultTextStyle");
+  const defaultTextStyle = defaultTextStyleEl ? parseTextStyleDef(defaultTextStyleEl, theme) : null;
+  const defaultTextLevelStyles = defaultTextStyleEl ? parseTextStyleLevels(defaultTextStyleEl, theme) : undefined;
+
+  const presentation: PptxPresentation = {
+    slideWidth, slideHeight, slides, theme, masters, layouts,
+    ...(sections ? { sections } : {}),
+    defaultTextStyle: defaultTextStyle ?? undefined,
+    defaultTextLevelStyles: defaultTextLevelStyles?.length ? defaultTextLevelStyles : undefined,
+  };
   resolveInheritance(presentation);
   return presentation;
 }
@@ -562,6 +572,11 @@ async function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<
 
   const bodyProps = txBody ? parseBodyProperties(txBody) : undefined;
 
+  // Parse shape-level lstStyle from txBody
+  const shapeLstStyle = txBody ? qs(txBody, "lstStyle") : null;
+  const shapeLevelStyles = shapeLstStyle ? parseTextStyleLevels(shapeLstStyle, theme) : undefined;
+  const validShapeLevelStyles = shapeLevelStyles?.length ? shapeLevelStyles : undefined;
+
   // Check for shape-level hyperlink on cNvPr
   const nvSpPr = qs(el, "nvSpPr");
   const cNvPr = nvSpPr ? qs(nvSpPr, "cNvPr") : null;
@@ -594,7 +609,7 @@ async function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<
       paragraphs = injectSlideNumber(paragraphs, slideIndex);
     }
     if (paragraphs.length === 0 && !placeholderType) return null;
-    return { type: "textbox", ...transform, paragraphs, bodyProps, hyperlink: shapeHyperlink, placeholderType, placeholderIdx, shadow };
+    return { type: "textbox", ...transform, paragraphs, bodyProps, hyperlink: shapeHyperlink, placeholderType, placeholderIdx, shadow, shapeLevelStyles: validShapeLevelStyles };
   }
 
   // Shape
@@ -649,6 +664,7 @@ async function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<
     shadow,
     ...(glow ? { glow } : {}),
     ...(softEdge ? { softEdge } : {}),
+    shapeLevelStyles: validShapeLevelStyles,
   };
 }
 
@@ -695,7 +711,7 @@ function mapPresetGeometry(preset: string | null): PptxShape["shapeType"] {
 // Body properties
 // ---------------------------------------------------------------------------
 
-function parseBodyProperties(txBody: Element): BodyProperties | undefined {
+export function parseBodyProperties(txBody: Element): BodyProperties | undefined {
   const bodyPr = qs(txBody, "bodyPr");
   if (!bodyPr) return undefined;
 
@@ -818,7 +834,7 @@ function parseParagraphs(txBody: Element, theme: PptxTheme, rels?: Record<string
 
   for (const pEl of pEls) {
     const pPr = qs(pEl, "pPr");
-    const alignment = parseAlignment(pPr, theme);
+    const { alignment, explicit: explicitAlignment } = parseAlignment(pPr, theme);
     const bullet = parseBullet(pPr, theme);
     const spacing = parseParagraphSpacing(pPr);
     const defRPr = pPr ? qs(pPr, "defRPr") : null;
@@ -844,6 +860,7 @@ function parseParagraphs(txBody: Element, theme: PptxTheme, rels?: Record<string
 
     paragraphs.push({
       alignment,
+      explicitAlignment: explicitAlignment || undefined,
       runs,
       bulletChar: bullet.bulletChar,
       bulletLevel: bullet.bulletLevel,
@@ -859,14 +876,15 @@ function parseParagraphs(txBody: Element, theme: PptxTheme, rels?: Record<string
   return paragraphs;
 }
 
-function parseAlignment(pPr: Element | null, theme?: PptxTheme): PptxParagraph["alignment"] {
+function parseAlignment(pPr: Element | null, theme?: PptxTheme): { alignment: PptxParagraph["alignment"]; explicit: boolean } {
   const defaultAlign = theme?.defaultAlignment ?? "left";
-  if (!pPr) return defaultAlign;
+  if (!pPr) return { alignment: defaultAlign, explicit: false };
   const algn = getAttr(pPr, "algn");
+  if (!algn) return { alignment: defaultAlign, explicit: false };
   const map: Record<string, PptxParagraph["alignment"]> = {
     l: "left", ctr: "center", r: "right", just: "justify",
   };
-  return map[algn ?? ""] ?? defaultAlign;
+  return { alignment: map[algn] ?? defaultAlign, explicit: true };
 }
 
 interface BulletInfo {
@@ -1084,10 +1102,15 @@ function parseRunColor(rPr: Element | null, theme: PptxTheme): string {
 export const DEFAULT_CLR_MAP: Record<string, string> = { bg1: "lt1", bg2: "lt2", tx1: "dk1", tx2: "dk2" };
 
 export function resolveColor(parent: Element, theme: PptxTheme): string | null {
-  const srgb = qs(parent, "srgbClr");
+  // Look inside solidFill first (preferred), then search parent directly.
+  // This prevents finding srgbClr inside unrelated nested elements (e.g., effectLst > outerShdw).
+  const solidFill = qs(parent, "solidFill");
+  const colorParent = solidFill ?? parent;
+
+  const srgb = qs(colorParent, "srgbClr");
   if (srgb) return applyColorTransforms(srgb, `#${getAttr(srgb, "val") ?? "000000"}`);
 
-  const schemeClr = qs(parent, "schemeClr");
+  const schemeClr = qs(colorParent, "schemeClr");
   if (schemeClr) {
     const val = getAttr(schemeClr, "val");
     // Try direct lookup first (e.g., dk1, lt1, accent1)
@@ -1111,14 +1134,18 @@ export function resolveColor(parent: Element, theme: PptxTheme): string | null {
 
 /** Like resolveColor but also extracts alpha from the color element's children. */
 export function resolveColorWithAlpha(parent: Element, theme: PptxTheme): { color: string; alpha?: number } | null {
-  const srgb = qs(parent, "srgbClr");
+  // Look inside solidFill first (preferred) to avoid finding srgbClr inside effectLst
+  const solidFill = qs(parent, "solidFill");
+  const colorParent = solidFill ?? parent;
+
+  const srgb = qs(colorParent, "srgbClr");
   if (srgb) {
     const color = applyColorTransforms(srgb, `#${getAttr(srgb, "val") ?? "000000"}`);
     const alpha = extractAlpha(srgb);
     return { color, alpha };
   }
 
-  const schemeClr = qs(parent, "schemeClr");
+  const schemeClr = qs(colorParent, "schemeClr");
   if (schemeClr) {
     const val = getAttr(schemeClr, "val");
     // Try direct lookup, then clrMap remapping, then default mapping
@@ -2500,18 +2527,36 @@ function extractPlaceholders(spTree: Element): PptxPlaceholder[] {
 }
 
 /** Parse default text styles from a slide master's p:txStyles */
-function parseTextStyles(doc: Document, theme: PptxTheme): { titleStyle?: PptxTextStyle; bodyStyle?: PptxTextStyle; bodyLevelStyles?: PptxTextStyle[] } {
+function parseTextStyles(doc: Document, theme: PptxTheme): {
+  titleStyle?: PptxTextStyle;
+  bodyStyle?: PptxTextStyle;
+  otherStyle?: PptxTextStyle;
+  titleLevelStyles?: PptxTextStyle[];
+  bodyLevelStyles?: PptxTextStyle[];
+  otherLevelStyles?: PptxTextStyle[];
+} {
   const txStyles = qs(doc, "txStyles");
   if (!txStyles) return {};
 
-  const titleStyle = parseTextStyleDef(qs(txStyles, "titleStyle"), theme);
-  const bodyStyle = parseTextStyleDef(qs(txStyles, "bodyStyle"), theme);
-  const bodyLevelStyles = parseTextStyleLevels(qs(txStyles, "bodyStyle"), theme);
+  const titleStyleEl = qs(txStyles, "titleStyle");
+  const bodyStyleEl = qs(txStyles, "bodyStyle");
+  const otherStyleEl = qs(txStyles, "otherStyle");
+
+  const titleStyle = parseTextStyleDef(titleStyleEl, theme);
+  const bodyStyle = parseTextStyleDef(bodyStyleEl, theme);
+  const otherStyle = parseTextStyleDef(otherStyleEl, theme);
+
+  const titleLevelStyles = titleStyleEl ? parseTextStyleLevels(titleStyleEl, theme) : [];
+  const bodyLevelStyles = bodyStyleEl ? parseTextStyleLevels(bodyStyleEl, theme) : [];
+  const otherLevelStyles = otherStyleEl ? parseTextStyleLevels(otherStyleEl, theme) : [];
 
   return {
     titleStyle: titleStyle ?? undefined,
     bodyStyle: bodyStyle ?? undefined,
+    otherStyle: otherStyle ?? undefined,
+    titleLevelStyles: titleLevelStyles.length > 0 ? titleLevelStyles : undefined,
     bodyLevelStyles: bodyLevelStyles.length > 0 ? bodyLevelStyles : undefined,
+    otherLevelStyles: otherLevelStyles.length > 0 ? otherLevelStyles : undefined,
   };
 }
 
@@ -2557,13 +2602,16 @@ function parseTextStyleDef(styleEl: Element | null, theme: PptxTheme): PptxTextS
 }
 
 /** Parse per-level text styles (lvl1pPr through lvl9pPr) from a text style definition. */
-function parseTextStyleLevels(styleEl: Element | null, theme: PptxTheme): PptxTextStyle[] {
+export function parseTextStyleLevels(styleEl: Element | null, theme: PptxTheme): PptxTextStyle[] {
   if (!styleEl) return [];
 
   const levels: PptxTextStyle[] = [];
   for (let i = 1; i <= 9; i++) {
     const lvl = qs(styleEl, `lvl${i}pPr`);
-    if (!lvl) break;
+    if (!lvl) {
+      levels.push({});
+      continue;
+    }
 
     const style: PptxTextStyle = {};
     const algn = getAttr(lvl, "algn");
@@ -2593,7 +2641,34 @@ function parseTextStyleLevels(styleEl: Element | null, theme: PptxTheme): PptxTe
       if (color) style.color = color;
     }
 
+    // Parse bullet info from level pPr
+    const buChar = qs(lvl, "buChar");
+    if (buChar) {
+      style.bulletChar = getAttr(buChar, "char") ?? "•";
+    }
+    const buAutoNum = qs(lvl, "buAutoNum");
+    if (buAutoNum) {
+      style.bulletAutoNumType = getAttr(buAutoNum, "type") ?? "arabicPeriod";
+    }
+    const buFont = qs(lvl, "buFont");
+    if (buFont) {
+      style.bulletFont = getAttr(buFont, "typeface") ?? undefined;
+    }
+    const buClr = qs(lvl, "buClr");
+    if (buClr) {
+      style.bulletColor = resolveColor(buClr, theme) ?? undefined;
+    }
+    const buSzPct = qs(lvl, "buSzPct");
+    if (buSzPct) {
+      style.bulletSizePercent = intAttr(buSzPct, "val", 100000) / 1000;
+    }
+
     levels.push(Object.keys(style).length > 0 ? style : {});
+  }
+
+  // Trim trailing empty entries
+  while (levels.length > 0 && Object.keys(levels[levels.length - 1]).length === 0) {
+    levels.pop();
   }
 
   return levels;
@@ -2709,9 +2784,9 @@ async function parseSlideMaster(
     : [];
   const placeholders = spTree ? extractPlaceholders(spTree) : [];
   const background = await parseBackground(doc, theme, rels, zip);
-  const { titleStyle, bodyStyle, bodyLevelStyles } = parseTextStyles(doc, theme);
+  const { titleStyle, bodyStyle, otherStyle, titleLevelStyles, bodyLevelStyles, otherLevelStyles } = parseTextStyles(doc, theme);
 
-  return { shapes, placeholders, background, titleStyle, bodyStyle, bodyLevelStyles, clrMap };
+  return { shapes, placeholders, background, titleStyle, bodyStyle, otherStyle, titleLevelStyles, bodyLevelStyles, otherLevelStyles, clrMap };
 }
 
 async function parseSlideLayout(
@@ -2805,57 +2880,165 @@ export function resolveInheritance(presentation: PptxPresentation): void {
     slide.masterShapes = master ? master.shapes.filter(isDecorativeShape) : [];
     slide.layoutShapes = layout ? layout.shapes.filter(isDecorativeShape) : [];
 
-    // 4. Apply master text style defaults to placeholder elements
-    if (master) {
-      for (const el of slide.elements) {
-        if (el.type !== "textbox" && el.type !== "shape") continue;
-        if (!el.placeholderType) continue;
+    // 4. Apply text style cascade defaults to all text elements
+    // Cascade order (lowest to highest priority):
+    //   Hardcoded defaults (18pt, left, black, body font)
+    //   → presentation defaultTextStyle
+    //   → master otherStyle (non-placeholders) / titleStyle|bodyStyle (placeholders)
+    //   → shape lstStyle
+    //   → paragraph defRPr (already applied during parsing)
+    //   → run rPr (already applied during parsing)
+    const defaultFs = (theme.defaultFontSize ?? 1800) / 100;
 
-        const isTitlePlaceholder =
-          el.placeholderType === "title" || el.placeholderType === "ctrTitle";
-        const isBodyPlaceholder =
-          el.placeholderType === "body" || el.placeholderType === "subTitle";
+    for (const el of slide.elements) {
+      if (el.type !== "textbox" && el.type !== "shape") continue;
 
-        if (!isTitlePlaceholder && !isBodyPlaceholder) continue;
+      const isTitlePlaceholder =
+        el.placeholderType === "title" || el.placeholderType === "ctrTitle";
 
-        const paragraphs = el.type === "textbox" ? el.paragraphs : el.text;
+      const paragraphs = el.type === "textbox" ? el.paragraphs : el.text;
+      const shapeLevelStyles = el.shapeLevelStyles;
 
-        for (const p of paragraphs) {
-          let masterStyle: PptxTextStyle | undefined;
-          if (isBodyPlaceholder && master.bodyLevelStyles) {
-            const levelIndex = Math.min(p.bulletLevel, master.bodyLevelStyles.length - 1);
-            if (levelIndex >= 0) masterStyle = master.bodyLevelStyles[levelIndex];
-          }
-          if (!masterStyle) {
-            masterStyle = isTitlePlaceholder ? master.titleStyle : master.bodyStyle;
-          }
-          if (!masterStyle) continue;
+      for (const p of paragraphs) {
+        // Build cascade defaults for this paragraph's bullet level
+        const cascadeDefaults = buildRunDefaults(
+          el.placeholderType,
+          p.bulletLevel,
+          master,
+          shapeLevelStyles,
+          presentation,
+        );
 
-          const defaultFs = (theme.defaultFontSize ?? 1800) / 100;
-          for (const run of p.runs) {
-            if (run.fontSize === defaultFs && masterStyle.fontSize) run.fontSize = masterStyle.fontSize;
-            if (run.color === "#000000" && masterStyle.color) run.color = masterStyle.color;
-            if (!run.bold && masterStyle.bold) run.bold = true;
-            if (masterStyle.fontFamily && run.fontFamily === theme.fonts.body && masterStyle.fontFamily !== theme.fonts.body) {
-              run.fontFamily = masterStyle.fontFamily;
-            }
+        // Apply cascade alignment only when the paragraph has NO explicit algn attribute.
+        // parseAlignment returns the theme default when no explicit algn is set.
+        if (!p.explicitAlignment && cascadeDefaults.alignment) {
+          p.alignment = cascadeDefaults.alignment;
+        }
+
+        // Apply cascade bullets when paragraph has no explicit bullet
+        if (!p.bulletChar && !p.bulletAutoNum) {
+          if (cascadeDefaults.bulletChar) {
+            p.bulletChar = cascadeDefaults.bulletChar;
+            if (cascadeDefaults.bulletFont) p.bulletFont = cascadeDefaults.bulletFont;
+            if (cascadeDefaults.bulletColor) p.bulletColor = cascadeDefaults.bulletColor;
+            if (cascadeDefaults.bulletSizePercent) p.bulletSizePercent = cascadeDefaults.bulletSizePercent;
+          } else if (cascadeDefaults.bulletAutoNumType) {
+            p.bulletAutoNum = { type: cascadeDefaults.bulletAutoNumType, startAt: 1 };
+            if (cascadeDefaults.bulletFont) p.bulletFont = cascadeDefaults.bulletFont;
+            if (cascadeDefaults.bulletColor) p.bulletColor = cascadeDefaults.bulletColor;
+            if (cascadeDefaults.bulletSizePercent) p.bulletSizePercent = cascadeDefaults.bulletSizePercent;
           }
         }
 
-        // Task #9: Title placeholders use heading font
-        if (isTitlePlaceholder) {
-          const titleParagraphs = el.type === "textbox" ? el.paragraphs : el.text;
-          for (const p of titleParagraphs) {
-            for (const run of p.runs) {
-              if (run.fontFamily === theme.fonts.body && theme.fonts.heading !== theme.fonts.body) {
-                run.fontFamily = theme.fonts.heading;
-              }
+        for (const run of p.runs) {
+          // Apply cascade defaults only when the run has the "default" value
+          // (i.e., no explicit value was set during parsing)
+          if (run.fontSize === defaultFs && cascadeDefaults.fontSize && cascadeDefaults.fontSize !== defaultFs) {
+            run.fontSize = cascadeDefaults.fontSize;
+          }
+          if (run.color === "#000000" && cascadeDefaults.color && cascadeDefaults.color !== "#000000") {
+            run.color = cascadeDefaults.color;
+          }
+          if (!run.bold && cascadeDefaults.bold) {
+            run.bold = true;
+          }
+          if (!run.italic && cascadeDefaults.italic) {
+            run.italic = true;
+          }
+          if (cascadeDefaults.fontFamily && run.fontFamily === theme.fonts.body && cascadeDefaults.fontFamily !== theme.fonts.body) {
+            run.fontFamily = cascadeDefaults.fontFamily;
+          }
+        }
+      }
+
+      // Title placeholders use heading font
+      if (isTitlePlaceholder) {
+        for (const p of paragraphs) {
+          for (const run of p.runs) {
+            if (run.fontFamily === theme.fonts.body && theme.fonts.heading !== theme.fonts.body) {
+              run.fontFamily = theme.fonts.heading;
             }
           }
         }
       }
     }
   }
+}
+
+/**
+ * Build cascaded text defaults for a shape element by walking the OOXML cascade.
+ * Returns the resolved defaults — the first non-undefined value wins (top-down priority).
+ */
+function buildRunDefaults(
+  placeholderType: string | undefined,
+  bulletLevel: number,
+  master: PptxSlideMaster | undefined,
+  shapeLevelStyles: PptxTextStyle[] | undefined,
+  presentation: PptxPresentation,
+): PptxTextStyle {
+  const defaults: PptxTextStyle = {};
+
+  // Apply from highest to lowest priority — applyStyleIfEmpty only sets unset fields,
+  // so the first (highest priority) value wins.
+
+  // 1. Shape lstStyle (highest cascade priority below explicit rPr/defRPr)
+  if (shapeLevelStyles) {
+    const lvlIdx = Math.min(bulletLevel, shapeLevelStyles.length - 1);
+    if (lvlIdx >= 0) applyStyleIfEmpty(defaults, shapeLevelStyles[lvlIdx]);
+  }
+
+  // 2. Master styles (depends on placeholder type)
+  if (master) {
+    const isTitlePlaceholder = placeholderType === "title" || placeholderType === "ctrTitle";
+    const isBodyPlaceholder = placeholderType === "body" || placeholderType === "subTitle";
+
+    if (isTitlePlaceholder) {
+      if (master.titleLevelStyles) {
+        const lvlIdx = Math.min(bulletLevel, master.titleLevelStyles.length - 1);
+        if (lvlIdx >= 0) applyStyleIfEmpty(defaults, master.titleLevelStyles[lvlIdx]);
+      }
+      if (master.titleStyle) applyStyleIfEmpty(defaults, master.titleStyle);
+    } else if (isBodyPlaceholder) {
+      if (master.bodyLevelStyles) {
+        const lvlIdx = Math.min(bulletLevel, master.bodyLevelStyles.length - 1);
+        if (lvlIdx >= 0) applyStyleIfEmpty(defaults, master.bodyLevelStyles[lvlIdx]);
+      }
+      if (master.bodyStyle) applyStyleIfEmpty(defaults, master.bodyStyle);
+    } else {
+      // Non-placeholder: use otherStyle
+      if (master.otherLevelStyles) {
+        const lvlIdx = Math.min(bulletLevel, master.otherLevelStyles.length - 1);
+        if (lvlIdx >= 0) applyStyleIfEmpty(defaults, master.otherLevelStyles[lvlIdx]);
+      }
+      if (master.otherStyle) applyStyleIfEmpty(defaults, master.otherStyle);
+    }
+  }
+
+  // 3. Presentation defaultTextStyle (lowest cascade priority)
+  if (presentation.defaultTextLevelStyles) {
+    const lvlIdx = Math.min(bulletLevel, presentation.defaultTextLevelStyles.length - 1);
+    if (lvlIdx >= 0) applyStyleIfEmpty(defaults, presentation.defaultTextLevelStyles[lvlIdx]);
+  }
+  if (presentation.defaultTextStyle) {
+    applyStyleIfEmpty(defaults, presentation.defaultTextStyle);
+  }
+
+  return defaults;
+}
+
+/** Apply style properties to defaults only where the default is not yet set. */
+function applyStyleIfEmpty(defaults: PptxTextStyle, style: PptxTextStyle): void {
+  if (style.fontSize !== undefined && defaults.fontSize === undefined) defaults.fontSize = style.fontSize;
+  if (style.fontFamily !== undefined && defaults.fontFamily === undefined) defaults.fontFamily = style.fontFamily;
+  if (style.color !== undefined && defaults.color === undefined) defaults.color = style.color;
+  if (style.bold !== undefined && defaults.bold === undefined) defaults.bold = style.bold;
+  if (style.italic !== undefined && defaults.italic === undefined) defaults.italic = style.italic;
+  if (style.alignment !== undefined && defaults.alignment === undefined) defaults.alignment = style.alignment;
+  if (style.bulletChar !== undefined && defaults.bulletChar === undefined) defaults.bulletChar = style.bulletChar;
+  if (style.bulletAutoNumType !== undefined && defaults.bulletAutoNumType === undefined) defaults.bulletAutoNumType = style.bulletAutoNumType;
+  if (style.bulletFont !== undefined && defaults.bulletFont === undefined) defaults.bulletFont = style.bulletFont;
+  if (style.bulletColor !== undefined && defaults.bulletColor === undefined) defaults.bulletColor = style.bulletColor;
+  if (style.bulletSizePercent !== undefined && defaults.bulletSizePercent === undefined) defaults.bulletSizePercent = style.bulletSizePercent;
 }
 
 /** Find a matching placeholder in layout then master by type + idx */

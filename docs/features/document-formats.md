@@ -259,7 +259,7 @@ View PowerPoint presentations directly in Notesage with high-fidelity slide rend
 
 | PPTX Element | Rendering |
 | --- | --- |
-| Text boxes | Styled `<div>` with paragraph/run formatting (bold, italic, underline, strikethrough, superscript/subscript, font, size, color, alignment, bullets, character spacing, text caps). `bodyPr` respected: vertical alignment (top/center/bottom), internal margins, font scaling (`normAutofit`), auto-fit overflow, no-wrap mode. Line/paragraph spacing (`lnSpc`, `spcBef`, `spcAft`), first-line indent, left margin. Auto-numbered bullets (`buAutoNum`: arabic, alpha, roman formats) with bullet font, color, and size |
+| Text boxes | Styled `<div>` with paragraph/run formatting (bold, italic, underline, strikethrough, superscript/subscript, font, size, color, alignment, bullets, character spacing, text caps). `bodyPr` respected: vertical alignment (top/center/bottom), internal margins, font scaling (`normAutofit`), `spAutoFit` (grow shape to fit text via `height:auto` + `minHeight`), no-wrap mode. Line/paragraph spacing (`lnSpc`, `spcBef`, `spcAft`), first-line indent, left margin. Auto-numbered bullets (`buAutoNum`: arabic, alpha, roman formats) with bullet font, color, and size. Full OOXML text cascade: presentation `defaultTextStyle` → master `txStyles` (titleStyle/bodyStyle/otherStyle with per-level overrides) → shape `lstStyle` → paragraph `defRPr` → run `rPr` |
 | Images | `<img>` with base64 data URLs extracted from ZIP media/. `alphaModFix` opacity support |
 | Shapes (rect, ellipse, roundRect, + 44 presets) | `<div>` or SVG `<path>` with CSS border-radius, background, border. `flipH`/`flipV` combined with rotation. 11 OOXML dash presets mapped to CSS `border-style` and SVG `stroke-dasharray` |
 | Lines and arrows | `<svg>` with `<line>` and arrowhead markers (head/tail, 5 arrow types: triangle, stealth, diamond, oval, arrow). Dash styles supported |
@@ -318,7 +318,7 @@ View PowerPoint presentations directly in Notesage with high-fidelity slide rend
 - Master/layout inheritance: slide masters and layouts parsed and merged into each slide's shape tree with correct z-order and placeholder deduplication
 - Preset geometry engine: 44 DrawingML preset shapes rendered as computed SVG paths
 - EMU to pixel conversion: 1 pixel = 9525 EMU at 96 DPI
-- 79 unit tests covering color transforms (26 tests), bullet numbering (36 tests), and tier 4 features (17 tests: character spacing, text caps, image transparency, arrow heads)
+- 128 unit tests covering color transforms (26 tests), bullet numbering (36 tests), tier 4 features (17 tests), autoFit/bodyPr (14 tests), text cascade (19 tests), rendering regression (26 tests — smoke tests for all 12 fixture files)
 
 ## Key Files
 

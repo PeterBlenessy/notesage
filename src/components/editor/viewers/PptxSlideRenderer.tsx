@@ -419,8 +419,15 @@ function TextBoxRenderer({
     <ParagraphsRenderer paragraphs={el.paragraphs} onSlideNavigate={onSlideNavigate} />
   );
 
+  const pos = positionStyle(el, px);
+  // spAutoFit: grow shape to fit text content
+  if (el.bodyProps?.autoFit) {
+    pos.height = "auto";
+    pos.minHeight = px(el.height);
+  }
+
   const inner = (
-    <div style={{ ...positionStyle(el, px), ...bodyStyle, boxShadow: shadowToCSS(el.shadow) }}>
+    <div style={{ ...pos, ...bodyStyle, boxShadow: shadowToCSS(el.shadow) }}>
       {el.bodyProps && el.bodyProps.fontScale < 1 ? (
         <div style={{ fontSize: `${el.bodyProps.fontScale * 100}%` }}>{content}</div>
       ) : content}
@@ -450,12 +457,18 @@ export function ParagraphsRenderer({
         const bulletLabel = p.bulletChar
           ?? (p.bulletAutoNum ? bulletCounters[i] ?? "" : null);
 
+        // Compute bullet font size: bulletSizePercent is relative to the text run size
+        const textFontSize = p.runs.length > 0 ? p.runs[0].fontSize : undefined;
+        const bulletFontSize = (p.bulletSizePercent != null && textFontSize != null)
+          ? textFontSize * (p.bulletSizePercent / 100)
+          : textFontSize; // default to same size as text
+
         const bulletStyle: CSSProperties | undefined =
-          (p.bulletFont || p.bulletColor || p.bulletSizePercent) ? {
+          (p.bulletFont || p.bulletColor || bulletFontSize != null) ? {
             flexShrink: 0,
             fontFamily: p.bulletFont ?? undefined,
             color: p.bulletColor ?? undefined,
-            fontSize: p.bulletSizePercent != null ? `${p.bulletSizePercent}%` : undefined,
+            fontSize: bulletFontSize != null ? bulletFontSize : undefined,
           } : { flexShrink: 0 };
 
         const basePaddingLeft = p.bulletLevel ? p.bulletLevel * 20 : 0;
@@ -468,6 +481,7 @@ export function ParagraphsRenderer({
               textAlign: p.alignment,
               paddingLeft: basePaddingLeft + extraMarginLeft || undefined,
               display: "flex",
+              alignItems: bulletLabel ? "baseline" : undefined,
               gap: bulletLabel ? 4 : undefined,
               lineHeight: p.lineSpacing != null ? p.lineSpacing : undefined,
               marginTop: p.spaceBefore != null ? p.spaceBefore : undefined,
@@ -763,8 +777,15 @@ function ShapeRenderer({
     filters.push(`blur(${el.softEdge}px)`);
   }
 
+  const pos = positionStyle(el, px);
+  // spAutoFit: grow shape to fit text content
+  if (el.bodyProps?.autoFit) {
+    pos.height = "auto";
+    pos.minHeight = px(el.height);
+  }
+
   const style: CSSProperties = {
-    ...positionStyle(el, px),
+    ...pos,
     ...(el.fill ? fillToCSS(el.fill) : {}),
     border: el.stroke ? `${Math.max(1, el.strokeWidth)}px ${borderStyle} ${el.stroke}` : undefined,
     borderRadius: el.shapeType === "ellipse" ? "50%" : el.shapeType === "roundRect" ? 8 : undefined,
@@ -823,6 +844,11 @@ function PresetShapeRenderer({
   const w = px(el.width);
   const h = px(el.height);
   const pos = positionStyle(el, px);
+  // spAutoFit: grow shape wrapper to fit text content
+  if (el.bodyProps?.autoFit) {
+    pos.height = "auto";
+    pos.minHeight = h;
+  }
 
   // Resolve fill color for the SVG path
   const fillColor = el.fill
@@ -904,12 +930,12 @@ function PresetShapeRenderer({
           top: 0,
           left: 0,
           width: w,
-          height: h,
+          ...(el.bodyProps?.autoFit ? { minHeight: h, height: "auto" } : { height: h }),
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           padding: 4,
-          overflow: "hidden",
+          overflow: el.bodyProps?.autoFit ? undefined : "hidden",
         }}>
           {wrappedText}
         </div>

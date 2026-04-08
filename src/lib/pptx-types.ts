@@ -10,6 +10,8 @@ export interface PptxPresentation {
   theme: PptxTheme;
   masters: PptxSlideMaster[];
   layouts: PptxSlideLayout[];
+  defaultTextStyle?: PptxTextStyle;
+  defaultTextLevelStyles?: PptxTextStyle[];
   sections?: PptxSection[];
 }
 
@@ -72,10 +74,13 @@ export interface PptxTextBox {
   shadow?: PptxShadow;
   placeholderType?: string;
   placeholderIdx?: number;
+  shapeLevelStyles?: PptxTextStyle[];
 }
 
 export interface PptxParagraph {
   alignment: "left" | "center" | "right" | "justify";
+  /** True when the paragraph has an explicit algn attribute in pPr (not defaulted from theme) */
+  explicitAlignment?: boolean;
   runs: PptxTextRun[];
   bulletChar: string | null;
   bulletLevel: number;
@@ -176,6 +181,7 @@ export interface PptxShape {
   softEdge?: number;  // radius in px
   placeholderType?: string;
   placeholderIdx?: number;
+  shapeLevelStyles?: PptxTextStyle[];
 }
 
 export type PptxFill =
@@ -365,7 +371,10 @@ export interface PptxSlideMaster {
   background: PptxBackground | null;
   titleStyle?: PptxTextStyle;
   bodyStyle?: PptxTextStyle;
+  otherStyle?: PptxTextStyle;
+  titleLevelStyles?: PptxTextStyle[];
   bodyLevelStyles?: PptxTextStyle[];
+  otherLevelStyles?: PptxTextStyle[];
   clrMap?: Record<string, string>;
 }
 
@@ -376,6 +385,11 @@ export interface PptxTextStyle {
   italic?: boolean;
   color?: string;
   alignment?: 'left' | 'center' | 'right' | 'justify';
+  bulletChar?: string;
+  bulletAutoNumType?: string;
+  bulletFont?: string;
+  bulletColor?: string;
+  bulletSizePercent?: number;
 }
 
 export interface PptxComment {
