@@ -337,6 +337,16 @@ async function parseTheme(zip: JSZip): Promise<PptxTheme> {
       const sz = getAttr(spDefRPr, "sz");
       if (sz) defaults.defaultFontSize = parseInt(sz, 10);
     }
+    // Default alignment from spDef lstStyle
+    const spDefLstStyle = qs(spDef, "lstStyle");
+    if (spDefLstStyle) {
+      const spDefPPr = qs(spDefLstStyle, "defPPr");
+      if (spDefPPr) {
+        const algnVal = getAttr(spDefPPr, "algn");
+        const algnMap: Record<string, PptxTheme["defaultAlignment"]> = { l: "left", ctr: "center", r: "right", just: "justify" };
+        if (algnVal && algnMap[algnVal]) defaults.defaultAlignment = algnMap[algnVal];
+      }
+    }
   }
 
   // Table styles from theme XML
@@ -808,7 +818,7 @@ function parseParagraphs(txBody: Element, theme: PptxTheme, rels?: Record<string
 
   for (const pEl of pEls) {
     const pPr = qs(pEl, "pPr");
-    const alignment = parseAlignment(pPr);
+    const alignment = parseAlignment(pPr, theme);
     const bullet = parseBullet(pPr, theme);
     const spacing = parseParagraphSpacing(pPr);
     const defRPr = pPr ? qs(pPr, "defRPr") : null;
@@ -849,13 +859,14 @@ function parseParagraphs(txBody: Element, theme: PptxTheme, rels?: Record<string
   return paragraphs;
 }
 
-function parseAlignment(pPr: Element | null): PptxParagraph["alignment"] {
-  if (!pPr) return "left";
+function parseAlignment(pPr: Element | null, theme?: PptxTheme): PptxParagraph["alignment"] {
+  const defaultAlign = theme?.defaultAlignment ?? "left";
+  if (!pPr) return defaultAlign;
   const algn = getAttr(pPr, "algn");
   const map: Record<string, PptxParagraph["alignment"]> = {
     l: "left", ctr: "center", r: "right", just: "justify",
   };
-  return map[algn ?? ""] ?? "left";
+  return map[algn ?? ""] ?? defaultAlign;
 }
 
 interface BulletInfo {

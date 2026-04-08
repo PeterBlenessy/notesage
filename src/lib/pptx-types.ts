@@ -338,6 +338,7 @@ export interface PptxTheme {
   colors: Record<string, string>;
   fonts: { heading: string; body: string };
   defaultFontSize?: number;  // from theme objectDefaults, in hundredths of point (e.g., 2400 = 24pt)
+  defaultAlignment?: 'left' | 'center' | 'right' | 'justify';  // from theme objectDefaults spDef
   clrMap?: Record<string, string>;
   tableStyles?: Map<string, PptxTableStyle>;
 }
