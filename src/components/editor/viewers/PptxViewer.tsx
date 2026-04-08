@@ -9,6 +9,7 @@ import { SlideRenderer } from "./PptxSlideRenderer";
 import { PptxSearchBar, usePptxSearch } from "./PptxSearchBar";
 import { PptxZoomControls, usePptxZoom } from "./PptxZoomControls";
 import { PptxCommentOverlay } from "./PptxCommentOverlay";
+import { useEditorStore } from "@/stores/editor-store";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -30,7 +31,14 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
   const [presentation, setPresentation] = useState<PptxPresentation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentSlide, setCurrentSlide] = useState(0);
+  // Restore last-viewed slide from persisted scroll positions
+  const savedSlideRef = useRef(Math.round(useEditorStore.getState().scrollPositions[filePath] ?? 0));
+  const setScrollPosition = useEditorStore((s) => s.setScrollPosition);
+  const [currentSlide, setCurrentSlideRaw] = useState(0);
+  const setCurrentSlide = useCallback((idx: number) => {
+    setCurrentSlideRaw(idx);
+    setScrollPosition(filePath, idx);
+  }, [filePath, setScrollPosition]);
   const [notesOpen, setNotesOpen] = useState(false);
   const [jumpInput, setJumpInput] = useState(false);
   const [jumpValue, setJumpValue] = useState("");
@@ -101,7 +109,10 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
     parsePptx(data)
       .then((pres) => {
         setPresentation(pres);
-        setCurrentSlide(0);
+        // Restore saved slide, clamped to valid range
+        const maxSlide = Math.max(0, pres.slides.length - 1);
+        const restoredSlide = Math.min(savedSlideRef.current, maxSlide);
+        setCurrentSlideRaw(restoredSlide);
         setLoading(false);
       })
       .catch((err) => {

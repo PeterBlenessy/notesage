@@ -139,6 +139,9 @@ describe("PptxViewer", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    // Clear any persisted slide position from previous tests
+    const { useEditorStore } = await import("@/stores/editor-store");
+    useEditorStore.getState().setScrollPosition("/test.pptx", 0);
     const parser = await import("@/lib/pptx-parser");
     parsePptxMock = parser.parsePptx as unknown as ReturnType<typeof vi.fn>;
     const mod = await import("./PptxViewer");
