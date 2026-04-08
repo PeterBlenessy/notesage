@@ -487,9 +487,8 @@ export function useDirectApiChat({
         let tools: ToolDefinition[] | undefined;
         const toolCallingEnabled = useSettingsStore.getState().toolCallingEnabled;
         if (toolCallingEnabled) {
-          const activeAgent = useSkillStore.getState().getActiveAgent();
-          const allowedTools = activeAgent?.allowed_tools ?? undefined;
-          tools = useSkillStore.getState().getToolDefinitions(allowedTools);
+          // All tools available to all agents — user controls access via permission system
+          tools = useSkillStore.getState().getToolDefinitions();
           if (tools.length === 0) tools = undefined;
         }
 

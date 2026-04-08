@@ -104,8 +104,8 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
   const skillTools = useSkillStore((s) => s.skillTools);
   const toolDefs = useMemo(() => {
     if (!toolCallingEnabled) return [];
-    const agent = useSkillStore.getState().getActiveAgent();
-    return useSkillStore.getState().getToolDefinitions(agent?.allowed_tools ?? undefined);
+    // All tools available to all agents — user controls access via permission system
+    return useSkillStore.getState().getToolDefinitions();
   }, [toolCallingEnabled, skillTools, activeAgentName, agents, agentEnabledOverrides]);
 
   const [providerOpen, setProviderOpen] = useState(false);

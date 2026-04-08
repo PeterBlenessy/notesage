@@ -113,13 +113,13 @@ describe('useDirectApiChat — tool calling', () => {
     expect(args.tools).toBeNull();
   });
 
-  it('filters tools by active agent allowed_tools', async () => {
+  it('sends all tools regardless of agent allowed_tools', async () => {
     useSkillStore.setState({
       skills: [],
       agents: [
         {
           name: 'restricted-agent',
-          description: 'An agent with restricted tools',
+          description: 'An agent with allowed_tools set',
           path: '/agents/restricted',
           source: 'notesage-global',
           allowed_tools: ['read_file'],
@@ -140,9 +140,10 @@ describe('useDirectApiChat — tool calling', () => {
     expect(invokeCall).toBeDefined();
     const args = invokeCall![1] as Record<string, unknown>;
     const tools = args.tools as Array<{ name: string }>;
-    // Only the allowed tool
-    expect(tools).toHaveLength(1);
-    expect(tools[0].name).toBe('read_file');
+    // All built-in tools available — user controls access via permission system
+    expect(tools.length).toBeGreaterThanOrEqual(6);
+    expect(tools.some((t) => t.name === 'read_file')).toBe(true);
+    expect(tools.some((t) => t.name === 'web_search')).toBe(true);
   });
 });
 

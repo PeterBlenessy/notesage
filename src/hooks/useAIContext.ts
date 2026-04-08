@@ -65,27 +65,10 @@ export function useAIContext(): UseAIContextReturn {
     return s.tabs.find((t) => t.id === s.activeTabId) ?? null;
   });
 
-  // Skill context for AI prompts — filtered by active agent's allowed-tools
-  const agentAllowedTools = activeAgent?.allowed_tools;
-  const skillDescriptions = useSkillStore((s) => {
-    const desc = s.getSkillDescriptionsForPrompt();
-    if (!agentAllowedTools || agentAllowedTools.length === 0) return desc;
-    const active = s.getActiveSkills().filter((sk) => agentAllowedTools.includes(sk.name));
-    if (active.length === 0) return '';
-    const lines = active.map((sk) => `- **${sk.name}**: ${sk.description}${sk.has_scripts ? ' (has scripts)' : ''}`);
-    return `\n\nAvailable skills:\n${lines.join('\n')}`;
-  });
-  const notesageSkillDescriptions = useSkillStore((s) => {
-    const desc = s.getNotesageSkillDescriptionsForPrompt();
-    if (!agentAllowedTools || agentAllowedTools.length === 0) return desc;
-    const active = s.getActiveSkills().filter(
-      (sk) => agentAllowedTools.includes(sk.name) &&
-        (sk.source === 'notesage-project' || sk.source === 'notesage-global')
-    );
-    if (active.length === 0) return '';
-    const lines = active.map((sk) => `- **${sk.name}** (${sk.path}/SKILL.md): ${sk.description}${sk.has_scripts ? ' — has executable scripts in scripts/' : ''}`);
-    return `\n\n<notesage-skills>\nThe user has Notesage skills installed. To use a skill, read its SKILL.md file for instructions.\n\n${lines.join('\n')}\n</notesage-skills>`;
-  });
+  // Skill context for AI prompts — all skills available to all agents,
+  // user controls access via the permission system (allow/reject per call)
+  const skillDescriptions = useSkillStore((s) => s.getSkillDescriptionsForPrompt());
+  const notesageSkillDescriptions = useSkillStore((s) => s.getNotesageSkillDescriptionsForPrompt());
   const agentInstructions = useSkillStore((s) => s.getMergedAgentInstructions());
   const notesageAgentInstructions = useSkillStore((s) => s.getNotesageAgentInstructions());
 
