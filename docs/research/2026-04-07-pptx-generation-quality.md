@@ -5,10 +5,12 @@
 | **Date** | 2026-04-07 |
 | **Status** | Research complete |
 | **Library** | PptxGenJS v3.12.0 |
-| **Current usage** | \~5% of library capabilities |
-| **Script** | `bundled-skills/generate-presentation/scripts/generate.mjs` (782 lines) |
-| **PRD** | [rich-pptx-generation](../prds/2026-04-07-rich-pptx-generation.md) (Draft) |
-| **Tasks** | [rich-pptx-generation-tasks](../tasks/2026-04-07-rich-pptx-generation-tasks.md) (18 tasks: 9S, 7M, 2L) |
+| **Current usage** | \~40% of library capabilities |
+| **Script** | `bundled-skills/generate-presentation/scripts/generate.mjs` (1381 lines) |
+| **PRD 1** | [rich-pptx-generation](../prds/2026-04-07-rich-pptx-generation.md) (Complete — 17/17 tasks) |
+| **Tasks 1** | [rich-pptx-generation-tasks](../tasks/2026-04-07-rich-pptx-generation-tasks.md) (17 done, 1 not planned) |
+| **PRD 2** | [pptx-generation-polish](../prds/2026-04-08-pptx-generation-polish.md) (Draft — 26 features across 5 tiers) |
+| **Tasks 2** | [pptx-generation-polish-tasks](../tasks/2026-04-08-pptx-generation-polish-tasks.md) (Not started) |
 
 ## Context
 
