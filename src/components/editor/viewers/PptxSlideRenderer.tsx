@@ -1164,11 +1164,11 @@ function TableRenderer({
   const rowCount = el.rows.length;
 
   return (
-    <div style={{ ...positionStyle(el, px), overflow: "hidden" }}>
+    <div style={{ ...positionStyle(el, px), overflow: "visible" }}>
       <table
         style={{
-          width: "100%",
-          height: "100%",
+          width: px(el.width),
+          height: px(el.height),
           borderCollapse: "collapse",
           tableLayout: "fixed",
         }}
