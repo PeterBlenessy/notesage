@@ -96,3 +96,4 @@ Chronological log of major implementation milestones and changes.
 | 090 | [Release v0.29.0](090-release-v0.29.0.md) | System tray, notifications, quick capture, autostart, image attachments, UI polish |
 | 091 | [Release v0.30.0](091-release-v0.30.0.md) | PptxGenJS presentation skill, response image rendering, sidebar UX, agent tools |
 | 092 | [Release v0.30.1](092-release-v0.30.1.md) | Fix speaker notes parsing for escaped brackets |
+| 093 | [Release v0.30.2](093-release-v0.30.2.md) | PPTX viewer v2 (21 tasks), rich PPTX generation (17 tasks), 3 bug fixes |
