@@ -10,6 +10,12 @@ export interface PptxPresentation {
   theme: PptxTheme;
   masters: PptxSlideMaster[];
   layouts: PptxSlideLayout[];
+  sections?: PptxSection[];
+}
+
+export interface PptxSection {
+  name: string;
+  startSlide: number;
 }
 
 export interface PptxSlide {
@@ -22,7 +28,10 @@ export interface PptxSlide {
     showDate: boolean;
     showFooter: boolean;
     showSlideNum: boolean;
+    dateText?: string;
+    footerText?: string;
   };
+  comments?: PptxComment[];
   layoutIndex?: number;
   masterIndex?: number;
   masterShapes?: PptxElement[];
@@ -82,6 +91,7 @@ export interface PptxParagraph {
   bulletFont?: string;
   bulletColor?: string;
   bulletSizePercent?: number; // relative to text size, e.g., 100
+  tabStops?: { pos: number; align: string }[];  // pos in px (converted from EMU)
 }
 
 export interface PptxTextRun {
@@ -89,6 +99,8 @@ export interface PptxTextRun {
   bold: boolean;
   italic: boolean;
   underline: boolean;
+  underlineStyle?: string;   // raw OOXML underline type (sng, dbl, heavy, dotted, dash, wavy, etc.)
+  underlineColor?: string;   // hex color for underline
   strikethrough?: "single" | "double";
   baseline?: number; // positive = superscript, negative = subscript (in 1000ths of %)
   fontSize: number;
@@ -96,6 +108,10 @@ export interface PptxTextRun {
   color: string;
   letterSpacing?: number;
   caps?: "all" | "small";
+  highlight?: string;        // hex color for text background highlight
+  kern?: number;             // minimum font size in hundredths of a point for kerning
+  eaFont?: string;           // East Asian font
+  csFont?: string;           // Complex Script font
   hyperlink?: string; // external URL or "slide:N" for internal links
 }
 
@@ -118,6 +134,14 @@ export interface PptxImage {
     bottom: number;  // percentage 0-100
   };
   shadow?: PptxShadow;
+  reflection?: {
+    blurRadius: number;   // px
+    startOpacity: number; // 0-1
+    endOpacity: number;   // 0-1
+    distance: number;     // px gap between image and reflection
+    direction: number;    // degrees (typically 90 = below)
+    size: number;         // percentage of image height to reflect (0-100)
+  };
 }
 
 export interface ArrowHead {
@@ -147,6 +171,8 @@ export interface PptxShape {
   bodyProps?: BodyProperties;
   hyperlink?: string;
   shadow?: PptxShadow;
+  glow?: { radius: number; color: string; alpha: number };
+  softEdge?: number;  // radius in px
   placeholderType?: string;
   placeholderIdx?: number;
 }
@@ -155,7 +181,8 @@ export type PptxFill =
   | { type: "solid"; color: string; alpha?: number }
   | { type: "linear"; angle: number; stops: PptxGradientStop[] }
   | { type: "radial"; stops: PptxGradientStop[] }
-  | { type: "pattern"; foreground: string };
+  | { type: "pattern"; preset?: string; foreground: string; background?: string }
+  | { type: "picture"; dataUrl: string; stretch?: boolean; tile?: boolean; crop?: { left: number; top: number; right: number; bottom: number } };
 
 export interface PptxGradientStop {
   position: number;
@@ -191,6 +218,14 @@ export interface PptxChart {
   };
   showDataLabels?: boolean;
   dataLabelType?: "value" | "category" | "percentage";
+  /** Data label position from dLblPos: "t" | "b" | "l" | "r" | "ctr" | "outEnd" | "inEnd" | "inBase" */
+  dataLabelPosition?: string;
+  /** Secondary value axis (when chart has two valAx elements) */
+  secondaryAxis?: {
+    title?: string;
+    visible: boolean;
+    numberFormat?: string;
+  };
 }
 
 export interface PptxChartSeries {
@@ -201,6 +236,35 @@ export interface PptxChartSeries {
   xValues?: number[];
   /** Bubble sizes for bubble charts */
   bubbleSizes?: number[];
+  /** Which axis this series belongs to — "right" for secondary axis */
+  axisId?: string;
+  /** Trendline configuration */
+  trendline?: {
+    type: "linear" | "exponential" | "polynomial" | "power" | "logarithmic";
+    order?: number;
+    forward?: number;
+    backward?: number;
+  };
+}
+
+export interface PptxTableStylePart {
+  fill?: string;  // hex color
+  bold?: boolean;
+  italic?: boolean;
+  fontSize?: number;
+  fontColor?: string;
+}
+
+export interface PptxTableStyle {
+  wholeTbl?: PptxTableStylePart;
+  band1H?: PptxTableStylePart;
+  band2H?: PptxTableStylePart;
+  band1V?: PptxTableStylePart;
+  band2V?: PptxTableStylePart;
+  firstRow?: PptxTableStylePart;
+  lastRow?: PptxTableStylePart;
+  firstCol?: PptxTableStylePart;
+  lastCol?: PptxTableStylePart;
 }
 
 export interface PptxTable {
@@ -210,6 +274,13 @@ export interface PptxTable {
   width: number;
   height: number;
   rows: PptxTableRow[];
+  style?: PptxTableStyle;
+  bandRow?: boolean;
+  bandCol?: boolean;
+  firstRow?: boolean;
+  lastRow?: boolean;
+  firstCol?: boolean;
+  lastCol?: boolean;
 }
 
 export interface PptxTableRow {
@@ -227,7 +298,7 @@ export interface CellBorder {
 export interface PptxTableCell {
   width: number;
   paragraphs: PptxParagraph[];
-  fill: string | null;
+  fill: string | PptxFill | null;  // string for hex color, PptxFill for gradient/pattern
   colspan: number;
   rowspan: number;
   borders?: {
@@ -265,6 +336,7 @@ export interface PptxBackground {
 export interface PptxTheme {
   colors: Record<string, string>;
   fonts: { heading: string; body: string };
+  tableStyles?: Map<string, PptxTableStyle>;
 }
 
 export interface PptxPlaceholder {
@@ -298,4 +370,12 @@ export interface PptxTextStyle {
   italic?: boolean;
   color?: string;
   alignment?: 'left' | 'center' | 'right' | 'justify';
+}
+
+export interface PptxComment {
+  author: string;
+  date: string;
+  text: string;
+  x: number;  // EMU position on slide
+  y: number;  // EMU position on slide
 }

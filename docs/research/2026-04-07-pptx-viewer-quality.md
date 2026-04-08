@@ -4,7 +4,7 @@
 | --- | --- |
 | **Date** | 2026-04-07 |
 | **Status** | Research complete |
-| **Current coverage** | ~60% of 163 inventoried OOXML features (post v2) |
+| **Current coverage** | \~60% of 163 inventoried OOXML features (post v2) |
 | **Code size** | \~1555 lines across 5 files |
 | **PRD 1** | [pptx-viewer-v2](../prds/2026-04-07-pptx-viewer-v2.md) (Complete — 21/21 tasks) |
 | **Tasks 1** | [pptx-viewer-v2-tasks](../tasks/2026-04-07-pptx-viewer-v2-tasks.md) (21 done) |

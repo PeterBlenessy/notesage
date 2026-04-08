@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef, useCallback } from "react";
-import { StickyNote, ChevronLeft, ChevronRight, Box } from "lucide-react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { StickyNote, ChevronLeft, ChevronRight, Box, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { getBinaryData } from "@/lib/binary-cache";
@@ -8,6 +8,7 @@ import type { PptxPresentation } from "@/lib/pptx-types";
 import { SlideRenderer } from "./PptxSlideRenderer";
 import { PptxSearchBar, usePptxSearch } from "./PptxSearchBar";
 import { PptxZoomControls, usePptxZoom } from "./PptxZoomControls";
+import { PptxCommentOverlay } from "./PptxCommentOverlay";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -33,6 +34,7 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
   const [notesOpen, setNotesOpen] = useState(false);
   const [jumpInput, setJumpInput] = useState(false);
   const [jumpValue, setJumpValue] = useState("");
+  const [commentsVisible, setCommentsVisible] = useState(false);
 
   const viewerRef = useRef<HTMLDivElement>(null);
   const slideContainerRef = useRef<HTMLDivElement>(null);
@@ -43,6 +45,19 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
   const isLegacyPpt = fileName.toLowerCase().endsWith(".ppt");
   const slideCount = presentation?.slides.length ?? 0;
   const slide = presentation?.slides[currentSlide] ?? null;
+  const hasAnyComments = useMemo(
+    () => presentation?.slides.some((s) => s.comments && s.comments.length > 0) ?? false,
+    [presentation],
+  );
+  const currentSection = useMemo(() => {
+    if (!presentation?.sections) return undefined;
+    let section = presentation.sections[0];
+    for (const s of presentation.sections) {
+      if (s.startSlide <= currentSlide) section = s;
+      else break;
+    }
+    return section;
+  }, [presentation, currentSlide]);
 
   // ---------------------------------------------------------------------------
   // Zoom
@@ -209,11 +224,30 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
         >
           <StickyNote className="h-3.5 w-3.5" strokeWidth={1.5} />
         </Button>
+        {hasAnyComments && (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => setCommentsVisible(!commentsVisible)}
+            className={commentsVisible ? "bg-accent text-foreground" : "text-muted-foreground"}
+            title="Comments"
+          >
+            <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </Button>
+        )}
         {slideCount > 0 && (
           <>
             <Separator orientation="vertical" className="h-4 mx-1" />
             <span className="text-xs text-muted-foreground tabular-nums">
               Slide {currentSlide + 1} / {slideCount}
+            </span>
+          </>
+        )}
+        {currentSection && (
+          <>
+            <Separator orientation="vertical" className="h-4 mx-1" />
+            <span className="text-xs text-muted-foreground truncate max-w-[160px]" title={currentSection.name}>
+              {currentSection.name}
             </span>
           </>
         )}
@@ -256,6 +290,12 @@ export function PptxViewer({ filePath, fileName }: PptxViewerProps) {
                   }}
                 >
                   <SlideRenderer slide={slide} theme={presentation!.theme} onSlideNavigate={goToSlide} />
+                  {commentsVisible && slide.comments && slide.comments.length > 0 && (
+                    <PptxCommentOverlay
+                      comments={slide.comments}
+                      px={(emu: number) => emu / EMU_PER_PX}
+                    />
+                  )}
                 </div>
               </div>
             </div>

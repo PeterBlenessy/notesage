@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import React, { useState, type CSSProperties, type ReactNode } from "react";
 import { Play, BarChart3, Box } from "lucide-react";
 import type {
   PptxSlide,
@@ -16,9 +16,11 @@ import type {
   PptxTextRun,
   PptxShadow,
   ArrowHead,
+  PptxTableStylePart,
 } from "@/lib/pptx-types";
 import { ChartRenderer } from "./PptxChartRenderer";
 import { PRESET_GEOMETRIES } from "@/lib/pptx-preset-geometries";
+import { patternToCSS } from "@/lib/pptx-patterns";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -192,7 +194,18 @@ export function fillToCSS(fill: PptxFill): CSSProperties {
         background: `radial-gradient(ellipse at center, ${fill.stops.map((s) => `${colorWithAlpha(s.color, s.alpha)} ${s.position}%`).join(", ")})`,
       };
     case "pattern":
+      if (fill.preset && fill.background) {
+        return patternToCSS(fill.preset, fill.foreground, fill.background);
+      }
+      // Backward compat: old format without preset/background
       return { backgroundColor: fill.foreground };
+    case "picture":
+      return {
+        backgroundImage: `url(${fill.dataUrl})`,
+        backgroundSize: fill.stretch ? "100% 100%" : fill.tile ? "auto" : "cover",
+        backgroundRepeat: fill.tile ? "repeat" : "no-repeat",
+        ...(fill.crop ? { backgroundPosition: `${-fill.crop.left}% ${-fill.crop.top}%` } : {}),
+      };
     default:
       return {};
   }
@@ -467,7 +480,7 @@ export function ParagraphsRenderer({
             )}
             <span>
               {p.runs.map((r, j) => (
-                <RunRenderer key={j} run={r} onSlideNavigate={onSlideNavigate} />
+                <RunRenderer key={j} run={r} onSlideNavigate={onSlideNavigate} tabStops={p.tabStops} />
               ))}
             </span>
           </div>
@@ -477,28 +490,76 @@ export function ParagraphsRenderer({
   );
 }
 
+const DEFAULT_TAB_WIDTH = 48; // px
+
 /** Render a single text run with strikethrough, baseline, and hyperlink support */
 function RunRenderer({
   run: r,
   onSlideNavigate,
+  tabStops,
 }: {
   run: PptxTextRun;
   onSlideNavigate?: (slideIndex: number) => void;
+  tabStops?: { pos: number; align: string }[];
 }) {
   const textDecorations: string[] = [];
   if (r.underline) textDecorations.push("underline");
   if (r.strikethrough) textDecorations.push("line-through");
 
+  // Map OOXML underline styles to CSS text-decoration-style
+  let textDecorationStyle: CSSProperties["textDecorationStyle"];
+  let textDecorationThickness: string | undefined;
+  if (r.underline && r.underlineStyle) {
+    switch (r.underlineStyle) {
+      case "dbl":
+        textDecorationStyle = "double";
+        break;
+      case "dotted":
+        textDecorationStyle = "dotted";
+        break;
+      case "dash":
+      case "dashLong":
+        textDecorationStyle = "dashed";
+        break;
+      case "wavy":
+      case "wavyHeavy":
+        textDecorationStyle = "wavy";
+        break;
+      // sng and unrecognized styles fall through to default solid
+    }
+    // Heavy variants get thicker underline
+    if (r.underlineStyle === "heavy" || r.underlineStyle === "dottedHeavy" || r.underlineStyle === "dashHeavy") {
+      textDecorationThickness = "2px";
+      if (r.underlineStyle === "dottedHeavy") textDecorationStyle = "dotted";
+      if (r.underlineStyle === "dashHeavy") textDecorationStyle = "dashed";
+    }
+    if (r.underlineStyle === "wavyHeavy") {
+      textDecorationThickness = "2px";
+    }
+  }
+
+  // Build font-family chain with CJK/complex script fallbacks
+  const fontFamilyParts = [r.fontFamily];
+  if (r.eaFont && r.eaFont !== r.fontFamily) fontFamilyParts.push(r.eaFont);
+  if (r.csFont && r.csFont !== r.fontFamily) fontFamilyParts.push(r.csFont);
+  fontFamilyParts.push("sans-serif");
+  const fontFamily = fontFamilyParts.join(", ");
+
   const style: CSSProperties = {
     fontWeight: r.bold ? 700 : 400,
     fontStyle: r.italic ? "italic" : "normal",
     textDecoration: textDecorations.length > 0 ? textDecorations.join(" ") : "none",
+    ...(textDecorationStyle ? { textDecorationStyle } : {}),
+    ...(textDecorationThickness ? { textDecorationThickness } : {}),
+    ...(r.underlineColor ? { textDecorationColor: r.underlineColor } : {}),
     fontSize: r.fontSize,
-    fontFamily: r.fontFamily,
+    fontFamily,
     color: r.color,
     ...(r.letterSpacing != null ? { letterSpacing: `${r.letterSpacing}pt` } : {}),
     ...(r.caps === "all" ? { textTransform: "uppercase" as const } : {}),
     ...(r.caps === "small" ? { fontVariant: "small-caps" as const } : {}),
+    ...(r.highlight ? { backgroundColor: r.highlight } : {}),
+    ...(r.kern != null && r.fontSize * 100 >= r.kern ? { fontKerning: "normal" as const } : {}),
     whiteSpace: "pre-wrap",
   };
 
@@ -511,7 +572,34 @@ function RunRenderer({
     style.fontSize = r.fontSize * 0.65;
   }
 
-  const span = <span style={style}>{r.text}</span>;
+  // Handle tab characters by splitting text and inserting tab-width spans
+  const hasTab = r.text.includes("\t");
+  let content: React.ReactNode;
+
+  if (hasTab) {
+    const segments = r.text.split("\t");
+    content = (
+      <>
+        {segments.map((seg, idx) => (
+          <React.Fragment key={idx}>
+            {idx > 0 && (
+              <span style={{
+                display: "inline-block",
+                minWidth: tabStops && tabStops[idx - 1]
+                  ? tabStops[idx - 1].pos
+                  : DEFAULT_TAB_WIDTH,
+              }} />
+            )}
+            {seg}
+          </React.Fragment>
+        ))}
+      </>
+    );
+  } else {
+    content = r.text;
+  }
+
+  const span = <span style={style}>{content}</span>;
 
   if (r.hyperlink) {
     return <>{wrapWithHyperlink(span, r.hyperlink, onSlideNavigate)}</>;
@@ -567,18 +655,60 @@ function ImageRenderer({
   px: (n: number) => number;
   onSlideNavigate?: (slideIndex: number) => void;
 }) {
-  const style: CSSProperties = {
-    ...positionStyle(el, px),
-    objectFit: "contain",
+  const [imgError, setImgError] = useState(false);
+
+  const imgStyle: CSSProperties = {
+    objectFit: "contain" as const,
     ...(el.opacity !== undefined && el.opacity < 1 ? { opacity: el.opacity } : {}),
     boxShadow: shadowToCSS(el.shadow),
+    ...(el.crop ? { clipPath: `inset(${el.crop.top}% ${el.crop.right}% ${el.crop.bottom}% ${el.crop.left}%)` } : {}),
   };
 
-  if (el.crop) {
-    style.clipPath = `inset(${el.crop.top}% ${el.crop.right}% ${el.crop.bottom}% ${el.crop.left}%)`;
+  if (imgError) {
+    const fallback = (
+      <div
+        style={{
+          ...positionStyle(el, px),
+          backgroundColor: "var(--color-muted, #f3f4f6)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          border: "1px dashed var(--color-border, #d1d5db)",
+        }}
+      >
+        <span style={{ fontSize: 10, color: "var(--color-muted-foreground, #9ca3af)" }}>
+          External image
+        </span>
+      </div>
+    );
+    return <>{wrapWithHyperlink(fallback, el.hyperlink, onSlideNavigate)}</>;
   }
 
-  const img = <img src={el.dataUrl} alt="" style={style} />;
+  if (el.reflection) {
+    const imgH = px(el.height);
+    const reflHeight = imgH * (el.reflection.size / 100);
+    const gap = el.reflection.distance;
+
+    const container = (
+      <div style={{ ...positionStyle(el, px), height: "auto", overflow: "visible" }}>
+        <img src={el.dataUrl} alt="" style={{ ...imgStyle, width: "100%", height: imgH }} onError={() => setImgError(true)} />
+        <div style={{
+          marginTop: gap,
+          height: reflHeight,
+          overflow: "hidden",
+          WebkitMaskImage: `linear-gradient(to bottom, rgba(0,0,0,${el.reflection.startOpacity}), rgba(0,0,0,${el.reflection.endOpacity}))`,
+          maskImage: `linear-gradient(to bottom, rgba(0,0,0,${el.reflection.startOpacity}), rgba(0,0,0,${el.reflection.endOpacity}))`,
+          filter: el.reflection.blurRadius > 0 ? `blur(${el.reflection.blurRadius}px)` : undefined,
+        }}>
+          <img src={el.dataUrl} alt="" style={{ width: "100%", height: imgH, objectFit: "contain", transform: "scaleY(-1)", transformOrigin: "top" }} />
+        </div>
+      </div>
+    );
+    return <>{wrapWithHyperlink(container, el.hyperlink, onSlideNavigate)}</>;
+  }
+
+  const style: CSSProperties = { ...positionStyle(el, px), ...imgStyle };
+  const img = <img src={el.dataUrl} alt="" style={style} onError={() => setImgError(true)} />;
   return <>{wrapWithHyperlink(img, el.hyperlink, onSlideNavigate)}</>;
 }
 
@@ -616,12 +746,30 @@ function ShapeRenderer({
   // Dash style for border
   const borderStyle = el.dashStyle ? (DASH_TO_BORDER_STYLE[el.dashStyle] ?? "solid") : "solid";
 
+  // Combine shadow and glow into boxShadow
+  const shadows: string[] = [];
+  if (el.shadow) {
+    const s = shadowToCSS(el.shadow);
+    if (s) shadows.push(s);
+  }
+  if (el.glow) {
+    shadows.push(`0 0 ${el.glow.radius}px rgba(${hexToRgb(el.glow.color)}, ${el.glow.alpha})`);
+  }
+
+  // Soft edge via CSS filter blur
+  const filters: string[] = [];
+  if (el.softEdge && el.softEdge > 0) {
+    filters.push(`blur(${el.softEdge}px)`);
+  }
+
   const style: CSSProperties = {
     ...positionStyle(el, px),
     ...(el.fill ? fillToCSS(el.fill) : {}),
     border: el.stroke ? `${Math.max(1, el.strokeWidth)}px ${borderStyle} ${el.stroke}` : undefined,
     borderRadius: el.shapeType === "ellipse" ? "50%" : el.shapeType === "roundRect" ? 8 : undefined,
-    boxShadow: shadowToCSS(el.shadow),
+    boxShadow: shadows.length > 0 ? shadows.join(", ") : undefined,
+    filter: filters.length > 0 ? filters.join(" ") : undefined,
+    ...(el.softEdge ? { overflow: "hidden" as const } : {}),
     ...(hasBodyProps ? bodyStyle : {
       overflow: "hidden",
       display: "flex",
@@ -700,8 +848,20 @@ function PresetShapeRenderer({
     ? <div style={{ fontSize: `${el.bodyProps.fontScale * 100}%` }}>{textContent}</div>
     : textContent;
 
+  // Build filter string combining shadow, glow, and soft edge
+  const svgFilters: string[] = [];
+  if (el.shadow) {
+    svgFilters.push(`drop-shadow(${el.shadow.offsetX}px ${el.shadow.offsetY}px ${el.shadow.blur}px rgba(${hexToRgb(el.shadow.color)}, ${el.shadow.alpha}))`);
+  }
+  if (el.glow) {
+    svgFilters.push(`drop-shadow(0px 0px ${el.glow.radius}px rgba(${hexToRgb(el.glow.color)}, ${el.glow.alpha}))`);
+  }
+  if (el.softEdge && el.softEdge > 0) {
+    svgFilters.push(`blur(${el.softEdge}px)`);
+  }
+
   const shape = (
-    <div style={{ ...pos, overflow: "visible", filter: el.shadow ? `drop-shadow(${el.shadow.offsetX}px ${el.shadow.offsetY}px ${el.shadow.blur}px rgba(${hexToRgb(el.shadow.color)}, ${el.shadow.alpha}))` : undefined }}>
+    <div style={{ ...pos, overflow: "visible", filter: svgFilters.length > 0 ? svgFilters.join(" ") : undefined }}>
       <svg
         viewBox="0 0 1 1"
         width={w}
@@ -922,6 +1082,47 @@ function LineRenderer({ el, px }: { el: PptxShape; px: (n: number) => number }) 
 // Table
 // ---------------------------------------------------------------------------
 
+/** Convert a cell fill (string hex, PptxFill, or null) to CSS properties */
+function cellFillStyle(fill: string | PptxFill | null): CSSProperties {
+  if (!fill) return {};
+  if (typeof fill === "string") return { backgroundColor: fill };
+  return fillToCSS(fill);
+}
+
+/** Resolve the applicable table style part for a cell based on its position.
+ *  Priority: firstRow/lastRow/firstCol/lastCol > band > wholeTbl */
+function resolveTableStylePart(
+  el: PptxTable,
+  ri: number,
+  ci: number,
+  rowCount: number,
+): PptxTableStylePart | null {
+  const style = el.style;
+  if (!style) return null;
+
+  if (ri === 0 && el.firstRow && style.firstRow) return style.firstRow;
+  if (ri === rowCount - 1 && el.lastRow && style.lastRow) return style.lastRow;
+  if (ci === 0 && el.firstCol && style.firstCol) return style.firstCol;
+
+  if (el.bandRow) {
+    const bandIndex = el.firstRow ? ri - 1 : ri;
+    if (bandIndex >= 0) {
+      if (bandIndex % 2 === 0 && style.band1H) return style.band1H;
+      if (bandIndex % 2 === 1 && style.band2H) return style.band2H;
+    }
+  }
+  if (el.bandCol) {
+    const bandIndex = el.firstCol ? ci - 1 : ci;
+    if (bandIndex >= 0) {
+      if (bandIndex % 2 === 0 && style.band1V) return style.band1V;
+      if (bandIndex % 2 === 1 && style.band2V) return style.band2V;
+    }
+  }
+
+  if (style.wholeTbl) return style.wholeTbl;
+  return null;
+}
+
 function TableRenderer({
   el,
   px,
@@ -931,6 +1132,8 @@ function TableRenderer({
   px: (n: number) => number;
   onSlideNavigate?: (slideIndex: number) => void;
 }) {
+  const rowCount = el.rows.length;
+
   return (
     <div style={{ ...positionStyle(el, px), overflow: "hidden" }}>
       <table
@@ -947,13 +1150,43 @@ function TableRenderer({
               {row.cells.map((cell, ci) => {
                 // Skip merged-away cells
                 if (cell.colspan === 0 || cell.rowspan === 0) return null;
+
+                // Resolve style part from table style
+                const stylePart = resolveTableStylePart(el, ri, ci, rowCount);
+
+                // Cell-level fill overrides style fill
+                const hasCellFill = cell.fill !== null;
+                let fallbackFill: CSSProperties = {};
+                if (!hasCellFill && !stylePart?.fill) {
+                  // Generic banding fallback when no table style provides fills
+                  if (el.bandRow && !el.style) {
+                    const bandIndex = el.firstRow ? ri - 1 : ri;
+                    if (bandIndex >= 0 && bandIndex % 2 === 1) fallbackFill = { backgroundColor: "#f3f4f6" };
+                  }
+                  if (el.bandCol && !el.style) {
+                    const bandIndex = el.firstCol ? ci - 1 : ci;
+                    if (bandIndex >= 0 && bandIndex % 2 === 1) fallbackFill = { backgroundColor: "#f3f4f6" };
+                  }
+                }
+                const fillStyle = hasCellFill
+                  ? cellFillStyle(cell.fill)
+                  : stylePart?.fill
+                    ? { backgroundColor: stylePart.fill }
+                    : fallbackFill;
+
+                // Text style from table style
+                const textStyle: CSSProperties = {};
+                if (stylePart?.bold) textStyle.fontWeight = "bold";
+                if (stylePart?.italic) textStyle.fontStyle = "italic";
+                if (stylePart?.fontColor) textStyle.color = stylePart.fontColor;
+
                 return (
                   <td
                     key={ci}
                     colSpan={cell.colspan > 1 ? cell.colspan : undefined}
                     rowSpan={cell.rowspan > 1 ? cell.rowspan : undefined}
                     style={{
-                      backgroundColor: cell.fill ?? undefined,
+                      ...fillStyle,
                       borderLeft: cell.borders?.left
                         ? cell.borders.left.none ? 'none' : `${cell.borders.left.width}px ${cell.borders.left.dash ?? 'solid'} ${cell.borders.left.color}`
                         : cell.borders ? undefined : '1px solid #d1d5db',
@@ -972,6 +1205,7 @@ function TableRenderer({
                       verticalAlign: cell.verticalAlign ?? 'top',
                       fontSize: 12,
                       overflow: "hidden",
+                      ...textStyle,
                     }}
                   >
                     <ParagraphsRenderer paragraphs={cell.paragraphs} onSlideNavigate={onSlideNavigate} />

@@ -26,6 +26,10 @@ import type {
   PptxTextStyle,
   PptxShadow,
   ArrowHead,
+  PptxTableStyle,
+  PptxTableStylePart,
+  PptxComment,
+  PptxSection,
 } from "./pptx-types";
 
 // ---------------------------------------------------------------------------
@@ -88,6 +92,9 @@ export async function parsePptx(bytes: Uint8Array): Promise<PptxPresentation> {
     }
   }
 
+  // --- Parse comment authors (presentation-level, once) ---
+  const commentAuthors = await parseCommentAuthors(zip);
+
   // --- Parse slides and resolve layout/master indices ---
   const slides: PptxSlide[] = [];
   for (let i = 0; i < slideRIds.length; i++) {
@@ -99,9 +106,9 @@ export async function parsePptx(bytes: Uint8Array): Promise<PptxPresentation> {
 
     // Resolve layout for this slide
     const slideRels = await readRels(zip, normalizedPath);
+    const slideDir = normalizedPath.substring(0, normalizedPath.lastIndexOf("/"));
     for (const [, target] of Object.entries(slideRels)) {
       if (target.includes("slideLayout")) {
-        const slideDir = normalizedPath.substring(0, normalizedPath.lastIndexOf("/"));
         const layoutPath = normalizePath(slideDir, target);
         const li = layoutPathToIndex.get(layoutPath);
         if (li !== undefined) {
@@ -112,10 +119,19 @@ export async function parsePptx(bytes: Uint8Array): Promise<PptxPresentation> {
       }
     }
 
+    // Parse slide comments
+    const slideComments = await parseSlideComments(zip, slideRels, slideDir, commentAuthors);
+    if (slideComments.length > 0) {
+      slide.comments = slideComments;
+    }
+
     slides.push(slide);
   }
 
-  const presentation: PptxPresentation = { slideWidth, slideHeight, slides, theme, masters, layouts };
+  // --- Parse sections ---
+  const sections = parseSections(presentationXml);
+
+  const presentation: PptxPresentation = { slideWidth, slideHeight, slides, theme, masters, layouts, ...(sections ? { sections } : {}) };
   resolveInheritance(presentation);
   return presentation;
 }
@@ -285,7 +301,83 @@ async function parseTheme(zip: JSZip): Promise<PptxTheme> {
     if (latin) defaults.fonts.body = getAttr(latin, "typeface") ?? "Calibri";
   }
 
+  // Table styles from theme XML
+  const tableStyles = parseTableStylesFromDoc(doc, defaults);
+
+  // Also try standalone tableStyles.xml
+  const tableStylesDoc = await readXml(zip, "ppt/tableStyles.xml");
+  if (tableStylesDoc) {
+    const tblStyleLst = qs(tableStylesDoc, "tblStyleLst");
+    if (tblStyleLst) {
+      const styleEls = qsa(tblStyleLst, "tblStyle");
+      for (const styleEl of styleEls) {
+        const styleId = getAttr(styleEl, "styleId");
+        if (styleId && !tableStyles.has(styleId)) {
+          tableStyles.set(styleId, parseTableStyleElement(styleEl, defaults));
+        }
+      }
+    }
+  }
+
+  if (tableStyles.size > 0) {
+    defaults.tableStyles = tableStyles;
+  }
+
   return defaults;
+}
+
+function parseTableStylesFromDoc(doc: Document, theme: PptxTheme): Map<string, PptxTableStyle> {
+  const styles = new Map<string, PptxTableStyle>();
+  const tblStyleLst = qs(doc, "tblStyleLst");
+  if (tblStyleLst) {
+    const styleEls = qsa(tblStyleLst, "tblStyle");
+    for (const styleEl of styleEls) {
+      const styleId = getAttr(styleEl, "styleId");
+      if (!styleId) continue;
+      styles.set(styleId, parseTableStyleElement(styleEl, theme));
+    }
+  }
+  return styles;
+}
+
+export function parseTableStyleElement(styleEl: Element, theme: PptxTheme): PptxTableStyle {
+  const result: PptxTableStyle = {};
+  const parts: Array<keyof PptxTableStyle> = [
+    "wholeTbl", "band1H", "band2H", "band1V", "band2V",
+    "firstRow", "lastRow", "firstCol", "lastCol",
+  ];
+  for (const part of parts) {
+    const partEl = qs(styleEl, part);
+    if (!partEl) continue;
+
+    const stylePart: PptxTableStylePart = {};
+    let hasValues = false;
+
+    const tcStyle = qs(partEl, "tcStyle");
+    if (tcStyle) {
+      const fillEl = qs(tcStyle, "fill");
+      if (fillEl) {
+        const solidFill = qs(fillEl, "solidFill");
+        if (solidFill) {
+          const color = resolveColor(solidFill, theme);
+          if (color) { stylePart.fill = color; hasValues = true; }
+        }
+      }
+    }
+
+    const tcTxStyle = qs(partEl, "tcTxStyle");
+    if (tcTxStyle) {
+      const b = getAttr(tcTxStyle, "b");
+      if (b === "on") { stylePart.bold = true; hasValues = true; }
+      const i = getAttr(tcTxStyle, "i");
+      if (i === "on") { stylePart.italic = true; hasValues = true; }
+      const fontColor = resolveColor(tcTxStyle, theme);
+      if (fontColor) { stylePart.fontColor = fontColor; hasValues = true; }
+    }
+
+    if (hasValues) result[part] = stylePart;
+  }
+  return result;
 }
 
 function extractThemeColor(el: Element): string | null {
@@ -338,10 +430,16 @@ function parseHeaderFooter(doc: Document): PptxSlide["headerFooter"] | undefined
   const ftrAttr = getAttr(hf, "ftr");
   const sldNumAttr = getAttr(hf, "sldNum");
 
+  // Some PPTX files store footer/date text as attributes on p:hf
+  const ftrText = getAttr(hf, "ftrText") ?? undefined;
+  const dtText = getAttr(hf, "dtText") ?? undefined;
+
   return {
     showDate: dtAttr !== "0",
     showFooter: ftrAttr !== "0",
     showSlideNum: sldNumAttr !== "0",
+    dateText: dtText,
+    footerText: ftrText,
   };
 }
 
@@ -367,7 +465,7 @@ async function parseElements(
     const ln = child.localName;
 
     if (ln === "sp") {
-      const el = parseShapeOrTextBox(child, theme, rels, slideIndex);
+      const el = await parseShapeOrTextBox(child, theme, rels, slideIndex, zip, slideDir);
       if (el) elements.push(el);
     } else if (ln === "pic") {
       const el = await parsePicture(child, rels, zip, slideDir, theme);
@@ -406,7 +504,7 @@ function getTransform(el: Element): { x: number; y: number; width: number; heigh
 // Text box / shape
 // ---------------------------------------------------------------------------
 
-function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<string, string>, slideIndex = 0): PptxTextBox | PptxShape | null {
+async function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<string, string>, slideIndex = 0, zip?: JSZip, slideDir?: string): Promise<PptxTextBox | PptxShape | null> {
   const txBody = qs(el, "txBody");
   const spPr = qs(el, "spPr");
   const prstGeom = spPr ? qs(spPr, "prstGeom") : null;
@@ -435,8 +533,11 @@ function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<string
     }
   }
 
-  // Shadow (from spPr effectLst)
-  const shadow = spPr ? parseShadow(spPr, theme) : undefined;
+  // Effects (shadow, glow, soft edge from spPr effectLst)
+  const effects = spPr ? parseEffects(spPr, theme) : {};
+  const shadow = effects.shadow;
+  const glow = effects.glow;
+  const softEdge = effects.softEdge;
 
   // If it has text and no geometry preset, treat as textbox
   if (txBody && !preset) {
@@ -450,7 +551,29 @@ function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<string
 
   // Shape
   const shapeType = mapPresetGeometry(preset);
-  const fill = spPr ? parseFill(spPr, theme) : null;
+  let fill = spPr ? parseFill(spPr, theme) : null;
+
+  // Picture fill (blipFill inside spPr) — overrides other fills
+  if (spPr && zip && slideDir && rels) {
+    const blipFillEl = qs(spPr, "blipFill");
+    if (blipFillEl) {
+      const blip = qs(blipFillEl, "blip");
+      const embedId = blip?.getAttributeNS(
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "embed",
+      ) || (blip ? getAttr(blip, "r:embed") : null);
+      if (embedId && rels[embedId]) {
+        const mediaPath = normalizePath(slideDir, rels[embedId]);
+        const dataUrl = await extractImageDataUrl(zip, mediaPath);
+        if (dataUrl) {
+          const stretch = !!qs(blipFillEl, "stretch");
+          const tile = !!qs(blipFillEl, "tile");
+          fill = { type: "picture", dataUrl, stretch, tile };
+        }
+      }
+    }
+  }
+
   const { stroke, strokeWidth, dashStyle, headArrow, tailArrow } = spPr
     ? parseStroke(spPr, theme)
     : { stroke: null, strokeWidth: 0, dashStyle: undefined, headArrow: undefined, tailArrow: undefined };
@@ -476,6 +599,8 @@ function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<string
     placeholderType,
     placeholderIdx,
     shadow,
+    ...(glow ? { glow } : {}),
+    ...(softEdge ? { softEdge } : {}),
   };
 }
 
@@ -648,7 +773,23 @@ function parseParagraphs(txBody: Element, theme: PptxTheme, rels?: Record<string
     const alignment = parseAlignment(pPr);
     const bullet = parseBullet(pPr, theme);
     const spacing = parseParagraphSpacing(pPr);
-    const runs = parseTextRuns(pEl, theme, rels);
+    const defRPr = pPr ? qs(pPr, "defRPr") : null;
+    const runs = parseTextRuns(pEl, theme, rels, defRPr);
+
+    // Parse tab stops from pPr > tabLst > tab
+    let tabStops: { pos: number; align: string }[] | undefined;
+    if (pPr) {
+      const tabLst = qs(pPr, "tabLst");
+      if (tabLst) {
+        const tabs = qsa(tabLst, "tab");
+        if (tabs.length > 0) {
+          tabStops = tabs.map(tab => ({
+            pos: intAttr(tab, "pos", 0) / 9525,
+            align: getAttr(tab, "algn") ?? "l",
+          }));
+        }
+      }
+    }
 
     // Skip empty paragraphs with no text at all
     if (runs.length === 0 && !bullet.bulletChar && !bullet.bulletAutoNum) continue;
@@ -663,6 +804,7 @@ function parseParagraphs(txBody: Element, theme: PptxTheme, rels?: Record<string
       bulletFont: bullet.bulletFont,
       bulletColor: bullet.bulletColor,
       bulletSizePercent: bullet.bulletSizePercent,
+      tabStops,
     });
   }
 
@@ -729,7 +871,7 @@ function parseBullet(pPr: Element | null, theme: PptxTheme): BulletInfo {
   return { bulletChar: null, bulletLevel: level };
 }
 
-export function parseTextRuns(pEl: Element, theme: PptxTheme, rels?: Record<string, string>): PptxTextRun[] {
+export function parseTextRuns(pEl: Element, theme: PptxTheme, rels?: Record<string, string>, defRPr?: Element | null): PptxTextRun[] {
   const runs: PptxTextRun[] = [];
 
   for (let i = 0; i < pEl.children.length; i++) {
@@ -743,40 +885,95 @@ export function parseTextRuns(pEl: Element, theme: PptxTheme, rels?: Record<stri
 
       const rPr = qs(child, "rPr");
 
+      // Resolve properties with defRPr fallback
+      const effectiveRPr = rPr ?? defRPr ?? null;
+
       // Character spacing (spc is in 1/100ths of a point)
-      const spc = rPr ? intAttr(rPr, "spc", 0) : 0;
+      const spc = rPr ? intAttr(rPr, "spc", 0) : (defRPr ? intAttr(defRPr, "spc", 0) : 0);
 
       // Text caps
-      const capAttr = rPr ? getAttr(rPr, "cap") : null;
+      const capAttr = rPr ? getAttr(rPr, "cap") : (defRPr ? getAttr(defRPr, "cap") : null);
       const caps = capAttr === "all" ? "all" as const
         : capAttr === "small" ? "small" as const
         : undefined;
 
       // Strikethrough
-      const strike = rPr ? getAttr(rPr, "strike") : null;
+      const strike = rPr ? getAttr(rPr, "strike") : (defRPr ? getAttr(defRPr, "strike") : null);
       let strikethrough: PptxTextRun["strikethrough"];
       if (strike === "sngStrike") strikethrough = "single";
       else if (strike === "dblStrike") strikethrough = "double";
 
       // Baseline (superscript/subscript)
-      const baseline = rPr ? intAttr(rPr, "baseline", 0) : 0;
+      const baseline = rPr ? intAttr(rPr, "baseline", 0) : (defRPr ? intAttr(defRPr, "baseline", 0) : 0);
+
+      // Underline style and color
+      const uAttr = effectiveRPr ? getAttr(effectiveRPr, "u") : null;
+      const underline = effectiveRPr ? (uAttr ?? "none") !== "none" : false;
+      const underlineStyle = underline && uAttr ? uAttr : undefined;
+      const uFill = rPr ? qs(rPr, "uFill") : null;
+      const uSolidFill = uFill ? qs(uFill, "solidFill") : null;
+      const underlineColor = uSolidFill ? resolveColor(uSolidFill, theme) ?? undefined : undefined;
+
+      // Highlight (text background)
+      const highlightEl = effectiveRPr ? qs(effectiveRPr, "highlight") : null;
+      const highlight = highlightEl ? resolveColor(highlightEl, theme) ?? undefined : undefined;
+
+      // Kerning
+      const kern = rPr ? intAttr(rPr, "kern", 0) : (defRPr ? intAttr(defRPr, "kern", 0) : 0);
+
+      // East Asian and Complex Script fonts
+      const eaEl = effectiveRPr ? qs(effectiveRPr, "ea") : null;
+      let eaFont: string | undefined;
+      if (eaEl) {
+        const tf = getAttr(eaEl, "typeface");
+        if (tf === "+mj-ea") eaFont = theme.fonts.heading;
+        else if (tf === "+mn-ea") eaFont = theme.fonts.body;
+        else if (tf) eaFont = tf;
+      }
+
+      const csEl = effectiveRPr ? qs(effectiveRPr, "cs") : null;
+      let csFont: string | undefined;
+      if (csEl) {
+        const tf = getAttr(csEl, "typeface");
+        if (tf === "+mj-cs") csFont = theme.fonts.heading;
+        else if (tf === "+mn-cs") csFont = theme.fonts.body;
+        else if (tf) csFont = tf;
+      }
 
       // Hyperlink on the run
       const hlinkClick = rPr ? qs(rPr, "hlinkClick") : null;
       const hyperlink = hlinkClick ? resolveHyperlinkElement(hlinkClick, rels) : undefined;
 
+      // Bold/italic/underline with defRPr fallback
+      const bold = rPr ? getAttr(rPr, "b") === "1"
+        : (defRPr ? getAttr(defRPr, "b") === "1" : false);
+      const italic = rPr ? getAttr(rPr, "i") === "1"
+        : (defRPr ? getAttr(defRPr, "i") === "1" : false);
+
+      // Font size with defRPr fallback
+      const defFontSize = defRPr ? intAttr(defRPr, "sz", 1800) : 1800;
+      const fontSize = rPr ? intAttr(rPr, "sz", defFontSize) / 100 : defFontSize / 100;
+
+      const fontFamily = parseFontFamily(effectiveRPr, theme);
+
       runs.push({
         text,
-        bold: rPr ? getAttr(rPr, "b") === "1" : false,
-        italic: rPr ? getAttr(rPr, "i") === "1" : false,
-        underline: rPr ? (getAttr(rPr, "u") ?? "none") !== "none" : false,
+        bold,
+        italic,
+        underline,
+        ...(underlineStyle ? { underlineStyle } : {}),
+        ...(underlineColor ? { underlineColor } : {}),
         strikethrough,
         baseline: baseline !== 0 ? baseline : undefined,
-        fontSize: rPr ? intAttr(rPr, "sz", 1800) / 100 : 18,
-        fontFamily: parseFontFamily(rPr, theme),
-        color: parseRunColor(rPr, theme),
+        fontSize,
+        fontFamily,
+        color: parseRunColor(effectiveRPr, theme),
         ...(spc !== 0 ? { letterSpacing: spc / 100 } : {}),
         ...(caps ? { caps } : {}),
+        ...(highlight ? { highlight } : {}),
+        ...(kern !== 0 ? { kern } : {}),
+        ...(eaFont && eaFont !== fontFamily ? { eaFont } : {}),
+        ...(csFont && csFont !== fontFamily ? { csFont } : {}),
         hyperlink,
       });
     } else if (ln === "br") {
@@ -987,34 +1184,83 @@ export function applyColorTransforms(parent: Element, baseColor: string): string
 // Shadows
 // ---------------------------------------------------------------------------
 
+interface EffectsResult {
+  shadow?: PptxShadow;
+  glow?: { radius: number; color: string; alpha: number };
+  softEdge?: number;
+}
+
+export function parseEffects(spPr: Element, theme: PptxTheme): EffectsResult {
+  const effectLst = qs(spPr, "effectLst");
+  if (!effectLst) return {};
+
+  const result: EffectsResult = {};
+
+  // Shadow (outerShdw)
+  const outerShdw = qs(effectLst, "outerShdw");
+  if (outerShdw) {
+    const blurRad = intAttr(outerShdw, "blurRad", 0) / 12700;
+    const dist = intAttr(outerShdw, "dist", 0) / 12700;
+    const dir = intAttr(outerShdw, "dir", 0) / 60000;
+    const dirRad = (dir * Math.PI) / 180;
+    const offsetX = Math.round(dist * Math.sin(dirRad) * 10) / 10;
+    const offsetY = Math.round(dist * Math.cos(dirRad) * 10) / 10;
+    const colorResult = resolveColorWithAlpha(outerShdw, theme);
+    result.shadow = {
+      offsetX, offsetY, blur: blurRad,
+      color: colorResult?.color ?? "#000000",
+      alpha: colorResult?.alpha ?? 0.5,
+    };
+  }
+
+  // Glow
+  const glowEl = qs(effectLst, "glow");
+  if (glowEl) {
+    const rad = intAttr(glowEl, "rad", 0) / 12700;
+    const colorResult = resolveColorWithAlpha(glowEl, theme);
+    result.glow = {
+      radius: rad,
+      color: colorResult?.color ?? "#000000",
+      alpha: colorResult?.alpha ?? 0.5,
+    };
+  }
+
+  // Soft edge
+  const softEdgeEl = qs(effectLst, "softEdge");
+  if (softEdgeEl) {
+    result.softEdge = intAttr(softEdgeEl, "rad", 0) / 12700;
+  }
+
+  return result;
+}
+
+/** @deprecated Use parseEffects instead. Kept for backward compat with picture shadow parsing. */
 function parseShadow(spPr: Element, theme: PptxTheme): PptxShadow | undefined {
+  return parseEffects(spPr, theme).shadow;
+}
+
+export function parseReflection(spPr: Element): PptxImage['reflection'] | undefined {
   const effectLst = qs(spPr, "effectLst");
   if (!effectLst) return undefined;
-  const outerShdw = qs(effectLst, "outerShdw");
-  if (!outerShdw) return undefined;
+  const reflEl = qs(effectLst, "reflection");
+  if (!reflEl) return undefined;
 
-  const blurRad = intAttr(outerShdw, "blurRad", 0) / 12700; // EMU to pt approx
-  const dist = intAttr(outerShdw, "dist", 0) / 12700;
-  const dir = intAttr(outerShdw, "dir", 0) / 60000; // 60000ths of degree to degrees
+  const blurRadius = intAttr(reflEl, "blurRad", 0) / 12700;        // EMU to pt
+  const startOpacity = intAttr(reflEl, "stA", 100000) / 100000;    // start alpha
+  const endOpacity = intAttr(reflEl, "endA", 0) / 100000;          // end alpha
+  const distance = intAttr(reflEl, "dist", 0) / 12700;             // EMU to pt
+  const direction = intAttr(reflEl, "dir", 5400000) / 60000;       // 60000ths of degree
+  const sy = intAttr(reflEl, "sy", -100000);                       // scale Y (negative = flip)
+  const size = Math.abs(sy) / 1000;                                // percentage
 
-  // Convert polar (dist, dir) to cartesian (x, y)
-  const dirRad = (dir * Math.PI) / 180;
-  const offsetX = Math.round(dist * Math.sin(dirRad) * 10) / 10;
-  const offsetY = Math.round(dist * Math.cos(dirRad) * 10) / 10;
-
-  // Color (use resolveColorWithAlpha to get alpha from color children)
-  const colorResult = resolveColorWithAlpha(outerShdw, theme);
-  const color = colorResult?.color ?? "#000000";
-  const alpha = colorResult?.alpha ?? 0.5;
-
-  return { offsetX, offsetY, blur: blurRad, color, alpha };
+  return { blurRadius, startOpacity, endOpacity, distance, direction, size };
 }
 
 // ---------------------------------------------------------------------------
 // Fill & stroke
 // ---------------------------------------------------------------------------
 
-function parseFill(spPr: Element, theme: PptxTheme): PptxFill | null {
+export function parseFill(spPr: Element, theme: PptxTheme): PptxFill | null {
   // Solid fill
   const solidFill = qs(spPr, "solidFill");
   if (solidFill) {
@@ -1026,14 +1272,15 @@ function parseFill(spPr: Element, theme: PptxTheme): PptxFill | null {
   const gradFill = qs(spPr, "gradFill");
   if (gradFill) return parseGradientFill(gradFill, theme);
 
-  // Pattern fill — fallback to foreground color
+  // Pattern fill with preset, foreground and background colors
   const pattFill = qs(spPr, "pattFill");
   if (pattFill) {
+    const preset = getAttr(pattFill, "prst") ?? "solid";
     const fgClr = qs(pattFill, "fgClr");
-    if (fgClr) {
-      const color = resolveColor(fgClr, theme);
-      if (color) return { type: "pattern", foreground: color };
-    }
+    const bgClr = qs(pattFill, "bgClr");
+    const fg = fgClr ? resolveColor(fgClr, theme) ?? "#000000" : "#000000";
+    const bg = bgClr ? resolveColor(bgClr, theme) ?? "#ffffff" : "#ffffff";
+    return { type: "pattern", preset, foreground: fg, background: bg };
   }
 
   // No fill
@@ -1043,7 +1290,7 @@ function parseFill(spPr: Element, theme: PptxTheme): PptxFill | null {
   return null;
 }
 
-function parseGradientFill(gradFill: Element, theme: PptxTheme): PptxFill {
+export function parseGradientFill(gradFill: Element, theme: PptxTheme): PptxFill {
   const stops: PptxGradientStop[] = [];
   const gsLst = qs(gradFill, "gsLst");
   if (gsLst) {
@@ -1156,10 +1403,23 @@ async function parsePicture(
     "embed",
   ) || getAttr(blip, "r:embed");
 
-  if (!embedId || !rels[embedId]) return null;
+  // Check for linked (external) image via r:link
+  const linkId = blip.getAttributeNS(
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+    "link",
+  ) || getAttr(blip, "r:link");
 
-  const mediaPath = normalizePath(slideDir, rels[embedId]);
-  const dataUrl = await extractImageDataUrl(zip, mediaPath);
+  let dataUrl: string | null = null;
+
+  if (embedId && rels[embedId]) {
+    const mediaPath = normalizePath(slideDir, rels[embedId]);
+    dataUrl = await extractImageDataUrl(zip, mediaPath);
+  } else if (linkId && rels[linkId]) {
+    const externalUrl = rels[linkId];
+    if (externalUrl.startsWith("http://") || externalUrl.startsWith("https://")) {
+      dataUrl = externalUrl;
+    }
+  }
   if (!dataUrl) return null;
 
   // Parse image crop from srcRect (values in 1/1000ths of a percent)
@@ -1209,7 +1469,10 @@ async function parsePicture(
   const picSpPr = qs(el, "spPr");
   const picShadow = picSpPr ? parseShadow(picSpPr, theme) : undefined;
 
-  return { type: "image", ...transform, dataUrl, ...(opacity !== undefined ? { opacity } : {}), crop, hyperlink: picHyperlink, shadow: picShadow };
+  // Reflection effect on pictures
+  const reflection = picSpPr ? parseReflection(picSpPr) : undefined;
+
+  return { type: "image", ...transform, dataUrl, ...(opacity !== undefined ? { opacity } : {}), crop, hyperlink: picHyperlink, shadow: picShadow, reflection };
 }
 
 async function extractImageDataUrl(zip: JSZip, path: string): Promise<string | null> {
@@ -1355,6 +1618,29 @@ function parseTable(
 ): PptxTable {
   const rows: PptxTableRow[] = [];
 
+  // Parse table properties (style GUID and banding flags)
+  const tblPr = qs(tbl, "tblPr");
+  let style: PptxTableStyle | undefined;
+  let bandRow: boolean | undefined;
+  let bandCol: boolean | undefined;
+  let firstRowFlag: boolean | undefined;
+  let lastRowFlag: boolean | undefined;
+  let firstColFlag: boolean | undefined;
+  let lastColFlag: boolean | undefined;
+
+  if (tblPr) {
+    const tblStyleId = getAttr(tblPr, "tblStyle");
+    if (tblStyleId && theme.tableStyles) {
+      style = theme.tableStyles.get(tblStyleId);
+    }
+    bandRow = getAttr(tblPr, "bandRow") === "1" ? true : undefined;
+    bandCol = getAttr(tblPr, "bandCol") === "1" ? true : undefined;
+    firstRowFlag = getAttr(tblPr, "firstRow") === "1" ? true : undefined;
+    lastRowFlag = getAttr(tblPr, "lastRow") === "1" ? true : undefined;
+    firstColFlag = getAttr(tblPr, "firstCol") === "1" ? true : undefined;
+    lastColFlag = getAttr(tblPr, "lastCol") === "1" ? true : undefined;
+  }
+
   // Column widths from tblGrid
   const tblGrid = qs(tbl, "tblGrid");
   const colWidths: number[] = [];
@@ -1396,13 +1682,18 @@ function parseTable(
 
       // Cell properties
       const tcPr = qs(tc, "tcPr");
-      let fill: string | null = null;
+      let fill: string | PptxFill | null = null;
       let borders: PptxTableCell["borders"] | undefined;
       let margins: PptxTableCell["margins"] | undefined;
       let verticalAlign: PptxTableCell["verticalAlign"] | undefined;
       if (tcPr) {
-        const solidFill = qs(tcPr, "solidFill");
-        if (solidFill) fill = resolveColor(solidFill, theme);
+        const gradFill = qs(tcPr, "gradFill");
+        if (gradFill) {
+          fill = parseGradientFill(gradFill, theme);
+        } else {
+          const solidFill = qs(tcPr, "solidFill");
+          if (solidFill) fill = resolveColor(solidFill, theme);
+        }
 
         // Borders
         borders = parseCellBorders(tcPr, theme);
@@ -1448,7 +1739,15 @@ function parseTable(
     rows.push({ height, cells });
   }
 
-  return { type: "table", ...transform, height: transform.height, rows };
+  const result: PptxTable = { type: "table", ...transform, height: transform.height, rows };
+  if (style) result.style = style;
+  if (bandRow) result.bandRow = bandRow;
+  if (bandCol) result.bandCol = bandCol;
+  if (firstRowFlag) result.firstRow = firstRowFlag;
+  if (lastRowFlag) result.lastRow = lastRowFlag;
+  if (firstColFlag) result.firstCol = firstColFlag;
+  if (lastColFlag) result.lastCol = lastColFlag;
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -1482,13 +1781,32 @@ async function parseChart(
 
   let chartType: PptxChart["chartType"] = "other";
   let chartEl: Element | null = null;
+  const additionalChartEls: Element[] = [];
 
   for (const [tag, ct] of Object.entries(chartTypeMap)) {
-    const found = qs(doc, tag);
-    if (found) {
-      chartType = ct;
-      chartEl = found;
-      break;
+    const plotArea = qs(doc, "plotArea");
+    const allOfType = plotArea ? qsa(plotArea, tag) : [];
+    if (allOfType.length > 0) {
+      if (!chartEl) {
+        chartType = ct;
+        chartEl = allOfType[0];
+        // Additional chart type elements of the same type
+        for (let i = 1; i < allOfType.length; i++) additionalChartEls.push(allOfType[i]);
+      } else {
+        // Different chart type overlaid (e.g., barChart + lineChart)
+        for (const el of allOfType) additionalChartEls.push(el);
+      }
+    }
+  }
+  // Fallback: try without plotArea if nothing found
+  if (!chartEl) {
+    for (const [tag, ct] of Object.entries(chartTypeMap)) {
+      const found = qs(doc, tag);
+      if (found) {
+        chartType = ct;
+        chartEl = found;
+        break;
+      }
     }
   }
 
@@ -1496,10 +1814,14 @@ async function parseChart(
     return { type: "chart", ...transform, chartType: "other", series: [], categories: [] };
   }
 
-  // Parse series
+  // Parse series from primary and additional chart type elements
   const series: PptxChartSeries[] = [];
   const categories: string[] = [];
-  const serEls = qsa(chartEl, "ser");
+  const allSerEls = [...qsa(chartEl, "ser")];
+  for (const addEl of additionalChartEls) {
+    allSerEls.push(...qsa(addEl, "ser"));
+  }
+  const serEls = allSerEls;
 
   for (const ser of serEls) {
     const txEl = qs(ser, "tx");
@@ -1663,11 +1985,13 @@ async function parseChart(
   // Parse data labels
   let showDataLabels: boolean | undefined;
   let dataLabelType: PptxChart["dataLabelType"] | undefined;
+  let dataLabelPosition: string | undefined;
   const dLbls = qs(chartEl, "dLbls");
   if (dLbls) {
     const showVal = qs(dLbls, "showVal");
     const showCatName = qs(dLbls, "showCatName");
     const showPercent = qs(dLbls, "showPercent");
+    const showSerName = qs(dLbls, "showSerName");
     if (showVal && getAttr(showVal, "val") === "1") {
       showDataLabels = true;
       dataLabelType = "value";
@@ -1677,10 +2001,105 @@ async function parseChart(
     } else if (showCatName && getAttr(showCatName, "val") === "1") {
       showDataLabels = true;
       dataLabelType = "category";
+    } else if (showSerName && getAttr(showSerName, "val") === "1") {
+      showDataLabels = true;
+      dataLabelType = "value"; // fallback — show values when series name is requested
+    }
+    // Parse data label position
+    const dLblPos = qs(dLbls, "dLblPos");
+    const posVal = dLblPos ? getAttr(dLblPos, "val") : undefined;
+    dataLabelPosition = posVal ?? undefined;
+  }
+
+  // Parse secondary axis — find all valAx elements
+  let secondaryAxis: PptxChart["secondaryAxis"] | undefined;
+  const allValAx = qsa(doc, "valAx");
+  if (allValAx.length >= 2) {
+    const secAx = allValAx[1];
+    const delEl = qs(secAx, "delete");
+    const visible = !(delEl && getAttr(delEl, "val") === "1");
+    let axTitle: string | undefined;
+    const axTitleEl = qs(secAx, "title");
+    if (axTitleEl) {
+      const axRich = qs(axTitleEl, "rich");
+      if (axRich) {
+        const texts: string[] = [];
+        for (const r of qsa(axRich, "r")) {
+          const t = qs(r, "t");
+          if (t?.textContent) texts.push(t.textContent);
+        }
+        axTitle = texts.join("") || undefined;
+      }
+    }
+    const numFmt = qs(secAx, "numFmt");
+    const numberFormat = numFmt ? (getAttr(numFmt, "formatCode") ?? undefined) : undefined;
+    secondaryAxis = { title: axTitle, visible, numberFormat };
+
+    // Determine which series belong to the secondary axis.
+    // In OOXML, a plotArea can have multiple chart type elements (e.g., barChart + lineChart).
+    // Each chart type element has axId references. Series in the second chart type use the secondary axis.
+    // Get the secondary axis ID
+    const secAxIdEl = qs(secAx, "axId");
+    const secAxId = secAxIdEl ? getAttr(secAxIdEl, "val") : null;
+    if (secAxId) {
+      // Find all chart type elements in the plotArea and check which reference the secondary axis
+      const plotArea = qs(doc, "plotArea");
+      if (plotArea) {
+        for (const [tag] of Object.entries(chartTypeMap)) {
+          const chartTypeEls = qsa(plotArea, tag);
+          for (const ctEl of chartTypeEls) {
+            if (ctEl === chartEl) continue; // skip the primary chart type element
+            // Check if this chart type element references the secondary axis
+            const axIdEls = qsa(ctEl, "axId");
+            const refsSecondary = axIdEls.some(a => getAttr(a, "val") === secAxId);
+            if (refsSecondary) {
+              // Mark all series from this chart type element as secondary
+              const secSerEls = qsa(ctEl, "ser");
+              for (const secSer of secSerEls) {
+                const secIdx = qs(secSer, "idx");
+                const secIdxVal = secIdx ? getAttr(secIdx, "val") : null;
+                if (secIdxVal !== null) {
+                  const idx = parseInt(secIdxVal, 10);
+                  if (idx < series.length) {
+                    series[idx].axisId = "right";
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 
-  return { type: "chart", ...transform, chartType, series, categories, title, legend, axes, showDataLabels, dataLabelType };
+  // Parse trendlines on each series
+  for (let si = 0; si < serEls.length; si++) {
+    const trendlineEl = qs(serEls[si], "trendline");
+    if (trendlineEl && si < series.length) {
+      const trendTypeEl = qs(trendlineEl, "trendlineType");
+      const typeVal = trendTypeEl ? getAttr(trendTypeEl, "val") : "linear";
+      const typeMap: Record<string, "linear" | "exponential" | "polynomial" | "power" | "logarithmic"> = {
+        linear: "linear", exp: "exponential", poly: "polynomial",
+        power: "power", log: "logarithmic",
+      };
+      const trendType = typeMap[typeVal ?? "linear"] ?? "linear";
+      const orderEl = qs(trendlineEl, "order");
+      const forwardEl = qs(trendlineEl, "forward");
+      const backwardEl = qs(trendlineEl, "backward");
+      series[si].trendline = {
+        type: trendType,
+        order: orderEl ? parseInt(getAttr(orderEl, "val") ?? "2", 10) : undefined,
+        forward: forwardEl ? parseFloat(getAttr(forwardEl, "val") ?? "0") : undefined,
+        backward: backwardEl ? parseFloat(getAttr(backwardEl, "val") ?? "0") : undefined,
+      };
+    }
+  }
+
+  return {
+    type: "chart", ...transform, chartType, series, categories,
+    title, legend, axes, showDataLabels, dataLabelType,
+    dataLabelPosition, secondaryAxis,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1934,6 +2353,82 @@ function parseTextStyleDef(styleEl: Element | null, theme: PptxTheme): PptxTextS
   }
 
   return Object.keys(style).length > 0 ? style : null;
+}
+
+// ---------------------------------------------------------------------------
+// Comment parsing
+// ---------------------------------------------------------------------------
+
+async function parseCommentAuthors(zip: JSZip): Promise<Map<number, string>> {
+  const doc = await readXml(zip, "ppt/commentAuthors.xml");
+  if (!doc) return new Map();
+  const authors = new Map<number, string>();
+  const cmAuthorEls = qsa(doc, "cmAuthor");
+  for (const el of cmAuthorEls) {
+    const id = intAttr(el, "id", -1);
+    const name = getAttr(el, "name") ?? "Unknown";
+    if (id >= 0) authors.set(id, name);
+  }
+  return authors;
+}
+
+async function parseSlideComments(
+  zip: JSZip,
+  slideRels: Record<string, string>,
+  slideDir: string,
+  authors: Map<number, string>,
+): Promise<PptxComment[]> {
+  const comments: PptxComment[] = [];
+  for (const [, target] of Object.entries(slideRels)) {
+    if (!target.includes("comment")) continue;
+    const commentPath = normalizePath(slideDir, target);
+    const doc = await readXml(zip, commentPath);
+    if (!doc) continue;
+
+    const cmEls = qsa(doc, "cm");
+    for (const cm of cmEls) {
+      const authorIdx = intAttr(cm, "authorId", 0);
+      const dt = getAttr(cm, "dt") ?? "";
+      const pos = qs(cm, "pos");
+      const x = pos ? intAttr(pos, "x", 0) : 0;
+      const y = pos ? intAttr(pos, "y", 0) : 0;
+      const textEl = qs(cm, "text");
+      const text = textEl?.textContent ?? "";
+
+      comments.push({
+        author: authors.get(authorIdx) ?? "Unknown",
+        date: dt,
+        text,
+        x,
+        y,
+      });
+    }
+  }
+  return comments;
+}
+
+// ---------------------------------------------------------------------------
+// Section parsing
+// ---------------------------------------------------------------------------
+
+function parseSections(presentationXml: Document): PptxSection[] | undefined {
+  const sectionLst = qs(presentationXml, "sectionLst");
+  if (!sectionLst) return undefined;
+
+  const sectionEls = qsa(sectionLst, "section");
+  if (sectionEls.length === 0) return undefined;
+
+  const sections: PptxSection[] = [];
+  let slideIdx = 0;
+  for (const sec of sectionEls) {
+    const name = getAttr(sec, "name") ?? "Untitled";
+    sections.push({ name, startSlide: slideIdx });
+    const sldIdLst = qs(sec, "sldIdLst");
+    const sldIds = sldIdLst ? qsa(sldIdLst, "sldId") : [];
+    slideIdx += sldIds.length;
+  }
+
+  return sections.length > 0 ? sections : undefined;
 }
 
 async function parseSlideMaster(

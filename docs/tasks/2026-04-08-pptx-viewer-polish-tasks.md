@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-08 |
-| **Status** | Not started |
+| **Status** | Complete |
 | **PRD** | [pptx-viewer-polish](../prds/2026-04-08-pptx-viewer-polish.md) |
 | **Research** | [pptx-viewer-quality](../research/2026-04-07-pptx-viewer-quality.md) |
 | **Total** | 23 tasks: 12S, 8M, 3L |
@@ -11,7 +11,7 @@
 
 **Risks:**
 
-- VP9 (pattern fills) requires defining ~48 SVG patterns. Start with the 10 most common and use solid foreground fallback for the rest.
+- VP9 (pattern fills) requires defining \~48 SVG patterns. Start with the 10 most common and use solid foreground fallback for the rest.
 - VP12 (table style resolution) is L complexity — theme table style IDs must be resolved against `a:tblStyleLst` which can be in theme XML or a separate `tableStyles.xml` file.
 - VP17 (trendlines) requires computing regression lines (linear, polynomial) from data points — needs a math utility or simple least-squares implementation.
 - VP7 (default run properties) interacts with master/layout inheritance — test carefully against the existing V2 master/layout pipeline.
@@ -20,33 +20,33 @@
 
 | Feature | Tier | Tasks | Status |
 | --- | --- | --- | --- |
-| VP1 — Underline styles | A | #1 | Not started |
-| VP2 — All caps / small caps | A | #2 | Not started |
-| VP3 — CJK / complex script fonts | B | #6 | Not started |
-| VP4 — Text highlight | A | #3 | Not started |
-| VP5 — Kerning | A | #4 | Not started |
-| VP6 — Bullet font/color/size | B | #7 | Not started |
-| VP7 — Default run properties | B | #8 | Not started |
-| VP8 — Tab stops | B | #5 | Not started |
-| VP9 — Pattern fills | D | #12 | Not started |
-| VP10 — Picture fill on shapes | D | #13 | Not started |
-| VP11 — Glow and soft edge | D | #14 | Not started |
-| VP12 — Table style resolution | E | #15 | Not started |
-| VP13 — Banded rows/columns | E | #16 | Not started |
-| VP14 — Cell gradient fill | E | #17 | Not started |
-| VP15 — Radar/bubble charts | C | #9 | Not started |
-| VP16 — Chart data labels | C | #10 | Not started |
-| VP17 — Secondary axes/trendlines | C | #11 | Not started |
-| VP18 — Image transparency | F | #18 | Not started |
-| VP19 — Image effects | F | #19 | Not started |
-| VP20 — Linked images | F | #20 | Not started |
-| VP21 — Slide headers/footers | G | #21 | Not started |
-| VP22 — Comments rendering | G | #22 | Not started |
-| VP23 — Sections in navigation | G | #23 | Not started |
+| VP1 — Underline styles | A | #1 | Done |
+| VP2 — All caps / small caps | A | #2 | Done |
+| VP3 — CJK / complex script fonts | B | #6 | Done |
+| VP4 — Text highlight | A | #3 | Done |
+| VP5 — Kerning | A | #4 | Done |
+| VP6 — Bullet font/color/size | B | #7 | Done |
+| VP7 — Default run properties | B | #8 | Done |
+| VP8 — Tab stops | B | #5 | Done |
+| VP9 — Pattern fills | D | #12 | Done |
+| VP10 — Picture fill on shapes | D | #13 | Done |
+| VP11 — Glow and soft edge | D | #14 | Done |
+| VP12 — Table style resolution | E | #15 | Done |
+| VP13 — Banded rows/columns | E | #16 | Done |
+| VP14 — Cell gradient fill | E | #17 | Done |
+| VP15 — Radar/bubble charts | C | #9 | Done |
+| VP16 — Chart data labels | C | #10 | Done |
+| VP17 — Secondary axes/trendlines | C | #11 | Done |
+| VP18 — Image transparency | F | #18 | Done |
+| VP19 — Image effects | F | #19 | Done |
+| VP20 — Linked images | F | #20 | Done |
+| VP21 — Slide headers/footers | G | #21 | Done |
+| VP22 — Comments rendering | G | #22 | Done |
+| VP23 — Sections in navigation | G | #23 | Done |
 
 ---
 
-### #1 — Add underline style parsing and rendering (VP1)
+### #1 — Add underline style parsing and rendering (VP1) ✅
 
 **Description:** Parse the full `rPr@u` attribute value in `pptx-parser.ts` (currently only checks for presence). Map OOXML underline types to CSS: `sng` → `underline`, `dbl` → `border-bottom: 3px double`, `heavy` → `text-decoration-thickness: 2px`, `dotted`/`dash`/`wavy` → corresponding `text-decoration-style`. Also parse underline color from `a:uFill > a:solidFill`. Add `underlineStyle` and `underlineColor` to `PptxTextRun` in `pptx-types.ts`.
 
@@ -64,7 +64,7 @@
 
 ---
 
-### #2 — Add all-caps and small-caps rendering (VP2)
+### #2 — Add all-caps and small-caps rendering (VP2) ✅
 
 **Description:** The `caps` field already exists on `PptxTextRun` (added in v2) and is parsed. Verify it's rendered in `PptxSlideRenderer.tsx`: `all` → `text-transform: uppercase`, `small` → `font-variant: small-caps`. If rendering is missing, add it.
 
@@ -80,7 +80,7 @@
 
 ---
 
-### #3 — Add text highlight rendering (VP4)
+### #3 — Add text highlight rendering (VP4) ✅
 
 **Description:** Parse run-level highlight from `a:rPr > a:highlight` or `a:rPr > a:solidFill` (when used as text background). Add `highlight?: string` (hex color) to `PptxTextRun`. Render as `background-color` on the text span.
 
@@ -98,7 +98,7 @@
 
 ---
 
-### #4 — Add kerning support (VP5)
+### #4 — Add kerning support (VP5) ✅
 
 **Description:** Parse `rPr@kern` attribute (minimum font size in hundredths of a point for automatic kerning). When present and font size exceeds the threshold, apply CSS `font-kerning: normal` on the text span. Add `kern?: number` to `PptxTextRun`.
 
@@ -115,7 +115,7 @@
 
 ---
 
-### #5 — Add tab stop support (VP8)
+### #5 — Add tab stop support (VP8) ✅
 
 **Description:** Parse `a:tabLst > a:tab` elements with `pos` (EMU position) and `algn` (left/center/right/decimal). Convert tab characters in text runs to positioned `<span>` elements with `margin-left` calculated from the tab stop position. Add `tabStops?: { pos: number; align: string }[]` to `PptxParagraph`.
 
@@ -133,7 +133,7 @@
 
 ---
 
-### #6 — Add CJK and complex script font resolution (VP3)
+### #6 — Add CJK and complex script font resolution (VP3) ✅
 
 **Description:** Parse `a:ea` (East Asian) and `a:cs` (Complex Script) font elements from run properties. Build a CSS `font-family` fallback chain: `latin, ea, cs, sans-serif`. Add `eaFont?: string` and `csFont?: string` to `PptxTextRun`.
 
@@ -151,7 +151,7 @@
 
 ---
 
-### #7 — Add bullet font, color, and size overrides (VP6)
+### #7 — Add bullet font, color, and size overrides (VP6) ✅
 
 **Description:** Parse `a:buFont` (typeface), `a:buClr` (color via `srgbClr` or `schemeClr`), and `a:buSzPct` (percentage of text size) from paragraph properties. The `bulletFont`, `bulletColor`, and `bulletSizePercent` fields already exist on `PptxParagraph` from v2. Ensure they're parsed and rendered: apply font/color/size to the bullet character `<span>` separately from the text run styling.
 
@@ -168,7 +168,7 @@
 
 ---
 
-### #8 — Add default run property resolution (VP7)
+### #8 — Add default run property resolution (VP7) ✅
 
 **Description:** Parse `a:defRPr` from `a:pPr` (paragraph properties). These define default font, size, color, and style for runs that don't specify their own. When a run's properties are empty, merge from the paragraph's `defRPr`. Fall back to layout/master `defRPr` when slide-level is absent (via the existing placeholder inheritance pipeline).
 
@@ -185,7 +185,7 @@
 
 ---
 
-### #9 — Add radar and bubble chart rendering (VP15)
+### #9 — Add radar and bubble chart rendering (VP15) ✅
 
 **Description:** Add `c:radarChart` and `c:bubbleChart` parsing in `pptx-parser.ts`. The `chartType` enum already includes `"radar"` and `"bubble"` from v2. Add recharts rendering in `PptxChartRenderer.tsx`:
 
@@ -208,7 +208,7 @@ Parse radar categories from `c:cat`, values from `c:val`. Parse bubble X/Y/size 
 
 ---
 
-### #10 — Add chart data label rendering (VP16)
+### #10 — Add chart data label rendering (VP16) ✅
 
 **Description:** Parse `c:dLbls` from chart XML. Extract `showVal`, `showCatName`, `showSerName`, `showPercent`, and `dLblPos` (position: t/b/l/r/ctr/outEnd/inEnd/inBase). The `showDataLabels` and `dataLabelType` fields already exist on `PptxChart` from v2. Render using recharts `<LabelList>` component on each series.
 
@@ -227,7 +227,7 @@ Parse radar categories from `c:cat`, values from `c:val`. Parse bubble X/Y/size 
 
 ---
 
-### #11 — Add chart secondary axes and trendlines (VP17)
+### #11 — Add chart secondary axes and trendlines (VP17) ✅
 
 **Description:** Parse secondary `c:valAx` (identified by different `axId` than the primary). Render as recharts `<YAxis yAxisId="right" orientation="right" />` with series assigned to the secondary axis.
 
@@ -248,7 +248,7 @@ Parse `c:trendline` on series: extract type (`linear`, `exponential`, `polynomia
 
 ---
 
-### #12 — Add pattern fill support (VP9)
+### #12 — Add pattern fill support (VP9) ✅
 
 **Description:** Parse `a:pattFill` with `prst` (pattern preset name), `a:fgClr`, and `a:bgClr`. Create `src/lib/pptx-patterns.ts` with CSS background generators for the 10 most common patterns:
 
@@ -256,7 +256,7 @@ Parse `c:trendline` on series: extract type (`linear`, `exponential`, `polynomia
 - `dkHorz`, `dkVert`, `dkDnDiag`, `dkUpDiag` → thicker `repeating-linear-gradient`
 - `ltHorz`, `ltVert` → thinner `repeating-linear-gradient`
 
-Remaining ~38 patterns fall back to solid foreground color. Extend `PptxFill` union with a richer `pattern` variant.
+Remaining \~38 patterns fall back to solid foreground color. Extend `PptxFill` union with a richer `pattern` variant.
 
 **Complexity:** M **Category:** frontend **Dependencies:** None **Files:**
 
@@ -274,7 +274,7 @@ Remaining ~38 patterns fall back to solid foreground color. Extend `PptxFill` un
 
 ---
 
-### #13 — Add picture fill on shapes (VP10)
+### #13 — Add picture fill on shapes (VP10) ✅
 
 **Description:** Parse `a:blipFill` inside shape/textbox properties (currently only parsed for standalone images). Extract the relationship ID, resolve to image data from the ZIP, and apply as CSS `background-image` on the shape div. Respect `a:stretch` (stretch fill), `a:tile` (tiled fill), and `a:srcRect` (source crop).
 
@@ -293,7 +293,7 @@ Remaining ~38 patterns fall back to solid foreground color. Extend `PptxFill` un
 
 ---
 
-### #14 — Add glow and soft edge effects (VP11)
+### #14 — Add glow and soft edge effects (VP11) ✅
 
 **Description:** Parse `a:glow` (radius, color, alpha) and `a:softEdge` (radius) from `a:effectLst` on shapes. Add `glow?: { radius: number; color: string; alpha: number }` and `softEdge?: number` to `PptxShape`. Render as:
 
@@ -314,7 +314,7 @@ Remaining ~38 patterns fall back to solid foreground color. Extend `PptxFill` un
 
 ---
 
-### #15 — Add table style resolution (VP12)
+### #15 — Add table style resolution (VP12) ✅
 
 **Description:** Parse `tbl@tblStyle` attribute (style ID GUID). Resolve against `a:tblStyleLst` in the theme XML (or `ppt/tableStyles.xml`). Extract styling for `wholeTbl`, `band1H`, `band2H`, `firstRow`, `lastRow`, `firstCol`, `lastCol`. Each style part defines fill, border, and text formatting. Apply as default cell styles, overridden by explicit `tcPr` properties.
 
@@ -333,7 +333,7 @@ Remaining ~38 patterns fall back to solid foreground color. Extend `PptxFill` un
 
 ---
 
-### #16 — Add banded rows and columns (VP13)
+### #16 — Add banded rows and columns (VP13) ✅
 
 **Description:** Parse `a:tblPr@bandRow` and `a:tblPr@bandCol` attributes. When banding is enabled and a table style is resolved (from #15), apply alternating styles from `band1H`/`band2H` (horizontal) or `band1V`/`band2V` (vertical). If no resolved style exists, apply a generic alternating fill using theme `lt2` color.
 
@@ -351,7 +351,7 @@ Remaining ~38 patterns fall back to solid foreground color. Extend `PptxFill` un
 
 ---
 
-### #17 — Add cell gradient fill (VP14)
+### #17 — Add cell gradient fill (VP14) ✅
 
 **Description:** Parse `a:gradFill` inside `a:tcPr` (table cell properties). Reuse the existing gradient parsing logic from shape fills. Add gradient fill option to `PptxTableCell`. Render as CSS gradient on the cell.
 
@@ -369,7 +369,7 @@ Remaining ~38 patterns fall back to solid foreground color. Extend `PptxFill` un
 
 ---
 
-### #18 — Add image transparency support (VP18)
+### #18 — Add image transparency support (VP18) ✅
 
 **Description:** The `opacity` field already exists on `PptxImage` from v2 and `alphaModFix` is already parsed. Verify rendering in `PptxSlideRenderer.tsx`: apply CSS `opacity: <value>` on the image element. If the rendering is missing, add it.
 
@@ -385,7 +385,7 @@ Remaining ~38 patterns fall back to solid foreground color. Extend `PptxFill` un
 
 ---
 
-### #19 — Add image effects (shadow, reflection) (VP19)
+### #19 — Add image effects (shadow, reflection) (VP19) ✅
 
 **Description:** Parse `a:effectLst` on image shapes. The `shadow` field already exists on `PptxImage` from v2. Verify shadow is rendered on images (it may only be applied to shapes currently). Add reflection support as a CSS approximation: flipped, faded duplicate positioned below the image using CSS `transform: scaleY(-1)` with `mask-image: linear-gradient(transparent, black)`.
 
@@ -402,7 +402,7 @@ Remaining ~38 patterns fall back to solid foreground color. Extend `PptxFill` un
 
 ---
 
-### #20 — Add linked (external) image support (VP20)
+### #20 — Add linked (external) image support (VP20) ✅
 
 **Description:** Parse `r:link` (as opposed to `r:embed`) in image relationship entries. These reference external URLs instead of embedded ZIP data. Detect in `pptx-parser.ts` and set `dataUrl` to the external URL. Render as `<img src="url">` with an error fallback placeholder (grey box with "External image" text) for unreachable URLs.
 
@@ -419,7 +419,7 @@ Remaining ~38 patterns fall back to solid foreground color. Extend `PptxFill` un
 
 ---
 
-### #21 — Add slide header and footer rendering (VP21)
+### #21 — Add slide header and footer rendering (VP21) ✅
 
 **Description:** The `headerFooter` field already exists on `PptxSlide` from v2 with `showDate`, `showFooter`, `showSlideNum` flags. Parse the actual text content: `dt` (date format or fixed text), `ftr` (footer text) from slide or master. Render positioned at the bottom of the slide in standard locations: date (left), footer (center), slide number (right).
 
@@ -438,7 +438,7 @@ Remaining ~38 patterns fall back to solid foreground color. Extend `PptxFill` un
 
 ---
 
-### #22 — Add comments rendering (VP22)
+### #22 — Add comments rendering (VP22) ✅
 
 **Description:** Parse `p:cmLst` from the comments XML part (e.g., `ppt/comments/comment1.xml` referenced from slide relationships). Extract author index, date, text, and anchor position. Display as a toggleable overlay: comment marker icons on the slide at anchor positions, with a side panel showing full comment text, author, and date.
 
@@ -458,7 +458,7 @@ Remaining ~38 patterns fall back to solid foreground color. Extend `PptxFill` un
 
 ---
 
-### #23 — Add sections in navigation (VP23)
+### #23 — Add sections in navigation (VP23) ✅
 
 **Description:** Parse `p:sectionLst` from `presentation.xml`. Each section has a name and a list of slide IDs. Display section names as labels in the slide counter/navigation area. Allow clicking a section name to jump to its first slide.
 
