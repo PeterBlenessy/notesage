@@ -1509,9 +1509,10 @@ function parseStyleFillRef(el: Element, theme: PptxTheme): PptxFill | null {
   if (idx <= 0) return null;
   const fillColor = resolveColor(fillRef, theme);
   if (!fillColor) return null;
-  // Map idx to alpha: 1=subtle, 2=moderate, 3=intense
-  const alpha = idx === 1 ? 0.2 : idx === 2 ? 0.6 : 1.0;
-  return { type: "solid", color: fillColor, alpha: alpha < 1 ? alpha : undefined };
+  // fillRef idx maps to theme fillStyleLst entries.
+  // idx=1 is typically a solid fill, idx=2/3 are gradients.
+  // We render all as solid fills since we don't parse the full fillStyleLst.
+  return { type: "solid", color: fillColor };
 }
 
 export function parseFill(spPr: Element, theme: PptxTheme): PptxFill | null {
@@ -3053,13 +3054,17 @@ export function resolveInheritance(presentation: PptxPresentation): void {
       const paragraphs = el.type === "textbox" ? el.paragraphs : el.text;
       const shapeLevelStyles = el.shapeLevelStyles;
 
-      // Find matching layout placeholder for text style inheritance
+      // Find matching layout placeholder for text style inheritance.
+      // Strip alignment from layout styles — layout alignment is for template
+      // placeholder text ("Click to edit..."), not for slide content.
       let layoutPlaceholderStyles: PptxTextStyle[] | undefined;
       if (el.placeholderType && layout) {
         const layoutPh = layout.placeholders.find(
           (p) => p.type === el.placeholderType && (el.placeholderIdx === undefined || p.idx === el.placeholderIdx),
         );
-        layoutPlaceholderStyles = layoutPh?.levelStyles;
+        if (layoutPh?.levelStyles) {
+          layoutPlaceholderStyles = layoutPh.levelStyles.map(({ alignment: _, ...rest }) => rest);
+        }
       }
 
       for (const p of paragraphs) {
