@@ -680,11 +680,9 @@ pub struct BundledFile {
 /// Write a bundled file to disk. In debug builds, skip files that already exist
 /// to allow live-editing bundled skills/agents during development.
 pub fn write_bundled_file(target: &Path, content: &str, executable: bool) -> Result<(), String> {
-    #[cfg(debug_assertions)]
-    if target.exists() {
-        return Ok(());
-    }
-
+    // Always overwrite bundled files to keep them in sync with app version.
+    // Bundled skills are embedded at compile time via include_str! — if the app
+    // ships a new version of a skill, the deployed copy must be updated.
     fs::write(target, content).map_err(|e| e.to_string())?;
 
     #[cfg(unix)]
