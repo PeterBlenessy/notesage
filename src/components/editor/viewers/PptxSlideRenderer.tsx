@@ -380,7 +380,7 @@ function wrapWithHyperlink(
           e.stopPropagation();
           if (onSlideNavigate && !isNaN(slideNum)) onSlideNavigate(slideNum - 1);
         }}
-        style={{ display: "contents", cursor: "pointer" }}
+        style={{ color: "#0563C1", textDecoration: "underline", cursor: "pointer" }}
       >
         {content}
       </a>
@@ -393,7 +393,7 @@ function wrapWithHyperlink(
       href={hyperlink}
       target="_blank"
       rel="noopener noreferrer"
-      style={{ display: "contents", cursor: "pointer" }}
+      style={{ color: "#0563C1", textDecoration: "underline", cursor: "pointer" }}
       onClick={(e) => e.stopPropagation()}
     >
       {content}

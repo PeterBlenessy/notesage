@@ -13,8 +13,10 @@ import type { PptxChart, PptxChartSeries } from "@/lib/pptx-types";
 // Constants
 // ---------------------------------------------------------------------------
 
+// Office default accent colors (matches the standard Office theme palette)
 const DEFAULT_CHART_COLORS = [
-  "#6b7280", "#9ca3af", "#4b5563", "#d1d5db", "#374151", "#e5e7eb",
+  "#4472C4", "#ED7D31", "#A5A5A5", "#FFC000", "#5B9BD5", "#70AD47",
+  "#264478", "#9E480E", "#636363", "#997300", "#255E91", "#43682B",
 ];
 
 type LabelPos = "top" | "bottom" | "left" | "right" | "center" | "inside" | "insideBottom";
@@ -199,7 +201,7 @@ function renderChart(
           {isHorizontal ? (
             <>
               <XAxis type="number" tick={{ fontSize: 10 }} label={xAxisLabel(el)} />
-              <YAxis dataKey="name" type="category" yAxisId="left" tick={{ fontSize: 10 }} label={yAxisLabel(el)} width={80} />
+              <YAxis dataKey="name" type="category" yAxisId="left" tick={{ fontSize: 10 }} label={yAxisLabel(el)} width={80} reversed />
             </>
           ) : (
             <>
