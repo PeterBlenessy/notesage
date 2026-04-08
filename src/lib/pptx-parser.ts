@@ -2054,7 +2054,14 @@ function parseTable(
     rows.push({ height, cells });
   }
 
-  const result: PptxTable = { type: "table", ...transform, height: transform.height, rows };
+  // Use the larger of xfrm width vs sum of column widths — xfrm may be a default/placeholder
+  const colWidthSum = colWidths.reduce((a, b) => a + b, 0);
+  const tableWidth = Math.max(transform.width, colWidthSum);
+  // Same for height — use sum of row heights if larger
+  const rowHeightSum = rows.reduce((a, r) => a + r.height, 0);
+  const tableHeight = Math.max(transform.height, rowHeightSum);
+
+  const result: PptxTable = { type: "table", ...transform, width: tableWidth, height: tableHeight, rows };
   if (style) result.style = style;
   if (bandRow) result.bandRow = bandRow;
   if (bandCol) result.bandCol = bandCol;
