@@ -2592,7 +2592,7 @@ function parseMasterRIds(presRels: Document): string[] {
 }
 
 /** Extract placeholders from a shape tree element */
-function extractPlaceholders(spTree: Element): PptxPlaceholder[] {
+function extractPlaceholders(spTree: Element, theme?: PptxTheme): PptxPlaceholder[] {
   const placeholders: PptxPlaceholder[] = [];
 
   for (let i = 0; i < spTree.children.length; i++) {
@@ -2612,6 +2612,17 @@ function extractPlaceholders(spTree: Element): PptxPlaceholder[] {
 
     const transform = getTransform(child);
 
+    // Parse lstStyle from the placeholder's txBody for text style inheritance
+    let levelStyles: PptxTextStyle[] | undefined;
+    if (theme) {
+      const txBody = qs(child, "txBody");
+      const lstStyle = txBody ? qs(txBody, "lstStyle") : null;
+      if (lstStyle) {
+        const parsed = parseTextStyleLevels(lstStyle, theme);
+        if (parsed.length > 0) levelStyles = parsed;
+      }
+    }
+
     placeholders.push({
       type: phType,
       idx: idx !== undefined && !isNaN(idx) ? idx : undefined,
@@ -2619,6 +2630,7 @@ function extractPlaceholders(spTree: Element): PptxPlaceholder[] {
       y: transform.y,
       width: transform.width,
       height: transform.height,
+      levelStyles,
     });
   }
 
@@ -2881,7 +2893,7 @@ async function parseSlideMaster(
   const shapes = spTree
     ? await parseElements(doc.documentElement, rels, zip, masterDir, theme)
     : [];
-  const placeholders = spTree ? extractPlaceholders(spTree) : [];
+  const placeholders = spTree ? extractPlaceholders(spTree, theme) : [];
   const background = await parseBackground(doc, theme, rels, zip);
   const { titleStyle, bodyStyle, otherStyle, titleLevelStyles, bodyLevelStyles, otherLevelStyles } = parseTextStyles(doc, theme);
 
@@ -2908,7 +2920,7 @@ async function parseSlideLayout(
   const shapes = spTree
     ? await parseElements(doc.documentElement, rels, zip, layoutDir, theme)
     : [];
-  const placeholders = spTree ? extractPlaceholders(spTree) : [];
+  const placeholders = spTree ? extractPlaceholders(spTree, theme) : [];
   const background = await parseBackground(doc, theme, rels, zip);
 
   return { name, shapes, placeholders, background };
@@ -2998,6 +3010,15 @@ export function resolveInheritance(presentation: PptxPresentation): void {
       const paragraphs = el.type === "textbox" ? el.paragraphs : el.text;
       const shapeLevelStyles = el.shapeLevelStyles;
 
+      // Find matching layout placeholder for text style inheritance
+      let layoutPlaceholderStyles: PptxTextStyle[] | undefined;
+      if (el.placeholderType && layout) {
+        const layoutPh = layout.placeholders.find(
+          (p) => p.type === el.placeholderType && (el.placeholderIdx === undefined || p.idx === el.placeholderIdx),
+        );
+        layoutPlaceholderStyles = layoutPh?.levelStyles;
+      }
+
       for (const p of paragraphs) {
         // Build cascade defaults for this paragraph's bullet level
         const cascadeDefaults = buildRunDefaults(
@@ -3006,6 +3027,7 @@ export function resolveInheritance(presentation: PptxPresentation): void {
           master,
           shapeLevelStyles,
           presentation,
+          layoutPlaceholderStyles,
         );
 
         // Apply cascade alignment only when the paragraph has NO explicit algn attribute.
@@ -3082,6 +3104,7 @@ function buildRunDefaults(
   master: PptxSlideMaster | undefined,
   shapeLevelStyles: PptxTextStyle[] | undefined,
   presentation: PptxPresentation,
+  layoutPlaceholderStyles?: PptxTextStyle[],
 ): PptxTextStyle {
   const defaults: PptxTextStyle = {};
 
@@ -3092,6 +3115,12 @@ function buildRunDefaults(
   if (shapeLevelStyles) {
     const lvlIdx = Math.min(bulletLevel, shapeLevelStyles.length - 1);
     if (lvlIdx >= 0) applyStyleIfEmpty(defaults, shapeLevelStyles[lvlIdx]);
+  }
+
+  // 1b. Layout placeholder lstStyle (between shape and master)
+  if (layoutPlaceholderStyles) {
+    const lvlIdx = Math.min(bulletLevel, layoutPlaceholderStyles.length - 1);
+    if (lvlIdx >= 0) applyStyleIfEmpty(defaults, layoutPlaceholderStyles[lvlIdx]);
   }
 
   // 2. Master styles (depends on placeholder type)

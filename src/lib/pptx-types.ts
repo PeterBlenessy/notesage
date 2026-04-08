@@ -358,6 +358,8 @@ export interface PptxPlaceholder {
   y: number;
   width: number;
   height: number;
+  /** Text style defaults from the placeholder's lstStyle (layout/master level) */
+  levelStyles?: PptxTextStyle[];
 }
 
 export interface PptxSlideLayout {
