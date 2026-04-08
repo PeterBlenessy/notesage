@@ -2666,15 +2666,8 @@ async function parseSlideMaster(
   const rels = await readRels(zip, masterPath);
   const masterDir = masterPath.substring(0, masterPath.lastIndexOf("/"));
 
-  const spTree = qs(doc.documentElement, "spTree");
-  const shapes = spTree
-    ? await parseElements(doc.documentElement, rels, zip, masterDir, theme)
-    : [];
-  const placeholders = spTree ? extractPlaceholders(spTree) : [];
-  const background = await parseBackground(doc, theme, rels, zip);
-  const { titleStyle, bodyStyle, bodyLevelStyles } = parseTextStyles(doc, theme);
-
-  // Parse clrMap from slide master — remaps semantic color names (bg1, tx1, etc.)
+  // Parse clrMap FIRST — it must be set on theme before parsing shapes/background
+  // so that scheme colors (bg1, tx1, etc.) resolve correctly through clrMap
   const clrMapEl = qs(doc.documentElement, "clrMap");
   let clrMap: Record<string, string> | undefined;
   if (clrMapEl) {
@@ -2684,7 +2677,17 @@ async function parseSlideMaster(
       const val = getAttr(clrMapEl, attr);
       if (val) clrMap[attr] = val;
     }
+    // Set on theme immediately so shapes/background parsed below use it
+    theme.clrMap = clrMap;
   }
+
+  const spTree = qs(doc.documentElement, "spTree");
+  const shapes = spTree
+    ? await parseElements(doc.documentElement, rels, zip, masterDir, theme)
+    : [];
+  const placeholders = spTree ? extractPlaceholders(spTree) : [];
+  const background = await parseBackground(doc, theme, rels, zip);
+  const { titleStyle, bodyStyle, bodyLevelStyles } = parseTextStyles(doc, theme);
 
   return { shapes, placeholders, background, titleStyle, bodyStyle, bodyLevelStyles, clrMap };
 }
