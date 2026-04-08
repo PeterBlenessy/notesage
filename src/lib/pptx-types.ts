@@ -113,6 +113,7 @@ export interface PptxTextRun {
   eaFont?: string;           // East Asian font
   csFont?: string;           // Complex Script font
   hyperlink?: string; // external URL or "slide:N" for internal links
+  shadow?: PptxShadow;
 }
 
 export interface PptxImage {
@@ -336,6 +337,7 @@ export interface PptxBackground {
 export interface PptxTheme {
   colors: Record<string, string>;
   fonts: { heading: string; body: string };
+  clrMap?: Record<string, string>;
   tableStyles?: Map<string, PptxTableStyle>;
 }
 
@@ -361,6 +363,8 @@ export interface PptxSlideMaster {
   background: PptxBackground | null;
   titleStyle?: PptxTextStyle;
   bodyStyle?: PptxTextStyle;
+  bodyLevelStyles?: PptxTextStyle[];
+  clrMap?: Record<string, string>;
 }
 
 export interface PptxTextStyle {

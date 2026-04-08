@@ -1,6 +1,14 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
-import { hexToHsl, hslToHex, applyColorTransforms } from "../pptx-parser";
+import {
+  hexToHsl,
+  hslToHex,
+  applyColorTransforms,
+  hexToRgbComponents,
+  rgbComponentsToHex,
+  srgbToLinear,
+  linearToSrgb,
+} from "../pptx-parser";
 
 // ---------------------------------------------------------------------------
 // Helper: create an XML element with DrawingML color transform children
@@ -11,6 +19,18 @@ function createColorElement(
 ): Element {
   const parts = Object.entries(transforms).map(
     ([name, val]) => `<a:${name} val="${val}"/>`,
+  );
+  const xml = `<root xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">${parts.join("")}</root>`;
+  return new DOMParser().parseFromString(xml, "application/xml")
+    .documentElement;
+}
+
+/** Create element with mixed value/valueless children (e.g., gamma, invGamma) */
+function createColorElementEx(
+  transforms: (readonly [string, number] | readonly [string])[],
+): Element {
+  const parts = transforms.map(([name, val]) =>
+    val !== undefined ? `<a:${name} val="${val}"/>` : `<a:${name}/>`
   );
   const xml = `<root xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">${parts.join("")}</root>`;
   return new DOMParser().parseFromString(xml, "application/xml")
@@ -233,5 +253,139 @@ describe("applyColorTransforms", () => {
     const baseHsl = hexToHsl(base);
     const resultHsl = hexToHsl(result);
     expect(resultHsl.l).toBeCloseTo(baseHsl.l, 3);
+  });
+
+  // --- RGB shade/tint tests ---
+
+  it("shade=50000 on pure red produces #800000 (RGB multiplication)", () => {
+    const el = createColorElement({ shade: 50000 });
+    const result = applyColorTransforms(el, "#ff0000");
+    // R=255*0.5=128, G=0*0.5=0, B=0*0.5=0 → #800000
+    expect(result).toBe("#800000");
+  });
+
+  it("shade on a saturated color desaturates (unlike HSL shade)", () => {
+    // In HSL, shade only changes luminance, not saturation.
+    // In RGB, shade multiplies all channels, which can reduce saturation.
+    const el = createColorElement({ shade: 50000 });
+    const result = applyColorTransforms(el, "#4a86c8");
+    // RGB: R=74*0.5=37, G=134*0.5=67, B=200*0.5=100 → #254364
+    expect(result).toBe("#254364");
+  });
+
+  it("tint=50000 on pure red produces #ff8080 (RGB tint)", () => {
+    const el = createColorElement({ tint: 50000 });
+    const result = applyColorTransforms(el, "#ff0000");
+    // R=255+(255-255)*0.5=255, G=0+(255-0)*0.5=128, B=0+(255-0)*0.5=128
+    expect(result).toBe("#ff8080");
+  });
+
+  // --- gamma/invGamma tests ---
+
+  it("gamma + shade + invGamma applies shade in linear RGB space", () => {
+    const el = createColorElementEx([
+      ["gamma"] as const,
+      ["shade", 50000] as const,
+      ["invGamma"] as const,
+    ]);
+    const result = applyColorTransforms(el, "#808080");
+    // sRGB 0x80 = 128/255 ≈ 0.502
+    // To linear: srgbToLinear(0.502) ≈ 0.2140
+    // Shade 50%: 0.2140 * 0.5 = 0.1070
+    // Back to sRGB: linearToSrgb(0.1070) ≈ 0.3510
+    // 0.3510 * 255 ≈ 89.5 → 90 = 0x5a
+    // Result should be around #5a5a5a
+    const { r, g, b } = hexToRgbComponents(result);
+    expect(r).toBe(g); // Grey stays grey
+    expect(r).toBe(b);
+    // Linear shade produces a darker result than sRGB shade would
+    // sRGB shade would give 128*0.5=64 (#404040)
+    // Linear shade gives ~90 (#5a5a5a) — lighter than sRGB shade on dark colors
+    expect(r).toBeGreaterThan(80);
+    expect(r).toBeLessThan(100);
+  });
+
+  it("gamma + tint + invGamma applies tint in linear RGB space", () => {
+    const el = createColorElementEx([
+      ["gamma"] as const,
+      ["tint", 50000] as const,
+      ["invGamma"] as const,
+    ]);
+    const result = applyColorTransforms(el, "#808080");
+    const { r, g, b } = hexToRgbComponents(result);
+    expect(r).toBe(g);
+    expect(r).toBe(b);
+    // Should be lighter than base
+    expect(r).toBeGreaterThan(128);
+  });
+
+  it("gamma without invGamma converts to linear but does not convert back", () => {
+    const el = createColorElementEx([
+      ["gamma"] as const,
+      ["shade", 100000] as const,
+    ]);
+    const result = applyColorTransforms(el, "#808080");
+    // sRGB 128/255 ≈ 0.502 → linear ≈ 0.2140 → shade 100% stays → 0.2140 * 255 ≈ 54.6 → 55 = 0x37
+    // Without invGamma, the linear value is written directly
+    const { r, g, b } = hexToRgbComponents(result);
+    expect(r).toBe(g);
+    expect(r).toBe(b);
+    expect(r).toBeLessThan(60);
+    expect(r).toBeGreaterThan(50);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// hexToRgbComponents / rgbComponentsToHex
+// ---------------------------------------------------------------------------
+
+describe("hexToRgbComponents", () => {
+  it("parses #ff0000 correctly", () => {
+    expect(hexToRgbComponents("#ff0000")).toEqual({ r: 255, g: 0, b: 0 });
+  });
+
+  it("parses without # prefix", () => {
+    expect(hexToRgbComponents("4a86c8")).toEqual({ r: 74, g: 134, b: 200 });
+  });
+});
+
+describe("rgbComponentsToHex", () => {
+  it("converts back to hex", () => {
+    expect(rgbComponentsToHex(255, 0, 0)).toBe("#ff0000");
+  });
+
+  it("clamps out-of-range values", () => {
+    expect(rgbComponentsToHex(300, -10, 128)).toBe("#ff0080");
+  });
+
+  it("rounds fractional values", () => {
+    expect(rgbComponentsToHex(127.6, 0, 255.4)).toBe("#8000ff");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// srgbToLinear / linearToSrgb
+// ---------------------------------------------------------------------------
+
+describe("srgbToLinear / linearToSrgb", () => {
+  it("round-trips mid-grey", () => {
+    const linear = srgbToLinear(0.5);
+    const back = linearToSrgb(linear);
+    expect(back).toBeCloseTo(0.5, 5);
+  });
+
+  it("round-trips black", () => {
+    expect(srgbToLinear(0)).toBe(0);
+    expect(linearToSrgb(0)).toBe(0);
+  });
+
+  it("round-trips white", () => {
+    expect(srgbToLinear(1)).toBeCloseTo(1, 5);
+    expect(linearToSrgb(1)).toBeCloseTo(1, 5);
+  });
+
+  it("linear mid-grey is darker than sRGB mid-grey", () => {
+    // sRGB 0.5 → linear should be < 0.5 (gamma compression makes midtones brighter)
+    expect(srgbToLinear(0.5)).toBeLessThan(0.5);
   });
 });

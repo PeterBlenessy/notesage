@@ -187,7 +187,7 @@ export function fillToCSS(fill: PptxFill): CSSProperties {
       return { backgroundColor: colorWithAlpha(fill.color, fill.alpha) };
     case "linear":
       return {
-        background: `linear-gradient(${fill.angle}deg, ${fill.stops.map((s) => `${colorWithAlpha(s.color, s.alpha)} ${s.position}%`).join(", ")})`,
+        background: `linear-gradient(${fill.angle + 90}deg, ${fill.stops.map((s) => `${colorWithAlpha(s.color, s.alpha)} ${s.position}%`).join(", ")})`,
       };
     case "radial":
       return {
@@ -560,6 +560,7 @@ function RunRenderer({
     ...(r.caps === "small" ? { fontVariant: "small-caps" as const } : {}),
     ...(r.highlight ? { backgroundColor: r.highlight } : {}),
     ...(r.kern != null && r.fontSize * 100 >= r.kern ? { fontKerning: "normal" as const } : {}),
+    ...(r.shadow ? { textShadow: `${r.shadow.offsetX}px ${r.shadow.offsetY}px ${r.shadow.blur}px rgba(${hexToRgb(r.shadow.color)}, ${r.shadow.alpha})` } : {}),
     whiteSpace: "pre-wrap",
   };
 

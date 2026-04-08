@@ -92,6 +92,11 @@ export async function parsePptx(bytes: Uint8Array): Promise<PptxPresentation> {
     }
   }
 
+  // Set theme clrMap from the first master
+  if (masters.length > 0 && masters[0].clrMap) {
+    theme.clrMap = masters[0].clrMap;
+  }
+
   // --- Parse comment authors (presentation-level, once) ---
   const commentAuthors = await parseCommentAuthors(zip);
 
@@ -102,7 +107,30 @@ export async function parsePptx(bytes: Uint8Array): Promise<PptxPresentation> {
     if (!slidePath) continue;
 
     const normalizedPath = normalizePath("ppt", slidePath);
+
+    // Check for per-slide clrMap override
+    const masterClrMap = theme.clrMap;
+    const slideDoc = await readXml(zip, normalizedPath);
+    if (slideDoc) {
+      const clrMapOvr = qs(slideDoc.documentElement, "clrMapOvr");
+      if (clrMapOvr) {
+        const override = qs(clrMapOvr, "overrideClrMapping");
+        if (override) {
+          const slideClrMap: Record<string, string> = { ...masterClrMap };
+          const clrMapAttrs = ["bg1", "tx1", "bg2", "tx2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink"];
+          for (const attr of clrMapAttrs) {
+            const val = getAttr(override, attr);
+            if (val) slideClrMap[attr] = val;
+          }
+          theme.clrMap = slideClrMap;
+        }
+      }
+    }
+
     const slide = await parseSlide(zip, normalizedPath, i, theme);
+
+    // Restore original clrMap
+    theme.clrMap = masterClrMap;
 
     // Resolve layout for this slide
     const slideRels = await readRels(zip, normalizedPath);
@@ -906,6 +934,24 @@ export function parseTextRuns(pEl: Element, theme: PptxTheme, rels?: Record<stri
       // Baseline (superscript/subscript)
       const baseline = rPr ? intAttr(rPr, "baseline", 0) : (defRPr ? intAttr(defRPr, "baseline", 0) : 0);
 
+      // Text-level shadow
+      const runEffectLst = effectiveRPr ? qs(effectiveRPr, "effectLst") : null;
+      const runOuterShdw = runEffectLst ? qs(runEffectLst, "outerShdw") : null;
+      let runShadow: PptxShadow | undefined;
+      if (runOuterShdw) {
+        const shdBlurRad = intAttr(runOuterShdw, "blurRad", 0) / 12700;
+        const shdDist = intAttr(runOuterShdw, "dist", 0) / 12700;
+        const shdDir = intAttr(runOuterShdw, "dir", 0) / 60000;
+        const shdDirRad = (shdDir * Math.PI) / 180;
+        const shdOffsetX = Math.round(shdDist * Math.sin(shdDirRad) * 10) / 10;
+        const shdOffsetY = Math.round(shdDist * Math.cos(shdDirRad) * 10) / 10;
+        const shdColorResult = resolveColorWithAlpha(runOuterShdw, theme);
+        runShadow = {
+          offsetX: shdOffsetX, offsetY: shdOffsetY, blur: shdBlurRad,
+          color: shdColorResult?.color ?? "#000000", alpha: shdColorResult?.alpha ?? 0.5,
+        };
+      }
+
       // Underline style and color
       const uAttr = effectiveRPr ? getAttr(effectiveRPr, "u") : null;
       const underline = effectiveRPr ? (uAttr ?? "none") !== "none" : false;
@@ -975,6 +1021,7 @@ export function parseTextRuns(pEl: Element, theme: PptxTheme, rels?: Record<stri
         ...(eaFont && eaFont !== fontFamily ? { eaFont } : {}),
         ...(csFont && csFont !== fontFamily ? { csFont } : {}),
         hyperlink,
+        ...(runShadow ? { shadow: runShadow } : {}),
       });
     } else if (ln === "br") {
       runs.push({
@@ -1011,20 +1058,29 @@ function parseRunColor(rPr: Element | null, theme: PptxTheme): string {
 // Color resolution
 // ---------------------------------------------------------------------------
 
-function resolveColor(parent: Element, theme: PptxTheme): string | null {
+/** Default clrMap mapping when no master clrMap is defined. */
+export const DEFAULT_CLR_MAP: Record<string, string> = { bg1: "lt1", bg2: "lt2", tx1: "dk1", tx2: "dk2" };
+
+export function resolveColor(parent: Element, theme: PptxTheme): string | null {
   const srgb = qs(parent, "srgbClr");
   if (srgb) return applyColorTransforms(srgb, `#${getAttr(srgb, "val") ?? "000000"}`);
 
   const schemeClr = qs(parent, "schemeClr");
   if (schemeClr) {
     const val = getAttr(schemeClr, "val");
+    // Try direct lookup first (e.g., dk1, lt1, accent1)
     if (val && theme.colors[val]) {
       return applyColorTransforms(schemeClr, theme.colors[val]);
     }
-    // Map bg1/bg2/tx1/tx2 to lt1/lt2/dk1/dk2
-    const altMap: Record<string, string> = { bg1: "lt1", bg2: "lt2", tx1: "dk1", tx2: "dk2" };
-    if (val && altMap[val] && theme.colors[altMap[val]]) {
-      return applyColorTransforms(schemeClr, theme.colors[altMap[val]]);
+    // Apply clrMap remapping (master's clrMap, or default mapping)
+    const clrMap = theme.clrMap ?? DEFAULT_CLR_MAP;
+    const remapped = val ? clrMap[val] : null;
+    if (remapped && theme.colors[remapped]) {
+      return applyColorTransforms(schemeClr, theme.colors[remapped]);
+    }
+    // Fallback to default mapping if clrMap doesn't have the key
+    if (val && DEFAULT_CLR_MAP[val] && theme.colors[DEFAULT_CLR_MAP[val]]) {
+      return applyColorTransforms(schemeClr, theme.colors[DEFAULT_CLR_MAP[val]]);
     }
   }
 
@@ -1032,7 +1088,7 @@ function resolveColor(parent: Element, theme: PptxTheme): string | null {
 }
 
 /** Like resolveColor but also extracts alpha from the color element's children. */
-function resolveColorWithAlpha(parent: Element, theme: PptxTheme): { color: string; alpha?: number } | null {
+export function resolveColorWithAlpha(parent: Element, theme: PptxTheme): { color: string; alpha?: number } | null {
   const srgb = qs(parent, "srgbClr");
   if (srgb) {
     const color = applyColorTransforms(srgb, `#${getAttr(srgb, "val") ?? "000000"}`);
@@ -1043,8 +1099,15 @@ function resolveColorWithAlpha(parent: Element, theme: PptxTheme): { color: stri
   const schemeClr = qs(parent, "schemeClr");
   if (schemeClr) {
     const val = getAttr(schemeClr, "val");
-    const altMap: Record<string, string> = { bg1: "lt1", bg2: "lt2", tx1: "dk1", tx2: "dk2" };
-    const baseKey = (val && theme.colors[val]) ? val : (val && altMap[val] && theme.colors[altMap[val]]) ? altMap[val] : null;
+    // Try direct lookup, then clrMap remapping, then default mapping
+    const clrMap = theme.clrMap ?? DEFAULT_CLR_MAP;
+    const baseKey = (val && theme.colors[val])
+      ? val
+      : (val && clrMap[val] && theme.colors[clrMap[val]])
+        ? clrMap[val]
+        : (val && DEFAULT_CLR_MAP[val] && theme.colors[DEFAULT_CLR_MAP[val]])
+          ? DEFAULT_CLR_MAP[val]
+          : null;
     if (baseKey) {
       const color = applyColorTransforms(schemeClr, theme.colors[baseKey]);
       const alpha = extractAlpha(schemeClr);
@@ -1122,6 +1185,32 @@ export function hslToHex(h: number, s: number, l: number): string {
   return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
 }
 
+/** Parse hex color to RGB components (0-255) */
+export function hexToRgbComponents(hex: string): { r: number; g: number; b: number } {
+  const raw = hex.replace("#", "");
+  return {
+    r: parseInt(raw.substring(0, 2), 16),
+    g: parseInt(raw.substring(2, 4), 16),
+    b: parseInt(raw.substring(4, 6), 16),
+  };
+}
+
+/** Convert RGB components (0-255) to hex string */
+export function rgbComponentsToHex(r: number, g: number, b: number): string {
+  const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+  return `#${clamp(r).toString(16).padStart(2, "0")}${clamp(g).toString(16).padStart(2, "0")}${clamp(b).toString(16).padStart(2, "0")}`;
+}
+
+/** Convert sRGB channel (0-1) to linear RGB */
+export function srgbToLinear(c: number): number {
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+/** Convert linear RGB channel to sRGB (0-1) */
+export function linearToSrgb(c: number): number {
+  return c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+}
+
 export function applyColorTransforms(parent: Element, baseColor: string): string {
   const hueMod = qs(parent, "hueMod");
   const hueOff = qs(parent, "hueOff");
@@ -1131,53 +1220,69 @@ export function applyColorTransforms(parent: Element, baseColor: string): string
   const lumOff = qs(parent, "lumOff");
   const tint = qs(parent, "tint");
   const shade = qs(parent, "shade");
+  const gamma = qs(parent, "gamma");
+  const invGamma = qs(parent, "invGamma");
 
   // Early return if no transforms present
   if (!hueMod && !hueOff && !satMod && !satOff && !lumMod && !lumOff && !tint && !shade) {
     return baseColor;
   }
 
-  const hsl = hexToHsl(baseColor);
+  let color = baseColor;
 
-  // 1. Hue modulation and offset
-  if (hueMod) {
-    hsl.h = hsl.h * (intAttr(hueMod, "val", 100000) / 100000);
-  }
-  if (hueOff) {
-    // hueOff is in 60000ths of a degree
-    hsl.h = hsl.h + intAttr(hueOff, "val", 0) / 60000;
-  }
-
-  // 2. Saturation modulation and offset
-  if (satMod) {
-    hsl.s = hsl.s * (intAttr(satMod, "val", 100000) / 100000);
-  }
-  if (satOff) {
-    hsl.s = hsl.s + intAttr(satOff, "val", 0) / 100000;
+  // 1. Hue/Sat/Lum modulation in HSL (correct per OOXML spec)
+  if (hueMod || hueOff || satMod || satOff || lumMod || lumOff) {
+    const hsl = hexToHsl(color);
+    if (hueMod) hsl.h = hsl.h * (intAttr(hueMod, "val", 100000) / 100000);
+    if (hueOff) hsl.h = hsl.h + intAttr(hueOff, "val", 0) / 60000;
+    if (satMod) hsl.s = hsl.s * (intAttr(satMod, "val", 100000) / 100000);
+    if (satOff) hsl.s = hsl.s + intAttr(satOff, "val", 0) / 100000;
+    if (lumMod || lumOff) {
+      const lm = lumMod ? intAttr(lumMod, "val", 100000) / 100000 : 1;
+      const lo = lumOff ? intAttr(lumOff, "val", 0) / 100000 : 0;
+      hsl.l = hsl.l * lm + lo;
+    }
+    color = hslToHex(hsl.h, hsl.s, hsl.l);
   }
 
-  // 3. Luminance modulation and offset: L_new = L * lumMod + lumOff
-  if (lumMod || lumOff) {
-    const lm = lumMod ? intAttr(lumMod, "val", 100000) / 100000 : 1;
-    const lo = lumOff ? intAttr(lumOff, "val", 0) / 100000 : 0;
-    hsl.l = hsl.l * lm + lo;
+  // 2. Tint and shade in sRGB (or linear RGB if gamma/invGamma present)
+  if (tint || shade) {
+    let { r, g, b } = hexToRgbComponents(color);
+
+    // Convert to linear space if gamma element is present
+    if (gamma) {
+      r = srgbToLinear(r / 255) * 255;
+      g = srgbToLinear(g / 255) * 255;
+      b = srgbToLinear(b / 255) * 255;
+    }
+
+    // Tint: sRGB channel operation — c_new = c + (255 - c) * tint_fraction
+    if (tint) {
+      const t = intAttr(tint, "val", 100000) / 100000;
+      r = r + (255 - r) * t;
+      g = g + (255 - g) * t;
+      b = b + (255 - b) * t;
+    }
+
+    // Shade: sRGB channel multiplication — c_new = c * shade_fraction
+    if (shade) {
+      const sh = intAttr(shade, "val", 100000) / 100000;
+      r = r * sh;
+      g = g * sh;
+      b = b * sh;
+    }
+
+    // Convert back from linear if invGamma element is present
+    if (invGamma) {
+      r = linearToSrgb(r / 255) * 255;
+      g = linearToSrgb(g / 255) * 255;
+      b = linearToSrgb(b / 255) * 255;
+    }
+
+    color = rgbComponentsToHex(r, g, b);
   }
 
-  // 4. Tint — mix toward white: L_new = L + (1 - L) * tint
-  if (tint) {
-    const t = intAttr(tint, "val", 100000) / 100000;
-    hsl.l = hsl.l + (1 - hsl.l) * t;
-  }
-
-  // 5. Shade — mix toward black: L_new = L * shade
-  if (shade) {
-    const sh = intAttr(shade, "val", 100000) / 100000;
-    hsl.l = hsl.l * sh;
-  }
-
-  // 6. Alpha — ignored for now (task #2)
-
-  return hslToHex(hsl.h, hsl.s, hsl.l);
+  return color;
 }
 
 // ---------------------------------------------------------------------------
@@ -1495,7 +1600,7 @@ async function extractImageDataUrl(zip: JSZip, path: string): Promise<string | n
 // Graphic frames (tables, charts, SmartArt)
 // ---------------------------------------------------------------------------
 
-async function parseGraphicFrame(
+export async function parseGraphicFrame(
   el: Element,
   rels: Record<string, string>,
   zip: JSZip,
@@ -1538,6 +1643,78 @@ async function parseGraphicFrame(
       stroke: "#999999",
       strokeWidth: 1,
       text: [{ alignment: "center", runs: [{ text: "SmartArt", bold: false, italic: true, underline: false, fontSize: 12, fontFamily: "sans-serif", color: "#999999" }], bulletChar: null, bulletLevel: 0 }],
+    };
+  }
+
+  // Check for OLE object — try to extract a preview/fallback image
+  const oleObj = qs(el, "oleObj");
+  if (oleObj) {
+    // Approach 1: Check if the OLE relationship points directly to an image file
+    const oleRId = oleObj.getAttributeNS(
+      "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+      "id",
+    ) || getAttr(oleObj, "r:id");
+
+    if (oleRId && rels[oleRId]) {
+      const target = rels[oleRId];
+      if (/\.(png|jpg|jpeg|gif|svg|emf|wmf|tiff?)$/i.test(target)) {
+        const imgPath = normalizePath(slideDir, target);
+        const dataUrl = await extractImageDataUrl(zip, imgPath);
+        if (dataUrl) {
+          return { type: "image", ...transform, dataUrl };
+        }
+      }
+    }
+
+    // Approach 2: Look for a VML drawing that contains the OLE preview image
+    // VML drawings are referenced in slide rels and contain <v:imagedata> elements
+    for (const [rIdKey, target] of Object.entries(rels)) {
+      if (oleRId && rIdKey === oleRId) continue; // already checked above
+      if (target.includes("vmlDrawing")) {
+        const vmlPath = normalizePath(slideDir, target);
+        const vmlDoc = await readXml(zip, vmlPath);
+        if (vmlDoc) {
+          const imageDataEls = qsa(vmlDoc, "imagedata");
+          for (const imgData of imageDataEls) {
+            const imgRId = getAttr(imgData, "r:id") || imgData.getAttributeNS(
+              "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+              "id",
+            );
+            if (imgRId) {
+              const vmlRels = await readRels(zip, vmlPath);
+              const imgTarget = vmlRels[imgRId];
+              if (imgTarget) {
+                const vmlDir = vmlPath.substring(0, vmlPath.lastIndexOf("/"));
+                const imgPath = normalizePath(vmlDir, imgTarget);
+                const dataUrl = await extractImageDataUrl(zip, imgPath);
+                if (dataUrl) {
+                  return { type: "image", ...transform, dataUrl };
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Fallback: render a placeholder
+    return {
+      type: "shape",
+      shapeType: "other",
+      ...transform,
+      fill: null,
+      stroke: "#999999",
+      strokeWidth: 1,
+      text: [{
+        alignment: "center" as const,
+        runs: [{
+          text: oleObj.getAttribute("name") || "Embedded Object",
+          bold: false, italic: true, underline: false,
+          fontSize: 10, fontFamily: "sans-serif", color: "#999999",
+        }],
+        bulletChar: null,
+        bulletLevel: 0,
+      }],
     };
   }
 
@@ -2301,16 +2478,18 @@ function extractPlaceholders(spTree: Element): PptxPlaceholder[] {
 }
 
 /** Parse default text styles from a slide master's p:txStyles */
-function parseTextStyles(doc: Document, theme: PptxTheme): { titleStyle?: PptxTextStyle; bodyStyle?: PptxTextStyle } {
+function parseTextStyles(doc: Document, theme: PptxTheme): { titleStyle?: PptxTextStyle; bodyStyle?: PptxTextStyle; bodyLevelStyles?: PptxTextStyle[] } {
   const txStyles = qs(doc, "txStyles");
   if (!txStyles) return {};
 
   const titleStyle = parseTextStyleDef(qs(txStyles, "titleStyle"), theme);
   const bodyStyle = parseTextStyleDef(qs(txStyles, "bodyStyle"), theme);
+  const bodyLevelStyles = parseTextStyleLevels(qs(txStyles, "bodyStyle"), theme);
 
   return {
     titleStyle: titleStyle ?? undefined,
     bodyStyle: bodyStyle ?? undefined,
+    bodyLevelStyles: bodyLevelStyles.length > 0 ? bodyLevelStyles : undefined,
   };
 }
 
@@ -2353,6 +2532,49 @@ function parseTextStyleDef(styleEl: Element | null, theme: PptxTheme): PptxTextS
   }
 
   return Object.keys(style).length > 0 ? style : null;
+}
+
+/** Parse per-level text styles (lvl1pPr through lvl9pPr) from a text style definition. */
+function parseTextStyleLevels(styleEl: Element | null, theme: PptxTheme): PptxTextStyle[] {
+  if (!styleEl) return [];
+
+  const levels: PptxTextStyle[] = [];
+  for (let i = 1; i <= 9; i++) {
+    const lvl = qs(styleEl, `lvl${i}pPr`);
+    if (!lvl) break;
+
+    const style: PptxTextStyle = {};
+    const algn = getAttr(lvl, "algn");
+    if (algn) {
+      const map: Record<string, PptxTextStyle["alignment"]> = { l: "left", ctr: "center", r: "right", just: "justify" };
+      style.alignment = map[algn];
+    }
+
+    const defRPr = qs(lvl, "defRPr");
+    if (defRPr) {
+      const sz = getAttr(defRPr, "sz");
+      if (sz) style.fontSize = parseInt(sz, 10) / 100;
+      if (getAttr(defRPr, "b") === "1") style.bold = true;
+      if (getAttr(defRPr, "i") === "1") style.italic = true;
+
+      const latin = qs(defRPr, "latin");
+      if (latin) {
+        const tf = getAttr(latin, "typeface");
+        if (tf) {
+          if (tf === "+mj-lt") style.fontFamily = theme.fonts.heading;
+          else if (tf === "+mn-lt") style.fontFamily = theme.fonts.body;
+          else style.fontFamily = tf;
+        }
+      }
+
+      const color = resolveColor(defRPr, theme);
+      if (color) style.color = color;
+    }
+
+    levels.push(Object.keys(style).length > 0 ? style : {});
+  }
+
+  return levels;
 }
 
 // ---------------------------------------------------------------------------
@@ -2450,9 +2672,21 @@ async function parseSlideMaster(
     : [];
   const placeholders = spTree ? extractPlaceholders(spTree) : [];
   const background = await parseBackground(doc, theme, rels, zip);
-  const { titleStyle, bodyStyle } = parseTextStyles(doc, theme);
+  const { titleStyle, bodyStyle, bodyLevelStyles } = parseTextStyles(doc, theme);
 
-  return { shapes, placeholders, background, titleStyle, bodyStyle };
+  // Parse clrMap from slide master — remaps semantic color names (bg1, tx1, etc.)
+  const clrMapEl = qs(doc.documentElement, "clrMap");
+  let clrMap: Record<string, string> | undefined;
+  if (clrMapEl) {
+    clrMap = {};
+    const clrMapAttrs = ["bg1", "tx1", "bg2", "tx2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink"];
+    for (const attr of clrMapAttrs) {
+      const val = getAttr(clrMapEl, attr);
+      if (val) clrMap[attr] = val;
+    }
+  }
+
+  return { shapes, placeholders, background, titleStyle, bodyStyle, bodyLevelStyles, clrMap };
 }
 
 async function parseSlideLayout(
@@ -2491,7 +2725,9 @@ async function parseSlideLayout(
  * 2. Inherits background from layout or master if slide has none
  * 3. Inherits placeholder positions from layout/master for empty placeholders
  */
-function resolveInheritance(presentation: PptxPresentation): void {
+export function resolveInheritance(presentation: PptxPresentation): void {
+  const theme = presentation.theme;
+
   for (const slide of presentation.slides) {
     const layout =
       slide.layoutIndex !== undefined
@@ -2543,6 +2779,56 @@ function resolveInheritance(presentation: PptxPresentation): void {
 
     slide.masterShapes = master ? master.shapes.filter(isDecorativeShape) : [];
     slide.layoutShapes = layout ? layout.shapes.filter(isDecorativeShape) : [];
+
+    // 4. Apply master text style defaults to placeholder elements
+    if (master) {
+      for (const el of slide.elements) {
+        if (el.type !== "textbox" && el.type !== "shape") continue;
+        if (!el.placeholderType) continue;
+
+        const isTitlePlaceholder =
+          el.placeholderType === "title" || el.placeholderType === "ctrTitle";
+        const isBodyPlaceholder =
+          el.placeholderType === "body" || el.placeholderType === "subTitle";
+
+        if (!isTitlePlaceholder && !isBodyPlaceholder) continue;
+
+        const paragraphs = el.type === "textbox" ? el.paragraphs : el.text;
+
+        for (const p of paragraphs) {
+          let masterStyle: PptxTextStyle | undefined;
+          if (isBodyPlaceholder && master.bodyLevelStyles) {
+            const levelIndex = Math.min(p.bulletLevel, master.bodyLevelStyles.length - 1);
+            if (levelIndex >= 0) masterStyle = master.bodyLevelStyles[levelIndex];
+          }
+          if (!masterStyle) {
+            masterStyle = isTitlePlaceholder ? master.titleStyle : master.bodyStyle;
+          }
+          if (!masterStyle) continue;
+
+          for (const run of p.runs) {
+            if (run.fontSize === 18 && masterStyle.fontSize) run.fontSize = masterStyle.fontSize;
+            if (run.color === "#000000" && masterStyle.color) run.color = masterStyle.color;
+            if (!run.bold && masterStyle.bold) run.bold = true;
+            if (masterStyle.fontFamily && run.fontFamily === theme.fonts.body && masterStyle.fontFamily !== theme.fonts.body) {
+              run.fontFamily = masterStyle.fontFamily;
+            }
+          }
+        }
+
+        // Task #9: Title placeholders use heading font
+        if (isTitlePlaceholder) {
+          const titleParagraphs = el.type === "textbox" ? el.paragraphs : el.text;
+          for (const p of titleParagraphs) {
+            for (const run of p.runs) {
+              if (run.fontFamily === theme.fonts.body && theme.fonts.heading !== theme.fonts.body) {
+                run.fontFamily = theme.fonts.heading;
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
 

@@ -94,7 +94,7 @@ describe("Cell gradient fill CSS rendering", () => {
     };
     const css = fillToCSS(fill);
     expect(css.background).toContain("linear-gradient");
-    expect(css.background).toContain("90deg");
+    expect(css.background).toContain("180deg"); // OOXML 90° + 90 = CSS 180°
   });
 
   it("converts radial gradient fill to CSS background", () => {
