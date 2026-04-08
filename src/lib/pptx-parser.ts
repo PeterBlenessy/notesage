@@ -655,15 +655,15 @@ async function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<
       paragraphs = injectSlideNumber(paragraphs, slideIndex);
     }
     if (paragraphs.length === 0 && !placeholderType) {
-      // Empty shape with no text — check if it has a visual fill (from spPr or <p:style>)
-      // If so, render as a rect shape instead of skipping
-      let styleFill: PptxFill | null = spPr ? parseFill(spPr, theme) : null;
-      if (!styleFill) styleFill = parseStyleFillRef(el, theme);
-      if (!styleFill) return null;
-      // Render as a shape with fill
+      // Empty shape with no text — only render if it has an explicit fill in spPr.
+      // Don't render shapes that only have <p:style> fills without preset geometry,
+      // as they likely have custom geometry (circles, arcs, etc.) we can't render
+      // and would incorrectly appear as solid-colored rectangles.
+      const explicitFill = spPr ? parseFill(spPr, theme) : null;
+      if (!explicitFill) return null;
       return {
         type: "shape", shapeType: "rect" as const, ...transform,
-        fill: styleFill, stroke: null, strokeWidth: 0, text: [],
+        fill: explicitFill, stroke: null, strokeWidth: 0, text: [],
         bodyProps, shadow,
       };
     }
