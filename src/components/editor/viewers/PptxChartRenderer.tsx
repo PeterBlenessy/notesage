@@ -304,7 +304,7 @@ function renderChart(
             label={el.showDataLabels ? (isPct ? ({ value }: { value: number }) => pctFormatter(value) : { fontSize: 9 }) : false}
           >
             {pieData.map((_, i) => (
-              <Cell key={i} fill={seriesColors[i % seriesColors.length]} />
+              <Cell key={i} fill={DEFAULT_CHART_COLORS[i % DEFAULT_CHART_COLORS.length]} />
             ))}
           </Pie>
           <Tooltip />
