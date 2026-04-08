@@ -2239,15 +2239,35 @@ async function parseChart(
   let title: string | undefined;
   const titleEl = qs(doc, "title");
   if (titleEl) {
-    const rich = qs(titleEl, "rich");
-    if (rich) {
-      const texts: string[] = [];
-      const titleRuns = qsa(rich, "r");
-      for (const r of titleRuns) {
-        const t = qs(r, "t");
-        if (t?.textContent) texts.push(t.textContent);
+    const tx = qs(titleEl, "tx");
+    if (tx) {
+      const rich = qs(tx, "rich");
+      if (rich) {
+        const texts: string[] = [];
+        const titleRuns = qsa(rich, "r");
+        for (const r of titleRuns) {
+          const t = qs(r, "t");
+          if (t?.textContent) texts.push(t.textContent);
+        }
+        title = texts.join("") || undefined;
       }
-      title = texts.join("") || undefined;
+      // String reference title (c:tx > c:strRef > c:strCache > c:pt > c:v)
+      if (!title) {
+        const strCache = qs(tx, "strCache");
+        if (strCache) {
+          const pt = qs(strCache, "pt");
+          const v = pt ? qs(pt, "v") : null;
+          if (v?.textContent) title = v.textContent;
+        }
+      }
+    }
+    // Auto-title: <c:title> exists but has no <c:tx> — use first series name
+    if (!title) {
+      const autoDeleted = qs(doc, "autoTitleDeleted");
+      const isAutoDeleted = autoDeleted && getAttr(autoDeleted, "val") === "1";
+      if (!isAutoDeleted && series.length > 0) {
+        title = series[0].name || undefined;
+      }
     }
   }
 

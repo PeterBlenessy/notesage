@@ -299,6 +299,8 @@ function renderChart(
             innerRadius={el.chartType === "doughnut" ? "40%" : 0}
             outerRadius="80%"
             dataKey="value"
+            startAngle={90}
+            endAngle={-270}
             label={el.showDataLabels ? (isPct ? ({ value }: { value: number }) => pctFormatter(value) : { fontSize: 9 }) : false}
           >
             {pieData.map((_, i) => (
