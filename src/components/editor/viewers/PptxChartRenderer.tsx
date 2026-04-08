@@ -211,7 +211,7 @@ function renderChart(
             </>
           )}
           <Tooltip />
-          {el.legend && <Legend verticalAlign={el.legend.position === "top" ? "top" : "bottom"} />}
+          {el.legend && <Legend verticalAlign={el.legend.position === "top" ? "top" : "bottom"} formatter={(value: string) => <span style={{ color: "#333" }}>{value}</span>} />}
           {el.series.map((s, i) => (
             <Bar key={i} dataKey={`s${i}`} name={s.name || `Series ${i + 1}`} fill={seriesColors[i]} yAxisId={s.axisId === "right" ? "right" : "left"}>
               {el.showDataLabels && <LabelList dataKey={`s${i}`} position={labelPos} fontSize={9} />}
@@ -231,7 +231,7 @@ function renderChart(
           <YAxis yAxisId="left" tick={{ fontSize: 10 }} label={yAxisLabel(el)} />
           {hasSecondary && <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />}
           <Tooltip />
-          {el.legend && <Legend verticalAlign={el.legend.position === "top" ? "top" : "bottom"} />}
+          {el.legend && <Legend verticalAlign={el.legend.position === "top" ? "top" : "bottom"} formatter={(value: string) => <span style={{ color: "#333" }}>{value}</span>} />}
           {el.series.map((s, i) => (
             <Line key={i} dataKey={`s${i}`} name={s.name || `Series ${i + 1}`} stroke={seriesColors[i]} dot={false} yAxisId={s.axisId === "right" ? "right" : "left"}>
               {el.showDataLabels && <LabelList dataKey={`s${i}`} position={labelPos} fontSize={9} />}
@@ -250,7 +250,7 @@ function renderChart(
           <YAxis yAxisId="left" tick={{ fontSize: 10 }} label={yAxisLabel(el)} />
           {hasSecondary && <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />}
           <Tooltip />
-          {el.legend && <Legend verticalAlign={el.legend.position === "top" ? "top" : "bottom"} />}
+          {el.legend && <Legend verticalAlign={el.legend.position === "top" ? "top" : "bottom"} formatter={(value: string) => <span style={{ color: "#333" }}>{value}</span>} />}
           {el.series.map((s, i) => (
             <Area key={i} dataKey={`s${i}`} name={s.name || `Series ${i + 1}`} fill={seriesColors[i]} stroke={seriesColors[i]} fillOpacity={0.3} yAxisId={s.axisId === "right" ? "right" : "left"}>
               {el.showDataLabels && <LabelList dataKey={`s${i}`} position={labelPos} fontSize={9} />}
@@ -276,7 +276,7 @@ function renderChart(
           <XAxis dataKey="x" type="number" tick={{ fontSize: 10 }} label={xAxisLabel(el)} />
           <YAxis dataKey="y" type="number" tick={{ fontSize: 10 }} label={yAxisLabel(el)} />
           <Tooltip />
-          {el.legend && <Legend verticalAlign={el.legend.position === "top" ? "top" : "bottom"} />}
+          {el.legend && <Legend verticalAlign={el.legend.position === "top" ? "top" : "bottom"} formatter={(value: string) => <span style={{ color: "#333" }}>{value}</span>} />}
           {scatterData.map((s, i) => (
             <Scatter key={i} name={s.name} data={s.points} fill={s.color} />
           ))}
@@ -308,7 +308,7 @@ function renderChart(
             ))}
           </Pie>
           <Tooltip />
-          {el.legend && <Legend verticalAlign={el.legend.position === "top" ? "top" : "bottom"} />}
+          {el.legend && <Legend verticalAlign={el.legend.position === "top" ? "top" : "bottom"} formatter={(value: string) => <span style={{ color: "#333" }}>{value}</span>} />}
         </PieChart>
       );
     }
