@@ -480,9 +480,11 @@ export function ParagraphsRenderer({
             style={{
               textAlign: p.alignment,
               paddingLeft: basePaddingLeft + extraMarginLeft || undefined,
-              display: "flex",
-              alignItems: bulletLabel ? "baseline" : undefined,
-              gap: bulletLabel ? 4 : undefined,
+              ...(bulletLabel ? {
+                display: "flex",
+                alignItems: "baseline",
+                gap: 4,
+              } : {}),
               lineHeight: p.lineSpacing != null ? p.lineSpacing : undefined,
               marginTop: p.spaceBefore != null ? p.spaceBefore : undefined,
               marginBottom: p.spaceAfter != null ? p.spaceAfter : undefined,
