@@ -654,7 +654,28 @@ async function parseShapeOrTextBox(el: Element, theme: PptxTheme, rels?: Record<
     if (placeholderType === "sldNum") {
       paragraphs = injectSlideNumber(paragraphs, slideIndex);
     }
-    if (paragraphs.length === 0 && !placeholderType) return null;
+    if (paragraphs.length === 0 && !placeholderType) {
+      // Empty shape with no text — check if it has a visual fill (from spPr or <p:style>)
+      // If so, render as a rect shape instead of skipping
+      let styleFill: PptxFill | null = spPr ? parseFill(spPr, theme) : null;
+      if (!styleFill) {
+        const pStyle = qs(el, "style");
+        if (pStyle) {
+          const fillRef = qs(pStyle, "fillRef");
+          if (fillRef && intAttr(fillRef, "idx", 0) > 0) {
+            const fillColor = resolveColor(fillRef, theme);
+            if (fillColor) styleFill = { type: "solid", color: fillColor };
+          }
+        }
+      }
+      if (!styleFill) return null;
+      // Render as a shape with fill
+      return {
+        type: "shape", shapeType: "rect" as const, ...transform,
+        fill: styleFill, stroke: null, strokeWidth: 0, text: [],
+        bodyProps, shadow,
+      };
+    }
     return { type: "textbox", ...transform, paragraphs, bodyProps, hyperlink: shapeHyperlink, placeholderType, placeholderIdx, shadow, shapeLevelStyles: validShapeLevelStyles };
   }
 
@@ -3058,15 +3079,8 @@ export function resolveInheritance(presentation: PptxPresentation): void {
         );
 
         // Apply cascade alignment only when the paragraph has NO explicit algn attribute.
-        if (!p.explicitAlignment) {
-          // Title, ctrTitle, subTitle placeholders default to centered in PowerPoint
-          // regardless of what the master txStyles say.
-          const isCenteredPlaceholder = isTitlePlaceholder || el.placeholderType === "subTitle";
-          if (isCenteredPlaceholder) {
-            p.alignment = "center";
-          } else if (cascadeDefaults.alignment) {
-            p.alignment = cascadeDefaults.alignment;
-          }
+        if (!p.explicitAlignment && cascadeDefaults.alignment) {
+          p.alignment = cascadeDefaults.alignment;
         }
 
         // Apply cascade bullets when paragraph has no explicit bullet.
