@@ -3,6 +3,11 @@
 **Library:** Recharts 3.8.0 (via shadcn/ui `ChartContainer` wrapper)
 **Date:** 2026-04-08
 
+| Stage | Link | Status |
+| --- | --- | --- |
+| PRD | [chart-feature-expansion](../prds/2026-04-08-chart-feature-expansion.md) | Draft |
+| Tasks | — | Not planned |
+
 ## Overview
 
 Notesage embeds charts in documents via a Tiptap node extension backed by sidecar JSON files (`.notesage/charts/{id}.json`). Charts are created either manually through the visual Chart Editor panel, or programmatically by AI agents using the `insert-chart` bundled skill. This audit inventories every feature Recharts provides and maps each to its support status in Notesage.
