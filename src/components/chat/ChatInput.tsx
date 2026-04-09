@@ -34,9 +34,10 @@ interface ChatInputProps {
   editContext?: EditContext | null;
   onCancelEdit?: () => void;
   supportsVision?: boolean;
+  maxTextareaHeight?: number;
 }
 
-export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = 'Ask anything...', footer, contextItems, onDismissContext, editContext, onCancelEdit, supportsVision }, ref) {
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput({ onSend, onStop, isLoading, disabled, placeholder = 'Ask anything...', footer, contextItems, onDismissContext, editContext, onCancelEdit, supportsVision, maxTextareaHeight }, ref) {
   const [message, setMessage] = useState('');
   const [pendingAttachments, setPendingAttachments] = useState<ImageAttachment[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -447,7 +448,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           placeholder={isDictating && interimText ? interimText : placeholder}
           disabled={disabled}
           rows={1}
-          className="chat-input-textarea flex-1 bg-transparent text-sm resize-none outline-none placeholder:text-muted-foreground/50 max-h-[120px] py-0.5 leading-relaxed overflow-y-auto text-foreground"
+          style={maxTextareaHeight ? { maxHeight: `${maxTextareaHeight}px` } : undefined}
+          className={`chat-input-textarea flex-1 bg-transparent text-sm resize-none outline-none placeholder:text-muted-foreground/50 py-0.5 leading-relaxed text-foreground ${maxTextareaHeight ? 'overflow-y-auto' : ''}`}
         />
       </div>
       {footer && (

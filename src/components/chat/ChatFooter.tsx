@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, type RefObject } from 'react';
+import { memo, useMemo, useState, useEffect, useRef, type RefObject } from 'react';
 import { ChevronUp, FolderOpen, Check, Target, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentIcon } from '@/components/AgentIcon';
@@ -113,6 +113,23 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
   const [projectOpen, setProjectOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
 
+  // Measure the chat panel height so the textarea can cap at 40%
+  const footerRef = useRef<HTMLDivElement>(null);
+  const [maxTextareaHeight, setMaxTextareaHeight] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    const panel = footerRef.current?.closest('.chat-panel-root') as HTMLElement | null;
+    if (!panel) return;
+
+    const observer = new ResizeObserver(([entry]) => {
+      const panelHeight = entry.contentRect.height;
+      // 30% of the chat panel — keeps the conversation comfortably visible
+      setMaxTextareaHeight(Math.floor(panelHeight * 0.3));
+    });
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, []);
+
   const projectLabel = useMemo(() => {
     if (selectedProjectPaths.length === 0) return 'No projects';
     if (selectedProjectPaths.length === 1) {
@@ -170,7 +187,7 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
   };
 
   return (
-    <div className="border-t border-border px-3 py-3">
+    <div ref={footerRef} className="border-t border-border px-3 py-3">
       <ChatInput
         ref={chatInputRef}
         onSend={onSend}
@@ -183,6 +200,7 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
         contextItems={contextItems}
         onDismissContext={dismissItem}
         supportsVision={supportsVision}
+        maxTextareaHeight={maxTextareaHeight}
         footer={
           <>
             {(interactiveConnections.length > 0 || hasProjectOverride) && (

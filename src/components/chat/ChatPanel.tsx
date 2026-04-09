@@ -280,7 +280,7 @@ export function ChatPanel() {
   }, [activeConversationId, conversations]);
 
   return (
-    <div className="h-full w-full bg-card flex flex-col">
+    <div className="chat-panel-root h-full w-full bg-card flex flex-col">
       <div className="h-9 px-2 flex items-center justify-between shrink-0 bg-card border-b border-border">
         <div className="flex items-center gap-0.5">
           <button
