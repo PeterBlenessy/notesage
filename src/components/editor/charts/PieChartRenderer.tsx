@@ -1,4 +1,4 @@
-import { PieChart, Pie, Cell } from "recharts";
+import { PieChart, Pie, Cell, type PieLabelRenderProps } from "recharts";
 import {
   ChartContainer,
   ChartTooltip,
@@ -32,13 +32,39 @@ export function PieChartRenderer({
       : theme;
   const palette = COLOR_PALETTES[chartData.config.colorScheme];
   const colors = resolvedTheme === "dark" ? palette.dark : palette.light;
+  const legendPos = chartData.config.legendPosition ?? "bottom";
+
+  const showLabels = chartData.config.showDataLabels;
+  const pieLabels = chartData.config.pieLabels ?? "none";
+  const total = chartData.data.reduce((sum, d) => sum + d.value, 0);
+
+  const renderLabel = showLabels && pieLabels !== "none"
+    ? (entry: PieLabelRenderProps) => {
+        const value = entry.value as number;
+        const category = (entry as PieLabelRenderProps & { category?: string }).category ?? "";
+        switch (pieLabels) {
+          case "value":
+            return String(value);
+          case "percent":
+            return total > 0 ? `${((value / total) * 100).toFixed(0)}%` : "0%";
+          case "name":
+            return category;
+          default:
+            return "";
+        }
+      }
+    : undefined;
 
   return (
     <ChartContainer config={config} className="w-full" style={{ height }}>
       <PieChart>
         <ChartTooltip content={<ChartTooltipContent hideLabel />} />
         {chartData.config.showLegend && (
-          <ChartLegend content={<ChartLegendContent nameKey="category" />} />
+          <ChartLegend
+            content={<ChartLegendContent nameKey="category" />}
+            verticalAlign={legendPos === "left" || legendPos === "right" ? "middle" : legendPos}
+            align={legendPos === "left" || legendPos === "right" ? legendPos : "center"}
+          />
         )}
         <Pie
           data={chartData.data}
@@ -50,6 +76,8 @@ export function PieChartRenderer({
           outerRadius="80%"
           strokeWidth={2}
           stroke="var(--color-background)"
+          label={renderLabel}
+          labelLine={showLabels && pieLabels !== "none"}
         >
           {chartData.data.map((_, i) => (
             <Cell

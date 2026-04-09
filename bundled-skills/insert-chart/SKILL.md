@@ -45,6 +45,10 @@ When the editor sees this markdown pattern, it renders an interactive chart. The
 | `area` | Filled area chart | Volume over time |
 | `pie` | Pie chart | Proportions of a whole |
 | `donut` | Donut chart | Proportions with center space |
+| `radar` | Radar / spider chart | Multi-dimensional comparison |
+| `scatter` | Scatter plot | Correlations between X/Y values |
+| `radial_bar` | Radial bar chart | Progress / gauge visualization |
+| `composed` | Mixed bar + line + area | Combining different visual encodings |
 
 ## Tips
 

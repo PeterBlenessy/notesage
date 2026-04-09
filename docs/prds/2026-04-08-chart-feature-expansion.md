@@ -210,15 +210,15 @@ Applied to `Legend.verticalAlign` and `Legend.layout` props. Editor UI: dropdown
 
 Update `bundled-skills/insert-chart/references/CHART-SCHEMA.md` and `EXAMPLES.md`:
 
-1. **New chart types** — add `"radar"`, `"scatter"`, `"radial_bar"`, `"composed"` to `ChartType` enum
-2. **Stacked mode** — add `config.stacked` boolean
-3. **Reference lines** — add `config.referenceLines` array
-4. **Data labels** — add `config.showDataLabels` boolean and `config.pieLabels` enum
-5. **Axis formatting** — add `config.xTickFormat` and `config.yTickFormat`
-6. **Curve type** — add `config.curveType` enum
-7. **Legend position** — add `config.legendPosition` enum
-8. **Scatter data shape** — document the `x`/`y` numeric data model for scatter charts
-9. **Composed series** — document `series[].renderAs` for composed charts
+ 1. **New chart types** — add `"radar"`, `"scatter"`, `"radial_bar"`, `"composed"` to `ChartType` enum
+ 2. **Stacked mode** — add `config.stacked` boolean
+ 3. **Reference lines** — add `config.referenceLines` array
+ 4. **Data labels** — add `config.showDataLabels` boolean and `config.pieLabels` enum
+ 5. **Axis formatting** — add `config.xTickFormat` and `config.yTickFormat`
+ 6. **Curve type** — add `config.curveType` enum
+ 7. **Legend position** — add `config.legendPosition` enum
+ 8. **Scatter data shape** — document the `x`/`y` numeric data model for scatter charts
+ 9. **Composed series** — document `series[].renderAs` for composed charts
 10. **New examples** — radar, scatter, stacked bar, composed, radial bar
 
 ### PPTX Export
@@ -260,7 +260,7 @@ Alternative: keep the 6-type grid and add a "More" expansion row. This avoids ov
 ```
 
 - Series column headers are editable (click to rename)
-- [+] button at the right adds a new series column
+- \[+\] button at the right adds a new series column
 - Each series header has an X button to remove it
 - Minimum 1 series column
 
@@ -287,6 +287,7 @@ Y Format: [Plain ▼]  Height: [300px ▼]
 ```
 
 Controls are context-aware:
+
 - "Curve" only visible for line/area types
 - "Stacked" only visible for bar/area with multi-series
 - "Legend position" only visible when legend is on
@@ -398,63 +399,100 @@ No new npm dependencies. All new chart types use components already exported by 
 ### Functional
 
 - [ ] All 10 chart types render correctly (6 existing + radar, scatter, radial bar, composed)
+
 - [ ] Stacked mode works for bar and area charts with multi-series data
+
 - [ ] Multi-series data editing: add, remove, rename series columns in the visual editor
+
 - [ ] Reference lines render on cartesian charts with correct axis, value, and label
+
 - [ ] Data labels display on bar, line, pie, and donut charts when enabled
+
 - [ ] Pie/donut slice labels support value, percent, and name formats
+
 - [ ] Axis tick formatting applies thousands/percent/currency formatting
+
 - [ ] Line curve type selection changes the line interpolation
+
 - [ ] Legend position control moves the legend to top/bottom/left/right
+
 - [ ] CSV/TSV paste into data table correctly parses rows and headers
+
 - [ ] Drag-to-resize updates chart height between 150–600px
+
 - [ ] Chart duplication creates a new chart with copied data
+
 - [ ] Image download produces valid SVG and PNG files
+
 - [ ] Chart height control in settings updates the rendered height
 
 ### Backward Compatibility
 
 - [ ] All existing charts (6 types) continue to render identically
+
 - [ ] Existing sidecar JSON files load without errors (new fields are optional)
-- [ ] Markdown round-trip: `![chart](/.notesage/charts/<id>.json)` unchanged
+
+- [ ] Markdown round-trip: `<div data-chart-id="<id>" data-type="chart" class="chart-block"></div>` unchanged
+
 - [ ] All existing round-trip tests pass
+
 - [ ] PDF, DOCX, PPTX export of existing chart types unaffected
 
 ### Skill Parity
 
 - [ ] `insert-chart` skill schema updated with all new types and config fields
+
 - [ ] Skill examples include radar, scatter, stacked bar, composed, radial bar
+
 - [ ] Agents can create charts with reference lines, data labels, and all new options
 
 ### Export
 
 - [ ] New chart types export to PDF via cached SVG
+
 - [ ] New chart types export to PPTX (native where supported, SVG fallback otherwise)
+
 - [ ] Stacked charts export correctly
+
 - [ ] Reference lines appear in exported output
+
 - [ ] Data labels appear in exported output
 
 ### Design
 
 - [ ] New chart types match the neutral aesthetic of existing charts
+
 - [ ] Radar chart uses polar grid styled with `--color-border` CSS variable
+
 - [ ] Scatter chart dots use palette colors consistently
+
 - [ ] Expanded type selector doesn't feel cramped — icons and labels readable
+
 - [ ] Multi-series data table is clean, not spreadsheet-like
+
 - [ ] Reference lines section is unobtrusive when collapsed
+
 - [ ] Resize handle is discoverable but not visually heavy
+
 - [ ] All new UI works in both light and dark mode
 
 ### Testing
 
 - [ ] Unit tests for each new renderer component
+
 - [ ] Unit tests for multi-series data table (add/remove/rename series)
+
 - [ ] Unit tests for CSV paste parsing
+
 - [ ] Unit tests for reference line rendering
+
 - [ ] Unit tests for axis tick formatting
+
 - [ ] Unit tests for ChartConfig backward compatibility (missing optional fields → defaults)
+
 - [ ] Existing chart tests continue to pass
-- [ ] Performance: chart editor panel opens in <100ms with 30-row dataset
+
+- [ ] Performance: chart editor panel opens in &lt;100ms with 30-row dataset
 
 ## Out of Scope
 

@@ -171,3 +171,226 @@ Note: Horizontal bar charts work like vertical bar charts but with `"type": "hor
 ```
 
 Note: Multi-series charts use `series` to define each data line. Each series `key` must exist as a property on every data point. The `value` field is not needed when using explicit series keys. Set `showLegend` to `true` so series are distinguishable.
+
+---
+
+## Example 6: Radar Chart — Product Comparison
+
+**Markdown to insert:**
+```markdown
+![chart](/.notesage/charts/product-radar-example.json)
+```
+
+**Sidecar JSON** (`.notesage/charts/product-radar-example.json`):
+```json
+{
+  "type": "radar",
+  "title": "Product Feature Comparison",
+  "data": [
+    { "category": "Performance", "productA": 90, "productB": 65 },
+    { "category": "Usability", "productA": 75, "productB": 85 },
+    { "category": "Design", "productA": 80, "productB": 70 },
+    { "category": "Price", "productA": 60, "productB": 90 },
+    { "category": "Support", "productA": 85, "productB": 55 },
+    { "category": "Features", "productA": 95, "productB": 80 }
+  ],
+  "series": [
+    { "key": "productA", "label": "Product A" },
+    { "key": "productB", "label": "Product B" }
+  ],
+  "config": {
+    "xLabel": "",
+    "yLabel": "",
+    "showGrid": true,
+    "showLegend": true,
+    "colorScheme": "neutral"
+  }
+}
+```
+
+Note: Radar charts use categories as the angle axis. Multi-series renders multiple overlaid polygons. Great for comparing items across multiple dimensions.
+
+---
+
+## Example 7: Scatter Chart — Height vs Weight
+
+**Markdown to insert:**
+```markdown
+![chart](/.notesage/charts/scatter-example.json)
+```
+
+**Sidecar JSON** (`.notesage/charts/scatter-example.json`):
+```json
+{
+  "type": "scatter",
+  "title": "Height vs Weight",
+  "data": [
+    { "category": "", "value": 0, "x": 160, "y": 55 },
+    { "category": "", "value": 0, "x": 165, "y": 62 },
+    { "category": "", "value": 0, "x": 170, "y": 68 },
+    { "category": "", "value": 0, "x": 175, "y": 75 },
+    { "category": "", "value": 0, "x": 180, "y": 80 },
+    { "category": "", "value": 0, "x": 185, "y": 88 },
+    { "category": "", "value": 0, "x": 172, "y": 70 },
+    { "category": "", "value": 0, "x": 168, "y": 65 }
+  ],
+  "config": {
+    "xLabel": "Height (cm)",
+    "yLabel": "Weight (kg)",
+    "showGrid": true,
+    "showLegend": false,
+    "colorScheme": "neutral"
+  }
+}
+```
+
+Note: Scatter charts use `x` and `y` fields for numeric coordinates. The `category` and `value` fields must still be present but are not rendered. Good for correlation analysis.
+
+---
+
+## Example 8: Stacked Bar Chart — Resource Allocation
+
+**Markdown to insert:**
+```markdown
+![chart](/.notesage/charts/stacked-bar-example.json)
+```
+
+**Sidecar JSON** (`.notesage/charts/stacked-bar-example.json`):
+```json
+{
+  "type": "bar",
+  "title": "Team Resource Allocation",
+  "data": [
+    { "category": "Engineering", "frontend": 8, "backend": 12, "devops": 4 },
+    { "category": "Design", "frontend": 2, "backend": 0, "devops": 0 },
+    { "category": "Product", "frontend": 1, "backend": 1, "devops": 1 },
+    { "category": "QA", "frontend": 3, "backend": 3, "devops": 2 }
+  ],
+  "series": [
+    { "key": "frontend", "label": "Frontend" },
+    { "key": "backend", "label": "Backend" },
+    { "key": "devops", "label": "DevOps" }
+  ],
+  "config": {
+    "xLabel": "Department",
+    "yLabel": "Headcount",
+    "showGrid": true,
+    "showLegend": true,
+    "colorScheme": "cool",
+    "stacked": true
+  }
+}
+```
+
+Note: Add `"stacked": true` to the config to stack bars vertically. Only applies to multi-series bar and area charts.
+
+---
+
+## Example 9: Composed Chart — Revenue Trend
+
+**Markdown to insert:**
+```markdown
+![chart](/.notesage/charts/composed-example.json)
+```
+
+**Sidecar JSON** (`.notesage/charts/composed-example.json`):
+```json
+{
+  "type": "composed",
+  "title": "Revenue Analysis",
+  "data": [
+    { "category": "Jan", "revenue": 120, "target": 110, "growth": 8 },
+    { "category": "Feb", "revenue": 135, "target": 120, "growth": 12 },
+    { "category": "Mar", "revenue": 148, "target": 130, "growth": 10 },
+    { "category": "Apr", "revenue": 142, "target": 140, "growth": -4 },
+    { "category": "May", "revenue": 165, "target": 150, "growth": 16 },
+    { "category": "Jun", "revenue": 178, "target": 160, "growth": 8 }
+  ],
+  "series": [
+    { "key": "revenue", "label": "Revenue ($K)", "renderAs": "bar" },
+    { "key": "target", "label": "Target ($K)", "renderAs": "line" },
+    { "key": "growth", "label": "Growth (%)", "renderAs": "area" }
+  ],
+  "config": {
+    "xLabel": "Month",
+    "yLabel": "Amount",
+    "showGrid": true,
+    "showLegend": true,
+    "colorScheme": "neutral"
+  }
+}
+```
+
+Note: Composed charts mix different visual encodings. Each series specifies `renderAs` (`"bar"`, `"line"`, or `"area"`). If omitted, defaults to `"bar"`.
+
+---
+
+## Example 10: Radial Bar Chart — Goal Progress
+
+**Markdown to insert:**
+```markdown
+![chart](/.notesage/charts/radial-example.json)
+```
+
+**Sidecar JSON** (`.notesage/charts/radial-example.json`):
+```json
+{
+  "type": "radial_bar",
+  "title": "Q1 Goal Progress",
+  "data": [
+    { "category": "Revenue", "value": 85 },
+    { "category": "Users", "value": 72 },
+    { "category": "NPS", "value": 93 },
+    { "category": "Retention", "value": 68 }
+  ],
+  "config": {
+    "xLabel": "",
+    "yLabel": "",
+    "showGrid": false,
+    "showLegend": true,
+    "colorScheme": "neutral"
+  }
+}
+```
+
+Note: Radial bar charts show each data point as a concentric arc. Good for progress/gauge visualizations. Data shape is the same as pie/donut (category + value).
+
+---
+
+## Example 11: Bar Chart with Reference Lines and Data Labels
+
+**Markdown to insert:**
+```markdown
+![chart](/.notesage/charts/annotated-bar-example.json)
+```
+
+**Sidecar JSON** (`.notesage/charts/annotated-bar-example.json`):
+```json
+{
+  "type": "bar",
+  "title": "Monthly Sales vs Target",
+  "data": [
+    { "category": "Jan", "value": 142 },
+    { "category": "Feb", "value": 168 },
+    { "category": "Mar", "value": 155 },
+    { "category": "Apr", "value": 193 },
+    { "category": "May", "value": 178 },
+    { "category": "Jun", "value": 210 }
+  ],
+  "config": {
+    "xLabel": "Month",
+    "yLabel": "Sales ($K)",
+    "showGrid": true,
+    "showLegend": false,
+    "colorScheme": "neutral",
+    "showDataLabels": true,
+    "yTickFormat": "currency",
+    "referenceLines": [
+      { "axis": "y", "value": 175, "label": "Target" },
+      { "axis": "y", "value": 150, "label": "Baseline" }
+    ]
+  }
+}
+```
+
+Note: `referenceLines` adds dashed lines at specified axis positions. `showDataLabels` shows values above bars/dots. `yTickFormat: "currency"` formats axis ticks as `$1,500`.

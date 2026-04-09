@@ -4,6 +4,10 @@ import { getChartConfig } from "@/lib/chart-theme";
 import { BarChartRenderer } from "./BarChartRenderer";
 import { LineChartRenderer } from "./LineChartRenderer";
 import { PieChartRenderer } from "./PieChartRenderer";
+import { RadarChartRenderer } from "./RadarChartRenderer";
+import { ScatterChartRenderer } from "./ScatterChartRenderer";
+import { RadialBarChartRenderer } from "./RadialBarChartRenderer";
+import { ComposedChartRenderer } from "./ComposedChartRenderer";
 
 interface ChartRendererProps {
   chartData: ChartData;
@@ -49,6 +53,42 @@ export function ChartRenderer({
     case "donut":
       return (
         <PieChartRenderer
+          chartData={chartData}
+          config={config}
+          height={height}
+        />
+      );
+
+    case "radar":
+      return (
+        <RadarChartRenderer
+          chartData={chartData}
+          config={config}
+          height={height}
+        />
+      );
+
+    case "scatter":
+      return (
+        <ScatterChartRenderer
+          chartData={chartData}
+          config={config}
+          height={height}
+        />
+      );
+
+    case "radial_bar":
+      return (
+        <RadialBarChartRenderer
+          chartData={chartData}
+          config={config}
+          height={height}
+        />
+      );
+
+    case "composed":
+      return (
+        <ComposedChartRenderer
           chartData={chartData}
           config={config}
           height={height}

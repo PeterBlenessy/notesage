@@ -10,13 +10,15 @@ import {
   DEFAULT_CHART_DATA,
   createEmptyChartData,
   getChartTypeMeta,
+  isCartesian,
+  isRadial,
   type ChartType,
   type ColorScheme,
 } from "@/lib/chart-types";
 
 describe("CHART_TYPES", () => {
-  it("defines six chart types", () => {
-    expect(CHART_TYPES).toHaveLength(6);
+  it("defines ten chart types", () => {
+    expect(CHART_TYPES).toHaveLength(10);
   });
 
   it("covers all expected types", () => {
@@ -27,6 +29,10 @@ describe("CHART_TYPES", () => {
     expect(types).toContain("pie");
     expect(types).toContain("donut");
     expect(types).toContain("horizontal_bar");
+    expect(types).toContain("radar");
+    expect(types).toContain("scatter");
+    expect(types).toContain("radial_bar");
+    expect(types).toContain("composed");
   });
 
   it("each type has required fields", () => {
@@ -34,18 +40,43 @@ describe("CHART_TYPES", () => {
       expect(meta.name).toBeTruthy();
       expect(meta.description).toBeTruthy();
       expect(meta.icon).toBeDefined();
-      expect(["cartesian", "radial"]).toContain(meta.dataShape);
+      expect(["cartesian", "radial", "polar", "xy"]).toContain(meta.dataShape);
     }
   });
 
-  it("pie and donut are radial, others are cartesian", () => {
+  it("has correct dataShape for each type", () => {
     for (const meta of CHART_TYPES) {
-      if (meta.type === "pie" || meta.type === "donut") {
+      if (meta.type === "pie" || meta.type === "donut" || meta.type === "radial_bar") {
         expect(meta.dataShape).toBe("radial");
+      } else if (meta.type === "radar") {
+        expect(meta.dataShape).toBe("polar");
+      } else if (meta.type === "scatter") {
+        expect(meta.dataShape).toBe("xy");
       } else {
         expect(meta.dataShape).toBe("cartesian");
       }
     }
+  });
+});
+
+describe("isCartesian / isRadial helpers", () => {
+  it("identifies cartesian types", () => {
+    expect(isCartesian("bar")).toBe(true);
+    expect(isCartesian("line")).toBe(true);
+    expect(isCartesian("area")).toBe(true);
+    expect(isCartesian("horizontal_bar")).toBe(true);
+    expect(isCartesian("composed")).toBe(true);
+    expect(isCartesian("pie")).toBe(false);
+    expect(isCartesian("radar")).toBe(false);
+    expect(isCartesian("scatter")).toBe(false);
+  });
+
+  it("identifies radial types", () => {
+    expect(isRadial("pie")).toBe(true);
+    expect(isRadial("donut")).toBe(true);
+    expect(isRadial("radial_bar")).toBe(true);
+    expect(isRadial("bar")).toBe(false);
+    expect(isRadial("radar")).toBe(false);
   });
 });
 
@@ -63,9 +94,9 @@ describe("getChartTypeMeta", () => {
 });
 
 describe("COLOR_PALETTES", () => {
-  const schemes: ColorScheme[] = ["neutral", "monochrome", "warm", "cool"];
+  const schemes: ColorScheme[] = ["neutral", "monochrome", "warm", "cool", "vivid", "ocean", "forest", "sunset"];
 
-  it("defines all four palettes", () => {
+  it("defines all eight palettes", () => {
     for (const scheme of schemes) {
       expect(COLOR_PALETTES[scheme]).toBeDefined();
     }
@@ -94,13 +125,17 @@ describe("COLOR_PALETTES", () => {
 });
 
 describe("COLOR_SCHEME_OPTIONS", () => {
-  it("has four options matching palette keys", () => {
-    expect(COLOR_SCHEME_OPTIONS).toHaveLength(4);
+  it("has eight options matching palette keys", () => {
+    expect(COLOR_SCHEME_OPTIONS).toHaveLength(8);
     const values = COLOR_SCHEME_OPTIONS.map((o) => o.value);
     expect(values).toContain("neutral");
     expect(values).toContain("monochrome");
     expect(values).toContain("warm");
     expect(values).toContain("cool");
+    expect(values).toContain("vivid");
+    expect(values).toContain("ocean");
+    expect(values).toContain("forest");
+    expect(values).toContain("sunset");
   });
 });
 

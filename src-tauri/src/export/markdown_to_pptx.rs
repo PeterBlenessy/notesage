@@ -649,6 +649,9 @@ fn build_pptx_chart(info: &SlideChart) -> Option<Chart> {
         "donut" | "doughnut" => ChartType::Doughnut,
         "horizontalbar" | "horizontal_bar" => ChartType::BarHorizontal,
         "radar" => ChartType::Radar,
+        "scatter" => ChartType::Scatter,
+        // radial_bar and composed have no native PPTX chart equivalent — use SVG fallback
+        "radial_bar" | "composed" => return None,
         _ => return None,
     };
 

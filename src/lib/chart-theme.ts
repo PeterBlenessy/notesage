@@ -73,6 +73,28 @@ export function getPieData(
 }
 
 /**
+ * Tick formatter for axis values.
+ */
+export function getTickFormatter(
+  format: "plain" | "thousands" | "percent" | "currency" | undefined
+): ((value: number) => string) | undefined {
+  switch (format) {
+    case "thousands":
+      return (v: number) => {
+        if (Math.abs(v) >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+        if (Math.abs(v) >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
+        return String(v);
+      };
+    case "percent":
+      return (v: number) => `${(v * 100).toFixed(0)}%`;
+    case "currency":
+      return (v: number) => `$${v.toLocaleString()}`;
+    default:
+      return undefined;
+  }
+}
+
+/**
  * Common Recharts axis styling to match Notesage's design system.
  */
 export const AXIS_STYLE = {
