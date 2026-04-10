@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date observed** | 2026-04-04 |
-| **Status** | Partially addressed (see [2026-04-07 startup fix](2026-04-07-startup-ready-never-set.md)) |
+| **Status** | Fixed |
 | **Severity** | Medium |
 | **Impact** | Chat tools dropdown shows 6/13 tools for ~6 seconds on startup; skill tools appear delayed |
 | **Versions affected** | v0.28.3 (and earlier) |
@@ -77,6 +77,21 @@ Show the persisted tree from localStorage immediately on mount, then refresh fro
 | File | Role |
 | --- | --- |
 | `src/hooks/useAppLifecycle.ts` | Startup pipeline, tree validation, `startupReady` |
-| `src/hooks/useSkillOperations.ts` | Skill discovery, gated by `startupReady` |
+| `src/hooks/useSkillOperations.ts` | Skill discovery, gated by `skillsReady` |
 | `src/stores/skill-store.ts` | `skillTools`, `getToolDefinitions()` |
+| `src/stores/settings-store.ts` | `homeDir`, `skillsReady` runtime flags |
 | `src-tauri/src/commands/file.rs` | `list_directory` Tauri command |
+| `src-tauri/src/commands/skills.rs` | Bundled skill extraction + manifest cleanup |
+| `src-tauri/src/commands/agents.rs` | Bundled agent extraction + manifest cleanup |
+
+## Resolution
+
+All three suggested fixes implemented:
+
+1. **Parallelize tree validation:** `listDirectory` calls for explorer folders, projects, synced iCloud projects, and per-project index init all run concurrently via `Promise.all`. Reduced tree validation from ~4.1s to ~2-3s.
+
+2. **Decouple skill discovery from tree validation:** New `skillsReady` flag fires immediately after home directory resolution, before tree validation starts. Skill pipeline reads `homeDir` from the settings store (resolved once on startup) instead of making IPC calls. Two-phase pipeline: Phase 1 scans existing files and populates tools immediately (~3s); Phase 2 extracts bundled skills/agents in background without blocking the UI. Bundled extraction includes manifest-based cleanup for deprecated skills/agents (`~/.notesage/.bundled-skills.json`, `~/.notesage/.bundled-agents.json`).
+
+3. **Cached tree display:** Already solved by Zustand persist — `workspace-store` persists the file tree to localStorage, so the sidebar renders instantly on mount from the cached state. The `reloadTrees()` call validates and refreshes the tree in the background. No additional work needed.
+
+**Result:** Tools dropdown loads in ~3s (down from ~12s). Subsequent rescans (e.g., triggered by connection changes) complete in ~60ms.

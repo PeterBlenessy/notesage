@@ -264,6 +264,28 @@ pub async fn extract_bundled_agents() -> Result<String, String> {
         },
     ];
 
+    // Collect current bundled agent file names (without .md extension)
+    let current_names: Vec<String> = bundled_files
+        .iter()
+        .map(|f| f.relative_path.trim_end_matches(".md").to_string())
+        .collect();
+
+    // Clean up agents removed from the bundle
+    let manifest_path = home.join(".notesage").join(".bundled-agents.json");
+    if let Ok(old_json) = fs::read_to_string(&manifest_path) {
+        if let Ok(old_names) = serde_json::from_str::<Vec<String>>(&old_json) {
+            for old_name in &old_names {
+                if !current_names.contains(old_name) {
+                    let stale_file = bundled_dir.join(format!("{}.md", old_name));
+                    if stale_file.is_file() {
+                        info!("Removing deprecated bundled agent: {}", old_name);
+                        let _ = fs::remove_file(&stale_file);
+                    }
+                }
+            }
+        }
+    }
+
     info!("Extracting {} bundled agent files to {}", bundled_files.len(), bundled_dir.display());
     let mut written = 0;
     for file in &bundled_files {
@@ -278,6 +300,12 @@ pub async fn extract_bundled_agents() -> Result<String, String> {
         written += 1;
     }
     info!("Successfully wrote {}/{} bundled agent files", written, bundled_files.len());
+
+    // Write manifest for future cleanup
+    let manifest_json = serde_json::to_string(&current_names)
+        .map_err(|e| format!("Failed to serialize agent manifest: {}", e))?;
+    fs::write(&manifest_path, manifest_json)
+        .map_err(|e| format!("Failed to write agent manifest: {}", e))?;
 
     // Extract bundled agent instructions to ~/.notesage/agents.md
     // Always overwrite to keep in sync with app version (same as bundled agents/skills)

@@ -98,6 +98,8 @@ function makeAgentManagedConnection(
 
 function resetStores() {
   useSettingsStore.setState({
+    homeDir: '/Users/test',
+    skillsReady: false,
     startupReady: false,
     personasMigrated: true, // Default to true to skip migration unless testing it
   });
@@ -166,8 +168,8 @@ describe('useSkillDiscovery', () => {
     mockWriteFile.mockResolvedValue(undefined);
   });
 
-  it('does not run when startupReady is false', async () => {
-    useSettingsStore.setState({ startupReady: false });
+  it('does not run when skillsReady is false', async () => {
+    useSettingsStore.setState({ skillsReady: false });
 
     renderHook(() => useSkillDiscovery());
 
@@ -179,11 +181,11 @@ describe('useSkillDiscovery', () => {
     expect(mockGetHomeDir).not.toHaveBeenCalled();
   });
 
-  // This MUST be the first test that sets startupReady=true so bundledExtracted
+  // This MUST be the first test that sets skillsReady=true so bundledExtracted
   // is still false and extraction runs.
   it('runs full discovery pipeline including extraction on first run', async () => {
     const { scanSkills, scanAgents, scanAgentInstructions } = setupStoreMocks();
-    useSettingsStore.setState({ personasMigrated: true, startupReady: true });
+    useSettingsStore.setState({ personasMigrated: true, skillsReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -191,19 +193,20 @@ describe('useSkillDiscovery', () => {
       await new Promise((r) => setTimeout(r, 100));
     });
 
-    // Extraction should run on first invocation
+    // Extraction should run on first invocation (phase 2)
     expect(mockExtractBundledSkills).toHaveBeenCalledTimes(1);
     expect(mockExtractBundledAgents).toHaveBeenCalledTimes(1);
-    expect(mockGetHomeDir).toHaveBeenCalled();
-    expect(scanSkills).toHaveBeenCalledTimes(1);
-    expect(scanAgents).toHaveBeenCalledTimes(1);
+    // Home dir read from store, not via IPC
+    // scanSkills/scanAgents called twice: phase 1 (immediate) + phase 2 (after extraction)
+    expect(scanSkills).toHaveBeenCalledTimes(2);
+    expect(scanAgents).toHaveBeenCalledTimes(2);
     expect(scanAgentInstructions).toHaveBeenCalledTimes(1);
   });
 
   // After the first test, bundledExtracted is true. Subsequent runs skip extraction.
   it('skips extraction on subsequent runs (bundledExtracted flag)', async () => {
     const { scanSkills, scanAgents } = setupStoreMocks();
-    useSettingsStore.setState({ personasMigrated: true, startupReady: true });
+    useSettingsStore.setState({ personasMigrated: true, skillsReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -228,7 +231,7 @@ describe('useSkillDiscovery', () => {
         { path: '/projects/beta', fileTree: [] },
       ],
     });
-    useSettingsStore.setState({ personasMigrated: true, startupReady: true });
+    useSettingsStore.setState({ personasMigrated: true, skillsReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -258,7 +261,7 @@ describe('useSkillDiscovery', () => {
         makeAgentManagedConnection('openai', { id: 'conn-openai' }),
       ],
     });
-    useSettingsStore.setState({ personasMigrated: true, startupReady: true });
+    useSettingsStore.setState({ personasMigrated: true, skillsReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -288,7 +291,7 @@ describe('useSkillDiscovery', () => {
         }),
       ],
     });
-    useSettingsStore.setState({ personasMigrated: true, startupReady: true });
+    useSettingsStore.setState({ personasMigrated: true, skillsReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -311,7 +314,7 @@ describe('useSkillDiscovery', () => {
         makeAgentManagedConnection('google', { id: 'conn-g2' }),
       ],
     });
-    useSettingsStore.setState({ personasMigrated: true, startupReady: true });
+    useSettingsStore.setState({ personasMigrated: true, skillsReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -340,7 +343,7 @@ describe('useSkillDiscovery', () => {
         }),
       ],
     });
-    useSettingsStore.setState({ personasMigrated: true, startupReady: true });
+    useSettingsStore.setState({ personasMigrated: true, skillsReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -353,10 +356,8 @@ describe('useSkillDiscovery', () => {
   });
 
   it('handles home directory failure gracefully', async () => {
-    mockGetHomeDir.mockRejectedValue(new Error('no home'));
-
     const { scanSkills } = setupStoreMocks();
-    useSettingsStore.setState({ personasMigrated: true, startupReady: true });
+    useSettingsStore.setState({ homeDir: null, personasMigrated: true, skillsReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -370,7 +371,7 @@ describe('useSkillDiscovery', () => {
 
   it('rescans when rescanCounter changes', async () => {
     const { scanSkills } = setupStoreMocks();
-    useSettingsStore.setState({ personasMigrated: true, startupReady: true });
+    useSettingsStore.setState({ personasMigrated: true, skillsReady: true });
 
     const { rerender } = renderHook(() => useSkillDiscovery());
 
@@ -411,7 +412,7 @@ describe('useSkillDiscovery', () => {
         }),
       ],
     });
-    useSettingsStore.setState({ personasMigrated: true, startupReady: true });
+    useSettingsStore.setState({ personasMigrated: true, skillsReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -433,7 +434,7 @@ describe('useSkillDiscovery', () => {
         makeAgentManagedConnection('anthropic', { status: 'disconnected' as Connection['status'] }),
       ],
     });
-    useSettingsStore.setState({ personasMigrated: true, startupReady: true });
+    useSettingsStore.setState({ personasMigrated: true, skillsReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -478,7 +479,7 @@ describe('persona migration', () => {
         },
       ],
     });
-    useSettingsStore.setState({ personasMigrated: false, startupReady: true });
+    useSettingsStore.setState({ personasMigrated: false, skillsReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -511,7 +512,7 @@ describe('persona migration', () => {
       activePersonaId: 'creative',
       customPersonas: [],
     });
-    useSettingsStore.setState({ personasMigrated: false, startupReady: true });
+    useSettingsStore.setState({ personasMigrated: false, skillsReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -540,7 +541,7 @@ describe('persona migration', () => {
       const { setActiveAgent } = setupStoreMocks();
 
       useAIStore.setState({ activePersonaId: personaId, customPersonas: [] });
-      useSettingsStore.setState({ personasMigrated: false, startupReady: true });
+      useSettingsStore.setState({ personasMigrated: false, skillsReady: true });
 
       renderHook(() => useSkillDiscovery());
 
@@ -566,7 +567,7 @@ describe('persona migration', () => {
         },
       ],
     });
-    useSettingsStore.setState({ personasMigrated: false, startupReady: true });
+    useSettingsStore.setState({ personasMigrated: false, skillsReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -581,7 +582,7 @@ describe('persona migration', () => {
     setupStoreMocks();
 
     useAIStore.setState({ activePersonaId: 'general', customPersonas: [] });
-    useSettingsStore.setState({ personasMigrated: true, startupReady: true });
+    useSettingsStore.setState({ personasMigrated: true, skillsReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -607,7 +608,7 @@ describe('persona migration', () => {
         },
       ],
     });
-    useSettingsStore.setState({ personasMigrated: true, startupReady: true });
+    useSettingsStore.setState({ personasMigrated: true, skillsReady: true });
     mockPathExists.mockResolvedValue(false);
 
     renderHook(() => useSkillDiscovery());
@@ -636,7 +637,7 @@ describe('persona migration', () => {
         },
       ],
     });
-    useSettingsStore.setState({ personasMigrated: true, startupReady: true });
+    useSettingsStore.setState({ personasMigrated: true, skillsReady: true });
     mockPathExists.mockResolvedValue(true);
 
     renderHook(() => useSkillDiscovery());
@@ -664,7 +665,7 @@ describe('persona migration', () => {
     });
     // personasMigrated=true means it's a re-migration (self-healing),
     // so activeAgent mapping should NOT run
-    useSettingsStore.setState({ personasMigrated: true, startupReady: true });
+    useSettingsStore.setState({ personasMigrated: true, skillsReady: true });
     mockPathExists.mockResolvedValue(false);
 
     renderHook(() => useSkillDiscovery());

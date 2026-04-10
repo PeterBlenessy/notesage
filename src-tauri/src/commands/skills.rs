@@ -914,6 +914,30 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
         },
     ];
 
+    // Collect current bundled skill directory names
+    let mut current_names: Vec<String> = bundled_files
+        .iter()
+        .filter_map(|f| f.relative_path.split('/').next().map(|s| s.to_string()))
+        .collect();
+    current_names.sort();
+    current_names.dedup();
+
+    // Clean up skills removed from the bundle
+    let manifest_path = home.join(".notesage").join(".bundled-skills.json");
+    if let Ok(old_json) = fs::read_to_string(&manifest_path) {
+        if let Ok(old_names) = serde_json::from_str::<Vec<String>>(&old_json) {
+            for old_name in &old_names {
+                if !current_names.contains(old_name) {
+                    let stale_dir = bundled_dir.join(old_name);
+                    if stale_dir.is_dir() {
+                        info!("Removing deprecated bundled skill: {}", old_name);
+                        let _ = fs::remove_dir_all(&stale_dir);
+                    }
+                }
+            }
+        }
+    }
+
     info!("Extracting {} bundled skill files to {}", bundled_files.len(), bundled_dir.display());
     let mut written = 0;
     for file in &bundled_files {
@@ -928,6 +952,12 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
         written += 1;
     }
     info!("Successfully wrote {}/{} bundled skill files", written, bundled_files.len());
+
+    // Write manifest for future cleanup
+    let manifest_json = serde_json::to_string(&current_names)
+        .map_err(|e| format!("Failed to serialize skill manifest: {}", e))?;
+    fs::write(&manifest_path, manifest_json)
+        .map_err(|e| format!("Failed to write skill manifest: {}", e))?;
 
     Ok(bundled_dir.to_string_lossy().to_string())
 }

@@ -39,9 +39,8 @@ function getAgentPathsForConnection(provider: ConnectionProvider, authMethod: st
 }
 
 /** Resolve ~ to the home directory. */
-async function expandHome(path: string): Promise<string> {
+function expandHomeSync(path: string, home: string): string {
   if (!path.startsWith('~/')) return path;
-  const home = await tauriApi.getHomeDir();
   return path.replace('~', home);
 }
 
@@ -173,12 +172,59 @@ async function migratePersonasToAgents(home: string) {
 // connection/project changes only re-scan directories (no extraction).
 let bundledExtracted = false;
 
+/** Build skill and agent directory lists for scanning. No async — all paths resolved synchronously. */
+function buildDiscoveryDirs(
+  home: string,
+  connections: { provider: ConnectionProvider; authMethod: string; status: string }[],
+  projects: { path: string }[],
+) {
+  const baseDirs: string[] = [];
+  baseDirs.push(`${home}/.notesage/skills`);
+  for (const project of projects) {
+    baseDirs.push(`${project.path}/.notesage/skills`);
+  }
+  const seen = new Set<string>();
+  for (const conn of connections) {
+    if (conn.status !== 'connected' && conn.status !== 'expired') continue;
+    const paths = getSkillPathsForConnection(conn.provider, conn.authMethod);
+    for (const p of paths) {
+      const expanded = expandHomeSync(p, home);
+      if (!seen.has(expanded)) {
+        seen.add(expanded);
+        baseDirs.push(expanded);
+      }
+    }
+  }
+
+  const agentBaseDirs: string[] = [];
+  agentBaseDirs.push(`${home}/.notesage/agents`);
+  for (const project of projects) {
+    agentBaseDirs.push(`${project.path}/.notesage/agents`);
+    agentBaseDirs.push(`${project.path}/.github/agents`);
+  }
+  const agentSeen = new Set<string>();
+  for (const conn of connections) {
+    if (conn.status !== 'connected' && conn.status !== 'expired') continue;
+    const paths = getAgentPathsForConnection(conn.provider, conn.authMethod);
+    for (const p of paths) {
+      const expanded = expandHomeSync(p, home);
+      if (!agentSeen.has(expanded)) {
+        agentSeen.add(expanded);
+        agentBaseDirs.push(expanded);
+      }
+    }
+  }
+
+  return { baseDirs, agentBaseDirs };
+}
+
 /**
  * Hook that manages skill discovery lifecycle.
- * Runs initial scan after startupReady, rescans on connection or project changes.
+ * Runs initial scan after skillsReady (fires early — before tree validation),
+ * rescans on connection or project changes.
  */
 export function useSkillDiscovery() {
-  const startupReady = useSettingsStore((s) => s.startupReady);
+  const skillsReady = useSettingsStore((s) => s.skillsReady);
   // Derive a stable key from connections: only rescan when the set of
   // connected providers changes, not on every config/status update.
   const connectionKey = useConnectionsStore((s) =>
@@ -194,7 +240,7 @@ export function useSkillDiscovery() {
   const rescanCounter = useSkillStore((s) => s.rescanCounter);
 
   useEffect(() => {
-    if (!startupReady) return;
+    if (!skillsReady) return;
 
     // Read full state inside the effect (not as a dependency)
     const connections = useConnectionsStore.getState().connections;
@@ -204,78 +250,25 @@ export function useSkillDiscovery() {
       log.info('skills', 'Starting skill/agent discovery pipeline');
       const pipelineStart = performance.now();
 
-      // Extract bundled skills and agents once per session (on startup).
-      // Rescans triggered by connection/project changes skip extraction to
-      // avoid the extraction → watcher → rescan → extraction loop.
-      let skillsExtracted = false;
-      let agentsExtracted = false;
-      if (!bundledExtracted) {
-        let stepStart = performance.now();
-        try {
-          const skillsPath = await tauriApi.extractBundledSkills();
-          skillsExtracted = true;
-          log.info('skills', `Extracted bundled skills to ${skillsPath}`);
-        } catch (e) {
-          log.error('skills', 'Failed to extract bundled skills', e);
-          toast.error('Failed to extract bundled skills. Check logs for details.');
-        }
-        console.log('[perf:skills]', { step: 'bundled-skills-extract', ms: Math.round(performance.now() - stepStart) });
-
-        stepStart = performance.now();
-        try {
-          const agentsPath = await tauriApi.extractBundledAgents();
-          agentsExtracted = true;
-          log.info('skills', `Extracted bundled agents to ${agentsPath}`);
-        } catch (e) {
-          log.error('skills', 'Failed to extract bundled agents', e);
-          toast.error('Failed to extract bundled agents. Check logs for details.');
-        }
-        console.log('[perf:skills]', { step: 'bundled-agents-extract', ms: Math.round(performance.now() - stepStart) });
-
-        bundledExtracted = true;
-      }
-
-      let home: string;
-      try {
-        home = await tauriApi.getHomeDir();
-        log.info('skills', `Home directory: ${home}`);
-      } catch (e) {
-        log.error('skills', 'Failed to resolve home directory', e);
-        toast.error('Failed to resolve home directory for skill discovery.');
+      // Use home dir from settings (resolved once on startup) to avoid IPC contention
+      const home = useSettingsStore.getState().homeDir;
+      if (!home) {
+        log.error('skills', 'Home directory not resolved yet');
         return;
       }
+      log.info('skills', `Home directory: ${home}`);
 
       // One-time migration: custom personas → agent files
       await migratePersonasToAgents(home);
 
-      const baseDirs: string[] = [];
-      baseDirs.push(`${home}/.notesage/skills`);
+      // --- Phase 1: Scan existing files and populate tools immediately ---
+      const { baseDirs, agentBaseDirs } = await buildDiscoveryDirs(home, connections, projects);
 
-      // Project-level skills
-      for (const project of projects) {
-        baseDirs.push(`${project.path}/.notesage/skills`);
-      }
-
-      // Provider-specific skills based on active connections
-      const seen = new Set<string>();
-      for (const conn of connections) {
-        if (conn.status !== 'connected' && conn.status !== 'expired') continue;
-        const paths = getSkillPathsForConnection(conn.provider, conn.authMethod);
-        for (const p of paths) {
-          const expanded = await expandHome(p);
-          if (!seen.has(expanded)) {
-            seen.add(expanded);
-            baseDirs.push(expanded);
-          }
-        }
-      }
-
-      // Scan skills
       log.info('skills', `Scanning skills in ${baseDirs.length} directories`);
       let stepStart = performance.now();
       await useSkillStore.getState().scanSkills(baseDirs);
-      const skillCount = useSkillStore.getState().skills.length;
-      log.info('skills', `Discovered ${skillCount} skills`);
+      const initialSkillCount = useSkillStore.getState().skills.length;
+      log.info('skills', `Discovered ${initialSkillCount} skills`);
       console.log('[perf:skills]', { step: 'skill-scan', ms: Math.round(performance.now() - stepStart) });
 
       // Extract tool definitions from script-bearing skills
@@ -290,46 +283,12 @@ export function useSkillDiscovery() {
         log.error('skills', 'Skill tool extraction failed', e);
       }
 
-      // Build agent base dirs
-      const agentBaseDirs: string[] = [];
-      agentBaseDirs.push(`${home}/.notesage/agents`);
-
-      // Project-level agents
-      for (const project of projects) {
-        agentBaseDirs.push(`${project.path}/.notesage/agents`);
-        // Also scan .github/agents for Copilot project agents
-        agentBaseDirs.push(`${project.path}/.github/agents`);
-      }
-
-      // Provider-specific agents based on active connections
-      const agentSeen = new Set<string>();
-      for (const conn of connections) {
-        if (conn.status !== 'connected' && conn.status !== 'expired') continue;
-        const paths = getAgentPathsForConnection(conn.provider, conn.authMethod);
-        for (const p of paths) {
-          const expanded = await expandHome(p);
-          if (!agentSeen.has(expanded)) {
-            agentSeen.add(expanded);
-            agentBaseDirs.push(expanded);
-          }
-        }
-      }
-
-      // Scan agents
       log.info('skills', `Scanning agents in ${agentBaseDirs.length} directories`);
       stepStart = performance.now();
       await useSkillStore.getState().scanAgents(agentBaseDirs);
-      const agentCount = useSkillStore.getState().agents.length;
-      log.info('skills', `Discovered ${agentCount} agents`);
+      const initialAgentCount = useSkillStore.getState().agents.length;
+      log.info('skills', `Discovered ${initialAgentCount} agents`);
       console.log('[perf:skills]', { step: 'agent-scan', ms: Math.round(performance.now() - stepStart) });
-
-      // Warn if extraction succeeded but nothing was discovered
-      if (skillsExtracted && skillCount === 0) {
-        log.warn('skills', 'Skills extraction succeeded but no skills were discovered');
-      }
-      if (agentsExtracted && agentCount === 0) {
-        log.warn('skills', 'Agents extraction succeeded but no agents were discovered');
-      }
 
       // Scan agent instructions (use first project as root, or null)
       const projectRoot = projects.length > 0 ? projects[0].path : null;
@@ -338,8 +297,57 @@ export function useSkillDiscovery() {
       await useSkillStore.getState().scanAgentInstructions(projectRoot, providerTypes);
       console.log('[perf:skills]', { step: 'instruction-scan', ms: Math.round(performance.now() - stepStart) });
 
+      const phase1Ms = Math.round(performance.now() - pipelineStart);
+      console.log('[perf:skills] phase1-ready', { skillCount: initialSkillCount, agentCount: initialAgentCount, ms: phase1Ms });
+      log.info('skills', 'Phase 1 complete — tools available');
+
+      // --- Phase 2: Extract bundled files, rescan if anything changed ---
+      if (!bundledExtracted) {
+        stepStart = performance.now();
+        try {
+          await tauriApi.extractBundledSkills();
+        } catch (e) {
+          log.error('skills', 'Failed to extract bundled skills', e);
+        }
+        console.log('[perf:skills]', { step: 'bundled-skills-extract', ms: Math.round(performance.now() - stepStart) });
+
+        stepStart = performance.now();
+        try {
+          await tauriApi.extractBundledAgents();
+        } catch (e) {
+          log.error('skills', 'Failed to extract bundled agents', e);
+        }
+        console.log('[perf:skills]', { step: 'bundled-agents-extract', ms: Math.round(performance.now() - stepStart) });
+
+        bundledExtracted = true;
+
+        // Rescan to pick up any new or updated bundled skills/agents
+        await useSkillStore.getState().scanSkills(baseDirs);
+        const finalSkillCount = useSkillStore.getState().skills.length;
+        await useSkillStore.getState().scanAgents(agentBaseDirs);
+        const finalAgentCount = useSkillStore.getState().agents.length;
+
+        // Re-extract tool definitions if skill count changed
+        if (finalSkillCount !== initialSkillCount) {
+          try {
+            const activeSkills = useSkillStore.getState().getActiveSkills();
+            const skillTools = await tauriApi.extractSkillTools(activeSkills);
+            useSkillStore.getState().setSkillTools(skillTools);
+            log.info('skills', `Updated skill tools after extraction: ${skillTools.length}`);
+          } catch (e) {
+            log.error('skills', 'Skill tool re-extraction failed', e);
+          }
+        }
+
+        console.log('[perf:skills] phase2-extract', {
+          skillsBefore: initialSkillCount, skillsAfter: finalSkillCount,
+          agentsBefore: initialAgentCount, agentsAfter: finalAgentCount,
+          ms: Math.round(performance.now() - pipelineStart) - phase1Ms,
+        });
+      }
+
       const totalMs = Math.round(performance.now() - pipelineStart);
-      console.log('[perf:skills] total', { skillCount, agentCount, totalMs });
+      console.log('[perf:skills] total', { skillCount: useSkillStore.getState().skills.length, agentCount: useSkillStore.getState().agents.length, totalMs });
       log.info('skills', 'Skill/agent discovery pipeline complete');
     };
 
@@ -347,7 +355,7 @@ export function useSkillDiscovery() {
       log.error('skills', 'Unhandled error in skill/agent discovery pipeline', e);
       toast.error('Failed to load skills and agents. Check logs for details.');
     });
-  }, [startupReady, connectionKey, projectPaths, rescanCounter]);
+  }, [skillsReady, connectionKey, projectPaths, rescanCounter]);
 }
 
 /**

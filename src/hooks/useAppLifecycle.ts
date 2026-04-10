@@ -196,11 +196,14 @@ export function useAppLifecycle({ onOpenPalette }: UseAppLifecycleOptions) {
         log.error("startup", "Startup tree reload failed", err);
       } finally {
         const settings = useSettingsStore.getState();
+        if (!settings.skillsReady) {
+          settings.setSkillsReady(true);
+        }
         if (!settings.startupReady) {
           if (timedOut) {
             log.warn(
               "startup",
-              `Startup timed out after ${STARTUP_TIMEOUT_MS / 1000}s — setting startupReady to unblock skill discovery`
+              `Startup timed out after ${STARTUP_TIMEOUT_MS / 1000}s — setting startupReady to unblock watchers`
             );
           }
           settings.setStartupReady(true);
@@ -242,18 +245,23 @@ async function reloadTrees() {
   const ws = useWorkspaceStore.getState();
   const settings = useSettingsStore.getState();
 
-  // Resolve ~ in notes root path
+  // Resolve home directory and ~ in notes root path
   let notesRoot = settings.notesRootPath;
-  if (notesRoot.startsWith("~")) {
-    try {
-      const homeDir = await tauriApi.getHomeDir();
+  try {
+    const homeDir = await tauriApi.getHomeDir();
+    settings.setHomeDir(homeDir);
+    if (notesRoot.startsWith("~")) {
       notesRoot = notesRoot.replace("~", homeDir);
       settings.setNotesRootPath(notesRoot);
-    } catch {
-      // Expected: home directory resolution may fail in sandboxed environments
-      log.error("startup", "Failed to resolve home directory");
     }
+  } catch {
+    // Expected: home directory resolution may fail in sandboxed environments
+    log.error("startup", "Failed to resolve home directory");
   }
+
+  // Signal that skill discovery can start — it only needs home dir and
+  // project paths (already available from persisted state), not tree validation.
+  settings.setSkillsReady(true);
 
   // Kick off tab restoration early — file reads run concurrently with
   // tree validation, iCloud scanning, and index init below.

@@ -72,6 +72,8 @@ interface SettingsStore {
   notifyAgentCompletion: boolean;
   notifyExternalChanges: boolean;
   // Runtime-only (not persisted) — detected on startup
+  homeDir: string | null; // Resolved once on startup, used by skill pipeline to avoid IPC
+  skillsReady: boolean; // Set early — after home dir resolution, before tree validation
   startupReady: boolean;
   icloudAvailable: boolean;
   icloudNotesagePath: string | null;
@@ -114,6 +116,8 @@ interface SettingsStore {
   setLastExportIncludePageNumbers: (include: boolean) => void;
   setLastExportFormat: (format: ExportFormat) => void;
   setLastPptxTemplate: (template: string) => void;
+  setHomeDir: (dir: string) => void;
+  setSkillsReady: (ready: boolean) => void;
   setStartupReady: (ready: boolean) => void;
   setICloudAvailable: (available: boolean) => void;
   setICloudNotesagePath: (path: string | null) => void;
@@ -156,6 +160,8 @@ export const useSettingsStore = create<SettingsStore>()(
       startAtLogin: false,
       notifyAgentCompletion: true,
       notifyExternalChanges: false,
+      homeDir: null,
+      skillsReady: false,
       startupReady: false,
       icloudAvailable: false,
       icloudNotesagePath: null,
@@ -333,6 +339,14 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ lastPptxTemplate: template });
       },
 
+      setHomeDir: (dir: string) => {
+        set({ homeDir: dir });
+      },
+
+      setSkillsReady: (ready: boolean) => {
+        set({ skillsReady: ready });
+      },
+
       setStartupReady: (ready: boolean) => {
         set({ startupReady: ready });
       },
@@ -409,7 +423,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
       partialize: (state) => {
         // Exclude runtime-only fields and deprecated fields from persistence
-        const { startupReady: _s, icloudAvailable: _a, icloudNotesagePath: _b, debugLogging: _d, ...persisted } = state;
+        const { homeDir: _hd, skillsReady: _sr, startupReady: _s, icloudAvailable: _a, icloudNotesagePath: _b, debugLogging: _d, ...persisted } = state;
         return persisted;
       },
     }
