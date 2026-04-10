@@ -260,50 +260,52 @@ async function reloadTrees() {
   const tTabs0 = performance.now();
   const tabRestorePromise = restorePersistedTabs();
 
-  // Reload explorer folder trees (remove invalid ones)
+  // Reload explorer folder trees and project trees in parallel
   log.info("startup", `Validating ${ws.explorerFolders.length} explorer folders, ${ws.projects.length} projects`);
   const STEP_TIMEOUT_MS = 10_000;
-  const validFolders: string[] = [];
-  for (const folder of ws.explorerFolders) {
-    try {
-      const tree = await withTimeout(
-        tauriApi.listDirectory(folder.path, settings.showHiddenFiles),
-        STEP_TIMEOUT_MS,
-        `listDirectory(${folder.path.split('/').pop()})`,
-      );
-      if (tree) {
-        ws.updateExplorerTree(folder.path, tree);
-        validFolders.push(folder.path);
-      } else {
-        validFolders.push(folder.path); // Keep on timeout — don't remove
-      }
-    } catch {
-      // Expected: folder no longer exists — will be removed below
-    }
-  }
-  for (const folder of ws.explorerFolders) {
-    if (!validFolders.includes(folder.path)) {
-      ws.removeExplorerFolder(folder.path);
-    }
-  }
 
-  // Reload all project trees
-  for (const project of ws.projects) {
-    try {
-      const tree = await withTimeout(
-        tauriApi.listDirectory(project.path, settings.showHiddenFiles),
-        STEP_TIMEOUT_MS,
-        `listDirectory(${project.path.split('/').pop()})`,
-      );
-      if (tree) {
-        ws.updateProjectTree(project.path, tree);
+  const [folderResults] = await Promise.all([
+    // Explorer folders — all in parallel
+    Promise.all(ws.explorerFolders.map(async (folder) => {
+      try {
+        const tree = await withTimeout(
+          tauriApi.listDirectory(folder.path, settings.showHiddenFiles),
+          STEP_TIMEOUT_MS,
+          `listDirectory(${folder.path.split('/').pop()})`,
+        );
+        if (tree) {
+          ws.updateExplorerTree(folder.path, tree);
+        }
+        return { path: folder.path, valid: true }; // Keep on success or timeout
+      } catch {
+        return { path: folder.path, valid: false };
       }
-      // On timeout: keep the project, just skip tree refresh
-    } catch {
-      // Expected: project directory may have been deleted or moved
-      const projectName = project.path.split('/').pop() || project.path;
-      ws.removeProject(project.path);
-      toast.warning(`Project "${projectName}" was removed — directory no longer exists`);
+    })),
+    // Projects — all in parallel
+    Promise.all(ws.projects.map(async (project) => {
+      try {
+        const tree = await withTimeout(
+          tauriApi.listDirectory(project.path, settings.showHiddenFiles),
+          STEP_TIMEOUT_MS,
+          `listDirectory(${project.path.split('/').pop()})`,
+        );
+        if (tree) {
+          ws.updateProjectTree(project.path, tree);
+        }
+        // On timeout: keep the project, just skip tree refresh
+      } catch {
+        // Expected: project directory may have been deleted or moved
+        const projectName = project.path.split('/').pop() || project.path;
+        ws.removeProject(project.path);
+        toast.warning(`Project "${projectName}" was removed — directory no longer exists`);
+      }
+    })),
+  ]);
+
+  // Remove invalid explorer folders
+  for (const result of folderResults) {
+    if (!result.valid) {
+      ws.removeExplorerFolder(result.path);
     }
   }
 
@@ -368,7 +370,7 @@ async function reloadTrees() {
         await syncStore.saveSettings(notesRoot);
         toast.info("iCloud is no longer available. Sync has been disabled.");
       } else {
-        for (const syncedPath of syncStore.syncedProjectPaths) {
+        await Promise.all(syncStore.syncedProjectPaths.map(async (syncedPath) => {
           try {
             const tree = await withTimeout(
               tauriApi.listDirectory(syncedPath, settings.showHiddenFiles),
@@ -383,7 +385,7 @@ async function reloadTrees() {
             // Expected: synced project directory may have been removed from iCloud
             syncStore.removeSyncedProject(syncedPath);
           }
-        }
+        }));
 
         try {
           await withTimeout(
@@ -425,7 +427,7 @@ async function reloadTrees() {
     const tIndex0 = performance.now();
     await tauriApi.indexInit();
     const projectsForIndex = useWorkspaceStore.getState().projects;
-    for (const project of projectsForIndex) {
+    await Promise.all(projectsForIndex.map(async (project) => {
       const tProjectIndex0 = performance.now();
       await tauriApi.indexInit(project.path);
       const projectTree = useWorkspaceStore.getState().projects.find(p => p.path === project.path);
@@ -435,7 +437,7 @@ async function reloadTrees() {
         fileCount,
         ms: Math.round(performance.now() - tProjectIndex0),
       });
-    }
+    }));
     console.log('[perf:startup] index init total', {
       ms: Math.round(performance.now() - tIndex0),
     });
