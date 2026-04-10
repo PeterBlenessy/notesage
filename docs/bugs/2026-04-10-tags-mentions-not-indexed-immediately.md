@@ -4,7 +4,7 @@
 | --- | --- |
 | **Date** | 2026-04-10 |
 | **Severity** | Low |
-| **Status** | Open |
+| **Status** | Fixed |
 | **Affects** | Tag badges, mention badges, command palette search (#, @) |
 | **Recurring** | Yes — this issue has been reported and fixed multiple times before |
 
@@ -48,13 +48,13 @@ Despite the queue drain fix, the user reports tags/mentions still don't work rel
 
 `index_init` only scans projects and `~/Notesage`. Explorer folders are excluded by design — this is a data security decision (users may open arbitrary system directories; indexing them would persist their content in our SQLite databases). Tags/mentions in explorer folder files will not appear in autocomplete or command palette search. This is expected behavior, not a bug.
 
-### 2. Parser changes across versions not detected
+### 2. Parser changes across versions not detected ✅ Fixed
 
 `reindex_file_in_db` compares content SHA-256 hash to skip unchanged files (line 186). After an app update that changes the tag/mention parser (`parser.rs`), files that haven't been edited won't be re-parsed. Stale index entries persist.
 
 - **Location:** `mod.rs:175-188` — content hash comparison
 - **Impact:** After an update with parser improvements, existing tags might be missing or wrong until files are edited
-- **Fix:** Bump `SCHEMA_VERSION` in `db.rs` when parser changes, and rebuild index when version changes (clear + rescan, not just schema migration)
+- **Fix:** Added `PARSER_VERSION` constant in `db.rs`. On startup, `open_or_create` compares stored vs current parser version. If mismatched and DB has data, `clear_all()` wipes indexed data so the next `reindex_directory` rebuilds from scratch. Handles old DBs without the column via `ALTER TABLE ADD COLUMN`. 3 unit tests added.
 
 ### 3. Silent failure if index init errors
 

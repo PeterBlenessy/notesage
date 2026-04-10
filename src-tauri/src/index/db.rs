@@ -2,8 +2,15 @@ use rusqlite::{Connection, Result as SqlResult};
 use std::path::Path;
 use std::time::Duration;
 
-/// Current schema version — bump when adding migrations.
+/// Current schema version — bump when adding table/column migrations.
 const SCHEMA_VERSION: i32 = 1;
+
+/// Current parser version — bump when parser.rs extraction logic changes
+/// (e.g., new tag/mention patterns, heading extraction fixes, task parsing).
+/// A bump triggers a full data clear + rebuild on next startup, without
+/// touching the schema itself. This ensures stale index entries from an
+/// older parser are replaced even if file content hasn't changed.
+const PARSER_VERSION: i32 = 1;
 
 /// Open or create an index database at the given path.
 /// Enables WAL mode, foreign keys, and creates schema if needed.
@@ -41,6 +48,25 @@ pub fn open_or_create(db_path: &Path) -> Result<Connection, String> {
         set_schema_version(&conn, SCHEMA_VERSION)?;
     }
 
+    // Check parser version — if the parser changed, clear all data so files
+    // are re-parsed on the next reindex_directory scan (content hashes reset).
+    let stored_parser = get_parser_version(&conn);
+    if stored_parser != PARSER_VERSION {
+        // Clear if the DB has indexed data (distinguishes "old DB with stale
+        // parser" from "brand-new empty DB that just needs the version set").
+        let has_data: bool = conn
+            .query_row("SELECT EXISTS(SELECT 1 FROM files)", [], |row| row.get(0))
+            .unwrap_or(false);
+        if has_data {
+            log::info!(target: "notesage::index",
+                "Parser version changed ({} → {}), clearing index for rebuild",
+                stored_parser, PARSER_VERSION
+            );
+            clear_all(&conn)?;
+        }
+        set_parser_version(&conn, PARSER_VERSION)?;
+    }
+
     // Exclude from iCloud backup on macOS
     super::icloud::exclude_from_icloud(db_path);
 
@@ -61,6 +87,33 @@ fn set_schema_version(conn: &Connection, version: i32) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     conn.execute("INSERT INTO schema_version (version) VALUES (?1)", [version])
         .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn get_parser_version(conn: &Connection) -> i32 {
+    conn.query_row(
+        "SELECT parser_version FROM schema_version LIMIT 1",
+        [],
+        |row| row.get(0),
+    )
+    .unwrap_or(0)
+}
+
+fn set_parser_version(conn: &Connection, version: i32) -> Result<(), String> {
+    // Add column if it doesn't exist (one-time migration from older DBs)
+    let has_col: bool = conn
+        .query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('schema_version') WHERE name = 'parser_version'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
+    if !has_col {
+        conn.execute("ALTER TABLE schema_version ADD COLUMN parser_version INTEGER DEFAULT 0", [])
+            .map_err(|e| format!("Failed to add parser_version column: {}", e))?;
+    }
+    conn.execute("UPDATE schema_version SET parser_version = ?1", [version])
+        .map_err(|e| format!("Failed to set parser version: {}", e))?;
     Ok(())
 }
 
@@ -174,12 +227,76 @@ mod tests {
 
         assert_eq!(table_count, 4, "Core tables (files, tags, mentions, tasks) must exist after open_or_create");
     }
+
+    #[test]
+    fn parser_version_stored_on_fresh_db() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let conn = open_or_create(&db_path).expect("Failed to open DB");
+
+        let pv = get_parser_version(&conn);
+        assert_eq!(pv, PARSER_VERSION, "Parser version must be set on fresh DB");
+    }
+
+    #[test]
+    fn parser_version_bump_clears_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+
+        // Create DB and insert a file row
+        {
+            let conn = open_or_create(&db_path).expect("Failed to open DB");
+            conn.execute(
+                "INSERT INTO files (path, name, content_hash, indexed_at) VALUES ('test.md', 'test.md', 'abc', 0)",
+                [],
+            ).expect("insert file");
+            let count: i64 = conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap();
+            assert_eq!(count, 1, "Should have 1 file");
+        }
+
+        // Simulate a parser version bump by lowering the stored version
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute("UPDATE schema_version SET parser_version = 0", []).unwrap();
+        }
+
+        // Re-open — should detect version mismatch and clear data
+        {
+            let conn = open_or_create(&db_path).expect("Failed to re-open DB");
+            let count: i64 = conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap();
+            assert_eq!(count, 0, "Files table must be empty after parser version bump");
+
+            let pv = get_parser_version(&conn);
+            assert_eq!(pv, PARSER_VERSION, "Parser version must be updated after rebuild");
+        }
+    }
+
+    #[test]
+    fn parser_version_column_added_to_old_db() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+
+        // Create a DB with the old schema (no parser_version column)
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch("CREATE TABLE schema_version (version INTEGER NOT NULL);").unwrap();
+            conn.execute("INSERT INTO schema_version (version) VALUES (1)", []).unwrap();
+            // Create minimal tables so clear_all doesn't fail
+            conn.execute_batch(SCHEMA_SQL).unwrap();
+        }
+
+        // open_or_create should add the column and set parser version
+        let conn = open_or_create(&db_path).expect("Failed to open old DB");
+        let pv = get_parser_version(&conn);
+        assert_eq!(pv, PARSER_VERSION, "Parser version must be set after column migration");
+    }
 }
 
 const SCHEMA_SQL: &str = "
 -- Schema version tracking
 CREATE TABLE IF NOT EXISTS schema_version (
-    version INTEGER NOT NULL
+    version INTEGER NOT NULL,
+    parser_version INTEGER DEFAULT 0
 );
 
 -- Indexed files with content hash for change detection
