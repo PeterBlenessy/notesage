@@ -172,6 +172,7 @@ pub fn run() {
             index::index_init,
             index::index_file,
             index::index_rebuild,
+            index::index_reset,
             index::index_tags,
             index::index_tag_occurrences,
             index::index_mentions,

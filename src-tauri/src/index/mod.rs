@@ -541,6 +541,57 @@ pub async fn index_rebuild(
     }
 }
 
+/// Delete an index database (and WAL/SHM files) and remove it from state.
+/// Called before retrying `index_init` when the DB is corrupted.
+#[tauri::command]
+pub async fn index_reset(
+    state: tauri::State<'_, IndexState>,
+    project_path: Option<String>,
+) -> Result<(), String> {
+    if let Some(ref pp) = project_path {
+        // Remove connection from state (drops the Connection, closing the DB)
+        {
+            let mut projects = state.project_dbs.lock();
+            projects.remove(&PathBuf::from(pp));
+        }
+
+        // Delete DB files
+        let home = dirs::home_dir().ok_or("Cannot find home directory")?;
+        let path_hash = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            pp.hash(&mut hasher);
+            format!("{:x}", hasher.finish())
+        };
+        let db_dir = home.join(".notesage").join("indexes").join(&path_hash);
+        let db_path = db_dir.join("index.db");
+        for suffix in &["", "-wal", "-shm"] {
+            let p = format!("{}{}", db_path.display(), suffix);
+            let _ = std::fs::remove_file(&p);
+        }
+
+        log::info!(target: "notesage::index", "Reset project index for {}", pp);
+    } else {
+        // Remove global DB connection
+        {
+            let mut global = state.global_db.lock();
+            *global = None;
+        }
+
+        // Delete DB files
+        let home = dirs::home_dir().ok_or("Cannot find home directory")?;
+        let db_path = home.join(".notesage").join("index.db");
+        for suffix in &["", "-wal", "-shm"] {
+            let p = format!("{}{}", db_path.display(), suffix);
+            let _ = std::fs::remove_file(&p);
+        }
+
+        log::info!(target: "notesage::index", "Reset global index");
+    }
+
+    Ok(())
+}
+
 /// Helper to run a query across multiple DBs and merge results.
 fn with_dbs<T, F>(
     state: &IndexState,

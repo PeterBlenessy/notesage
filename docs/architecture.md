@@ -191,6 +191,7 @@ A persistent SQLite index provides instant search for tags, mentions, tasks, goa
 - **AST-parsed extraction**: Tags, mentions, tasks, goals extracted from comrak's document tree — no false positives from code blocks, frontmatter, or inline code
 - **FTS5**: Full-text search with porter stemming for content search across all text files
 - **Incremental updates**: Filesystem watcher triggers reindex of changed files via SHA-256 content hashing
+- **Scope**: Only projects and `~/Notesage` are indexed. Explorer folders are intentionally excluded — this is a data security decision (users may open arbitrary system directories via Explorer; indexing them would persist their content in our SQLite databases)
 - **iCloud safe**: `index.db` excluded from iCloud sync via xattr; each device rebuilds its own index from synced files
 
 ### State Management (Zustand)

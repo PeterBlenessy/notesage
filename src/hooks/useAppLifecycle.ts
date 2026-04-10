@@ -429,15 +429,16 @@ async function reloadTrees() {
   log.info("startup", `iCloud/sync complete in ${Math.round(performance.now() - t0)}ms, loading notes tree`);
   await refreshNotesTree();
 
-  // Initialize the SQLite document index
+  // Initialize the SQLite document index.
+  // If init fails (corrupted DB), auto-recover by deleting the DB and retrying.
   log.info("startup", `Notes tree loaded in ${Math.round(performance.now() - t0)}ms, initializing index`);
   try {
     const tIndex0 = performance.now();
-    await tauriApi.indexInit();
+    await initIndexWithRecovery();
     const projectsForIndex = useWorkspaceStore.getState().projects;
     await Promise.all(projectsForIndex.map(async (project) => {
       const tProjectIndex0 = performance.now();
-      await tauriApi.indexInit(project.path);
+      await initIndexWithRecovery(project.path);
       const projectTree = useWorkspaceStore.getState().projects.find(p => p.path === project.path);
       const fileCount = countFiles(projectTree?.fileTree);
       console.log('[perf:startup] index init', {
@@ -519,6 +520,39 @@ async function restorePersistedTabs() {
 }
 
 /** Recursively count files (non-directories) in a FileEntry tree. */
+/**
+ * Initialize the index for a scope, with auto-recovery on failure.
+ * If init fails (corrupted DB), deletes the DB files and retries once.
+ * Shows a toast during recovery so the user knows tags/mentions may be
+ * temporarily unavailable.
+ */
+async function initIndexWithRecovery(projectPath?: string): Promise<void> {
+  try {
+    await tauriApi.indexInit(projectPath);
+  } catch (firstError) {
+    const scope = projectPath ?? "global";
+    log.warn("lifecycle", `Index init failed for ${scope}, attempting recovery`, firstError);
+
+    // Delete corrupted DB and retry
+    toast.info("Rebuilding search index — tags and mentions will be available shortly", {
+      id: `index-recovery-${scope}`,
+    });
+    try {
+      await tauriApi.indexReset(projectPath);
+      await tauriApi.indexInit(projectPath);
+      toast.dismiss(`index-recovery-${scope}`);
+    } catch (retryError) {
+      log.error("lifecycle", `Index recovery failed for ${scope}`, retryError);
+      toast.error(
+        "An unexpected error occurred while rebuilding the search index. " +
+        "Tag and mention suggestions will be unavailable until the app is restarted. " +
+        "If this persists, please share the app logs and report the issue on GitHub.",
+        { id: `index-recovery-${scope}`, duration: 15000 },
+      );
+    }
+  }
+}
+
 function countFiles(entries: FileEntry[] | undefined): number {
   if (!entries) return 0;
   let count = 0;

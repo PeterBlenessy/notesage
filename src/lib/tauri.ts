@@ -811,6 +811,10 @@ export const tauriApi = {
     return await invoke<IndexStats>("index_rebuild", { projectPath: projectPath ?? null });
   },
 
+  async indexReset(projectPath?: string): Promise<void> {
+    await invoke("index_reset", { projectPath: projectPath ?? null });
+  },
+
   async indexTags(projectPaths: string[], query?: string): Promise<IndexedTag[]> {
     return await invoke<IndexedTag[]>("index_tags", { projectPaths, query: query ?? null });
   },
