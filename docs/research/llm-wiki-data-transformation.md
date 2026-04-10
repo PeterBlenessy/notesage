@@ -246,6 +246,340 @@ Extend the existing command palette modes:
 - Augments tag co-occurrence and FTS5, doesn't replace them
 - **Effort:** Large — new embedding pipeline, vector math, model management
 
+## Automatic Entity Recognition & Cross-Indexing
+
+The sections above cover file-to-file link discovery. There's a second, equally valuable problem: **recognizing words inside documents that correspond to known tags, mentions, or recurring concepts — without the user typing `#` or `@` prefixes.**
+
+Today, if a user writes "I discussed the transformer architecture with Sarah" in a note, none of that is indexed. But if the workspace already has `#transformer`, `#architecture`, and `@Sarah` in other files, the system should notice and offer to tag/link them.
+
+### Current Architecture Gap
+
+| Component | What it does today | What's missing |
+| --- | --- | --- |
+| `tag-highlight.ts` | Regex-matches `#tag` on every keystroke, decorates as badge | Only matches explicit `#` prefix. Doesn't know what tags exist. |
+| `mention-highlight.ts` | Same for `@mention` | Same limitation. |
+| `tag-suggestion.tsx` | Queries SQLite index for autocomplete after `#` typed | Only activates after user types `#`. |
+| `parser.rs` | Extracts `#tag` and `@mention` from AST text nodes | Only matches prefixed patterns. |
+| SQLite index | Stores all known tags + mentions with file counts | Data exists, but nothing consumes it for entity matching. |
+
+The index *knows* every tag and mention in the workspace. The editor decorations *don't use this knowledge*. Bridging this gap enables automatic entity recognition.
+
+### Design: Two-Layer Entity Recognition
+
+#### Layer 1: Background Entity Index (Rust, runs on file change)
+
+When the watcher triggers a reindex, the parser currently extracts `#tags` and `@mentions`. Extend it to also detect **un-prefixed occurrences** of known entities:
+
+```
+File changed → Reindex pipeline:
+  1. Parse file (existing — extract #tags, @mentions, headings, tasks)
+  2. [NEW] Load known entity dictionary from index:
+     - All tags from `SELECT DISTINCT tag FROM tags`
+     - All mentions from `SELECT DISTINCT mention FROM mentions`
+     - All file titles from `SELECT DISTINCT title FROM files WHERE title IS NOT NULL`
+  3. [NEW] Scan body text for un-prefixed matches:
+     - Word-boundary match each entity against the document text
+     - Skip matches inside code blocks, frontmatter, existing #tag/@mention patterns
+     - Record as "suggested" entities with position and context
+  4. [NEW] Store in a `suggested_entities` table
+```
+
+**New schema:**
+
+```sql
+CREATE TABLE IF NOT EXISTS suggested_entities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    entity_text TEXT NOT NULL,            -- the matched word(s)
+    entity_type TEXT NOT NULL,            -- 'tag' | 'mention' | 'title' | 'recurring'
+    canonical_form TEXT NOT NULL,         -- the normalized form (e.g., 'transformer' for #transformer)
+    position INTEGER NOT NULL,            -- byte offset in body text
+    context_before TEXT DEFAULT '',
+    context_after TEXT DEFAULT '',
+    status TEXT DEFAULT 'suggested'        -- 'suggested' | 'accepted' | 'dismissed'
+);
+CREATE INDEX IF NOT EXISTS idx_suggested_file ON suggested_entities(file_id);
+CREATE INDEX IF NOT EXISTS idx_suggested_status ON suggested_entities(status);
+```
+
+**Entity dictionary construction:**
+
+The dictionary is built incrementally from the index itself. Every confirmed `#tag` in any file adds that tag's name (minus the `#`) to the dictionary. As the user's knowledge base grows, the dictionary grows automatically. No manual configuration needed.
+
+```rust
+fn build_entity_dictionary(conn: &Connection) -> EntityDictionary {
+    // Tags: "machine-learning" → EntityType::Tag
+    let tags: Vec<String> = query_all_tag_names(conn);
+    
+    // Mentions: "Sarah" → EntityType::Mention  
+    let mentions: Vec<String> = query_all_mention_names(conn);
+    
+    // File titles: "Transformer Architecture" → EntityType::Title
+    let titles: Vec<String> = query_all_titles(conn);
+    
+    // Build Aho-Corasick automaton for multi-pattern matching
+    EntityDictionary::new(tags, mentions, titles)
+}
+```
+
+**Why Aho-Corasick?** The dictionary may have hundreds or thousands of patterns. Matching each one individually with regex would be O(n * m) per file. Aho-Corasick builds a finite automaton that matches all patterns in a single pass — O(n + matches), regardless of dictionary size. The `aho-corasick` crate is a Rust standard and already well-optimized.
+
+**Word boundary handling:**
+
+Matching "ML" shouldn't highlight "HTML". The matcher must enforce word boundaries:
+
+```rust
+fn is_word_boundary(text: &str, start: usize, end: usize) -> bool {
+    let before = if start == 0 { true } else {
+        !text[..start].chars().last().unwrap().is_alphanumeric()
+    };
+    let after = if end >= text.len() { true } else {
+        !text[end..].chars().next().unwrap().is_alphanumeric()
+    };
+    before && after
+}
+```
+
+**Case sensitivity:** Tags are case-insensitive for matching but preserve their canonical form. "Transformer" in text matches `#transformer` and suggests the canonical `#transformer`.
+
+#### Layer 2: Editor Decorations (TypeScript, runs on keystroke)
+
+A new ProseMirror extension — `EntitySuggestion` — that decorates un-prefixed words matching the entity dictionary:
+
+```typescript
+// entity-suggestion.ts — new Tiptap extension
+
+const EntitySuggestionPluginKey = new PluginKey("entitySuggestion");
+
+// Cached entity dictionary, refreshed from SQLite on tab switch / file change
+let entitySet: Set<string> = new Set();
+let entityMap: Map<string, EntityInfo> = new Map();  // word → { type, canonical }
+
+function buildEntityDecorations(doc: PMNode): DecorationSet {
+  const decorations: Decoration[] = [];
+  
+  doc.descendants((node, pos) => {
+    if (node.type.name === "codeBlock") return false;
+    if (!node.isText || !node.text) return;
+    if (node.marks.some(m => m.type.name === "code")) return;
+    
+    const text = node.text;
+    // Split into words, check each against the entity set
+    const wordRe = /\b([a-zA-Z][a-zA-Z0-9_-]*)\b/g;
+    let match: RegExpExecArray | null;
+    
+    while ((match = wordRe.exec(text)) !== null) {
+      const word = match[1].toLowerCase();
+      if (!entitySet.has(word)) continue;
+      
+      // Skip if this word is already inside a #tag or @mention decoration
+      const from = pos + match.index;
+      const to = from + match[1].length;
+      if (isInsideTagOrMention(doc, from)) continue;
+      
+      const info = entityMap.get(word)!;
+      decorations.push(
+        Decoration.inline(from, to, {
+          class: `entity-suggestion entity-${info.type}`,
+          "data-entity": info.canonical,
+          "data-entity-type": info.type,
+        })
+      );
+    }
+  });
+  
+  return DecorationSet.create(doc, decorations);
+}
+```
+
+**Performance concern:** The current `tag-highlight.ts` runs a regex on every keystroke and stays under 1ms for 100KB documents (see `decorations.perf.test.ts`). The entity suggestion extension does the same text traversal but checks each word against a `Set<string>` — O(1) per lookup. For a 100KB document with ~15,000 words and a dictionary of 1,000 entities, this is ~15,000 hash lookups per keystroke. This should be well under 2ms.
+
+**But** — if performance becomes an issue:
+
+1. **Debounce rebuilds:** Don't rebuild on every keystroke. Rebuild on idle (requestIdleCallback) or after 300ms of no typing. The existing `tag-highlight.ts` rebuilds on every `docChanged` because the regex is cheap. Entity matching may warrant debouncing.
+2. **Incremental updates:** Only re-scan the changed paragraph, not the whole document. ProseMirror's transaction tells you which regions changed via `tr.mapping`.
+3. **Skip if dictionary is empty:** If no tags/mentions exist in the workspace yet, the extension does nothing.
+
+**Dictionary refresh:** The entity set is loaded from the SQLite index via a Tauri command (`index_entity_dictionary`) on:
+- Editor mount / tab switch
+- After reindexing completes (listen for `index-updated` Tauri event)
+- Not on every keystroke — the dictionary changes infrequently
+
+#### Decoration Styling
+
+Suggested entities need a visually distinct treatment from confirmed tags:
+
+```css
+/* Confirmed tags: solid badge */
+.tag-badge {
+  background-color: var(--color-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.05em 0.45em;
+}
+
+/* Suggested entities: subtle underline, no badge */
+.entity-suggestion {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--color-muted-foreground);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.entity-suggestion:hover {
+  text-decoration-style: solid;
+  background-color: var(--color-muted);
+  border-radius: 4px;
+}
+```
+
+Clicking a suggested entity opens a popover with actions:
+- **Tag it** — wraps the word with `#` prefix (turns "transformer" into "#transformer")
+- **Link to file** — if the entity matches a file title, inserts `[transformer](./transformer.md)`
+- **Dismiss** — hides the suggestion for this word in this file (persisted in `suggested_entities.status`)
+- **Dismiss everywhere** — adds to a user-managed exclusion list
+
+#### User Interaction Flow
+
+```
+User writes: "The transformer architecture uses attention mechanisms"
+
+Index knows: #transformer (5 files), #attention (3 files), #architecture (2 files)
+
+Editor shows: "The transformer architecture uses attention mechanisms"
+                    ^^^^^^^^^^^  ^^^^^^^^^^^^        ^^^^^^^^^
+                    (dotted underline on each)
+
+User clicks "transformer" → popover:
+  [Tag it]     — changes to "#transformer"
+  [Link to: Transformer Overview.md]
+  [Dismiss]    — hide this suggestion
+
+User clicks "Tag it" → text becomes "#transformer" → TagHighlight kicks in → solid badge
+```
+
+### Recurring Word Detection (New Entity Discovery)
+
+Beyond matching against known entities, detect **new recurring words** that should become tags:
+
+**Backend (runs during reindex):**
+
+```sql
+-- Words that appear in 3+ files but aren't tagged anywhere
+-- (simplified — actual implementation uses the body text from FTS5)
+WITH word_counts AS (
+    SELECT word, COUNT(DISTINCT file_id) as file_count
+    FROM file_words  -- hypothetical: extracted during indexing
+    WHERE length(word) > 3
+    AND word NOT IN (SELECT DISTINCT lower(tag) FROM tags)
+    GROUP BY word
+    HAVING file_count >= 3
+)
+SELECT word, file_count FROM word_counts ORDER BY file_count DESC;
+```
+
+In practice, this would work by:
+
+1. During parsing, extract significant words from body text (nouns, technical terms — skip stop words)
+2. Count word frequency across files using the existing FTS5 token data
+3. Words appearing in 3+ files that aren't already tags become "recurring entity" suggestions
+4. These appear with a different decoration style (e.g., dashed underline) and the popover says "This word appears in N files. Create tag?"
+
+**FTS5 auxiliary function approach (simpler):**
+
+SQLite's FTS5 already tokenizes and indexes all content. We can query term frequency:
+
+```sql
+-- Get terms that appear across many documents
+SELECT term, doc_count
+FROM files_fts_vocab
+WHERE doc_count >= 3
+AND length(term) > 3
+ORDER BY doc_count DESC;
+```
+
+This requires adding `files_fts_vocab` as an FTS5 vocabulary table:
+
+```sql
+CREATE VIRTUAL TABLE IF NOT EXISTS files_fts_vocab 
+    USING fts5vocab(files_fts, instance);
+```
+
+This gives us cross-document term frequency for free — FTS5 already did the tokenization.
+
+### New File Detection
+
+Files copied into a project folder (not created through Notesage) trigger the same pipeline:
+
+```
+New file detected by watcher → file-changed event (kind: "create")
+  → Reindex pipeline runs:
+      1. Parse content, extract explicit tags/mentions (existing)
+      2. Match body text against entity dictionary (new)
+      3. Store suggested entities in SQLite
+      4. Emit Tauri event: "entities-suggested" with file path + count
+  → Frontend shows toast: "3 potential tags found in imported-notes.md"
+  → User opens file → entity decorations visible immediately
+```
+
+This works for:
+- Files synced via iCloud from another device
+- Files copied from Finder into the project folder
+- Files created by external tools (AI agents, scripts, etc.)
+- Bulk imports (e.g., dragging 50 notes from another app)
+
+### Implementation Phases (Entity Recognition)
+
+**Phase E0: Entity Dictionary Tauri Command**
+
+- New `index_entity_dictionary(project_paths)` command returning all known tag names, mention names, and file titles
+- Build in Rust, return as `Vec<EntityEntry>` with type + canonical form
+- Cached in-process with invalidation on reindex
+- **Effort:** Small — one query aggregating existing tables
+
+**Phase E1: Editor Entity Decoration Extension**
+
+- New `entity-suggestion.ts` ProseMirror plugin
+- Loads dictionary on mount and on `index-updated` event
+- Word-boundary matching against `Set<string>`
+- Dotted underline decoration (distinct from confirmed tag badges)
+- Click handler opens action popover (Tag it / Link / Dismiss)
+- **Effort:** Medium — new extension, popover component, styling
+
+**Phase E2: Backend Entity Matching During Reindex**
+
+- Extend `parser.rs` to accept an entity dictionary parameter
+- After extracting explicit tags/mentions, scan body text for dictionary matches
+- Use `aho-corasick` crate for efficient multi-pattern matching
+- Store results in `suggested_entities` table
+- Emit `entities-suggested` Tauri event with summary
+- **Effort:** Medium — parser extension, new table, Aho-Corasick integration
+
+**Phase E3: Recurring Word Detection**
+
+- Add `files_fts_vocab` FTS5 vocabulary table to schema
+- Query for high-frequency cross-document terms not already tagged
+- Surface as a separate class of suggestion ("Appears in N files — create tag?")
+- **Effort:** Small — one schema addition, one query, UI treatment
+
+**Phase E4: Dismiss/Accept Persistence**
+
+- `suggested_entities.status` tracks user decisions per file
+- "Dismiss everywhere" adds to an exclusion list (new table or stored in settings)
+- Accepted suggestions become confirmed tags/mentions in the document
+- **Effort:** Small — status updates, exclusion list
+
+### Performance Budget
+
+| Operation | Budget | Frequency | Notes |
+| --- | --- | --- | --- |
+| Dictionary load from SQLite | <10ms | On tab switch, on reindex | Single query, cached |
+| Editor decoration rebuild | <2ms for 100KB doc | Every keystroke (or debounced) | `Set.has()` is O(1), ~15K lookups |
+| Aho-Corasick match during reindex | <5ms per file | On file change | Single-pass through body text |
+| FTS5 vocab query | <50ms | On lint/manual trigger | Aggregate across all indexed files |
+
+All within the existing performance budgets documented in `docs/performance-baseline.md`.
+
 ## Key Takeaway
 
 The most impactful idea from Karpathy's pattern isn't the wiki format — it's that **the LLM should do the bookkeeping humans abandon**. In Notesage terms:
@@ -253,5 +587,10 @@ The most impactful idea from Karpathy's pattern isn't the wiki format — it's t
 1. **Links should be discovered, not just authored.** Tag co-occurrence and FTS5 similarity can surface connections instantly, with zero AI cost.
 2. **Ingestion should be transformation.** Saving a file should trigger a "what does this relate to?" step — at minimum SQL-based, optionally AI-assisted.
 3. **Health checking should be routine.** Orphan detection, broken links, and tag hygiene are all cheap SQL queries that can run continuously.
+4. **Entities should be recognized, not just typed.** The index already knows every tag and mention in the workspace. Matching plain text against that dictionary turns every document into a connected node in the knowledge graph — automatically, on every save.
 
-The existing SQLite index, comrak parser, and skill system provide the foundation. The main missing piece is the `links` table and the tag co-occurrence query — both small additions that unlock the entire link-discovery pipeline.
+The existing SQLite index, comrak parser, and skill system provide the foundation. The two main additions are:
+- The `links` table and tag co-occurrence query for file-to-file discovery
+- The entity dictionary and `entity-suggestion` extension for intra-document recognition
+
+Both are incremental extensions of existing infrastructure, not new systems.
