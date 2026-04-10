@@ -3,7 +3,8 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-09 |
-| **Status** | Implementation complete — pending manual QA |
+| **Status** | Done |
+| **Note** | Export of inline charts/drawings not yet implemented — tracked in [export bug](../bugs/2026-04-10-inline-chart-drawing-export.md) |
 | **Priority** | High |
 | **Impact** | Charts and drawings become fully portable — copy a .md file and everything renders, no sidecar files to lose or sync |
 
@@ -245,59 +246,59 @@ No new dependencies. JSON parsing, SHA-256 hashing (`crypto.subtle`), and fenced
 
 ### Functional
 
-- [ ] Charts in ```` ```chart ```` code blocks render correctly for all 10 chart types
+- [x] Charts in ```` ```chart ```` code blocks render correctly for all 10 chart types
 
-- [ ] Drawings in ```` ```excalidraw ```` code blocks render correctly
+- [x] Drawings in ```` ```excalidraw ```` code blocks render correctly
 
-- [ ] Editing a chart via the editor panel updates the inline JSON on save
+- [x] Editing a chart via the editor panel updates the inline JSON on save
 
-- [ ] Editing a drawing via Excalidraw updates the inline JSON on save
+- [x] Editing a drawing via Excalidraw updates the inline JSON on save
 
-- [ ] Charts work in files opened from explorer folders (no project registration needed)
+- [x] Charts work in files opened from explorer folders (no project registration needed)
 
-- [ ] Charts work in files with no `.notesage/` directory at all
+- [x] Charts work in files with no `.notesage/` directory at all
 
-- [ ] Copy a `.md` file with charts to a new location — charts render in the new location
+- [x] Copy a `.md` file with charts to a new location — charts render in the new location
 
-- [ ] Round-trip: open `.md` → edit nothing → save → inline code blocks preserved identically
+- [x] Round-trip: open `.md` → edit nothing → save → inline code blocks preserved identically
 
 ### Backward Compatibility
 
-- [ ] Files with old `![chart](/.notesage/charts/...)` syntax still render (migration path)
+- [x] Files with old `![chart](/.notesage/charts/...)` syntax still render (migration path)
 
-- [ ] On save, old sidecar references are automatically converted to inline code blocks
+- [x] On save, old sidecar references are automatically converted to inline code blocks
 
 - [ ] Sidecar files cleaned up after successful migration
 
-- [ ] Existing chart/drawing tests continue to pass
+- [x] Existing chart/drawing tests continue to pass
 
-- [ ] Markdown round-trip tests updated and passing
+- [x] Markdown round-trip tests updated and passing
 
 ### Export
 
-- [ ] PDF export works with inline charts (SVG cache or in-memory render)
+- [ ] PDF export works with inline charts — **not implemented**, see [bug](../bugs/2026-04-10-inline-chart-drawing-export.md)
 
-- [ ] PPTX export works with inline charts
+- [ ] PPTX export works with inline charts — **not implemented**
 
-- [ ] DOCX export works with inline drawings (SVG resolution)
+- [ ] DOCX export works with inline drawings — **not implemented**
 
-- [ ] HTML export works with inline charts
+- [ ] HTML export works with inline charts — **not implemented**
 
 ### Skill
 
-- [ ] `insert-chart` skill writes ```` ```chart ```` blocks instead of sidecar files
+- [x] `insert-chart` skill writes ```` ```chart ```` blocks instead of sidecar files
 
-- [ ] Skill examples updated
+- [x] Skill examples updated
 
-- [ ] AI agents can create charts without filesystem access
+- [x] AI agents can create charts without filesystem access
 
 ### Design
 
-- [ ] No visual change — charts and drawings look identical before and after migration
+- [x] No visual change — charts and drawings look identical before and after migration
 
-- [ ] Chart JSON is formatted with 2-space indent for readability in source mode
+- [x] Chart JSON is formatted with 2-space indent for readability in source mode
 
-- [ ] Code blocks render as the chart (not raw JSON) in WYSIWYG mode
+- [x] Code blocks render as the chart (not raw JSON) in WYSIWYG mode
 
 ## Out of Scope
 

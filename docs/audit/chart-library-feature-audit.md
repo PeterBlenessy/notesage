@@ -6,7 +6,7 @@
 | Stage | Link | Status |
 | --- | --- | --- |
 | PRD | [chart-feature-expansion](../prds/2026-04-08-chart-feature-expansion.md) | Draft |
-| Tasks | — | Not planned |
+| Tasks | [chart-feature-expansion-tasks](../tasks/2026-04-08-chart-feature-expansion-tasks.md) | Not started |
 
 ## Overview
 

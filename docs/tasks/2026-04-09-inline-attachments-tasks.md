@@ -3,7 +3,8 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-09 |
-| **Status** | Complete |
+| **Status** | Done |
+| **Note** | Export tasks (#9-#11) reverted and blocked on [inline chart/drawing export bug](../bugs/2026-04-10-inline-chart-drawing-export.md) — needs redesign |
 | **PRD** | [inline-attachments](../prds/2026-04-09-inline-attachments.md) |
 | **Total** | 16 tasks: 5S, 7M, 4L |
 | **Suggested order** | Parser (#1-#2) → Chart extension (#3-#5) → Drawing extension (#6-#8) → SVG cache (#9) → Export (#10-#11) → Migration (#12-#13) → Skill (#14) → Tests (#15) → Cleanup (#16) |
@@ -150,7 +151,7 @@ SVG preview generation (for the static preview in the document) should work from
 
 ## SVG Cache
 
-### #9 — Implement content-hash SVG cache for exports ✅
+### #9 — Implement content-hash SVG cache for exports ❌ reverted — blocked on [export bug](../bugs/2026-04-10-inline-chart-drawing-export.md), needs redesign
 
 **Description:** Create a `src/lib/svg-cache.ts` utility that manages SVG preview caching in `.notesage/cache/`. Key files by content hash (first 12 chars of SHA-256 of the JSON). Provide `writeSvgCache(json, svg, filePath)` that finds or creates the nearest `.notesage/cache/` directory (walking up from the file's location, or using the file's own directory as fallback). Provide `readSvgCache(json, filePath)` that returns cached SVG or null.
 
@@ -170,7 +171,7 @@ The cache is best-effort — if no `.notesage/` dir can be found and we can't cr
 
 ## Export Updates (Rust)
 
-### #10 — Update Rust exporters to parse ```` ```chart ```` fenced blocks ✅
+### #10 — Update Rust exporters to parse ```` ```chart ```` fenced blocks ❌ reverted — blocked on [export bug](../bugs/2026-04-10-inline-chart-drawing-export.md), needs redesign
 
 **Description:** Update the comrak-based markdown parsers in `markdown_to_typst.rs`, `markdown_to_html.rs`, `markdown_to_pptx.rs`, and `markdown_to_docx.rs` to recognize ```` ```chart ```` fenced code blocks. Extract the JSON content from the code block's literal text. For PPTX, parse into the `SlideChart` model. For Typst/HTML, render the cached SVG or a placeholder. Keep the existing `![chart](/.notesage/charts/...)` image-syntax handling as a legacy fallback.
 
@@ -188,7 +189,7 @@ comrak exposes code blocks via `NodeValue::CodeBlock { info, literal }` — matc
 
 ---
 
-### #11 — Update Rust exporters to parse ```` ```excalidraw ```` fenced blocks ✅
+### #11 — Update Rust exporters to parse ```` ```excalidraw ```` fenced blocks ❌ reverted — blocked on [export bug](../bugs/2026-04-10-inline-chart-drawing-export.md), needs redesign
 
 **Description:** Same as #10 but for ```` ```excalidraw ```` blocks in drawings. The exporters need the SVG rendering — they should look for the cached SVG file (via content hash), or fall back to a placeholder. The SVG path resolution changes from `/.notesage/drawings/{id}.svg` to `/.notesage/cache/drawing-{hash}.svg`.
 

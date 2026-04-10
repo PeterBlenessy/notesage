@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-08 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | Medium |
 | **Impact** | Improved rendering fidelity for underline styles, CJK fonts, text effects, table theming, chart types, pattern fills, and media placeholders — closing the gap between viewer and PowerPoint |
 | **Research** | [pptx-viewer-quality](../research/2026-04-07-pptx-viewer-quality.md) |

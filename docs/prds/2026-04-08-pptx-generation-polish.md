@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-08 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | Medium |
 | **Impact** | Enhanced text formatting, chart customization, shape variety, and image/table polish — closing the gap between generated and hand-crafted presentations |
 | **Research** | [pptx-generation-quality](../research/2026-04-07-pptx-generation-quality.md) |

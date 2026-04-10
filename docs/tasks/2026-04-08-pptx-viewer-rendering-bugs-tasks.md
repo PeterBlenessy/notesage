@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-08 |
-| **Status** | In progress |
+| **Status** | Complete |
 | **Bugs** | [pptx-viewer-rendering-bugs](../bugs/2026-04-08-pptx-viewer-rendering-bugs.md) |
 | **Total** | 10 tasks: 3S, 5M, 2L |
 | **Suggested order** | Color pipeline (#1-#3) → Gradient (#4) → Text inheritance (#5-#7) → Polish (#8-#10) |
