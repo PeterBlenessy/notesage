@@ -306,27 +306,166 @@ CREATE INDEX IF NOT EXISTS idx_suggested_status ON suggested_entities(status);
 
 The dictionary is built incrementally from the index itself. Every confirmed `#tag` in any file adds that tag's name (minus the `#`) to the dictionary. As the user's knowledge base grows, the dictionary grows automatically. No manual configuration needed.
 
+The critical insight is that a single entity has **many surface forms**. The tag `#foo-bar` should match all of: "foo bar", "Foo Bar", "foobar", "FooBar", "Foo bar", "foo-bar". Similarly, the mention `@JohnSmith` should match "John Smith", "john smith", "JOHN SMITH".
+
+**Normalization function:**
+
+All surface forms reduce to a single canonical key by stripping separators and lowercasing:
+
 ```rust
-fn build_entity_dictionary(conn: &Connection) -> EntityDictionary {
-    // Tags: "machine-learning" → EntityType::Tag
-    let tags: Vec<String> = query_all_tag_names(conn);
-    
-    // Mentions: "Sarah" → EntityType::Mention  
-    let mentions: Vec<String> = query_all_mention_names(conn);
-    
-    // File titles: "Transformer Architecture" → EntityType::Title
-    let titles: Vec<String> = query_all_titles(conn);
-    
-    // Build Aho-Corasick automaton for multi-pattern matching
-    EntityDictionary::new(tags, mentions, titles)
+/// Normalize a string to a canonical matching key.
+/// "Foo Bar" → "foobar", "foo-bar" → "foobar", "FooBar" → "foobar"
+fn normalize(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(|c| c.to_lowercase())
+        .collect()
 }
 ```
 
-**Why Aho-Corasick?** The dictionary may have hundreds or thousands of patterns. Matching each one individually with regex would be O(n * m) per file. Aho-Corasick builds a finite automaton that matches all patterns in a single pass — O(n + matches), regardless of dictionary size. The `aho-corasick` crate is a Rust standard and already well-optimized.
+This means `normalize("foo bar") == normalize("foo-bar") == normalize("FooBar") == "foobar"`.
+
+**Surface form generation:**
+
+For each entity, generate all plausible surface forms that might appear in text:
+
+```rust
+fn surface_forms(canonical: &str) -> Vec<String> {
+    // Input: tag name like "foo-bar" or mention like "JohnSmith"
+    let mut forms = Vec::new();
+    
+    // Split on separators (hyphens, underscores) and camelCase boundaries
+    let words = split_entity_words(canonical);  // ["foo", "bar"]
+    
+    // "foo bar" — space-separated lowercase
+    forms.push(words.join(" "));
+    // "Foo Bar" — title case
+    forms.push(words.iter().map(|w| titlecase(w)).collect::<Vec<_>>().join(" "));
+    // "foobar" — concatenated lowercase
+    forms.push(words.join(""));
+    // "FooBar" — PascalCase
+    forms.push(words.iter().map(|w| titlecase(w)).collect::<Vec<_>>().join(""));
+    // "foo-bar" — hyphenated (original tag form)
+    forms.push(words.join("-"));
+    // "foo_bar" — underscored
+    forms.push(words.join("_"));
+    
+    // Deduplicate (some forms collapse for single-word entities)
+    forms.sort();
+    forms.dedup();
+    forms
+}
+
+/// Split "foo-bar" → ["foo", "bar"], "FooBar" → ["Foo", "Bar"],
+/// "machine_learning" → ["machine", "learning"]
+fn split_entity_words(s: &str) -> Vec<String> {
+    // Split on hyphens and underscores first
+    let parts: Vec<&str> = s.split(|c: char| c == '-' || c == '_').collect();
+    
+    // Then split each part on camelCase boundaries
+    parts.into_iter()
+        .flat_map(|part| split_camel_case(part))
+        .map(|w| w.to_lowercase())
+        .filter(|w| !w.is_empty())
+        .collect()
+}
+```
+
+**Example: what gets generated for `#machine-learning`:**
+
+| Surface form | Matches in text |
+| --- | --- |
+| `machine learning` | "I studied machine learning at MIT" |
+| `Machine Learning` | "Machine Learning is transforming..." |
+| `machinelearning` | "see #machinelearning" (informal) |
+| `MachineLearning` | "the MachineLearning library" |
+| `machine-learning` | "a machine-learning model" |
+| `machine_learning` | "import machine_learning" |
+
+**Example: what gets generated for `@JohnSmith`:**
+
+| Surface form | Matches in text |
+| --- | --- |
+| `john smith` | "I met john smith yesterday" |
+| `John Smith` | "John Smith presented the findings" |
+| `johnsmith` | "email johnsmith@..." (filtered by boundary check) |
+| `JohnSmith` | "cc @JohnSmith" (already tagged, skipped) |
+
+**Dictionary structure:**
+
+```rust
+struct EntityDictionary {
+    // Aho-Corasick automaton built from ALL surface forms of ALL entities
+    automaton: AhoCorasick,
+    // Map from surface form index → (entity_type, canonical_form)
+    // Aho-Corasick returns pattern indices; this maps back to the entity
+    pattern_map: Vec<EntityInfo>,
+    // Normalization lookup for dedup: normalized_key → canonical_form
+    norm_map: HashMap<String, String>,
+}
+
+fn build_entity_dictionary(conn: &Connection) -> EntityDictionary {
+    let mut patterns: Vec<String> = Vec::new();
+    let mut pattern_map: Vec<EntityInfo> = Vec::new();
+    
+    // Tags: "machine-learning" → generate all surface forms
+    for tag in query_all_tag_names(conn) {
+        for form in surface_forms(&tag) {
+            patterns.push(form.clone());
+            pattern_map.push(EntityInfo {
+                entity_type: EntityType::Tag,
+                canonical: format!("#{}", tag),  // e.g., "#machine-learning"
+            });
+        }
+    }
+    
+    // Mentions: "JohnSmith" → generate all surface forms
+    for mention in query_all_mention_names(conn) {
+        for form in surface_forms(&mention) {
+            patterns.push(form.clone());
+            pattern_map.push(EntityInfo {
+                entity_type: EntityType::Mention,
+                canonical: format!("@{}", mention),
+            });
+        }
+    }
+    
+    // File titles: "Transformer Architecture" → surface forms + the title itself
+    for title in query_all_titles(conn) {
+        patterns.push(title.clone());  // exact title match
+        pattern_map.push(EntityInfo {
+            entity_type: EntityType::Title,
+            canonical: title.clone(),
+        });
+        // Also generate normalized forms if the title is multi-word
+        if title.contains(' ') || title.contains('-') {
+            for form in surface_forms(&title) {
+                patterns.push(form.clone());
+                pattern_map.push(EntityInfo {
+                    entity_type: EntityType::Title,
+                    canonical: title.clone(),
+                });
+            }
+        }
+    }
+    
+    // Build case-insensitive Aho-Corasick automaton
+    let automaton = AhoCorasickBuilder::new()
+        .ascii_case_insensitive(true)
+        .build(&patterns)
+        .unwrap();
+    
+    EntityDictionary { automaton, pattern_map, norm_map }
+}
+```
+
+**Why Aho-Corasick?** The dictionary may have hundreds or thousands of patterns (especially with surface form expansion — 6x the entity count). Matching each one individually with regex would be O(n * m) per file. Aho-Corasick builds a finite automaton that matches all patterns in a single pass — O(n + matches), regardless of dictionary size. The `aho-corasick` crate is a Rust standard, already well-optimized, and supports case-insensitive matching natively.
+
+**Multi-word matching is free with Aho-Corasick.** The automaton matches arbitrarily long patterns, not just single words. "machine learning" (with the space) is just another pattern in the automaton. The algorithm handles overlapping matches and longest-match disambiguation.
 
 **Word boundary handling:**
 
-Matching "ML" shouldn't highlight "HTML". The matcher must enforce word boundaries:
+After Aho-Corasick reports a match, validate word boundaries to avoid false positives:
 
 ```rust
 fn is_word_boundary(text: &str, start: usize, end: usize) -> bool {
@@ -340,20 +479,65 @@ fn is_word_boundary(text: &str, start: usize, end: usize) -> bool {
 }
 ```
 
-**Case sensitivity:** Tags are case-insensitive for matching but preserve their canonical form. "Transformer" in text matches `#transformer` and suggests the canonical `#transformer`.
+This prevents "ML" from matching inside "HTML", and "john" from matching inside "johnson".
+
+**Match deduplication:**
+
+Multiple surface forms may match the same text span. "Foo Bar" matches both the "foo bar" pattern and the "Foo Bar" pattern for `#foo-bar`. Deduplicate by position: if two matches overlap, keep the longest one. If same length, prefer exact case match over case-insensitive.
+
+**Case sensitivity:** All matching is case-insensitive via the Aho-Corasick `ascii_case_insensitive` flag. The canonical form is always preserved (e.g., `#machine-learning`, `@JohnSmith`).
 
 #### Layer 2: Editor Decorations (TypeScript, runs on keystroke)
 
-A new ProseMirror extension — `EntitySuggestion` — that decorates un-prefixed words matching the entity dictionary:
+A new ProseMirror extension — `EntitySuggestion` — that decorates un-prefixed words (including multi-word phrases) matching the entity dictionary.
+
+**The frontend can't use Aho-Corasick** (that's a Rust crate). Instead, it uses a different strategy: the backend provides pre-computed match results per file, and the editor also does lightweight live matching for the current document.
+
+**Two matching strategies (choose based on phase):**
+
+**Strategy A — Backend-computed suggestions (recommended for Phase E1):**
+
+The Rust backend runs Aho-Corasick during reindexing and stores results in `suggested_entities`. The editor loads suggestions for the active file via a Tauri command and creates decorations from stored positions. This is the simplest approach — the editor just renders pre-computed data.
 
 ```typescript
-// entity-suggestion.ts — new Tiptap extension
+// entity-suggestion.ts — backend-driven approach
 
-const EntitySuggestionPluginKey = new PluginKey("entitySuggestion");
+interface EntitySuggestion {
+  position: number;     // character offset in body text
+  length: number;
+  entityType: string;   // 'tag' | 'mention' | 'title'
+  canonical: string;    // '#machine-learning', '@JohnSmith'
+  status: string;       // 'suggested' | 'accepted' | 'dismissed'
+}
 
-// Cached entity dictionary, refreshed from SQLite on tab switch / file change
-let entitySet: Set<string> = new Set();
-let entityMap: Map<string, EntityInfo> = new Map();  // word → { type, canonical }
+// Loaded once on tab switch, refreshed on reindex
+let suggestions: EntitySuggestion[] = [];
+
+async function loadSuggestions(filePath: string) {
+  suggestions = await invoke<EntitySuggestion[]>(
+    'index_entity_suggestions', { path: filePath }
+  );
+}
+```
+
+The challenge is mapping byte offsets from the parser to ProseMirror positions. The existing tag/mention extraction already does this (the `position` field in `ExtractedTag`). The same offset-mapping logic applies.
+
+**Strategy B — Frontend live matching (for real-time as-you-type):**
+
+For instant feedback while typing (before the backend has reindexed), the frontend does its own matching using a normalized lookup map:
+
+```typescript
+// Normalized entity map: "foobar" → { type, canonical, surfaceForms }
+// Built from backend dictionary, cached in memory
+let entityNormMap: Map<string, EntityInfo> = new Map();
+
+// All surface forms for fast text scanning
+// Sorted longest-first so "machine learning" matches before "machine"
+let surfaceForms: Array<{ form: string; normalized: string }> = [];
+
+function normalize(s: string): string {
+  return s.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+}
 
 function buildEntityDecorations(doc: PMNode): DecorationSet {
   const decorations: Decoration[] = [];
@@ -364,20 +548,44 @@ function buildEntityDecorations(doc: PMNode): DecorationSet {
     if (node.marks.some(m => m.type.name === "code")) return;
     
     const text = node.text;
-    // Split into words, check each against the entity set
-    const wordRe = /\b([a-zA-Z][a-zA-Z0-9_-]*)\b/g;
-    let match: RegExpExecArray | null;
+    const lowerText = text.toLowerCase();
     
-    while ((match = wordRe.exec(text)) !== null) {
-      const word = match[1].toLowerCase();
-      if (!entitySet.has(word)) continue;
+    // Try each surface form against this text node
+    // surfaceForms is sorted longest-first for greedy matching
+    const matched: Array<{ from: number; to: number; info: EntityInfo }> = [];
+    
+    for (const { form, normalized } of surfaceForms) {
+      const lowerForm = form.toLowerCase();
+      let searchFrom = 0;
       
-      // Skip if this word is already inside a #tag or @mention decoration
-      const from = pos + match.index;
-      const to = from + match[1].length;
-      if (isInsideTagOrMention(doc, from)) continue;
-      
-      const info = entityMap.get(word)!;
+      while (searchFrom < lowerText.length) {
+        const idx = lowerText.indexOf(lowerForm, searchFrom);
+        if (idx === -1) break;
+        
+        const end = idx + form.length;
+        
+        // Word boundary check
+        const beforeOk = idx === 0 || !/\w/.test(text[idx - 1]);
+        const afterOk = end >= text.length || !/\w/.test(text[end]);
+        
+        if (beforeOk && afterOk) {
+          const from = pos + idx;
+          const to = pos + end;
+          
+          // Skip if inside existing #tag or @mention
+          if (!isInsideTagOrMention(doc, from)) {
+            const info = entityNormMap.get(normalized)!;
+            matched.push({ from, to, info });
+          }
+        }
+        searchFrom = idx + 1;
+      }
+    }
+    
+    // Deduplicate overlapping matches — keep longest
+    const deduped = deduplicateOverlapping(matched);
+    
+    for (const { from, to, info } of deduped) {
       decorations.push(
         Decoration.inline(from, to, {
           class: `entity-suggestion entity-${info.type}`,
@@ -390,15 +598,35 @@ function buildEntityDecorations(doc: PMNode): DecorationSet {
   
   return DecorationSet.create(doc, decorations);
 }
+
+function deduplicateOverlapping(
+  matches: Array<{ from: number; to: number; info: EntityInfo }>
+): Array<{ from: number; to: number; info: EntityInfo }> {
+  // Sort by position, then longest first
+  matches.sort((a, b) => a.from - b.from || (b.to - b.from) - (a.to - a.from));
+  
+  const result: typeof matches = [];
+  let lastEnd = -1;
+  
+  for (const m of matches) {
+    if (m.from >= lastEnd) {
+      result.push(m);
+      lastEnd = m.to;
+    }
+  }
+  return result;
+}
 ```
 
-**Performance concern:** The current `tag-highlight.ts` runs a regex on every keystroke and stays under 1ms for 100KB documents (see `decorations.perf.test.ts`). The entity suggestion extension does the same text traversal but checks each word against a `Set<string>` — O(1) per lookup. For a 100KB document with ~15,000 words and a dictionary of 1,000 entities, this is ~15,000 hash lookups per keystroke. This should be well under 2ms.
+**Performance considerations:**
 
-**But** — if performance becomes an issue:
+With multi-word surface forms, the matching cost is higher than single-word `Set.has()`. For a dictionary of 200 entities with ~6 surface forms each (1,200 patterns) scanned against a 100KB document:
 
-1. **Debounce rebuilds:** Don't rebuild on every keystroke. Rebuild on idle (requestIdleCallback) or after 300ms of no typing. The existing `tag-highlight.ts` rebuilds on every `docChanged` because the regex is cheap. Entity matching may warrant debouncing.
-2. **Incremental updates:** Only re-scan the changed paragraph, not the whole document. ProseMirror's transaction tells you which regions changed via `tr.mapping`.
-3. **Skip if dictionary is empty:** If no tags/mentions exist in the workspace yet, the extension does nothing.
+- Naive `indexOf` loop: ~1,200 scans per text node. With ~500 text nodes in a 100KB doc, that's 600K string searches. Too slow for every keystroke.
+- **Optimization: only scan on idle.** Rebuild decorations via `requestIdleCallback` or after 300ms debounce, not on every `docChanged`. The user sees instant feedback for explicit `#tags` (existing `tag-highlight.ts` runs on every keystroke), and entity suggestions appear ~300ms later.
+- **Optimization: incremental.** On `docChanged`, only re-scan text nodes in the changed range (ProseMirror's `tr.steps` tell you which positions were affected). Carry forward decorations for unchanged regions via `DecorationSet.map()`.
+- **Optimization: short-circuit.** If the text node is shorter than the shortest surface form, skip it. If the dictionary is empty, the plugin is a no-op.
+- **Strategy A avoids this entirely** — the backend does the heavy matching in Rust (Aho-Corasick, single-pass, fast), and the editor just renders stored positions. The only per-keystroke cost is re-mapping positions after edits, which ProseMirror's `DecorationSet.map(tr.mapping)` handles efficiently.
 
 **Dictionary refresh:** The entity set is loaded from the SQLite index via a Tauri command (`index_entity_dictionary`) on:
 - Editor mount / tab switch
@@ -442,59 +670,76 @@ Clicking a suggested entity opens a popover with actions:
 #### User Interaction Flow
 
 ```
-User writes: "The transformer architecture uses attention mechanisms"
+Example 1 — Tag matching with multi-word surface forms:
 
-Index knows: #transformer (5 files), #attention (3 files), #architecture (2 files)
+User writes: "We discussed machine learning approaches with the team"
 
-Editor shows: "The transformer architecture uses attention mechanisms"
-                    ^^^^^^^^^^^  ^^^^^^^^^^^^        ^^^^^^^^^
-                    (dotted underline on each)
+Index knows: #machine-learning (8 files)
 
-User clicks "transformer" → popover:
-  [Tag it]     — changes to "#transformer"
-  [Link to: Transformer Overview.md]
+Surface forms generated: "machine learning", "Machine Learning",
+                         "machinelearning", "MachineLearning",
+                         "machine-learning", "machine_learning"
+
+Editor shows: "We discussed machine learning approaches with the team"
+                             ^^^^^^^^^^^^^^^^
+                             (dotted underline — matches "machine learning")
+
+User clicks "machine learning" → popover:
+  [Tag it]     — replaces "machine learning" with "#machine-learning"
+  [Link to: Machine Learning Overview.md]
   [Dismiss]    — hide this suggestion
 
-User clicks "Tag it" → text becomes "#transformer" → TagHighlight kicks in → solid badge
+User clicks "Tag it" → becomes "#machine-learning" → solid badge
+
+
+Example 2 — Mention matching with first+last name:
+
+User writes: "I need to follow up with Sarah Connor about the deadline"
+
+Index knows: @SarahConnor (3 files), @sarah-connor (1 file)
+
+Surface forms generated: "sarah connor", "Sarah Connor",
+                         "sarahconnor", "SarahConnor"
+
+Editor shows: "I need to follow up with Sarah Connor about the deadline"
+                                        ^^^^^^^^^^^^
+                                        (dotted underline)
+
+User clicks "Sarah Connor" → popover:
+  [Mention]    — replaces "Sarah Connor" with "@SarahConnor"
+  [Dismiss]    — hide this suggestion
+
+
+Example 3 — Variant detection across casing/formatting:
+
+File A says: "The FooBar library is useful"
+File B says: "I configured foo bar for the project"
+File C says: "See docs on Foo-Bar integration"
+
+All three normalize to "foobar". If #foo-bar exists as a tag:
+  → All three occurrences get dotted underlines
+  → Clicking any one offers to convert to "#foo-bar"
+
+If #foo-bar does NOT exist yet (recurring word detection):
+  → FTS5 vocab query finds "foobar" (normalized) appears in 3+ files
+  → Suggestion: "This phrase appears in 3 files — create #foo-bar?"
 ```
 
-### Recurring Word Detection (New Entity Discovery)
+### Recurring Word & Phrase Detection (New Entity Discovery)
 
-Beyond matching against known entities, detect **new recurring words** that should become tags:
+Beyond matching against known entities, detect **new recurring words and phrases** that should become tags. This handles the case where "foo bar" / "FooBar" / "Foo Bar" appears across multiple files but nobody has created `#foo-bar` yet.
 
-**Backend (runs during reindex):**
-
-```sql
--- Words that appear in 3+ files but aren't tagged anywhere
--- (simplified — actual implementation uses the body text from FTS5)
-WITH word_counts AS (
-    SELECT word, COUNT(DISTINCT file_id) as file_count
-    FROM file_words  -- hypothetical: extracted during indexing
-    WHERE length(word) > 3
-    AND word NOT IN (SELECT DISTINCT lower(tag) FROM tags)
-    GROUP BY word
-    HAVING file_count >= 3
-)
-SELECT word, file_count FROM word_counts ORDER BY file_count DESC;
-```
-
-In practice, this would work by:
-
-1. During parsing, extract significant words from body text (nouns, technical terms — skip stop words)
-2. Count word frequency across files using the existing FTS5 token data
-3. Words appearing in 3+ files that aren't already tags become "recurring entity" suggestions
-4. These appear with a different decoration style (e.g., dashed underline) and the popover says "This word appears in N files. Create tag?"
-
-**FTS5 auxiliary function approach (simpler):**
+**Single-word detection via FTS5 vocabulary:**
 
 SQLite's FTS5 already tokenizes and indexes all content. We can query term frequency:
 
 ```sql
--- Get terms that appear across many documents
+-- Get terms that appear across many documents but aren't already tags
 SELECT term, doc_count
 FROM files_fts_vocab
 WHERE doc_count >= 3
 AND length(term) > 3
+AND lower(term) NOT IN (SELECT DISTINCT lower(tag) FROM tags)
 ORDER BY doc_count DESC;
 ```
 
@@ -505,7 +750,102 @@ CREATE VIRTUAL TABLE IF NOT EXISTS files_fts_vocab
     USING fts5vocab(files_fts, instance);
 ```
 
-This gives us cross-document term frequency for free — FTS5 already did the tokenization.
+This gives us cross-document single-word frequency for free — FTS5 already did the tokenization. But it only finds single tokens (porter-stemmed), not multi-word phrases.
+
+**Multi-word phrase detection (bigrams/trigrams):**
+
+FTS5 doesn't natively track multi-word phrases. To detect that "machine learning" (two words) recurs across files, we need an extraction step during indexing:
+
+```rust
+/// Extract significant bigrams and trigrams from body text.
+/// Returns (normalized_phrase, original_form) pairs.
+fn extract_phrases(body_text: &str) -> Vec<(String, String)> {
+    let words: Vec<&str> = body_text.split_whitespace()
+        .filter(|w| w.len() > 2)
+        .filter(|w| !is_stop_word(w))
+        .collect();
+    
+    let mut phrases = Vec::new();
+    
+    // Bigrams: "machine learning", "neural network", etc.
+    for window in words.windows(2) {
+        let original = format!("{} {}", window[0], window[1]);
+        let normalized = normalize(&original);  // "machinelearning"
+        if normalized.len() >= 6 {  // skip trivially short
+            phrases.push((normalized, original));
+        }
+    }
+    
+    // Trigrams (optional, higher threshold): "large language model"
+    for window in words.windows(3) {
+        let original = format!("{} {} {}", window[0], window[1], window[2]);
+        let normalized = normalize(&original);
+        if normalized.len() >= 10 {
+            phrases.push((normalized, original));
+        }
+    }
+    
+    phrases
+}
+```
+
+**New schema for phrase frequency tracking:**
+
+```sql
+CREATE TABLE IF NOT EXISTS phrase_freq (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    normalized TEXT NOT NULL,       -- "machinelearning" (separator-stripped, lowered)
+    example_form TEXT NOT NULL,     -- "machine learning" (one actual occurrence)
+    file_count INTEGER DEFAULT 1,  -- number of distinct files containing this phrase
+    UNIQUE(normalized)
+);
+CREATE INDEX IF NOT EXISTS idx_phrase_normalized ON phrase_freq(normalized);
+```
+
+During reindexing, for each file:
+1. Extract bigrams/trigrams
+2. For each normalized phrase, `INSERT OR UPDATE` incrementing `file_count`
+3. On file delete/change, decrement counts (or rebuild periodically)
+
+**Variant consolidation:**
+
+The normalization function collapses all variants to a single key:
+
+| Text occurrence | Normalized key | Same entity? |
+| --- | --- | --- |
+| "foo bar" | `foobar` | Yes |
+| "Foo Bar" | `foobar` | Yes |
+| "FooBar" | `foobar` | Yes |
+| "foobar" | `foobar` | Yes |
+| "foo-bar" | `foobar` | Yes |
+| "FOO_BAR" | `foobar` | Yes |
+
+So if "foo bar" appears in file A, "FooBar" in file B, and "Foo-Bar" in file C, the normalized key `foobar` has `file_count = 3`. This triggers the recurring entity suggestion.
+
+**Query for candidates:**
+
+```sql
+-- Phrases appearing in 3+ files that don't match any existing tag
+SELECT pf.normalized, pf.example_form, pf.file_count
+FROM phrase_freq pf
+WHERE pf.file_count >= 3
+AND pf.normalized NOT IN (
+    SELECT REPLACE(REPLACE(LOWER(tag), '-', ''), '_', '')
+    FROM tags
+)
+ORDER BY pf.file_count DESC
+LIMIT 50;
+```
+
+These appear with a different decoration style (e.g., dashed underline) and the popover says "This phrase appears in N files. Create tag `#foo-bar`?"
+
+**Tag name suggestion:**
+
+When the user accepts a recurring phrase as a new tag, suggest a canonical tag name by hyphenating the words: `normalize("FooBar") → split → ["foo", "bar"] → "#foo-bar"`. The user can edit before confirming.
+
+**Name detection:**
+
+The same mechanism detects recurring person names. If "John Smith", "john smith", and "John smith" appear across 3+ files, normalized key `johnsmith` has `file_count >= 3`. The suggestion becomes: "Create mention `@JohnSmith`?" — with the PascalCase form as the default canonical name.
 
 ### New File Detection
 
@@ -574,9 +914,13 @@ This works for:
 | Operation | Budget | Frequency | Notes |
 | --- | --- | --- | --- |
 | Dictionary load from SQLite | <10ms | On tab switch, on reindex | Single query, cached |
-| Editor decoration rebuild | <2ms for 100KB doc | Every keystroke (or debounced) | `Set.has()` is O(1), ~15K lookups |
-| Aho-Corasick match during reindex | <5ms per file | On file change | Single-pass through body text |
-| FTS5 vocab query | <50ms | On lint/manual trigger | Aggregate across all indexed files |
+| Surface form generation | <5ms for 500 entities | On dictionary rebuild | ~3000 patterns (6x expansion), done once |
+| Editor decoration rebuild (Strategy A) | <1ms | On tab switch + `map()` per keystroke | Backend-computed positions, just render |
+| Editor decoration rebuild (Strategy B) | <5ms for 100KB doc | Debounced 300ms | Multi-word `indexOf` scanning, idle-time only |
+| Aho-Corasick match during reindex | <5ms per file | On file change | Single-pass, handles all surface forms |
+| Phrase extraction (bigrams) | <2ms per file | On file change | Word splitting + normalization |
+| Phrase frequency query | <50ms | On lint/manual trigger | Aggregate across all indexed files |
+| FTS5 vocab query | <50ms | On lint/manual trigger | Single-word frequency |
 
 All within the existing performance budgets documented in `docs/performance-baseline.md`.
 
