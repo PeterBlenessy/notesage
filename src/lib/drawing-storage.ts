@@ -2,6 +2,11 @@
  * Drawing storage utilities for reading, writing, and deleting
  * .excalidraw and .svg sidecar files via Tauri IPC.
  *
+ * @deprecated Drawings now use inline fenced code blocks (`drawingJson` attribute)
+ * instead of sidecar files. These functions are retained only for backward
+ * compatibility during migration of existing documents. New drawings do not
+ * create sidecar files. See PRD: docs/prds/2026-04-09-inline-attachments.md
+ *
  * Drawing files are stored at:
  *   <projectRoot>/.notesage/drawings/<drawingId>.excalidraw
  *   <projectRoot>/.notesage/drawings/<drawingId>.svg

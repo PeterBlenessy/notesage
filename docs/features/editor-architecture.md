@@ -41,7 +41,7 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | ThemedHighlight | `themed-highlight.ts` | Mark Extension | Extends Tiptap Highlight with semantic color names for light/dark mode |
 | LinkClick | `link-click.ts` | Plugin | Click handler for link navigation (internal files → open as tab, external → system browser) |
 | Callout | `callout.ts` | Node Extension | Callout blocks (Note, Tip, Warning, Important) with Obsidian `> [!type]` markdown round-tripping |
-| Drawing | `drawing.ts` | Node Extension + ReactNodeViewRenderer + Plugin | Inline Excalidraw canvas (atom node, sidecar `.excalidraw`/`.svg` storage, deletion cleanup plugin with 5s undo, markdown `<div data-drawing-id="path" data-type="drawing" class="drawing-block"></div>` round-tripping) |
+| Drawing | `drawing.ts` | Node Extension + ReactNodeViewRenderer + Plugin | Inline Excalidraw canvas (atom node, inline JSON via `drawingJson` attribute, `` ```excalidraw `` fenced code block markdown, legacy sidecar with auto-migration, deletion cleanup plugin with 5s undo) |
 | LinkPreview | `link-preview.ts` | Node Extension + ReactNodeViewRenderer + Plugin | Rich link preview cards (atom node, OG metadata fetch, `> [!link](url)` markdown, paste detection prompt, `/embed` slash command) |
 | TableHeaderAttrs | `table-header-attrs.ts` | Node Extension | Extends TableHeader with `colType`, `colCurrency`, `colAggregation`, `colSortDirection` attributes |
 | TableAggregation | `table-aggregation.ts` | Plugin + Decoration | Computes column aggregations (sum/avg/count/min/max) and renders footer row via widget decoration |

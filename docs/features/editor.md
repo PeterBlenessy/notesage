@@ -18,7 +18,8 @@ Tiptap-powered rich text editor with full markdown round-tripping.
   - Inline sparkline charts (`{{spark:12,15,9,22}}` → tiny SVG line chart)
   - Right-click column configuration context menu (type, currency, aggregation)
   - Column metadata persisted as HTML comments in markdown (`<!-- type:currency,currency:USD,summary:sum -->`)
-- Drawing blocks (inline Excalidraw canvas — shapes, arrows, text, freehand, connectors)
+- Chart blocks (10 chart types: bar, line, area, pie, donut, horizontal bar, radar, scatter, radial bar, composed) — data embedded as `` ```chart `` fenced code blocks in markdown, rendered via Recharts. Legacy sidecar format auto-migrated on open.
+- Drawing blocks (inline Excalidraw canvas — shapes, arrows, text, freehand, connectors) — scene data embedded as `` ```excalidraw `` fenced code blocks in markdown. Legacy sidecar format auto-migrated on open.
 - Link preview cards (rich cards with title, description, favicon, preview image — fetched from OpenGraph metadata, `> [!link](url)` markdown syntax)
 - Text color (8-color palette) and background highlights (6-color palette)
 - Text alignment (left, center, right)
@@ -40,7 +41,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 
 - Sidebar file tree with expand/collapse, file icons by extension, right-click context menu (new file, new folder, rename, delete, "Add to chat" for image files)
 - File operations via Tauri commands: open folder (native dialog), open/save/create/rename/delete files
-- Hidden files/folders ignored by default; optional "Show Hidden Files" toggle in Settings > Advanced reveals dotfiles with dimmed styling and bottom-sort order. `.DS_Store` and `.git/objects|pack|logs` always excluded.
+- Hidden files/folders ignored by default; optional "Show Hidden Files" toggle in Settings &gt; Advanced reveals dotfiles with dimmed styling and bottom-sort order. `.DS_Store` and `.git/objects|pack|logs` always excluded.
 
 ## Markdown Round-Tripping
 

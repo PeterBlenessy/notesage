@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { NodeViewWrapper } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
 import { Pencil, Copy, Download } from "lucide-react";
@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChartRenderer } from "./ChartRenderer";
 import { ChartEditorPanel } from "./ChartEditorPanel";
-import { loadChart, saveChart, saveSvgPreview } from "@/lib/chart-storage";
+import { loadChart } from "@/lib/chart-storage";
 import type { ChartData } from "@/lib/chart-types";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -33,9 +33,20 @@ const MIN_HEIGHT = 150;
 const MAX_HEIGHT = 600;
 
 export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps) {
+  const chartJson = node.attrs.chartJson as string | null;
   const chartId = node.attrs.chartId as string | null;
   const height = (node.attrs.height as number) ?? 300;
   const projectRoot = useActiveProject();
+
+  // Inline charts: parse directly from attribute (synchronous, no loading state)
+  const inlineData = useMemo(() => {
+    if (!chartJson) return null;
+    try {
+      return JSON.parse(chartJson) as ChartData;
+    } catch {
+      return null;
+    }
+  }, [chartJson]);
 
   const [chartData, setChartData] = useState<ChartData | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -45,15 +56,41 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
   const closedAtRef = useRef(0);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  // Load chart data from sidecar
+  // Legacy fallback: load chart data from sidecar files
   useEffect(() => {
-    if (!chartId || !projectRoot) return;
+    if (chartJson || !chartId || !projectRoot) return;
 
     loadChart(chartId, projectRoot).then((data) => {
+      if (!data) {
+        setLoaded(true);
+        return;
+      }
       setChartData(data);
       setLoaded(true);
+
+      // Auto-migrate: set chartJson on the node so next save writes inline format.
+      // Use setTimeout to escape React's commit phase and avoid flushSync errors
+      // from Tiptap's ReactNodeViewRenderer during ProseMirror state updates.
+      setTimeout(() => {
+        const pos = getPos();
+        if (typeof pos === "number" && editor) {
+          editor
+            .chain()
+            .command(({ tr }) => {
+              tr.setNodeMarkup(pos, undefined, {
+                ...node.attrs,
+                chartJson: JSON.stringify(data),
+              });
+              return true;
+            })
+            .run();
+        }
+      }, 0);
     });
-  }, [chartId, projectRoot]);
+  }, [chartJson, chartId, projectRoot]); // eslint-disable-line react-hooks/exhaustive-deps -- editor, getPos, node.attrs excluded to avoid re-trigger loops
+
+  const finalData = inlineData ?? chartData;
+  const isReady = inlineData !== null || loaded;
 
   const handleOpenChange = useCallback((open: boolean) => {
     setIsEditing(open);
@@ -69,22 +106,24 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
   }, []);
 
   const handleSave = useCallback(
-    async (data: ChartData) => {
-      if (!chartId || !projectRoot) return;
-
-      setChartData(data);
-      await saveChart(chartId, projectRoot, data);
-
-      // Cache SVG preview for PDF export
-      const svgElement = document.querySelector(
-        `[data-chart-id="${chartId}"] .recharts-wrapper svg`
-      );
-      if (svgElement) {
-        const svgString = new XMLSerializer().serializeToString(svgElement);
-        await saveSvgPreview(chartId, projectRoot, svgString);
+    (data: ChartData) => {
+      const pos = getPos();
+      if (typeof pos === "number" && editor) {
+        // Update chartJson attribute — makes document dirty → triggers auto-save
+        // This also converts legacy sidecar charts to inline on edit
+        editor
+          .chain()
+          .command(({ tr }) => {
+            tr.setNodeMarkup(pos, undefined, {
+              ...node.attrs,
+              chartJson: JSON.stringify(data),
+            });
+            return true;
+          })
+          .run();
       }
     },
-    [chartId, projectRoot]
+    [editor, getPos, node.attrs]
   );
 
   // ── Drag-to-resize ──────────────────────────────────────
@@ -142,23 +181,11 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
   // ── Chart duplication ───────────────────────────────────
 
   const handleDuplicate = useCallback(
-    async (e: React.MouseEvent) => {
+    (e: React.MouseEvent) => {
       e.stopPropagation();
-      if (!chartId || !projectRoot || !chartData || !editor) return;
+      const data = inlineData ?? chartData;
+      if (!data || !editor) return;
 
-      const newId = crypto.randomUUID();
-      await saveChart(newId, projectRoot, chartData);
-
-      // Also copy SVG preview
-      const svgElement = document.querySelector(
-        `[data-chart-id="${chartId}"] .recharts-wrapper svg`
-      );
-      if (svgElement) {
-        const svgString = new XMLSerializer().serializeToString(svgElement);
-        await saveSvgPreview(newId, projectRoot, svgString);
-      }
-
-      // Insert after current chart node
       const pos = getPos();
       if (typeof pos === "number") {
         const nodeSize = node.nodeSize;
@@ -166,25 +193,27 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
           .chain()
           .insertContentAt(pos + nodeSize, {
             type: "chart",
-            attrs: { chartId: newId, height },
+            attrs: {
+              chartJson: JSON.stringify(data),
+              height,
+            },
           })
           .run();
       }
 
       toast("Chart duplicated");
     },
-    [chartId, projectRoot, chartData, editor, getPos, node, height]
+    [inlineData, chartData, editor, getPos, node, height]
   );
 
   // ── Image download ──────────────────────────────────────
 
   const downloadSvg = useCallback(
-    async (e: React.MouseEvent) => {
+    (e: React.MouseEvent) => {
       e.stopPropagation();
-      if (!chartId) return;
 
-      const svgElement = document.querySelector(
-        `[data-chart-id="${chartId}"] .recharts-wrapper svg`
+      const svgElement = wrapperRef.current?.querySelector(
+        ".recharts-wrapper svg"
       );
       if (!svgElement) return;
 
@@ -194,7 +223,7 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
 
       const a = document.createElement("a");
       a.href = url;
-      a.download = `chart-${chartId.slice(0, 8)}.svg`;
+      a.download = `chart-${(chartId ?? "inline").slice(0, 8)}.svg`;
       a.click();
       URL.revokeObjectURL(url);
     },
@@ -202,12 +231,11 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
   );
 
   const downloadPng = useCallback(
-    async (e: React.MouseEvent) => {
+    (e: React.MouseEvent) => {
       e.stopPropagation();
-      if (!chartId) return;
 
-      const svgElement = document.querySelector(
-        `[data-chart-id="${chartId}"] .recharts-wrapper svg`
+      const svgElement = wrapperRef.current?.querySelector(
+        ".recharts-wrapper svg"
       );
       if (!svgElement) return;
 
@@ -230,7 +258,7 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
           const pngUrl = URL.createObjectURL(blob);
           const a = document.createElement("a");
           a.href = pngUrl;
-          a.download = `chart-${chartId!.slice(0, 8)}.png`;
+          a.download = `chart-${(chartId ?? "inline").slice(0, 8)}.png`;
           a.click();
           URL.revokeObjectURL(pngUrl);
         }, "image/png");
@@ -241,15 +269,15 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
     [chartId]
   );
 
-  if (!chartId) return null;
+  if (!chartId && !chartJson) return null;
 
-  const isEmpty = loaded && !chartData;
+  const isEmpty = isReady && !finalData;
   const displayHeight = dragHeight ?? height;
 
   return (
     <NodeViewWrapper
       ref={wrapperRef}
-      data-chart-id={chartId}
+      data-chart-id={chartId ?? undefined}
       className={cn(
         "chart-block my-4 rounded-lg border transition-colors cursor-pointer relative",
         selected
@@ -271,15 +299,15 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
           <Pencil className="size-5" strokeWidth={1.5} />
           <span className="text-sm">Click to add data</span>
         </div>
-      ) : chartData ? (
+      ) : finalData ? (
         /* Rendered chart */
         <div className="relative p-3">
-          {chartData.title && (
+          {finalData.title && (
             <p className="text-sm font-medium text-center mb-1">
-              {chartData.title}
+              {finalData.title}
             </p>
           )}
-          <ChartRenderer chartData={chartData} height={displayHeight} />
+          <ChartRenderer chartData={finalData} height={displayHeight} />
 
           {/* Hover overlay with actions */}
           {isHovered && (
@@ -332,7 +360,7 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
       )}
 
       {/* Resize handle at bottom edge */}
-      {chartData && (
+      {finalData && (
         <div
           className="absolute bottom-0 left-0 right-0 h-1 cursor-ns-resize hover:bg-primary/20 transition-colors"
           onMouseDown={handleResizeStart}
@@ -343,7 +371,7 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
       <ChartEditorPanel
         open={isEditing}
         onOpenChange={handleOpenChange}
-        initialData={chartData}
+        initialData={finalData}
         onSave={handleSave}
       />
     </NodeViewWrapper>

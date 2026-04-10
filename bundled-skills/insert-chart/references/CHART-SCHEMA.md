@@ -1,6 +1,19 @@
-# Chart Sidecar JSON Schema
+# Chart JSON Schema
 
-The chart sidecar file (`.notesage/charts/{id}.json`) must conform to the following structure. Notesage renders charts using [Recharts](https://recharts.org/), so the data format maps directly to Recharts component props.
+Charts are embedded in markdown as fenced code blocks with the `chart` language tag:
+
+````
+```chart
+{
+  "type": "<ChartType>",
+  "title": "<string>",
+  "data": [...],
+  "config": {...}
+}
+```
+````
+
+The JSON inside the code block must conform to the following structure. Notesage renders charts using [Recharts](https://recharts.org/), so the data format maps directly to Recharts component props.
 
 ## Top-Level Object: ChartData
 

@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react"
 import "@excalidraw/excalidraw/index.css";
 import { useSettingsStore } from "@/stores/settings-store";
 import { saveDrawing, saveSvgPreview, loadDrawing } from "@/lib/drawing-storage";
+import type { Editor } from "@tiptap/core";
 
 // Excalidraw types — use inline type to avoid import issues
 type ExcalidrawAPI = {
@@ -16,15 +17,23 @@ const ExcalidrawLazy = lazy(() =>
 
 interface DrawingEditorProps {
   drawingId: string;
+  drawingJson?: string | null;
   projectRoot: string;
   initialHeight: number;
+  editor?: Editor | null;
+  getPos?: () => number | undefined;
+  nodeAttrs?: Record<string, unknown>;
   onDone: (svgContent: string | null) => void;
 }
 
 export function DrawingEditor({
   drawingId,
+  drawingJson,
   projectRoot,
   initialHeight,
+  editor,
+  getPos,
+  nodeAttrs,
   onDone,
 }: DrawingEditorProps) {
   const [height, setHeight] = useState(initialHeight);
@@ -41,11 +50,25 @@ export function DrawingEditor({
 
   // Load existing scene data on mount
   useEffect(() => {
-    loadDrawing(drawingId, projectRoot).then((data: unknown) => {
-      if (data) setInitialData(data);
+    if (drawingJson) {
+      try {
+        setInitialData(JSON.parse(drawingJson));
+      } catch {
+        // invalid JSON — start with empty canvas
+      }
       setDataLoaded(true);
-    });
-  }, [drawingId, projectRoot]);
+      return;
+    }
+    // Legacy: load from sidecar file
+    if (drawingId && projectRoot) {
+      loadDrawing(drawingId, projectRoot).then((data: unknown) => {
+        if (data) setInitialData(data);
+        setDataLoaded(true);
+      });
+    } else {
+      setDataLoaded(true);
+    }
+  }, [drawingId, drawingJson, projectRoot]);
 
   const handleDone = useCallback(async () => {
     const api = excalidrawRef.current;
@@ -54,7 +77,7 @@ export function DrawingEditor({
       return;
     }
 
-    // Save scene JSON
+    // Gather scene data
     const elements = api.getSceneElements();
     const appState = api.getAppState();
     const files = api.getFiles();
@@ -67,9 +90,26 @@ export function DrawingEditor({
       },
       files,
     };
-    await saveDrawing(drawingId, projectRoot, sceneData);
 
-    // Export two SVG previews — one for light, one for dark theme
+    // Update drawingJson on the node via ProseMirror transaction (inline mode)
+    if (editor && getPos) {
+      const pos = getPos();
+      if (typeof pos === "number") {
+        const jsonStr = JSON.stringify(sceneData);
+        editor.chain().command(({ tr }) => {
+          tr.setNodeMarkup(pos, undefined, {
+            ...(nodeAttrs ?? {}),
+            drawingJson: jsonStr,
+          });
+          return true;
+        }).run();
+      }
+    } else if (projectRoot) {
+      // Legacy fallback: save to sidecar file
+      await saveDrawing(drawingId, projectRoot, sceneData);
+    }
+
+    // Export SVG preview
     try {
       const { exportToSvg } = await import("@excalidraw/excalidraw");
 
@@ -93,16 +133,18 @@ export function DrawingEditor({
       const lightSvg = await exportSvg(false);
       const darkSvg = await exportSvg(true);
 
-      // Save both variants — dark gets a "-dark" suffix
-      await saveSvgPreview(drawingId, projectRoot, lightSvg);
-      await saveSvgPreview(drawingId + "-dark", projectRoot, darkSvg);
+      // Save SVG cache for legacy sidecar mode
+      if (projectRoot && drawingId !== "inline") {
+        await saveSvgPreview(drawingId, projectRoot, lightSvg);
+        await saveSvgPreview(drawingId + "-dark", projectRoot, darkSvg);
+      }
 
       // Return the one matching current theme
       onDone(resolvedTheme === "dark" ? darkSvg : lightSvg);
     } catch {
       onDone(null);
     }
-  }, [drawingId, projectRoot, onDone, resolvedTheme]);
+  }, [drawingId, drawingJson, projectRoot, editor, getPos, nodeAttrs, onDone, resolvedTheme]);
 
   // Handle Escape key
   useEffect(() => {

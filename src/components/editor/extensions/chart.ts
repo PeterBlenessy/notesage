@@ -12,6 +12,7 @@ declare module "@tiptap/core" {
     chart: {
       insertChart: (attrs?: {
         chartId?: string;
+        chartJson?: string;
         width?: number | null;
         height?: number;
       }) => ReturnType;
@@ -101,11 +102,23 @@ export const Chart = Node.create({
           "data-height": String(attributes.height),
         }),
       },
+      chartJson: {
+        default: null as string | null,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute("data-chart-json") || null,
+        renderHTML: (attributes: Record<string, unknown>) => {
+          if (!attributes.chartJson) return {};
+          return { "data-chart-json": attributes.chartJson as string };
+        },
+      },
     };
   },
 
   parseHTML() {
     return [
+      {
+        tag: "div[data-chart-json]",
+      },
       {
         tag: "div[data-chart-id]",
       },
@@ -137,6 +150,7 @@ export const Chart = Node.create({
             type: this.name,
             attrs: {
               chartId,
+              chartJson: attrs?.chartJson ?? null,
               width: attrs?.width ?? null,
               height: attrs?.height ?? 300,
             },
@@ -160,11 +174,26 @@ export const Chart = Node.create({
           const n = node as {
             attrs: {
               chartId: string | null;
+              chartJson: string | null;
               width: number | null;
               height: number;
             };
           };
 
+          if (n.attrs.chartJson) {
+            // Inline format: fenced code block with pretty-printed JSON
+            try {
+              const parsed = JSON.parse(n.attrs.chartJson);
+              const prettyJson = JSON.stringify(parsed, null, 2);
+              s.write("```chart\n" + prettyJson + "\n```\n\n");
+            } catch {
+              // If JSON is invalid, write raw
+              s.write("```chart\n" + n.attrs.chartJson + "\n```\n\n");
+            }
+            return;
+          }
+
+          // Legacy fallback: sidecar image syntax
           const chartId = n.attrs.chartId;
           if (!chartId) return;
 

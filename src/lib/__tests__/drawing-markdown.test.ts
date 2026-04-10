@@ -3,7 +3,7 @@
  * Pure function — no Tauri mocking needed.
  */
 import { describe, it, expect } from 'vitest';
-import { convertDrawingsToHtml } from '@/lib/markdown';
+import { convertDrawingsToHtml, convertInlineDrawingsToHtml } from '@/lib/markdown';
 
 describe('convertDrawingsToHtml', () => {
   it('converts excalidraw image to HTML div', () => {
@@ -95,5 +95,44 @@ describe('convertDrawingsToHtml', () => {
     expect(result).toBe(
       '<div data-drawing-id="test-id" data-type="drawing" class="drawing-block"></div>',
     );
+  });
+});
+
+describe('convertInlineDrawingsToHtml', () => {
+  it('converts ```excalidraw block to HTML div with data-drawing-json', () => {
+    const input = '```excalidraw\n{"type":"excalidraw","elements":[]}\n```';
+    const result = convertInlineDrawingsToHtml(input);
+    expect(result).toContain('data-drawing-json=');
+    expect(result).toContain('data-type="drawing"');
+    expect(result).toContain('class="drawing-block"');
+  });
+
+  it('regular code blocks not affected', () => {
+    const jsonBlock = '```json\n{"key": "value"}\n```';
+    const jsBlock = '```js\nconsole.log("hello");\n```';
+    expect(convertInlineDrawingsToHtml(jsonBlock)).toBe(jsonBlock);
+    expect(convertInlineDrawingsToHtml(jsBlock)).toBe(jsBlock);
+  });
+
+  it('multiple drawings work', () => {
+    const input = [
+      '```excalidraw',
+      '{"elements":[1]}',
+      '```',
+      '',
+      '```excalidraw',
+      '{"elements":[2]}',
+      '```',
+    ].join('\n');
+    const result = convertInlineDrawingsToHtml(input);
+    const matches = result.match(/data-drawing-json=/g);
+    expect(matches).toHaveLength(2);
+  });
+
+  it('JSON properly escaped', () => {
+    const input = '```excalidraw\n{"label":"<b>A & B</b>"}\n```';
+    const result = convertInlineDrawingsToHtml(input);
+    expect(result).toContain('&lt;b&gt;A &amp; B&lt;/b&gt;');
+    expect(result).not.toContain('<b>');
   });
 });

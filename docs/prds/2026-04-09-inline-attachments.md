@@ -3,13 +3,13 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-09 |
-| **Status** | Draft |
+| **Status** | Implementation complete — pending manual QA |
 | **Priority** | High |
 | **Impact** | Charts and drawings become fully portable — copy a .md file and everything renders, no sidecar files to lose or sync |
 
 ## Problem
 
-Charts and drawings are stored as **sidecar files** in `.notesage/charts/` and `.notesage/drawings/`, referenced from markdown via image syntax (`![chart](/.notesage/charts/{id}.json)`). This creates three problems:
+Charts and drawings are stored as **sidecar files** in `.notesage/charts/` and `.notesage/drawings/`, referenced from markdown via image syntax (`<div data-chart-id="{id}" data-type="chart" class="chart-block"></div>`). This creates three problems:
 
 1. **Not portable.** Moving or sharing a `.md` file without its `.notesage/` directory breaks all charts and drawings. They show "Loading chart..." forever. Markdown files with charts are not redistributable.
 
@@ -24,7 +24,7 @@ Meanwhile, the markdown ecosystem has a proven pattern for embedding structured 
 1. **Charts inline** — chart JSON embedded in ```` ```chart ```` fenced code blocks, fully self-contained in the markdown file
 2. **Drawings inline** — Excalidraw scene data embedded in ```` ```excalidraw ```` fenced code blocks
 3. **Zero sidecar files for source data** — the markdown file is the single source of truth
-4. **SVG caches in `.notesage/`** — derived SVG previews (for PDF/PPTX export) still stored in `.notesage/cache/` as a performance optimization, regenerated on demand if missing
+4. **SVG caches in** `.notesage/` — derived SVG previews (for PDF/PPTX export) still stored in `.notesage/cache/` as a performance optimization, regenerated on demand if missing
 5. **No project requirement** — charts and drawings work in any opened file, regardless of project registration
 6. **Backward compatibility** — existing sidecar-based documents continue to work; one-time migration converts sidecar references to inline blocks on save
 7. **Skill parity** — `insert-chart` skill updated to write inline code blocks instead of sidecar files
@@ -34,7 +34,7 @@ Meanwhile, the markdown ecosystem has a proven pattern for embedding structured 
 - **Images** — binary data doesn't embed well in markdown; images remain as file references
 - **Real-time collaboration on embedded data** — same single-user model as today
 - **External editor support** — we don't need other editors to render the charts, just preserve the code blocks
-- **Compression** — chart JSON is small (typically <2KB); no need to compress or minify
+- **Compression** — chart JSON is small (typically &lt;2KB); no need to compress or minify
 
 ## User Stories
 
@@ -51,35 +51,35 @@ Meanwhile, the markdown ecosystem has a proven pattern for embedding structured 
 #### Charts
 
 Before (sidecar):
+
 ```markdown
-![chart](/.notesage/charts/abc123.json)
+<div data-chart-id="abc123" data-type="chart" class="chart-block"></div>
 ```
 
 After (inline):
-````markdown
-```chart
-{
-  "type": "bar",
-  "title": "Revenue",
-  "data": [{"category": "Q1", "value": 142}],
-  "config": {"xLabel": "", "yLabel": "", "showGrid": true, "showLegend": false, "colorScheme": "neutral"}
-}
+
+```markdown
+<div data-chart-json="{
+  &quot;type&quot;: &quot;bar&quot;,
+  &quot;title&quot;: &quot;Revenue&quot;,
+  &quot;data&quot;: [{&quot;category&quot;: &quot;Q1&quot;, &quot;value&quot;: 142}],
+  &quot;config&quot;: {&quot;xLabel&quot;: &quot;&quot;, &quot;yLabel&quot;: &quot;&quot;, &quot;showGrid&quot;: true, &quot;showLegend&quot;: false, &quot;colorScheme&quot;: &quot;neutral&quot;}
+}" data-type="chart" class="chart-block"></div>
 ```
-````
 
 #### Drawings
 
 Before (sidecar):
+
 ```markdown
-![drawing](/.notesage/drawings/abc123.excalidraw)
+<div data-drawing-id="abc123" data-type="drawing" class="drawing-block"></div>
 ```
 
 After (inline):
-````markdown
-```excalidraw
-{"type":"excalidraw","version":2,"elements":[...],"appState":{...}}
+
+```markdown
+<div data-drawing-json="{&quot;type&quot;:&quot;excalidraw&quot;,&quot;version&quot;:2,&quot;elements&quot;:[...],&quot;appState&quot;:{...}}" data-type="drawing" class="drawing-block"></div>
 ```
-````
 
 ### Parser Changes (`markdown.ts`)
 
@@ -93,8 +93,8 @@ The parser should handle both formats simultaneously during the migration period
 
 ### Serializer Changes (chart extension `addStorage.markdown.serialize`)
 
-- **Old:** `s.write("![chart](/.notesage/charts/{id}.json)\n\n")`
-- **New:** `s.write("```chart\n" + JSON.stringify(chartData, null, 2) + "\n```\n\n")`
+- **Old:** `s.write("<div data-chart-id="{id}" data-type="chart" class="chart-block"></div>\n\n")`
+- **New:** ```` s.write("```chart\n" + JSON.stringify(chartData, null, 2) + "\n```\n\n") ````
 
 The chart data is already in memory (the `ChartNodeView` holds it in state). The serializer reads it from the node attribute.
 
@@ -190,11 +190,9 @@ The skill workflow simplifies dramatically:
 
 **New:** Write the fenced code block directly into the markdown file:
 
-````markdown
-```chart
-{"type": "bar", ...}
+```markdown
+<div data-chart-json="{&quot;type&quot;: &quot;bar&quot;, ...}" data-type="chart" class="chart-block"></div>
 ```
-````
 
 No filesystem operations, no UUID, no directory creation. The skill just writes text.
 
@@ -248,39 +246,57 @@ No new dependencies. JSON parsing, SHA-256 hashing (`crypto.subtle`), and fenced
 ### Functional
 
 - [ ] Charts in ```` ```chart ```` code blocks render correctly for all 10 chart types
+
 - [ ] Drawings in ```` ```excalidraw ```` code blocks render correctly
+
 - [ ] Editing a chart via the editor panel updates the inline JSON on save
+
 - [ ] Editing a drawing via Excalidraw updates the inline JSON on save
+
 - [ ] Charts work in files opened from explorer folders (no project registration needed)
+
 - [ ] Charts work in files with no `.notesage/` directory at all
+
 - [ ] Copy a `.md` file with charts to a new location — charts render in the new location
+
 - [ ] Round-trip: open `.md` → edit nothing → save → inline code blocks preserved identically
 
 ### Backward Compatibility
 
 - [ ] Files with old `![chart](/.notesage/charts/...)` syntax still render (migration path)
+
 - [ ] On save, old sidecar references are automatically converted to inline code blocks
+
 - [ ] Sidecar files cleaned up after successful migration
+
 - [ ] Existing chart/drawing tests continue to pass
+
 - [ ] Markdown round-trip tests updated and passing
 
 ### Export
 
 - [ ] PDF export works with inline charts (SVG cache or in-memory render)
+
 - [ ] PPTX export works with inline charts
+
 - [ ] DOCX export works with inline drawings (SVG resolution)
+
 - [ ] HTML export works with inline charts
 
 ### Skill
 
 - [ ] `insert-chart` skill writes ```` ```chart ```` blocks instead of sidecar files
+
 - [ ] Skill examples updated
+
 - [ ] AI agents can create charts without filesystem access
 
 ### Design
 
 - [ ] No visual change — charts and drawings look identical before and after migration
+
 - [ ] Chart JSON is formatted with 2-space indent for readability in source mode
+
 - [ ] Code blocks render as the chart (not raw JSON) in WYSIWYG mode
 
 ## Out of Scope
@@ -288,5 +304,5 @@ No new dependencies. JSON parsing, SHA-256 hashing (`crypto.subtle`), and fenced
 - **Image embedding** — binary data doesn't work in code blocks; images remain as file references
 - **Link preview embedding** — these are fetched from URLs at render time, not stored
 - **Mermaid migration** — Mermaid already uses fenced code blocks (no change needed)
-- **Removing `.notesage/` entirely** — still needed for project metadata, comments, skills, agents, research, index.db
+- **Removing** `.notesage/` **entirely** — still needed for project metadata, comments, skills, agents, research, index.db
 - **Multi-file chart references** — charts are always inline in the document that displays them

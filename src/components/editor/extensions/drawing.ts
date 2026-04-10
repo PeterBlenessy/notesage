@@ -12,6 +12,7 @@ declare module "@tiptap/core" {
     drawing: {
       insertDrawing: (attrs?: {
         drawingId?: string;
+        drawingJson?: string;
         width?: number | null;
         height?: number;
       }) => ReturnType;
@@ -105,14 +106,22 @@ export const Drawing = Node.create({
           "data-height": String(attributes.height),
         }),
       },
+      drawingJson: {
+        default: null as string | null,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute("data-drawing-json") || null,
+        renderHTML: (attributes: Record<string, unknown>) => {
+          if (!attributes.drawingJson) return {};
+          return { "data-drawing-json": attributes.drawingJson as string };
+        },
+      },
     };
   },
 
   parseHTML() {
     return [
-      {
-        tag: "div[data-drawing-id]",
-      },
+      { tag: "div[data-drawing-json]" },
+      { tag: "div[data-drawing-id]" },
     ];
   },
 
@@ -141,6 +150,7 @@ export const Drawing = Node.create({
             type: this.name,
             attrs: {
               drawingId,
+              drawingJson: attrs?.drawingJson ?? null,
               width: attrs?.width ?? null,
               height: attrs?.height ?? 600,
             },
@@ -164,11 +174,42 @@ export const Drawing = Node.create({
           const n = node as {
             attrs: {
               drawingId: string | null;
+              drawingJson: string | null;
               width: number | null;
               height: number;
             };
           };
 
+          if (n.attrs.drawingJson) {
+            // Strip volatile appState fields to prevent dirty-on-open
+            try {
+              const parsed = JSON.parse(n.attrs.drawingJson);
+              if (parsed.appState) {
+                delete parsed.appState.scrollX;
+                delete parsed.appState.scrollY;
+                delete parsed.appState.zoom;
+                delete parsed.appState.selectedElementIds;
+                delete parsed.appState.cursorButton;
+                delete parsed.appState.editingElement;
+                delete parsed.appState.resizingElement;
+                delete parsed.appState.selectionElement;
+                delete parsed.appState.draggingElement;
+                delete parsed.appState.editingGroupId;
+                delete parsed.appState.editingLinearElement;
+                // Remove empty appState
+                if (Object.keys(parsed.appState).length === 0) {
+                  delete parsed.appState;
+                }
+              }
+              const json = JSON.stringify(parsed, null, 2);
+              s.write("```excalidraw\n" + json + "\n```\n\n");
+            } catch {
+              s.write("```excalidraw\n" + n.attrs.drawingJson + "\n```\n\n");
+            }
+            return;
+          }
+
+          // Legacy fallback: sidecar image syntax
           const drawingId = n.attrs.drawingId;
           if (!drawingId) return;
 

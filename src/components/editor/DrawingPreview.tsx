@@ -8,7 +8,8 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { cn } from "@/lib/utils";
 import { DrawingEditor } from "./DrawingEditor";
 
-export function DrawingPreview({ node, selected }: NodeViewProps) {
+export function DrawingPreview({ node, selected, editor, getPos }: NodeViewProps) {
+  const drawingJson = node.attrs.drawingJson as string | null;
   const drawingId = node.attrs.drawingId as string | null;
   const height = (node.attrs.height as number) || 600;
   const [svgContent, setSvgContent] = useState<string | null>(null);
@@ -66,10 +67,51 @@ export function DrawingPreview({ node, selected }: NodeViewProps) {
     }
   }, []);
 
-  // Always render from .excalidraw source (ensures agent edits are reflected).
-  // Falls back to cached SVG only when the .excalidraw file doesn't exist.
+  // Inline drawing: generate SVG from in-memory scene data
   useEffect(() => {
-    if (!drawingId || !projectPath) return;
+    if (!drawingJson) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const scene = JSON.parse(drawingJson) as {
+          elements?: unknown[];
+          appState?: Record<string, unknown>;
+          files?: Record<string, unknown>;
+        };
+        const elements = scene.elements ?? [];
+        if (elements.length === 0) {
+          setSvgContent(null);
+          return;
+        }
+
+        const { exportToSvg } = await import("@excalidraw/excalidraw");
+        const svgEl = await exportToSvg({
+          elements: elements as Parameters<typeof exportToSvg>[0]["elements"],
+          appState: {
+            ...(scene.appState ?? {}),
+            exportWithDarkMode: isDark,
+            exportBackground: false,
+          },
+          files: (scene.files ?? {}) as Parameters<typeof exportToSvg>[0]["files"],
+        });
+        svgEl.removeAttribute("width");
+        svgEl.removeAttribute("height");
+        svgEl.style.width = "100%";
+        svgEl.style.height = "auto";
+
+        if (!cancelled) setSvgContent(svgEl.outerHTML);
+      } catch {
+        if (!cancelled) setSvgContent(null);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [drawingJson, isDark]);
+
+  // Legacy: load from sidecar (only when no drawingJson)
+  useEffect(() => {
+    if (drawingJson || !drawingId || !projectPath) return;
     let cancelled = false;
 
     (async () => {
@@ -77,6 +119,24 @@ export function DrawingPreview({ node, selected }: NodeViewProps) {
       const generated = await regenerateSvg(drawingId, projectPath, isDark);
       if (!cancelled && generated) {
         setSvgContent(generated);
+
+        // Auto-migrate: load scene data and set drawingJson for inline format.
+        // Use setTimeout to escape React's commit phase and avoid flushSync errors.
+        const sceneData = await loadDrawing(drawingId, projectPath);
+        if (sceneData && editor && getPos) {
+          setTimeout(() => {
+            const pos = getPos();
+            if (typeof pos === "number") {
+              editor.chain().command(({ tr }) => {
+                tr.setNodeMarkup(pos, undefined, {
+                  ...node.attrs,
+                  drawingJson: JSON.stringify(sceneData),
+                });
+                return true;
+              }).run();
+            }
+          }, 0);
+        }
         return;
       }
 
@@ -88,11 +148,11 @@ export function DrawingPreview({ node, selected }: NodeViewProps) {
     })();
 
     return () => { cancelled = true; };
-  }, [drawingId, projectPath, isDark, regenerateSvg, refreshKey]);
+  }, [drawingJson, drawingId, projectPath, isDark, regenerateSvg, refreshKey]);
 
-  // Listen for .excalidraw file changes and trigger a re-render
+  // Listen for .excalidraw file changes — only needed for legacy sidecar mode
   useEffect(() => {
-    if (!drawingId) return;
+    if (drawingJson || !drawingId) return;
     const needle = drawingId + ".excalidraw";
 
     const unlisten = listen<Array<{ path: string; kind: string }>>("file-changed-batch", (event) => {
@@ -107,15 +167,21 @@ export function DrawingPreview({ node, selected }: NodeViewProps) {
     });
 
     return () => { unlisten.then((fn) => fn()); };
-  }, [drawingId]);
+  }, [drawingJson, drawingId]);
+
+  if (!drawingId && !drawingJson) return null;
 
   return (
     <NodeViewWrapper className="drawing-node-view" data-drawing-id={drawingId} contentEditable={false}>
-      {isEditing && drawingId && projectPath ? (
+      {isEditing && (drawingJson || (drawingId && projectPath)) ? (
         <DrawingEditor
-          drawingId={drawingId}
-          projectRoot={projectPath}
+          drawingId={drawingId ?? "inline"}
+          drawingJson={drawingJson}
+          projectRoot={projectPath ?? ""}
           initialHeight={height}
+          editor={editor}
+          getPos={getPos}
+          nodeAttrs={node.attrs}
           onDone={(svg) => {
             if (svg) setSvgContent(svg);
             setIsEditing(false);
@@ -131,7 +197,7 @@ export function DrawingPreview({ node, selected }: NodeViewProps) {
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
           onClick={() => {
-            if (drawingId && projectPath) setIsEditing(true);
+            if (drawingJson || (drawingId && projectPath)) setIsEditing(true);
           }}
         >
           {svgContent ? (

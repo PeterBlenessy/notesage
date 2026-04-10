@@ -10,30 +10,36 @@ Insert an inline chart into a Notesage markdown document. Charts render natively
 
 ## How It Works
 
-Notesage charts are stored as two pieces:
-1. A **sidecar JSON file** in `.notesage/charts/{id}.json` containing the chart data and configuration
-2. A **markdown image reference** `![chart](/.notesage/charts/{id}.json)` in the document
+Notesage charts are embedded directly in markdown files as fenced code blocks with the `chart` language tag:
 
-When the editor sees this markdown pattern, it renders an interactive chart. The file watcher automatically picks up changes, so the chart appears as soon as both files are written.
+````
+```chart
+{
+  "type": "bar",
+  "title": "Example",
+  "data": [...],
+  "config": {...}
+}
+```
+````
+
+When the editor sees a `chart` code block, it renders an interactive chart inline. No external files or directories are needed.
 
 ## Workflow
 
-1. **Generate a unique ID** for the chart. Use `uuidgen` (available on macOS and most Linux), or any unique string — the only requirement is no collisions within the project's `.notesage/charts/` directory.
+1. **Compose the chart JSON.** See `references/CHART-SCHEMA.md` for the full data format and `references/EXAMPLES.md` for complete working examples.
 
-2. **Create the charts directory** if it doesn't exist:
+2. **Insert a fenced code block** into the markdown document at the desired location, using `chart` as the language tag:
+
+   ````
+   ```chart
+   { ...chart JSON... }
    ```
-   mkdir -p <project_root>/.notesage/charts
-   ```
+   ````
 
-3. **Write the chart JSON** to `.notesage/charts/{id}.json`. See `references/CHART-SCHEMA.md` for the full data format and `references/EXAMPLES.md` for complete working examples.
+   The code block must be on its own paragraph (blank lines above and below).
 
-4. **Insert the markdown reference** into the document at the desired location:
-   ```markdown
-   ![chart](/.notesage/charts/{id}.json)
-   ```
-   This line must be on its own paragraph (blank lines above and below).
-
-5. **Save the document.** The editor detects the file change and renders the chart inline.
+3. **Save the document.** The editor renders the chart inline.
 
 ## Supported Chart Types
 
@@ -53,20 +59,18 @@ When the editor sees this markdown pattern, it renders an interactive chart. The
 ## Tips
 
 - **Start with minimal data** — verify rendering with a simple 3-point single-series chart before building the full dataset. This catches format issues early.
-- Keep data arrays reasonable (5–30 points for readability)
+- Keep data arrays reasonable (5-30 points for readability)
 - Use `"line"` or `"area"` for time series data
-- Use `"pie"` or `"donut"` only when showing parts of a whole (typically 3–8 slices)
+- Use `"pie"` or `"donut"` only when showing parts of a whole (typically 3-8 slices)
 - Multi-series charts need the `series` array — see the schema and examples. Set `showLegend: true` so series are distinguishable.
 - The `colorScheme` options are `"neutral"`, `"monochrome"`, `"warm"`, and `"cool"`
-- If you need to look at existing charts in the project for reference, check `.notesage/charts/*.json`
 
 ## Troubleshooting
 
 - **Chart renders empty (axes only, no bars/lines):** Check that the `dataKey` values match. For single-series, each data point needs a `value` field. For multi-series, each data point must contain all series keys as numeric properties, and the `series` array must list them.
-- **Chart disappears after switching tabs:** If the chart markdown reference (`![chart](...)`) was removed from the document (e.g., by an undo or failed edit), the editor deletes the orphaned sidecar file after 5 seconds. Re-insert the markdown line and re-create the JSON file.
-- **Chart shows placeholder instead of rendering:** The sidecar JSON file may be missing or contain invalid JSON. Check that `.notesage/charts/{id}.json` exists and is valid JSON matching the schema.
+- **Chart shows as a code block instead of rendering:** Make sure the language tag is exactly `chart` (lowercase, no spaces). The JSON must be valid — check for trailing commas or missing quotes.
 
 ## References
 
-- `references/CHART-SCHEMA.md` — Full JSON schema for the chart sidecar file
+- `references/CHART-SCHEMA.md` — Full JSON schema for the chart data format
 - `references/EXAMPLES.md` — Complete working examples for each chart type

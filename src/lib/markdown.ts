@@ -488,6 +488,56 @@ export function convertMermaidToHtml(markdown: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Inline fenced code block → HTML converters
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert fenced ```chart code blocks to Chart node HTML elements
+ * before tiptap-markdown parses the content.
+ *
+ * Matches: ```chart\n{...json...}\n```
+ * Outputs: <div data-chart-json="..." data-type="chart" class="chart-block"></div>
+ *
+ * The JSON content is HTML-attribute-escaped. Regular code blocks are unchanged.
+ */
+export function convertInlineChartsToHtml(markdown: string): string {
+  return markdown.replace(
+    /```chart\n([\s\S]*?)```/g,
+    (_match, json: string) => {
+      const escaped = json.trimEnd()
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      return `<div data-chart-json="${escaped}" data-type="chart" class="chart-block"></div>`;
+    },
+  );
+}
+
+/**
+ * Convert fenced ```excalidraw code blocks to Drawing node HTML elements
+ * before tiptap-markdown parses the content.
+ *
+ * Matches: ```excalidraw\n{...json...}\n```
+ * Outputs: <div data-drawing-json="..." data-type="drawing" class="drawing-block"></div>
+ *
+ * The JSON content is HTML-attribute-escaped. Regular code blocks are unchanged.
+ */
+export function convertInlineDrawingsToHtml(markdown: string): string {
+  return markdown.replace(
+    /```excalidraw\n([\s\S]*?)```/g,
+    (_match, json: string) => {
+      const escaped = json.trimEnd()
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      return `<div data-drawing-json="${escaped}" data-type="drawing" class="drawing-block"></div>`;
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Image path space encoding
 // ---------------------------------------------------------------------------
 
@@ -781,9 +831,10 @@ export function getMarkdownFromEditor(editor: Editor): string {
   return injectAnnotationsIntoMarkdown(markdown, editor);
 }
 
+
 export function setMarkdownInEditor(editor: Editor, markdown: string): void {
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(markdown);
-  const encoded = encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))));
+  const encoded = encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))))));
   setContentWithoutHistory(editor, encoded);
 
   if (metadata.size > 0) {
@@ -819,7 +870,7 @@ export function loadRawMarkdownIntoEditor(
 ): void {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(cleaned);
-  const encoded = encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))));
+  const encoded = encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))))));
   editor.chain().setMeta("addToHistory", false).setContent(encoded).run();
 
   // Clear undo/redo history — the loaded content is a fresh baseline.
@@ -856,7 +907,7 @@ export function prepareInitialContent(rawMarkdown: string): {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(cleaned);
   return {
-    content: encodeImagePathSpaces(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))))),
+    content: encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))))))),
     annotations,
     tableMetadata: metadata,
   };

@@ -1,18 +1,13 @@
 # Chart Examples
 
-Complete sidecar JSON examples ready to use. Each example includes the JSON file content and the markdown line to insert.
+Complete inline chart examples ready to use. Each example shows the fenced code block to insert directly into a markdown document.
 
 ---
 
 ## Example 1: Line Chart — S&P 500 Performance
 
-**Markdown to insert:**
-```markdown
-![chart](/.notesage/charts/sp500-example.json)
-```
-
-**Sidecar JSON** (`.notesage/charts/sp500-example.json`):
-```json
+````markdown
+```chart
 {
   "type": "line",
   "title": "S&P 500 Annual Close",
@@ -37,18 +32,14 @@ Complete sidecar JSON examples ready to use. Each example includes the JSON file
   }
 }
 ```
+````
 
 ---
 
 ## Example 2: Bar Chart — Quarterly Revenue
 
-**Markdown to insert:**
-```markdown
-![chart](/.notesage/charts/revenue-example.json)
-```
-
-**Sidecar JSON** (`.notesage/charts/revenue-example.json`):
-```json
+````markdown
+```chart
 {
   "type": "bar",
   "title": "2025 Quarterly Revenue",
@@ -67,18 +58,14 @@ Complete sidecar JSON examples ready to use. Each example includes the JSON file
   }
 }
 ```
+````
 
 ---
 
 ## Example 3: Pie Chart — Market Share
 
-**Markdown to insert:**
-```markdown
-![chart](/.notesage/charts/market-share-example.json)
-```
-
-**Sidecar JSON** (`.notesage/charts/market-share-example.json`):
-```json
+````markdown
+```chart
 {
   "type": "pie",
   "title": "Browser Market Share (2025)",
@@ -98,6 +85,7 @@ Complete sidecar JSON examples ready to use. Each example includes the JSON file
   }
 }
 ```
+````
 
 Note: For pie and donut charts, `xLabel`, `yLabel`, and `showGrid` are ignored but must still be present in the config object. Set `showLegend` to `true` so slice labels are visible.
 
@@ -105,13 +93,8 @@ Note: For pie and donut charts, `xLabel`, `yLabel`, and `showGrid` are ignored b
 
 ## Example 4: Horizontal Bar Chart — Programming Languages
 
-**Markdown to insert:**
-```markdown
-![chart](/.notesage/charts/languages-example.json)
-```
-
-**Sidecar JSON** (`.notesage/charts/languages-example.json`):
-```json
+````markdown
+```chart
 {
   "type": "horizontal_bar",
   "title": "Top Programming Languages (2025)",
@@ -131,6 +114,7 @@ Note: For pie and donut charts, `xLabel`, `yLabel`, and `showGrid` are ignored b
   }
 }
 ```
+````
 
 Note: Horizontal bar charts work like vertical bar charts but with `"type": "horizontal_bar"`. Category labels appear on the Y-axis, values on the X-axis. Good for long category names.
 
@@ -138,13 +122,8 @@ Note: Horizontal bar charts work like vertical bar charts but with `"type": "hor
 
 ## Example 5: Multi-Series Line Chart — Revenue vs Expenses
 
-**Markdown to insert:**
-```markdown
-![chart](/.notesage/charts/rev-vs-exp-example.json)
-```
-
-**Sidecar JSON** (`.notesage/charts/rev-vs-exp-example.json`):
-```json
+````markdown
+```chart
 {
   "type": "line",
   "title": "Revenue vs Expenses",
@@ -169,6 +148,7 @@ Note: Horizontal bar charts work like vertical bar charts but with `"type": "hor
   }
 }
 ```
+````
 
 Note: Multi-series charts use `series` to define each data line. Each series `key` must exist as a property on every data point. The `value` field is not needed when using explicit series keys. Set `showLegend` to `true` so series are distinguishable.
 
@@ -176,13 +156,8 @@ Note: Multi-series charts use `series` to define each data line. Each series `ke
 
 ## Example 6: Radar Chart — Product Comparison
 
-**Markdown to insert:**
-```markdown
-![chart](/.notesage/charts/product-radar-example.json)
-```
-
-**Sidecar JSON** (`.notesage/charts/product-radar-example.json`):
-```json
+````markdown
+```chart
 {
   "type": "radar",
   "title": "Product Feature Comparison",
@@ -207,6 +182,7 @@ Note: Multi-series charts use `series` to define each data line. Each series `ke
   }
 }
 ```
+````
 
 Note: Radar charts use categories as the angle axis. Multi-series renders multiple overlaid polygons. Great for comparing items across multiple dimensions.
 
@@ -214,13 +190,8 @@ Note: Radar charts use categories as the angle axis. Multi-series renders multip
 
 ## Example 7: Scatter Chart — Height vs Weight
 
-**Markdown to insert:**
-```markdown
-![chart](/.notesage/charts/scatter-example.json)
-```
-
-**Sidecar JSON** (`.notesage/charts/scatter-example.json`):
-```json
+````markdown
+```chart
 {
   "type": "scatter",
   "title": "Height vs Weight",
@@ -243,6 +214,7 @@ Note: Radar charts use categories as the angle axis. Multi-series renders multip
   }
 }
 ```
+````
 
 Note: Scatter charts use `x` and `y` fields for numeric coordinates. The `category` and `value` fields must still be present but are not rendered. Good for correlation analysis.
 
@@ -250,13 +222,8 @@ Note: Scatter charts use `x` and `y` fields for numeric coordinates. The `catego
 
 ## Example 8: Stacked Bar Chart — Resource Allocation
 
-**Markdown to insert:**
-```markdown
-![chart](/.notesage/charts/stacked-bar-example.json)
-```
-
-**Sidecar JSON** (`.notesage/charts/stacked-bar-example.json`):
-```json
+````markdown
+```chart
 {
   "type": "bar",
   "title": "Team Resource Allocation",
@@ -281,6 +248,7 @@ Note: Scatter charts use `x` and `y` fields for numeric coordinates. The `catego
   }
 }
 ```
+````
 
 Note: Add `"stacked": true` to the config to stack bars vertically. Only applies to multi-series bar and area charts.
 
@@ -288,13 +256,8 @@ Note: Add `"stacked": true` to the config to stack bars vertically. Only applies
 
 ## Example 9: Composed Chart — Revenue Trend
 
-**Markdown to insert:**
-```markdown
-![chart](/.notesage/charts/composed-example.json)
-```
-
-**Sidecar JSON** (`.notesage/charts/composed-example.json`):
-```json
+````markdown
+```chart
 {
   "type": "composed",
   "title": "Revenue Analysis",
@@ -320,6 +283,7 @@ Note: Add `"stacked": true` to the config to stack bars vertically. Only applies
   }
 }
 ```
+````
 
 Note: Composed charts mix different visual encodings. Each series specifies `renderAs` (`"bar"`, `"line"`, or `"area"`). If omitted, defaults to `"bar"`.
 
@@ -327,13 +291,8 @@ Note: Composed charts mix different visual encodings. Each series specifies `ren
 
 ## Example 10: Radial Bar Chart — Goal Progress
 
-**Markdown to insert:**
-```markdown
-![chart](/.notesage/charts/radial-example.json)
-```
-
-**Sidecar JSON** (`.notesage/charts/radial-example.json`):
-```json
+````markdown
+```chart
 {
   "type": "radial_bar",
   "title": "Q1 Goal Progress",
@@ -352,6 +311,7 @@ Note: Composed charts mix different visual encodings. Each series specifies `ren
   }
 }
 ```
+````
 
 Note: Radial bar charts show each data point as a concentric arc. Good for progress/gauge visualizations. Data shape is the same as pie/donut (category + value).
 
@@ -359,13 +319,8 @@ Note: Radial bar charts show each data point as a concentric arc. Good for progr
 
 ## Example 11: Bar Chart with Reference Lines and Data Labels
 
-**Markdown to insert:**
-```markdown
-![chart](/.notesage/charts/annotated-bar-example.json)
-```
-
-**Sidecar JSON** (`.notesage/charts/annotated-bar-example.json`):
-```json
+````markdown
+```chart
 {
   "type": "bar",
   "title": "Monthly Sales vs Target",
@@ -392,5 +347,6 @@ Note: Radial bar charts show each data point as a concentric arc. Good for progr
   }
 }
 ```
+````
 
 Note: `referenceLines` adds dashed lines at specified axis positions. `showDataLabels` shows values above bars/dots. `yTickFormat: "currency"` formats axis ticks as `$1,500`.

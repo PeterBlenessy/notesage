@@ -2,6 +2,11 @@
  * Chart sidecar file operations for reading, writing, and deleting
  * chart JSON and SVG preview files via Tauri IPC.
  *
+ * @deprecated Charts now use inline fenced code blocks (`chartJson` attribute)
+ * instead of sidecar files. These functions are retained only for backward
+ * compatibility during migration of existing documents. New charts do not
+ * create sidecar files. See PRD: docs/prds/2026-04-09-inline-attachments.md
+ *
  * Chart files are stored at:
  *   <projectRoot>/.notesage/charts/<chartId>.json
  *   <projectRoot>/.notesage/charts/<chartId>.svg

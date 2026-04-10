@@ -3,7 +3,7 @@
  * Pure function — no Tauri mocking needed.
  */
 import { describe, it, expect } from "vitest";
-import { convertChartsToHtml } from "@/lib/markdown";
+import { convertChartsToHtml, convertInlineChartsToHtml } from "@/lib/markdown";
 
 describe("convertChartsToHtml", () => {
   it("converts chart JSON image to HTML div", () => {
@@ -100,5 +100,96 @@ describe("convertChartsToHtml", () => {
     const input = "![config](/.notesage/config.json)";
     const result = convertChartsToHtml(input);
     expect(result).toBe(input);
+  });
+});
+
+describe("convertInlineChartsToHtml", () => {
+  it("converts ```chart block to HTML div with data-chart-json", () => {
+    const input = '```chart\n{"type":"bar","title":"Revenue","data":[{"category":"Q1","value":142}]}\n```';
+    const result = convertInlineChartsToHtml(input);
+    expect(result).toContain('data-chart-json=');
+    expect(result).toContain('data-type="chart"');
+    expect(result).toContain('class="chart-block"');
+    expect(result).toContain("&quot;type&quot;:&quot;bar&quot;");
+  });
+
+  it("multi-line pretty-printed JSON works", () => {
+    const input = '```chart\n{\n  "type": "bar",\n  "title": "Revenue"\n}\n```';
+    const result = convertInlineChartsToHtml(input);
+    expect(result).toContain('data-chart-json=');
+    expect(result).toContain("&quot;type&quot;: &quot;bar&quot;");
+  });
+
+  it("regular code blocks (```json, ```js) not affected", () => {
+    const jsonBlock = '```json\n{"key": "value"}\n```';
+    const jsBlock = '```js\nconsole.log("hello");\n```';
+    expect(convertInlineChartsToHtml(jsonBlock)).toBe(jsonBlock);
+    expect(convertInlineChartsToHtml(jsBlock)).toBe(jsBlock);
+  });
+
+  it("empty ```chart block produces div with empty data-chart-json", () => {
+    const input = '```chart\n\n```';
+    const result = convertInlineChartsToHtml(input);
+    expect(result).toBe('<div data-chart-json="" data-type="chart" class="chart-block"></div>');
+  });
+
+  it("multiple charts in same document", () => {
+    const input = [
+      '```chart',
+      '{"type":"bar"}',
+      '```',
+      '',
+      'Some text',
+      '',
+      '```chart',
+      '{"type":"line"}',
+      '```',
+    ].join('\n');
+    const result = convertInlineChartsToHtml(input);
+    expect(result).toContain("&quot;type&quot;:&quot;bar&quot;");
+    expect(result).toContain("&quot;type&quot;:&quot;line&quot;");
+  });
+
+  it("mixed with regular code blocks and text", () => {
+    const input = [
+      '# Title',
+      '',
+      '```js',
+      'const x = 1;',
+      '```',
+      '',
+      '```chart',
+      '{"type":"pie"}',
+      '```',
+      '',
+      'Paragraph after.',
+    ].join('\n');
+    const result = convertInlineChartsToHtml(input);
+    expect(result).toContain('```js\nconst x = 1;\n```');
+    expect(result).toContain('data-chart-json=');
+    expect(result).toContain('# Title');
+    expect(result).toContain('Paragraph after.');
+  });
+
+  it("JSON with special HTML characters is properly escaped", () => {
+    const input = '```chart\n{"label":"<b>A & B</b>"}\n```';
+    const result = convertInlineChartsToHtml(input);
+    expect(result).toContain("&lt;b&gt;A &amp; B&lt;/b&gt;");
+    expect(result).not.toContain("<b>");
+  });
+
+  it("preserves surrounding content", () => {
+    const input = [
+      '# Heading',
+      '',
+      '```chart',
+      '{"type":"bar"}',
+      '```',
+      '',
+      'End paragraph.',
+    ].join('\n');
+    const result = convertInlineChartsToHtml(input);
+    expect(result).toContain('# Heading');
+    expect(result).toContain('End paragraph.');
   });
 });
