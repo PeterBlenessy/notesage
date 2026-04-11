@@ -627,14 +627,21 @@
   line-height: 1.5;
 }
 
-.chat-markdown ul,
+.chat-markdown ul {
+  padding-left: 1.25em;
+  margin: 0.4em 0;
+  list-style-type: disc;
+}
+
 .chat-markdown ol {
   padding-left: 1.25em;
   margin: 0.4em 0;
+  list-style-type: decimal;
 }
 
 .chat-markdown li {
   margin-bottom: 0.15em;
+  display: list-item;
 }
 
 .chat-markdown strong {
