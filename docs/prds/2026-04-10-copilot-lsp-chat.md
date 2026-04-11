@@ -146,7 +146,7 @@ The exact `value` format needs to be determined by inspecting actual LSP traffic
 
 The LSP sends server→client requests that need responses. Handle in `handle_server_request`:
 
-**`conversation/context`** — server requests editor context:
+`conversation/context` — server requests editor context:
 
 ```rust
 "conversation/context" => {
@@ -163,7 +163,7 @@ The LSP sends server→client requests that need responses. Handle in `handle_se
 }
 ```
 
-**`conversation/invokeClientTool`** — server requests the client to execute a tool:
+`conversation/invokeClientTool` — server requests the client to execute a tool:
 
 ```rust
 "conversation/invokeClientTool" => {
@@ -180,7 +180,7 @@ The LSP sends server→client requests that need responses. Handle in `handle_se
 }
 ```
 
-**`conversation/invokeClientToolConfirmation`** — server requests user confirmation before tool execution:
+`conversation/invokeClientToolConfirmation` — server requests user confirmation before tool execution:
 
 ```rust
 "conversation/invokeClientToolConfirmation" => {
@@ -205,6 +205,7 @@ transport.send_notification("conversation/registerTools", json!({
 The LSP then decides when to invoke tools during conversation turns. Tool calls arrive as `conversation/invokeClientTool` server→client requests. The response flow is synchronous from the LSP's perspective — it waits for our tool result before continuing generation.
 
 This maps cleanly to the existing tool calling infrastructure:
+
 - Read-only tools (`read_file`, `list_directory`, `web_search`, `read_skill_content`) → auto-allowed
 - Write/execute tools (`write_file`, `execute_skill_script`) → `ToolCallPermissionCard` with tiered approval
 - Skill tools (`skill__*` prefix) → routed through `tool-executor.ts`
@@ -428,35 +429,57 @@ Remove the forced `['inline_completion']` capability override. Wire up `copilot_
 ### Functional
 
 - [ ] Copilot LSP connection appears in Interactive, Agent Tasks, and Inline Completion routing dropdowns
+
 - [ ] Selecting Copilot LSP for interactive allows sending chat messages
+
 - [ ] Chat responses stream in real-time (not delivered all-at-once)
+
 - [ ] Responses render as chronological segments (text, thinking, tool calls, tool results)
+
 - [ ] Tool calling works: web search, read_file, write_file, list_directory, execute_skill_script, read_skill_content
+
 - [ ] Tool call permission flow works (auto-allow read-only, prompt for write/execute)
+
 - [ ] Comment delegation to Copilot LSP agent works (agent_tasks routing)
+
 - [ ] Background agent tasks show progress in Activity panel
+
 - [ ] Model picker shows available Copilot models
+
 - [ ] Switching models mid-conversation works
+
 - [ ] Conversation cleanup on chat clear, tab close, app quit
+
 - [ ] Inline completions continue to work alongside chat
+
 - [ ] Graceful error handling if LSP doesn't support conversation methods
 
 ### Testing
 
 - [ ] Unit tests for routing discrimination (lspBinary vs agentBinary)
+
 - [ ] Unit tests for event-to-segment mapping
+
 - [ ] Unit tests for tool call event → tool execution → result response flow
+
 - [ ] Rust tests for conversation command lifecycle
+
 - [ ] Manual test: full chat conversation with Copilot LSP
+
 - [ ] Manual test: tool calling (ask AI to search the web, read a file)
+
 - [ ] Manual test: comment delegation via Copilot LSP
+
 - [ ] Manual test: inline completion still works while chat is active
 
 ### Design
 
 - [ ] Chat panel UX identical to other providers (no visual distinction needed)
+
 - [ ] Tool call segments render with descriptive labels (same as direct API)
+
 - [ ] Model picker shows correct models for Copilot connection
+
 - [ ] Error states (rate limit, auth expired) show actionable toasts
 
 ## Out of Scope (Future Iterations)

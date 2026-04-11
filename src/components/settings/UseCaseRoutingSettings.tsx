@@ -15,23 +15,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Button } from '@/components/ui/button';
-import { ChevronRight, Settings2, Check, Loader2, RefreshCw } from 'lucide-react';
+import { ChevronRight, Settings2, Loader2, Check } from 'lucide-react';
 import type { AICapability, Connection } from '@/lib/ai/connections';
-import { ROUTING_SLOT_LABELS } from '@/lib/ai/connections';
+import { ROUTING_SLOT_LABELS, prettyModelName, getAgentModels } from '@/lib/ai/connections';
+import { AGENT_KNOWN_MODELS } from '@/components/settings/connection/ModelSelectionForm';
 import { tauriApi } from '@/lib/tauri';
 import { cn } from '@/lib/utils';
 
@@ -45,8 +38,8 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
   const setUseCaseModel = useRoutingStore((s) => s.setUseCaseModel);
 
   const isLocalBundled = connection.authMethod === 'local_bundled';
-  const isCopilotLsp = connection.credentials && 'agentBinary' in connection.credentials && connection.credentials.agentBinary === 'copilot-language-server';
-  const canListModels = (connection.authMethod !== 'agent_managed' || isCopilotLsp) && !isLocalBundled;
+  const isAgentManaged = connection.authMethod === 'agent_managed';
+  const isCopilotLsp = isAgentManaged && connection.credentials && 'agentBinary' in connection.credentials && connection.credentials.agentBinary === 'copilot-language-server';
 
   // For local_bundled, use downloaded models from local-ai-store
   const localModels = useLocalAIStore((s) => s.models);
@@ -56,20 +49,49 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
   );
 
   const [open, setOpen] = useState(false);
-  const [inputValue, setInputValue] = useState(currentModel ?? '');
   const [models, setModels] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Use local models for local_bundled, fetched models for others
-  const displayModels = isLocalBundled ? localModelNames : models;
+  const agentBinary = isAgentManaged && 'agentBinary' in connection.credentials
+    ? (connection.credentials as { agentBinary: string }).agentBinary
+    : '';
 
-  useEffect(() => {
-    setInputValue(currentModel ?? '');
-  }, [currentModel]);
+  const agentMergedModels = useMemo(() => {
+    if (!isAgentManaged) return [];
+
+    if (isCopilotLsp) {
+      // LSP: use only models from copilot/models API.
+      // Hardcoded models may be rejected by the conversation API.
+      return models.length > 0
+        ? models
+        : (AGENT_KNOWN_MODELS[agentBinary] ?? []).map((m) => m.id);
+    }
+
+    // ACP agents: hardcoded list as base, enriched with dynamic cache
+    const known = AGENT_KNOWN_MODELS[agentBinary] ?? [];
+    const knownIds = new Set(known.map((m) => m.id));
+    const dynamic = getAgentModels(connection.id)?.models.map((m) => m.modelId) ?? [];
+
+    const merged = known.map((m) => m.id);
+    for (const id of dynamic) {
+      if (!knownIds.has(id)) merged.push(id);
+    }
+    return merged;
+  }, [isAgentManaged, isCopilotLsp, agentBinary, connection.id, models]);
+
+  // Resolve display models: local > agent merged > API-fetched
+  const displayModels = isLocalBundled
+    ? localModelNames
+    : isAgentManaged
+      ? agentMergedModels
+      : models;
+
+  // Can fetch = API key, Ollama, OpenAI-compatible, Copilot LSP
+  const canFetchModels = !isLocalBundled && (!isAgentManaged || isCopilotLsp);
 
   const fetchModels = useCallback(async () => {
-    if (!canListModels) return;
+    if (!canFetchModels) return;
     setLoading(true);
     setError(null);
     try {
@@ -89,20 +111,23 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
     } finally {
       setLoading(false);
     }
-  }, [connection, canListModels, isCopilotLsp]);
+  }, [connection, canFetchModels, isCopilotLsp]);
 
   useEffect(() => {
-    if (open && canListModels && models.length === 0 && !loading && !error) {
+    if (open && canFetchModels && models.length === 0 && !loading && !error) {
       fetchModels();
     }
-  }, [open, canListModels, models.length, loading, error, fetchModels]);
+  }, [open, canFetchModels, models.length, loading, error, fetchModels]);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(isOpen) => setOpen(isOpen)}
+    >
       <TooltipProvider delayDuration={300}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <PopoverTrigger asChild>
+            <DropdownMenuTrigger asChild>
               <button
                 className={cn(
                   'h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors duration-150',
@@ -112,103 +137,44 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
               >
                 <Settings2 className="h-3.5 w-3.5" strokeWidth={1.5} />
               </button>
-            </PopoverTrigger>
+            </DropdownMenuTrigger>
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">
-            {currentModel ? `Model: ${currentModel}` : 'Override model'}
+            {currentModel ? `Model: ${prettyModelName(currentModel)}` : 'Override model'}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      <PopoverContent className="w-56 p-0" align="end">
-        <Command>
-          <div className="flex items-center gap-1 px-1">
-            <CommandInput
-              placeholder={canListModels ? "Search or type\u2026" : "Type model name\u2026"}
-              value={inputValue}
-              onValueChange={setInputValue}
-              className="flex-1 h-8 text-xs"
-            />
-            {canListModels && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 shrink-0"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  fetchModels();
-                }}
-                disabled={loading}
-              >
-                {loading ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3 w-3" />
-                )}
-              </Button>
-            )}
+      <DropdownMenuContent align="end" className="w-56 max-h-80 overflow-y-auto">
+        <DropdownMenuItem
+          onSelect={() => setUseCaseModel(useCase, undefined)}
+        >
+          <span className="flex-1 text-muted-foreground">Default</span>
+          {!currentModel && <Check className="h-3.5 w-3.5 ml-2 shrink-0" />}
+        </DropdownMenuItem>
+        {loading && (
+          <div className="flex items-center justify-center py-2">
+            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
           </div>
-          <CommandList>
-            {error && (
-              <p className="px-3 py-1.5 text-[11px] text-destructive">{error}</p>
-            )}
-            <CommandGroup>
-              <CommandItem
-                value="__default__"
-                onSelect={() => {
-                  setUseCaseModel(useCase, undefined);
-                  setInputValue('');
-                  setOpen(false);
-                }}
-              >
-                <Check
-                  className={cn('mr-2 h-3 w-3', !currentModel ? 'opacity-100' : 'opacity-0')}
-                />
-                <span className="text-xs text-muted-foreground">Default</span>
-              </CommandItem>
-            </CommandGroup>
-            {!isLocalBundled && canListModels && !loading && !error && displayModels.length === 0 && (
-              <CommandEmpty className="text-xs">
-                Type a model name or click refresh
-              </CommandEmpty>
-            )}
-            {displayModels.length > 0 && (
-              <CommandGroup>
-                {displayModels.map((m) => (
-                  <CommandItem
-                    key={m}
-                    value={m}
-                    onSelect={(val) => {
-                      setUseCaseModel(useCase, val);
-                      setInputValue(val);
-                      setOpen(false);
-                    }}
-                  >
-                    <Check
-                      className={cn('mr-2 h-3 w-3', currentModel === m ? 'opacity-100' : 'opacity-0')}
-                    />
-                    <span className="truncate text-xs">{m}</span>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            )}
-            {inputValue.trim() && !displayModels.includes(inputValue.trim()) && inputValue.trim() !== '__default__' && (
-              <CommandGroup>
-                <CommandItem
-                  value={`custom-${inputValue.trim()}`}
-                  onSelect={() => {
-                    setUseCaseModel(useCase, inputValue.trim());
-                    setOpen(false);
-                  }}
-                >
-                  <Check className="mr-2 h-3 w-3 opacity-0" />
-                  <span className="text-xs">Use &quot;{inputValue.trim()}&quot;</span>
-                </CommandItem>
-              </CommandGroup>
-            )}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+        )}
+        {error && (
+          <p className="px-2 py-1.5 text-[11px] text-destructive">{error}</p>
+        )}
+        {displayModels.map((m) => (
+          <DropdownMenuItem
+            key={m}
+            onSelect={() => setUseCaseModel(useCase, m)}
+          >
+            <span className="flex-1 truncate">{prettyModelName(m)}</span>
+            {currentModel === m && <Check className="h-3.5 w-3.5 ml-2 shrink-0" />}
+          </DropdownMenuItem>
+        ))}
+        {!loading && displayModels.length === 0 && !error && (
+          <p className="px-2 py-1.5 text-[11px] text-muted-foreground italic">
+            No models available
+          </p>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -258,7 +224,7 @@ export function UseCaseRoutingSettings() {
                         setRouting(useCase, val === NONE ? null : val)
                       }
                     >
-                      <SelectTrigger className="w-44 text-left">
+                      <SelectTrigger className="w-52 text-left">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>

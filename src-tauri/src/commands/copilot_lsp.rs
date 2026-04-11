@@ -1768,6 +1768,8 @@ pub async fn copilot_lsp_conversation_create(
     message: String,
     model: Option<String>,
     tools: Option<Vec<Value>>,
+    doc_uri: Option<String>,
+    doc_language_id: Option<String>,
 ) -> Result<Value, String> {
     let guard = state.process.lock().await;
     let process = guard
@@ -1795,6 +1797,15 @@ pub async fn copilot_lsp_conversation_create(
         params["model"] = Value::String(model_id.clone());
     } else {
         log::info!(target: "notesage::copilot", "conversation/create with no model (server default)");
+    }
+
+    // Attach active document context so the model can see the open file
+    if let Some(uri) = &doc_uri {
+        let mut doc = serde_json::json!({ "uri": uri });
+        if let Some(lang) = &doc_language_id {
+            doc["languageId"] = Value::String(lang.clone());
+        }
+        params["doc"] = doc;
     }
 
     let result = process
@@ -1849,6 +1860,8 @@ pub async fn copilot_lsp_conversation_turn(
     conversation_id: String,
     message: String,
     model: Option<String>,
+    doc_uri: Option<String>,
+    doc_language_id: Option<String>,
 ) -> Result<Value, String> {
     let guard = state.process.lock().await;
     let process = guard
@@ -1869,6 +1882,15 @@ pub async fn copilot_lsp_conversation_turn(
 
     if let Some(model_id) = &model {
         params["model"] = Value::String(model_id.clone());
+    }
+
+    // Attach active document context
+    if let Some(uri) = &doc_uri {
+        let mut doc = serde_json::json!({ "uri": uri });
+        if let Some(lang) = &doc_language_id {
+            doc["languageId"] = Value::String(lang.clone());
+        }
+        params["doc"] = doc;
     }
 
     let result = process
@@ -1930,35 +1952,7 @@ pub async fn copilot_lsp_conversation_models(
                 models.len(),
                 serde_json::to_string(&models).unwrap_or_default()
             );
-            let parsed: Vec<CopilotModel> = models
-                .iter()
-                .filter_map(|m| {
-                    let id = m.get("id").and_then(|v| v.as_str())
-                        .or_else(|| m.get("modelFamily").and_then(|v| v.as_str()))?;
-                    let name = m.get("modelName").and_then(|v| v.as_str())
-                        .or_else(|| m.get("id").and_then(|v| v.as_str()))
-                        .unwrap_or(id);
-
-                    // Filter to chat-eligible models (scopes includes "chat-panel")
-                    let scopes = m.get("scopes").and_then(|v| v.as_array());
-                    let is_chat = scopes.map_or(true, |s| {
-                        s.iter().any(|scope| scope.as_str() == Some("chat-panel"))
-                    });
-                    if !is_chat {
-                        return None;
-                    }
-
-                    Some(CopilotModel {
-                        id: id.to_string(),
-                        name: name.to_string(),
-                        provider: m.get("modelProviderName")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("copilot")
-                            .to_string(),
-                    })
-                })
-                .collect();
-
+            let parsed = parse_copilot_models(models);
             Ok(parsed)
         }
         Ok(_) => {
@@ -1970,6 +1964,30 @@ pub async fn copilot_lsp_conversation_models(
             Ok(hardcoded_fallback_models())
         }
     }
+}
+
+/// Parse the copilot/models JSON array into CopilotModel structs.
+/// Extracts id (or modelFamily), modelName, and modelProviderName.
+fn parse_copilot_models(models: &[Value]) -> Vec<CopilotModel> {
+    models
+        .iter()
+        .filter_map(|m| {
+            let id = m.get("id").and_then(|v| v.as_str())
+                .or_else(|| m.get("modelFamily").and_then(|v| v.as_str()))?;
+            let name = m.get("modelName").and_then(|v| v.as_str())
+                .or_else(|| m.get("id").and_then(|v| v.as_str()))
+                .unwrap_or(id);
+
+            Some(CopilotModel {
+                id: id.to_string(),
+                name: name.to_string(),
+                provider: m.get("modelProviderName")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("copilot")
+                    .to_string(),
+            })
+        })
+        .collect()
 }
 
 /// Fallback model list when copilot/models is unavailable.
@@ -2053,5 +2071,135 @@ pub async fn copilot_lsp_tool_confirmation_response(
         Ok(())
     } else {
         Err(format!("No pending confirmation request with id {}", request_id))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn parse_copilot_models_standard_format() {
+        let models = vec![
+            json!({
+                "id": "gpt-4o",
+                "modelFamily": "gpt-4o",
+                "modelName": "GPT-4o",
+                "scopes": ["chat-panel", "edit-panel", "inline"],
+                "preview": false,
+                "isChatDefault": true,
+                "modelProviderName": "openai"
+            }),
+            json!({
+                "id": "claude-sonnet-4",
+                "modelFamily": "claude-sonnet-4",
+                "modelName": "Claude Sonnet 4",
+                "scopes": ["chat-panel"],
+                "modelProviderName": "anthropic"
+            }),
+        ];
+
+        let parsed = parse_copilot_models(&models);
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].id, "gpt-4o");
+        assert_eq!(parsed[0].name, "GPT-4o");
+        assert_eq!(parsed[0].provider, "openai");
+        assert_eq!(parsed[1].id, "claude-sonnet-4");
+        assert_eq!(parsed[1].name, "Claude Sonnet 4");
+        assert_eq!(parsed[1].provider, "anthropic");
+    }
+
+    #[test]
+    fn parse_copilot_models_falls_back_to_model_family() {
+        // Some models might only have modelFamily, not id
+        let models = vec![
+            json!({
+                "modelFamily": "o4-mini",
+                "modelName": "o4-mini",
+            }),
+        ];
+
+        let parsed = parse_copilot_models(&models);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].id, "o4-mini");
+        assert_eq!(parsed[0].name, "o4-mini");
+        assert_eq!(parsed[0].provider, "copilot"); // default when not specified
+    }
+
+    #[test]
+    fn parse_copilot_models_skips_entries_without_id_or_family() {
+        let models = vec![
+            json!({ "modelName": "Mystery Model" }),  // no id, no modelFamily
+            json!({ "id": "valid-model", "modelName": "Valid" }),
+        ];
+
+        let parsed = parse_copilot_models(&models);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].id, "valid-model");
+    }
+
+    #[test]
+    fn parse_copilot_models_uses_id_as_name_fallback() {
+        let models = vec![
+            json!({ "id": "gemini-2.5-pro" }),  // no modelName
+        ];
+
+        let parsed = parse_copilot_models(&models);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].id, "gemini-2.5-pro");
+        assert_eq!(parsed[0].name, "gemini-2.5-pro"); // falls back to id
+    }
+
+    #[test]
+    fn parse_copilot_models_no_scope_filtering() {
+        // After removing the scope filter, ALL models should be included
+        // regardless of their scopes
+        let models = vec![
+            json!({ "id": "model-a", "modelName": "A", "scopes": ["chat-panel"] }),
+            json!({ "id": "model-b", "modelName": "B", "scopes": ["edit-panel"] }),
+            json!({ "id": "model-c", "modelName": "C", "scopes": ["inline"] }),
+            json!({ "id": "model-d", "modelName": "D" }),  // no scopes at all
+        ];
+
+        let parsed = parse_copilot_models(&models);
+        assert_eq!(parsed.len(), 4, "All models should be included regardless of scope");
+    }
+
+    #[test]
+    fn parse_copilot_models_realistic_pro_account() {
+        // Simulate a realistic copilot/models response for a Pro account
+        let models = vec![
+            json!({ "id": "gpt-4o", "modelFamily": "gpt-4o", "modelName": "GPT-4o", "scopes": ["chat-panel", "edit-panel", "agent-panel", "inline"], "modelProviderName": "github" }),
+            json!({ "id": "gpt-4.1", "modelFamily": "gpt-4.1", "modelName": "GPT-4.1", "scopes": ["chat-panel", "edit-panel", "agent-panel"], "modelProviderName": "github" }),
+            json!({ "id": "o4-mini", "modelFamily": "o4-mini", "modelName": "o4-mini", "scopes": ["chat-panel", "edit-panel", "agent-panel"], "modelProviderName": "github" }),
+            json!({ "id": "claude-sonnet-4", "modelFamily": "claude-sonnet-4", "modelName": "Claude Sonnet 4", "scopes": ["chat-panel", "edit-panel", "agent-panel"], "modelProviderName": "anthropic" }),
+            json!({ "id": "claude-3.5-sonnet", "modelFamily": "claude-3.5-sonnet", "modelName": "Claude 3.5 Sonnet", "scopes": ["chat-panel", "edit-panel"], "modelProviderName": "anthropic" }),
+            json!({ "id": "gemini-2.5-pro", "modelFamily": "gemini-2.5-pro", "modelName": "Gemini 2.5 Pro", "scopes": ["chat-panel"], "modelProviderName": "google" }),
+        ];
+
+        let parsed = parse_copilot_models(&models);
+        assert_eq!(parsed.len(), 6, "All 6 models should be parsed");
+
+        // Verify each model has correct id and name
+        let ids: Vec<&str> = parsed.iter().map(|m| m.id.as_str()).collect();
+        assert!(ids.contains(&"gpt-4o"));
+        assert!(ids.contains(&"claude-sonnet-4"));
+        assert!(ids.contains(&"gemini-2.5-pro"));
+    }
+
+    #[test]
+    fn hardcoded_fallback_has_models() {
+        let fallback = hardcoded_fallback_models();
+        assert!(fallback.len() >= 3, "Fallback should have at least a few models");
+        // All should have non-empty id and name
+        for model in &fallback {
+            assert!(!model.id.is_empty());
+            assert!(!model.name.is_empty());
+        }
     }
 }

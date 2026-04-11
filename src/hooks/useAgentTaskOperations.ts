@@ -464,11 +464,10 @@ async function startCopilotLspTask(
   const { onComplete, onActivity, onError, onChunk } = callbacks ?? {};
   const { taskId, track } = setupTask(prompt, taskMeta, connection);
 
-  // For Copilot LSP, the model must be a copilot/models ID — NOT the ACP
-  // agent model ID stored in connection.config.model (which uses a different
-  // naming scheme and is rejected by the LSP with "model is not supported").
-  // Use only the routing store's per-use-case model selection.
-  const model = useRoutingStore.getState().routing.agent_tasks?.model;
+  // Routing store model takes priority, then connection config model.
+  // Both now store correct copilot/models IDs (the connection config
+  // dialog fetches from copilot/models for LSP connections).
+  const model = useRoutingStore.getState().routing.agent_tasks?.model ?? connection.config?.model;
 
   // Latch onto the conversationId from the first event (we don't know it
   // until events arrive because conversation/create blocks until streaming finishes).

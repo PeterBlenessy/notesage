@@ -1066,12 +1066,12 @@ export const tauriApi = {
   },
 
   // Copilot LSP conversation operations
-  copilotLspConversationCreate(message: string, model?: string, tools?: Array<{ name: string; description: string; inputSchema: unknown }>) {
-    return invoke<{ conversationId: string; turnId: string }>('copilot_lsp_conversation_create', { message, model: model ?? null, tools: tools ?? null });
+  copilotLspConversationCreate(message: string, model?: string, tools?: Array<{ name: string; description: string; inputSchema: unknown }>, docUri?: string, docLanguageId?: string) {
+    return invoke<{ conversationId: string; turnId: string }>('copilot_lsp_conversation_create', { message, model: model ?? null, tools: tools ?? null, docUri: docUri ?? null, docLanguageId: docLanguageId ?? null });
   },
 
-  copilotLspConversationTurn(conversationId: string, message: string, model?: string) {
-    return invoke<{ conversationId: string; turnId: string }>('copilot_lsp_conversation_turn', { conversationId, message, model: model ?? null });
+  copilotLspConversationTurn(conversationId: string, message: string, model?: string, docUri?: string, docLanguageId?: string) {
+    return invoke<{ conversationId: string; turnId: string }>('copilot_lsp_conversation_turn', { conversationId, message, model: model ?? null, docUri: docUri ?? null, docLanguageId: docLanguageId ?? null });
   },
 
   copilotLspConversationDestroy(conversationId: string) {

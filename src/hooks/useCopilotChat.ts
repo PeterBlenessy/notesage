@@ -1,4 +1,5 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { tauriApi } from '@/lib/tauri';
 import { useChatStore } from '@/stores/chat-store';
@@ -6,6 +7,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { useSkillStore } from '@/stores/skill-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useEditorStore } from '@/stores/editor-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import { useToolPermissionStore, type ToolCallDecision } from '@/stores/tool-permission-store';
 import { executeToolCall } from '@/lib/tool-executor';
@@ -64,6 +66,24 @@ export function useCopilotChat({
   const conversationIdRef = useRef<string | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
 
+  // Determine if the effective connection is a Copilot LSP
+  const isCopilotLsp = effectiveConnection?.credentials != null
+    && 'agentBinary' in effectiveConnection.credentials
+    && effectiveConnection.credentials.agentBinary === 'copilot-language-server';
+
+  const projects = useWorkspaceStore((s) => s.projects);
+  const workingDir = projects[0]?.path ?? null;
+
+  // Ensure the Copilot LSP process is running when this connection is active.
+  // copilot_lsp_start is safe to call when already running — it reuses the
+  // existing process and updates the workspace folder.
+  useEffect(() => {
+    if (!isCopilotLsp || !workingDir) return;
+    invoke('copilot_lsp_start', { workingDirectory: workingDir }).catch((err) => {
+      log.error('copilot', 'Failed to ensure LSP is running for chat', err);
+    });
+  }, [isCopilotLsp, workingDir]);
+
   // -------------------------------------------------------------------------
   // generateText — one-shot text generation via a temporary conversation
   // -------------------------------------------------------------------------
@@ -74,7 +94,7 @@ export function useCopilotChat({
       let tempCleanup: (() => void) | null = null;
 
       try {
-        const model = useRoutingStore.getState().routing.interactive?.model;
+        const model = useRoutingStore.getState().routing.interactive?.model ?? effectiveConnection?.config?.model;
 
         return await new Promise<string>((resolve, reject) => {
           let accumulated = '';
@@ -218,14 +238,22 @@ export function useCopilotChat({
           if (tools.length === 0) tools = undefined;
         }
 
-        const model = useRoutingStore.getState().routing.interactive?.model;
+        const model = useRoutingStore.getState().routing.interactive?.model ?? effectiveConnection?.config?.model;
 
-        // Map tools to the format expected by the LSP
-        const lspTools = tools?.map((t) => ({
-          name: t.name,
-          description: t.description,
-          inputSchema: t.input_schema as unknown,
-        }));
+        // Map tools to the format expected by the LSP.
+        // The LSP requires inputSchema.required to be an array (even if empty).
+        const lspTools = tools?.map((t) => {
+          const schema = t.input_schema as Record<string, unknown> | undefined;
+          const sanitized: Record<string, unknown> = schema ? { ...schema } : { type: 'object', properties: {} };
+          if (!Array.isArray(sanitized.required)) {
+            sanitized.required = [];
+          }
+          return {
+            name: t.name,
+            description: t.description,
+            inputSchema: sanitized,
+          };
+        });
 
         // -------------------------------------------------------------------
         // Event listeners
@@ -390,15 +418,33 @@ export function useCopilotChat({
 
         cleanupRef.current = cleanup;
 
+        // Collect active document context for the LSP
+        const editorState = useEditorStore.getState();
+        const activeTab = editorState.activeTabId
+          ? editorState.tabs.find((t) => t.id === editorState.activeTabId)
+          : null;
+        const docUri = activeTab?.filePath ? `file://${activeTab.filePath}` : undefined;
+        const docLang = activeTab?.filePath ? getLanguageId(activeTab.filePath) : undefined;
+
+        // Ensure the LSP knows about the active document (textDocument/didOpen)
+        // so conversation/context and doc references can resolve the file.
+        if (activeTab?.filePath && activeTab?.content != null) {
+          invoke('copilot_lsp_did_open', {
+            uri: activeTab.filePath,
+            content: activeTab.content,
+            version: 1,
+          }).catch(() => {}); // fire-and-forget, may already be open
+        }
+
         // Start the conversation or send a follow-up turn.
         // Note: create/turn block until after all $/progress notifications
         // are delivered, so events arrive DURING this await. The isOurEvent
         // filter latches onto the conversationId from the first event.
         if (!conversationIdRef.current) {
-          const result = await tauriApi.copilotLspConversationCreate(content, model, lspTools);
+          const result = await tauriApi.copilotLspConversationCreate(content, model, lspTools, docUri, docLang);
           conversationIdRef.current = result.conversationId;
         } else {
-          await tauriApi.copilotLspConversationTurn(conversationIdRef.current, content, model);
+          await tauriApi.copilotLspConversationTurn(conversationIdRef.current, content, model, docUri, docLang);
         }
       } catch (error) {
         clearInterval(flushInterval);

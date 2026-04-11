@@ -302,6 +302,26 @@
 
 ### #14 — Cleanup and edge cases ✅
 
+---
+
+### #15 — Connection config model picker uses correct Copilot model IDs ✅
+
+| Field | Value |
+| --- | --- |
+| **Complexity** | M |
+| **Category** | frontend |
+| **Dependencies** | #2 |
+| **Files** | `src/components/settings/connection/ModelSelectionForm.tsx`, `src/hooks/useAgentTaskOperations.ts` |
+
+**Description:** The connection config dialog model picker shows ACP model IDs (e.g., `claude-sonnet-4.6`) from the hardcoded `AGENT_KNOWN_MODELS` fallback list for Copilot LSP connections. These IDs are rejected by the Copilot LSP `conversation/create` API which expects IDs from `copilot/models` (e.g., `claude-sonnet-4`). The user selects a model that looks correct but gets a 400 "model is not supported" error at runtime.
+
+**Acceptance criteria:**
+- [ ] For Copilot LSP connections (`agentBinary === 'copilot-language-server'`), the model picker fetches models from `tauriApi.copilotLspConversationModels()` instead of using `getAgentModels()` or `AGENT_KNOWN_MODELS`
+- [ ] Fetched models shown with their proper IDs and display names
+- [ ] Falls back to existing hardcoded list only if the LSP isn't running or fetch fails
+- [ ] `startCopilotLspTask` reads model from `connection.config.model` again (now stores correct IDs)
+- [ ] Selecting a model in the connection config and using it for chat/delegation works end-to-end
+
 | Field | Value |
 | --- | --- |
 | **Complexity** | M |

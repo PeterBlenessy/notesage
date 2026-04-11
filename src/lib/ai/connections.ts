@@ -340,8 +340,11 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   'gpt-5-mini': 'GPT-5 Mini',
   'gpt-5-codex-mini': 'GPT-5 Codex Mini',
   'gpt-4.1': 'GPT-4.1',
+  'gpt-4o': 'GPT-4o',
+  'gpt-41-copilot': 'GPT-4.1 Copilot',
   'o4-mini': 'o4-mini',
   'o3': 'o3',
+  'auto': 'Auto',
   // Gemini
   'gemini-2.5-pro': 'Gemini 2.5 Pro',
   'gemini-2.5-flash': 'Gemini 2.5 Flash',

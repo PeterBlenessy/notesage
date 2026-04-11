@@ -22,8 +22,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Loader2, RefreshCw, ChevronsUpDown, Check, Brain } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
 import type { Connection, ReasoningEffort } from '@/lib/ai/connections';
 import { getAgentModels, prettyModelName } from '@/lib/ai/connections';
+import { tauriApi } from '@/lib/tauri';
 import { cn } from '@/lib/utils';
 
 // --- Constants ---
@@ -65,13 +67,13 @@ export function formatTokenCount(tokens: number): string {
 }
 
 /** Known models per agent binary — curated list for the model picker */
-interface AgentModelOption {
+export interface AgentModelOption {
   id: string;
   label: string;
   note?: string;
 }
 
-const AGENT_KNOWN_MODELS: Record<string, AgentModelOption[]> = {
+export const AGENT_KNOWN_MODELS: Record<string, AgentModelOption[]> = {
   'claude-agent-acp': [
     { id: 'sonnet', label: 'Claude Sonnet', note: 'Default — fast and capable' },
     { id: 'opus', label: 'Claude Opus', note: 'Most capable, slower' },
@@ -188,6 +190,30 @@ export function ModelSelectionForm({
     ? (connection.credentials as { agentBinary: string }).agentBinary
     : '';
   const isCodexAgent = agentBinary === 'codex-acp';
+  const isCopilotLsp = agentBinary === 'copilot-language-server';
+
+  // Fetch models from Copilot LSP for copilot-language-server connections
+  const [copilotModels, setCopilotModels] = useState<Array<{ id: string; name: string }>>([]);
+  const [copilotModelsLoading, setCopilotModelsLoading] = useState(false);
+
+  const fetchCopilotModels = useCallback(async () => {
+    if (!isCopilotLsp) return;
+    setCopilotModelsLoading(true);
+    try {
+      const result = await tauriApi.copilotLspConversationModels();
+      setCopilotModels(result);
+    } catch {
+      // LSP not running or doesn't support copilot/models — keep fallback
+    } finally {
+      setCopilotModelsLoading(false);
+    }
+  }, [isCopilotLsp]);
+
+  useEffect(() => {
+    if (isCopilotLsp && copilotModels.length === 0 && !copilotModelsLoading) {
+      fetchCopilotModels();
+    }
+  }, [isCopilotLsp, copilotModels.length, copilotModelsLoading, fetchCopilotModels]);
 
   return (
     <div className="space-y-3">
@@ -245,18 +271,39 @@ export function ModelSelectionForm({
       {!isLocalBundled && <div className="space-y-1.5">
         <Label className="text-sm">Model</Label>
         {isAgentManaged ? (() => {
-          const cached = getAgentModels(connection.id);
-          const dynamicModels = cached?.models.map((m) => ({
-            id: m.modelId,
-            label: m.name,
-            note: m.description ?? undefined,
-          })) ?? [];
-          const fallbackModels = AGENT_KNOWN_MODELS[agentBinary] ?? [];
-          const displayModels = dynamicModels.length > 0 ? dynamicModels : fallbackModels;
-          const currentModel = cached?.currentModel;
-          const defaultLabel = currentModel
-            ? `Agent default (${prettyModelName(currentModel)})`
-            : 'Agent default';
+          let currentModel: string | null = null;
+          let defaultLabel: string;
+          let displayModels: AgentModelOption[];
+
+          if (isCopilotLsp) {
+            // Copilot LSP: use only models from copilot/models API.
+            // The API returns the actual models available for the user's plan.
+            // Hardcoded models may not work (the conversation API rejects
+            // model IDs not returned by copilot/models).
+            displayModels = copilotModels.length > 0
+              ? copilotModels.map((m) => ({ id: m.id, label: m.name }))
+              : (AGENT_KNOWN_MODELS[agentBinary] ?? []);
+            defaultLabel = 'Server default';
+          } else {
+            // ACP agents: hardcoded list as base, enriched with dynamic models
+            const knownModels = AGENT_KNOWN_MODELS[agentBinary] ?? [];
+            const knownIds = new Set(knownModels.map((m) => m.id));
+            const dynamicModels: AgentModelOption[] = getAgentModels(connection.id)?.models.map((m) => ({
+              id: m.modelId,
+              label: m.name,
+              note: m.description ?? undefined,
+            })) ?? [];
+
+            displayModels = [...knownModels];
+            for (const dm of dynamicModels) {
+              if (!knownIds.has(dm.id)) displayModels.push(dm);
+            }
+
+            currentModel = getAgentModels(connection.id)?.currentModel ?? null;
+            defaultLabel = currentModel
+              ? `Agent default (${prettyModelName(currentModel)})`
+              : 'Agent default';
+          }
 
           return (
             <>
