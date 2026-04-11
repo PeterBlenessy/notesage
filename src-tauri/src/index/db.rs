@@ -3,6 +3,8 @@ use std::path::Path;
 use std::time::Duration;
 
 /// Current schema version — bump when adding table/column migrations.
+/// Note: if parser extraction logic changes (not schema), bump PARSER_VERSION
+/// instead — it triggers a data-only rebuild without schema migration.
 const SCHEMA_VERSION: i32 = 1;
 
 /// Current parser version — bump when parser.rs extraction logic changes
@@ -10,6 +12,8 @@ const SCHEMA_VERSION: i32 = 1;
 /// A bump triggers a full data clear + rebuild on next startup, without
 /// touching the schema itself. This ensures stale index entries from an
 /// older parser are replaced even if file content hasn't changed.
+/// Note: independent of SCHEMA_VERSION — schema changes don't require a
+/// parser version bump, and vice versa.
 const PARSER_VERSION: i32 = 1;
 
 /// Open or create an index database at the given path.
@@ -100,7 +104,10 @@ fn get_parser_version(conn: &Connection) -> i32 {
 }
 
 fn set_parser_version(conn: &Connection, version: i32) -> Result<(), String> {
-    // Add column if it doesn't exist (one-time migration from older DBs)
+    // Add column if it doesn't exist (one-time migration from older DBs).
+    // Wrapped in a transaction so a crash between ALTER TABLE and UPDATE
+    // doesn't leave the column at DEFAULT 0 (which would trigger a spurious
+    // full rebuild on every subsequent open).
     let has_col: bool = conn
         .query_row(
             "SELECT COUNT(*) > 0 FROM pragma_table_info('schema_version') WHERE name = 'parser_version'",
@@ -108,12 +115,17 @@ fn set_parser_version(conn: &Connection, version: i32) -> Result<(), String> {
             |row| row.get(0),
         )
         .unwrap_or(false);
+
+    let tx = conn.unchecked_transaction()
+        .map_err(|e| format!("Failed to begin transaction: {}", e))?;
     if !has_col {
-        conn.execute("ALTER TABLE schema_version ADD COLUMN parser_version INTEGER DEFAULT 0", [])
+        tx.execute("ALTER TABLE schema_version ADD COLUMN parser_version INTEGER DEFAULT 0", [])
             .map_err(|e| format!("Failed to add parser_version column: {}", e))?;
     }
-    conn.execute("UPDATE schema_version SET parser_version = ?1", [version])
+    tx.execute("UPDATE schema_version SET parser_version = ?1", [version])
         .map_err(|e| format!("Failed to set parser version: {}", e))?;
+    tx.commit()
+        .map_err(|e| format!("Failed to commit parser version: {}", e))?;
     Ok(())
 }
 

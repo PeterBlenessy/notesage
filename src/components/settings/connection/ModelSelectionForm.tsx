@@ -73,6 +73,28 @@ export interface AgentModelOption {
   note?: string;
 }
 
+const COPILOT_MODELS: AgentModelOption[] = [
+  { id: 'claude-sonnet-4.6', label: 'Claude Sonnet 4.6' },
+  { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5' },
+  { id: 'claude-sonnet-4', label: 'Claude Sonnet 4', note: 'Default' },
+  { id: 'claude-opus-4.6', label: 'Claude Opus 4.6' },
+  { id: 'claude-opus-4.6-fast', label: 'Claude Opus 4.6 Fast' },
+  { id: 'claude-opus-4.5', label: 'Claude Opus 4.5' },
+  { id: 'claude-haiku-4.5', label: 'Claude Haiku 4.5' },
+  { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex' },
+  { id: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
+  { id: 'gpt-5.2', label: 'GPT-5.2' },
+  { id: 'gpt-5.1-codex', label: 'GPT-5.1 Codex' },
+  { id: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
+  { id: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini' },
+  { id: 'gpt-5.1', label: 'GPT-5.1' },
+  { id: 'gpt-5-mini', label: 'GPT-5 Mini' },
+  { id: 'gpt-4.1', label: 'GPT-4.1' },
+  { id: 'o4-mini', label: 'o4-mini' },
+  { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro (Preview)' },
+  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+];
+
 export const AGENT_KNOWN_MODELS: Record<string, AgentModelOption[]> = {
   'claude-agent-acp': [
     { id: 'sonnet', label: 'Claude Sonnet', note: 'Default — fast and capable' },
@@ -85,34 +107,13 @@ export const AGENT_KNOWN_MODELS: Record<string, AgentModelOption[]> = {
     { id: 'gpt-5.4', label: 'GPT-5.4', note: 'Latest flagship — requires paid plan' },
     { id: 'o4-mini', label: 'o4-mini', note: 'Fast reasoning model' },
   ],
-  'copilot': [
-    { id: 'claude-sonnet-4.6', label: 'Claude Sonnet 4.6' },
-    { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5' },
-    { id: 'claude-sonnet-4', label: 'Claude Sonnet 4', note: 'Default' },
-    { id: 'claude-opus-4.6', label: 'Claude Opus 4.6' },
-    { id: 'claude-opus-4.6-fast', label: 'Claude Opus 4.6 Fast' },
-    { id: 'claude-opus-4.5', label: 'Claude Opus 4.5' },
-    { id: 'claude-haiku-4.5', label: 'Claude Haiku 4.5' },
-    { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex' },
-    { id: 'gpt-5.2-codex', label: 'GPT-5.2 Codex' },
-    { id: 'gpt-5.2', label: 'GPT-5.2' },
-    { id: 'gpt-5.1-codex', label: 'GPT-5.1 Codex' },
-    { id: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max' },
-    { id: 'gpt-5.1-codex-mini', label: 'GPT-5.1 Codex Mini' },
-    { id: 'gpt-5.1', label: 'GPT-5.1' },
-    { id: 'gpt-5-mini', label: 'GPT-5 Mini' },
-    { id: 'gpt-4.1', label: 'GPT-4.1' },
-    { id: 'o4-mini', label: 'o4-mini' },
-    { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro (Preview)' },
-    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-  ],
+  'copilot': COPILOT_MODELS,
+  'copilot-language-server': COPILOT_MODELS,
   'gemini': [
     { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', note: 'Default — most capable' },
     { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', note: 'Fast and efficient' },
   ],
 };
-// Copilot LSP shares the same model catalog as Copilot CLI
-AGENT_KNOWN_MODELS['copilot-language-server'] = AGENT_KNOWN_MODELS['copilot'];
 
 // --- Local model type ---
 
@@ -187,7 +188,7 @@ export function ModelSelectionForm({
   const isLocalBundled = connection.authMethod === 'local_bundled';
   const isAgentManaged = connection.authMethod === 'agent_managed';
   const agentBinary = connection.credentials.type === 'agent_managed'
-    ? (connection.credentials as { agentBinary: string }).agentBinary
+    ? connection.credentials.agentBinary
     : '';
   const isCodexAgent = agentBinary === 'codex-acp';
   const isCopilotLsp = agentBinary === 'copilot-language-server';
@@ -230,15 +231,15 @@ export function ModelSelectionForm({
                 <SelectValue placeholder="Select a model" />
               </SelectTrigger>
               <SelectContent>
-                {downloadedLocalModels.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
+                {downloadedLocalModels.map((localModel) => (
+                  <SelectItem key={localModel.id} value={localModel.id}>
                     <span className="flex items-center gap-2">
-                      <span>{m.name}</span>
-                      {m.size_bytes > 0 && (
+                      <span>{localModel.name}</span>
+                      {localModel.size_bytes > 0 && (
                         <span className="text-xs text-muted-foreground">
-                          {m.size_bytes < 1_000_000_000
-                            ? `${(m.size_bytes / 1_000_000).toFixed(0)} MB`
-                            : `${(m.size_bytes / 1_000_000_000).toFixed(1)} GB`}
+                          {localModel.size_bytes < 1_000_000_000
+                            ? `${(localModel.size_bytes / 1_000_000).toFixed(0)} MB`
+                            : `${(localModel.size_bytes / 1_000_000_000).toFixed(1)} GB`}
                         </span>
                       )}
                     </span>
@@ -318,11 +319,11 @@ export function ModelSelectionForm({
                   <SelectItem value="__default__">
                     <span className="text-muted-foreground">{defaultLabel}</span>
                   </SelectItem>
-                  {displayModels.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>
+                  {displayModels.map((agentModel) => (
+                    <SelectItem key={agentModel.id} value={agentModel.id}>
                       <span className="flex items-center gap-2">
-                        <span>{prettyModelName(m.id)}</span>
-                        {currentModel === m.id && (
+                        <span>{prettyModelName(agentModel.id)}</span>
+                        {currentModel === agentModel.id && (
                           <span className="text-[10px] text-muted-foreground">(current)</span>
                         )}
                       </span>
@@ -374,10 +375,10 @@ export function ModelSelectionForm({
                   {!modelsLoading && !modelsError && models.length === 0 && <CommandEmpty>Type a model name or click refresh</CommandEmpty>}
                   {models.length > 0 && (
                     <CommandGroup>
-                      {models.map((m) => (
-                        <CommandItem key={m} value={m} onSelect={(val) => { onModelChange(val); onModelPopoverOpenChange(false); }}>
-                          <Check className={cn('mr-2 h-3.5 w-3.5', model === m ? 'opacity-100' : 'opacity-0')} />
-                          <span className="truncate text-sm">{m}</span>
+                      {models.map((modelId) => (
+                        <CommandItem key={modelId} value={modelId} onSelect={(val) => { onModelChange(val); onModelPopoverOpenChange(false); }}>
+                          <Check className={cn('mr-2 h-3.5 w-3.5', model === modelId ? 'opacity-100' : 'opacity-0')} />
+                          <span className="truncate text-sm">{modelId}</span>
                         </CommandItem>
                       ))}
                     </CommandGroup>

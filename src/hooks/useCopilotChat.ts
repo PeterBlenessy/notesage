@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { tauriApi } from '@/lib/tauri';
 import { useChatStore } from '@/stores/chat-store';
@@ -56,7 +55,6 @@ export function useCopilotChat({
     setLoading,
     setError,
     setActiveTool,
-    addActivity,
     appendTextSegment,
     pushSegment,
     updateSegment,
@@ -79,7 +77,7 @@ export function useCopilotChat({
   // existing process and updates the workspace folder.
   useEffect(() => {
     if (!isCopilotLsp || !workingDir) return;
-    invoke('copilot_lsp_start', { workingDirectory: workingDir }).catch((err) => {
+    tauriApi.copilotLspStart(workingDir).catch((err) => {
       log.error('copilot', 'Failed to ensure LSP is running for chat', err);
     });
   }, [isCopilotLsp, workingDir]);
@@ -137,6 +135,10 @@ export function useCopilotChat({
             if (!settled) {
               settled = true;
               tempCleanup?.();
+              const errMsg = err instanceof Error ? err.message : String(err);
+              if (errMsg.includes('method not found') || errMsg.includes('Method not found') || errMsg.includes('-32601')) {
+                toast.error('Chat not supported by this Copilot LSP version. Update copilot-language-server: npm update -g @github/copilot-language-server');
+              }
               reject(err);
             }
           });
@@ -146,6 +148,124 @@ export function useCopilotChat({
           tauriApi.copilotLspConversationDestroy(tempConversationId).catch(() => {});
         }
       }
+    },
+    [],
+  );
+
+  // -------------------------------------------------------------------------
+  // handleToolCall — execute a single tool call and send result back to LSP
+  // -------------------------------------------------------------------------
+  // Uses useChatStore.getState() directly to avoid stale closure captures —
+  // this async function runs outside React render and may be called
+  // concurrently by multiple tool call events.
+
+  const handleToolCall = useCallback(
+    async (
+      requestId: string,
+      toolCallId: string,
+      name: string,
+      args: Record<string, unknown>,
+      assistantMessageId: number,
+    ) => {
+      // Check permission
+      const tier = usePermissionStore.getState().isToolAllowed(name);
+
+      if (tier === 'none') {
+        const decision = await new Promise<ToolCallDecision>((resolve) => {
+          useToolPermissionStore.getState().setPending({
+            id: toolCallId,
+            name,
+            arguments: args,
+            resolve,
+          });
+        });
+        useToolPermissionStore.getState().setPending(null);
+
+        if (decision === 'deny') {
+          log.info('ai', `Tool call denied by user: ${name}`);
+          useChatStore.getState().pushSegment(assistantMessageId, {
+            type: 'tool_call',
+            kind: name,
+            label: formatToolLabel(name, args),
+            detail: 'Permission denied',
+            status: 'error',
+            timestamp: Date.now(),
+          } as ToolCallSegment);
+          await tauriApi.copilotLspToolResult(requestId, {
+            content: `Permission denied for tool: ${name}`,
+            is_error: true,
+          });
+          return;
+        }
+
+        if (decision === 'session') {
+          usePermissionStore.getState().allowToolSession(name);
+        } else if (decision === 'always') {
+          usePermissionStore.getState().allowToolAlways(name);
+        }
+      }
+
+      // Push running tool call segment
+      const toolLabel = formatToolLabel(name, args);
+      const toolDetail =
+        Object.keys(args).length > 0 ? JSON.stringify(args, null, 2) : undefined;
+
+      useChatStore.getState().addActivity(assistantMessageId, {
+        kind: 'tool_call',
+        label: name,
+        detail: 'running',
+        status: 'running',
+        timestamp: Date.now(),
+      });
+
+      useChatStore.getState().pushSegment(assistantMessageId, {
+        type: 'tool_call',
+        kind: name,
+        label: toolLabel,
+        detail: toolDetail,
+        status: 'running',
+        timestamp: Date.now(),
+      } as ToolCallSegment);
+
+      // Read the segment index AFTER pushing — this is safe even under
+      // concurrent tool calls because each push appends and we read the
+      // latest state immediately after our own push.
+      const updatedConv = useChatStore.getState().conversations.find(
+        (c) => c.id === useChatStore.getState().activeConversationId,
+      );
+      const updatedMsg = updatedConv?.messages.find((m) => m.timestamp === assistantMessageId);
+      const toolSegIdx = (updatedMsg?.segments?.length ?? 1) - 1;
+
+      // Execute the tool
+      const result = await executeToolCall(toolCallId, name, args);
+
+      // Update activity to done
+      useChatStore.getState().addActivity(assistantMessageId, {
+        kind: 'tool_call',
+        label: name,
+        detail: result.is_error ? result.content : 'completed',
+        status: 'done',
+        timestamp: Date.now(),
+      });
+
+      // Update tool call segment to done and push tool result segment
+      useChatStore.getState().updateSegment(assistantMessageId, toolSegIdx, {
+        status: result.is_error ? 'error' : 'done',
+      });
+      useChatStore.getState().pushSegment(assistantMessageId, {
+        type: 'tool_result',
+        toolCallId,
+        result: result.is_error ? undefined : result.content,
+        error: result.is_error ? result.content : undefined,
+        collapsed: true,
+        timestamp: Date.now(),
+      });
+
+      // Send result back to the LSP
+      await tauriApi.copilotLspToolResult(requestId, {
+        content: result.content,
+        is_error: result.is_error,
+      });
     },
     [],
   );
@@ -429,11 +549,8 @@ export function useCopilotChat({
         // Ensure the LSP knows about the active document (textDocument/didOpen)
         // so conversation/context and doc references can resolve the file.
         if (activeTab?.filePath && activeTab?.content != null) {
-          invoke('copilot_lsp_did_open', {
-            uri: activeTab.filePath,
-            content: activeTab.content,
-            version: 1,
-          }).catch(() => {}); // fire-and-forget, may already be open
+          tauriApi.copilotLspDidOpen(activeTab.filePath, activeTab.content, 1)
+            .catch(() => {}); // fire-and-forget, may already be open
         }
 
         // Start the conversation or send a follow-up turn.
@@ -441,8 +558,18 @@ export function useCopilotChat({
         // are delivered, so events arrive DURING this await. The isOurEvent
         // filter latches onto the conversationId from the first event.
         if (!conversationIdRef.current) {
-          const result = await tauriApi.copilotLspConversationCreate(content, model, lspTools, docUri, docLang);
-          conversationIdRef.current = result.conversationId;
+          // Set sentinel to prevent a concurrent sendChatMessage from creating
+          // a second conversation before the first resolves.
+          conversationIdRef.current = 'pending';
+          try {
+            const result = await tauriApi.copilotLspConversationCreate(content, model, lspTools, docUri, docLang);
+            conversationIdRef.current = result.conversationId;
+          } catch (e) {
+            conversationIdRef.current = null;
+            throw e;
+          }
+        } else if (conversationIdRef.current === 'pending') {
+          throw new Error('A conversation is already being created. Please wait.');
         } else {
           await tauriApi.copilotLspConversationTurn(conversationIdRef.current, content, model, docUri, docLang);
         }
@@ -474,122 +601,13 @@ export function useCopilotChat({
       setLoading,
       setError,
       setActiveTool,
-      addActivity,
       appendTextSegment,
       pushSegment,
       updateSegment,
       finalizeSegments,
+      handleToolCall,
     ],
   );
-
-  // -------------------------------------------------------------------------
-  // handleToolCall — execute a single tool call and send result back to LSP
-  // -------------------------------------------------------------------------
-
-  async function handleToolCall(
-    requestId: string,
-    toolCallId: string,
-    name: string,
-    args: Record<string, unknown>,
-    assistantMessageId: number,
-  ) {
-    // Check permission
-    const tier = usePermissionStore.getState().isToolAllowed(name);
-
-    if (tier === 'none') {
-      const decision = await new Promise<ToolCallDecision>((resolve) => {
-        useToolPermissionStore.getState().setPending({
-          id: toolCallId,
-          name,
-          arguments: args,
-          resolve,
-        });
-      });
-      useToolPermissionStore.getState().setPending(null);
-
-      if (decision === 'deny') {
-        log.info('ai', `Tool call denied by user: ${name}`);
-        pushSegment(assistantMessageId, {
-          type: 'tool_call',
-          kind: name,
-          label: formatToolLabel(name, args),
-          detail: 'Permission denied',
-          status: 'error',
-          timestamp: Date.now(),
-        } as ToolCallSegment);
-        await tauriApi.copilotLspToolResult(requestId, {
-          content: `Permission denied for tool: ${name}`,
-          is_error: true,
-        });
-        return;
-      }
-
-      if (decision === 'session') {
-        usePermissionStore.getState().allowToolSession(name);
-      } else if (decision === 'always') {
-        usePermissionStore.getState().allowToolAlways(name);
-      }
-    }
-
-    // Push running tool call segment
-    const toolLabel = formatToolLabel(name, args);
-    const toolDetail =
-      Object.keys(args).length > 0 ? JSON.stringify(args, null, 2) : undefined;
-
-    const conv = useChatStore
-      .getState()
-      .conversations.find((c) => c.id === useChatStore.getState().activeConversationId);
-    const msg = conv?.messages.find((m) => m.timestamp === assistantMessageId);
-    const toolSegIdx = msg?.segments?.length ?? 0;
-
-    addActivity(assistantMessageId, {
-      kind: 'tool_call',
-      label: name,
-      detail: 'running',
-      status: 'running',
-      timestamp: Date.now(),
-    });
-
-    pushSegment(assistantMessageId, {
-      type: 'tool_call',
-      kind: name,
-      label: toolLabel,
-      detail: toolDetail,
-      status: 'running',
-      timestamp: Date.now(),
-    } as ToolCallSegment);
-
-    // Execute the tool
-    const result = await executeToolCall(toolCallId, name, args);
-
-    // Update activity to done
-    addActivity(assistantMessageId, {
-      kind: 'tool_call',
-      label: name,
-      detail: result.is_error ? result.content : 'completed',
-      status: 'done',
-      timestamp: Date.now(),
-    });
-
-    // Update tool call segment to done and push tool result segment
-    updateSegment(assistantMessageId, toolSegIdx, {
-      status: result.is_error ? 'error' : 'done',
-    });
-    pushSegment(assistantMessageId, {
-      type: 'tool_result',
-      toolCallId,
-      result: result.is_error ? undefined : result.content,
-      error: result.is_error ? result.content : undefined,
-      collapsed: true,
-      timestamp: Date.now(),
-    });
-
-    // Send result back to the LSP
-    await tauriApi.copilotLspToolResult(requestId, {
-      content: result.content,
-      is_error: result.is_error,
-    });
-  }
 
   // -------------------------------------------------------------------------
   // cancelChat — destroy conversation and clean up listeners

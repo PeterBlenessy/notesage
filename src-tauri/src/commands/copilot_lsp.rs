@@ -436,6 +436,7 @@ async fn handle_server_request(
 
             let tool_name = params.and_then(|p| p.get("name")).and_then(|v| v.as_str()).unwrap_or("");
             let tool_call_id = params.and_then(|p| p.get("toolCallId")).and_then(|v| v.as_str()).unwrap_or("");
+            let tool_input = params.and_then(|p| p.get("input")).cloned().unwrap_or(Value::Null);
             let title = params.and_then(|p| p.get("title")).and_then(|v| v.as_str()).unwrap_or("");
             let message = params.and_then(|p| p.get("message")).and_then(|v| v.as_str()).unwrap_or("");
 
@@ -443,6 +444,7 @@ async fn handle_server_request(
                 "requestId": request_id,
                 "id": tool_call_id,
                 "name": tool_name,
+                "arguments": tool_input,
                 "title": title,
                 "description": message,
                 "conversationId": params.and_then(|p| p.get("conversationId")).and_then(|v| v.as_str()).unwrap_or(""),
@@ -1040,7 +1042,18 @@ pub async fn copilot_lsp_stop(
 pub async fn copilot_lsp_status(
     state: State<'_, CopilotLspState>,
 ) -> Result<CopilotStatus, String> {
-    let guard = state.process.lock().await;
+    let mut guard = state.process.lock().await;
+
+    // Check if the process is actually alive — clear stale state if it exited
+    if let Some(proc) = guard.as_mut() {
+        match proc.child.try_wait() {
+            Ok(Some(_)) | Err(_) => {
+                log::warn!(target: "notesage::copilot", "LSP process found dead during status check — clearing stale state");
+                *guard = None;
+            }
+            Ok(None) => {} // Still alive
+        }
+    }
 
     match guard.as_ref() {
         Some(process) => {

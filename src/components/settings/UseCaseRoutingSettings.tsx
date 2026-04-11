@@ -53,8 +53,8 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const agentBinary = isAgentManaged && 'agentBinary' in connection.credentials
-    ? (connection.credentials as { agentBinary: string }).agentBinary
+  const agentBinary = isAgentManaged && connection.credentials.type === 'agent_managed'
+    ? connection.credentials.agentBinary
     : '';
 
   const agentMergedModels = useMemo(() => {
@@ -99,6 +99,9 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
         const result = await tauriApi.copilotLspConversationModels();
         setModels(result.map((m: { id: string }) => m.id));
       } else {
+        // Post-keychain migration, credentials.key is always undefined here
+        // (only credentialStored: true is persisted). The Rust list_models
+        // command resolves the key from the keychain via connectionId.
         const apiKey = connection.credentials.type === 'api_key' ? connection.credentials.key : undefined;
         const baseUrl = connection.config?.baseUrl;
         const provider = connection.provider === 'openai_compatible' ? 'openai_compatible' : connection.provider;

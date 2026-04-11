@@ -139,6 +139,18 @@ export interface IndexedTag {
   file_count: number;
 }
 
+export interface CopilotContextPayload {
+  uri: string;
+  content: string;
+  languageId: string;
+}
+
+export interface CopilotToolResultPayload {
+  content: string | Array<{ value: string }>;
+  is_error?: boolean;
+  status?: string;
+}
+
 export interface IndexTagOccurrence {
   path: string;
   file_name: string;
@@ -1082,15 +1094,23 @@ export const tauriApi = {
     return invoke<Array<{ id: string; name: string; provider: string }>>('copilot_lsp_conversation_models');
   },
 
-  copilotLspContextResponse(requestId: string, context: unknown) {
+  copilotLspContextResponse(requestId: string, context: CopilotContextPayload | null | unknown[]) {
     return invoke<void>('copilot_lsp_context_response', { requestId, context });
   },
 
-  copilotLspToolResult(requestId: string, result: unknown) {
+  copilotLspToolResult(requestId: string, result: CopilotToolResultPayload) {
     return invoke<void>('copilot_lsp_tool_result', { requestId, result });
   },
 
   copilotLspToolConfirmationResponse(requestId: string, accepted: boolean) {
     return invoke<void>('copilot_lsp_tool_confirmation_response', { requestId, accepted });
+  },
+
+  copilotLspStart(workingDirectory: string) {
+    return invoke<void>('copilot_lsp_start', { workingDirectory });
+  },
+
+  copilotLspDidOpen(uri: string, content: string, version: number) {
+    return invoke<void>('copilot_lsp_did_open', { uri, content, version });
   },
 };

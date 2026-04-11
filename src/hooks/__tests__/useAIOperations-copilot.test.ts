@@ -295,9 +295,8 @@ describe('useAIOperations — Copilot LSP routing', () => {
 
       expect(mockCancelDirectChat).toHaveBeenCalled();
       expect(mockCancelCopilotChat).toHaveBeenCalled();
-      // ACP cancel is only called for agent_managed connections (Copilot LSP is
-      // technically agent_managed but the cancel logic checks authMethod directly)
-      expect(mockAcpCancelChat).toHaveBeenCalled();
+      // Copilot LSP is agent_managed but has no ACP session — skip acpCancelChat
+      expect(mockAcpCancelChat).not.toHaveBeenCalled();
     });
 
     it('cancels ACP and direct for ACP connections', () => {

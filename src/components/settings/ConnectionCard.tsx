@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import type { Connection } from '@/lib/ai/connections';
 import { CAPABILITY_LABELS, prettyModelName, setAgentModels } from '@/lib/ai/connections';
 import { useConnectionsStore } from '@/stores/connections-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { Button } from '@/components/ui/button';
@@ -91,9 +92,19 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
 
         if (isLsp) {
           // Copilot LSP: check status via LSP protocol (don't use ACP)
-          const status = await invoke<{ authenticated: boolean; message: string; kind: string }>(
+          let status = await invoke<{ authenticated: boolean; message: string; kind: string }>(
             'copilot_lsp_status'
           );
+
+          // Auto-recover: if the LSP isn't running, restart it and retry
+          if (!status.authenticated && status.kind === 'Inactive') {
+            const workingDir = useWorkspaceStore.getState().projects[0]?.path ?? '/tmp';
+            await invoke('copilot_lsp_start', { workingDirectory: workingDir });
+            status = await invoke<{ authenticated: boolean; message: string; kind: string }>(
+              'copilot_lsp_status'
+            );
+          }
+
           if (!status.authenticated) {
             throw new Error(status.message || 'Not authenticated');
           }

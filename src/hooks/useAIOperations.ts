@@ -57,7 +57,7 @@ export function useAIOperations() {
     const projectProviderOverride = singleMetadata?.ai.provider ?? null;
 
     if (projectProviderOverride) {
-      const conn = useConnectionsStore.getState().getConnection(projectProviderOverride);
+      const conn = connections.find((c) => c.id === projectProviderOverride);
       if (conn) {
         const fromConn = resolveConnectionCredentials(conn, useCaseModel);
         if (fromConn) return fromConn;
@@ -146,13 +146,17 @@ export function useAIOperations() {
   );
 
   // Route cancelChat — always clean up direct listeners, then delegate ACP/Copilot if needed
+  const isCopilotLsp = effectiveConnection?.credentials != null
+    && 'agentBinary' in effectiveConnection.credentials
+    && effectiveConnection.credentials.agentBinary === 'copilot-language-server';
+
   const cancelChat = useCallback(() => {
     cancelDirectChat();
     cancelCopilotChat();
-    if (effectiveConnection?.authMethod === 'agent_managed') {
+    if (effectiveConnection?.authMethod === 'agent_managed' && !isCopilotLsp) {
       acpCancelChat();
     }
-  }, [cancelDirectChat, cancelCopilotChat, effectiveConnection, acpCancelChat]);
+  }, [cancelDirectChat, cancelCopilotChat, effectiveConnection, isCopilotLsp, acpCancelChat]);
 
   return { generateText, sendChatMessage, cancelChat };
 }
