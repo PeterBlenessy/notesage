@@ -476,12 +476,15 @@ export function convertMermaidToHtml(markdown: string): string {
   return markdown.replace(
     /```mermaid\n([\s\S]*?)```/g,
     (_match, source: string) => {
-      // HTML-escape the source for safe attribute embedding
+      // HTML-escape the source for safe attribute embedding.
+      // Newlines must also be escaped — literal newlines inside HTML attributes
+      // can cause parsers to split the tag at blank lines.
       const escaped = source.trimEnd()
         .replace(/&/g, "&amp;")
         .replace(/"/g, "&quot;")
         .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+        .replace(/>/g, "&gt;")
+        .replace(/\n/g, "&#10;");
       return `<div data-mermaid-source="${escaped}" data-type="mermaid" class="mermaid-block"></div>`;
     },
   );
