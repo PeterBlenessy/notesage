@@ -449,7 +449,7 @@ impl<'a> DocxConverter<'a> {
             }
             NodeValue::CodeBlock(ref code_block) => {
                 let lang = code_block.info.split_whitespace().next().unwrap_or("");
-                if lang == "chart" || lang == "excalidraw" {
+                if lang == "chart" || lang == "excalidraw" || lang == "mermaid" {
                     let idx = self.embedded_svg_index;
                     self.embedded_svg_index += 1;
 
@@ -485,7 +485,7 @@ impl<'a> DocxConverter<'a> {
                     let title = serde_json::from_str::<serde_json::Value>(&code_block.literal)
                         .ok()
                         .and_then(|v| v.get("title").and_then(|t| t.as_str()).map(|s| s.to_string()))
-                        .unwrap_or_else(|| if lang == "chart" { "Chart".to_string() } else { "Drawing".to_string() });
+                        .unwrap_or_else(|| match lang { "chart" => "Chart", "mermaid" => "Diagram", _ => "Drawing" }.to_string());
                     let run = Run::new().add_text(&format!("[{}]", title)).italic().color("888888");
                     let para = Paragraph::new().add_run(run).line_spacing(self.body_line_spacing());
                     self.paragraphs.push(DocxElement::Para(para));

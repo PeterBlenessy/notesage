@@ -150,7 +150,7 @@ impl<'s> Converter<'s> {
                 };
 
                 // Inline chart/excalidraw blocks: emit as image from embedded SVGs
-                if lang == "chart" || lang == "excalidraw" {
+                if lang == "chart" || lang == "excalidraw" || lang == "mermaid" {
                     let idx = self.embedded_svg_index;
                     self.embedded_svg_index += 1;
 
@@ -169,7 +169,7 @@ impl<'s> Converter<'s> {
                     let title = serde_json::from_str::<serde_json::Value>(&cb.literal)
                         .ok()
                         .and_then(|v| v.get("title").and_then(|t| t.as_str()).map(|s| s.to_string()))
-                        .unwrap_or_else(|| if lang == "chart" { "Chart".to_string() } else { "Drawing".to_string() });
+                        .unwrap_or_else(|| match lang { "chart" => "Chart", "mermaid" => "Diagram", _ => "Drawing" }.to_string());
                     self.write(&format!("[{}]\n\n", title));
                     return;
                 }

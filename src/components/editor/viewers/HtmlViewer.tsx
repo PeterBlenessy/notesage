@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
+import type { Editor } from "@tiptap/core";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { Copy, Download } from "lucide-react";
@@ -8,6 +9,7 @@ import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 import { presetsForBackend } from "@/lib/typography-presets";
 import { useEditorStylesStore } from "@/stores/editor-styles-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { collectEmbeddedSvgs } from "@/hooks/useExportOperations";
 import { toast } from "sonner";
 
 interface HtmlViewerProps {
@@ -15,9 +17,10 @@ interface HtmlViewerProps {
   filePath: string;
   fileName: string;
   projectRoot?: string;
+  editor?: Editor | null;
 }
 
-export function HtmlViewer({ content, filePath, fileName, projectRoot }: HtmlViewerProps) {
+export function HtmlViewer({ content, filePath, fileName, projectRoot, editor }: HtmlViewerProps) {
   const [htmlDoc, setHtmlDoc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +49,10 @@ export function HtmlViewer({ content, filePath, fileName, projectRoot }: HtmlVie
 
         const title = fileName.replace(/\.[^.]+$/, "");
         const typography = presetsForBackend(useEditorStylesStore.getState().presets);
+
+        // Collect embedded SVGs for inline charts/drawings
+        const embeddedSvgs = editor ? await collectEmbeddedSvgs(editor) : [];
+
         const result = await invoke<string>("render_html", {
           markdown: content,
           title,
@@ -53,6 +60,7 @@ export function HtmlViewer({ content, filePath, fileName, projectRoot }: HtmlVie
           includeStyles: true,
           projectRoot: projectRoot ?? null,
           typography,
+          embeddedSvgs: embeddedSvgs.length > 0 ? embeddedSvgs : null,
         });
 
         if (!cancelled) {
@@ -69,7 +77,7 @@ export function HtmlViewer({ content, filePath, fileName, projectRoot }: HtmlVie
 
     renderHtml();
     return () => { cancelled = true; };
-  }, [content, theme, fileName, projectRoot]);
+  }, [content, theme, fileName, projectRoot, editor]);
 
   // Copy HTML to clipboard
   const handleCopyHtml = useCallback(async () => {
@@ -80,6 +88,7 @@ export function HtmlViewer({ content, filePath, fileName, projectRoot }: HtmlVie
 
       // Get body-only fragment for clipboard
       const typography = presetsForBackend(useEditorStylesStore.getState().presets);
+      const embeddedSvgs = editor ? await collectEmbeddedSvgs(editor) : [];
       const bodyHtml = await invoke<string>("render_html", {
         markdown: content,
         title: fileName.replace(/\.[^.]+$/, ""),
@@ -87,6 +96,7 @@ export function HtmlViewer({ content, filePath, fileName, projectRoot }: HtmlVie
         includeStyles: false,
         projectRoot: projectRoot ?? null,
         typography,
+        embeddedSvgs: embeddedSvgs.length > 0 ? embeddedSvgs : null,
       });
 
       // Write both text/html and text/plain to clipboard

@@ -557,6 +557,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           filePath={activeTab.filePath}
           fileName={activeTab.fileName}
           projectRoot={projectPath ?? undefined}
+          editor={editor}
         />
       ) : activeTab?.viewMode === "source" ? (
         <SourceModeEditor

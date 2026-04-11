@@ -19,12 +19,14 @@ import { COLOR_PALETTES } from "@/lib/chart-types";
  * Charts: capture rendered SVG from the DOM, then replace CSS variable
  *         references with hex colors computed from the chart's data.
  * Drawings: call Excalidraw's exportToSvg() with the inline JSON.
+ * Mermaid: capture rendered SVG from the DOM.
  * Returns an ordered array matching the positional order that comrak will walk.
  */
-async function collectEmbeddedSvgs(editor: Editor): Promise<string[]> {
+export async function collectEmbeddedSvgs(editor: Editor): Promise<string[]> {
   const svgs: string[] = [];
   const promises: { index: number; promise: Promise<string> }[] = [];
   let chartIndex = 0;
+  let mermaidIndex = 0;
 
   editor.state.doc.descendants((node) => {
     if (node.type.name === "chart" && node.attrs.chartJson) {
@@ -51,6 +53,19 @@ async function collectEmbeddedSvgs(editor: Editor): Promise<string[]> {
         index: idx,
         promise: renderDrawingSvg(json),
       });
+    } else if (node.type.name === "mermaidBlock" && node.attrs.source) {
+      const idx = svgs.length;
+      svgs.push(""); // placeholder
+
+      // Capture rendered mermaid SVG from the DOM
+      const mermaidContainers = document.querySelectorAll(
+        ".mermaid-block .mermaid-svg-container svg"
+      );
+      const svgEl = mermaidContainers[mermaidIndex] as SVGSVGElement | undefined;
+      mermaidIndex++;
+      if (svgEl) {
+        svgs[idx] = new XMLSerializer().serializeToString(svgEl);
+      }
     }
     return false; // don't descend into atom nodes
   });

@@ -71,7 +71,7 @@ fn postprocess_embedded_svgs(html: &str, embedded_svgs: Option<&[String]>) -> St
     // Syntect output: <pre style="..."><code class="language-chart">...</code></pre>
     // Plain comrak: <pre><code class="language-chart">...</code></pre>
     let re = Regex::new(
-        r#"(?s)<pre[^>]*>\s*<code[^>]*class="[^"]*language-(chart|excalidraw)[^"]*"[^>]*>.*?</code>\s*</pre>"#,
+        r#"(?s)<pre[^>]*>\s*<code[^>]*class="[^"]*language-(chart|excalidraw|mermaid)[^"]*"[^>]*>.*?</code>\s*</pre>"#,
     ).unwrap();
 
     let mut index = 0usize;

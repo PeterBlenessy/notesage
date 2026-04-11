@@ -433,7 +433,7 @@ fn parse_to_builders(
                 let lang = cb.info.split_whitespace().next().unwrap_or("");
 
                 // Inline chart/excalidraw blocks
-                if lang == "chart" || lang == "excalidraw" {
+                if lang == "chart" || lang == "excalidraw" || lang == "mermaid" {
                     let idx = embedded_svg_index;
                     embedded_svg_index += 1;
 
@@ -472,7 +472,7 @@ fn parse_to_builders(
                     let title_text = serde_json::from_str::<serde_json::Value>(&cb.literal)
                         .ok()
                         .and_then(|v| v.get("title").and_then(|t| t.as_str()).map(|s| s.to_string()))
-                        .unwrap_or_else(|| if lang == "chart" { "Chart".to_string() } else { "Drawing".to_string() });
+                        .unwrap_or_else(|| match lang { "chart" => "Chart", "mermaid" => "Diagram", _ => "Drawing" }.to_string());
                     ensure_current(&mut current, &mut builders);
                     if let Some(ref mut builder) = current {
                         builder.bullets.push(SlideBullet {
