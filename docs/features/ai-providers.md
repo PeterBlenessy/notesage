@@ -50,19 +50,30 @@ interface AIProvider {
 - Network sandboxing: agent traffic routed through localhost HTTP proxy with per-agent domain allowlists (see Network Sandboxing section)
 - Context-aware chat footer: "Search" toggle for direct API connections
 
-### Path 3: Copilot LSP (for `inline_completion` use case only)
+### Path 3: Copilot LSP (for `interactive`, `agent_tasks`, and `inline_completion` use cases)
 
 - Spawns `copilot-language-server --stdio` subprocess managed by `CopilotLspState`
-- JSON-RPC 2.0 transport for LSP document sync and `textDocument/inlineCompletion` requests
+- JSON-RPC 2.0 transport for LSP document sync, `textDocument/inlineCompletion` requests, and `conversation/*` chat methods
 - Ghost text rendered as ProseMirror widget decorations via `GhostText` Tiptap extension
-- Separate from ACP — the Copilot CLI (`copilot --acp`) handles chat/agents, the LSP handles completions only
-- **Capabilities restricted to `['inline_completion']`** — never assigned to interactive or agent_tasks routing slots (LSP does not speak ACP)
+- Separate from ACP — the Copilot CLI (`copilot --acp`) handles chat/agents via ACP protocol, the LSP handles completions and chat via JSON-RPC
+- Full capabilities: `['interactive', 'inline_completion', 'agent_tasks']` — users can use their Copilot subscription for all AI features
 - Global inline completions toggle (persisted in settings-store, applies to all tabs)
 - OAuth device flow authentication with two protocol variants:
   - **Protocol A** (copilot.lua-era): `signInInitiate` → returns `{ userCode, verificationUri }` → `signInConfirm` (blocks until auth completes)
   - **Protocol B** (newer LSP): `signIn` → returns `{ userCode, verificationUri, command }` → `finishDeviceFlow` (deferred to user click)
 - Device code UX: code shown in modal, auto-copied to clipboard, browser opens only when user clicks "Open GitHub". The `finishDeviceFlow` command is stashed in `pending_auth_command` and triggered by `copilot_lsp_finish_auth` to prevent the LSP from opening the browser before the user sees the code.
 - All JSON-RPC messages logged at info level and emitted as `copilot-lsp-message` Tauri events for debugging
+
+**Chat conversations** via `conversation/*` JSON-RPC methods:
+- `conversation/create` — creates a session with the first user message
+- `conversation/turn` — sends follow-up messages with streaming via `$/progress`
+- `conversation/destroy` — closes the session
+- `copilot/models` — lists available models (GPT-4o, Claude, Gemini, etc.)
+- `conversation/registerTools` — registers client-side tools for agent mode
+- `conversation/invokeClientTool` — server-to-client tool execution requests
+- `conversation/context` — server-to-client editor context requests
+- Full tool calling support (same tools as direct API path)
+- Streaming responses rendered as chronological segments
 
 ### Path 4: Local Bundled (for `local_bundled` connections)
 
@@ -76,7 +87,7 @@ interface AIProvider {
 
 ### Routing
 
-`useAIOperations` reads the `interactive` connection from `routing-store`. If the connection is `api_key`/`local`, it uses Path 1 (direct API). If `local_bundled`, it uses Path 4 (bundled server). If `agent_managed`, it uses Path 2 (ACP). `useCopilotCompletion` independently reads the `inline_completion` connection and manages the Copilot LSP. `useLocalCompletion` handles inline completions for `local`, `local_bundled`, and `openai_compatible` connections. The rest of the app (chat panel, bubble menu) is unaware of which path is used.
+`useAIOperations` reads the `interactive` connection from `routing-store`. If the connection is `api_key`/`local`, it uses Path 1 (direct API). If `local_bundled`, it uses Path 4 (bundled server). If `agent_managed` with `lspBinary`, it uses Path 3 (Copilot LSP `conversation/*` methods). If `agent_managed` without `lspBinary`, it uses Path 2 (ACP). `useCopilotCompletion` independently reads the `inline_completion` connection and manages the Copilot LSP for ghost text. `useLocalCompletion` handles inline completions for `local`, `local_bundled`, and `openai_compatible` connections. The rest of the app (chat panel, bubble menu) is unaware of which path is used.
 
 ## Inline Completions
 
@@ -297,7 +308,8 @@ For providers that also support server-side web search (Anthropic `web_search_20
 | `src-tauri/model-catalog.json` | Curated LLM model catalog |
 | `src/lib/ai/` | Provider abstraction (types, connections, providers) |
 | `src/hooks/useAIOperations.ts` | AI generation, chat, and ACP routing |
-| `src/hooks/useCopilotCompletion.ts` | Copilot LSP lifecycle |
+| `src/hooks/useCopilotCompletion.ts` | Copilot LSP lifecycle (inline completions) |
+| `src/hooks/useCopilotChat.ts` | Copilot LSP chat via conversation/* JSON-RPC |
 | `src/hooks/useLocalAI.ts` | Local AI server lifecycle |
 | `src/hooks/useLocalCompletion.ts` | Local/compatible inline completions |
 | `src/hooks/useModelMetadata.ts` | Batch model metadata fetching |

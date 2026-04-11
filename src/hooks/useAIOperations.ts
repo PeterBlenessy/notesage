@@ -9,6 +9,7 @@ import { resolveConnectionCredentials } from '@/lib/ai/credentials';
 import { useAIContext } from '@/hooks/useAIContext';
 import { useDirectApiChat } from '@/hooks/useDirectApiChat';
 import { useAcpLifecycle } from '@/hooks/useAcpLifecycle';
+import { useCopilotChat } from '@/hooks/useCopilotChat';
 
 // Re-export ACP utilities for external consumers
 export { stopAcpAgent } from '@/lib/ai/acp-agent-state';
@@ -109,35 +110,49 @@ export function useAIOperations() {
     buildAcpSystemMessage,
   });
 
+  // Delegate Copilot LSP operations to useCopilotChat
+  const { copilotGenerateText, copilotSendChatMessage, cancelCopilotChat } = useCopilotChat({
+    effectiveConnection,
+    buildComposedSystemMessage,
+    composedSystemMessage,
+  });
+
   // Route generateText based on connection type
   const generateText = useCallback(
     async (prompt: string): Promise<string> => {
+      if (effectiveConnection?.credentials && 'agentBinary' in effectiveConnection.credentials && effectiveConnection.credentials.agentBinary === 'copilot-language-server') {
+        return copilotGenerateText(prompt);
+      }
       if (effectiveConnection?.authMethod === 'agent_managed') {
         return acpGenerateText(prompt);
       }
       return directGenerateText(prompt);
     },
-    [effectiveConnection, acpGenerateText, directGenerateText]
+    [effectiveConnection, copilotGenerateText, acpGenerateText, directGenerateText]
   );
 
   // Route sendChatMessage based on connection type
   const sendChatMessage = useCallback(
     async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null; attachments?: ImageAttachment[] }) => {
+      if (effectiveConnection?.credentials && 'agentBinary' in effectiveConnection.credentials && effectiveConnection.credentials.agentBinary === 'copilot-language-server') {
+        return copilotSendChatMessage(content, messages, opts);
+      }
       if (effectiveConnection?.authMethod === 'agent_managed') {
         return acpSendChatMessage(content, messages, opts);
       }
       return directSendChatMessage(content, messages, opts);
     },
-    [effectiveConnection, acpSendChatMessage, directSendChatMessage]
+    [effectiveConnection, copilotSendChatMessage, acpSendChatMessage, directSendChatMessage]
   );
 
-  // Route cancelChat — always clean up direct listeners, then delegate ACP if needed
+  // Route cancelChat — always clean up direct listeners, then delegate ACP/Copilot if needed
   const cancelChat = useCallback(() => {
     cancelDirectChat();
+    cancelCopilotChat();
     if (effectiveConnection?.authMethod === 'agent_managed') {
       acpCancelChat();
     }
-  }, [cancelDirectChat, effectiveConnection, acpCancelChat]);
+  }, [cancelDirectChat, cancelCopilotChat, effectiveConnection, acpCancelChat]);
 
   return { generateText, sendChatMessage, cancelChat };
 }

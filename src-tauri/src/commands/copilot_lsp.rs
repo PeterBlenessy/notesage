@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
@@ -67,6 +68,17 @@ pub struct SignInResponse {
     pub verification_uri: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CopilotModel {
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+}
+
+/// Pending server→client request responses (tool calls, context requests).
+/// Key: a unique request correlation ID, Value: oneshot sender for the response.
+type PendingServerRequests = Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<Value>>>>;
+
 // ---------------------------------------------------------------------------
 // Copilot LSP Transport — wraps shared JsonRpcTransport with LSP-specific
 // logging and reader loop setup.
@@ -80,6 +92,7 @@ fn spawn_copilot_transport(
     stdout: ChildStdout,
     child_pid: Option<u32>,
     app: AppHandle,
+    pending_server_requests: PendingServerRequests,
 ) -> JsonRpcTransport {
     let transport = JsonRpcTransport::new(stdin);
     let reader_pending = transport.pending.clone();
@@ -92,6 +105,7 @@ fn spawn_copilot_transport(
             reader_writer,
             child_pid,
             app,
+            pending_server_requests,
         )
         .await
         {
@@ -115,6 +129,7 @@ async fn reader_loop(
     writer: Arc<Mutex<BufWriter<ChildStdin>>>,
     child_pid: Option<u32>,
     app: AppHandle,
+    pending_server_requests: PendingServerRequests,
 ) -> Result<(), String> {
     let mut reader = BufReader::new(stdout);
 
@@ -198,6 +213,7 @@ async fn reader_loop(
                     msg.params.as_ref(),
                     &writer,
                     &app,
+                    &pending_server_requests,
                 )
                 .await;
             } else {
@@ -222,6 +238,7 @@ async fn handle_server_request(
     params: Option<&Value>,
     writer: &Arc<Mutex<BufWriter<ChildStdin>>>,
     app: &AppHandle,
+    pending_server_requests: &PendingServerRequests,
 ) {
     let response_result = match method {
         "signIn" => {
@@ -349,6 +366,102 @@ async fn handle_server_request(
             }
         }
 
+        "conversation/context" => {
+            // Server requests editor context during conversation turn processing.
+            // Emit a Tauri event to collect context from the frontend, wait for response
+            // via oneshot channel with 10s timeout.
+            let request_id = format!("ctx-{}", json_rpc::next_request_id());
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            pending_server_requests.lock().await.insert(request_id.clone(), tx);
+
+            let _ = app.emit("copilot-context-request", serde_json::json!({
+                "requestId": request_id,
+                "skillId": params.and_then(|p| p.get("skillId")).and_then(|v| v.as_str()).unwrap_or("current-editor"),
+                "conversationId": params.and_then(|p| p.get("conversationId")).and_then(|v| v.as_str()).unwrap_or(""),
+                "turnId": params.and_then(|p| p.get("turnId")).and_then(|v| v.as_str()).unwrap_or(""),
+            }));
+
+            match tokio::time::timeout(Duration::from_secs(10), rx).await {
+                Ok(Ok(result)) => result,
+                Ok(Err(_)) => {
+                    log::warn!(target: "notesage::copilot", "conversation/context channel closed");
+                    serde_json::json!([null, null])
+                }
+                Err(_) => {
+                    log::warn!(target: "notesage::copilot", "conversation/context timed out after 10s");
+                    pending_server_requests.lock().await.remove(&request_id);
+                    serde_json::json!([null, null])
+                }
+            }
+        }
+
+        "conversation/invokeClientTool" => {
+            // Server requests tool execution. Emit event, wait for frontend to execute
+            // and send result back via copilot_lsp_tool_result command.
+            let request_id = format!("tool-{}", json_rpc::next_request_id());
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            pending_server_requests.lock().await.insert(request_id.clone(), tx);
+
+            let tool_name = params.and_then(|p| p.get("name")).and_then(|v| v.as_str()).unwrap_or("");
+            let tool_input = params.and_then(|p| p.get("input")).cloned().unwrap_or(Value::Null);
+            let tool_call_id = params.and_then(|p| p.get("toolCallId")).and_then(|v| v.as_str()).unwrap_or("");
+
+            let _ = app.emit("copilot-tool-call", serde_json::json!({
+                "requestId": request_id,
+                "id": tool_call_id,
+                "name": tool_name,
+                "arguments": tool_input,
+                "conversationId": params.and_then(|p| p.get("conversationId")).and_then(|v| v.as_str()).unwrap_or(""),
+            }));
+
+            match tokio::time::timeout(Duration::from_secs(60), rx).await {
+                Ok(Ok(result)) => result,
+                Ok(Err(_)) => {
+                    log::warn!(target: "notesage::copilot", "conversation/invokeClientTool channel closed");
+                    serde_json::json!({"status": "error", "content": [{"value": "Tool execution channel closed"}]})
+                }
+                Err(_) => {
+                    log::warn!(target: "notesage::copilot", "conversation/invokeClientTool timed out after 60s");
+                    pending_server_requests.lock().await.remove(&request_id);
+                    serde_json::json!({"status": "error", "content": [{"value": "Tool execution timed out"}]})
+                }
+            }
+        }
+
+        "conversation/invokeClientToolConfirmation" => {
+            // Server requests user confirmation before tool execution.
+            let request_id = format!("confirm-{}", json_rpc::next_request_id());
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            pending_server_requests.lock().await.insert(request_id.clone(), tx);
+
+            let tool_name = params.and_then(|p| p.get("name")).and_then(|v| v.as_str()).unwrap_or("");
+            let tool_call_id = params.and_then(|p| p.get("toolCallId")).and_then(|v| v.as_str()).unwrap_or("");
+            let title = params.and_then(|p| p.get("title")).and_then(|v| v.as_str()).unwrap_or("");
+            let message = params.and_then(|p| p.get("message")).and_then(|v| v.as_str()).unwrap_or("");
+
+            let _ = app.emit("copilot-tool-confirmation", serde_json::json!({
+                "requestId": request_id,
+                "id": tool_call_id,
+                "name": tool_name,
+                "title": title,
+                "description": message,
+                "conversationId": params.and_then(|p| p.get("conversationId")).and_then(|v| v.as_str()).unwrap_or(""),
+            }));
+
+            match tokio::time::timeout(Duration::from_secs(30), rx).await {
+                Ok(Ok(result)) => result,
+                Ok(Err(_)) => {
+                    log::warn!(target: "notesage::copilot", "conversation/invokeClientToolConfirmation channel closed");
+                    serde_json::json!({"result": "dismiss"})
+                }
+                Err(_) => {
+                    log::warn!(target: "notesage::copilot", "conversation/invokeClientToolConfirmation timed out — auto-dismiss");
+                    pending_server_requests.lock().await.remove(&request_id);
+                    serde_json::json!({"result": "dismiss"})
+                }
+            }
+        }
+
         _ => {
             log::debug!(target: "notesage::copilot", "Unhandled server request: {}", method);
             Value::Null
@@ -420,6 +533,129 @@ async fn handle_server_notification(method: &str, params: Option<&Value>, app: &
             }
         }
 
+        "$/progress" => {
+            // Conversation streaming: $/progress notifications carry text chunks,
+            // tool call rounds, and completion signals via workDoneToken correlation.
+            if let Some(params) = params {
+                let token = params.get("token").and_then(|v| v.as_str()).unwrap_or("");
+                let value = params.get("value");
+
+                // Only process conversation-related progress tokens
+                if !token.starts_with("copilot-chat-") {
+                    return;
+                }
+
+                if let Some(value) = value {
+                    let kind = value.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                    let conversation_id = value.get("conversationId").and_then(|v| v.as_str()).unwrap_or("");
+                    let turn_id = value.get("turnId").and_then(|v| v.as_str()).unwrap_or("");
+
+                    match kind {
+                        "begin" => {
+                            log::debug!(
+                                target: "notesage::copilot",
+                                "$/progress begin: conv={}, turn={}",
+                                conversation_id, turn_id
+                            );
+                        }
+
+                        "report" => {
+                            // Text chunks
+                            if let Some(reply) = value.get("reply").and_then(|v| v.as_str()) {
+                                if !reply.is_empty() {
+                                    let _ = app.emit("copilot-chat-chunk", serde_json::json!({
+                                        "text": reply,
+                                        "conversationId": conversation_id,
+                                        "turnId": turn_id,
+                                    }));
+                                }
+                            }
+
+                            // Agent rounds with tool calls
+                            if let Some(rounds) = value.get("editAgentRounds").and_then(|v| v.as_array()) {
+                                for round in rounds {
+                                    // Emit round reply text if present
+                                    if let Some(round_reply) = round.get("reply").and_then(|v| v.as_str()) {
+                                        if !round_reply.is_empty() {
+                                            let _ = app.emit("copilot-chat-chunk", serde_json::json!({
+                                                "text": round_reply,
+                                                "conversationId": conversation_id,
+                                                "turnId": turn_id,
+                                            }));
+                                        }
+                                    }
+
+                                    // Emit tool call status updates
+                                    if let Some(tool_calls) = round.get("toolCalls").and_then(|v| v.as_array()) {
+                                        for tc in tool_calls {
+                                            let _ = app.emit("copilot-chat-tool-update", serde_json::json!({
+                                                "conversationId": conversation_id,
+                                                "turnId": turn_id,
+                                                "toolCallId": tc.get("id"),
+                                                "name": tc.get("name"),
+                                                "status": tc.get("status"),
+                                                "input": tc.get("input"),
+                                                "result": tc.get("result"),
+                                                "error": tc.get("error"),
+                                                "progressMessage": tc.get("progressMessage"),
+                                            }));
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Progress steps (skill resolution, searching, etc.)
+                            if let Some(steps) = value.get("steps").and_then(|v| v.as_array()) {
+                                for step in steps {
+                                    let _ = app.emit("copilot-chat-step", serde_json::json!({
+                                        "conversationId": conversation_id,
+                                        "turnId": turn_id,
+                                        "stepId": step.get("id"),
+                                        "title": step.get("title"),
+                                        "status": step.get("status"),
+                                    }));
+                                }
+                            }
+
+                            // Notification messages from the server
+                            if let Some(notifications) = value.get("notifications").and_then(|v| v.as_array()) {
+                                for notif in notifications {
+                                    let _ = app.emit("copilot-chat-thinking", serde_json::json!({
+                                        "text": notif.get("message").and_then(|v| v.as_str()).unwrap_or(""),
+                                        "conversationId": conversation_id,
+                                        "turnId": turn_id,
+                                    }));
+                                }
+                            }
+                        }
+
+                        "end" => {
+                            let error = value.get("error");
+                            let follow_up = value.get("followUp");
+                            let suggested_title = value.get("suggestedTitle").and_then(|v| v.as_str());
+
+                            let _ = app.emit("copilot-chat-done", serde_json::json!({
+                                "conversationId": conversation_id,
+                                "turnId": turn_id,
+                                "error": error,
+                                "followUp": follow_up,
+                                "suggestedTitle": suggested_title,
+                            }));
+                        }
+
+                        _ => {
+                            log::debug!(
+                                target: "notesage::copilot",
+                                "$/progress unknown kind={}: {}",
+                                kind,
+                                serde_json::to_string(value).unwrap_or_default()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         _ => {
             // Ignore other notifications silently
         }
@@ -442,6 +678,11 @@ pub struct CopilotLspProcess {
     /// The frontend calls `copilot_lsp_finish_auth` to trigger it when the user
     /// clicks "Open GitHub", so the browser doesn't open before the code is shown.
     pub pending_auth_command: tokio::sync::Mutex<Option<(String, Value)>>,
+    /// Active conversation IDs for cleanup on LSP stop/crash.
+    pub active_conversations: tokio::sync::Mutex<Vec<String>>,
+    /// Pending server→client request responses (context requests, tool calls).
+    /// The reader loop inserts a oneshot sender; a Tauri command resolves it.
+    pub pending_server_requests: PendingServerRequests,
 }
 
 impl CopilotLspState {
@@ -640,7 +881,8 @@ pub async fn copilot_lsp_start(
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
 
     // Create the JSON-RPC transport (spawns reader loop)
-    let transport = spawn_copilot_transport(stdin, stdout, child_pid, app.clone());
+    let pending_server_requests: PendingServerRequests = Arc::new(Mutex::new(HashMap::new()));
+    let transport = spawn_copilot_transport(stdin, stdout, child_pid, app.clone(), pending_server_requests.clone());
 
     // Read app version from package.json (via Tauri config)
     let app_version = app
@@ -728,6 +970,8 @@ pub async fn copilot_lsp_start(
         child,
         status: tokio::sync::Mutex::new(status),
         pending_auth_command: tokio::sync::Mutex::new(None),
+        active_conversations: tokio::sync::Mutex::new(Vec::new()),
+        pending_server_requests,
     });
 
     Ok(())
@@ -742,6 +986,19 @@ pub async fn copilot_lsp_stop(
     let mut guard = state.process.lock().await;
 
     if let Some(mut process) = guard.take() {
+        // Destroy active conversations before shutdown
+        let convs = process.active_conversations.lock().await.clone();
+        for conv_id in &convs {
+            let _ = process
+                .transport
+                .send_request(
+                    "conversation/destroy",
+                    Some(serde_json::json!({ "conversationId": conv_id })),
+                )
+                .await;
+        }
+        process.active_conversations.lock().await.clear();
+
         // Try graceful shutdown: send shutdown request, then exit notification
         let shutdown_result = tokio::time::timeout(
             std::time::Duration::from_secs(3),
@@ -1496,4 +1753,305 @@ pub async fn copilot_lsp_accept_completion(
         .map_err(|e| format!("Accept completion failed: {}", e))?;
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Conversation commands
+// ---------------------------------------------------------------------------
+
+/// Create a new conversation session and send the first message.
+/// Returns the conversation ID. Streaming response arrives via $/progress
+/// events (copilot-chat-chunk, copilot-chat-thinking, copilot-chat-done).
+#[tauri::command]
+pub async fn copilot_lsp_conversation_create(
+    state: State<'_, CopilotLspState>,
+    message: String,
+    model: Option<String>,
+    tools: Option<Vec<Value>>,
+) -> Result<Value, String> {
+    let guard = state.process.lock().await;
+    let process = guard
+        .as_ref()
+        .ok_or("Copilot LSP not running.")?;
+
+    let work_done_token = format!("copilot-chat-{}", std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis());
+
+    let mut params = serde_json::json!({
+        "workDoneToken": work_done_token,
+        "turns": [{
+            "request": message,
+        }],
+        "capabilities": {
+            "allSkills": true,
+        },
+        "source": "panel",
+    });
+
+    if let Some(model_id) = &model {
+        log::info!(target: "notesage::copilot", "conversation/create with model={}", model_id);
+        params["model"] = Value::String(model_id.clone());
+    } else {
+        log::info!(target: "notesage::copilot", "conversation/create with no model (server default)");
+    }
+
+    let result = process
+        .transport
+        .send_request("conversation/create", Some(params))
+        .await
+        .map_err(|e| format!("conversation/create failed: {}", e))?;
+
+    let conversation_id = result
+        .get("conversationId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    if !conversation_id.is_empty() {
+        process.active_conversations.lock().await.push(conversation_id.clone());
+
+        // Register tools if provided (Task #5)
+        if let Some(tool_defs) = tools {
+            if !tool_defs.is_empty() {
+                let reg_result = process
+                    .transport
+                    .send_request(
+                        "conversation/registerTools",
+                        Some(serde_json::json!({ "tools": tool_defs })),
+                    )
+                    .await;
+
+                match reg_result {
+                    Ok(_) => log::debug!(
+                        target: "notesage::copilot",
+                        "Registered {} tools for conversation {}",
+                        tool_defs.len(), conversation_id
+                    ),
+                    Err(e) => log::warn!(
+                        target: "notesage::copilot",
+                        "Tool registration failed (non-fatal): {}", e
+                    ),
+                }
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+/// Send a follow-up message in an existing conversation.
+/// Streaming response arrives via $/progress events.
+#[tauri::command]
+pub async fn copilot_lsp_conversation_turn(
+    state: State<'_, CopilotLspState>,
+    conversation_id: String,
+    message: String,
+    model: Option<String>,
+) -> Result<Value, String> {
+    let guard = state.process.lock().await;
+    let process = guard
+        .as_ref()
+        .ok_or("Copilot LSP not running.")?;
+
+    let work_done_token = format!("copilot-chat-{}", std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis());
+
+    let mut params = serde_json::json!({
+        "workDoneToken": work_done_token,
+        "conversationId": conversation_id,
+        "message": message,
+        "source": "panel",
+    });
+
+    if let Some(model_id) = &model {
+        params["model"] = Value::String(model_id.clone());
+    }
+
+    let result = process
+        .transport
+        .send_request("conversation/turn", Some(params))
+        .await
+        .map_err(|e| format!("conversation/turn failed: {}", e))?;
+
+    Ok(result)
+}
+
+/// Destroy a conversation session.
+#[tauri::command]
+pub async fn copilot_lsp_conversation_destroy(
+    state: State<'_, CopilotLspState>,
+    conversation_id: String,
+) -> Result<(), String> {
+    let guard = state.process.lock().await;
+    let process = guard
+        .as_ref()
+        .ok_or("Copilot LSP not running.")?;
+
+    process
+        .transport
+        .send_request(
+            "conversation/destroy",
+            Some(serde_json::json!({ "conversationId": conversation_id })),
+        )
+        .await
+        .map_err(|e| format!("conversation/destroy failed: {}", e))?;
+
+    // Remove from active conversations
+    let mut convs = process.active_conversations.lock().await;
+    convs.retain(|id| id != &conversation_id);
+
+    Ok(())
+}
+
+/// List available models for Copilot chat.
+#[tauri::command]
+pub async fn copilot_lsp_conversation_models(
+    state: State<'_, CopilotLspState>,
+) -> Result<Vec<CopilotModel>, String> {
+    let guard = state.process.lock().await;
+    let process = guard
+        .as_ref()
+        .ok_or("Copilot LSP not running.")?;
+
+    let result = process
+        .transport
+        .send_request("copilot/models", Some(serde_json::json!({})))
+        .await;
+
+    match result {
+        Ok(Value::Array(ref models)) => {
+            log::info!(
+                target: "notesage::copilot",
+                "copilot/models returned {} models: {}",
+                models.len(),
+                serde_json::to_string(&models).unwrap_or_default()
+            );
+            let parsed: Vec<CopilotModel> = models
+                .iter()
+                .filter_map(|m| {
+                    let id = m.get("id").and_then(|v| v.as_str())
+                        .or_else(|| m.get("modelFamily").and_then(|v| v.as_str()))?;
+                    let name = m.get("modelName").and_then(|v| v.as_str())
+                        .or_else(|| m.get("id").and_then(|v| v.as_str()))
+                        .unwrap_or(id);
+
+                    // Filter to chat-eligible models (scopes includes "chat-panel")
+                    let scopes = m.get("scopes").and_then(|v| v.as_array());
+                    let is_chat = scopes.map_or(true, |s| {
+                        s.iter().any(|scope| scope.as_str() == Some("chat-panel"))
+                    });
+                    if !is_chat {
+                        return None;
+                    }
+
+                    Some(CopilotModel {
+                        id: id.to_string(),
+                        name: name.to_string(),
+                        provider: m.get("modelProviderName")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("copilot")
+                            .to_string(),
+                    })
+                })
+                .collect();
+
+            Ok(parsed)
+        }
+        Ok(_) => {
+            log::warn!(target: "notesage::copilot", "copilot/models returned non-array");
+            Ok(hardcoded_fallback_models())
+        }
+        Err(e) => {
+            log::warn!(target: "notesage::copilot", "copilot/models failed: {}, using fallback", e);
+            Ok(hardcoded_fallback_models())
+        }
+    }
+}
+
+/// Fallback model list when copilot/models is unavailable.
+fn hardcoded_fallback_models() -> Vec<CopilotModel> {
+    vec![
+        CopilotModel { id: "gpt-4o".into(), name: "GPT-4o".into(), provider: "openai".into() },
+        CopilotModel { id: "gpt-4.1".into(), name: "GPT-4.1".into(), provider: "openai".into() },
+        CopilotModel { id: "claude-sonnet-4".into(), name: "Claude Sonnet 4".into(), provider: "anthropic".into() },
+        CopilotModel { id: "gemini-2.5-pro".into(), name: "Gemini 2.5 Pro".into(), provider: "google".into() },
+        CopilotModel { id: "o4-mini".into(), name: "o4-mini".into(), provider: "openai".into() },
+    ]
+}
+
+// ---------------------------------------------------------------------------
+// Server→client response bridges
+// ---------------------------------------------------------------------------
+
+/// Send a context response back to a pending conversation/context request.
+/// Called by the frontend after collecting editor state.
+#[tauri::command]
+pub async fn copilot_lsp_context_response(
+    state: State<'_, CopilotLspState>,
+    request_id: String,
+    context: Value,
+) -> Result<(), String> {
+    let guard = state.process.lock().await;
+    let process = guard
+        .as_ref()
+        .ok_or("Copilot LSP not running.")?;
+
+    let mut pending = process.pending_server_requests.lock().await;
+    if let Some(tx) = pending.remove(&request_id) {
+        let _ = tx.send(context);
+        Ok(())
+    } else {
+        Err(format!("No pending context request with id {}", request_id))
+    }
+}
+
+/// Send a tool execution result back to a pending conversation/invokeClientTool request.
+/// Called by the frontend after executing the tool.
+#[tauri::command]
+pub async fn copilot_lsp_tool_result(
+    state: State<'_, CopilotLspState>,
+    request_id: String,
+    result: Value,
+) -> Result<(), String> {
+    let guard = state.process.lock().await;
+    let process = guard
+        .as_ref()
+        .ok_or("Copilot LSP not running.")?;
+
+    let mut pending = process.pending_server_requests.lock().await;
+    if let Some(tx) = pending.remove(&request_id) {
+        let _ = tx.send(result);
+        Ok(())
+    } else {
+        Err(format!("No pending tool request with id {}", request_id))
+    }
+}
+
+/// Send a tool confirmation response back to a pending invokeClientToolConfirmation request.
+/// Called by the frontend after user approves/denies.
+#[tauri::command]
+pub async fn copilot_lsp_tool_confirmation_response(
+    state: State<'_, CopilotLspState>,
+    request_id: String,
+    accepted: bool,
+) -> Result<(), String> {
+    let guard = state.process.lock().await;
+    let process = guard
+        .as_ref()
+        .ok_or("Copilot LSP not running.")?;
+
+    let mut pending = process.pending_server_requests.lock().await;
+    if let Some(tx) = pending.remove(&request_id) {
+        let response = serde_json::json!({
+            "result": if accepted { "accept" } else { "dismiss" }
+        });
+        let _ = tx.send(response);
+        Ok(())
+    } else {
+        Err(format!("No pending confirmation request with id {}", request_id))
+    }
 }

@@ -452,6 +452,157 @@ async function startAcpTask(
 }
 
 // ---------------------------------------------------------------------------
+// Copilot LSP path (agent_managed connections with copilot-language-server)
+// ---------------------------------------------------------------------------
+
+async function startCopilotLspTask(
+  prompt: string,
+  callbacks: TaskCallbacks | undefined,
+  taskMeta: TaskMeta | undefined,
+  connection: Connection,
+): Promise<string> {
+  const { onComplete, onActivity, onError, onChunk } = callbacks ?? {};
+  const { taskId, track } = setupTask(prompt, taskMeta, connection);
+
+  // For Copilot LSP, the model must be a copilot/models ID — NOT the ACP
+  // agent model ID stored in connection.config.model (which uses a different
+  // naming scheme and is rejected by the LSP with "model is not supported").
+  // Use only the routing store's per-use-case model selection.
+  const model = useRoutingStore.getState().routing.agent_tasks?.model;
+
+  // Latch onto the conversationId from the first event (we don't know it
+  // until events arrive because conversation/create blocks until streaming finishes).
+  let eventConvId: string | null = null;
+  const isOurEvent = (payload: { conversationId?: string }): boolean => {
+    if (!payload.conversationId) return true;
+    if (eventConvId === null) {
+      eventConvId = payload.conversationId;
+      return true;
+    }
+    return payload.conversationId === eventConvId;
+  };
+
+  // Listen for streaming events
+  const unlistenChunk = await listen<{ text: string; conversationId?: string }>('copilot-chat-chunk', (event) => {
+    if (!isOurEvent(event.payload)) return;
+    const current = tasksMap.get(taskId);
+    if (!current || current.status !== 'running') return;
+    current.output += event.payload.text;
+    onChunk?.(event.payload.text);
+    if (track) useActivityStore.getState().appendPartialOutput(taskId, event.payload.text);
+  });
+
+  const unlistenThinking = await listen<{ text: string; conversationId?: string }>('copilot-chat-thinking', (event) => {
+    if (!isOurEvent(event.payload)) return;
+    // Thinking events logged but not appended to output
+  });
+
+  const unlistenDone = await listen<{ conversationId: string; error?: unknown }>('copilot-chat-done', async (event) => {
+    if (!isOurEvent(event.payload)) return;
+    const current = tasksMap.get(taskId);
+    if (!current || current.status !== 'running') return;
+
+    // Destroy the conversation
+    if (event.payload.conversationId) {
+      tauriApi.copilotLspConversationDestroy(event.payload.conversationId).catch(() => {});
+    }
+
+    if (event.payload.error) {
+      const errMsg = typeof event.payload.error === 'object' && event.payload.error !== null
+        ? (event.payload.error as Record<string, unknown>).message as string ?? 'Unknown error'
+        : String(event.payload.error);
+      current.status = 'failed';
+      onError?.(errMsg);
+      if (track) useActivityStore.getState().updateTaskStatus(taskId, 'error');
+    } else {
+      current.status = 'completed';
+      const responsePreview = current.output.length > 100
+        ? current.output.slice(0, 100) + '\u2026'
+        : current.output || '(empty response)';
+      onActivity?.({ kind: 'agent_complete', label: 'Agent finished', detail: responsePreview, event: 'agent_complete' });
+      onComplete?.(current.output);
+      if (track) {
+        const as = useActivityStore.getState();
+        as.completeAllActivities(taskId);
+        as.updateTaskStatus(taskId, 'done');
+        as.setFinalOutput(taskId, current.output);
+      }
+    }
+
+    cleanup();
+  });
+
+  // Tool call handler — execute tools and respond
+  const unlistenToolCall = await listen<{ requestId: string; id: string; name: string; arguments: Record<string, unknown>; conversationId?: string }>('copilot-tool-call', async (event) => {
+    if (!isOurEvent(event.payload)) return;
+    const current = tasksMap.get(taskId);
+    if (!current || current.status !== 'running') return;
+
+    const { requestId, name, arguments: args } = event.payload;
+    onActivity?.({ kind: 'tool_call', label: `Tool: ${name}`, detail: JSON.stringify(args).slice(0, 100), event: 'tool_call' });
+
+    try {
+      const { executeToolCall } = await import('@/lib/tool-executor');
+      const result = await executeToolCall(event.payload.id, name, args);
+      await tauriApi.copilotLspToolResult(requestId, {
+        status: 'success',
+        content: [{ value: typeof result === 'string' ? result : JSON.stringify(result) }],
+      });
+      onActivity?.({ kind: 'tool_result', label: `Tool result: ${name}`, event: 'tool_result' });
+    } catch (err) {
+      await tauriApi.copilotLspToolResult(requestId, {
+        status: 'error',
+        content: [{ value: String(err) }],
+      });
+    }
+  });
+
+  // Tool confirmation handler — auto-approve for agent tasks
+  const unlistenConfirm = await listen<{ requestId: string; name: string; conversationId?: string }>('copilot-tool-confirmation', async (event) => {
+    if (!isOurEvent(event.payload)) return;
+    const current = tasksMap.get(taskId);
+    if (!current || current.status !== 'running') return;
+    // Auto-approve tool confirmations for agent tasks (same as ACP path)
+    await tauriApi.copilotLspToolConfirmationResponse(event.payload.requestId, true);
+    onActivity?.({ kind: 'tool_call', label: `Approved: ${event.payload.name}`, event: 'permission_auto_approved' });
+  });
+
+  // Context request handler — provide empty context for headless tasks
+  const unlistenContext = await listen<{ requestId: string; conversationId?: string }>('copilot-context-request', async (event) => {
+    if (!isOurEvent(event.payload)) return;
+    await tauriApi.copilotLspContextResponse(event.payload.requestId, [null, null]);
+  });
+
+  const cleanup = () => {
+    unlistenChunk();
+    unlistenThinking();
+    unlistenDone();
+    unlistenToolCall();
+    unlistenConfirm();
+    unlistenContext();
+  };
+  cleanupMap.set(taskId, cleanup);
+
+  onActivity?.({ kind: 'agent_responding', label: 'Agent responding', event: 'agent_responding' });
+
+  // Create conversation and send the prompt
+  try {
+    await tauriApi.copilotLspConversationCreate(prompt, model);
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const current = tasksMap.get(taskId);
+    if (current) {
+      current.status = 'failed';
+    }
+    onError?.(errMsg);
+    if (track) useActivityStore.getState().updateTaskStatus(taskId, 'error');
+    cleanup();
+  }
+
+  return taskId;
+}
+
+// ---------------------------------------------------------------------------
 // Direct API path (api_key / local connections — streaming chat)
 // ---------------------------------------------------------------------------
 
@@ -595,6 +746,11 @@ export function useAgentTaskOperations(): UseAgentTaskOperationsReturn {
 
       // Route based on auth method
       if (taskConnection.authMethod === 'agent_managed') {
+        // Check if this is a Copilot LSP connection (uses conversation/* methods, not ACP)
+        const creds = taskConnection.credentials;
+        if ('agentBinary' in creds && creds.agentBinary === 'copilot-language-server') {
+          return startCopilotLspTask(prompt, callbacks, taskMeta, taskConnection);
+        }
         return startAcpTask(prompt, callbacks, taskMeta, taskConnection, selectedProjectPaths);
       }
       return startDirectApiTask(prompt, callbacks, taskMeta, taskConnection);

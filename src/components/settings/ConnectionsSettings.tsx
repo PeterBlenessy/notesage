@@ -213,12 +213,6 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
         label: option.label,
         credentials,
       });
-      // Copilot LSP only supports inline completions — not chat or agent tasks.
-      // Override the auto-derived capabilities to prevent it being assigned to
-      // the interactive/agent_tasks routing slots (it speaks LSP, not ACP).
-      if (option.lspBinary) {
-        useConnectionsStore.getState().updateConnection(connectionId, { capabilities: ['inline_completion'] });
-      }
       autoAssign(connectionId);
       setTimeout(() => resetFlow(), 600);
     },

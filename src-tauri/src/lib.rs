@@ -168,6 +168,13 @@ pub fn run() {
             copilot_lsp_request_completion,
             copilot_lsp_did_show_completion,
             copilot_lsp_accept_completion,
+            copilot_lsp_conversation_create,
+            copilot_lsp_conversation_turn,
+            copilot_lsp_conversation_destroy,
+            copilot_lsp_conversation_models,
+            copilot_lsp_context_response,
+            copilot_lsp_tool_result,
+            copilot_lsp_tool_confirmation_response,
             // SQLite document index
             index::index_init,
             index::index_file,

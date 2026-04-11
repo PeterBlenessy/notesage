@@ -318,6 +318,110 @@ await invoke('copilot_lsp_finish_auth');
 window.open('https://github.com/login/device', '_blank');
 ```
 
+## Copilot LSP Conversation Operations
+
+Located in `src-tauri/src/commands/copilot_lsp.rs`
+
+### copilot_lsp_conversation_create
+
+Creates a new conversation and sends the first message. Streaming response arrives via Tauri events (`copilot-chat-chunk`, `copilot-chat-thinking`, `copilot-chat-done`).
+
+```rust
+#[tauri::command]
+pub async fn copilot_lsp_conversation_create(
+    state: State<'_, CopilotLspState>,
+    message: String,
+    model: Option<String>,
+    tools: Option<Vec<Value>>,
+) -> Result<Value, String>
+```
+
+**Parameters:**
+
+- `message`: First user message to send
+- `model`: Optional model ID (e.g., `"gpt-4o"`, `"claude-sonnet-4"`)
+- `tools`: Optional array of tool definitions to register with the conversation
+
+**Returns:**
+
+- `Ok(Value)`: JSON object containing `conversationId` for subsequent turns
+- `Err(String)`: Error message if conversation creation fails
+
+### copilot_lsp_conversation_turn
+
+Sends a follow-up message in an existing conversation. Streaming response arrives via Tauri events.
+
+```rust
+#[tauri::command]
+pub async fn copilot_lsp_conversation_turn(
+    state: State<'_, CopilotLspState>,
+    conversation_id: String,
+    message: String,
+    model: Option<String>,
+) -> Result<(), String>
+```
+
+**Parameters:**
+
+- `conversation_id`: ID returned from `copilot_lsp_conversation_create`
+- `message`: User message to send
+- `model`: Optional model ID override
+
+### copilot_lsp_conversation_destroy
+
+Destroys a conversation session and frees server-side resources.
+
+```rust
+#[tauri::command]
+pub async fn copilot_lsp_conversation_destroy(
+    state: State<'_, CopilotLspState>,
+    conversation_id: String,
+) -> Result<(), String>
+```
+
+### copilot_lsp_conversation_models
+
+Lists available models for Copilot chat. Falls back to a hardcoded list if the LSP doesn't support `copilot/models`.
+
+```rust
+#[tauri::command]
+pub async fn copilot_lsp_conversation_models(
+    state: State<'_, CopilotLspState>,
+) -> Result<Vec<CopilotModel>, String>
+```
+
+**Returns:**
+
+- `Ok(Vec<CopilotModel>)`: Array of available models with `id`, `name`, and `provider` fields
+
+**Events emitted during conversations:**
+
+- `copilot-chat-chunk` (`{ text: string }`): Text delta to append
+- `copilot-chat-thinking` (`{ text: string }`): Thinking/reasoning delta
+- `copilot-chat-done` (`{}`): Stream completed
+- `copilot-tool-call` (`{ requestId: string, id: string, name: string, arguments: object }`): LSP requests tool execution
+- `copilot-tool-confirmation` (`{ requestId: string, name: string, arguments: object }`): LSP requests user approval before tool execution
+- `copilot-context-request` (`{ requestId: string }`): LSP requests editor context
+
+**Frontend usage:**
+
+```typescript
+// Create a conversation with the first message
+const result = await tauriApi.copilotLspConversationCreate('Hello', 'gpt-4o', tools);
+const conversationId = result.conversationId;
+
+// Send follow-up messages
+await tauriApi.copilotLspConversationTurn(conversationId, 'Tell me more', 'gpt-4o');
+
+// Listen for streaming chunks
+listen<{ text: string }>('copilot-chat-chunk', (event) => {
+  appendText(event.payload.text);
+});
+
+// Clean up when done
+await tauriApi.copilotLspConversationDestroy(conversationId);
+```
+
 ## Credential Operations
 
 Located in `src-tauri/src/commands/credentials.rs`

@@ -1064,4 +1064,33 @@ export const tauriApi = {
   async fetchLinkMetadata(url: string): Promise<LinkMetadata> {
     return await invoke<LinkMetadata>("fetch_link_metadata", { url });
   },
+
+  // Copilot LSP conversation operations
+  copilotLspConversationCreate(message: string, model?: string, tools?: Array<{ name: string; description: string; inputSchema: unknown }>) {
+    return invoke<{ conversationId: string; turnId: string }>('copilot_lsp_conversation_create', { message, model: model ?? null, tools: tools ?? null });
+  },
+
+  copilotLspConversationTurn(conversationId: string, message: string, model?: string) {
+    return invoke<{ conversationId: string; turnId: string }>('copilot_lsp_conversation_turn', { conversationId, message, model: model ?? null });
+  },
+
+  copilotLspConversationDestroy(conversationId: string) {
+    return invoke<void>('copilot_lsp_conversation_destroy', { conversationId });
+  },
+
+  copilotLspConversationModels() {
+    return invoke<Array<{ id: string; name: string; provider: string }>>('copilot_lsp_conversation_models');
+  },
+
+  copilotLspContextResponse(requestId: string, context: unknown) {
+    return invoke<void>('copilot_lsp_context_response', { requestId, context });
+  },
+
+  copilotLspToolResult(requestId: string, result: unknown) {
+    return invoke<void>('copilot_lsp_tool_result', { requestId, result });
+  },
+
+  copilotLspToolConfirmationResponse(requestId: string, accepted: boolean) {
+    return invoke<void>('copilot_lsp_tool_confirmation_response', { requestId, accepted });
+  },
 };

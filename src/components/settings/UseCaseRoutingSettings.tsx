@@ -45,7 +45,8 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
   const setUseCaseModel = useRoutingStore((s) => s.setUseCaseModel);
 
   const isLocalBundled = connection.authMethod === 'local_bundled';
-  const canListModels = connection.authMethod !== 'agent_managed' && !isLocalBundled;
+  const isCopilotLsp = connection.credentials && 'agentBinary' in connection.credentials && connection.credentials.agentBinary === 'copilot-language-server';
+  const canListModels = (connection.authMethod !== 'agent_managed' || isCopilotLsp) && !isLocalBundled;
 
   // For local_bundled, use downloaded models from local-ai-store
   const localModels = useLocalAIStore((s) => s.models);
@@ -72,18 +73,23 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
     setLoading(true);
     setError(null);
     try {
-      const apiKey = connection.credentials.type === 'api_key' ? connection.credentials.key : undefined;
-      const baseUrl = connection.config?.baseUrl;
-      const provider = connection.provider === 'openai_compatible' ? 'openai_compatible' : connection.provider;
-      const result = await tauriApi.listModels(provider, apiKey, baseUrl);
-      setModels(result);
+      if (isCopilotLsp) {
+        const result = await tauriApi.copilotLspConversationModels();
+        setModels(result.map((m: { id: string }) => m.id));
+      } else {
+        const apiKey = connection.credentials.type === 'api_key' ? connection.credentials.key : undefined;
+        const baseUrl = connection.config?.baseUrl;
+        const provider = connection.provider === 'openai_compatible' ? 'openai_compatible' : connection.provider;
+        const result = await tauriApi.listModels(provider, apiKey, baseUrl);
+        setModels(result);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setModels([]);
     } finally {
       setLoading(false);
     }
-  }, [connection, canListModels]);
+  }, [connection, canListModels, isCopilotLsp]);
 
   useEffect(() => {
     if (open && canListModels && models.length === 0 && !loading && !error) {

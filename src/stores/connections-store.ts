@@ -112,6 +112,27 @@ export const useConnectionsStore = create<ConnectionsStore>()(
           state.connections = validated;
         }
 
+        // Migrate Copilot LSP connections from inline_completion-only to full capabilities.
+        // Previously, ConnectionsSettings forced capabilities to ['inline_completion'] on creation.
+        // Now the LSP supports conversation/* methods for chat and agent tasks.
+        let capMigrated = false;
+        state.connections = state.connections.map((c) => {
+          if (
+            c.credentials.type === 'agent_managed' &&
+            'agentBinary' in c.credentials &&
+            c.credentials.agentBinary === 'copilot-language-server' &&
+            c.capabilities.length === 1 &&
+            c.capabilities[0] === 'inline_completion'
+          ) {
+            capMigrated = true;
+            return { ...c, capabilities: ['interactive', 'inline_completion', 'agent_tasks'] as AICapability[] };
+          }
+          return c;
+        });
+        if (capMigrated) {
+          log.info('connections', 'Migrated Copilot LSP connections to full capabilities');
+        }
+
         // Migrate plaintext API keys from localStorage to OS keychain (one-time)
         const needsMigration = state.connections.some(
           (c) => c.credentials.type === 'api_key' && c.credentials.key && !c.credentials.credentialStored
