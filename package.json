@@ -45,6 +45,7 @@
     "@codemirror/state": "^6.5.4",
     "@codemirror/view": "^6.39.15",
     "@excalidraw/excalidraw": "^0.18.0",
+    "@excalidraw/mermaid-to-excalidraw": "^2.2.2",
     "@lezer/highlight": "^1.2.3",
     "@lezer/markdown": "^1.6.3",
     "@radix-ui/react-visually-hidden": "^1.2.4",

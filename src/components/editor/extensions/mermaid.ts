@@ -2,6 +2,19 @@ import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { MermaidPreview } from "../MermaidPreview";
 
+const DEFAULT_MERMAID_SOURCE = `graph TD
+    A[Start] --> B{Decision}
+    B -->|Yes| C[Result]
+    B -->|No| D[Other]`;
+
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    mermaidBlock: {
+      insertMermaidBlock: (attrs?: { source?: string }) => ReturnType;
+    };
+  }
+}
+
 export const MermaidBlock = Node.create({
   name: "mermaidBlock",
   group: "block",
@@ -37,6 +50,21 @@ export const MermaidBlock = Node.create({
       }),
       ["div", { class: "mermaid-placeholder" }, "Mermaid Diagram"],
     ];
+  },
+
+  addCommands() {
+    return {
+      insertMermaidBlock:
+        (attrs?: { source?: string }) =>
+        ({ commands }) => {
+          return commands.insertContent({
+            type: this.name,
+            attrs: {
+              source: attrs?.source || DEFAULT_MERMAID_SOURCE,
+            },
+          });
+        },
+    };
   },
 
   addNodeView() {

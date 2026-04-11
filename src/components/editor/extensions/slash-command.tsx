@@ -27,6 +27,7 @@ import {
   CircleAlert,
   Pencil,
   BarChart3,
+  Workflow,
   Link,
 } from "lucide-react";
 
@@ -198,6 +199,19 @@ const commands: CommandItem[] = [
     icon: BarChart3,
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).insertChart().run();
+    },
+  },
+  {
+    title: "Mermaid",
+    description: "Insert a text-based diagram",
+    icon: Workflow,
+    command: ({ editor, range }) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertMermaidBlock()
+        .run();
     },
   },
   {

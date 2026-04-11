@@ -147,3 +147,84 @@ export async function loadSvgPreview(
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Excalidraw shape library persistence
+// ---------------------------------------------------------------------------
+
+const LIBRARY_FILENAME = 'excalidraw-library.json';
+
+async function libraryFilePath(): Promise<string> {
+  const home = await tauriApi.getHomeDir();
+  return `${home}/.notesage/${LIBRARY_FILENAME}`;
+}
+
+async function ensureNotesageDir(): Promise<void> {
+  const home = await tauriApi.getHomeDir();
+  const dir = `${home}/.notesage`;
+  const exists = await tauriApi.pathExists(dir);
+  if (!exists) {
+    await tauriApi.createDirectory(dir);
+  }
+}
+
+/**
+ * Load the global Excalidraw library from disk.
+ * Returns the parsed library items array, or empty array if not found.
+ */
+export async function loadLibrary(): Promise<unknown[]> {
+  try {
+    const filePath = await libraryFilePath();
+    const exists = await tauriApi.pathExists(filePath);
+    if (!exists) return [];
+
+    const raw = await tauriApi.readFile(filePath);
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save the global Excalidraw library to disk.
+ */
+export async function saveLibrary(items: unknown[]): Promise<void> {
+  await ensureNotesageDir();
+  const filePath = await libraryFilePath();
+  await tauriApi.writeFile(filePath, JSON.stringify(items, null, 2));
+}
+
+/**
+ * Import a .excalidrawlib file and merge its items into the global library.
+ * Deduplicates by `id` — existing items take priority.
+ * Returns the number of newly added items.
+ */
+export async function importLibraryFile(filePath: string): Promise<number> {
+  const raw = await tauriApi.readFile(filePath);
+  const parsed = JSON.parse(raw) as Record<string, unknown>;
+
+  const newItems = Array.isArray(parsed.libraryItems)
+    ? (parsed.libraryItems as Array<Record<string, unknown>>)
+    : Array.isArray(parsed)
+      ? (parsed as Array<Record<string, unknown>>)
+      : [];
+
+  if (newItems.length === 0) return 0;
+
+  const existing = await loadLibrary();
+  const existingIds = new Set(
+    existing
+      .map((item) => (item as Record<string, unknown>).id)
+      .filter(Boolean),
+  );
+
+  const toAdd = newItems.filter(
+    (item) => item.id && !existingIds.has(item.id),
+  );
+
+  if (toAdd.length === 0) return 0;
+
+  await saveLibrary([...existing, ...toAdd]);
+  return toAdd.length;
+}

@@ -12,6 +12,9 @@ import {
   deleteDrawing,
   drawingExists,
   loadSvgPreview,
+  loadLibrary,
+  saveLibrary,
+  importLibraryFile,
 } from '@/lib/drawing-storage';
 
 const PROJECT = '/projects/my-project';
@@ -176,6 +179,155 @@ describe('drawing-storage', () => {
       });
 
       expect(await loadSvgPreview('broken', PROJECT)).toBeNull();
+    });
+  });
+
+  // --- Shape Library Persistence ---
+
+  describe('loadLibrary', () => {
+    it('returns parsed array when file exists', async () => {
+      const items = [{ id: 'lib1', status: 'published', elements: [] }];
+      setMockInvokeHandler('get_home_dir', () => '/Users/test');
+      setMockInvokeHandler('path_exists', () => true);
+      setMockInvokeHandler('read_file', () => JSON.stringify(items));
+
+      const result = await loadLibrary();
+      expect(result).toEqual(items);
+    });
+
+    it('returns empty array when file does not exist', async () => {
+      setMockInvokeHandler('get_home_dir', () => '/Users/test');
+      setMockInvokeHandler('path_exists', () => false);
+
+      const result = await loadLibrary();
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array on read error', async () => {
+      setMockInvokeHandler('get_home_dir', () => '/Users/test');
+      setMockInvokeHandler('path_exists', () => true);
+      setMockInvokeHandler('read_file', () => { throw new Error('fail'); });
+
+      const result = await loadLibrary();
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array when file contains non-array JSON', async () => {
+      setMockInvokeHandler('get_home_dir', () => '/Users/test');
+      setMockInvokeHandler('path_exists', () => true);
+      setMockInvokeHandler('read_file', () => '{"not": "an array"}');
+
+      const result = await loadLibrary();
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('saveLibrary', () => {
+    it('writes library items as pretty JSON', async () => {
+      let writtenContent = '';
+      let writtenPath = '';
+
+      setMockInvokeHandler('get_home_dir', () => '/Users/test');
+      setMockInvokeHandler('path_exists', () => true);
+      setMockInvokeHandler('write_file', (args) => {
+        const a = args as Record<string, string>;
+        writtenPath = a.path;
+        writtenContent = a.content;
+        return undefined;
+      });
+
+      const items = [{ id: 'a', elements: [] }];
+      await saveLibrary(items);
+
+      expect(writtenPath).toBe('/Users/test/.notesage/excalidraw-library.json');
+      expect(JSON.parse(writtenContent)).toEqual(items);
+    });
+
+    it('creates .notesage dir if it does not exist', async () => {
+      const createdDirs: string[] = [];
+
+      setMockInvokeHandler('get_home_dir', () => '/Users/test');
+      setMockInvokeHandler('path_exists', () => false);
+      setMockInvokeHandler('create_directory', (args) => {
+        createdDirs.push((args as Record<string, string>).path);
+        return undefined;
+      });
+      setMockInvokeHandler('write_file', () => undefined);
+
+      await saveLibrary([]);
+
+      expect(createdDirs).toContain('/Users/test/.notesage');
+    });
+  });
+
+  describe('importLibraryFile', () => {
+    it('merges new items and returns count', async () => {
+      const existingItems = [{ id: 'existing-1', elements: [1] }];
+      const libFile = {
+        type: 'excalidrawlib',
+        version: 2,
+        libraryItems: [
+          { id: 'new-1', elements: [2] },
+          { id: 'new-2', elements: [3] },
+        ],
+      };
+
+      let savedItems: unknown[] = [];
+      setMockInvokeHandler('get_home_dir', () => '/Users/test');
+      setMockInvokeHandler('path_exists', (args) => {
+        const path = (args as Record<string, string>).path;
+        // Library file exists (for loadLibrary), .notesage dir exists
+        return path.endsWith('.json') || path.endsWith('.notesage');
+      });
+      setMockInvokeHandler('read_file', (args) => {
+        const path = (args as Record<string, string>).path;
+        if (path.endsWith('import.excalidrawlib')) return JSON.stringify(libFile);
+        return JSON.stringify(existingItems);
+      });
+      setMockInvokeHandler('write_file', (args) => {
+        savedItems = JSON.parse((args as Record<string, string>).content);
+        return undefined;
+      });
+
+      const count = await importLibraryFile('/tmp/import.excalidrawlib');
+
+      expect(count).toBe(2);
+      expect(savedItems).toHaveLength(3);
+    });
+
+    it('deduplicates by id — existing items take priority', async () => {
+      const existingItems = [{ id: 'dup', elements: [1] }];
+      const libFile = {
+        libraryItems: [{ id: 'dup', elements: [999] }],
+      };
+
+      let savedItems: unknown[] | null = null;
+      setMockInvokeHandler('get_home_dir', () => '/Users/test');
+      setMockInvokeHandler('path_exists', () => true);
+      setMockInvokeHandler('read_file', (args) => {
+        const path = (args as Record<string, string>).path;
+        if (path.endsWith('.excalidrawlib')) return JSON.stringify(libFile);
+        return JSON.stringify(existingItems);
+      });
+      setMockInvokeHandler('write_file', (args) => {
+        savedItems = JSON.parse((args as Record<string, string>).content);
+        return undefined;
+      });
+
+      const count = await importLibraryFile('/tmp/dup.excalidrawlib');
+
+      expect(count).toBe(0);
+      // Should not have saved since no new items
+      expect(savedItems).toBeNull();
+    });
+
+    it('returns 0 when library file has no items', async () => {
+      setMockInvokeHandler('get_home_dir', () => '/Users/test');
+      setMockInvokeHandler('path_exists', () => true);
+      setMockInvokeHandler('read_file', () => JSON.stringify({ libraryItems: [] }));
+
+      const count = await importLibraryFile('/tmp/empty.excalidrawlib');
+      expect(count).toBe(0);
     });
   });
 });

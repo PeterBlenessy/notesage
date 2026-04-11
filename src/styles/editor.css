@@ -1275,6 +1275,32 @@ mark.dom-find-highlight-active {
   border-bottom: 1px solid var(--color-border);
 }
 
+.drawing-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawing-import-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-muted-foreground);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.drawing-import-button:hover {
+  background: var(--color-muted);
+  color: var(--color-foreground);
+}
+
 .drawing-done-button {
   padding: 4px 12px;
   font-size: 13px;
@@ -1383,10 +1409,21 @@ mark.dom-find-highlight-active {
   height: auto;
 }
 
-.mermaid-edit-btn {
+.mermaid-action-buttons {
   position: absolute;
   top: 8px;
   right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.mermaid-preview:hover .mermaid-action-buttons {
+  opacity: 1;
+}
+
+.mermaid-edit-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1397,11 +1434,16 @@ mark.dom-find-highlight-active {
   color: var(--color-muted-foreground);
   border: 1px solid var(--color-border);
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 150ms ease, background 150ms ease;
+  transition: background 150ms ease;
 }
 
-.mermaid-preview:hover .mermaid-edit-btn {
+.mermaid-edit-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Legacy: single button without container (backward compat) */
+.mermaid-preview:hover > .mermaid-edit-btn {
   opacity: 1;
 }
 

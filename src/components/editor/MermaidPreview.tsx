@@ -1,8 +1,10 @@
 import { NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
 import { useEffect, useState, useRef, useCallback } from "react";
-import { Code, Eye } from "lucide-react";
+import { Code, Eye, Pencil } from "lucide-react";
+import { toast } from "sonner";
 import { useSettingsStore } from "@/stores/settings-store";
 import { cn } from "@/lib/utils";
+import { convertMermaidToExcalidraw } from "@/lib/mermaid-to-drawing";
 
 let mermaidInstance: typeof import("mermaid").default | null = null;
 let mermaidInitialized = false;
@@ -29,11 +31,12 @@ async function initMermaid(isDark: boolean) {
   mermaidInitialized = true;
 }
 
-export function MermaidPreview({ node, selected, updateAttributes }: NodeViewProps) {
+export function MermaidPreview({ node, selected, updateAttributes, editor, getPos }: NodeViewProps) {
   const source = (node.attrs.source as string) || "";
   const [svgContent, setSvgContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [isConverting, setIsConverting] = useState(false);
   const [editSource, setEditSource] = useState(source);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -105,6 +108,33 @@ export function MermaidPreview({ node, selected, updateAttributes }: NodeViewPro
     [source]
   );
 
+  const handleConvertToDrawing = useCallback(async () => {
+    if (!source.trim() || !editor || typeof getPos !== "function") return;
+    setIsConverting(true);
+    try {
+      const drawingJson = await convertMermaidToExcalidraw(source);
+      const pos = getPos();
+      if (typeof pos !== "number") return;
+
+      // Replace this mermaid block with a drawing node
+      editor.chain().command(({ tr }) => {
+        const node = tr.doc.nodeAt(pos);
+        if (!node) return false;
+        tr.replaceWith(pos, pos + node.nodeSize, editor.schema.nodes.drawing.create({
+          drawingId: crypto.randomUUID(),
+          drawingJson,
+        }));
+        return true;
+      }).run();
+
+      toast.success("Converted to drawing");
+    } catch (err) {
+      toast.error(`Conversion failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsConverting(false);
+    }
+  }, [source, editor, getPos]);
+
   return (
     <NodeViewWrapper className="mermaid-node-view" contentEditable={false}>
       {isEditing ? (
@@ -157,17 +187,28 @@ export function MermaidPreview({ node, selected, updateAttributes }: NodeViewPro
           ) : (
             <div className="mermaid-loading">Rendering diagram...</div>
           )}
-          <button
-            type="button"
-            className="mermaid-edit-btn"
-            onClick={() => {
-              setEditSource(source);
-              setIsEditing(true);
-            }}
-            title="Edit source"
-          >
-            <Code size={14} strokeWidth={1.5} />
-          </button>
+          <div className="mermaid-action-buttons">
+            <button
+              type="button"
+              className="mermaid-edit-btn mermaid-convert-btn"
+              onClick={handleConvertToDrawing}
+              disabled={isConverting}
+              title="Convert to Excalidraw drawing"
+            >
+              <Pencil size={14} strokeWidth={1.5} />
+            </button>
+            <button
+              type="button"
+              className="mermaid-edit-btn"
+              onClick={() => {
+                setEditSource(source);
+                setIsEditing(true);
+              }}
+              title="Edit source"
+            >
+              <Code size={14} strokeWidth={1.5} />
+            </button>
+          </div>
         </div>
       )}
     </NodeViewWrapper>

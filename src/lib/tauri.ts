@@ -472,6 +472,16 @@ export const tauriApi = {
     return await invoke<string | null>("open_folder_dialog");
   },
 
+  async openFileDialog(
+    filterName?: string,
+    filterExtensions?: string[],
+  ): Promise<string | null> {
+    return await invoke<string | null>("open_file_dialog", {
+      filterName,
+      filterExtensions,
+    });
+  },
+
   async getHomeDir(): Promise<string> {
     return await invoke<string>("get_home_dir");
   },

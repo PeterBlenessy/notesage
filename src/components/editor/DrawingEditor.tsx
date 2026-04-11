@@ -1,7 +1,10 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import "@excalidraw/excalidraw/index.css";
+import { FolderOpen } from "lucide-react";
+import { toast } from "sonner";
 import { useSettingsStore } from "@/stores/settings-store";
-import { saveDrawing, saveSvgPreview, loadDrawing } from "@/lib/drawing-storage";
+import { saveDrawing, saveSvgPreview, loadDrawing, loadLibrary, saveLibrary, importLibraryFile } from "@/lib/drawing-storage";
+import { tauriApi } from "@/lib/tauri";
 import type { Editor } from "@tiptap/core";
 
 // Excalidraw types — use inline type to avoid import issues
@@ -9,6 +12,8 @@ type ExcalidrawAPI = {
   getSceneElements: () => unknown[];
   getAppState: () => Record<string, unknown>;
   getFiles: () => Record<string, unknown>;
+  updateLibrary: (opts: { libraryItems: unknown[]; merge?: boolean; openLibraryMenu?: boolean }) => void;
+  getLibraryItems: () => unknown[];
 };
 
 const ExcalidrawLazy = lazy(() =>
@@ -39,7 +44,9 @@ export function DrawingEditor({
   const [height, setHeight] = useState(initialHeight);
   const [initialData, setInitialData] = useState<unknown>(null);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [libraryItems, setLibraryItems] = useState<unknown[]>([]);
   const excalidrawRef = useRef<ExcalidrawAPI | null>(null);
+  const librarySaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const theme = useSettingsStore((s) => s.theme);
   const resolvedTheme =
     theme === "system"
@@ -69,6 +76,54 @@ export function DrawingEditor({
       setDataLoaded(true);
     }
   }, [drawingId, drawingJson, projectRoot]);
+
+  // Load global shape library on mount
+  useEffect(() => {
+    loadLibrary().then(setLibraryItems);
+  }, []);
+
+  // Debounced library save on change
+  const handleLibraryChange = useCallback((items: unknown[]) => {
+    setLibraryItems(items as unknown[]);
+    if (librarySaveTimerRef.current) clearTimeout(librarySaveTimerRef.current);
+    librarySaveTimerRef.current = setTimeout(() => {
+      saveLibrary(items as unknown[]);
+    }, 500);
+  }, []);
+
+  // Cleanup debounce timer
+  useEffect(() => {
+    return () => {
+      if (librarySaveTimerRef.current) clearTimeout(librarySaveTimerRef.current);
+    };
+  }, []);
+
+  // Import .excalidrawlib file via native dialog
+  const handleImportLibrary = useCallback(async () => {
+    const filePath = await tauriApi.openFileDialog(
+      "Excalidraw Libraries",
+      ["excalidrawlib"],
+    );
+    if (!filePath) return;
+
+    try {
+      const count = await importLibraryFile(filePath);
+      if (count > 0) {
+        const updated = await loadLibrary();
+        setLibraryItems(updated);
+        excalidrawRef.current?.updateLibrary({
+          libraryItems: updated,
+          merge: false,
+          openLibraryMenu: true,
+        });
+        toast.success(`Library imported (${count} item${count === 1 ? "" : "s"})`);
+      } else {
+        toast.info("No new items to import");
+      }
+    } catch (err) {
+      toast.error(`Failed to import library: ${err}`);
+    }
+  }, []);
 
   const handleDone = useCallback(async () => {
     const api = excalidrawRef.current;
@@ -199,9 +254,19 @@ export function DrawingEditor({
         <span className="text-sm font-medium text-muted-foreground">
           Drawing
         </span>
-        <button className="drawing-done-button" onClick={handleDone}>
-          Done
-        </button>
+        <div className="drawing-header-actions">
+          <button
+            className="drawing-import-button"
+            onClick={handleImportLibrary}
+            title="Import shape library (.excalidrawlib)"
+          >
+            <FolderOpen size={14} strokeWidth={1.5} />
+            <span>Import Library</span>
+          </button>
+          <button className="drawing-done-button" onClick={handleDone}>
+            Done
+          </button>
+        </div>
       </div>
       <div className="drawing-editor-canvas" style={{ height, width: "100%" }}>
         {dataLoaded && (
@@ -214,12 +279,18 @@ export function DrawingEditor({
               excalidrawAPI={(api: unknown) => {
                 excalidrawRef.current = api as ExcalidrawAPI;
               }}
-              initialData={initialData as Record<string, unknown> | undefined}
+              initialData={{
+                ...(initialData as Record<string, unknown> | undefined),
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                libraryItems: libraryItems as any,
+              }}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              onLibraryChange={handleLibraryChange as any}
               theme={resolvedTheme}
               UIOptions={{
-                canvasActions: { saveAsImage: false, loadScene: false },
+                canvasActions: { saveAsImage: true, loadScene: false },
                 welcomeScreen: false,
-                dockedSidebarBreakpoint: 0,
+                dockedSidebarBreakpoint: 640,
               }}
             />
           </Suspense>

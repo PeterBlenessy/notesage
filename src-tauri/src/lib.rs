@@ -91,6 +91,7 @@ pub fn run() {
             delete_path,
             path_exists,
             open_folder_dialog,
+            open_file_dialog,
             run_in_terminal,
             ai_generate_text,
             ai_chat,
