@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-08 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | High |
 | **Impact** | Users can create richer, more expressive charts — radar, scatter, stacked, composed — with multi-series editing, data labels, reference lines, and better editor UX |
 | **Audit** | [chart-library-feature-audit](../audit/chart-library-feature-audit.md) |
@@ -398,101 +398,101 @@ No new npm dependencies. All new chart types use components already exported by 
 
 ### Functional
 
-- [ ] All 10 chart types render correctly (6 existing + radar, scatter, radial bar, composed)
+- [x] All 10 chart types render correctly (6 existing + radar, scatter, radial bar, composed)
 
-- [ ] Stacked mode works for bar and area charts with multi-series data
+- [x] Stacked mode works for bar and area charts with multi-series data
 
-- [ ] Multi-series data editing: add, remove, rename series columns in the visual editor
+- [x] Multi-series data editing: add, remove, rename series columns in the visual editor
 
-- [ ] Reference lines render on cartesian charts with correct axis, value, and label
+- [x] Reference lines render on cartesian charts with correct axis, value, and label
 
-- [ ] Data labels display on bar, line, pie, and donut charts when enabled
+- [x] Data labels display on bar, line, pie, and donut charts when enabled
 
-- [ ] Pie/donut slice labels support value, percent, and name formats
+- [x] Pie/donut slice labels support value, percent, and name formats
 
-- [ ] Axis tick formatting applies thousands/percent/currency formatting
+- [x] Axis tick formatting applies thousands/percent/currency formatting
 
-- [ ] Line curve type selection changes the line interpolation
+- [x] Line curve type selection changes the line interpolation
 
-- [ ] Legend position control moves the legend to top/bottom/left/right
+- [x] Legend position control moves the legend to top/bottom/left/right
 
-- [ ] CSV/TSV paste into data table correctly parses rows and headers
+- [x] CSV/TSV paste into data table correctly parses rows and headers
 
-- [ ] Drag-to-resize updates chart height between 150–600px
+- [x] Drag-to-resize updates chart height between 150–600px
 
-- [ ] Chart duplication creates a new chart with copied data
+- [x] Chart duplication creates a new chart with copied data
 
-- [ ] Image download produces valid SVG and PNG files
+- [x] Image download produces valid SVG and PNG files
 
-- [ ] Chart height control in settings updates the rendered height
+- [x] Chart height control in settings updates the rendered height
 
 ### Backward Compatibility
 
-- [ ] All existing charts (6 types) continue to render identically
+- [x] All existing charts (6 types) continue to render identically
 
-- [ ] Existing sidecar JSON files load without errors (new fields are optional)
+- [x] Existing sidecar JSON files load without errors (new fields are optional)
 
-- [ ] Markdown round-trip: `<div data-chart-id="<id>" data-type="chart" class="chart-block"></div>` unchanged
+- [x] Markdown round-trip: `<div data-chart-id="<id>" data-type="chart" class="chart-block"></div>` unchanged
 
-- [ ] All existing round-trip tests pass
+- [x] All existing round-trip tests pass
 
-- [ ] PDF, DOCX, PPTX export of existing chart types unaffected
+- [x] PDF, DOCX, PPTX export of existing chart types unaffected
 
 ### Skill Parity
 
-- [ ] `insert-chart` skill schema updated with all new types and config fields
+- [x] `insert-chart` skill schema updated with all new types and config fields
 
-- [ ] Skill examples include radar, scatter, stacked bar, composed, radial bar
+- [x] Skill examples include radar, scatter, stacked bar, composed, radial bar
 
-- [ ] Agents can create charts with reference lines, data labels, and all new options
+- [x] Agents can create charts with reference lines, data labels, and all new options
 
 ### Export
 
-- [ ] New chart types export to PDF via cached SVG
+- [x] New chart types export to PDF via cached SVG
 
-- [ ] New chart types export to PPTX (native where supported, SVG fallback otherwise)
+- [x] New chart types export to PPTX (native where supported, SVG fallback otherwise)
 
-- [ ] Stacked charts export correctly
+- [x] Stacked charts export correctly
 
-- [ ] Reference lines appear in exported output
+- [x] Reference lines appear in exported output
 
-- [ ] Data labels appear in exported output
+- [x] Data labels appear in exported output
 
 ### Design
 
-- [ ] New chart types match the neutral aesthetic of existing charts
+- [x] New chart types match the neutral aesthetic of existing charts
 
-- [ ] Radar chart uses polar grid styled with `--color-border` CSS variable
+- [x] Radar chart uses polar grid styled with `--color-border` CSS variable
 
-- [ ] Scatter chart dots use palette colors consistently
+- [x] Scatter chart dots use palette colors consistently
 
-- [ ] Expanded type selector doesn't feel cramped — icons and labels readable
+- [x] Expanded type selector doesn't feel cramped — icons and labels readable
 
-- [ ] Multi-series data table is clean, not spreadsheet-like
+- [x] Multi-series data table is clean, not spreadsheet-like
 
-- [ ] Reference lines section is unobtrusive when collapsed
+- [x] Reference lines section is unobtrusive when collapsed
 
-- [ ] Resize handle is discoverable but not visually heavy
+- [x] Resize handle is discoverable but not visually heavy
 
-- [ ] All new UI works in both light and dark mode
+- [x] All new UI works in both light and dark mode
 
 ### Testing
 
-- [ ] Unit tests for each new renderer component
+- [x] Unit tests for each new renderer component
 
-- [ ] Unit tests for multi-series data table (add/remove/rename series)
+- [x] Unit tests for multi-series data table (add/remove/rename series)
 
-- [ ] Unit tests for CSV paste parsing
+- [x] Unit tests for CSV paste parsing
 
-- [ ] Unit tests for reference line rendering
+- [x] Unit tests for reference line rendering
 
-- [ ] Unit tests for axis tick formatting
+- [x] Unit tests for axis tick formatting
 
-- [ ] Unit tests for ChartConfig backward compatibility (missing optional fields → defaults)
+- [x] Unit tests for ChartConfig backward compatibility (missing optional fields → defaults)
 
-- [ ] Existing chart tests continue to pass
+- [x] Existing chart tests continue to pass
 
-- [ ] Performance: chart editor panel opens in &lt;100ms with 30-row dataset
+- [x] Performance: chart editor panel opens in &lt;100ms with 30-row dataset
 
 ## Out of Scope
 

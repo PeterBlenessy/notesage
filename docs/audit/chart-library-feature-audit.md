@@ -1,12 +1,11 @@
 # Chart Library Feature Audit: Recharts in Notesage
 
-**Library:** Recharts 3.8.0 (via shadcn/ui `ChartContainer` wrapper)
-**Date:** 2026-04-08
+**Library:** Recharts 3.8.0 (via shadcn/ui `ChartContainer` wrapper) **Date:** 2026-04-08
 
 | Stage | Link | Status |
 | --- | --- | --- |
-| PRD | [chart-feature-expansion](../prds/2026-04-08-chart-feature-expansion.md) | Draft |
-| Tasks | [chart-feature-expansion-tasks](../tasks/2026-04-08-chart-feature-expansion-tasks.md) | Not started |
+| PRD | [chart-feature-expansion](../prds/2026-04-08-chart-feature-expansion.md) | Complete |
+| Tasks | [chart-feature-expansion-tasks](../tasks/2026-04-08-chart-feature-expansion-tasks.md) | Complete |
 
 ## Overview
 
@@ -15,7 +14,7 @@ Notesage embeds charts in documents via a Tiptap node extension backed by sideca
 ### Legend
 
 | Symbol | Meaning |
-|--------|---------|
+| --- | --- |
 | **Supported (Manual)** | Available in the visual Chart Editor panel |
 | **Supported (Skill)** | Achievable by agents writing sidecar JSON via `insert-chart` |
 | **Supported (PPTX viewer)** | Used in the PPTX viewer's chart renderer only |
@@ -28,7 +27,7 @@ Notesage embeds charts in documents via a Tiptap node extension backed by sideca
 ### Available in Recharts
 
 | Chart Type | Recharts Component | Manual Editor | insert-chart Skill | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Vertical Bar | `BarChart` + `Bar` | **Supported** | **Supported** | Core chart type |
 | Horizontal Bar | `BarChart layout="vertical"` | **Supported** | **Supported** | `"horizontal_bar"` type |
 | Line | `LineChart` + `Line` | **Supported** | **Supported** | Core chart type |
@@ -52,7 +51,7 @@ Notesage embeds charts in documents via a Tiptap node extension backed by sideca
 ## 2. Cartesian Components (Axes, Grid, etc.)
 
 | Component | Recharts Name | Manual Editor | insert-chart Skill | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | X Axis | `XAxis` | **Supported** | **Supported** | Always rendered for cartesian types |
 | Y Axis | `YAxis` | **Supported** | **Supported** | Always rendered for cartesian types |
 | X Axis label | `XAxis.label` | **Supported** | **Supported** | `config.xLabel` |
@@ -73,7 +72,7 @@ Notesage embeds charts in documents via a Tiptap node extension backed by sideca
 ## 3. Data Annotation & Reference Components
 
 | Component | Recharts Name | Manual Editor | insert-chart Skill | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Reference Line | `ReferenceLine` | **Not supported** | **Not supported** | Horizontal/vertical reference marks (e.g., target line, average) |
 | Reference Dot | `ReferenceDot` | **Not supported** | **Not supported** | Point annotations |
 | Reference Area | `ReferenceArea` | **Not supported** | **Not supported** | Shaded regions (e.g., highlight a range) |
@@ -87,7 +86,7 @@ Notesage embeds charts in documents via a Tiptap node extension backed by sideca
 ## 4. Interactive Components
 
 | Component | Recharts Name | Manual Editor | insert-chart Skill | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Tooltip | `Tooltip` / `ChartTooltip` | **Supported** | **Supported** | Uses shadcn `ChartTooltipContent` |
 | Legend | `Legend` / `ChartLegend` | **Supported** | **Supported** | `config.showLegend` toggle |
 | Legend position | `Legend.verticalAlign`, `Legend.layout` | **Not supported** | **Not supported** | Always bottom-aligned, horizontal |
@@ -101,7 +100,7 @@ Notesage embeds charts in documents via a Tiptap node extension backed by sideca
 ## 5. Styling & Visual Features
 
 | Feature | Recharts Mechanism | Manual Editor | insert-chart Skill | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Color palette selection | CSS variables via `ChartConfig` | **Supported** | **Supported** | 4 palettes: neutral, monochrome, warm, cool |
 | Per-series custom colors | `fill`/`stroke` per element | **Not supported** | **Not supported** | Colors assigned by palette index only |
 | Gradient fills | `<defs>` + `<linearGradient>` | **Not supported** | **Not supported** | Gradient fills on areas/bars |
@@ -127,7 +126,7 @@ Notesage embeds charts in documents via a Tiptap node extension backed by sideca
 ## 6. Polar Chart Components
 
 | Component | Recharts Name | Manual Editor | insert-chart Skill | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | PolarGrid | `PolarGrid` | **Not supported** | **Not supported** | Grid for radar/radial charts |
 | PolarAngleAxis | `PolarAngleAxis` | **Not supported** | **Not supported** | Angular axis labels |
 | PolarRadiusAxis | `PolarRadiusAxis` | **Not supported** | **Not supported** | Radial axis labels/ticks |
@@ -137,7 +136,7 @@ Notesage embeds charts in documents via a Tiptap node extension backed by sideca
 ## 7. Layout & Container
 
 | Feature | Recharts Mechanism | Manual Editor | insert-chart Skill | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Responsive container | `ResponsiveContainer` / `ChartContainer` | **Supported** | **Supported** | Via shadcn wrapper |
 | Chart height | Node attribute `height` | **Partial** | **Partial** | Default 300px. Configurable in extension attrs but no UI control in editor panel. |
 | Chart width | Node attribute `width` | **Partial** | **Partial** | Attribute exists but always `null` (full-width). No UI for custom width. |
@@ -149,7 +148,7 @@ Notesage embeds charts in documents via a Tiptap node extension backed by sideca
 ## 8. Data Handling
 
 | Feature | Current Status | Manual Editor | insert-chart Skill | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Single series | Supported | **Supported** | **Supported** | `category` + `value` pattern |
 | Multi-series | Supported at render level | **Not supported** | **Supported** | Data table only supports single-series editing. Multi-series requires direct JSON. |
 | Data sorting | Not implemented | **Not supported** | **Not supported** | Auto-sort by value or category |
@@ -164,7 +163,7 @@ Notesage embeds charts in documents via a Tiptap node extension backed by sideca
 ## 9. Export Support
 
 | Export Target | Chart Support | Notes |
-|---|---|---|
+| --- | --- | --- |
 | PDF (Typst) | **Supported** | Chart block references are rewritten to cached `.svg` preview files |
 | DOCX | **Supported** | SVG embedded as image (same cached `.svg`) |
 | HTML | **Partial** | Chart markdown reference not converted to inline chart; renders as broken image if no special handling |
@@ -176,7 +175,7 @@ Notesage embeds charts in documents via a Tiptap node extension backed by sideca
 ## 10. Editor UX Features
 
 | Feature | Current Status | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Visual chart type picker | **Supported** | 6-type grid with icons |
 | Data entry table | **Supported** | Category + value rows, add/remove |
 | Multi-series data editing | **Not supported** | Only single-series in UI. No way to add/name series columns. |
@@ -201,7 +200,7 @@ Notesage embeds charts in documents via a Tiptap node extension backed by sideca
 ### High Priority — Chart Types
 
 | Improvement | Rationale | Effort |
-|---|---|---|
+| --- | --- | --- |
 | **Add Radar chart** | Already rendered in PPTX viewer. Useful for competency assessments, product comparisons, multi-dimensional analysis. Just needs a renderer + type + editor UI. | Low-Medium |
 | **Add Scatter chart** | Already rendered in PPTX viewer. Essential for correlation analysis, scientific data. Needs X/Y numeric data model (currently category-based). | Medium |
 | **Add Composed/Mixed chart** | Combine bars + lines on one chart (e.g., revenue bars + trend line). Very common in business reporting. | Medium |
@@ -211,7 +210,7 @@ Notesage embeds charts in documents via a Tiptap node extension backed by sideca
 ### High Priority — Data & Configuration
 
 | Improvement | Rationale | Effort |
-|---|---|---|
+| --- | --- | --- |
 | **Multi-series data editing in UI** | Currently only agents can create multi-series charts. Users should be able to add/remove/rename series columns in the data table. | Medium |
 | **Reference lines** | Target lines, averages, thresholds are extremely common in business charts. Recharts `ReferenceLine` is trivial to add. | Low |
 | **Data labels on chart** | Show values on bars/dots/slices. Recharts `LabelList` already used in PPTX viewer. Just needs a toggle in settings. | Low |
@@ -223,7 +222,7 @@ Notesage embeds charts in documents via a Tiptap node extension backed by sideca
 ### Medium Priority — Editor UX
 
 | Improvement | Rationale | Effort |
-|---|---|---|
+| --- | --- | --- |
 | **Drag-to-resize chart blocks** | Charts are fixed height (300px). Users should be able to drag resize handles like they can with drawings. | Medium |
 | **CSV/TSV paste into data table** | Copy from Excel/Sheets and paste directly. Huge productivity win for data-heavy users. | Low-Medium |
 | **Chart from table** | Right-click a document table to generate a chart from its data. Natural workflow. | Medium |
@@ -235,7 +234,7 @@ Notesage embeds charts in documents via a Tiptap node extension backed by sideca
 ### Lower Priority — Advanced Features
 
 | Improvement | Rationale | Effort |
-|---|---|---|
+| --- | --- | --- |
 | **Dual Y axes** | Two scales on left/right for different series ranges. Common in financial charts. | Medium |
 | **Gradient/pattern fills** | Visual differentiation beyond solid colors. Good for accessibility (pattern) and aesthetics (gradient). | Medium |
 | **Brush (zoom/pan)** | Interactive range selection for large datasets. | Medium |
@@ -252,18 +251,18 @@ Notesage embeds charts in documents via a Tiptap node extension backed by sideca
 ### Skill-Specific Improvements
 
 | Improvement | Rationale | Effort |
-|---|---|---|
+| --- | --- | --- |
 | **Extend skill schema for new chart types** | As types are added, update CHART-SCHEMA.md and EXAMPLES.md so agents can create them. | Low (per type) |
 | **Add reference line support to schema** | Allow agents to specify target/average lines in JSON. | Low |
 | **Add data labels to schema** | `config.showDataLabels` boolean so agents can toggle value labels. | Low |
 | **Add stacking to schema** | `config.stacked` boolean for stacked bar/area charts. | Low |
 | **Add curve type to schema** | `config.curveType` field for line/area charts. | Low |
-| **Add pie label format to schema** | `config.pieLabels: "none" | "value" | "percent" | "name"` | Low |
+| **Add pie label format to schema** | \`config.pieLabels: "none" | "value" |
 
 ### UX Polish Opportunities
 
 | Improvement | Rationale |
-|---|---|
+| --- | --- |
 | **Empty state improvement** | The "Click to add data" placeholder could show chart type thumbnails to guide selection. |
 | **Keyboard shortcuts in chart editor** | Tab between fields, Enter to add row, Delete to remove row. |
 | **Data validation feedback** | Show inline errors when data is malformed (e.g., non-numeric values, duplicate categories). |
