@@ -579,6 +579,7 @@ export const tauriApi = {
     pageSize: string;
     projectRoot?: string;
     typography?: BackendTypographyPresets;
+    embeddedSvgs?: string[];
   }): Promise<number[]> {
     return await invoke<number[]>("export_pdf", options);
   },
@@ -591,6 +592,7 @@ export const tauriApi = {
     markdown: string;
     title: string;
     template: string;
+    embeddedSvgs?: string[];
   }): Promise<number[]> {
     return await invoke<number[]>("export_pptx", options);
   },
@@ -604,6 +606,7 @@ export const tauriApi = {
     pageSize: string;
     projectRoot?: string;
     typography?: BackendTypographyPresets;
+    embeddedSvgs?: string[];
   }): Promise<number[]> {
     return await invoke<number[]>("export_docx", options);
   },
@@ -615,6 +618,7 @@ export const tauriApi = {
     includeStyles: boolean;
     projectRoot?: string;
     typography?: BackendTypographyPresets;
+    embeddedSvgs?: string[];
   }): Promise<string> {
     return await invoke<string>("render_html", options);
   },

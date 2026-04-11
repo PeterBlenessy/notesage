@@ -22,11 +22,12 @@ pub async fn export_pdf(
     project_root: Option<String>,
     typography: Option<TypographyPresets>,
     page_settings: Option<DocumentPageSettings>,
+    embedded_svgs: Option<Vec<String>>,
 ) -> Result<Vec<u8>, String> {
     let page_size = PageSize::from_str(&page_size)?;
 
     // Convert markdown to Typst markup
-    let typst_content = markdown_to_typst(&markdown);
+    let typst_content = markdown_to_typst(&markdown, embedded_svgs.as_deref());
 
     // Generate source: use typography presets if provided, else fall back to template
     let presets = typography.unwrap_or_default();
@@ -59,6 +60,21 @@ pub async fn export_pdf(
         resolve_drawing_svgs(&markdown, root, &world);
     }
 
+    // Register embedded SVGs (from inline charts/drawings) as virtual files.
+    // Pre-process with usvg to convert <text> elements to <path> — Typst's
+    // built-in usvg doesn't have access to fonts for text rendering.
+    if let Some(ref svgs) = embedded_svgs {
+        for (i, svg) in svgs.iter().enumerate() {
+            if !svg.is_empty() {
+                let processed = preprocess_svg_text(svg);
+                world.add_file(
+                    &format!("/embedded-{}.svg", i),
+                    processed,
+                );
+            }
+        }
+    }
+
     world.export_pdf()
 }
 
@@ -69,12 +85,14 @@ pub async fn export_pptx(
     title: String,
     template: String,
     project_root: Option<String>,
+    embedded_svgs: Option<Vec<String>>,
 ) -> Result<Vec<u8>, String> {
     markdown_to_pptx(
         &markdown,
         &title,
         &template,
         project_root.as_deref(),
+        embedded_svgs.as_deref(),
     )
 }
 
@@ -90,6 +108,7 @@ pub async fn export_docx(
     project_root: Option<String>,
     typography: Option<TypographyPresets>,
     page_settings: Option<DocumentPageSettings>,
+    embedded_svgs: Option<Vec<String>>,
 ) -> Result<Vec<u8>, String> {
     let options = DocxOptions {
         include_toc,
@@ -97,7 +116,7 @@ pub async fn export_docx(
         page_size,
         project_root,
     };
-    markdown_to_docx(&markdown, &title, &template, &options, typography.as_ref(), page_settings.as_ref())
+    markdown_to_docx(&markdown, &title, &template, &options, typography.as_ref(), page_settings.as_ref(), embedded_svgs.as_deref())
 }
 
 /// Render markdown to a complete HTML document or body fragment.
@@ -110,8 +129,9 @@ pub async fn render_html(
     project_root: Option<String>,
     typography: Option<TypographyPresets>,
     page_settings: Option<DocumentPageSettings>,
+    embedded_svgs: Option<Vec<String>>,
 ) -> Result<String, String> {
-    let body = markdown_to_html(&markdown, &theme, project_root.as_deref());
+    let body = markdown_to_html(&markdown, &theme, project_root.as_deref(), embedded_svgs.as_deref());
 
     if include_styles {
         let base_css = html_css(&theme);
@@ -411,6 +431,27 @@ fn generate_html_typography_css(presets: &TypographyPresets) -> String {
     ));
 
     css
+}
+
+/// Pre-process an SVG string: parse with usvg + system fonts so that `<text>`
+/// elements are converted to `<path>`. Typst's built-in usvg instance lacks
+/// font access, causing all SVG text to be silently dropped.
+pub(crate) fn preprocess_svg_text(svg_str: &str) -> Vec<u8> {
+    use std::sync::Arc;
+
+    let mut fontdb = fontdb::Database::new();
+    fontdb.load_system_fonts();
+
+    let mut opt = usvg::Options::default();
+    opt.fontdb = Arc::new(fontdb);
+
+    match usvg::Tree::from_str(svg_str, &opt) {
+        Ok(tree) => tree.to_string(&usvg::WriteOptions::default()).into_bytes(),
+        Err(e) => {
+            log::warn!("[export] SVG pre-processing failed, using raw: {}", e);
+            svg_str.as_bytes().to_vec()
+        }
+    }
 }
 
 /// Scan markdown for `.excalidraw` image references and add corresponding SVG files

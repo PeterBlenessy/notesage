@@ -271,11 +271,12 @@ pub fn markdown_to_pptx(
     title: &str,
     template: &str,
     project_root: Option<&str>,
+    embedded_svgs: Option<&[String]>,
 ) -> Result<Vec<u8>, String> {
     let pptx_template = PptxTemplate::from_str(template).unwrap_or(PptxTemplate::Simple);
     let config = pptx_template.config();
 
-    let builders = parse_to_builders(markdown, title, project_root);
+    let builders = parse_to_builders(markdown, title, project_root, embedded_svgs);
 
     // Apply overflow splitting (Task #5)
     let builders = apply_overflow_splitting(builders);
@@ -293,6 +294,7 @@ fn parse_to_builders(
     markdown: &str,
     title: &str,
     project_root: Option<&str>,
+    embedded_svgs: Option<&[String]>,
 ) -> Vec<SlideBuilder> {
     let arena = Arena::new();
     let mut options = Options::default();
@@ -306,6 +308,7 @@ fn parse_to_builders(
     let mut seen_heading = false;
     let mut pre_heading_text: Vec<String> = Vec::new();
     let project_root_path = project_root.map(PathBuf::from);
+    let mut embedded_svg_index: usize = 0;
 
     for node in root.children() {
         match &node.data.borrow().value {
@@ -408,6 +411,62 @@ fn parse_to_builders(
                 }
             }
             NodeValue::CodeBlock(cb) => {
+                let lang = cb.info.split_whitespace().next().unwrap_or("");
+
+                // Inline chart/excalidraw blocks
+                if lang == "chart" || lang == "excalidraw" {
+                    let idx = embedded_svg_index;
+                    embedded_svg_index += 1;
+
+                    if lang == "chart" {
+                        // Try native PPTX chart first (from inline JSON)
+                        if let Some(chart_info) = parse_inline_chart_json(&cb.literal) {
+                            if build_pptx_chart(&chart_info).is_some() {
+                                ensure_current(&mut current, &mut builders);
+                                if let Some(ref mut builder) = current {
+                                    builder.charts.push(chart_info);
+                                }
+                                continue;
+                            }
+                        }
+                    }
+
+                    // Fall back to embedded SVG image
+                    if let Some(svgs) = embedded_svgs {
+                        if let Some(svg) = svgs.get(idx) {
+                            if !svg.is_empty() {
+                                // Write SVG to a temp file for ppt-rs Image
+                                let tmp = std::env::temp_dir().join(format!("notesage-export-{}.svg", idx));
+                                if std::fs::write(&tmp, svg).is_ok() {
+                                    ensure_current(&mut current, &mut builders);
+                                    if let Some(ref mut builder) = current {
+                                        builder.images.push(SlideImage { path: tmp });
+                                    }
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+
+                    // Fallback placeholder
+                    let title_text = serde_json::from_str::<serde_json::Value>(&cb.literal)
+                        .ok()
+                        .and_then(|v| v.get("title").and_then(|t| t.as_str()).map(|s| s.to_string()))
+                        .unwrap_or_else(|| if lang == "chart" { "Chart".to_string() } else { "Drawing".to_string() });
+                    ensure_current(&mut current, &mut builders);
+                    if let Some(ref mut builder) = current {
+                        builder.bullets.push(SlideBullet {
+                            text: format!("[{}]", title_text),
+                            level: 0,
+                            style: BulletStyle::None,
+                            bold: false,
+                            italic: true,
+                            font_size: Some(14),
+                        });
+                    }
+                    continue;
+                }
+
                 // Task #6: code blocks with reduced font size and no bullet
                 let code = cb.literal.trim().to_string();
                 if code.is_empty() {
@@ -678,6 +737,48 @@ fn build_pptx_chart(info: &SlideChart) -> Option<Chart> {
 fn read_chart_json(path: &Path) -> Option<SlideChart> {
     let content = std::fs::read_to_string(path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+
+    let chart_type = json.get("type")?.as_str()?.to_string();
+    let labels: Vec<String> = json
+        .get("labels")?
+        .as_array()?
+        .iter()
+        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+        .collect();
+
+    let datasets: Vec<ChartDataset> = json
+        .get("datasets")?
+        .as_array()?
+        .iter()
+        .filter_map(|ds| {
+            let label = ds.get("label")?.as_str()?.to_string();
+            let data: Vec<f64> = ds
+                .get("data")?
+                .as_array()?
+                .iter()
+                .filter_map(|v| v.as_f64())
+                .collect();
+            Some(ChartDataset { label, data })
+        })
+        .collect();
+
+    let title = json
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Chart")
+        .to_string();
+
+    Some(SlideChart {
+        title,
+        chart_type,
+        labels,
+        datasets,
+    })
+}
+
+/// Parse inline chart JSON (from a ```chart code block literal) into our intermediate model.
+fn parse_inline_chart_json(literal: &str) -> Option<SlideChart> {
+    let json: serde_json::Value = serde_json::from_str(literal).ok()?;
 
     let chart_type = json.get("type")?.as_str()?.to_string();
     let labels: Vec<String> = json
@@ -1083,7 +1184,7 @@ mod tests {
 
     /// Helper: parse markdown to PPTX bytes and assert valid ZIP.
     fn export(md: &str, title: &str) -> Vec<u8> {
-        let result = markdown_to_pptx(md, title, "simple", None);
+        let result = markdown_to_pptx(md, title, "simple", None, None);
         assert!(result.is_ok(), "Failed: {:?}", result.err());
         let bytes = result.unwrap();
         assert!(bytes.len() > 100, "PPTX too small: {} bytes", bytes.len());
@@ -1093,7 +1194,7 @@ mod tests {
 
     /// Helper: parse markdown and return the slide builders (post-overflow).
     fn slides(md: &str) -> Vec<SlideBuilder> {
-        let builders = parse_to_builders(md, "Test", None);
+        let builders = parse_to_builders(md, "Test", None, None);
         apply_overflow_splitting(builders)
     }
 
@@ -1318,7 +1419,7 @@ mod tests {
     #[test]
     fn table_converts_to_slide_content() {
         let md = "# Slide\n\n| H1 | H2 |\n| --- | --- |\n| a | b |\n";
-        let result = markdown_to_pptx(md, "Test", "simple", None);
+        let result = markdown_to_pptx(md, "Test", "simple", None, None);
         assert!(result.is_ok());
     }
 
@@ -1354,7 +1455,7 @@ mod tests {
     #[test]
     fn missing_image_produces_placeholder_in_pptx() {
         let md = "# Slide\n\n![alt](/nonexistent/image.png)\n";
-        let result = markdown_to_pptx(md, "Test", "simple", None);
+        let result = markdown_to_pptx(md, "Test", "simple", None, None);
         assert!(result.is_ok(), "Should not fail on missing images");
     }
 
@@ -1579,7 +1680,7 @@ fn main() {
 > [!link](https://example.com)
 "#;
 
-        let result = markdown_to_pptx(md, "Full Feature Test", "simple", None);
+        let result = markdown_to_pptx(md, "Full Feature Test", "simple", None, None);
         assert!(result.is_ok(), "PPTX failed: {:?}", result.err());
         let bytes = result.unwrap();
         assert!(!bytes.is_empty());
@@ -1592,7 +1693,7 @@ fn main() {
     fn all_templates_produce_valid_output() {
         let md = "# Title\n\nContent here\n\n## Subtitle\n\n- Point 1\n- Point 2\n";
         for template in ["simple", "business", "report"] {
-            let result = markdown_to_pptx(md, "Template Test", template, None);
+            let result = markdown_to_pptx(md, "Template Test", template, None, None);
             assert!(
                 result.is_ok(),
                 "Template '{}' failed: {:?}",
@@ -1617,7 +1718,7 @@ fn main() {
     #[test]
     fn unknown_template_falls_back_to_simple() {
         let md = "# Slide\n\nContent\n";
-        let result = markdown_to_pptx(md, "Test", "nonexistent", None);
+        let result = markdown_to_pptx(md, "Test", "nonexistent", None, None);
         assert!(result.is_ok(), "Fallback failed: {:?}", result.err());
     }
 
@@ -1628,7 +1729,7 @@ fn main() {
         for i in 0..100 {
             md.push_str(&format!("Word{} alpha bravo charlie. ", i));
         }
-        let result = markdown_to_pptx(&md, "Word Overflow", "simple", None);
+        let result = markdown_to_pptx(&md, "Word Overflow", "simple", None, None);
         assert!(result.is_ok(), "Word overflow failed: {:?}", result.err());
     }
 

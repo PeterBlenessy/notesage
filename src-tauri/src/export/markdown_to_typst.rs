@@ -6,7 +6,11 @@ use comrak::{parse_document, Arena, Options};
 use super::table_utils::*;
 
 /// Convert a markdown string to Typst markup.
-pub fn markdown_to_typst(markdown: &str) -> String {
+///
+/// `embedded_svgs` contains pre-rendered SVG strings for inline chart/excalidraw
+/// code blocks, matched by position (the Nth chart/excalidraw block in the AST
+/// corresponds to the Nth entry in the vec).
+pub fn markdown_to_typst(markdown: &str, embedded_svgs: Option<&[String]>) -> String {
     let mut options = Options::default();
     options.extension.table = true;
     options.extension.tasklist = true;
@@ -17,12 +21,12 @@ pub fn markdown_to_typst(markdown: &str) -> String {
     let arena = Arena::new();
     let root = parse_document(&arena, markdown, &options);
 
-    let mut converter = Converter::new();
+    let mut converter = Converter::new(embedded_svgs);
     converter.convert_node(root, 0);
     converter.finish()
 }
 
-struct Converter {
+struct Converter<'s> {
     output: String,
     /// Track list nesting depth for indentation.
     list_depth: usize,
@@ -36,10 +40,14 @@ struct Converter {
     table_cells: Vec<String>,
     /// When collecting table cell content, push to this instead of output.
     cell_buffer: Option<String>,
+    /// Pre-rendered SVGs for inline chart/excalidraw blocks.
+    embedded_svgs: Option<&'s [String]>,
+    /// Index into embedded_svgs, incremented for each chart/excalidraw code block.
+    embedded_svg_index: usize,
 }
 
-impl Converter {
-    fn new() -> Self {
+impl<'s> Converter<'s> {
+    fn new(embedded_svgs: Option<&'s [String]>) -> Self {
         Self {
             output: String::new(),
             list_depth: 0,
@@ -48,6 +56,8 @@ impl Converter {
             table_is_header_row: false,
             table_cells: Vec::new(),
             cell_buffer: None,
+            embedded_svgs,
+            embedded_svg_index: 0,
         }
     }
 
@@ -108,9 +118,29 @@ impl Converter {
                 self.write("]");
             }
             NodeValue::Code(NodeCode { ref literal, .. }) => {
-                self.write("`");
+                // Use enough backticks to avoid conflict with literal content.
+                // Find the longest consecutive run of backticks in the literal,
+                // then use one more than that for the delimiters.
+                let max_run = {
+                    let mut max = 0usize;
+                    let mut current = 0usize;
+                    for ch in literal.chars() {
+                        if ch == '`' {
+                            current += 1;
+                            if current > max { max = current; }
+                        } else {
+                            current = 0;
+                        }
+                    }
+                    max
+                };
+                let delim = "`".repeat(max_run + 1);
+                self.write(&delim);
+                // Typst requires a space after opening delimiter when content starts with `
+                if literal.starts_with('`') { self.write(" "); }
                 self.write(literal);
-                self.write("`");
+                if literal.ends_with('`') { self.write(" "); }
+                self.write(&delim);
             }
             NodeValue::CodeBlock(ref cb) => {
                 let lang = if cb.info.is_empty() {
@@ -118,6 +148,32 @@ impl Converter {
                 } else {
                     cb.info.split_whitespace().next().unwrap_or("")
                 };
+
+                // Inline chart/excalidraw blocks: emit as image from embedded SVGs
+                if lang == "chart" || lang == "excalidraw" {
+                    let idx = self.embedded_svg_index;
+                    self.embedded_svg_index += 1;
+
+                    if let Some(svgs) = self.embedded_svgs {
+                        if let Some(svg) = svgs.get(idx) {
+                            if !svg.is_empty() {
+                                self.write(&format!(
+                                    "#image(\"/embedded-{}.svg\", width: 100%)\n\n",
+                                    idx
+                                ));
+                                return;
+                            }
+                        }
+                    }
+                    // Fallback: extract title from JSON if possible
+                    let title = serde_json::from_str::<serde_json::Value>(&cb.literal)
+                        .ok()
+                        .and_then(|v| v.get("title").and_then(|t| t.as_str()).map(|s| s.to_string()))
+                        .unwrap_or_else(|| if lang == "chart" { "Chart".to_string() } else { "Drawing".to_string() });
+                    self.write(&format!("[{}]\n\n", title));
+                    return;
+                }
+
                 if lang.is_empty() {
                     self.write("```\n");
                 } else {
@@ -665,18 +721,18 @@ mod tests {
 
     #[test]
     fn test_headings() {
-        assert_eq!(markdown_to_typst("# Heading 1"), "= Heading 1\n");
-        assert_eq!(markdown_to_typst("## Heading 2"), "== Heading 2\n");
-        assert_eq!(markdown_to_typst("### Heading 3"), "=== Heading 3\n");
-        assert_eq!(markdown_to_typst("#### Heading 4"), "==== Heading 4\n");
-        assert_eq!(markdown_to_typst("##### Heading 5"), "===== Heading 5\n");
-        assert_eq!(markdown_to_typst("###### Heading 6"), "====== Heading 6\n");
+        assert_eq!(markdown_to_typst("# Heading 1", None), "= Heading 1\n");
+        assert_eq!(markdown_to_typst("## Heading 2", None), "== Heading 2\n");
+        assert_eq!(markdown_to_typst("### Heading 3", None), "=== Heading 3\n");
+        assert_eq!(markdown_to_typst("#### Heading 4", None), "==== Heading 4\n");
+        assert_eq!(markdown_to_typst("##### Heading 5", None), "===== Heading 5\n");
+        assert_eq!(markdown_to_typst("###### Heading 6", None), "====== Heading 6\n");
     }
 
     #[test]
     fn test_paragraphs() {
         assert_eq!(
-            markdown_to_typst("Hello world.\n\nSecond paragraph."),
+            markdown_to_typst("Hello world.\n\nSecond paragraph.", None),
             "Hello world.\n\nSecond paragraph.\n"
         );
     }
@@ -684,7 +740,7 @@ mod tests {
     #[test]
     fn test_bold() {
         assert_eq!(
-            markdown_to_typst("This is **bold** text."),
+            markdown_to_typst("This is **bold** text.", None),
             "This is *bold* text.\n"
         );
     }
@@ -692,7 +748,7 @@ mod tests {
     #[test]
     fn test_italic() {
         assert_eq!(
-            markdown_to_typst("This is *italic* text."),
+            markdown_to_typst("This is *italic* text.", None),
             "This is _italic_ text.\n"
         );
     }
@@ -700,7 +756,7 @@ mod tests {
     #[test]
     fn test_strikethrough() {
         assert_eq!(
-            markdown_to_typst("This is ~~struck~~ text."),
+            markdown_to_typst("This is ~~struck~~ text.", None),
             "This is #strike[struck] text.\n"
         );
     }
@@ -708,7 +764,7 @@ mod tests {
     #[test]
     fn test_inline_code() {
         assert_eq!(
-            markdown_to_typst("Use `println!` to print."),
+            markdown_to_typst("Use `println!` to print.", None),
             "Use `println!` to print.\n"
         );
     }
@@ -717,20 +773,20 @@ mod tests {
     fn test_code_block() {
         let input = "```rust\nfn main() {}\n```";
         let expected = "```rust\nfn main() {}\n```\n";
-        assert_eq!(markdown_to_typst(input), expected);
+        assert_eq!(markdown_to_typst(input, None), expected);
     }
 
     #[test]
     fn test_code_block_no_lang() {
         let input = "```\nsome code\n```";
         let expected = "```\nsome code\n```\n";
-        assert_eq!(markdown_to_typst(input), expected);
+        assert_eq!(markdown_to_typst(input, None), expected);
     }
 
     #[test]
     fn test_link() {
         assert_eq!(
-            markdown_to_typst("[Example](https://example.com)"),
+            markdown_to_typst("[Example](https://example.com)", None),
             "#link(\"https://example.com\")[Example]\n"
         );
     }
@@ -738,7 +794,7 @@ mod tests {
     #[test]
     fn test_image() {
         assert_eq!(
-            markdown_to_typst("![Alt text](image.png)"),
+            markdown_to_typst("![Alt text](image.png)", None),
             "#image(\"image.png\", alt: \"Alt text\")\n"
         );
     }
@@ -746,7 +802,7 @@ mod tests {
     #[test]
     fn test_image_no_alt() {
         assert_eq!(
-            markdown_to_typst("![](image.png)"),
+            markdown_to_typst("![](image.png)", None),
             "#image(\"image.png\")\n"
         );
     }
@@ -754,7 +810,7 @@ mod tests {
     #[test]
     fn test_bullet_list() {
         let input = "- First\n- Second\n- Third";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(output.contains("- First"));
         assert!(output.contains("- Second"));
         assert!(output.contains("- Third"));
@@ -763,7 +819,7 @@ mod tests {
     #[test]
     fn test_ordered_list() {
         let input = "1. First\n2. Second\n3. Third";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(output.contains("+ First"));
         assert!(output.contains("+ Second"));
         assert!(output.contains("+ Third"));
@@ -772,7 +828,7 @@ mod tests {
     #[test]
     fn test_task_list() {
         let input = "- [ ] Unchecked\n- [x] Checked";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(output.contains("- [ ] Unchecked"), "output: {}", output);
         assert!(output.contains("- [x] Checked"), "output: {}", output);
     }
@@ -780,7 +836,7 @@ mod tests {
     #[test]
     fn test_nested_list() {
         let input = "- Item 1\n  - Nested 1\n  - Nested 2\n- Item 2";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(output.contains("- Item 1"), "output: {}", output);
         assert!(output.contains("  - Nested 1"), "output: {}", output);
         assert!(output.contains("- Item 2"), "output: {}", output);
@@ -788,7 +844,7 @@ mod tests {
 
     #[test]
     fn test_blockquote() {
-        let output = markdown_to_typst("> This is a quote");
+        let output = markdown_to_typst("> This is a quote", None);
         assert!(output.contains("#quote(block: true)["), "output: {}", output);
         assert!(output.contains("This is a quote"), "output: {}", output);
     }
@@ -796,7 +852,7 @@ mod tests {
     #[test]
     fn test_horizontal_rule() {
         assert_eq!(
-            markdown_to_typst("---"),
+            markdown_to_typst("---", None),
             "#line(length: 100%)\n"
         );
     }
@@ -804,7 +860,7 @@ mod tests {
     #[test]
     fn test_table() {
         let input = "| A | B |\n|---|---|\n| 1 | 2 |";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(output.contains("#table("), "output: {}", output);
         assert!(output.contains("columns: 2"), "output: {}", output);
         assert!(output.contains("[A]"), "output: {}", output);
@@ -816,7 +872,7 @@ mod tests {
     #[test]
     fn test_frontmatter_stripped() {
         let input = "---\ntitle: Test\n---\n\n# Hello";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(!output.contains("title"), "output: {}", output);
         assert!(output.contains("= Hello"), "output: {}", output);
     }
@@ -824,7 +880,7 @@ mod tests {
     #[test]
     fn test_escape_special_chars() {
         let input = "Price is $10 and @user said #hashtag";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(output.contains("\\$10"), "output: {}", output);
         assert!(output.contains("\\@user"), "output: {}", output);
         assert!(output.contains("\\#hashtag"), "output: {}", output);
@@ -832,7 +888,7 @@ mod tests {
 
     #[test]
     fn test_bold_italic_combined() {
-        let output = markdown_to_typst("***bold and italic***");
+        let output = markdown_to_typst("***bold and italic***", None);
         assert!(output.contains("*_bold and italic_*") || output.contains("_*bold and italic*_"),
             "output: {}", output);
     }
@@ -867,7 +923,7 @@ print("hello")
 
 [Link](https://example.com)
 "#;
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         // Verify key elements are present
         assert!(output.contains("= Main Title"), "missing heading");
         assert!(output.contains("*bold*"), "missing bold");
@@ -887,7 +943,7 @@ print("hello")
     #[test]
     fn test_callout_note() {
         let input = "> [!note]\n> This is a note.";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(output.contains("#block("), "missing block: {}", output);
         assert!(output.contains("Note"), "missing label: {}", output);
         assert!(output.contains("This is a note."), "missing content: {}", output);
@@ -896,7 +952,7 @@ print("hello")
     #[test]
     fn test_callout_with_title() {
         let input = "> [!tip] Pro Tip\n> This is helpful.";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(output.contains("Pro Tip"), "missing custom title: {}", output);
         assert!(output.contains("This is helpful."), "missing content: {}", output);
     }
@@ -905,7 +961,7 @@ print("hello")
     fn test_callout_all_types() {
         for callout_type in &["note", "tip", "warning", "important"] {
             let input = format!("> [!{}]\n> Content here.", callout_type);
-            let output = markdown_to_typst(&input);
+            let output = markdown_to_typst(&input, None);
             assert!(output.contains("#block("), "missing block for {}: {}", callout_type, output);
         }
     }
@@ -913,14 +969,14 @@ print("hello")
     #[test]
     fn test_invalid_callout_remains_blockquote() {
         let input = "> [!custom]\n> Some text.";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(output.contains("#quote(block: true)"), "invalid type should be blockquote: {}", output);
     }
 
     #[test]
     fn test_drawing_image_to_svg() {
         let input = "![drawing](/.notesage/drawings/abc123.excalidraw)";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(
             output.contains("/.notesage/drawings/abc123.svg"),
             "should reference SVG: {}",
@@ -936,7 +992,7 @@ print("hello")
     #[test]
     fn test_drawing_image_to_svg_with_alt() {
         let input = "![My Drawing](/.notesage/drawings/sketch.excalidraw)";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(
             output.contains("/.notesage/drawings/sketch.svg"),
             "should reference SVG: {}",
@@ -957,7 +1013,7 @@ print("hello")
     #[test]
     fn test_regular_image_unchanged() {
         let input = "![photo](images/photo.png)";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(
             output.contains("images/photo.png"),
             "regular image should be unchanged: {}",
@@ -968,7 +1024,7 @@ print("hello")
     #[test]
     fn test_link_preview_basic() {
         let input = "> [!link](https://example.com)\n> **Example Title**\n> A description of the page\n> example.com";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(output.contains("#block("), "missing block: {}", output);
         assert!(output.contains("Example Title"), "missing title: {}", output);
         assert!(output.contains("A description of the page"), "missing description: {}", output);
@@ -979,7 +1035,7 @@ print("hello")
     #[test]
     fn test_link_preview_url_only() {
         let input = "> [!link](https://example.com)";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(output.contains("#block("), "missing block: {}", output);
         assert!(output.contains("https:\\/\\/example.com"), "missing URL: {}", output);
     }
@@ -987,7 +1043,7 @@ print("hello")
     #[test]
     fn test_link_preview_does_not_affect_callouts() {
         let input = "> [!note]\n> This is a note.";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         // Should be a callout, not a link preview
         assert!(output.contains("Note"), "should be callout: {}", output);
         assert!(!output.contains("stroke: 1pt"), "should not be link preview card: {}", output);
@@ -996,7 +1052,7 @@ print("hello")
     #[test]
     fn test_link_preview_with_metadata_comments() {
         let input = "> [!link](https://example.com)\n> **Title**\n> Description\n> example.com\n> <!--image:https://example.com/img.png-->\n> <!--favicon:https://example.com/fav.ico-->";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         let _ = &output; // used below
         assert!(output.contains("#block("), "missing block: {}", output);
         assert!(output.contains("Title"), "missing title: {}", output);
@@ -1009,7 +1065,7 @@ print("hello")
         use super::super::typst_world::NotesageWorld;
 
         let markdown = "# Test\n\n> [!link](https://example.com)\n> **Example**\n> A description\n> example.com\n> <!--image:https://example.com/img.png-->\n> <!--favicon:https://example.com/fav.ico-->\n";
-        let typst = markdown_to_typst(markdown);
+        let typst = markdown_to_typst(markdown, None);
         let _ = &typst; // used below
         let world = NotesageWorld::new(typst);
         let result = world.export_pdf();
@@ -1030,7 +1086,7 @@ print("hello")
 > <!--image:https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico-->
 > <!--favicon:https://gmail.com/favicon.ico-->
 "#;
-        let typst = markdown_to_typst(markdown);
+        let typst = markdown_to_typst(markdown, None);
         let _ = &typst; // used below
         let world = NotesageWorld::new(typst);
         let result = world.export_pdf();
@@ -1042,7 +1098,7 @@ print("hello")
         use super::super::typst_world::NotesageWorld;
 
         let markdown = "## Changes\n\n/\n\n> [!link](https://github.com)\n> **GitHub**\n> Description\n> GitHub\n> <!--image:https://example.com/img.png-->\n> <!--favicon:https://github.com/fav.ico-->\n".to_string();
-        let typst = markdown_to_typst(&markdown);
+        let typst = markdown_to_typst(&markdown, None);
         let _ = &typst; // used below
         let world = NotesageWorld::new(typst);
         let result = world.export_pdf();
@@ -1052,7 +1108,7 @@ print("hello")
     #[test]
     fn test_link_preview_does_not_affect_regular_blockquote() {
         let input = "> This is a regular quote";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(output.contains("#quote(block: true)"), "should be blockquote: {}", output);
     }
 
@@ -1062,7 +1118,7 @@ print("hello")
     fn test_table_without_metadata_unchanged() {
         // Tables without column metadata should produce identical output to before
         let input = "| Name | Value |\n|------|-------|\n| Alice | 100 |\n| Bob | 200 |";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(output.contains("#table("), "output: {}", output);
         assert!(output.contains("columns: 2"), "output: {}", output);
         assert!(output.contains("[Name]"), "output: {}", output);
@@ -1164,7 +1220,7 @@ print("hello")
     #[test]
     fn test_table_with_summary_footer() {
         let input = "| Item | Amount <!-- type:number,summary:sum --> |\n|------|--------|\n| A | 10 |\n| B | 20 |\n| C | 30 |";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(output.contains("#table("), "missing table: {}", output);
         assert!(output.contains("table.hline"), "missing footer hline: {}", output);
         assert!(output.contains("table.cell(fill: luma(240))"), "missing footer cell: {}", output);
@@ -1174,7 +1230,7 @@ print("hello")
     #[test]
     fn test_table_with_currency_formatting() {
         let input = "| Item | Price <!-- type:currency,currency:USD,summary:sum --> |\n|------|-------|\n| A | 10.50 |\n| B | 20.75 |";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(output.contains("\\$10.50"), "missing formatted price 10.50: {}", output);
         assert!(output.contains("\\$20.75"), "missing formatted price 20.75: {}", output);
         assert!(output.contains("Sum: \\$31.25"), "missing sum: {}", output);
@@ -1183,7 +1239,7 @@ print("hello")
     #[test]
     fn test_table_with_sparkline_degraded() {
         let input = "| Item | Trend |\n|------|-------|\n| A | {{spark:12,15,9,22,18}} |";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(output.contains("12, 15, 9, 22, 18"), "sparkline should degrade to numbers: {}", output);
         assert!(!output.contains("{{spark"), "sparkline syntax should be stripped: {}", output);
     }
@@ -1191,7 +1247,7 @@ print("hello")
     #[test]
     fn test_table_mixed_columns_some_with_metadata() {
         let input = "| Name | Score <!-- type:number,summary:avg --> |\n|------|-------|\n| Alice | 85 |\n| Bob | 95 |";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         // First column footer should be empty
         assert!(output.contains("table.cell(fill: luma(240))[]"), "missing empty footer cell: {}", output);
         // Second column should have avg
@@ -1201,7 +1257,7 @@ print("hello")
     #[test]
     fn test_table_header_comment_stripped() {
         let input = "| Item | Amount <!-- type:number --> |\n|------|--------|\n| A | 10 |";
-        let output = markdown_to_typst(input);
+        let output = markdown_to_typst(input, None);
         assert!(!output.contains("<!--"), "HTML comment should be stripped: {}", output);
         assert!(output.contains("[Amount]"), "header text should remain: {}", output);
     }
@@ -1211,7 +1267,7 @@ print("hello")
         use super::super::typst_world::NotesageWorld;
 
         let markdown = "# Budget\n\n| Item | Amount <!-- type:currency,currency:USD,summary:sum --> |\n|------|--------|\n| Rent | 1200 |\n| Food | 400 |\n| Utils | 150 |\n";
-        let typst = markdown_to_typst(markdown);
+        let typst = markdown_to_typst(markdown, None);
         let world = NotesageWorld::new(typst);
         let result = world.export_pdf();
         assert!(result.is_ok(), "PDF export failed: {:?}", result.err());
@@ -1222,7 +1278,7 @@ print("hello")
         use super::super::typst_world::NotesageWorld;
 
         let markdown = "# Trends\n\n| Item | Trend |\n|------|-------|\n| A | {{spark:1,2,3,4,5}} |\n| B | {{spark:5,4,3,2,1}} |\n";
-        let typst = markdown_to_typst(markdown);
+        let typst = markdown_to_typst(markdown, None);
         let world = NotesageWorld::new(typst);
         let result = world.export_pdf();
         assert!(result.is_ok(), "PDF export failed: {:?}", result.err());
@@ -1255,7 +1311,7 @@ fn main() {}
 |---|---|
 | 1 | 2 |
 "#;
-        let typst = markdown_to_typst(markdown);
+        let typst = markdown_to_typst(markdown, None);
         let world = NotesageWorld::new(typst);
         let result = world.export_pdf();
         assert!(result.is_ok(), "PDF export failed: {:?}", result.err());

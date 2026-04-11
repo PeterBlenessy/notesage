@@ -35,6 +35,7 @@ pub fn markdown_to_docx(
     options: &DocxOptions,
     typography: Option<&super::typography::TypographyPresets>,
     page_settings: Option<&super::page_settings::DocumentPageSettings>,
+    embedded_svgs: Option<&[String]>,
 ) -> Result<Vec<u8>, String> {
     let mut opts = Options::default();
     opts.extension.table = true;
@@ -50,7 +51,7 @@ pub fn markdown_to_docx(
         Some(presets) => TemplateConfig::from_typography(presets),
         None => TemplateConfig::from_name(template),
     };
-    let mut converter = DocxConverter::new(title, &template_config, options, page_settings);
+    let mut converter = DocxConverter::new(title, &template_config, options, page_settings, embedded_svgs);
     converter.walk(root);
     converter.finish()
 }
@@ -213,6 +214,10 @@ struct DocxConverter<'a> {
     /// Cell paragraph accumulator (for tables).
     cell_paragraphs: Option<Vec<Paragraph>>,
     cell_runs: Option<Vec<Run>>,
+    /// Pre-rendered SVGs for inline chart/excalidraw blocks.
+    embedded_svgs: Option<&'a [String]>,
+    /// Index into embedded_svgs, incremented for each chart/excalidraw code block.
+    embedded_svg_index: usize,
 }
 
 enum DocxElement {
@@ -233,6 +238,7 @@ impl<'a> DocxConverter<'a> {
         template: &'a TemplateConfig,
         options: &'a DocxOptions,
         page_settings: Option<&'a super::page_settings::DocumentPageSettings>,
+        embedded_svgs: Option<&'a [String]>,
     ) -> Self {
         Self {
             title: title.to_string(),
@@ -257,6 +263,8 @@ impl<'a> DocxConverter<'a> {
             code_block_text: None,
             cell_paragraphs: None,
             cell_runs: None,
+            embedded_svgs,
+            embedded_svg_index: 0,
         }
     }
 
@@ -440,6 +448,34 @@ impl<'a> DocxConverter<'a> {
                 self.convert_blockquote(node);
             }
             NodeValue::CodeBlock(ref code_block) => {
+                let lang = code_block.info.split_whitespace().next().unwrap_or("");
+                if lang == "chart" || lang == "excalidraw" {
+                    let idx = self.embedded_svg_index;
+                    self.embedded_svg_index += 1;
+
+                    if let Some(svgs) = self.embedded_svgs {
+                        if let Some(svg) = svgs.get(idx) {
+                            if !svg.is_empty() {
+                                let pic = Pic::new(svg.as_bytes());
+                                let run = Run::new().add_image(pic);
+                                let para = Paragraph::new()
+                                    .add_run(run)
+                                    .line_spacing(self.body_line_spacing());
+                                self.paragraphs.push(DocxElement::Para(para));
+                                return;
+                            }
+                        }
+                    }
+                    // Fallback placeholder
+                    let title = serde_json::from_str::<serde_json::Value>(&code_block.literal)
+                        .ok()
+                        .and_then(|v| v.get("title").and_then(|t| t.as_str()).map(|s| s.to_string()))
+                        .unwrap_or_else(|| if lang == "chart" { "Chart".to_string() } else { "Drawing".to_string() });
+                    let run = Run::new().add_text(&format!("[{}]", title)).italic().color("888888");
+                    let para = Paragraph::new().add_run(run).line_spacing(self.body_line_spacing());
+                    self.paragraphs.push(DocxElement::Para(para));
+                    return;
+                }
                 self.convert_code_block(&code_block.literal);
             }
             NodeValue::Table(ref table) => {
@@ -1559,6 +1595,7 @@ mod tests {
             },
             None,
             None,
+            None,
         );
         assert!(result.is_ok());
         let bytes = result.unwrap();
@@ -1582,6 +1619,7 @@ mod tests {
             },
             None,
             None,
+            None,
         );
         assert!(result.is_ok());
         assert!(!result.unwrap().is_empty());
@@ -1600,6 +1638,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
             None,
             None,
         );
@@ -1621,6 +1660,7 @@ mod tests {
             },
             None,
             None,
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1638,6 +1678,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
             None,
             None,
         );
@@ -1659,6 +1700,7 @@ mod tests {
             },
             None,
             None,
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1676,6 +1718,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
             None,
             None,
         );
@@ -1697,6 +1740,7 @@ mod tests {
             },
             None,
             None,
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1716,6 +1760,7 @@ mod tests {
             },
             None,
             None,
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1733,6 +1778,7 @@ mod tests {
                     page_size: "a4".to_string(),
                     project_root: None,
                 },
+                None,
                 None,
                 None,
             );
@@ -1755,6 +1801,7 @@ mod tests {
                 },
                 None,
                 None,
+                None,
             );
             assert!(result.is_ok(), "Page size {} failed", size);
         }
@@ -1772,6 +1819,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
             None,
             None,
         );
@@ -1793,6 +1841,7 @@ mod tests {
             },
             None,
             None,
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1812,6 +1861,7 @@ mod tests {
             },
             None,
             None,
+            None,
         );
         assert!(result.is_ok());
     }
@@ -1829,6 +1879,7 @@ mod tests {
                 page_size: "a4".to_string(),
                 project_root: None,
             },
+            None,
             None,
             None,
         );
@@ -1932,6 +1983,7 @@ mod tests {
                 project_root: None,
             },
             Some(&presets),
+            None,
             None,
         );
         assert!(result.is_ok());

@@ -388,7 +388,7 @@ fn main() {}
 
     #[test]
     fn test_clean_template_compiles() {
-        let typst_content = markdown_to_typst(TEST_MARKDOWN);
+        let typst_content = markdown_to_typst(TEST_MARKDOWN, None);
         let source = apply_template(
             &typst_content,
             &TemplateOptions {
@@ -406,7 +406,7 @@ fn main() {}
 
     #[test]
     fn test_academic_template_compiles() {
-        let typst_content = markdown_to_typst(TEST_MARKDOWN);
+        let typst_content = markdown_to_typst(TEST_MARKDOWN, None);
         let source = apply_template(
             &typst_content,
             &TemplateOptions {
@@ -428,7 +428,7 @@ fn main() {}
 
     #[test]
     fn test_report_template_compiles() {
-        let typst_content = markdown_to_typst(TEST_MARKDOWN);
+        let typst_content = markdown_to_typst(TEST_MARKDOWN, None);
         let source = apply_template(
             &typst_content,
             &TemplateOptions {
@@ -450,7 +450,7 @@ fn main() {}
 
     #[test]
     fn test_all_page_sizes() {
-        let typst_content = markdown_to_typst("# Hello\n\nWorld.");
+        let typst_content = markdown_to_typst("# Hello\n\nWorld.", None);
         for page_size in [PageSize::A4, PageSize::Letter, PageSize::A5] {
             let source = apply_template(
                 &typst_content,
@@ -475,7 +475,7 @@ fn main() {}
 
     #[test]
     fn test_toc_and_page_numbers_toggle() {
-        let typst_content = markdown_to_typst(TEST_MARKDOWN);
+        let typst_content = markdown_to_typst(TEST_MARKDOWN, None);
 
         // All combinations
         for toc in [true, false] {
@@ -505,7 +505,7 @@ fn main() {}
 
     #[test]
     fn test_title_with_special_chars() {
-        let typst_content = markdown_to_typst("# Test\n\nContent.");
+        let typst_content = markdown_to_typst("# Test\n\nContent.", None);
         let source = apply_template(
             &typst_content,
             &TemplateOptions {

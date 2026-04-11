@@ -13,7 +13,7 @@ fn export_pipeline(
     include_page_numbers: bool,
     page_size: PageSize,
 ) -> Result<Vec<u8>, String> {
-    let typst_content = markdown_to_typst(markdown);
+    let typst_content = markdown_to_typst(markdown, None);
     let source = apply_template(
         &typst_content,
         &TemplateOptions {
@@ -744,7 +744,7 @@ fn test_a5_page_size_all_templates() {
 
 /// Helper: generate PPTX and verify it's a valid ZIP with expected entries.
 fn pptx_pipeline(markdown: &str, title: &str, template: &str) -> Vec<u8> {
-    let result = markdown_to_pptx(markdown, title, template, None);
+    let result = markdown_to_pptx(markdown, title, template, None, None);
     assert!(result.is_ok(), "PPTX export failed: {:?}", result.err());
     let bytes = result.unwrap();
     assert!(bytes.len() > 100, "PPTX too small: {} bytes", bytes.len());
@@ -846,7 +846,7 @@ fn test_pptx_special_characters_in_title() {
         "Price $100 @company",
     ];
     for title in &titles {
-        let result = markdown_to_pptx("# Test\n\nContent.", title, "simple", None);
+        let result = markdown_to_pptx("# Test\n\nContent.", title, "simple", None, None);
         assert!(result.is_ok(), "Title '{}' failed: {:?}", title, result.err());
     }
 }
@@ -973,4 +973,36 @@ fn test_pptx_task_lists() {
 "#;
     let bytes = pptx_pipeline(markdown, "Sprint Review", "simple");
     assert_pptx_has_entries(&bytes, &["ppt/slides/slide1.xml"]);
+}
+
+#[test]
+fn test_chart_code_block_emits_image_reference() {
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">
+  <rect x="10" y="10" width="40" height="80" fill="#4a7dff"/>
+</svg>"##.to_string();
+
+    let markdown = "# Test\n\n```chart\n{\"type\":\"bar\",\"title\":\"Test\"}\n```\n\nAfter.\n";
+    let embedded_svgs = vec![svg];
+    let typst_content = markdown_to_typst(markdown, Some(&embedded_svgs));
+
+    assert!(typst_content.contains("#image(\"/embedded-0.svg\""),
+        "Chart code block should emit image reference");
+    assert!(!typst_content.contains("```chart"),
+        "Chart code block should NOT pass through as raw code");
+}
+
+use crate::commands::export::preprocess_svg_text;
+
+#[test]
+fn test_svg_text_preprocessing_converts_text_to_paths() {
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200">
+  <rect x="50" y="20" width="80" height="120" fill="#4a7dff"/>
+  <text x="90" y="160" text-anchor="middle" fill="#333333" font-size="14" font-family="sans-serif">Q1</text>
+  <text x="200" y="190" text-anchor="middle" fill="#666666" font-size="12" font-family="sans-serif">Label</text>
+</svg>"##;
+
+    let bytes = preprocess_svg_text(svg);
+    let processed = String::from_utf8_lossy(&bytes);
+    assert!(!processed.contains("<text"), "text elements should be converted to paths");
+    assert!(processed.contains("<path"), "should contain path elements from text conversion");
 }
