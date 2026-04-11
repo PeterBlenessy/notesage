@@ -433,25 +433,56 @@ fn generate_html_typography_css(presets: &TypographyPresets) -> String {
     css
 }
 
+/// Cached system font database — loading system fonts is expensive (~200ms),
+/// so we do it once and reuse for all SVG processing during an export.
+use std::sync::{Arc, OnceLock};
+static FONTDB: OnceLock<Arc<fontdb::Database>> = OnceLock::new();
+
+fn shared_fontdb() -> Arc<fontdb::Database> {
+    FONTDB.get_or_init(|| {
+        let mut db = fontdb::Database::new();
+        db.load_system_fonts();
+        Arc::new(db)
+    }).clone()
+}
+
 /// Pre-process an SVG string: parse with usvg + system fonts so that `<text>`
 /// elements are converted to `<path>`. Typst's built-in usvg instance lacks
 /// font access, causing all SVG text to be silently dropped.
 pub(crate) fn preprocess_svg_text(svg_str: &str) -> Vec<u8> {
-    use std::sync::Arc;
-
-    let mut fontdb = fontdb::Database::new();
-    fontdb.load_system_fonts();
-
     let mut opt = usvg::Options::default();
-    opt.fontdb = Arc::new(fontdb);
+    opt.fontdb = shared_fontdb();
 
     match usvg::Tree::from_str(svg_str, &opt) {
         Ok(tree) => tree.to_string(&usvg::WriteOptions::default()).into_bytes(),
         Err(e) => {
-            log::warn!("[export] SVG pre-processing failed, using raw: {}", e);
+            log::warn!("[export] SVG text preprocessing failed: {}", e);
             svg_str.as_bytes().to_vec()
         }
     }
+}
+
+/// Convert an SVG string to PNG bytes at 2x scale for DOCX/PPTX export.
+/// These formats don't support SVG natively — they need raster images.
+/// Returns (png_bytes, width_px, height_px) at the original SVG dimensions.
+pub(crate) fn svg_to_png(svg_str: &str) -> Option<(Vec<u8>, u32, u32)> {
+    let mut opt = usvg::Options::default();
+    opt.fontdb = shared_fontdb();
+
+    let tree = usvg::Tree::from_str(svg_str, &opt).ok()?;
+    let size = tree.size();
+    let orig_w = size.width() as u32;
+    let orig_h = size.height() as u32;
+    let scale = 2.0; // 2x for print quality
+    let width = (size.width() * scale) as u32;
+    let height = (size.height() * scale) as u32;
+
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)?;
+    pixmap.fill(resvg::tiny_skia::Color::WHITE);
+    let transform = resvg::tiny_skia::Transform::from_scale(scale, scale);
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+
+    Some((pixmap.encode_png().ok()?, orig_w, orig_h))
 }
 
 /// Scan markdown for `.excalidraw` image references and add corresponding SVG files

@@ -456,13 +456,28 @@ impl<'a> DocxConverter<'a> {
                     if let Some(svgs) = self.embedded_svgs {
                         if let Some(svg) = svgs.get(idx) {
                             if !svg.is_empty() {
-                                let pic = Pic::new(svg.as_bytes());
-                                let run = Run::new().add_image(pic);
-                                let para = Paragraph::new()
-                                    .add_run(run)
-                                    .line_spacing(self.body_line_spacing());
-                                self.paragraphs.push(DocxElement::Para(para));
-                                return;
+                                // DOCX doesn't support SVG — convert to PNG via resvg
+                                if let Some((png_data, orig_w, orig_h)) = crate::commands::export::svg_to_png(svg) {
+                                    // Scale to fit page content width (page width minus margins)
+                                    // Page widths in EMU: A4=7560310, Letter=7772400, A5=5346700
+                                    // Default margins: ~1 inch each side = 914400 × 2 = 1828800
+                                    let page_w_emu: u32 = match self.options.page_size.as_str() {
+                                        "letter" => 7_772_400,
+                                        "a5" => 5_346_700,
+                                        _ => 7_560_310, // a4
+                                    };
+                                    let max_width_emu = page_w_emu - 1_828_800; // subtract margins
+                                    let aspect = orig_h as f64 / orig_w as f64;
+                                    let w_emu = max_width_emu;
+                                    let h_emu = (w_emu as f64 * aspect) as u32;
+                                    let pic = Pic::new(&png_data).size(w_emu, h_emu);
+                                    let run = Run::new().add_image(pic);
+                                    let para = Paragraph::new()
+                                        .add_run(run)
+                                        .line_spacing(self.body_line_spacing());
+                                    self.paragraphs.push(DocxElement::Para(para));
+                                    return;
+                                }
                             }
                         }
                     }

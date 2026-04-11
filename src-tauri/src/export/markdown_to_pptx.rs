@@ -200,10 +200,29 @@ impl SlideBuilder {
         }
 
         // Add images (Task #7)
+        // Centered on slide, fit within content area (8" × 4.5" max)
+        let max_w: u32 = 7_315_200; // 8 inches in EMU
+        let max_h: u32 = 4_114_800; // 4.5 inches in EMU
         for img in &self.images {
             if img.path.exists() {
                 match Image::from_path(&img.path) {
-                    Ok(image) => {
+                    Ok(mut image) => {
+                        // Scale to fit content area while preserving aspect ratio
+                        if image.width > 0 && image.height > 0 {
+                            let aspect = image.height as f64 / image.width as f64;
+                            let mut w = max_w.min(image.width);
+                            let mut h = (w as f64 * aspect) as u32;
+                            if h > max_h {
+                                h = max_h;
+                                w = (h as f64 / aspect) as u32;
+                            }
+                            image.width = w;
+                            image.height = h;
+                            // Center horizontally, position below title
+                            let slide_w: u32 = 9_144_000; // 10 inches
+                            image.x = (slide_w - w) / 2;
+                            image.y = 1_828_800; // 2 inches from top
+                        }
                         slide = slide.add_image(image);
                     }
                     Err(_) => {
@@ -431,18 +450,19 @@ fn parse_to_builders(
                         }
                     }
 
-                    // Fall back to embedded SVG image
+                    // Fall back to embedded image (convert SVG → PNG for ppt-rs)
                     if let Some(svgs) = embedded_svgs {
                         if let Some(svg) = svgs.get(idx) {
                             if !svg.is_empty() {
-                                // Write SVG to a temp file for ppt-rs Image
-                                let tmp = std::env::temp_dir().join(format!("notesage-export-{}.svg", idx));
-                                if std::fs::write(&tmp, svg).is_ok() {
-                                    ensure_current(&mut current, &mut builders);
-                                    if let Some(ref mut builder) = current {
-                                        builder.images.push(SlideImage { path: tmp });
+                                if let Some((png_data, _w, _h)) = crate::commands::export::svg_to_png(svg) {
+                                    let tmp = std::env::temp_dir().join(format!("notesage-export-{}.png", idx));
+                                    if std::fs::write(&tmp, &png_data).is_ok() {
+                                        ensure_current(&mut current, &mut builders);
+                                        if let Some(ref mut builder) = current {
+                                            builder.images.push(SlideImage { path: tmp });
+                                        }
+                                        continue;
                                     }
-                                    continue;
                                 }
                             }
                         }

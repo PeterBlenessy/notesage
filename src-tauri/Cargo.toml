@@ -38,9 +38,10 @@ tauri-plugin-window-state = "2.4.1"
 typst = "0.14.2"
 typst-pdf = "0.14.2"
 typst-syntax = "0.14.2"
-# SVG text-to-paths pre-processing (usvg needs fontdb to convert <text> to <path>)
+# SVG text-to-paths pre-processing and rasterization for DOCX/PPTX export
 usvg = "0.45"
 fontdb = "0.23"
+resvg = "0.45"
 typst-library = "0.14.2"
 typst-utils = "0.14.2"
 chrono = { version = "0.4", default-features = false, features = ["now", "clock"] }
