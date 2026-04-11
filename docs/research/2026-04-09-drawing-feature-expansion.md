@@ -5,7 +5,7 @@
 
 | Stage | Link | Status |
 | --- | --- | --- |
-| PRD | [drawing-feature-expansion](../prds/2026-04-09-drawing-feature-expansion.md) | Draft |
+| PRD | [drawing-feature-expansion](../prds/2026-04-09-drawing-feature-expansion.md) | Complete |
 | Tasks | [drawing-feature-expansion-tasks](../tasks/2026-04-09-drawing-feature-expansion-tasks.md) | Complete |
 
 Notesage embeds Excalidraw as an inline drawing canvas. This research audits which Excalidraw features are unused or disabled, and evaluates whether adding draw.io support would create competitive advantage.

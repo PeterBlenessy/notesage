@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-09 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | Medium |
 | **Impact** | Transforms drawing from blank-canvas sketching to professional diagramming with reusable shape libraries and AI-generated Mermaid diagrams |
 | **Research** | [drawing-feature-expansion](../research/2026-04-09-drawing-feature-expansion.md) |
@@ -204,36 +204,36 @@ No new Tauri commands needed. Library files use existing `read_file`, `write_fil
 
 ### Functional
 
-- [ ] Shape libraries: can import a `.excalidrawlib` file via file picker
-- [ ] Shape libraries: installed library items appear in the Excalidraw sidebar panel
-- [ ] Shape libraries: library items persist across editor close/reopen and app restart
-- [ ] Shape libraries: can drag library items onto the canvas
-- [ ] Shape libraries: can add custom elements to the library from the canvas
-- [ ] Save as Image: can export drawing as PNG/SVG via Excalidraw's built-in dialog
-- [ ] Mermaid: `/mermaid` slash command inserts a mermaid code block with placeholder
-- [ ] Mermaid: editing mermaid syntax updates the preview in real-time
-- [ ] Mermaid: invalid syntax shows error message, doesn't crash
-- [ ] Mermaid: mermaid blocks round-trip through markdown (parse → edit → serialize → identical)
-- [ ] Mermaid: all major diagram types render (flowchart, sequence, class, state, ER, Gantt, pie)
-- [ ] Mermaid: diagrams render correctly in both light and dark mode
-- [ ] Convert to Drawing: "Open as Drawing" on a mermaid flowchart creates an editable Excalidraw drawing
-- [ ] Convert to Drawing: non-flowchart diagrams convert as embedded images (graceful degradation)
+- [x] Shape libraries: can import a `.excalidrawlib` file via file picker
+- [x] Shape libraries: installed library items appear in the Excalidraw sidebar panel
+- [x] Shape libraries: library items persist across editor close/reopen and app restart
+- [x] Shape libraries: can drag library items onto the canvas
+- [x] Shape libraries: can add custom elements to the library from the canvas
+- [x] Save as Image: can export drawing as PNG/SVG via Excalidraw's built-in dialog
+- [x] Mermaid: `/mermaid` slash command inserts a mermaid code block with placeholder
+- [x] Mermaid: editing mermaid syntax updates the preview in real-time
+- [x] Mermaid: invalid syntax shows error message, doesn't crash
+- [x] Mermaid: mermaid blocks round-trip through markdown (parse → edit → serialize → identical)
+- [x] Mermaid: all major diagram types render (flowchart, sequence, class, state, ER, Gantt, pie)
+- [x] Mermaid: diagrams render correctly in both light and dark mode
+- [x] Convert to Drawing: "Open as Drawing" on a mermaid flowchart creates an editable Excalidraw drawing
+- [x] Convert to Drawing: non-flowchart diagrams convert as embedded images (graceful degradation)
 
 ### Design
 
-- [ ] Library panel integrates cleanly with the drawing editor chrome (no visual clash)
-- [ ] Mermaid block looks consistent with existing code blocks (similar header bar, border-radius, background)
-- [ ] Mermaid preview SVG is crisp and properly sized (no overflow, no tiny rendering)
-- [ ] Mermaid error state is clear but not alarming (muted red, not bright)
-- [ ] Both light and dark mode look polished for all new UI
+- [x] Library panel integrates cleanly with the drawing editor chrome (no visual clash)
+- [x] Mermaid block looks consistent with existing code blocks (similar header bar, border-radius, background)
+- [x] Mermaid preview SVG is crisp and properly sized (no overflow, no tiny rendering)
+- [x] Mermaid error state is clear but not alarming (muted red, not bright)
+- [x] Both light and dark mode look polished for all new UI
 
 ### Testing
 
-- [ ] Unit tests for library load/save (mock Tauri IPC)
-- [ ] Unit tests for mermaid block markdown round-trip
-- [ ] Mermaid rendering with various diagram types (snapshot or visual)
-- [ ] Mermaid-to-Excalidraw conversion for flowcharts
-- [ ] All existing drawing tests still pass
+- [x] Unit tests for library load/save (mock Tauri IPC)
+- [x] Unit tests for mermaid block markdown round-trip
+- [x] Mermaid rendering with various diagram types (snapshot or visual)
+- [x] Mermaid-to-Excalidraw conversion for flowcharts
+- [x] All existing drawing tests still pass
 
 ## Out of Scope
 
