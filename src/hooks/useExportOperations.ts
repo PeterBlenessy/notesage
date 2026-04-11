@@ -132,7 +132,7 @@ const THEME_COLORS: Record<string, string> = {
  * then looks up oklch palette values and converts to hex.
  * No DOM, no CSS, no WebKit — pure data transformation.
  */
-function resolveChartColors(svgString: string, chartJson: string): string {
+export function resolveChartColors(svgString: string, chartJson: string): string {
   // Parse the chart data to get colorScheme and series keys
   let chartData: ChartData | null = null;
   try {
@@ -195,7 +195,7 @@ function resolveChartColors(svgString: string, chartJson: string): string {
 }
 
 /** Render an Excalidraw drawing JSON to an SVG string (light mode for export). */
-async function renderDrawingSvg(drawingJson: string): Promise<string> {
+export async function renderDrawingSvg(drawingJson: string): Promise<string> {
   try {
     const scene = JSON.parse(drawingJson) as {
       elements?: unknown[];

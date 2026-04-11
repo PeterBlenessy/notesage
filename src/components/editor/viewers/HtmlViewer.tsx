@@ -9,8 +9,16 @@ import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 import { presetsForBackend } from "@/lib/typography-presets";
 import { useEditorStylesStore } from "@/stores/editor-styles-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { collectEmbeddedSvgs } from "@/hooks/useExportOperations";
 import { toast } from "sonner";
+
+/** Count how many "__drawing__" placeholders appear before index i. */
+function countDrawingsBefore(svgs: string[], i: number): number {
+  let count = 0;
+  for (let j = 0; j < i; j++) {
+    if (svgs[j] === "__drawing__") count++;
+  }
+  return count;
+}
 
 interface HtmlViewerProps {
   content: string;
@@ -18,9 +26,11 @@ interface HtmlViewerProps {
   fileName: string;
   projectRoot?: string;
   editor?: Editor | null;
+  /** Pre-collected SVGs from WYSIWYG DOM (charts/mermaid captured before unmount). */
+  cachedEmbeddedSvgs?: string[];
 }
 
-export function HtmlViewer({ content, filePath, fileName, projectRoot, editor }: HtmlViewerProps) {
+export function HtmlViewer({ content, filePath, fileName, projectRoot, editor, cachedEmbeddedSvgs }: HtmlViewerProps) {
   const [htmlDoc, setHtmlDoc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,8 +60,33 @@ export function HtmlViewer({ content, filePath, fileName, projectRoot, editor }:
         const title = fileName.replace(/\.[^.]+$/, "");
         const typography = presetsForBackend(useEditorStylesStore.getState().presets);
 
-        // Collect embedded SVGs for inline charts/drawings
-        const embeddedSvgs = editor ? await collectEmbeddedSvgs(editor) : [];
+        // Use pre-cached SVGs (collected while WYSIWYG was still in DOM).
+        // Resolve "__drawing__" placeholders by rendering from JSON.
+        let embeddedSvgs: string[] = [];
+        if (cachedEmbeddedSvgs && cachedEmbeddedSvgs.length > 0 && editor) {
+          const { renderDrawingSvg } = await import("@/hooks/useExportOperations");
+          const resolved = await Promise.all(
+            cachedEmbeddedSvgs.map(async (svg, i) => {
+              if (svg === "__drawing__") {
+                // Find the i-th drawing node and render its SVG
+                let drawingIdx = 0;
+                let drawingJson = "";
+                editor.state.doc.descendants((node) => {
+                  if (node.type.name === "drawing" && node.attrs.drawingJson) {
+                    if (drawingIdx === countDrawingsBefore(cachedEmbeddedSvgs, i)) {
+                      drawingJson = node.attrs.drawingJson as string;
+                    }
+                    drawingIdx++;
+                  }
+                  return false;
+                });
+                return drawingJson ? await renderDrawingSvg(drawingJson) : "";
+              }
+              return svg;
+            })
+          );
+          embeddedSvgs = resolved;
+        }
 
         const result = await invoke<string>("render_html", {
           markdown: content,
@@ -77,7 +112,7 @@ export function HtmlViewer({ content, filePath, fileName, projectRoot, editor }:
 
     renderHtml();
     return () => { cancelled = true; };
-  }, [content, theme, fileName, projectRoot, editor]);
+  }, [content, theme, fileName, projectRoot, editor, cachedEmbeddedSvgs]);
 
   // Copy HTML to clipboard
   const handleCopyHtml = useCallback(async () => {
@@ -86,9 +121,8 @@ export function HtmlViewer({ content, filePath, fileName, projectRoot, editor }:
         ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
         : theme;
 
-      // Get body-only fragment for clipboard
+      // Get body-only fragment for clipboard — reuse cached SVGs
       const typography = presetsForBackend(useEditorStylesStore.getState().presets);
-      const embeddedSvgs = editor ? await collectEmbeddedSvgs(editor) : [];
       const bodyHtml = await invoke<string>("render_html", {
         markdown: content,
         title: fileName.replace(/\.[^.]+$/, ""),
@@ -96,7 +130,7 @@ export function HtmlViewer({ content, filePath, fileName, projectRoot, editor }:
         includeStyles: false,
         projectRoot: projectRoot ?? null,
         typography,
-        embeddedSvgs: embeddedSvgs.length > 0 ? embeddedSvgs : null,
+        embeddedSvgs: cachedEmbeddedSvgs && cachedEmbeddedSvgs.length > 0 ? cachedEmbeddedSvgs : null,
       });
 
       // Write both text/html and text/plain to clipboard

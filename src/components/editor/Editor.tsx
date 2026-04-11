@@ -11,7 +11,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useEditorStylesStore, fontFamilyCSS } from "@/stores/editor-styles-store";
 import { useEditor } from "@/hooks/useEditor";
 import { useFileOperations } from "@/hooks/useFileOperations";
-import { useExportOperations } from "@/hooks/useExportOperations";
+import { useExportOperations, resolveChartColors } from "@/hooks/useExportOperations";
 import { useDiffReview } from "@/hooks/useDiffReview";
 import { useFileWatcher } from "@/hooks/useFileWatcher";
 import { useCommentEditorSync } from "@/hooks/useCommentEditorSync";
@@ -332,6 +332,47 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   /** Per-tab ProseMirror EditorState cache — preserves undo/redo, selection, and plugin state across tab switches. */
   const cachedEditorStatesRef = useRef<Map<string, EditorState>>(new Map());
 
+  // Cache embedded SVGs for HTML preview — must be collected while WYSIWYG is still in DOM.
+  // We use a ref + useMemo trick: collect synchronously from the live DOM before React
+  // unmounts the WYSIWYG editor and mounts HtmlViewer.
+  const cachedEmbeddedSvgsRef = useRef<string[]>([]);
+  const prevViewModeRef = useRef<string | undefined>(undefined);
+  if (
+    activeTab?.viewMode === "html-preview" &&
+    prevViewModeRef.current !== "html-preview" &&
+    editor
+  ) {
+    // Transitioning TO html-preview — collect chart/mermaid SVGs from live DOM
+    const chartSvgs: string[] = [];
+    let chartIdx = 0;
+    let mermaidIdx = 0;
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === "chart" && node.attrs.chartJson) {
+        const wrappers = document.querySelectorAll(".chart-block .recharts-wrapper svg");
+        const svgEl = wrappers[chartIdx++] as SVGSVGElement | undefined;
+        if (svgEl) {
+          const raw = new XMLSerializer().serializeToString(svgEl);
+          chartSvgs.push(resolveChartColors(raw, node.attrs.chartJson as string));
+        } else {
+          chartSvgs.push("");
+        }
+      } else if (node.type.name === "drawing" && node.attrs.drawingJson) {
+        chartSvgs.push("__drawing__"); // placeholder — will be rendered async by HtmlViewer
+      } else if (node.type.name === "mermaidBlock" && node.attrs.source) {
+        const containers = document.querySelectorAll(".mermaid-block .mermaid-svg-container svg");
+        const svgEl = containers[mermaidIdx++] as SVGSVGElement | undefined;
+        if (svgEl) {
+          chartSvgs.push(new XMLSerializer().serializeToString(svgEl));
+        } else {
+          chartSvgs.push("");
+        }
+      }
+      return false;
+    });
+    cachedEmbeddedSvgsRef.current = chartSvgs;
+  }
+  prevViewModeRef.current = activeTab?.viewMode;
+
   // External change detection + inline diff review
   const {
     externalChangesAll,
@@ -558,6 +599,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           fileName={activeTab.fileName}
           projectRoot={projectPath ?? undefined}
           editor={editor}
+          cachedEmbeddedSvgs={cachedEmbeddedSvgsRef.current}
         />
       ) : activeTab?.viewMode === "source" ? (
         <SourceModeEditor
