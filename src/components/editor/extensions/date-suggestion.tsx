@@ -266,7 +266,7 @@ export const DateSuggestion = Extension.create({
       Suggestion({
         editor: this.editor,
         ...this.options.suggestion,
-        allow: ({ state, range, isActive }: { state: EditorState; range: Range; isActive: boolean }) => {
+        allow: ({ state, range, isActive }: { state: EditorState; range: Range; isActive?: boolean }) => {
           if (!isActive && !lastTxChangedDoc) return false;
 
           const $from = state.doc.resolve(range.from);

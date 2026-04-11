@@ -77,7 +77,7 @@ log = "0.4"
 # Auto-update
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
-tauri-plugin-http = "2.5.7"
+tauri-plugin-http = "2"
 
 # System info (local AI memory detection)
 sysinfo = "0.35"

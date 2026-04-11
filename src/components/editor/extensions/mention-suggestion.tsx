@@ -170,7 +170,7 @@ export const MentionSuggestion = Extension.create({
       Suggestion({
         editor: this.editor,
         ...this.options.suggestion,
-        allow: ({ state, range, isActive }: { state: unknown; range: Range; isActive: boolean }) => {
+        allow: ({ state, range, isActive }: { state: unknown; range: Range; isActive?: boolean }) => {
           if (!isActive && !lastTxChangedDoc) return false;
 
           const editorState = state as EditorState;

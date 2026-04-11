@@ -177,7 +177,7 @@ export const TagSuggestion = Extension.create({
       Suggestion({
         editor: this.editor,
         ...this.options.suggestion,
-        allow: ({ state, range, isActive }: { state: unknown; range: Range; isActive: boolean }) => {
+        allow: ({ state, range, isActive }: { state: unknown; range: Range; isActive?: boolean }) => {
           // Only require doc change for initial activation, not while already active
           if (!isActive && !lastTxChangedDoc) return false;
 

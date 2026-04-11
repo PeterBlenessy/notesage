@@ -318,7 +318,7 @@ export function EpubViewer({ filePath, fileName }: EpubViewerProps) {
         containerRef.current!.appendChild(viewEl);
 
         // Create a File blob from binary data
-        const blob = new File([data], fileName, { type: "application/epub+zip" });
+        const blob = new File([data.buffer as ArrayBuffer], fileName, { type: "application/epub+zip" });
 
         // Open the book
         await view.open(blob);

@@ -168,6 +168,6 @@ function convertTable(table: HTMLElement): string {
  * Convert a DOCX file (as Uint8Array) to markdown via mammoth + HTML-to-markdown.
  */
 export async function docxToMarkdown(data: Uint8Array): Promise<string> {
-  const result = await mammoth.convertToHtml({ arrayBuffer: data.buffer });
+  const result = await mammoth.convertToHtml({ arrayBuffer: data.buffer as ArrayBuffer });
   return htmlToMarkdown(result.value);
 }
