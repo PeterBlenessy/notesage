@@ -179,7 +179,7 @@
 
 ## Accessibility
 
-### #15 — Fix FindBar disabled button contrast
+### #15 — Fix FindBar disabled button contrast ✅
 
 **Description:** Three disabled buttons (Previous, Next, Replace) use `disabled:opacity-50` with `text-muted-foreground`, failing WCAG AA. Change to `disabled:opacity-70` or use a different approach that maintains 4.5:1 contrast.
 
@@ -190,7 +190,7 @@
 
 ---
 
-### #16 — Fix SyncSettings checkbox contrast
+### #16 — Fix SyncSettings checkbox contrast ✅
 
 **Description:** Checkbox icon has `opacity-0 group-hover:opacity-40` when unselected. At 40% opacity, fails WCAG AA. Change to `group-hover:opacity-100` or use `text-foreground/50`.
 
@@ -201,7 +201,7 @@
 
 ---
 
-### #17 — Add aria-label to FindBar icon-only buttons
+### #17 — Add aria-label to FindBar icon-only buttons ✅
 
 **Description:** Replace/toggle, Previous, Next, and Close buttons use `title` but no `aria-label`. Add aria-labels: "Toggle replace options", "Previous match", "Next match", "Close find bar".
 
@@ -212,7 +212,7 @@
 
 ---
 
-### #18 — Add aria-label to ChatInput icon-only buttons
+### #18 — Add aria-label to ChatInput icon-only buttons ✅
 
 **Description:** Cancel edit, microphone, attach image, and send buttons use `title` instead of `aria-label`. Add proper aria-labels for screen reader support.
 

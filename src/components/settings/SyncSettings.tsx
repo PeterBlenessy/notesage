@@ -550,7 +550,7 @@ export function SyncSettings() {
                                 "h-4 w-4 shrink-0 transition-opacity duration-150",
                                 isSelected
                                   ? "text-primary opacity-100"
-                                  : "text-muted-foreground opacity-0 group-hover:opacity-40"
+                                  : "text-muted-foreground opacity-0 group-hover:opacity-100"
                               )}
                             />
                           </button>

@@ -343,6 +343,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       disabled={disabled}
       className={`h-6 w-6 shrink-0 ${isDictating ? 'text-red-500 animate-pulse' : 'text-muted-foreground hover:text-foreground'}`}
       title={isDictating ? 'Stop dictation' : 'Start dictation'}
+      aria-label={isDictating ? 'Stop dictation' : 'Start dictation'}
     >
       {isDictating ? (
         <MicOff className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -360,6 +361,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       disabled={!canSend}
       className={`h-6 w-6 shrink-0 disabled:opacity-50 ${canSend ? 'bg-foreground text-background hover:bg-foreground/90' : 'bg-muted text-muted-foreground'}`}
       title="Send (Cmd+Enter)"
+      aria-label="Send message"
     >
       <ArrowUp className="h-3.5 w-3.5" strokeWidth={1.5} />
     </Button>
@@ -372,6 +374,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       onClick={onStop}
       className="h-6 w-6 shrink-0 bg-muted text-muted-foreground hover:text-foreground"
       title="Stop generating"
+      aria-label="Stop generating"
     >
       <Square className="h-2.5 w-2.5" strokeWidth={0} fill="currentColor" />
     </Button>
@@ -385,6 +388,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       disabled={disabled}
       className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground transition-colors duration-150"
       title="Attach image"
+      aria-label="Attach image"
     >
       <ImagePlus className="h-3.5 w-3.5" strokeWidth={1.5} />
     </Button>
@@ -422,6 +426,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             onClick={handleCancelEdit}
             className="h-4 w-4 rounded flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
             title="Cancel editing"
+            aria-label="Cancel editing"
           >
             <X className="h-3 w-3" strokeWidth={1.5} />
           </button>

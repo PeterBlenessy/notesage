@@ -144,6 +144,7 @@ export function FindBar({
             onClick={() => onReplaceExpandedChange(!replaceExpanded)}
             className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground"
             title={replaceExpanded ? "Hide replace" : "Show replace"}
+            aria-label="Toggle replace options"
             aria-expanded={replaceExpanded}
           >
             <ChevronRight
@@ -169,16 +170,18 @@ export function FindBar({
         <button
           onClick={onPrevious}
           disabled={matchCount === 0}
-          className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-50"
+          className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-70"
           title="Previous match (Shift+Enter)"
+          aria-label="Previous match"
         >
           <ChevronUp size={14} strokeWidth={1.5} />
         </button>
         <button
           onClick={onNext}
           disabled={matchCount === 0}
-          className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-50"
+          className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-70"
           title="Next match (Enter)"
+          aria-label="Next match"
         >
           <ChevronDown size={14} strokeWidth={1.5} />
         </button>
@@ -186,6 +189,7 @@ export function FindBar({
           onClick={onClose}
           className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground"
           title="Close (Escape)"
+          aria-label="Close find bar"
         >
           <X size={14} strokeWidth={1.5} />
         </button>
@@ -209,7 +213,7 @@ export function FindBar({
           <button
             onClick={() => onReplace?.(replacement)}
             disabled={matchCount === 0}
-            className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-50"
+            className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-70"
             title="Replace (Enter in replace field)"
           >
             <Replace size={14} strokeWidth={1.5} />
@@ -217,7 +221,7 @@ export function FindBar({
           <button
             onClick={() => onReplaceAll?.(replacement)}
             disabled={matchCount === 0}
-            className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-50"
+            className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-70"
             title="Replace All (Cmd+Shift+Enter)"
           >
             <ReplaceAll size={14} strokeWidth={1.5} />
