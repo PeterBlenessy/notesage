@@ -279,6 +279,7 @@ async function startAcpTask(
   selectedProjectPaths: string[],
 ): Promise<string> {
   const { onComplete, onActivity, onError, onChunk } = callbacks ?? {};
+  let completionFired = false;
 
   // Use explicit projectRoot from taskMeta (delegation/chat), fall back to chat selection
   const cwd = taskMeta?.projectRoot ?? (selectedProjectPaths[0] || '/tmp');
@@ -337,6 +338,8 @@ async function startAcpTask(
       onActivity?.({ kind: 'tool_result', label: 'Tool result', event: 'tool_result' });
       if (track) useActivityStore.getState().completeLastActivity(taskId);
     } else if (eventType === 'agent_turn_complete') {
+      if (completionFired) return;
+      completionFired = true;
       current.status = 'completed';
       const responsePreview = current.output.length > 100
         ? current.output.slice(0, 100) + '\u2026'
@@ -407,6 +410,8 @@ async function startAcpTask(
     .then(() => {
       const t = tasksMap.get(taskId);
       if (t && t.status === 'running') {
+        if (completionFired) return;
+        completionFired = true;
         t.status = 'completed';
         const responsePreview = t.output.length > 100
           ? t.output.slice(0, 100) + '\u2026'
@@ -427,11 +432,10 @@ async function startAcpTask(
     })
     .catch((error) => {
       const t = tasksMap.get(taskId);
+      if (!t) return;
       const errorMsg = error instanceof Error ? error.message : String(error);
-      if (t) {
-        t.status = 'failed';
-        t.error = errorMsg;
-      }
+      t.status = 'failed';
+      t.error = errorMsg;
       onError?.(errorMsg);
       // Send desktop notification for agent error
       import('@/lib/notifications').then(({ notify }) => {

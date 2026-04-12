@@ -189,7 +189,10 @@ export function useLocalAI() {
 
   // Listen for server status events
   useEffect(() => {
-    const unlisten = listen<{ running: boolean; port: number | null; model: string | null }>(
+    let unlisten: (() => void) | null = null;
+    let mounted = true;
+
+    listen<{ running: boolean; port: number | null; model: string | null }>(
       'local-server-status',
       (event) => {
         const { running, port } = event.payload;
@@ -213,9 +216,18 @@ export function useLocalAI() {
           updateConnectionStatus('error');
         }
       },
-    );
+    ).then((fn) => {
+      if (mounted) {
+        unlisten = fn;
+      } else {
+        fn(); // Already unmounted — immediately remove listener
+      }
+    });
 
-    return () => { unlisten.then((fn) => fn()); };
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
   }, []);
 
   // Health check every 30s when server should be running

@@ -137,6 +137,18 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     };
   }, []);
 
+  // Clean up cancel escalation timer and listener on unmount (Bug #2)
+  useEffect(() => {
+    return () => {
+      if (cancelEscalationRef.current) {
+        clearTimeout(cancelEscalationRef.current);
+        cancelEscalationRef.current = null;
+      }
+      cancelEscalationListenerRef.current?.();
+      cancelEscalationListenerRef.current = null;
+    };
+  }, []);
+
   // Respawn agent when workspace folders change (sandbox paths need updating)
   const workspaceProjects = useWorkspaceStore((s) => s.projects);
   const workspaceExplorerFolders = useWorkspaceStore((s) => s.explorerFolders);
@@ -430,6 +442,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             return;
           } catch (retryError) {
             log.error('ai', 'ACP retry with restore also failed', retryError);
+            if (acpAgent) {
+              usePermissionStore.getState().clearRequestsForInstance(acpAgent.instanceId);
+            }
             setMessageError(assistantMessageId, friendlyAcpError(retryError, agentLabel));
             setLoading(false);
             setActiveTool(null);
@@ -452,6 +467,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         }
 
         // Non-connection error — show friendly message, no retry
+        if (acpAgent) {
+          usePermissionStore.getState().clearRequestsForInstance(acpAgent.instanceId);
+        }
         stopAcpAgent();
         log.error('ai', 'ACP chat error', error);
         setMessageError(assistantMessageId, friendlyAcpError(error, agentLabel));

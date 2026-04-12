@@ -82,6 +82,19 @@ export function useCopilotChat({
     });
   }, [isCopilotLsp, workingDir]);
 
+  // Clean up the conversation and reset the ref on unmount. This prevents
+  // conversationIdRef from being left as "pending" if the component unmounts
+  // during conversation creation, and destroys any live conversation to free
+  // server-side resources.
+  useEffect(() => {
+    return () => {
+      if (conversationIdRef.current && conversationIdRef.current !== 'pending') {
+        tauriApi.copilotLspConversationDestroy(conversationIdRef.current).catch(() => {});
+      }
+      conversationIdRef.current = null;
+    };
+  }, []);
+
   // -------------------------------------------------------------------------
   // generateText — one-shot text generation via a temporary conversation
   // -------------------------------------------------------------------------
@@ -97,18 +110,32 @@ export function useCopilotChat({
         return await new Promise<string>((resolve, reject) => {
           let accumulated = '';
           let settled = false;
+          let eventConvId: string | null = null;
+
+          /** Filter: latch onto the first conversationId seen in events, then
+           *  only accept events for that conversation. This prevents cross-talk
+           *  if generateText is called concurrently with sendChatMessage. */
+          const isOurEvent = (payload: { conversationId?: string }): boolean => {
+            if (!payload.conversationId) return true; // no ID = accept (safety)
+            if (eventConvId === null) {
+              eventConvId = payload.conversationId;
+              return true;
+            }
+            return payload.conversationId === eventConvId;
+          };
 
           const setup = async () => {
-            // Listeners must be registered BEFORE calling create/turn because the
+            // Listeners must be registered BEFORE calling create because the
             // JSON-RPC response blocks until after all $/progress notifications
-            // are delivered. We cannot filter by conversationId here since it's
-            // only known after the response. This is safe for generateText because
-            // it's a one-shot call — no other conversation runs concurrently.
+            // are delivered. The isOurEvent filter latches onto the first
+            // conversationId from the first event, preventing cross-talk.
             const [unlistenChunk, unlistenDone] = await Promise.all([
-              listen<{ text: string }>('copilot-chat-chunk', (event) => {
+              listen<{ text: string; conversationId?: string }>('copilot-chat-chunk', (event) => {
+                if (!isOurEvent(event.payload)) return;
                 accumulated += event.payload.text;
               }),
-              listen<{ error?: { message?: string } }>('copilot-chat-done', (event) => {
+              listen<{ error?: { message?: string }; conversationId?: string }>('copilot-chat-done', (event) => {
+                if (!isOurEvent(event.payload)) return;
                 if (!settled) {
                   settled = true;
                   cleanup();

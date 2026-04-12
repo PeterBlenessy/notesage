@@ -935,24 +935,23 @@ pub async fn acp_agent_authenticate(
     instance_id: String,
     method_id: Option<String>,
 ) -> Result<AuthStatus, String> {
-    let agents = state.agents.lock().await;
-    let handle = agents
-        .get(&instance_id)
-        .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    }; // lock released here
 
     let (reply_tx, reply_rx) = oneshot::channel();
 
-    handle
-        .cmd_tx
+    cmd_tx
         .send(AgentCmd::Authenticate {
             method_id,
             reply: reply_tx,
         })
         .await
         .map_err(|_| "Agent thread is no longer running".to_string())?;
-
-    // Drop lock before awaiting reply to avoid holding it during auth
-    drop(agents);
 
     reply_rx
         .await
@@ -1110,23 +1109,23 @@ pub async fn acp_session_new(
     instance_id: String,
     working_directory: String,
 ) -> Result<SessionResult, String> {
-    let agents = state.agents.lock().await;
-    let handle = agents
-        .get(&instance_id)
-        .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    }; // lock released here
 
     let (reply_tx, reply_rx) = oneshot::channel();
 
-    handle
-        .cmd_tx
+    cmd_tx
         .send(AgentCmd::NewSession {
             working_directory,
             reply: reply_tx,
         })
         .await
         .map_err(|_| "Agent thread is no longer running".to_string())?;
-
-    drop(agents);
 
     let result = reply_rx
         .await
@@ -1143,15 +1142,17 @@ pub async fn acp_session_load(
     session_id: String,
     working_directory: String,
 ) -> Result<SessionResult, String> {
-    let agents = state.agents.lock().await;
-    let handle = agents
-        .get(&instance_id)
-        .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    }; // lock released here
 
     let (reply_tx, reply_rx) = oneshot::channel();
 
-    handle
-        .cmd_tx
+    cmd_tx
         .send(AgentCmd::LoadSession {
             session_id,
             working_directory,
@@ -1159,8 +1160,6 @@ pub async fn acp_session_load(
         })
         .await
         .map_err(|_| "Agent thread is no longer running".to_string())?;
-
-    drop(agents);
 
     let result = reply_rx
         .await
@@ -1180,15 +1179,17 @@ pub async fn acp_session_prompt(
     content: String,
     images: Option<Vec<super::ai::ImageData>>,
 ) -> Result<(), String> {
-    let agents = state.agents.lock().await;
-    let handle = agents
-        .get(&instance_id)
-        .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    }; // lock released here
 
     let (reply_tx, reply_rx) = oneshot::channel();
 
-    handle
-        .cmd_tx
+    cmd_tx
         .send(AgentCmd::Prompt {
             session_id,
             content,
@@ -1197,8 +1198,6 @@ pub async fn acp_session_prompt(
         })
         .await
         .map_err(|_| "Agent thread is no longer running".to_string())?;
-
-    drop(agents);
 
     // 30-minute timeout — prompts can take very long for research tasks with many
     // tool calls, web fetches, and file reads. The frontend has a 60s unresponsive
@@ -1230,23 +1229,23 @@ pub async fn acp_session_cancel(
     instance_id: String,
     session_id: String,
 ) -> Result<(), String> {
-    let agents = state.agents.lock().await;
-    let handle = agents
-        .get(&instance_id)
-        .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    }; // lock released here
 
     let (reply_tx, reply_rx) = oneshot::channel();
 
-    handle
-        .cmd_tx
+    cmd_tx
         .send(AgentCmd::Cancel {
             session_id,
             reply: reply_tx,
         })
         .await
         .map_err(|_| "Agent thread is no longer running".to_string())?;
-
-    drop(agents);
 
     reply_rx
         .await
@@ -1262,13 +1261,15 @@ pub async fn acp_permission_respond(
     request_id: String,
     option_id: Option<String>,
 ) -> Result<(), String> {
-    let agents = state.agents.lock().await;
-    let handle = agents
-        .get(&instance_id)
-        .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    }; // lock released here
 
-    handle
-        .cmd_tx
+    cmd_tx
         .send(AgentCmd::PermissionRespond {
             request_id,
             option_id,
