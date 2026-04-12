@@ -16,21 +16,102 @@ import type {
   PptxBackground,
   PptxTheme,
   PptxFill,
-  PptxGradientStop,
   PptxParagraph,
-  PptxTextRun,
-  BodyProperties,
   PptxSlideMaster,
   PptxSlideLayout,
   PptxPlaceholder,
   PptxTextStyle,
-  PptxShadow,
-  ArrowHead,
   PptxTableStyle,
   PptxTableStylePart,
   PptxComment,
   PptxSection,
 } from "./pptx-types";
+
+// ---------------------------------------------------------------------------
+// Imports from extracted modules
+// ---------------------------------------------------------------------------
+
+// Internal use + re-exported
+import {
+  readXml,
+  readRels,
+  parseRelationships,
+  normalizePath,
+  qs,
+  qsa,
+  getAttr,
+  intAttr,
+} from "./pptx-xml-utils";
+
+// Re-export everything from pptx-xml-utils for backward compat
+export {
+  parseXmlString,
+  readXml,
+  readRels,
+  parseRelationships,
+  normalizePath,
+  qs,
+  qsa,
+  getAttr,
+  intAttr,
+} from "./pptx-xml-utils";
+
+// Internal use only
+import { resolveColor } from "./pptx-colors";
+
+// Re-export everything from pptx-colors for backward compat
+export {
+  DEFAULT_CLR_MAP,
+  resolveColor,
+  resolveColorWithAlpha,
+  hexToHsl,
+  hslToHex,
+  hexToRgbComponents,
+  rgbComponentsToHex,
+  srgbToLinear,
+  linearToSrgb,
+  applyColorTransforms,
+} from "./pptx-colors";
+
+// Internal use
+import {
+  parseBodyProperties,
+  parseParagraphs,
+  parseTextStyleDef,
+  parseTextStyleLevels,
+  parseTextStyles,
+  resolveHyperlink,
+} from "./pptx-text-parser";
+
+// Re-export for backward compat
+export {
+  parseBodyProperties,
+  parseTextRuns,
+  parseTextStyleLevels,
+  resolveHyperlinkElement,
+} from "./pptx-text-parser";
+
+// Internal use
+import {
+  parseEffects,
+  parseReflection,
+  parseFill,
+  parseGradientFill,
+  parseStroke,
+  parseShadow,
+  parseStyleFillRef,
+} from "./pptx-shape-parser";
+
+export type { EffectsResult } from "./pptx-shape-parser";
+
+// Re-export for backward compat
+export {
+  parseEffects,
+  parseReflection,
+  parseFill,
+  parseGradientFill,
+  parseStroke,
+} from "./pptx-shape-parser";
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -172,99 +253,6 @@ export async function parsePptx(bytes: Uint8Array): Promise<PptxPresentation> {
   };
   resolveInheritance(presentation);
   return presentation;
-}
-
-// ---------------------------------------------------------------------------
-// XML helpers
-// ---------------------------------------------------------------------------
-
-function parseXmlString(text: string): Document {
-  return new DOMParser().parseFromString(text, "application/xml");
-}
-
-async function readXml(zip: JSZip, path: string): Promise<Document | null> {
-  const file = zip.file(path);
-  if (!file) return null;
-  const text = await file.async("text");
-  return parseXmlString(text);
-}
-
-async function readRels(zip: JSZip, slidePath: string): Promise<Record<string, string>> {
-  const dir = slidePath.substring(0, slidePath.lastIndexOf("/"));
-  const name = slidePath.substring(slidePath.lastIndexOf("/") + 1);
-  const relsPath = `${dir}/_rels/${name}.rels`;
-  const doc = await readXml(zip, relsPath);
-  return doc ? parseRelationships(doc) : {};
-}
-
-function parseRelationships(doc: Document): Record<string, string> {
-  const map: Record<string, string> = {};
-  const rels = doc.getElementsByTagName("Relationship");
-  for (let i = 0; i < rels.length; i++) {
-    const rel = rels[i];
-    const id = rel.getAttribute("Id");
-    const target = rel.getAttribute("Target");
-    if (id && target) map[id] = target;
-  }
-  return map;
-}
-
-function normalizePath(base: string, relative: string): string {
-  if (relative.startsWith("/")) return relative.substring(1);
-  const parts = `${base}/${relative}`.split("/");
-  const resolved: string[] = [];
-  for (const p of parts) {
-    if (p === "..") resolved.pop();
-    else if (p !== ".") resolved.push(p);
-  }
-  return resolved.join("/");
-}
-
-/** Get text content of first element matching a local-name selector */
-function qs(parent: Element | Document, localName: string): Element | null {
-  return parent.querySelector(`*|${localName}`) ??
-    findByLocalName(parent, localName);
-}
-
-function qsa(parent: Element | Document, localName: string): Element[] {
-  const result = parent.querySelectorAll(`*|${localName}`);
-  if (result.length > 0) return Array.from(result);
-  return findAllByLocalName(parent, localName);
-}
-
-function findByLocalName(parent: Element | Document, name: string): Element | null {
-  const children = parent instanceof Document ? parent.documentElement?.children : parent.children;
-  if (!children) return null;
-  for (let i = 0; i < children.length; i++) {
-    if (children[i].localName === name) return children[i];
-    const found = findByLocalName(children[i], name);
-    if (found) return found;
-  }
-  return null;
-}
-
-function findAllByLocalName(parent: Element | Document, name: string): Element[] {
-  const results: Element[] = [];
-  const root = parent instanceof Document ? parent.documentElement : parent;
-  if (!root) return results;
-  const walk = (el: Element) => {
-    for (let i = 0; i < el.children.length; i++) {
-      const child = el.children[i];
-      if (child.localName === name) results.push(child);
-      walk(child);
-    }
-  };
-  walk(root);
-  return results;
-}
-
-function getAttr(el: Element, name: string): string | null {
-  return el.getAttribute(name);
-}
-
-function intAttr(el: Element, name: string, fallback = 0): number {
-  const v = el.getAttribute(name);
-  return v ? parseInt(v, 10) || fallback : fallback;
 }
 
 // ---------------------------------------------------------------------------
@@ -786,850 +774,8 @@ function mapPresetGeometry(preset: string | null): PptxShape["shapeType"] {
   return map[preset] ?? "other";
 }
 
-// ---------------------------------------------------------------------------
-// Body properties
-// ---------------------------------------------------------------------------
-
-export function parseBodyProperties(txBody: Element): BodyProperties | undefined {
-  const bodyPr = qs(txBody, "bodyPr");
-  if (!bodyPr) return undefined;
-
-  const anchorAttr = getAttr(bodyPr, "anchor");
-  const anchorMap: Record<string, BodyProperties["anchor"]> = {
-    t: "top", ctr: "center", b: "bottom",
-  };
-  const anchor = anchorMap[anchorAttr ?? ""] ?? "top";
-
-  const marginLeft = intAttr(bodyPr, "lIns", 91440);
-  const marginTop = intAttr(bodyPr, "tIns", 45720);
-  const marginRight = intAttr(bodyPr, "rIns", 91440);
-  const marginBottom = intAttr(bodyPr, "bIns", 45720);
-
-  let fontScale = 1;
-  const normAutofit = qs(bodyPr, "normAutofit");
-  if (normAutofit) {
-    const scaleVal = intAttr(normAutofit, "fontScale", 100000);
-    fontScale = scaleVal / 100000;
-  }
-
-  const autoFit = !!qs(bodyPr, "spAutoFit");
-
-  const wrapAttr = getAttr(bodyPr, "wrap");
-  const wrap = wrapAttr !== "none";
-
-  return { anchor, marginLeft, marginTop, marginRight, marginBottom, fontScale, autoFit, wrap };
-}
-
-// ---------------------------------------------------------------------------
-// Spacing helpers
-// ---------------------------------------------------------------------------
-
-function parseSpacingValue(el: Element | null): number | undefined {
-  if (!el) return undefined;
-  const spcPct = qs(el, "spcPct");
-  if (spcPct) {
-    const val = intAttr(spcPct, "val", 0);
-    return val / 100000; // e.g., 150000 -> 1.5 multiplier
-  }
-  const spcPts = qs(el, "spcPts");
-  if (spcPts) {
-    const val = intAttr(spcPts, "val", 0);
-    return val / 100 * 1.333; // hundredths of points -> points -> px
-  }
-  return undefined;
-}
-
-function parseParagraphSpacing(pPr: Element | null): {
-  lineSpacing?: number;
-  spaceBefore?: number;
-  spaceAfter?: number;
-  indent?: number;
-  marginLeft?: number;
-} {
-  if (!pPr) return {};
-
-  const lnSpc = qs(pPr, "lnSpc");
-  const lineSpacing = parseSpacingValue(lnSpc);
-
-  const spcBef = qs(pPr, "spcBef");
-  const spaceBefore = parseSpacingValue(spcBef);
-
-  const spcAft = qs(pPr, "spcAft");
-  const spaceAfter = parseSpacingValue(spcAft);
-
-  const indentEmu = intAttr(pPr, "indent", 0);
-  const indent = indentEmu !== 0 ? indentEmu / 9525 : undefined;
-
-  const marLEmu = intAttr(pPr, "marL", 0);
-  const marginLeft = marLEmu !== 0 ? marLEmu / 9525 : undefined;
-
-  return { lineSpacing, spaceBefore, spaceAfter, indent, marginLeft };
-}
-
-// ---------------------------------------------------------------------------
-// Hyperlink helpers
-// ---------------------------------------------------------------------------
-
-function resolveHyperlinkElement(hlinkEl: Element, rels?: Record<string, string>): string | undefined {
-  const rId = hlinkEl.getAttributeNS(
-    "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
-    "id",
-  ) || getAttr(hlinkEl, "r:id");
-
-  // Internal slide link (action)
-  const action = getAttr(hlinkEl, "action");
-  if (action && action.startsWith("ppaction://hlinksldjump")) {
-    if (rId && rels?.[rId]) {
-      const target = rels[rId];
-      const match = target.match(/slide(\d+)\.xml/i);
-      if (match) return `slide:${parseInt(match[1], 10)}`;
-    }
-    return undefined;
-  }
-
-  if (rId && rels?.[rId]) {
-    const target = rels[rId];
-    if (target.startsWith("http://") || target.startsWith("https://") || target.startsWith("mailto:")) {
-      return target;
-    }
-  }
-
-  return undefined;
-}
-
-function resolveHyperlink(cNvPr: Element, rels?: Record<string, string>): string | undefined {
-  const hlinkClick = qs(cNvPr, "hlinkClick");
-  if (!hlinkClick) return undefined;
-  return resolveHyperlinkElement(hlinkClick, rels);
-}
-
-// ---------------------------------------------------------------------------
-// Paragraphs & text runs
-// ---------------------------------------------------------------------------
-
-function parseParagraphs(txBody: Element, theme: PptxTheme, rels?: Record<string, string>): PptxParagraph[] {
-  const paragraphs: PptxParagraph[] = [];
-  const pEls = qsa(txBody, "p");
-
-  for (const pEl of pEls) {
-    const pPr = qs(pEl, "pPr");
-    const { alignment, explicit: explicitAlignment } = parseAlignment(pPr, theme);
-    const bullet = parseBullet(pPr, theme);
-    const spacing = parseParagraphSpacing(pPr);
-    const defRPr = pPr ? qs(pPr, "defRPr") : null;
-    const runs = parseTextRuns(pEl, theme, rels, defRPr);
-
-    // Parse tab stops from pPr > tabLst > tab
-    let tabStops: { pos: number; align: string }[] | undefined;
-    if (pPr) {
-      const tabLst = qs(pPr, "tabLst");
-      if (tabLst) {
-        const tabs = qsa(tabLst, "tab");
-        if (tabs.length > 0) {
-          tabStops = tabs.map(tab => ({
-            pos: intAttr(tab, "pos", 0) / 9525,
-            align: getAttr(tab, "algn") ?? "l",
-          }));
-        }
-      }
-    }
-
-    // Skip empty paragraphs with no text at all
-    if (runs.length === 0 && !bullet.bulletChar && !bullet.bulletAutoNum) continue;
-
-    paragraphs.push({
-      alignment,
-      explicitAlignment: explicitAlignment || undefined,
-      runs,
-      bulletChar: bullet.bulletChar,
-      bulletLevel: bullet.bulletLevel,
-      ...spacing,
-      bulletAutoNum: bullet.bulletAutoNum,
-      bulletFont: bullet.bulletFont,
-      bulletColor: bullet.bulletColor,
-      bulletSizePercent: bullet.bulletSizePercent,
-      tabStops,
-    });
-  }
-
-  return paragraphs;
-}
-
-function parseAlignment(pPr: Element | null, theme?: PptxTheme): { alignment: PptxParagraph["alignment"]; explicit: boolean } {
-  const defaultAlign = theme?.defaultAlignment ?? "left";
-  if (!pPr) return { alignment: defaultAlign, explicit: false };
-  const algn = getAttr(pPr, "algn");
-  if (!algn) return { alignment: defaultAlign, explicit: false };
-  const map: Record<string, PptxParagraph["alignment"]> = {
-    l: "left", ctr: "center", r: "right", just: "justify",
-  };
-  return { alignment: map[algn] ?? defaultAlign, explicit: true };
-}
-
-interface BulletInfo {
-  bulletChar: string | null;
-  bulletLevel: number;
-  bulletAutoNum?: { type: string; startAt: number };
-  bulletFont?: string;
-  bulletColor?: string;
-  bulletSizePercent?: number;
-}
-
-function parseBullet(pPr: Element | null, theme: PptxTheme): BulletInfo {
-  if (!pPr) return { bulletChar: null, bulletLevel: 0 };
-  const level = intAttr(pPr, "lvl", 0);
-
-  // Parse shared bullet styling
-  const buFont = qs(pPr, "buFont");
-  const bulletFont = buFont ? (getAttr(buFont, "typeface") ?? undefined) : undefined;
-
-  const buClr = qs(pPr, "buClr");
-  const bulletColor = buClr ? (resolveColor(buClr, theme) ?? undefined) : undefined;
-
-  const buSzPct = qs(pPr, "buSzPct");
-  const bulletSizePercent = buSzPct ? (intAttr(buSzPct, "val", 100000) / 1000) : undefined;
-
-  const buChar = qs(pPr, "buChar");
-  if (buChar) {
-    return {
-      bulletChar: getAttr(buChar, "char") ?? "•",
-      bulletLevel: level,
-      bulletFont, bulletColor, bulletSizePercent,
-    };
-  }
-
-  const buAutoNum = qs(pPr, "buAutoNum");
-  if (buAutoNum) {
-    const type = getAttr(buAutoNum, "type") ?? "arabicPeriod";
-    const startAt = intAttr(buAutoNum, "startAt", 1);
-    return {
-      bulletChar: null, // rendered dynamically
-      bulletLevel: level,
-      bulletAutoNum: { type, startAt },
-      bulletFont, bulletColor, bulletSizePercent,
-    };
-  }
-
-  // buNone explicitly disables bullets
-  const buNone = qs(pPr, "buNone");
-  if (buNone) return { bulletChar: null, bulletLevel: 0 };
-
-  return { bulletChar: null, bulletLevel: level };
-}
-
-export function parseTextRuns(pEl: Element, theme: PptxTheme, rels?: Record<string, string>, defRPr?: Element | null): PptxTextRun[] {
-  const runs: PptxTextRun[] = [];
-
-  for (let i = 0; i < pEl.children.length; i++) {
-    const child = pEl.children[i];
-    const ln = child.localName;
-
-    if (ln === "r") {
-      const tEl = qs(child, "t");
-      const text = tEl?.textContent ?? "";
-      if (!text) continue;
-
-      const rPr = qs(child, "rPr");
-
-      // Resolve properties with defRPr fallback
-      const effectiveRPr = rPr ?? defRPr ?? null;
-
-      // Character spacing (spc is in 1/100ths of a point)
-      const spc = rPr ? intAttr(rPr, "spc", 0) : (defRPr ? intAttr(defRPr, "spc", 0) : 0);
-
-      // Text caps
-      const capAttr = rPr ? getAttr(rPr, "cap") : (defRPr ? getAttr(defRPr, "cap") : null);
-      const caps = capAttr === "all" ? "all" as const
-        : capAttr === "small" ? "small" as const
-        : undefined;
-
-      // Strikethrough
-      const strike = rPr ? getAttr(rPr, "strike") : (defRPr ? getAttr(defRPr, "strike") : null);
-      let strikethrough: PptxTextRun["strikethrough"];
-      if (strike === "sngStrike") strikethrough = "single";
-      else if (strike === "dblStrike") strikethrough = "double";
-
-      // Baseline (superscript/subscript)
-      const baseline = rPr ? intAttr(rPr, "baseline", 0) : (defRPr ? intAttr(defRPr, "baseline", 0) : 0);
-
-      // Text-level shadow
-      const runEffectLst = effectiveRPr ? qs(effectiveRPr, "effectLst") : null;
-      const runOuterShdw = runEffectLst ? qs(runEffectLst, "outerShdw") : null;
-      let runShadow: PptxShadow | undefined;
-      if (runOuterShdw) {
-        const shdBlurRad = intAttr(runOuterShdw, "blurRad", 0) / 12700;
-        const shdDist = intAttr(runOuterShdw, "dist", 0) / 12700;
-        const shdDir = intAttr(runOuterShdw, "dir", 0) / 60000;
-        const shdDirRad = (shdDir * Math.PI) / 180;
-        const shdOffsetX = Math.round(shdDist * Math.sin(shdDirRad) * 10) / 10;
-        const shdOffsetY = Math.round(shdDist * Math.cos(shdDirRad) * 10) / 10;
-        const shdColorResult = resolveColorWithAlpha(runOuterShdw, theme);
-        runShadow = {
-          offsetX: shdOffsetX, offsetY: shdOffsetY, blur: shdBlurRad,
-          color: shdColorResult?.color ?? "#000000", alpha: shdColorResult?.alpha ?? 0.5,
-        };
-      }
-
-      // Underline style and color
-      const uAttr = effectiveRPr ? getAttr(effectiveRPr, "u") : null;
-      const underline = effectiveRPr ? (uAttr ?? "none") !== "none" : false;
-      const underlineStyle = underline && uAttr ? uAttr : undefined;
-      const uFill = rPr ? qs(rPr, "uFill") : null;
-      const uSolidFill = uFill ? qs(uFill, "solidFill") : null;
-      const underlineColor = uSolidFill ? resolveColor(uSolidFill, theme) ?? undefined : undefined;
-
-      // Highlight (text background)
-      const highlightEl = effectiveRPr ? qs(effectiveRPr, "highlight") : null;
-      const highlight = highlightEl ? resolveColor(highlightEl, theme) ?? undefined : undefined;
-
-      // Kerning
-      const kern = rPr ? intAttr(rPr, "kern", 0) : (defRPr ? intAttr(defRPr, "kern", 0) : 0);
-
-      // East Asian and Complex Script fonts
-      const eaEl = effectiveRPr ? qs(effectiveRPr, "ea") : null;
-      let eaFont: string | undefined;
-      if (eaEl) {
-        const tf = getAttr(eaEl, "typeface");
-        if (tf === "+mj-ea") eaFont = theme.fonts.heading;
-        else if (tf === "+mn-ea") eaFont = theme.fonts.body;
-        else if (tf) eaFont = tf;
-      }
-
-      const csEl = effectiveRPr ? qs(effectiveRPr, "cs") : null;
-      let csFont: string | undefined;
-      if (csEl) {
-        const tf = getAttr(csEl, "typeface");
-        if (tf === "+mj-cs") csFont = theme.fonts.heading;
-        else if (tf === "+mn-cs") csFont = theme.fonts.body;
-        else if (tf) csFont = tf;
-      }
-
-      // Hyperlink on the run
-      const hlinkClick = rPr ? qs(rPr, "hlinkClick") : null;
-      const hyperlink = hlinkClick ? resolveHyperlinkElement(hlinkClick, rels) : undefined;
-
-      // Bold/italic/underline with defRPr fallback
-      const bold = rPr ? getAttr(rPr, "b") === "1"
-        : (defRPr ? getAttr(defRPr, "b") === "1" : false);
-      const italic = rPr ? getAttr(rPr, "i") === "1"
-        : (defRPr ? getAttr(defRPr, "i") === "1" : false);
-
-      // Font size with defRPr fallback
-      const themeFontSize = theme.defaultFontSize ?? 1800;
-      const defFontSize = defRPr ? intAttr(defRPr, "sz", themeFontSize) : themeFontSize;
-      const fontSize = rPr ? intAttr(rPr, "sz", defFontSize) / 100 : defFontSize / 100;
-
-      const fontFamily = parseFontFamily(effectiveRPr, theme);
-
-      runs.push({
-        text,
-        bold,
-        italic,
-        underline,
-        ...(underlineStyle ? { underlineStyle } : {}),
-        ...(underlineColor ? { underlineColor } : {}),
-        strikethrough,
-        baseline: baseline !== 0 ? baseline : undefined,
-        fontSize,
-        fontFamily,
-        color: parseRunColor(effectiveRPr, theme),
-        ...(spc !== 0 ? { letterSpacing: spc / 100 } : {}),
-        ...(caps ? { caps } : {}),
-        ...(highlight ? { highlight } : {}),
-        ...(kern !== 0 ? { kern } : {}),
-        ...(eaFont && eaFont !== fontFamily ? { eaFont } : {}),
-        ...(csFont && csFont !== fontFamily ? { csFont } : {}),
-        hyperlink,
-        ...(runShadow ? { shadow: runShadow } : {}),
-      });
-    } else if (ln === "br") {
-      runs.push({
-        text: "\n",
-        bold: false, italic: false, underline: false,
-        fontSize: 18, fontFamily: theme.fonts.body, color: "#000000",
-      });
-    }
-  }
-
-  return runs;
-}
-
-function parseFontFamily(rPr: Element | null, theme: PptxTheme): string {
-  if (!rPr) return theme.fonts.body;
-  const latin = qs(rPr, "latin");
-  if (latin) {
-    const tf = getAttr(latin, "typeface");
-    if (tf) {
-      if (tf === "+mj-lt") return theme.fonts.heading;
-      if (tf === "+mn-lt") return theme.fonts.body;
-      return tf;
-    }
-  }
-  return theme.fonts.body;
-}
-
-function parseRunColor(rPr: Element | null, theme: PptxTheme): string {
-  if (!rPr) return "#000000";
-  return resolveColor(rPr, theme) ?? "#000000";
-}
-
-// ---------------------------------------------------------------------------
-// Color resolution
-// ---------------------------------------------------------------------------
-
-/** Default clrMap mapping when no master clrMap is defined. */
-export const DEFAULT_CLR_MAP: Record<string, string> = { bg1: "lt1", bg2: "lt2", tx1: "dk1", tx2: "dk2" };
-
-export function resolveColor(parent: Element, theme: PptxTheme): string | null {
-  // Look inside solidFill first (preferred), then search parent directly.
-  // This prevents finding srgbClr inside unrelated nested elements (e.g., effectLst > outerShdw).
-  const solidFill = qs(parent, "solidFill");
-  const colorParent = solidFill ?? parent;
-
-  const srgb = qs(colorParent, "srgbClr");
-  if (srgb) return applyColorTransforms(srgb, `#${getAttr(srgb, "val") ?? "000000"}`);
-
-  const schemeClr = qs(colorParent, "schemeClr");
-  if (schemeClr) {
-    const val = getAttr(schemeClr, "val");
-    // Try direct lookup first (e.g., dk1, lt1, accent1)
-    if (val && theme.colors[val]) {
-      return applyColorTransforms(schemeClr, theme.colors[val]);
-    }
-    // Apply clrMap remapping (master's clrMap, or default mapping)
-    const clrMap = theme.clrMap ?? DEFAULT_CLR_MAP;
-    const remapped = val ? clrMap[val] : null;
-    if (remapped && theme.colors[remapped]) {
-      return applyColorTransforms(schemeClr, theme.colors[remapped]);
-    }
-    // Fallback to default mapping if clrMap doesn't have the key
-    if (val && DEFAULT_CLR_MAP[val] && theme.colors[DEFAULT_CLR_MAP[val]]) {
-      return applyColorTransforms(schemeClr, theme.colors[DEFAULT_CLR_MAP[val]]);
-    }
-  }
-
-  return null;
-}
-
-/** Like resolveColor but also extracts alpha from the color element's children. */
-export function resolveColorWithAlpha(parent: Element, theme: PptxTheme): { color: string; alpha?: number } | null {
-  // Look inside solidFill first (preferred) to avoid finding srgbClr inside effectLst
-  const solidFill = qs(parent, "solidFill");
-  const colorParent = solidFill ?? parent;
-
-  const srgb = qs(colorParent, "srgbClr");
-  if (srgb) {
-    const color = applyColorTransforms(srgb, `#${getAttr(srgb, "val") ?? "000000"}`);
-    const alpha = extractAlpha(srgb);
-    return { color, alpha };
-  }
-
-  const schemeClr = qs(colorParent, "schemeClr");
-  if (schemeClr) {
-    const val = getAttr(schemeClr, "val");
-    // Try direct lookup, then clrMap remapping, then default mapping
-    const clrMap = theme.clrMap ?? DEFAULT_CLR_MAP;
-    const baseKey = (val && theme.colors[val])
-      ? val
-      : (val && clrMap[val] && theme.colors[clrMap[val]])
-        ? clrMap[val]
-        : (val && DEFAULT_CLR_MAP[val] && theme.colors[DEFAULT_CLR_MAP[val]])
-          ? DEFAULT_CLR_MAP[val]
-          : null;
-    if (baseKey) {
-      const color = applyColorTransforms(schemeClr, theme.colors[baseKey]);
-      const alpha = extractAlpha(schemeClr);
-      return { color, alpha };
-    }
-  }
-
-  return null;
-}
-
-/** Extract alpha value from a color element's alpha child (values in 1/1000ths of percent). */
-function extractAlpha(colorEl: Element): number | undefined {
-  const alphaEl = qs(colorEl, "alpha");
-  if (!alphaEl) return undefined;
-  const val = intAttr(alphaEl, "val", 100000);
-  if (val >= 100000) return undefined; // fully opaque, no need to set
-  return val / 100000;
-}
-
-export function hexToHsl(hex: string): { h: number; s: number; l: number } {
-  const raw = hex.replace("#", "");
-  const r = parseInt(raw.substring(0, 2), 16) / 255;
-  const g = parseInt(raw.substring(2, 4), 16) / 255;
-  const b = parseInt(raw.substring(4, 6), 16) / 255;
-
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const l = (max + min) / 2;
-
-  if (max === min) return { h: 0, s: 0, l };
-
-  const d = max - min;
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-
-  let h: number;
-  if (max === r) {
-    h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-  } else if (max === g) {
-    h = ((b - r) / d + 2) / 6;
-  } else {
-    h = ((r - g) / d + 4) / 6;
-  }
-
-  return { h: h * 360, s, l };
-}
-
-export function hslToHex(h: number, s: number, l: number): string {
-  // Clamp values
-  h = ((h % 360) + 360) % 360;
-  s = Math.max(0, Math.min(1, s));
-  l = Math.max(0, Math.min(1, l));
-
-  if (s === 0) {
-    const v = Math.round(l * 255);
-    return `#${v.toString(16).padStart(2, "0")}${v.toString(16).padStart(2, "0")}${v.toString(16).padStart(2, "0")}`;
-  }
-
-  const hue2rgb = (p: number, q: number, t: number): number => {
-    if (t < 0) t += 1;
-    if (t > 1) t -= 1;
-    if (t < 1 / 6) return p + (q - p) * 6 * t;
-    if (t < 1 / 2) return q;
-    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-    return p;
-  };
-
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-  const p = 2 * l - q;
-  const hNorm = h / 360;
-
-  const r = Math.round(hue2rgb(p, q, hNorm + 1 / 3) * 255);
-  const g = Math.round(hue2rgb(p, q, hNorm) * 255);
-  const b = Math.round(hue2rgb(p, q, hNorm - 1 / 3) * 255);
-
-  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
-}
-
-/** Parse hex color to RGB components (0-255) */
-export function hexToRgbComponents(hex: string): { r: number; g: number; b: number } {
-  const raw = hex.replace("#", "");
-  return {
-    r: parseInt(raw.substring(0, 2), 16),
-    g: parseInt(raw.substring(2, 4), 16),
-    b: parseInt(raw.substring(4, 6), 16),
-  };
-}
-
-/** Convert RGB components (0-255) to hex string */
-export function rgbComponentsToHex(r: number, g: number, b: number): string {
-  const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
-  return `#${clamp(r).toString(16).padStart(2, "0")}${clamp(g).toString(16).padStart(2, "0")}${clamp(b).toString(16).padStart(2, "0")}`;
-}
-
-/** Convert sRGB channel (0-1) to linear RGB */
-export function srgbToLinear(c: number): number {
-  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-}
-
-/** Convert linear RGB channel to sRGB (0-1) */
-export function linearToSrgb(c: number): number {
-  return c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
-}
-
-export function applyColorTransforms(parent: Element, baseColor: string): string {
-  const hueMod = qs(parent, "hueMod");
-  const hueOff = qs(parent, "hueOff");
-  const satMod = qs(parent, "satMod");
-  const satOff = qs(parent, "satOff");
-  const lumMod = qs(parent, "lumMod");
-  const lumOff = qs(parent, "lumOff");
-  const tint = qs(parent, "tint");
-  const shade = qs(parent, "shade");
-  const gamma = qs(parent, "gamma");
-  const invGamma = qs(parent, "invGamma");
-
-  // Early return if no transforms present
-  if (!hueMod && !hueOff && !satMod && !satOff && !lumMod && !lumOff && !tint && !shade) {
-    return baseColor;
-  }
-
-  let color = baseColor;
-
-  // 1. Hue/Sat/Lum modulation in HSL (correct per OOXML spec)
-  if (hueMod || hueOff || satMod || satOff || lumMod || lumOff) {
-    const hsl = hexToHsl(color);
-    if (hueMod) hsl.h = hsl.h * (intAttr(hueMod, "val", 100000) / 100000);
-    if (hueOff) hsl.h = hsl.h + intAttr(hueOff, "val", 0) / 60000;
-    if (satMod) hsl.s = hsl.s * (intAttr(satMod, "val", 100000) / 100000);
-    if (satOff) hsl.s = hsl.s + intAttr(satOff, "val", 0) / 100000;
-    if (lumMod || lumOff) {
-      const lm = lumMod ? intAttr(lumMod, "val", 100000) / 100000 : 1;
-      const lo = lumOff ? intAttr(lumOff, "val", 0) / 100000 : 0;
-      hsl.l = hsl.l * lm + lo;
-    }
-    color = hslToHex(hsl.h, hsl.s, hsl.l);
-  }
-
-  // 2. Tint and shade in sRGB (or linear RGB if gamma/invGamma present)
-  if (tint || shade) {
-    let { r, g, b } = hexToRgbComponents(color);
-
-    // Convert to linear space if gamma element is present
-    if (gamma) {
-      r = srgbToLinear(r / 255) * 255;
-      g = srgbToLinear(g / 255) * 255;
-      b = srgbToLinear(b / 255) * 255;
-    }
-
-    // Tint: sRGB channel operation — c_new = c + (255 - c) * tint_fraction
-    if (tint) {
-      const t = intAttr(tint, "val", 100000) / 100000;
-      r = r + (255 - r) * t;
-      g = g + (255 - g) * t;
-      b = b + (255 - b) * t;
-    }
-
-    // Shade: sRGB channel multiplication — c_new = c * shade_fraction
-    if (shade) {
-      const sh = intAttr(shade, "val", 100000) / 100000;
-      r = r * sh;
-      g = g * sh;
-      b = b * sh;
-    }
-
-    // Convert back from linear if invGamma element is present
-    if (invGamma) {
-      r = linearToSrgb(r / 255) * 255;
-      g = linearToSrgb(g / 255) * 255;
-      b = linearToSrgb(b / 255) * 255;
-    }
-
-    color = rgbComponentsToHex(r, g, b);
-  }
-
-  return color;
-}
-
-// ---------------------------------------------------------------------------
-// Shadows
-// ---------------------------------------------------------------------------
-
-interface EffectsResult {
-  shadow?: PptxShadow;
-  glow?: { radius: number; color: string; alpha: number };
-  softEdge?: number;
-}
-
-export function parseEffects(spPr: Element, theme: PptxTheme): EffectsResult {
-  const effectLst = qs(spPr, "effectLst");
-  if (!effectLst) return {};
-
-  const result: EffectsResult = {};
-
-  // Shadow (outerShdw)
-  const outerShdw = qs(effectLst, "outerShdw");
-  if (outerShdw) {
-    const blurRad = intAttr(outerShdw, "blurRad", 0) / 12700;
-    const dist = intAttr(outerShdw, "dist", 0) / 12700;
-    const dir = intAttr(outerShdw, "dir", 0) / 60000;
-    const dirRad = (dir * Math.PI) / 180;
-    const offsetX = Math.round(dist * Math.sin(dirRad) * 10) / 10;
-    const offsetY = Math.round(dist * Math.cos(dirRad) * 10) / 10;
-    const colorResult = resolveColorWithAlpha(outerShdw, theme);
-    result.shadow = {
-      offsetX, offsetY, blur: blurRad,
-      color: colorResult?.color ?? "#000000",
-      alpha: colorResult?.alpha ?? 0.5,
-    };
-  }
-
-  // Glow
-  const glowEl = qs(effectLst, "glow");
-  if (glowEl) {
-    const rad = intAttr(glowEl, "rad", 0) / 12700;
-    const colorResult = resolveColorWithAlpha(glowEl, theme);
-    result.glow = {
-      radius: rad,
-      color: colorResult?.color ?? "#000000",
-      alpha: colorResult?.alpha ?? 0.5,
-    };
-  }
-
-  // Soft edge
-  const softEdgeEl = qs(effectLst, "softEdge");
-  if (softEdgeEl) {
-    result.softEdge = intAttr(softEdgeEl, "rad", 0) / 12700;
-  }
-
-  return result;
-}
-
-/** @deprecated Use parseEffects instead. Kept for backward compat with picture shadow parsing. */
-function parseShadow(spPr: Element, theme: PptxTheme): PptxShadow | undefined {
-  return parseEffects(spPr, theme).shadow;
-}
-
-export function parseReflection(spPr: Element): PptxImage['reflection'] | undefined {
-  const effectLst = qs(spPr, "effectLst");
-  if (!effectLst) return undefined;
-  const reflEl = qs(effectLst, "reflection");
-  if (!reflEl) return undefined;
-
-  const blurRadius = intAttr(reflEl, "blurRad", 0) / 12700;        // EMU to pt
-  const startOpacity = intAttr(reflEl, "stA", 100000) / 100000;    // start alpha
-  const endOpacity = intAttr(reflEl, "endA", 0) / 100000;          // end alpha
-  const distance = intAttr(reflEl, "dist", 0) / 12700;             // EMU to pt
-  const direction = intAttr(reflEl, "dir", 5400000) / 60000;       // 60000ths of degree
-  const sy = intAttr(reflEl, "sy", -100000);                       // scale Y (negative = flip)
-  const size = Math.abs(sy) / 1000;                                // percentage
-
-  return { blurRadius, startOpacity, endOpacity, distance, direction, size };
-}
-
-// ---------------------------------------------------------------------------
-// Fill & stroke
-// ---------------------------------------------------------------------------
-
-/**
- * Parse fill from a <p:style> fillRef element.
- * fillRef idx determines the intensity: 1=subtle (20% alpha), 2=moderate (60%), 3=intense (full).
- */
-function parseStyleFillRef(el: Element, theme: PptxTheme): PptxFill | null {
-  const pStyle = qs(el, "style");
-  if (!pStyle) return null;
-  const fillRef = qs(pStyle, "fillRef");
-  if (!fillRef) return null;
-  const idx = intAttr(fillRef, "idx", 0);
-  if (idx <= 0) return null;
-  const fillColor = resolveColor(fillRef, theme);
-  if (!fillColor) return null;
-  // fillRef idx maps to theme fillStyleLst entries.
-  // idx=1 is typically a solid fill, idx=2/3 are gradients.
-  // We render all as solid fills since we don't parse the full fillStyleLst.
-  return { type: "solid", color: fillColor };
-}
-
-export function parseFill(spPr: Element, theme: PptxTheme): PptxFill | null {
-  // Solid fill
-  const solidFill = qs(spPr, "solidFill");
-  if (solidFill) {
-    const result = resolveColorWithAlpha(solidFill, theme);
-    if (result) return { type: "solid", color: result.color, alpha: result.alpha };
-  }
-
-  // Gradient fill
-  const gradFill = qs(spPr, "gradFill");
-  if (gradFill) return parseGradientFill(gradFill, theme);
-
-  // Pattern fill with preset, foreground and background colors
-  const pattFill = qs(spPr, "pattFill");
-  if (pattFill) {
-    const preset = getAttr(pattFill, "prst") ?? "solid";
-    const fgClr = qs(pattFill, "fgClr");
-    const bgClr = qs(pattFill, "bgClr");
-    const fg = fgClr ? resolveColor(fgClr, theme) ?? "#000000" : "#000000";
-    const bg = bgClr ? resolveColor(bgClr, theme) ?? "#ffffff" : "#ffffff";
-    return { type: "pattern", preset, foreground: fg, background: bg };
-  }
-
-  // No fill
-  const noFill = qs(spPr, "noFill");
-  if (noFill) return null;
-
-  return null;
-}
-
-export function parseGradientFill(gradFill: Element, theme: PptxTheme): PptxFill {
-  const stops: PptxGradientStop[] = [];
-  const gsLst = qs(gradFill, "gsLst");
-  if (gsLst) {
-    const gsEls = qsa(gsLst, "gs");
-    for (const gs of gsEls) {
-      const pos = intAttr(gs, "pos", 0) / 1000; // 0–100000 → 0–100
-      const result = resolveColorWithAlpha(gs, theme);
-      stops.push({ position: pos, color: result?.color ?? "#000000", alpha: result?.alpha });
-    }
-  }
-
-  // Check for linear
-  const lin = qs(gradFill, "lin");
-  if (lin) {
-    const ang = intAttr(lin, "ang", 0) / 60000; // 60000ths of degree → degrees
-    return { type: "linear", angle: ang, stops };
-  }
-
-  // Check for radial (path)
-  const path = qs(gradFill, "path");
-  if (path) {
-    return { type: "radial", stops };
-  }
-
-  // Default to linear 0 degrees
-  return { type: "linear", angle: 0, stops };
-}
-
-interface StrokeResult {
-  stroke: string | null;
-  strokeWidth: number;
-  dashStyle?: string;
-  headArrow?: ArrowHead;
-  tailArrow?: ArrowHead;
-}
-
-export function parseStroke(spPr: Element, theme: PptxTheme): StrokeResult {
-  const ln = qs(spPr, "ln");
-  if (!ln) return { stroke: null, strokeWidth: 0 };
-
-  const noFill = qs(ln, "noFill");
-  if (noFill) return { stroke: null, strokeWidth: 0 };
-
-  const width = intAttr(ln, "w", 12700) / 12700; // EMUs → pt (approx)
-  const color = resolveColor(ln, theme);
-
-  // Dash style
-  const prstDash = qs(ln, "prstDash");
-  const dashVal = prstDash ? getAttr(prstDash, "val") : null;
-
-  const headArrow = parseArrowEnd(ln, "headEnd");
-  const tailArrow = parseArrowEnd(ln, "tailEnd");
-
-  return { stroke: color, strokeWidth: width, dashStyle: dashVal ?? undefined, headArrow, tailArrow };
-}
-
-const ARROW_TYPE_MAP: Record<string, ArrowHead["type"]> = {
-  triangle: "triangle",
-  stealth: "stealth",
-  diamond: "diamond",
-  oval: "oval",
-  arrow: "arrow",
-};
-
-const ARROW_SIZE_MAP: Record<string, "sm" | "med" | "lg"> = {
-  sm: "sm",
-  med: "med",
-  lg: "lg",
-};
-
-function parseArrowEnd(ln: Element, tagSuffix: string): ArrowHead | undefined {
-  const el = qs(ln, tagSuffix);
-  if (!el) return undefined;
-
-  const rawType = getAttr(el, "type");
-  if (!rawType || rawType === "none") return undefined;
-
-  const type = ARROW_TYPE_MAP[rawType] ?? "triangle";
-  const rawW = getAttr(el, "w");
-  const rawLen = getAttr(el, "len");
-
-  const arrow: ArrowHead = { type };
-  if (rawW && ARROW_SIZE_MAP[rawW]) arrow.width = ARROW_SIZE_MAP[rawW];
-  if (rawLen && ARROW_SIZE_MAP[rawLen]) arrow.length = ARROW_SIZE_MAP[rawLen];
-
-  return arrow;
-}
+// Body properties, spacing helpers, hyperlinks, paragraphs, text runs, text styles
+// are now in pptx-text-parser.ts and imported at the top of this file.
 
 // ---------------------------------------------------------------------------
 // Pictures
@@ -2678,154 +1824,6 @@ function extractPlaceholders(spTree: Element, theme?: PptxTheme): PptxPlaceholde
   return placeholders;
 }
 
-/** Parse default text styles from a slide master's p:txStyles */
-function parseTextStyles(doc: Document, theme: PptxTheme): {
-  titleStyle?: PptxTextStyle;
-  bodyStyle?: PptxTextStyle;
-  otherStyle?: PptxTextStyle;
-  titleLevelStyles?: PptxTextStyle[];
-  bodyLevelStyles?: PptxTextStyle[];
-  otherLevelStyles?: PptxTextStyle[];
-} {
-  const txStyles = qs(doc, "txStyles");
-  if (!txStyles) return {};
-
-  const titleStyleEl = qs(txStyles, "titleStyle");
-  const bodyStyleEl = qs(txStyles, "bodyStyle");
-  const otherStyleEl = qs(txStyles, "otherStyle");
-
-  const titleStyle = parseTextStyleDef(titleStyleEl, theme);
-  const bodyStyle = parseTextStyleDef(bodyStyleEl, theme);
-  const otherStyle = parseTextStyleDef(otherStyleEl, theme);
-
-  const titleLevelStyles = titleStyleEl ? parseTextStyleLevels(titleStyleEl, theme) : [];
-  const bodyLevelStyles = bodyStyleEl ? parseTextStyleLevels(bodyStyleEl, theme) : [];
-  const otherLevelStyles = otherStyleEl ? parseTextStyleLevels(otherStyleEl, theme) : [];
-
-  return {
-    titleStyle: titleStyle ?? undefined,
-    bodyStyle: bodyStyle ?? undefined,
-    otherStyle: otherStyle ?? undefined,
-    titleLevelStyles: titleLevelStyles.length > 0 ? titleLevelStyles : undefined,
-    bodyLevelStyles: bodyLevelStyles.length > 0 ? bodyLevelStyles : undefined,
-    otherLevelStyles: otherLevelStyles.length > 0 ? otherLevelStyles : undefined,
-  };
-}
-
-function parseTextStyleDef(styleEl: Element | null, theme: PptxTheme): PptxTextStyle | null {
-  if (!styleEl) return null;
-
-  const lvl1 = qs(styleEl, "lvl1pPr");
-  if (!lvl1) return null;
-
-  const style: PptxTextStyle = {};
-
-  const algn = getAttr(lvl1, "algn");
-  if (algn) {
-    const map: Record<string, PptxTextStyle["alignment"]> = {
-      l: "left", ctr: "center", r: "right", just: "justify",
-    };
-    style.alignment = map[algn];
-  }
-
-  const defRPr = qs(lvl1, "defRPr");
-  if (defRPr) {
-    const sz = getAttr(defRPr, "sz");
-    if (sz) style.fontSize = parseInt(sz, 10) / 100;
-
-    if (getAttr(defRPr, "b") === "1") style.bold = true;
-    if (getAttr(defRPr, "i") === "1") style.italic = true;
-
-    const latin = qs(defRPr, "latin");
-    if (latin) {
-      const tf = getAttr(latin, "typeface");
-      if (tf) {
-        if (tf === "+mj-lt") style.fontFamily = theme.fonts.heading;
-        else if (tf === "+mn-lt") style.fontFamily = theme.fonts.body;
-        else style.fontFamily = tf;
-      }
-    }
-
-    const color = resolveColor(defRPr, theme);
-    if (color) style.color = color;
-  }
-
-  return Object.keys(style).length > 0 ? style : null;
-}
-
-/** Parse per-level text styles (lvl1pPr through lvl9pPr) from a text style definition. */
-export function parseTextStyleLevels(styleEl: Element | null, theme: PptxTheme): PptxTextStyle[] {
-  if (!styleEl) return [];
-
-  const levels: PptxTextStyle[] = [];
-  for (let i = 1; i <= 9; i++) {
-    const lvl = qs(styleEl, `lvl${i}pPr`);
-    if (!lvl) {
-      levels.push({});
-      continue;
-    }
-
-    const style: PptxTextStyle = {};
-    const algn = getAttr(lvl, "algn");
-    if (algn) {
-      const map: Record<string, PptxTextStyle["alignment"]> = { l: "left", ctr: "center", r: "right", just: "justify" };
-      style.alignment = map[algn];
-    }
-
-    const defRPr = qs(lvl, "defRPr");
-    if (defRPr) {
-      const sz = getAttr(defRPr, "sz");
-      if (sz) style.fontSize = parseInt(sz, 10) / 100;
-      if (getAttr(defRPr, "b") === "1") style.bold = true;
-      if (getAttr(defRPr, "i") === "1") style.italic = true;
-
-      const latin = qs(defRPr, "latin");
-      if (latin) {
-        const tf = getAttr(latin, "typeface");
-        if (tf) {
-          if (tf === "+mj-lt") style.fontFamily = theme.fonts.heading;
-          else if (tf === "+mn-lt") style.fontFamily = theme.fonts.body;
-          else style.fontFamily = tf;
-        }
-      }
-
-      const color = resolveColor(defRPr, theme);
-      if (color) style.color = color;
-    }
-
-    // Parse bullet info from level pPr
-    const buChar = qs(lvl, "buChar");
-    if (buChar) {
-      style.bulletChar = getAttr(buChar, "char") ?? "•";
-    }
-    const buAutoNum = qs(lvl, "buAutoNum");
-    if (buAutoNum) {
-      style.bulletAutoNumType = getAttr(buAutoNum, "type") ?? "arabicPeriod";
-    }
-    const buFont = qs(lvl, "buFont");
-    if (buFont) {
-      style.bulletFont = getAttr(buFont, "typeface") ?? undefined;
-    }
-    const buClr = qs(lvl, "buClr");
-    if (buClr) {
-      style.bulletColor = resolveColor(buClr, theme) ?? undefined;
-    }
-    const buSzPct = qs(lvl, "buSzPct");
-    if (buSzPct) {
-      style.bulletSizePercent = intAttr(buSzPct, "val", 100000) / 1000;
-    }
-
-    levels.push(Object.keys(style).length > 0 ? style : {});
-  }
-
-  // Trim trailing empty entries
-  while (levels.length > 0 && Object.keys(levels[levels.length - 1]).length === 0) {
-    levels.pop();
-  }
-
-  return levels;
-}
-
 // ---------------------------------------------------------------------------
 // Comment parsing
 // ---------------------------------------------------------------------------
@@ -2936,9 +1934,20 @@ async function parseSlideMaster(
     : [];
   const placeholders = spTree ? extractPlaceholders(spTree, theme) : [];
   const background = await parseBackground(doc, theme, rels, zip);
-  const { titleStyle, bodyStyle, otherStyle, titleLevelStyles, bodyLevelStyles, otherLevelStyles } = parseTextStyles(doc, theme);
+  const tsResult = parseTextStyles(doc, theme);
 
-  return { shapes, placeholders, background, titleStyle, bodyStyle, otherStyle, titleLevelStyles, bodyLevelStyles, otherLevelStyles, clrMap };
+  return {
+    shapes,
+    placeholders,
+    background,
+    titleStyle: tsResult.titleStyle ?? undefined,
+    bodyStyle: tsResult.bodyStyle ?? undefined,
+    otherStyle: tsResult.otherStyle ?? undefined,
+    titleLevelStyles: tsResult.titleLevelStyles.length > 0 ? tsResult.titleLevelStyles : undefined,
+    bodyLevelStyles: tsResult.bodyLevelStyles.length > 0 ? tsResult.bodyLevelStyles : undefined,
+    otherLevelStyles: tsResult.otherLevelStyles.length > 0 ? tsResult.otherLevelStyles : undefined,
+    clrMap,
+  };
 }
 
 async function parseSlideLayout(

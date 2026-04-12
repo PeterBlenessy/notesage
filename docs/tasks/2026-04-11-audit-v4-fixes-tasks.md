@@ -225,7 +225,7 @@
 
 ## Large File Decomposition
 
-### #19 — Decompose copilot_lsp.rs into sub-modules
+### #19 — Decompose copilot_lsp.rs into sub-modules ✅
 
 **Description:** Split the 2,218-line copilot_lsp.rs into: `copilot_protocol.rs` (JSON-RPC encoding, protocol constants), `copilot_signin.rs` (device code auth flow), `copilot_models.rs` (model parsing, fallback models). Keep main `copilot_lsp.rs` as orchestrator (\~1000 lines).
 
@@ -236,7 +236,7 @@
 
 ---
 
-### #20 — Decompose pptx-parser.ts — extract color and XML utilities
+### #20 — Decompose pptx-parser.ts — extract color and XML utilities ✅
 
 **Description:** Extract `pptx-colors.ts` (150 lines: color space conversions, hex/RGB/HSL manipulation) and `pptx-xml-utils.ts` (300 lines: DOM querying, namespace-aware element selection, attribute helpers) from the 3,270-line pptx-parser.ts. First step of a larger decomposition.
 
@@ -247,7 +247,7 @@
 
 ---
 
-### #21 — Decompose pptx-parser.ts — extract text and shape parsers
+### #21 — Decompose pptx-parser.ts — extract text and shape parsers ✅
 
 **Description:** Extract `pptx-text-parser.ts` (500 lines: paragraph, run, bullet, text style parsing) and `pptx-shape-parser.ts` (350 lines: geometry, fill, stroke, shadow, arrow parsing). Second step.
 
@@ -258,7 +258,7 @@
 
 ---
 
-### #22 — Decompose PptxSlideRenderer.tsx into sub-renderers
+### #22 — Decompose PptxSlideRenderer.tsx into sub-renderers ✅
 
 **Description:** Extract `PptxTextRenderer.tsx` (250 lines), `PptxShapeRenderer.tsx` (250 lines), and `PptxTableRenderer.tsx` (150 lines) from the 1,274-line PptxSlideRenderer.tsx.
 
@@ -269,7 +269,7 @@
 
 ---
 
-### #23 — Extract AddCustomModelDialog from LocalAISettings
+### #23 — Extract AddCustomModelDialog from LocalAISettings ✅
 
 **Description:** Move the \~300-line `AddCustomModelDialog` sub-component from LocalAISettings.tsx to its own file. Also extract ModelCard component (\~150 lines).
 
@@ -280,7 +280,7 @@
 
 ---
 
-### #24 — Decompose skills.rs into sub-modules
+### #24 — Decompose skills.rs into sub-modules ✅
 
 **Description:** Extract `skills_frontmatter.rs` (200 lines: YAML parsing, SkillFrontmatter struct) and `skills_tool_parser.rs` (300 lines: tool definition extraction, usage comment parsing, ArgMapping) from the 1,519-line skills.rs.
 
