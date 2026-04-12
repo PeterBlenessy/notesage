@@ -352,6 +352,20 @@ export function useExportOperations(editor: Editor | null) {
   }
   h1, h2, h3, h4, h5, h6 { break-after: avoid; }
   p { orphans: 3; widows: 3; }
+  /* Fix page header/footer zones for print */
+  .page-top-margin, .page-bottom-margin {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    pointer-events: none;
+    height: auto !important;
+  }
+  .page-header-zone, .page-footer-zone {
+    padding: 8px 0 !important;
+    font-size: 10px;
+    color: #888;
+    display: flex;
+    justify-content: space-between;
+  }
 </style>
 </head><body>${resolvedBody}</body></html>`;
 

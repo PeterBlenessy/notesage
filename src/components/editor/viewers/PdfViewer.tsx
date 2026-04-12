@@ -409,22 +409,11 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
 
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        try {
-          await page.render({
-            canvasContext: ctx,
-            canvas,
-            viewport,
-          }).promise;
-        } catch (renderErr) {
-          // pdfjs v5 uses ReadableStream internally which WKWebView
-          // doesn't fully support. The render often succeeds despite
-          // the error — suppress to avoid console noise.
-          if (String(renderErr).includes("readableStream")) {
-            // Silently ignore — rendering usually completes fine
-          } else {
-            throw renderErr;
-          }
-        }
+        await page.render({
+          canvasContext: ctx,
+          canvas,
+          viewport,
+        }).promise;
 
         renderedScales.current.set(pageNum, scale);
         pageHeights.current.set(pageNum, viewport.height);
@@ -455,7 +444,11 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
           }
         }
       } catch (err) {
-        console.error(`Failed to render PDF page ${pageNum}:`, err);
+        // Suppress pdfjs ReadableStream errors — WKWebView doesn't fully
+        // support ReadableStream but rendering completes fine regardless.
+        if (!String(err).includes("readableStream")) {
+          console.error(`Failed to render PDF page ${pageNum}:`, err);
+        }
       } finally {
         renderingPages.current.delete(pageNum);
       }
