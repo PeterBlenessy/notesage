@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
-import { Check, RotateCcw, Type } from "lucide-react";
+import { Check, FileDown, RotateCcw, Type } from "lucide-react";
 import type { Editor } from "@tiptap/react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -18,6 +19,8 @@ import {
   type BlockTypeStyle,
   type TypographyPresets,
 } from "@/stores/editor-styles-store";
+import { useEditorStore } from "@/stores/editor-store";
+import { presetsToDocumentStyle } from "@/lib/frontmatter";
 import { type FullBlockType } from "@/lib/typography-presets";
 import { cn } from "@/lib/utils";
 
@@ -361,10 +364,78 @@ export function TypographyPopover({ editor }: TypographyPopoverProps) {
                 Reset to {blockLabel} style
               </Button>
             )}
+
+            {/* Document style actions */}
+            <DocumentStyleActions />
           </>
         )}
       </PopoverContent>
     </Popover>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Document style actions
+// ---------------------------------------------------------------------------
+
+/** Save current presets to document frontmatter or reset to global style. */
+function DocumentStyleActions() {
+  const presets = useEditorStylesStore((s) => s.presets);
+  const setDocumentPresets = useEditorStylesStore((s) => s.setDocumentPresets);
+
+  const activeTabId = useEditorStore((s) => s.activeTabId);
+  const tabs = useEditorStore((s) => s.tabs);
+  const activeTab = activeTabId ? tabs.find((t) => t.id === activeTabId) : null;
+
+  // Only show for markdown files that have a tab
+  const isMarkdown = activeTab?.filePath?.endsWith(".md");
+  if (!activeTab || !isMarkdown) return null;
+
+  const hasDocumentStyle = activeTab.frontmatter?.style != null;
+
+  const handleSave = () => {
+    const style = presetsToDocumentStyle(presets);
+    useEditorStore.getState().updateFrontmatter(activeTab.id, { style });
+    toast.success("Style saved to document");
+  };
+
+  const handleReset = () => {
+    if (!activeTab.frontmatter) return;
+    const updated = { ...activeTab.frontmatter };
+    delete updated.style;
+    // If frontmatter is now empty, set to null; otherwise set the cleaned object
+    const hasKeys = Object.keys(updated).length > 0;
+    useEditorStore.getState().setFrontmatter(activeTab.id, hasKeys ? updated : null);
+    setDocumentPresets(null);
+    toast.success("Reset to global style");
+  };
+
+  return (
+    <>
+      <Separator />
+      <div className="space-y-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full h-7 text-xs text-muted-foreground justify-start"
+          onClick={handleSave}
+        >
+          <FileDown className="size-3 mr-1.5" strokeWidth={1.5} />
+          Save as document style
+        </Button>
+        {hasDocumentStyle && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full h-7 text-xs text-muted-foreground justify-start"
+            onClick={handleReset}
+          >
+            <RotateCcw className="size-3 mr-1.5" strokeWidth={1.5} />
+            Reset to global style
+          </Button>
+        )}
+      </div>
+    </>
   );
 }
 

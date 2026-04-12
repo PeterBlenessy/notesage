@@ -256,6 +256,77 @@ export function documentStyleToPresets(
   return Object.keys(result).length > 0 ? result : null;
 }
 
+// ---------------------------------------------------------------------------
+// TypographyPresets → DocumentStyle conversion (for saving to frontmatter)
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert TypographyPresets to a DocumentStyle suitable for `style:` frontmatter.
+ * Font sizes are written as `"Npx"`, font weights as numeric values,
+ * and line heights as plain numbers.
+ */
+export function presetsToDocumentStyle(presets: {
+  paragraph: { fontFamily: string; fontSize: number; fontWeight: number; lineHeight: number };
+  heading1: { fontFamily: string; fontSize: number; fontWeight: number; lineHeight: number };
+  heading2: { fontFamily: string; fontSize: number; fontWeight: number; lineHeight: number };
+  heading3: { fontFamily: string; fontSize: number; fontWeight: number; lineHeight: number };
+  heading4: { fontFamily: string; fontSize: number; fontWeight: number; lineHeight: number };
+  heading5: { fontFamily: string; fontSize: number; fontWeight: number; lineHeight: number };
+  heading6: { fontFamily: string; fontSize: number; fontWeight: number; lineHeight: number };
+  codeBlock: { fontFamily: string; fontSize: number };
+  blockquote: { fontFamily: string; fontSize: number; fontWeight: number; color?: string };
+}): DocumentStyle {
+  const style: DocumentStyle = {};
+
+  // body ← paragraph
+  style.body = presetToElement(presets.paragraph);
+
+  // h1-h6
+  const headingMap: Array<{ src: keyof typeof presets; dst: keyof DocumentStyle }> = [
+    { src: 'heading1', dst: 'h1' },
+    { src: 'heading2', dst: 'h2' },
+    { src: 'heading3', dst: 'h3' },
+    { src: 'heading4', dst: 'h4' },
+    { src: 'heading5', dst: 'h5' },
+    { src: 'heading6', dst: 'h6' },
+  ];
+  for (const { src, dst } of headingMap) {
+    style[dst] = presetToElement(presets[src] as { fontFamily: string; fontSize: number; fontWeight: number; lineHeight: number });
+  }
+
+  // code
+  style.code = {
+    font: presets.codeBlock.fontFamily,
+    size: `${presets.codeBlock.fontSize}px`,
+  };
+
+  // blockquote
+  const bq: DocumentStyleElement = {
+    font: presets.blockquote.fontFamily,
+    size: `${presets.blockquote.fontSize}px`,
+    weight: presets.blockquote.fontWeight,
+  };
+  if (presets.blockquote.color) bq.color = presets.blockquote.color;
+  style.blockquote = bq;
+
+  return style;
+}
+
+/** Convert a full block preset to a DocumentStyleElement. */
+function presetToElement(block: {
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: number;
+  lineHeight: number;
+}): DocumentStyleElement {
+  return {
+    font: block.fontFamily,
+    size: `${block.fontSize}px`,
+    weight: block.fontWeight,
+    lineHeight: block.lineHeight,
+  };
+}
+
 /** Map a DocumentStyleElement to partial BlockTypeStyle fields. */
 function mapElementToPreset(el: DocumentStyleElement): Record<string, unknown> {
   const mapped: Record<string, unknown> = {};
