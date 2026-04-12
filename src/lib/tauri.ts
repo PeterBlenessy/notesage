@@ -570,19 +570,6 @@ export const tauriApi = {
   },
 
   // Export operations
-  async exportPdf(options: {
-    markdown: string;
-    title: string;
-    template: string;
-    includeToc: boolean;
-    includePageNumbers: boolean;
-    pageSize: string;
-    projectRoot?: string;
-    typography?: BackendTypographyPresets;
-  }): Promise<number[]> {
-    return await invoke<number[]>("export_pdf", options);
-  },
-
   async exportPdfWebkit(options: {
     html: string;
     pageWidth: number;

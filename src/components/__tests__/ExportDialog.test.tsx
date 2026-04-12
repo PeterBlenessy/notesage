@@ -68,7 +68,8 @@ describe('ExportDialog', () => {
 
   it('defaults to PDF format with PDF-specific options', () => {
     renderDialog();
-    expect(screen.getByText('Include table of contents')).toBeTruthy();
+    // TOC is only shown for DOCX, not PDF
+    expect(screen.queryByText('Include table of contents')).toBeNull();
     expect(screen.getByText('Include page numbers')).toBeTruthy();
     expect(screen.getByText('Page size')).toBeTruthy();
     expect(screen.getByText('Export PDF')).toBeTruthy();
@@ -145,6 +146,15 @@ describe('ExportDialog', () => {
     expect(screen.getByText('Export PPTX')).toBeTruthy();
     // Add Template button
     expect(screen.getByText('Add Template')).toBeTruthy();
+  });
+
+  it('shows TOC checkbox for DOCX format', () => {
+    useSettingsStore.setState({ lastExportFormat: 'docx' });
+    renderDialog();
+    expect(screen.getByText('Include table of contents')).toBeTruthy();
+    expect(screen.getByText('Include page numbers')).toBeTruthy();
+    expect(screen.getByText('Page size')).toBeTruthy();
+    expect(screen.getByText('Export DOCX')).toBeTruthy();
   });
 
   it('hides PDF options when PPTX is selected', () => {

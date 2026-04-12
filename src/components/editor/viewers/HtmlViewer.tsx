@@ -17,11 +17,9 @@ interface HtmlViewerProps {
   fileName: string;
   projectRoot?: string;
   editor?: Editor | null;
-  /** Pre-collected SVGs from WYSIWYG DOM (charts/mermaid captured before unmount). */
-  cachedEmbeddedSvgs?: string[];
 }
 
-export function HtmlViewer({ content, filePath, fileName, projectRoot, editor, cachedEmbeddedSvgs }: HtmlViewerProps) {
+export function HtmlViewer({ content, filePath, fileName, projectRoot, editor }: HtmlViewerProps) {
   const [htmlDoc, setHtmlDoc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,9 +49,6 @@ export function HtmlViewer({ content, filePath, fileName, projectRoot, editor, c
         const title = fileName.replace(/\.[^.]+$/, "");
         const typography = presetsForBackend(useEditorStylesStore.getState().presets);
 
-        // Use pre-cached SVGs (collected while WYSIWYG was still in DOM).
-        const embeddedSvgs = cachedEmbeddedSvgs?.filter(s => s && s !== "__drawing__") ?? [];
-
         const result = await invoke<string>("render_html", {
           markdown: content,
           title,
@@ -61,7 +56,6 @@ export function HtmlViewer({ content, filePath, fileName, projectRoot, editor, c
           includeStyles: true,
           projectRoot: projectRoot ?? null,
           typography,
-          embeddedSvgs: embeddedSvgs.length > 0 ? embeddedSvgs : null,
         });
 
         if (!cancelled) {
@@ -78,7 +72,7 @@ export function HtmlViewer({ content, filePath, fileName, projectRoot, editor, c
 
     renderHtml();
     return () => { cancelled = true; };
-  }, [content, theme, fileName, projectRoot, editor, cachedEmbeddedSvgs]);
+  }, [content, theme, fileName, projectRoot, editor]);
 
   // Copy HTML to clipboard
   const handleCopyHtml = useCallback(async () => {
@@ -87,7 +81,7 @@ export function HtmlViewer({ content, filePath, fileName, projectRoot, editor, c
         ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
         : theme;
 
-      // Get body-only fragment for clipboard — reuse cached SVGs
+      // Get body-only fragment for clipboard
       const typography = presetsForBackend(useEditorStylesStore.getState().presets);
       const bodyHtml = await invoke<string>("render_html", {
         markdown: content,
@@ -96,7 +90,6 @@ export function HtmlViewer({ content, filePath, fileName, projectRoot, editor, c
         includeStyles: false,
         projectRoot: projectRoot ?? null,
         typography,
-        embeddedSvgs: cachedEmbeddedSvgs && cachedEmbeddedSvgs.length > 0 ? cachedEmbeddedSvgs : null,
       });
 
       // Write both text/html and text/plain to clipboard

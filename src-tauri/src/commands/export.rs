@@ -47,7 +47,6 @@ pub async fn export_docx(
     project_root: Option<String>,
     typography: Option<TypographyPresets>,
     page_settings: Option<DocumentPageSettings>,
-    _embedded_svgs: Option<Vec<String>>,
     embedded_images: Option<Vec<EmbeddedImage>>,
 ) -> Result<Vec<u8>, String> {
     let options = DocxOptions {
@@ -69,9 +68,8 @@ pub async fn render_html(
     project_root: Option<String>,
     typography: Option<TypographyPresets>,
     page_settings: Option<DocumentPageSettings>,
-    embedded_svgs: Option<Vec<String>>,
 ) -> Result<String, String> {
-    let body = markdown_to_html(&markdown, &theme, project_root.as_deref(), embedded_svgs.as_deref());
+    let body = markdown_to_html(&markdown, &theme, project_root.as_deref());
 
     if include_styles {
         let base_css = html_css(&theme);

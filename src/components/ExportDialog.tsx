@@ -222,19 +222,21 @@ export function ExportDialog({
             <>
               {/* Document options */}
               <div className="space-y-3">
-                <label
-                  className="flex cursor-pointer items-center gap-2.5"
-                  htmlFor="export-toc"
-                >
-                  <Checkbox
-                    id="export-toc"
-                    checked={includeToc}
-                    onCheckedChange={(checked) =>
-                      setIncludeToc(checked === true)
-                    }
-                  />
-                  <span className="text-sm">Include table of contents</span>
-                </label>
+                {format === "docx" && (
+                  <label
+                    className="flex cursor-pointer items-center gap-2.5"
+                    htmlFor="export-toc"
+                  >
+                    <Checkbox
+                      id="export-toc"
+                      checked={includeToc}
+                      onCheckedChange={(checked) =>
+                        setIncludeToc(checked === true)
+                      }
+                    />
+                    <span className="text-sm">Include table of contents</span>
+                  </label>
+                )}
 
                 <label
                   className="flex cursor-pointer items-center gap-2.5"
