@@ -199,9 +199,9 @@ export function useExportOperations(editor: Editor | null) {
           // - Interactive placeholders ("Click to add header")
           // - Resize handles, edit overlays, sort indicators
           for (const sel of [
-            ".page-top-margin", ".page-bottom-margin", ".page-gap",
-            ".page-hf-editor",
-            ".page-hf-empty", // only remove empty "Click to add" placeholders
+            ".page-gap", // decorative gap between pages
+            ".page-hf-editor", // inline editing UI for headers/footers
+            ".page-hf-empty", // "Click to add header/footer" placeholders
             ".drawing-edit-overlay",
             ".table-sort-indicator", ".table-filter-row",
             ".cursor-ns-resize", // chart/drawing resize handles
