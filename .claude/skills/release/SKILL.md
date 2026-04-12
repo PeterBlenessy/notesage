@@ -57,7 +57,14 @@ Bump the version, generate a changelog, and create a release history entry.
 
 7. **Update `docs/history/README.md`** with the new entry.
 
-8. **Present the release for review:**
+8. **Run performance baseline:**
+   - Run `pnpm test:perf` — all synthetic benchmarks must pass within budget.
+   - **Real-world startup measurement** requires the user's help: ask them to start the app in dev mode (`pnpm tauri dev`), refresh the page, and paste the `[perf:*]` console logs. You cannot capture these yourself — the app runs in a Tauri WebView, not a headless browser.
+   - Once the user provides the logs, extract the key metrics and append a dated entry to `docs/performance-baseline.md` under "Startup Performance" with the new version and commit hash. Include: `phase1-ready`, `startup ready`, `tree refresh`, `skills total`, and any metric that changed significantly.
+   - Never overwrite previous entries — the history is the point.
+   - If any metric regressed >20% from the previous entry, flag it to the user before proceeding.
+
+9. **Present the release for review:**
    - Show the version change
    - Show the changelog summary
    - Show the files that were modified

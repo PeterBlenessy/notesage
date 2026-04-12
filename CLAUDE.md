@@ -64,6 +64,16 @@ Notesage is a rich text markdown editor with AI collaboration capabilities, pack
 | `/review-ui` | Design review against design system |
 | `/test` | Run full test suite |
 
+## Performance Tracking
+
+After any work that touches startup, skills, tree loading, editor rendering, or Tauri IPC hot paths:
+
+1. **Run `pnpm test:perf`** — synthetic benchmarks must pass within budget
+2. **Check real-world startup** — open the app (dev mode), capture `[perf:*]` console logs, compare against the baseline in `docs/performance-baseline.md`
+3. **Record new measurements** — append a dated entry to the "Startup Performance" section in `docs/performance-baseline.md` with the commit hash. Never overwrite previous entries — the history is the point.
+
+Key metrics to capture: `phase1-ready` (tools visible), `startup ready`, `tree refresh`, `skills total`, and any metric that changed significantly.
+
 ## Quick Start
 
 ```bash

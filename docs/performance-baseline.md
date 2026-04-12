@@ -55,18 +55,49 @@ Previous baseline (same date, same code) had optimistic parse 100KB (182ms) and 
 
 | Operation | Median (ms) | Dev Budget (2x) | CI Budget (3x) |
 | --- | --- | --- | --- |
-| updateTabContent (10 tabs) | <0.01 | 5 | 5 |
-| updateTabContent (50 tabs) | <0.01 | 5 | 5 |
-| updateTabContent (100 tabs) | <0.01 | 5 | 5 |
+| updateTabContent (10 tabs) | &lt;0.01 | 5 | 5 |
+| updateTabContent (50 tabs) | &lt;0.01 | 5 | 5 |
+| updateTabContent (100 tabs) | &lt;0.01 | 5 | 5 |
 | listDirectory (100 entries) | 0.07 | 1 | 2 |
 | listDirectory (500 entries) | 0.24 | 1 | 2 |
 | listDirectory (1000 entries) | 0.44 | 2 | 3 |
 | palette filter (500, 3-char) | 0.03 | 1 | 1 |
 | palette filter (500, 8 queries) | 0.11 | 1 | 1 |
 
+## Startup Performance (real-world, dev mode)
+
+Measured with 6 iCloud projects, 3 explorer folders, 22 open tabs, 679 total files. Times are from `[perf:*]` console logs on page refresh (steady-state, not cold first launch).
+
+### 2026-04-12 — Post audit v4 (0c8bde2)
+
+**Skills pipeline:**
+
+| Step | ms |
+| --- | --- |
+| skill-scan | 1,483 |
+| skill-tool-extract (9 skills) | 3,175 |
+| agent-scan | 843 |
+| instruction-scan | 780 |
+| **phase1-ready (tools visible)** | **6,293** |
+| bundled-skills-extract | 2,198 |
+| bundled-agents-extract | 781 |
+| phase2-extract | 4,787 |
+| **total** | **11,081** |
+
+**Startup & trees:**
+
+| Metric | ms |
+| --- | --- |
+| startup ready | 13,068 |
+| tree refresh (1st) | 12,804 |
+| tree refresh (2nd) | 12,484 |
+| index init total | 1,791 |
+
+**Known issues:** Double startup (reloadTrees runs twice), triple tree refresh, sequential skill-tool-extract is the bottleneck.
+
 ## Notes
 
-- Parse benchmarks include Tiptap editor creation overhead (~15ms fixed cost)
+- Parse benchmarks include Tiptap editor creation overhead (\~15ms fixed cost)
 - Decoration operations are sub-millisecond even at 100KB — well within real-time editing budgets
 - Store operations are sub-millisecond — no concern for performance
 - CI budgets use 3x multiplier to account for shared runner variability
