@@ -308,7 +308,12 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
     }
 
     let cancelled = false;
-    const loadTask = pdfjsLib.getDocument({ data: data.slice() });
+    const loadTask = pdfjsLib.getDocument({
+      data: data.slice(),
+      // Disable ReadableStream transport — WKWebView doesn't fully support it
+      disableStream: true,
+      disableAutoFetch: true,
+    });
 
     loadTask.promise
       .then(async (doc) => {

@@ -237,6 +237,12 @@ async function handleModifyEvent(path: string, normalizedPath: string) {
 
   if (!tab) return;
 
+  // Skip binary files — readFile expects UTF-8 text
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  if (["pdf", "docx", "pptx", "xlsx", "zip", "png", "jpg", "jpeg", "gif", "webp", "ico", "woff", "woff2", "ttf", "otf"].includes(ext)) {
+    return;
+  }
+
   try {
     const raw = await tauriApi.readFile(path);
     const { content } = parseFrontmatter(raw);
