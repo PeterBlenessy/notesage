@@ -111,7 +111,7 @@
 
 ## Performance — Zustand Selector Fixes & Memoization
 
-### #9 — Convert Editor.tsx useEditorStore to individual selectors
+### #9 — Convert Editor.tsx useEditorStore to individual selectors ✅
 
 **Description:** Replace `const { tabs, activeTabId, updateTabContent, ... } = useEditorStore()` (8 fields) with individual selectors: `const tabs = useEditorStore((s) => s.tabs)`. This prevents the editor from re-rendering on unrelated store changes.
 
@@ -122,7 +122,7 @@
 
 ---
 
-### #10 — Convert Editor.tsx useSettingsStore to individual selectors
+### #10 — Convert Editor.tsx useSettingsStore to individual selectors ✅
 
 **Description:** Replace `const { showFloatingToolbar, toolbarVisible, contentWidth, ... } = useSettingsStore()` (12 fields) with individual selectors. Any settings change currently triggers a full editor re-render.
 
@@ -133,7 +133,7 @@
 
 ---
 
-### #11 — Convert ChatMessage useChatStore to individual selectors
+### #11 — Convert ChatMessage useChatStore to individual selectors ✅
 
 **Description:** Replace `const { isLoading, deleteMessage } = useChatStore()` with selectors. ChatMessage renders in a list — when isLoading toggles, ALL messages currently re-render.
 
@@ -144,7 +144,7 @@
 
 ---
 
-### #12 — Wrap ChatMessage with React.memo()
+### #12 — Wrap ChatMessage with React.memo() ✅
 
 **Description:** ChatMessage is rendered in a list but not memoized. Wrap the export with `memo()`. Ensure props are stable (fix inline callbacks in ChatMessageList first).
 
@@ -155,7 +155,7 @@
 
 ---
 
-### #13 — Replace inline callbacks in ChatMessageList map with useCallback
+### #13 — Replace inline callbacks in ChatMessageList map with useCallback ✅
 
 **Description:** In `messages.map()`, inline arrow functions for onResend, onEdit, onRetry, onBranch are recreated every render. Extract to useCallback-wrapped handlers or move outside the map.
 
@@ -166,7 +166,7 @@
 
 ---
 
-### #14 — Convert TabBar useEditorStore to individual selectors
+### #14 — Convert TabBar useEditorStore to individual selectors ✅
 
 **Description:** Replace `const { tabs, activeTabId, setActiveTab, closeTab, reorderTab, pendingCloseTabId, setPendingCloseTabId } = useEditorStore()` (7 fields) with selectors. TabBar is always-visible and re-renders on any editor state change.
 

@@ -36,7 +36,13 @@ function TabIcon({ fileType }: { fileType?: FileType }) {
 }
 
 export function TabBar() {
-  const { tabs, activeTabId, setActiveTab, closeTab, reorderTab, pendingCloseTabId, setPendingCloseTabId } = useEditorStore();
+  const tabs = useEditorStore((s) => s.tabs);
+  const activeTabId = useEditorStore((s) => s.activeTabId);
+  const setActiveTab = useEditorStore((s) => s.setActiveTab);
+  const closeTab = useEditorStore((s) => s.closeTab);
+  const reorderTab = useEditorStore((s) => s.reorderTab);
+  const pendingCloseTabId = useEditorStore((s) => s.pendingCloseTabId);
+  const setPendingCloseTabId = useEditorStore((s) => s.setPendingCloseTabId);
   const { saveFile } = useFileOperations();
   const activeTabRef = useRef<HTMLButtonElement>(null);
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);

@@ -11,6 +11,7 @@ import { useRoutingStore } from '@/stores/routing-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
+import type { ChatMessage as ChatMessageType } from '@/lib/ai/types';
 import { ChatMessage } from './ChatMessage';
 import { LocalAISetupCard } from './LocalAISetupCard';
 import { PermissionCard } from './PermissionCard';
@@ -158,6 +159,38 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
     setDomainRequests((prev) => prev.filter((r) => r.requestId !== requestId));
   };
 
+  // Stable callbacks for ChatMessage — prevent inline arrow functions from breaking React.memo
+  const handleResend = useCallback((msg: ChatMessageType) => {
+    onResend?.(msg);
+  }, [onResend]);
+
+  const handleEdit = useCallback((msg: ChatMessageType) => {
+    onEdit?.(msg);
+  }, [onEdit]);
+
+  const handleRetry = useCallback((msg: ChatMessageType) => {
+    const allMsgs = useChatStore.getState().conversations.find(
+      (c) => c.id === useChatStore.getState().activeConversationId
+    )?.messages;
+    if (!allMsgs) return;
+    const msgIndex = allMsgs.findIndex((m) => m.timestamp === msg.timestamp);
+    const prevUser = allMsgs.slice(0, msgIndex).reverse().find((m) => m.role === 'user');
+    if (prevUser) onResend?.(prevUser);
+  }, [onResend]);
+
+  const handleBranch = useCallback((timestamp: number) => {
+    branchFromMessage(timestamp);
+    toast('Branched conversation', {
+      description: 'Type a new message to continue on this branch.',
+    });
+    requestAnimationFrame(() => {
+      autoScrollRef.current = true;
+      scrollToEnd();
+      const textarea = document.querySelector<HTMLTextAreaElement>('.chat-input-textarea');
+      textarea?.focus();
+    });
+  }, [branchFromMessage, scrollToEnd]);
+
   return (
     <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 py-4">
       {messages.length === 0 ? (
@@ -218,25 +251,10 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
                   message={displayMessage}
                   isLast={isLast}
                   branchCount={branchCount}
-                  onResend={onResend && message.role === 'user' ? () => onResend(message) : undefined}
-                  onEdit={onEdit && message.role === 'user' ? () => onEdit(message) : undefined}
-                  onRetry={onResend && message.role === 'assistant' && message.isError ? () => {
-                    // Retry = resend the preceding user message
-                    const prevUser = messages.slice(0, index).reverse().find((m) => m.role === 'user');
-                    if (prevUser) onResend(prevUser);
-                  } : undefined}
-                  onBranch={message.timestamp ? () => {
-                    branchFromMessage(message.timestamp!);
-                    toast('Branched conversation', {
-                      description: 'Type a new message to continue on this branch.',
-                    });
-                    requestAnimationFrame(() => {
-                      autoScrollRef.current = true;
-                      scrollToEnd();
-                      const textarea = document.querySelector<HTMLTextAreaElement>('.chat-input-textarea');
-                      textarea?.focus();
-                    });
-                  } : undefined}
+                  onResend={onResend && message.role === 'user' ? handleResend : undefined}
+                  onEdit={onEdit && message.role === 'user' ? handleEdit : undefined}
+                  onRetry={onResend && message.role === 'assistant' && message.isError ? handleRetry : undefined}
+                  onBranch={message.timestamp ? handleBranch : undefined}
                 />
                 {isLastAssistant && parsed && parsed.replies.length > 0 && (
                   <QuickReplies replies={parsed.replies} onSelect={onSend} />

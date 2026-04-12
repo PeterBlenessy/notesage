@@ -1,5 +1,5 @@
 import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2, X, AlertTriangle, Brain, Zap, Wrench, Ban, GitBranch, Pencil, RotateCcw, Ellipsis } from 'lucide-react';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, memo } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { MarkdownContent } from '@/components/MarkdownContent';
 import { ProviderLogo } from '@/components/ProviderLogo';
@@ -536,25 +536,32 @@ interface ChatMessageProps {
   isLast?: boolean;
   /** Number of child branches from this message (shows branch indicator when > 1) */
   branchCount?: number;
-  /** Callback to create a branch from this message */
-  onBranch?: () => void;
+  /** Callback to create a branch from this message's timestamp */
+  onBranch?: (timestamp: number) => void;
   /** Callback to resend this user message */
-  onResend?: () => void;
+  onResend?: (message: ChatMessageType) => void;
   /** Callback to edit this user message */
-  onEdit?: () => void;
+  onEdit?: (message: ChatMessageType) => void;
   /** Callback to retry a failed assistant message */
-  onRetry?: () => void;
+  onRetry?: (message: ChatMessageType) => void;
 }
 
-export function ChatMessage({ message, isLast = false, branchCount, onBranch, onResend, onEdit, onRetry }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, isLast = false, branchCount, onBranch, onResend, onEdit, onRetry }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
-  const { isLoading, deleteMessage } = useChatStore();
+  const isLoading = useChatStore((s) => s.isLoading);
+  const deleteMessage = useChatStore((s) => s.deleteMessage);
 
   // Auto-expand thinking while streaming, collapse after completion. User toggle overrides.
   const [thinkingManualToggle, setThinkingManualToggle] = useState<boolean | null>(null);
   const isActiveStream = isLoading && isLast;
   const thinkingExpanded = thinkingManualToggle ?? (isActiveStream && !!message.thinking);
   const setThinkingExpanded = (v: boolean) => setThinkingManualToggle(v);
+
+  // Bind message/timestamp into stable () => void wrappers for child components
+  const handleBranch = onBranch && message.timestamp ? () => onBranch(message.timestamp!) : undefined;
+  const handleResend = onResend ? () => onResend(message) : undefined;
+  const handleEdit = onEdit ? () => onEdit(message) : undefined;
+  const handleRetry = onRetry ? () => onRetry(message) : undefined;
 
   // Tool messages are not rendered directly — their content is shown via ToolCallLog on the assistant message
   if (message.role === 'tool') return null;
@@ -655,9 +662,9 @@ export function ChatMessage({ message, isLast = false, branchCount, onBranch, on
         ) : message.isError ? (
           <div>
             <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{message.content}</p>
-            {onRetry && (
+            {handleRetry && (
               <button
-                onClick={onRetry}
+                onClick={handleRetry}
                 className="mt-2 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm"
               >
                 <RotateCcw className="h-3 w-3" strokeWidth={1.5} />
@@ -743,9 +750,9 @@ export function ChatMessage({ message, isLast = false, branchCount, onBranch, on
         {!isLoading && message.content && (
           <UserActionButtons
             isUser={isUser}
-            onEdit={onEdit}
-            onResend={onResend}
-            onBranch={onBranch}
+            onEdit={handleEdit}
+            onResend={handleResend}
+            onBranch={handleBranch}
             onCopy={handleCopy}
             copied={copied}
           />
@@ -767,4 +774,4 @@ export function ChatMessage({ message, isLast = false, branchCount, onBranch, on
     )}
     </div>
   );
-}
+});

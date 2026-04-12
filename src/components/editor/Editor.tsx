@@ -11,7 +11,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useEditorStylesStore, fontFamilyCSS } from "@/stores/editor-styles-store";
 import { useEditor } from "@/hooks/useEditor";
 import { useFileOperations } from "@/hooks/useFileOperations";
-import { useExportOperations, resolveChartColors } from "@/hooks/useExportOperations";
+import { useExportOperations } from "@/hooks/useExportOperations";
 import { useDiffReview } from "@/hooks/useDiffReview";
 import { useFileWatcher } from "@/hooks/useFileWatcher";
 import { useCommentEditorSync } from "@/hooks/useCommentEditorSync";
@@ -87,9 +87,28 @@ interface EditorProps {
 }
 
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick, onShortcutsOpen, onOpenActions }: EditorProps) {
-  const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, externalChanges, clearExternalChange, toggleViewMode, setViewMode } = useEditorStore();
+  const tabs = useEditorStore((s) => s.tabs);
+  const activeTabId = useEditorStore((s) => s.activeTabId);
+  const updateTabContent = useEditorStore((s) => s.updateTabContent);
+  const setFrontmatter = useEditorStore((s) => s.setFrontmatter);
+  const recentFiles = useEditorStore((s) => s.recentFiles);
+  const externalChanges = useEditorStore((s) => s.externalChanges);
+  const clearExternalChange = useEditorStore((s) => s.clearExternalChange);
+  const toggleViewMode = useEditorStore((s) => s.toggleViewMode);
+  const setViewMode = useEditorStore((s) => s.setViewMode);
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
-  const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, printLayout, notesRootPath, sourceWordWrap, setSourceWordWrap } = useSettingsStore();
+  const showFloatingToolbar = useSettingsStore((s) => s.showFloatingToolbar);
+  const toolbarVisible = useSettingsStore((s) => s.toolbarVisible);
+  const contentWidth = useSettingsStore((s) => s.contentWidth);
+  const marginTop = useSettingsStore((s) => s.marginTop);
+  const marginBottom = useSettingsStore((s) => s.marginBottom);
+  const marginLeft = useSettingsStore((s) => s.marginLeft);
+  const marginRight = useSettingsStore((s) => s.marginRight);
+  const gitEnabled = useSettingsStore((s) => s.gitEnabled);
+  const printLayout = useSettingsStore((s) => s.printLayout);
+  const notesRootPath = useSettingsStore((s) => s.notesRootPath);
+  const sourceWordWrap = useSettingsStore((s) => s.sourceWordWrap);
+  const setSourceWordWrap = useSettingsStore((s) => s.setSourceWordWrap);
   const editorStyles = useEditorStylesStore();
   const { projectPath } = useActiveProject();
   const commentStorageRoot = projectPath ?? (notesRootPath && !notesRootPath.startsWith('~') ? notesRootPath : null);
@@ -332,47 +351,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   /** Per-tab ProseMirror EditorState cache — preserves undo/redo, selection, and plugin state across tab switches. */
   const cachedEditorStatesRef = useRef<Map<string, EditorState>>(new Map());
 
-  // Cache embedded SVGs for HTML preview — must be collected while WYSIWYG is still in DOM.
-  // We use a ref + useMemo trick: collect synchronously from the live DOM before React
-  // unmounts the WYSIWYG editor and mounts HtmlViewer.
-  const cachedEmbeddedSvgsRef = useRef<string[]>([]);
-  const prevViewModeRef = useRef<string | undefined>(undefined);
-  if (
-    activeTab?.viewMode === "html-preview" &&
-    prevViewModeRef.current !== "html-preview" &&
-    editor
-  ) {
-    // Transitioning TO html-preview — collect chart/mermaid SVGs from live DOM
-    const chartSvgs: string[] = [];
-    let chartIdx = 0;
-    let mermaidIdx = 0;
-    editor.state.doc.descendants((node) => {
-      if (node.type.name === "chart" && node.attrs.chartJson) {
-        const wrappers = document.querySelectorAll(".chart-block .recharts-wrapper svg");
-        const svgEl = wrappers[chartIdx++] as SVGSVGElement | undefined;
-        if (svgEl) {
-          const raw = new XMLSerializer().serializeToString(svgEl);
-          chartSvgs.push(resolveChartColors(raw, node.attrs.chartJson as string));
-        } else {
-          chartSvgs.push("");
-        }
-      } else if (node.type.name === "drawing" && node.attrs.drawingJson) {
-        chartSvgs.push("__drawing__"); // placeholder — will be rendered async by HtmlViewer
-      } else if (node.type.name === "mermaidBlock" && node.attrs.source) {
-        const containers = document.querySelectorAll(".mermaid-block .mermaid-svg-container svg");
-        const svgEl = containers[mermaidIdx++] as SVGSVGElement | undefined;
-        if (svgEl) {
-          chartSvgs.push(new XMLSerializer().serializeToString(svgEl));
-        } else {
-          chartSvgs.push("");
-        }
-      }
-      return false;
-    });
-    cachedEmbeddedSvgsRef.current = chartSvgs;
-  }
-  prevViewModeRef.current = activeTab?.viewMode;
-
   // External change detection + inline diff review
   const {
     externalChangesAll,
@@ -598,8 +576,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           filePath={activeTab.filePath}
           fileName={activeTab.fileName}
           projectRoot={projectPath ?? undefined}
-          editor={editor}
-          cachedEmbeddedSvgs={cachedEmbeddedSvgsRef.current}
         />
       ) : activeTab?.viewMode === "source" ? (
         <SourceModeEditor
