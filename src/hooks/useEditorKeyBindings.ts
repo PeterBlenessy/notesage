@@ -125,6 +125,74 @@ export function useEditorKeyBindings({
     return () => window.removeEventListener("keydown", handleToggle);
   }, [handleToggleViewMode]);
 
+  // Print document: extract editor content into a new window and print that.
+  // This avoids all the @media print CSS complexity of hiding app chrome.
+  useEffect(() => {
+    const handlePrint = () => {
+      const prosemirror = document.querySelector(".ProseMirror");
+      if (!prosemirror) return;
+
+      // Clone the editor content
+      const content = prosemirror.cloneNode(true) as HTMLElement;
+      content.removeAttribute("contenteditable");
+
+      // Collect all stylesheets from the current page
+      const styles: string[] = [];
+      for (const sheet of document.styleSheets) {
+        try {
+          for (const rule of sheet.cssRules) {
+            styles.push(rule.cssText);
+          }
+        } catch {
+          // Cross-origin stylesheets can't be read — skip
+        }
+      }
+
+      // Create a hidden iframe, write the content, print it
+      const iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.left = "-10000px";
+      iframe.style.top = "0";
+      iframe.style.width = "800px";
+      iframe.style.height = "600px";
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentDocument;
+      if (!doc) { iframe.remove(); return; }
+
+      doc.open();
+      doc.write(`<!DOCTYPE html>
+<html><head>
+<style>${styles.join("\n")}</style>
+<style>
+  body { margin: 0; padding: 24px 48px; background: white; color: black; max-width: 720px; margin: 0 auto; }
+  @page { margin: 1in; }
+  pre, table, .chart-block, .drawing-node-view, .mermaid-block, blockquote {
+    break-inside: avoid;
+  }
+  h1, h2, h3, h4, h5, h6 { break-after: avoid; }
+  p { orphans: 3; widows: 3; }
+  img, svg { max-width: 100%; height: auto; }
+</style>
+</head><body>${content.outerHTML}</body></html>`);
+      doc.close();
+
+      // Wait for rendering, then print the iframe
+      setTimeout(() => {
+        iframe.contentWindow?.print();
+        // Clean up after print dialog closes
+        setTimeout(() => iframe.remove(), 1000);
+      }, 300);
+    };
+    window.addEventListener("notesage-print", handlePrint);
+    // Expose for console testing: window.notesagePrint()
+    (window as unknown as Record<string, unknown>).notesagePrint = handlePrint;
+    return () => {
+      window.removeEventListener("notesage-print", handlePrint);
+      delete (window as unknown as Record<string, unknown>).notesagePrint;
+    };
+  }, []);
+
   // Find in document — listen for custom events from App.tsx (WYSIWYG mode only; source mode handled by SourceModeEditor)
   useEffect(() => {
     const handleFindOpen = () => {

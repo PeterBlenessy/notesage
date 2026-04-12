@@ -878,227 +878,76 @@ mod tests {
 /// This renders the HTML exactly as the browser engine would, producing
 /// WYSIWYG-fidelity PDF output.
 ///
-/// Parameters:
-/// - `html`: A complete HTML document string (with embedded CSS).
-/// - `page_width`: Page width in points (A4 = 595.28).
-/// - `page_height`: Page height in points (A4 = 841.89).
-///
-/// This command is macOS-only. On other platforms it returns an error.
+/// Uses a dedicated Tauri webview window (not the main app webview) to
+/// avoid disrupting the user's editor state.
 #[tauri::command]
 pub async fn export_pdf_webkit(
+    app: tauri::AppHandle,
     html: String,
+    title: String,
     page_width: f64,
     page_height: f64,
 ) -> Result<Vec<u8>, String> {
     #[cfg(target_os = "macos")]
     {
-        webkit_pdf::render_pdf_with_wkwebview(&html, page_width, page_height).await
+        webkit_pdf::render_pdf_with_tauri_webview(&app, &html, &title, page_width, page_height).await
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (html, page_width, page_height);
+        let _ = (app, html, title, page_width, page_height);
         Err("WKWebView PDF export is only available on macOS".to_string())
     }
 }
 
 #[cfg(target_os = "macos")]
 mod webkit_pdf {
-    use block2::RcBlock;
-    use objc2::rc::Retained;
-    use objc2::{MainThreadMarker, MainThreadOnly};
-    use objc2_core_foundation::{CGPoint, CGRect, CGSize};
-    use objc2_foundation::{NSData, NSError, NSString};
-    use objc2_web_kit::{WKPDFConfiguration, WKWebView, WKWebViewConfiguration};
-    use std::sync::{Arc, Mutex};
-
-    // Raw FFI bindings for Grand Central Dispatch.
-    // These are stable C API symbols provided by libSystem on macOS.
-    //
-    // Note: `dispatch_get_main_queue()` is a C macro that resolves to
-    // `&_dispatch_main_q`. We use the underlying symbol directly.
-    #[link(name = "System", kind = "dylib")]
-    extern "C" {
-        #[link_name = "_dispatch_main_q"]
-        static DISPATCH_MAIN_Q: std::ffi::c_void;
-
-        fn dispatch_async_f(
-            queue: *const std::ffi::c_void,
-            context: *mut std::ffi::c_void,
-            work: extern "C" fn(*mut std::ffi::c_void),
-        );
-        fn dispatch_after_f(
-            when: u64,
-            queue: *const std::ffi::c_void,
-            context: *mut std::ffi::c_void,
-            work: extern "C" fn(*mut std::ffi::c_void),
-        );
-        fn dispatch_time(when: u64, delta: i64) -> u64;
-    }
-
-    /// Returns a pointer to the main dispatch queue.
-    fn main_queue() -> *const std::ffi::c_void {
-        unsafe { &DISPATCH_MAIN_Q as *const std::ffi::c_void }
-    }
-
-    const DISPATCH_TIME_NOW: u64 = 0;
-
-    /// Wrapper to safely send a main-thread-only Retained<WKWebView> across
-    /// the Send boundary. This is safe because:
-    /// 1. The webview is created on the main thread
-    /// 2. All closures capturing it are dispatched exclusively to the main thread
-    /// 3. The webview is only ever accessed on the main thread
-    struct SendWebView(Retained<WKWebView>);
-
-    // SAFETY: SendWebView is only ever moved between closures that execute on
-    // the main thread (via dispatch_async/dispatch_after to the main queue).
-    // The WKWebView is never actually accessed from a non-main thread.
-    unsafe impl Send for SendWebView {}
-
-    /// Helper to dispatch a boxed closure to the main queue.
-    fn dispatch_main(f: Box<dyn FnOnce() + Send>) {
-        extern "C" fn trampoline(ctx: *mut std::ffi::c_void) {
-            let closure: Box<Box<dyn FnOnce() + Send>> = unsafe { Box::from_raw(ctx as *mut _) };
-            closure();
-        }
-        let boxed: Box<Box<dyn FnOnce() + Send>> = Box::new(f);
-        let raw = Box::into_raw(boxed) as *mut std::ffi::c_void;
-        unsafe { dispatch_async_f(main_queue(), raw, trampoline) };
-    }
-
-    /// Helper to dispatch a boxed closure to the main queue after a delay.
-    fn dispatch_main_after(delay_ns: i64, f: Box<dyn FnOnce() + Send>) {
-        extern "C" fn trampoline(ctx: *mut std::ffi::c_void) {
-            let closure: Box<Box<dyn FnOnce() + Send>> = unsafe { Box::from_raw(ctx as *mut _) };
-            closure();
-        }
-        let boxed: Box<Box<dyn FnOnce() + Send>> = Box::new(f);
-        let raw = Box::into_raw(boxed) as *mut std::ffi::c_void;
-        unsafe {
-            let when = dispatch_time(DISPATCH_TIME_NOW, delay_ns);
-            dispatch_after_f(when, main_queue(), raw, trampoline);
-        }
-    }
-
-    /// Renders HTML to PDF bytes via WKWebView on the main thread.
-    ///
-    /// Strategy:
-    /// 1. Dispatch WKWebView creation + HTML load to the main thread
-    /// 2. Poll `isLoading` on the main thread every 50ms
-    /// 3. Once loaded, call `createPDF` and send result via oneshot channel
-    pub async fn render_pdf_with_wkwebview(
+    /// Open the document HTML in a Tauri webview window and trigger
+    /// the macOS print dialog. The user can "Save as PDF".
+    /// The window is closed after the print dialog is dismissed.
+    pub async fn render_pdf_with_tauri_webview(
+        app: &tauri::AppHandle,
         html: &str,
-        page_width: f64,
-        page_height: f64,
-    ) -> Result<Vec<u8>, String> {
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<u8>, String>>();
-        let html = html.to_owned();
-        let tx = Arc::new(Mutex::new(Some(tx)));
-
-        let tx_clone = tx.clone();
-        dispatch_main(Box::new(move || {
-            // SAFETY: We are on the main thread (dispatched to main queue).
-            let mtm = unsafe { MainThreadMarker::new_unchecked() };
-
-            let config = unsafe { WKWebViewConfiguration::new(mtm) };
-            let frame = CGRect::new(
-                CGPoint::new(0.0, 0.0),
-                CGSize::new(page_width, page_height),
-            );
-            let webview = unsafe {
-                WKWebView::initWithFrame_configuration(WKWebView::alloc(mtm), frame, &config)
-            };
-
-            // Load the HTML string
-            let ns_html = NSString::from_str(&html);
-            unsafe {
-                webview.loadHTMLString_baseURL(&ns_html, None);
-            }
-
-            // Start polling for load completion
-            let send_wv = SendWebView(webview);
-            poll_until_loaded(send_wv, page_width, page_height, tx_clone, 0);
-        }));
-
-        rx.await
-            .map_err(|_| "PDF generation channel was dropped".to_string())?
-    }
-
-    /// Poll WKWebView.isLoading on the main thread. When loading is done,
-    /// call createPDF. Times out after 30 seconds.
-    fn poll_until_loaded(
-        webview: SendWebView,
-        page_width: f64,
-        page_height: f64,
-        tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<Result<Vec<u8>, String>>>>>,
-        attempt: u32,
-    ) {
-        const MAX_ATTEMPTS: u32 = 600; // 30s at 50ms intervals
-        const POLL_INTERVAL_NS: i64 = 50_000_000; // 50ms
-
-        if attempt >= MAX_ATTEMPTS {
-            if let Some(sender) = tx.lock().unwrap().take() {
-                let _ = sender.send(Err(
-                    "WKWebView load timed out after 30 seconds".to_string(),
-                ));
-            }
-            return;
-        }
-
-        let still_loading = unsafe { webview.0.isLoading() };
-        if still_loading {
-            // Schedule another check after 50ms
-            dispatch_main_after(
-                POLL_INTERVAL_NS,
-                Box::new(move || {
-                    poll_until_loaded(webview, page_width, page_height, tx, attempt + 1);
-                }),
-            );
-        } else {
-            // Loading complete — create PDF
-            create_pdf(webview, page_width, page_height, tx);
-        }
-    }
-
-    /// Call WKWebView.createPDF and send the result through the channel.
-    fn create_pdf(
-        webview: SendWebView,
+        title: &str,
         _page_width: f64,
         _page_height: f64,
-        tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<Result<Vec<u8>, String>>>>>,
-    ) {
-        // SAFETY: We are on the main thread
-        let mtm = unsafe { MainThreadMarker::new_unchecked() };
+    ) -> Result<Vec<u8>, String> {
+        use tauri::Manager;
 
-        let pdf_config = unsafe { WKPDFConfiguration::new(mtm) };
-
-        // Leave the rect as the default null rect so WKWebView captures the
-        // full page. The page_width/page_height were already used for the
-        // WKWebView frame, which determines the layout viewport width.
-
-        let tx_for_block = tx.clone();
-
-        let completion = RcBlock::new(move |data: *mut NSData, error: *mut NSError| {
-            let result = if !error.is_null() {
-                let err = unsafe { &*error };
-                let desc = err.localizedDescription();
-                Err(format!("createPDF failed: {}", desc))
-            } else if data.is_null() {
-                Err("createPDF returned null data".to_string())
-            } else {
-                let ns_data = unsafe { &*data };
-                Ok(ns_data.to_vec())
-            };
-
-            if let Some(sender) = tx_for_block.lock().unwrap().take() {
-                let _ = sender.send(result);
-            }
-        });
-
-        unsafe {
-            webview
-                .0
-                .createPDFWithConfiguration_completionHandler(Some(&pdf_config), &completion);
+        // Close any leftover print window from a previous export
+        if let Some(existing) = app.get_webview_window("print-preview") {
+            let _ = existing.close();
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         }
+
+        // Write HTML to temp file
+        let temp_path = std::env::temp_dir().join("notesage-print.html");
+        std::fs::write(&temp_path, html)
+            .map_err(|e| format!("Failed to write temp HTML: {}", e))?;
+
+        let file_url = format!("file://{}", temp_path.display());
+        log::info!("[print] Opening print window ({} bytes HTML)", html.len());
+
+        // Create a window with the rendered document
+        let _print_window = tauri::webview::WebviewWindowBuilder::new(
+            app,
+            "print-preview",
+            tauri::WebviewUrl::External(
+                file_url.parse().map_err(|e| format!("Bad URL: {}", e))?,
+            ),
+        )
+        .title(title)
+        .inner_size(800.0, 1000.0)
+        .build()
+        .map_err(|e| format!("Failed to create print window: {}", e))?;
+
+        // Wait for content to render, then trigger print dialog
+        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+
+        log::info!("[print] Triggering print dialog");
+        _print_window.print()
+            .map_err(|e| format!("Print failed: {}", e))?;
+
+        Ok(vec![])
     }
 }
 

@@ -10,6 +10,7 @@ use std::fs;
 use std::path::Path;
 
 use skills_frontmatter::parse_frontmatter;
+#[allow(unused_imports)]
 pub use skills_tool_parser::{ArgMapping, ArgMappingType, SkillToolEntry};
 use skills_tool_parser::{fallback_generic_schema, parse_usage_comment, to_snake_case};
 

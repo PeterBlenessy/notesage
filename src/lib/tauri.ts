@@ -572,6 +572,7 @@ export const tauriApi = {
   // Export operations
   async exportPdfWebkit(options: {
     html: string;
+    title: string;
     pageWidth: number;
     pageHeight: number;
   }): Promise<number[]> {

@@ -276,3 +276,57 @@ body {
 [data-sonner-toast] [data-cancel] {
   margin-top: 8px !important;
 }
+
+/* ============================================
+   PRINT STYLES — window.print()
+   Strategy: hide EVERYTHING, then show only .ProseMirror.
+   This avoids having to enumerate every UI component.
+   ============================================ */
+@media print {
+  /* 1. Hide the entire app */
+  #root * {
+    visibility: hidden;
+  }
+
+  /* 2. Show only the editor content and its ancestors (so it's positioned) */
+  .ProseMirror,
+  .ProseMirror * {
+    visibility: visible !important;
+  }
+
+  /* 3. Position the editor at the top-left, full width */
+  .ProseMirror {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* 4. White background, black text */
+  body, html, #root {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* 5. Page break control */
+  pre, table, .chart-block, .drawing-node-view,
+  .mermaid-block, blockquote, .callout, figure {
+    break-inside: avoid;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    break-after: avoid;
+  }
+  p {
+    orphans: 3;
+    widows: 3;
+  }
+
+  /* 6. Images and charts fit within page */
+  img, svg, .chart-block, .drawing-node-view, .mermaid-block {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+}
