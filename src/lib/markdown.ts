@@ -774,6 +774,35 @@ export function applyTableColumnMetadata(
 }
 
 // ---------------------------------------------------------------------------
+// Table of Contents preprocessing
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert `<!-- toc -->` HTML comments to a `<div>` element that
+ * tiptap-markdown can parse and preserve as a TOC node in ProseMirror.
+ *
+ * On serialization, `getMarkdownFromEditor` converts these back to the
+ * comment form via `restoreTocComments`.
+ */
+export function convertTocToHtml(markdown: string): string {
+  return markdown.replace(
+    /^<!-- toc -->$/gm,
+    '<div data-toc="true" class="toc-block"></div>',
+  );
+}
+
+/**
+ * Restore `<!-- toc -->` comments from the serialized HTML div form.
+ * Called during `getMarkdownFromEditor` to produce clean markdown.
+ */
+export function restoreTocComments(markdown: string): string {
+  return markdown.replace(
+    /^<div data-toc[^>]*><\/div>$/gm,
+    '<!-- toc -->',
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page break preprocessing
 // ---------------------------------------------------------------------------
 
@@ -830,6 +859,9 @@ export function getMarkdownFromEditor(editor: Editor): string {
   // Restore page break comments from HTML div form
   markdown = restorePageBreaks(markdown);
 
+  // Restore TOC comments from HTML div form
+  markdown = restoreTocComments(markdown);
+
   // Inject {emoji} prefixes from the current ProseMirror document annotations
   return injectAnnotationsIntoMarkdown(markdown, editor);
 }
@@ -837,7 +869,7 @@ export function getMarkdownFromEditor(editor: Editor): string {
 
 export function setMarkdownInEditor(editor: Editor, markdown: string): void {
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(markdown);
-  const encoded = encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))))));
+  const encoded = encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))))))));
   setContentWithoutHistory(editor, encoded);
 
   if (metadata.size > 0) {
@@ -873,7 +905,7 @@ export function loadRawMarkdownIntoEditor(
 ): void {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(cleaned);
-  const encoded = encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))))));
+  const encoded = encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))))))));
   editor.chain().setMeta("addToHistory", false).setContent(encoded).run();
 
   // Clear undo/redo history — the loaded content is a fresh baseline.
@@ -910,7 +942,7 @@ export function prepareInitialContent(rawMarkdown: string): {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(cleaned);
   return {
-    content: encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))))))),
+    content: encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))))))),
     annotations,
     tableMetadata: metadata,
   };

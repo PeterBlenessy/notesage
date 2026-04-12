@@ -1801,3 +1801,75 @@ mark.dom-find-highlight-active {
 .ProseMirror pre code .hljs-name {
   color: var(--ns-code-tag);
 }
+
+/* ----------------------------------------------------------------
+   Table of Contents block
+   ---------------------------------------------------------------- */
+
+.ProseMirror .toc-block {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin: 1.5rem 0;
+  background-color: var(--color-muted);
+  user-select: none;
+}
+
+.ProseMirror .toc-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-muted-foreground);
+  margin-bottom: 0.75rem;
+}
+
+.ProseMirror .toc-empty {
+  font-size: 0.8125rem;
+  color: var(--color-muted-foreground);
+  font-style: italic;
+}
+
+.ProseMirror .toc-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.ProseMirror .toc-item {
+  margin: 0;
+  padding: 0;
+}
+
+.ProseMirror .toc-item.toc-level-1 {
+  padding-left: 1rem;
+}
+
+.ProseMirror .toc-item.toc-level-2 {
+  padding-left: 2rem;
+}
+
+.ProseMirror .toc-link {
+  display: block;
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 0.875rem;
+  color: var(--color-foreground);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.ProseMirror .toc-link:hover {
+  background-color: var(--color-accent);
+}
+
+.ProseMirror .toc-link:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: -2px;
+}

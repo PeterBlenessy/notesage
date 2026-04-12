@@ -22,7 +22,7 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { common, createLowlight } from "lowlight";
 import { Markdown } from "tiptap-markdown";
 import { SlashCommand } from "@/components/editor/extensions/slash-command";
-import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSuggestion, MentionHighlight, MentionSuggestion, DateHighlight, DateSuggestion, SearchHighlight, Drawing, Chart, MermaidBlock, LinkPreview } from "@/components/editor/extensions";
+import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSuggestion, MentionHighlight, MentionSuggestion, DateHighlight, DateSuggestion, SearchHighlight, Drawing, Chart, MermaidBlock, LinkPreview, TableOfContents } from "@/components/editor/extensions";
 import { PageBreaks } from "@/components/editor/extensions/page-breaks";
 import { LinkClick } from "@/components/editor/extensions/link-click";
 import { SendToAI } from "@/components/editor/extensions/send-to-ai";
@@ -164,6 +164,7 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       TableSparkline,
       TableHeaderMenu,
       SendToAI,
+      TableOfContents,
     ],
     content,
     editable,

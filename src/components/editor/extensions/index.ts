@@ -71,3 +71,6 @@ export { TableSort, TableSortPluginKey, sortTableByColumn } from './table-sort';
 export { TableSparkline } from './table-sparkline';
 export { TableHeaderMenu, TableHeaderMenuPluginKey, TABLE_HEADER_MENU_EVENT } from './table-header-menu';
 export type { TableHeaderMenuEventDetail } from './table-header-menu';
+export { TableOfContents } from './toc';
+export type { TocHeading } from './toc';
+export { scanHeadings } from './toc';

@@ -14,6 +14,7 @@ use comrak::{parse_document, Arena, Options};
 use docx_rs::*;
 
 use super::table_utils::*;
+use crate::commands::export::EmbeddedImage;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -35,7 +36,7 @@ pub fn markdown_to_docx(
     options: &DocxOptions,
     typography: Option<&super::typography::TypographyPresets>,
     page_settings: Option<&super::page_settings::DocumentPageSettings>,
-    embedded_svgs: Option<&[String]>,
+    embedded_images: Option<&[EmbeddedImage]>,
 ) -> Result<Vec<u8>, String> {
     let mut opts = Options::default();
     opts.extension.table = true;
@@ -51,7 +52,7 @@ pub fn markdown_to_docx(
         Some(presets) => TemplateConfig::from_typography(presets),
         None => TemplateConfig::from_name(template),
     };
-    let mut converter = DocxConverter::new(title, &template_config, options, page_settings, embedded_svgs);
+    let mut converter = DocxConverter::new(title, &template_config, options, page_settings, embedded_images);
     converter.walk(root);
     converter.finish()
 }
@@ -214,10 +215,10 @@ struct DocxConverter<'a> {
     /// Cell paragraph accumulator (for tables).
     cell_paragraphs: Option<Vec<Paragraph>>,
     cell_runs: Option<Vec<Run>>,
-    /// Pre-rendered SVGs for inline chart/excalidraw blocks.
-    embedded_svgs: Option<&'a [String]>,
-    /// Index into embedded_svgs, incremented for each chart/excalidraw code block.
-    embedded_svg_index: usize,
+    /// Pre-rendered PNG images for chart/excalidraw/mermaid code blocks.
+    embedded_images: Option<&'a [EmbeddedImage]>,
+    /// Index into embedded_images — incremented for each chart/excalidraw/mermaid code block.
+    embedded_image_index: usize,
 }
 
 enum DocxElement {
@@ -238,7 +239,7 @@ impl<'a> DocxConverter<'a> {
         template: &'a TemplateConfig,
         options: &'a DocxOptions,
         page_settings: Option<&'a super::page_settings::DocumentPageSettings>,
-        embedded_svgs: Option<&'a [String]>,
+        embedded_images: Option<&'a [EmbeddedImage]>,
     ) -> Self {
         Self {
             title: title.to_string(),
@@ -263,8 +264,8 @@ impl<'a> DocxConverter<'a> {
             code_block_text: None,
             cell_paragraphs: None,
             cell_runs: None,
-            embedded_svgs,
-            embedded_svg_index: 0,
+            embedded_images,
+            embedded_image_index: 0,
         }
     }
 
@@ -448,50 +449,12 @@ impl<'a> DocxConverter<'a> {
                 self.convert_blockquote(node);
             }
             NodeValue::CodeBlock(ref code_block) => {
-                let lang = code_block.info.split_whitespace().next().unwrap_or("");
-                if lang == "chart" || lang == "excalidraw" || lang == "mermaid" {
-                    let idx = self.embedded_svg_index;
-                    self.embedded_svg_index += 1;
-
-                    if let Some(svgs) = self.embedded_svgs {
-                        if let Some(svg) = svgs.get(idx) {
-                            if !svg.is_empty() {
-                                // DOCX doesn't support SVG — convert to PNG via resvg
-                                if let Some((png_data, orig_w, orig_h)) = crate::commands::export::svg_to_png(svg) {
-                                    // Scale to fit page content width (page width minus margins)
-                                    // Page widths in EMU: A4=7560310, Letter=7772400, A5=5346700
-                                    // Default margins: ~1 inch each side = 914400 × 2 = 1828800
-                                    let page_w_emu: u32 = match self.options.page_size.as_str() {
-                                        "letter" => 7_772_400,
-                                        "a5" => 5_346_700,
-                                        _ => 7_560_310, // a4
-                                    };
-                                    let max_width_emu = page_w_emu - 1_828_800; // subtract margins
-                                    let aspect = orig_h as f64 / orig_w as f64;
-                                    let w_emu = max_width_emu;
-                                    let h_emu = (w_emu as f64 * aspect) as u32;
-                                    let pic = Pic::new(&png_data).size(w_emu, h_emu);
-                                    let run = Run::new().add_image(pic);
-                                    let para = Paragraph::new()
-                                        .add_run(run)
-                                        .line_spacing(self.body_line_spacing());
-                                    self.paragraphs.push(DocxElement::Para(para));
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                    // Fallback placeholder
-                    let title = serde_json::from_str::<serde_json::Value>(&code_block.literal)
-                        .ok()
-                        .and_then(|v| v.get("title").and_then(|t| t.as_str()).map(|s| s.to_string()))
-                        .unwrap_or_else(|| match lang { "chart" => "Chart", "mermaid" => "Diagram", _ => "Drawing" }.to_string());
-                    let run = Run::new().add_text(&format!("[{}]", title)).italic().color("888888");
-                    let para = Paragraph::new().add_run(run).line_spacing(self.body_line_spacing());
-                    self.paragraphs.push(DocxElement::Para(para));
-                    return;
+                let info = code_block.info.trim().to_lowercase();
+                if info == "chart" || info == "excalidraw" || info == "mermaid" {
+                    self.convert_embedded_block();
+                } else {
+                    self.convert_code_block(&code_block.literal);
                 }
-                self.convert_code_block(&code_block.literal);
             }
             NodeValue::Table(ref table) => {
                 self.convert_table(node, &table.alignments);
@@ -976,6 +939,33 @@ impl<'a> DocxConverter<'a> {
                     .line(240) // single spacing for code
                     .line_rule(LineSpacingType::Auto),
             );
+        self.paragraphs.push(DocxElement::Para(para));
+    }
+
+    /// Insert a pre-rendered PNG for a chart/excalidraw/mermaid code block.
+    /// Consumes the next embedded image from the positional array.
+    fn convert_embedded_block(&mut self) {
+        let idx = self.embedded_image_index;
+        self.embedded_image_index += 1;
+
+        if let Some(images) = self.embedded_images {
+            if let Some(img) = images.get(idx) {
+                let pic = Pic::new(&img.data);
+                let run = Run::new().add_image(pic);
+                let para = Paragraph::new()
+                    .add_run(run)
+                    .line_spacing(self.body_line_spacing());
+                self.paragraphs.push(DocxElement::Para(para));
+                return;
+            }
+        }
+
+        // No embedded image available — show placeholder
+        let run = self
+            .style_run(Run::new().add_text("[Chart/Drawing]").italic().color("888888"));
+        let para = Paragraph::new()
+            .add_run(run)
+            .line_spacing(self.body_line_spacing());
         self.paragraphs.push(DocxElement::Para(para));
     }
 

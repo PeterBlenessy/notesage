@@ -29,6 +29,7 @@ import {
   BarChart3,
   Workflow,
   Link,
+  List as ListIcon,
 } from "lucide-react";
 
 interface CommandItem {
@@ -222,6 +223,14 @@ const commands: CommandItem[] = [
       editor.chain().focus().deleteRange(range).insertLinkPreview({ url: "" }).run();
     },
   },
+  {
+    title: "Table of Contents",
+    description: "Insert a live table of contents",
+    icon: ListIcon,
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).insertTableOfContents().run();
+    },
+  },
 ];
 
 interface CommandListRef {
@@ -358,7 +367,7 @@ export const SlashCommand = Extension.create({
       Suggestion({
         editor: this.editor,
         ...this.options.suggestion,
-        allow: ({ state, range, isActive }: { state: EditorState; range: Range; isActive?: boolean }) => {
+        allow: ({ state, range, isActive }: { editor: unknown; state: EditorState; range: Range; isActive?: boolean }) => {
           // Only require doc change for initial activation, not while already active
           if (!isActive && !lastTxChangedDoc) return false;
 

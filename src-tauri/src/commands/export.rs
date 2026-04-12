@@ -10,6 +10,16 @@ use crate::export::typst_world::NotesageWorld;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// A pre-rendered PNG image captured from the frontend (chart, drawing, or mermaid).
+/// Passed positionally — index N corresponds to the Nth chart/excalidraw/mermaid
+/// fenced code block encountered during the comrak AST walk.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct EmbeddedImage {
+    pub data: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
 /// Convert markdown to PDF bytes using the Typst engine.
 #[tauri::command]
 pub async fn export_pdf(
@@ -85,14 +95,14 @@ pub async fn export_pptx(
     title: String,
     template: String,
     project_root: Option<String>,
-    embedded_svgs: Option<Vec<String>>,
+    embedded_images: Option<Vec<EmbeddedImage>>,
 ) -> Result<Vec<u8>, String> {
     markdown_to_pptx(
         &markdown,
         &title,
         &template,
         project_root.as_deref(),
-        embedded_svgs.as_deref(),
+        embedded_images.as_deref(),
     )
 }
 
@@ -109,6 +119,7 @@ pub async fn export_docx(
     typography: Option<TypographyPresets>,
     page_settings: Option<DocumentPageSettings>,
     embedded_svgs: Option<Vec<String>>,
+    embedded_images: Option<Vec<EmbeddedImage>>,
 ) -> Result<Vec<u8>, String> {
     let options = DocxOptions {
         include_toc,
@@ -116,7 +127,7 @@ pub async fn export_docx(
         page_size,
         project_root,
     };
-    markdown_to_docx(&markdown, &title, &template, &options, typography.as_ref(), page_settings.as_ref(), embedded_svgs.as_deref())
+    markdown_to_docx(&markdown, &title, &template, &options, typography.as_ref(), page_settings.as_ref(), embedded_images.as_deref())
 }
 
 /// Render markdown to a complete HTML document or body fragment.
@@ -1030,3 +1041,348 @@ mod tests {
         assert!(css.contains("font-size: 14px"), "h6 should be 14px");
     }
 }
+
+// --- WKWebView PDF Export (macOS) ---
+
+/// Convert an HTML string to PDF bytes using macOS WKWebView.createPDF.
+/// This renders the HTML exactly as the browser engine would, producing
+/// WYSIWYG-fidelity PDF output.
+///
+/// Parameters:
+/// - `html`: A complete HTML document string (with embedded CSS).
+/// - `page_width`: Page width in points (A4 = 595.28).
+/// - `page_height`: Page height in points (A4 = 841.89).
+///
+/// This command is macOS-only. On other platforms it returns an error.
+#[tauri::command]
+pub async fn export_pdf_webkit(
+    html: String,
+    page_width: f64,
+    page_height: f64,
+) -> Result<Vec<u8>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        webkit_pdf::render_pdf_with_wkwebview(&html, page_width, page_height).await
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (html, page_width, page_height);
+        Err("WKWebView PDF export is only available on macOS".to_string())
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod webkit_pdf {
+    use block2::RcBlock;
+    use objc2::rc::Retained;
+    use objc2::{MainThreadMarker, MainThreadOnly};
+    use objc2_core_foundation::{CGPoint, CGRect, CGSize};
+    use objc2_foundation::{NSData, NSError, NSString};
+    use objc2_web_kit::{WKPDFConfiguration, WKWebView, WKWebViewConfiguration};
+    use std::sync::{Arc, Mutex};
+
+    // Raw FFI bindings for Grand Central Dispatch.
+    // These are stable C API symbols provided by libSystem on macOS.
+    //
+    // Note: `dispatch_get_main_queue()` is a C macro that resolves to
+    // `&_dispatch_main_q`. We use the underlying symbol directly.
+    #[link(name = "System", kind = "dylib")]
+    extern "C" {
+        #[link_name = "_dispatch_main_q"]
+        static DISPATCH_MAIN_Q: std::ffi::c_void;
+
+        fn dispatch_async_f(
+            queue: *const std::ffi::c_void,
+            context: *mut std::ffi::c_void,
+            work: extern "C" fn(*mut std::ffi::c_void),
+        );
+        fn dispatch_after_f(
+            when: u64,
+            queue: *const std::ffi::c_void,
+            context: *mut std::ffi::c_void,
+            work: extern "C" fn(*mut std::ffi::c_void),
+        );
+        fn dispatch_time(when: u64, delta: i64) -> u64;
+    }
+
+    /// Returns a pointer to the main dispatch queue.
+    fn main_queue() -> *const std::ffi::c_void {
+        unsafe { &DISPATCH_MAIN_Q as *const std::ffi::c_void }
+    }
+
+    const DISPATCH_TIME_NOW: u64 = 0;
+
+    /// Wrapper to safely send a main-thread-only Retained<WKWebView> across
+    /// the Send boundary. This is safe because:
+    /// 1. The webview is created on the main thread
+    /// 2. All closures capturing it are dispatched exclusively to the main thread
+    /// 3. The webview is only ever accessed on the main thread
+    struct SendWebView(Retained<WKWebView>);
+
+    // SAFETY: SendWebView is only ever moved between closures that execute on
+    // the main thread (via dispatch_async/dispatch_after to the main queue).
+    // The WKWebView is never actually accessed from a non-main thread.
+    unsafe impl Send for SendWebView {}
+
+    /// Helper to dispatch a boxed closure to the main queue.
+    fn dispatch_main(f: Box<dyn FnOnce() + Send>) {
+        extern "C" fn trampoline(ctx: *mut std::ffi::c_void) {
+            let closure: Box<Box<dyn FnOnce() + Send>> = unsafe { Box::from_raw(ctx as *mut _) };
+            closure();
+        }
+        let boxed: Box<Box<dyn FnOnce() + Send>> = Box::new(f);
+        let raw = Box::into_raw(boxed) as *mut std::ffi::c_void;
+        unsafe { dispatch_async_f(main_queue(), raw, trampoline) };
+    }
+
+    /// Helper to dispatch a boxed closure to the main queue after a delay.
+    fn dispatch_main_after(delay_ns: i64, f: Box<dyn FnOnce() + Send>) {
+        extern "C" fn trampoline(ctx: *mut std::ffi::c_void) {
+            let closure: Box<Box<dyn FnOnce() + Send>> = unsafe { Box::from_raw(ctx as *mut _) };
+            closure();
+        }
+        let boxed: Box<Box<dyn FnOnce() + Send>> = Box::new(f);
+        let raw = Box::into_raw(boxed) as *mut std::ffi::c_void;
+        unsafe {
+            let when = dispatch_time(DISPATCH_TIME_NOW, delay_ns);
+            dispatch_after_f(when, main_queue(), raw, trampoline);
+        }
+    }
+
+    /// Renders HTML to PDF bytes via WKWebView on the main thread.
+    ///
+    /// Strategy:
+    /// 1. Dispatch WKWebView creation + HTML load to the main thread
+    /// 2. Poll `isLoading` on the main thread every 50ms
+    /// 3. Once loaded, call `createPDF` and send result via oneshot channel
+    pub async fn render_pdf_with_wkwebview(
+        html: &str,
+        page_width: f64,
+        page_height: f64,
+    ) -> Result<Vec<u8>, String> {
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<u8>, String>>();
+        let html = html.to_owned();
+        let tx = Arc::new(Mutex::new(Some(tx)));
+
+        let tx_clone = tx.clone();
+        dispatch_main(Box::new(move || {
+            // SAFETY: We are on the main thread (dispatched to main queue).
+            let mtm = unsafe { MainThreadMarker::new_unchecked() };
+
+            let config = unsafe { WKWebViewConfiguration::new(mtm) };
+            let frame = CGRect::new(
+                CGPoint::new(0.0, 0.0),
+                CGSize::new(page_width, page_height),
+            );
+            let webview = unsafe {
+                WKWebView::initWithFrame_configuration(WKWebView::alloc(mtm), frame, &config)
+            };
+
+            // Load the HTML string
+            let ns_html = NSString::from_str(&html);
+            unsafe {
+                webview.loadHTMLString_baseURL(&ns_html, None);
+            }
+
+            // Start polling for load completion
+            let send_wv = SendWebView(webview);
+            poll_until_loaded(send_wv, page_width, page_height, tx_clone, 0);
+        }));
+
+        rx.await
+            .map_err(|_| "PDF generation channel was dropped".to_string())?
+    }
+
+    /// Poll WKWebView.isLoading on the main thread. When loading is done,
+    /// call createPDF. Times out after 30 seconds.
+    fn poll_until_loaded(
+        webview: SendWebView,
+        page_width: f64,
+        page_height: f64,
+        tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<Result<Vec<u8>, String>>>>>,
+        attempt: u32,
+    ) {
+        const MAX_ATTEMPTS: u32 = 600; // 30s at 50ms intervals
+        const POLL_INTERVAL_NS: i64 = 50_000_000; // 50ms
+
+        if attempt >= MAX_ATTEMPTS {
+            if let Some(sender) = tx.lock().unwrap().take() {
+                let _ = sender.send(Err(
+                    "WKWebView load timed out after 30 seconds".to_string(),
+                ));
+            }
+            return;
+        }
+
+        let still_loading = unsafe { webview.0.isLoading() };
+        if still_loading {
+            // Schedule another check after 50ms
+            dispatch_main_after(
+                POLL_INTERVAL_NS,
+                Box::new(move || {
+                    poll_until_loaded(webview, page_width, page_height, tx, attempt + 1);
+                }),
+            );
+        } else {
+            // Loading complete — create PDF
+            create_pdf(webview, page_width, page_height, tx);
+        }
+    }
+
+    /// Call WKWebView.createPDF and send the result through the channel.
+    fn create_pdf(
+        webview: SendWebView,
+        _page_width: f64,
+        _page_height: f64,
+        tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<Result<Vec<u8>, String>>>>>,
+    ) {
+        // SAFETY: We are on the main thread
+        let mtm = unsafe { MainThreadMarker::new_unchecked() };
+
+        let pdf_config = unsafe { WKPDFConfiguration::new(mtm) };
+
+        // Leave the rect as the default null rect so WKWebView captures the
+        // full page. The page_width/page_height were already used for the
+        // WKWebView frame, which determines the layout viewport width.
+
+        let tx_for_block = tx.clone();
+
+        let completion = RcBlock::new(move |data: *mut NSData, error: *mut NSError| {
+            let result = if !error.is_null() {
+                let err = unsafe { &*error };
+                let desc = err.localizedDescription();
+                Err(format!("createPDF failed: {}", desc))
+            } else if data.is_null() {
+                Err("createPDF returned null data".to_string())
+            } else {
+                let ns_data = unsafe { &*data };
+                Ok(ns_data.to_vec())
+            };
+
+            if let Some(sender) = tx_for_block.lock().unwrap().take() {
+                let _ = sender.send(result);
+            }
+        });
+
+        unsafe {
+            webview
+                .0
+                .createPDFWithConfiguration_completionHandler(Some(&pdf_config), &completion);
+        }
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod webkit_pdf_tests {
+    use super::*;
+
+    // WKWebView requires GCD main queue blocks to be processed by the real
+    // main thread. `cargo test` runs tests on worker threads, not the main
+    // thread. This helper dispatches the test closure TO the main thread,
+    // then pumps the run loop on the test thread to wait for completion.
+    //
+    // The approach: dispatch_sync to the main queue doesn't work from a test
+    // thread because the main thread is blocked in the test harness. Instead,
+    // we use dispatch_async and pump CFRunLoop from the test thread to process
+    // main-queue blocks. But CFRunLoop only drains the main queue when called
+    // from the actual main thread.
+    //
+    // Solution: use a global dispatch semaphore. The async work dispatches to
+    // the main queue via our existing dispatch_main, and when it produces a
+    // result we signal the semaphore. The test thread waits on the semaphore.
+    //
+    // But we still need the main thread to be running its run loop.
+    // In `cargo test`, the main thread IS running the test harness, which
+    // processes the main dispatch queue when idle. So dispatch_async to main
+    // queue DOES work during cargo test -- the blocks just get processed
+    // between test runs or during thread sleep.
+    //
+    // Actually, let's try the simplest approach: just use dispatch_async to
+    // the GLOBAL concurrent queue for the WKWebView work (instead of main
+    // queue), and do the main-thread operations via performSelectorOnMainThread.
+    //
+    // Wait -- the real solution is: in the test binary, the main thread IS
+    // available for GCD. The test runner uses the main thread. However,
+    // `cargo test` by default runs tests in parallel threads. The main thread
+    // is actually running `main()` which calls the test framework.
+    //
+    // The GCD main queue IS processed -- it just needs someone to drain it.
+    // Since macOS 10.12+, the main run loop automatically drains the main
+    // GCD queue. The problem is nobody is running the main run loop in the
+    // test binary.
+    //
+    // Final approach: we accept that these tests require a running app
+    // environment and mark them as ignored by default. They can be run
+    // manually with `cargo test -- --ignored` in a proper macOS environment.
+
+    /// Test that export_pdf_webkit returns non-empty PDF bytes for simple HTML.
+    ///
+    /// This test is ignored by default because WKWebView requires a running
+    /// main thread event loop (AppKit run loop) which is not available in
+    /// `cargo test`. Run with `cargo test -- --ignored` in a proper macOS
+    /// app environment, or test via the Tauri dev server.
+    #[test]
+    #[ignore = "requires macOS main thread run loop (WKWebView)"]
+    fn test_export_pdf_webkit_simple_html() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(export_pdf_webkit(
+            r#"<!DOCTYPE html>
+<html>
+<head><title>Test</title></head>
+<body><h1>Hello World</h1><p>This is a test document.</p></body>
+</html>"#
+                .to_string(),
+            595.28,
+            841.89,
+        ));
+
+        let pdf_bytes = result.expect("export_pdf_webkit should succeed");
+        assert!(!pdf_bytes.is_empty(), "PDF bytes should not be empty");
+        assert!(
+            pdf_bytes.len() >= 5 && &pdf_bytes[..5] == b"%PDF-",
+            "Output should be a valid PDF (starts with %PDF-), got {:?}",
+            &pdf_bytes[..std::cmp::min(5, pdf_bytes.len())]
+        );
+    }
+
+    /// Test with Letter page size.
+    #[test]
+    #[ignore = "requires macOS main thread run loop (WKWebView)"]
+    fn test_export_pdf_webkit_letter_size() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(export_pdf_webkit(
+            "<html><body><p>Letter size test</p></body></html>".to_string(),
+            612.0,
+            792.0,
+        ));
+
+        let pdf_bytes = result.expect("export_pdf_webkit should succeed");
+        assert!(!pdf_bytes.is_empty(), "PDF bytes should not be empty");
+        assert!(
+            pdf_bytes.len() >= 5 && &pdf_bytes[..5] == b"%PDF-",
+            "Output should be a valid PDF"
+        );
+    }
+
+    /// Verify the command returns an error gracefully rather than panicking
+    /// when called with empty HTML.
+    #[test]
+    #[ignore = "requires macOS main thread run loop (WKWebView)"]
+    fn test_export_pdf_webkit_empty_html() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(export_pdf_webkit("".to_string(), 595.28, 841.89));
+        // Empty HTML should still produce a PDF (blank page), not an error
+        match result {
+            Ok(pdf_bytes) => {
+                assert!(
+                    pdf_bytes.len() >= 5 && &pdf_bytes[..5] == b"%PDF-",
+                    "Even empty HTML should produce a valid PDF"
+                );
+            }
+            Err(_) => {
+                // Acceptable — some WKWebView versions may error on empty content
+            }
+        }
+    }
+}
+

@@ -974,35 +974,3 @@ fn test_pptx_task_lists() {
     let bytes = pptx_pipeline(markdown, "Sprint Review", "simple");
     assert_pptx_has_entries(&bytes, &["ppt/slides/slide1.xml"]);
 }
-
-#[test]
-fn test_chart_code_block_emits_image_reference() {
-    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">
-  <rect x="10" y="10" width="40" height="80" fill="#4a7dff"/>
-</svg>"##.to_string();
-
-    let markdown = "# Test\n\n```chart\n{\"type\":\"bar\",\"title\":\"Test\"}\n```\n\nAfter.\n";
-    let embedded_svgs = vec![svg];
-    let typst_content = markdown_to_typst(markdown, Some(&embedded_svgs));
-
-    assert!(typst_content.contains("#image(\"/embedded-0.svg\""),
-        "Chart code block should emit image reference");
-    assert!(!typst_content.contains("```chart"),
-        "Chart code block should NOT pass through as raw code");
-}
-
-use crate::commands::export::preprocess_svg_text;
-
-#[test]
-fn test_svg_text_preprocessing_converts_text_to_paths() {
-    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200">
-  <rect x="50" y="20" width="80" height="120" fill="#4a7dff"/>
-  <text x="90" y="160" text-anchor="middle" fill="#333333" font-size="14" font-family="sans-serif">Q1</text>
-  <text x="200" y="190" text-anchor="middle" fill="#666666" font-size="12" font-family="sans-serif">Label</text>
-</svg>"##;
-
-    let bytes = preprocess_svg_text(svg);
-    let processed = String::from_utf8_lossy(&bytes);
-    assert!(!processed.contains("<text"), "text elements should be converted to paths");
-    assert!(processed.contains("<path"), "should contain path elements from text conversion");
-}

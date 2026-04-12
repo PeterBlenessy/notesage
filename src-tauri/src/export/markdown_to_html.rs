@@ -55,41 +55,9 @@ pub fn markdown_to_html(markdown: &str, theme: &str, project_root: Option<&str>,
     let html = postprocess_drawing_placeholders(&html);
     let html = postprocess_table_footers(&html, &table_metadata);
     let html = postprocess_task_lists(&html);
+    let html = postprocess_toc(&html);
 
     html
-}
-
-/// Replace `<pre><code class="language-chart">` and `<pre><code class="language-excalidraw">`
-/// blocks with embedded SVG content from the frontend.
-fn postprocess_embedded_svgs(html: &str, embedded_svgs: Option<&[String]>) -> String {
-    let svgs = match embedded_svgs {
-        Some(s) if !s.is_empty() => s,
-        _ => return html.to_string(),
-    };
-
-    // Match <pre> blocks that syntect wraps around chart/excalidraw code
-    // Syntect output: <pre style="..."><code class="language-chart">...</code></pre>
-    // Plain comrak: <pre><code class="language-chart">...</code></pre>
-    let re = Regex::new(
-        r#"(?s)<pre[^>]*>\s*<code[^>]*class="[^"]*language-(chart|excalidraw|mermaid)[^"]*"[^>]*>.*?</code>\s*</pre>"#,
-    ).unwrap();
-
-    let mut index = 0usize;
-    re.replace_all(html, |caps: &regex::Captures| {
-        let idx = index;
-        index += 1;
-        if let Some(svg) = svgs.get(idx) {
-            if !svg.is_empty() {
-                let kind = if caps.get(1).map(|m| m.as_str()) == Some("chart") { "chart" } else { "drawing" };
-                return format!(
-                    "<div class=\"embedded-{}\" style=\"max-width:100%;margin:1em 0\">{}</div>",
-                    kind, svg,
-                );
-            }
-        }
-        // Fallback: keep original code block
-        caps.get(0).unwrap().as_str().to_string()
-    }).to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +108,12 @@ fn preprocess_markdown(markdown: &str, project_root: Option<&str>) -> (String, T
         // Detect page break comments and replace with inline HTML
         if trimmed == "<!-- pagebreak -->" {
             result.push_str("<div style=\"page-break-before: always\"></div>\n");
+            continue;
+        }
+
+        // Detect TOC comments — will be replaced with a generated TOC in post-processing
+        if trimmed == "<!-- toc -->" {
+            result.push_str("<!-- toc-placeholder -->\n");
             continue;
         }
 
@@ -264,6 +238,34 @@ fn preprocess_markdown(markdown: &str, project_root: Option<&str>) -> (String, T
 // ---------------------------------------------------------------------------
 // Post-processing (after comrak rendering)
 // ---------------------------------------------------------------------------
+
+/// Replace `<pre><code class="language-chart|excalidraw|mermaid">` blocks with embedded SVGs.
+fn postprocess_embedded_svgs(html: &str, embedded_svgs: Option<&[String]>) -> String {
+    let svgs = match embedded_svgs {
+        Some(s) if !s.is_empty() => s,
+        _ => return html.to_string(),
+    };
+
+    let re = Regex::new(
+        r#"(?s)<pre[^>]*>\s*<code[^>]*class="[^"]*language-(chart|excalidraw|mermaid)[^"]*"[^>]*>.*?</code>\s*</pre>"#,
+    ).unwrap();
+
+    let mut index = 0usize;
+    re.replace_all(html, |caps: &regex::Captures| {
+        let idx = index;
+        index += 1;
+        if let Some(svg) = svgs.get(idx) {
+            if !svg.is_empty() {
+                let kind = if caps.get(1).map(|m| m.as_str()) == Some("chart") { "chart" } else { "drawing" };
+                return format!(
+                    "<div class=\"embedded-{}\" style=\"max-width:100%;margin:1em 0\">{}</div>",
+                    kind, svg,
+                );
+            }
+        }
+        caps.get(0).unwrap().as_str().to_string()
+    }).to_string()
+}
 
 /// SVG icon paths for callout types.
 fn callout_icon_svg(callout_type: &str) -> &'static str {
@@ -470,6 +472,61 @@ fn postprocess_task_lists(html: &str) -> String {
         "<li><input type=\"checkbox\" disabled=\"\" />",
         "<li class=\"task-item\"><span class=\"checkbox\"></span>",
     )
+}
+
+/// Replace `<!-- toc-placeholder -->` with a generated table of contents
+/// built from heading tags (h1-h3) found in the HTML.
+fn postprocess_toc(html: &str) -> String {
+    if !html.contains("<!-- toc-placeholder -->") {
+        return html.to_string();
+    }
+
+    // Extract headings from the HTML
+    let heading_re = Regex::new(r"<(h[1-3])[^>]*>(.*?)</\1>").unwrap();
+    let tag_strip_re = Regex::new(r"<[^>]+>").unwrap();
+    let mut headings: Vec<(u8, String)> = Vec::new();
+
+    for caps in heading_re.captures_iter(html) {
+        let tag = caps.get(1).unwrap().as_str();
+        let level: u8 = tag[1..].parse().unwrap_or(1);
+        let inner = caps.get(2).unwrap().as_str();
+        // Strip nested HTML tags to get plain text
+        let text = tag_strip_re.replace_all(inner, "").trim().to_string();
+        if !text.is_empty() {
+            headings.push((level, text));
+        }
+    }
+
+    // Build the TOC HTML
+    let mut toc = String::new();
+    toc.push_str("<div class=\"toc-block\">\n");
+    toc.push_str("<div class=\"toc-header\">Table of Contents</div>\n");
+
+    if headings.is_empty() {
+        toc.push_str("</div>");
+    } else {
+        toc.push_str("<ul class=\"toc-list\">\n");
+        let min_level = headings.iter().map(|(l, _)| *l).min().unwrap_or(1);
+        for (level, text) in &headings {
+            let indent_class = level - min_level;
+            toc.push_str(&format!(
+                "<li class=\"toc-item toc-level-{}\"><span class=\"toc-link\">{}</span></li>\n",
+                indent_class,
+                html_escape(text),
+            ));
+        }
+        toc.push_str("</ul>\n</div>");
+    }
+
+    html.replace("<!-- toc-placeholder -->", &toc)
+}
+
+/// Minimal HTML entity escaping for TOC text.
+fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 /// Compute and append `<tfoot>` rows for tables with aggregation metadata.

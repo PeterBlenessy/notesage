@@ -16,6 +16,7 @@
 //! - `> [!link](url)` → text with URL
 //! - `---` → explicit slide break
 
+use crate::commands::export::EmbeddedImage;
 use crate::export::templates::{PptxTemplate, PptxTemplateConfig};
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::{parse_document, Arena, Options};
@@ -200,29 +201,10 @@ impl SlideBuilder {
         }
 
         // Add images (Task #7)
-        // Centered on slide, fit within content area (8" × 4.5" max)
-        let max_w: u32 = 7_315_200; // 8 inches in EMU
-        let max_h: u32 = 4_114_800; // 4.5 inches in EMU
         for img in &self.images {
             if img.path.exists() {
                 match Image::from_path(&img.path) {
-                    Ok(mut image) => {
-                        // Scale to fit content area while preserving aspect ratio
-                        if image.width > 0 && image.height > 0 {
-                            let aspect = image.height as f64 / image.width as f64;
-                            let mut w = max_w.min(image.width);
-                            let mut h = (w as f64 * aspect) as u32;
-                            if h > max_h {
-                                h = max_h;
-                                w = (h as f64 / aspect) as u32;
-                            }
-                            image.width = w;
-                            image.height = h;
-                            // Center horizontally, position below title
-                            let slide_w: u32 = 9_144_000; // 10 inches
-                            image.x = (slide_w - w) / 2;
-                            image.y = 1_828_800; // 2 inches from top
-                        }
+                    Ok(image) => {
                         slide = slide.add_image(image);
                     }
                     Err(_) => {
@@ -290,12 +272,12 @@ pub fn markdown_to_pptx(
     title: &str,
     template: &str,
     project_root: Option<&str>,
-    embedded_svgs: Option<&[String]>,
+    embedded_images: Option<&[EmbeddedImage]>,
 ) -> Result<Vec<u8>, String> {
     let pptx_template = PptxTemplate::from_str(template).unwrap_or(PptxTemplate::Simple);
     let config = pptx_template.config();
 
-    let builders = parse_to_builders(markdown, title, project_root, embedded_svgs);
+    let builders = parse_to_builders(markdown, title, project_root, embedded_images);
 
     // Apply overflow splitting (Task #5)
     let builders = apply_overflow_splitting(builders);
@@ -313,7 +295,7 @@ fn parse_to_builders(
     markdown: &str,
     title: &str,
     project_root: Option<&str>,
-    embedded_svgs: Option<&[String]>,
+    embedded_images: Option<&[EmbeddedImage]>,
 ) -> Vec<SlideBuilder> {
     let arena = Arena::new();
     let mut options = Options::default();
@@ -326,8 +308,8 @@ fn parse_to_builders(
     let mut current: Option<SlideBuilder> = None;
     let mut seen_heading = false;
     let mut pre_heading_text: Vec<String> = Vec::new();
+    let mut embedded_image_index: usize = 0;
     let project_root_path = project_root.map(PathBuf::from);
-    let mut embedded_svg_index: usize = 0;
 
     for node in root.children() {
         match &node.data.borrow().value {
@@ -430,64 +412,49 @@ fn parse_to_builders(
                 }
             }
             NodeValue::CodeBlock(cb) => {
-                let lang = cb.info.split_whitespace().next().unwrap_or("");
+                let info = cb.info.trim().to_lowercase();
+                if info == "chart" || info == "excalidraw" || info == "mermaid" {
+                    // Use pre-rendered PNG from frontend if available
+                    let idx = embedded_image_index;
+                    embedded_image_index += 1;
 
-                // Inline chart/excalidraw blocks
-                if lang == "chart" || lang == "excalidraw" || lang == "mermaid" {
-                    let idx = embedded_svg_index;
-                    embedded_svg_index += 1;
-
-                    if lang == "chart" {
-                        // Try native PPTX chart first (from inline JSON)
-                        if let Some(chart_info) = parse_inline_chart_json(&cb.literal) {
-                            if build_pptx_chart(&chart_info).is_some() {
-                                ensure_current(&mut current, &mut builders);
-                                if let Some(ref mut builder) = current {
-                                    builder.charts.push(chart_info);
+                    if let Some(images) = embedded_images {
+                        if let Some(img) = images.get(idx) {
+                            // Write PNG to a temp file for ppt-rs Image::from_path
+                            let temp_path = std::env::temp_dir()
+                                .join(format!("notesage-pptx-embed-{}.png", idx));
+                            if std::fs::write(&temp_path, &img.data).is_ok() {
+                                if seen_heading {
+                                    ensure_current(&mut current, &mut builders);
+                                    if let Some(ref mut builder) = current {
+                                        builder.images.push(SlideImage {
+                                            path: temp_path,
+                                        });
+                                    }
                                 }
                                 continue;
                             }
                         }
                     }
 
-                    // Fall back to embedded image (convert SVG → PNG for ppt-rs)
-                    if let Some(svgs) = embedded_svgs {
-                        if let Some(svg) = svgs.get(idx) {
-                            if !svg.is_empty() {
-                                if let Some((png_data, _w, _h)) = crate::commands::export::svg_to_png(svg) {
-                                    let tmp = std::env::temp_dir().join(format!("notesage-export-{}.png", idx));
-                                    if std::fs::write(&tmp, &png_data).is_ok() {
-                                        ensure_current(&mut current, &mut builders);
-                                        if let Some(ref mut builder) = current {
-                                            builder.images.push(SlideImage { path: tmp });
-                                        }
-                                        continue;
-                                    }
-                                }
-                            }
+                    // Fallback: show placeholder text
+                    if seen_heading {
+                        ensure_current(&mut current, &mut builders);
+                        if let Some(ref mut builder) = current {
+                            builder.bullets.push(SlideBullet {
+                                text: format!("[{}]", info),
+                                level: 0,
+                                style: BulletStyle::None,
+                                bold: false,
+                                italic: true,
+                                font_size: Some(14),
+                            });
                         }
-                    }
-
-                    // Fallback placeholder
-                    let title_text = serde_json::from_str::<serde_json::Value>(&cb.literal)
-                        .ok()
-                        .and_then(|v| v.get("title").and_then(|t| t.as_str()).map(|s| s.to_string()))
-                        .unwrap_or_else(|| match lang { "chart" => "Chart", "mermaid" => "Diagram", _ => "Drawing" }.to_string());
-                    ensure_current(&mut current, &mut builders);
-                    if let Some(ref mut builder) = current {
-                        builder.bullets.push(SlideBullet {
-                            text: format!("[{}]", title_text),
-                            level: 0,
-                            style: BulletStyle::None,
-                            bold: false,
-                            italic: true,
-                            font_size: Some(14),
-                        });
                     }
                     continue;
                 }
 
-                // Task #6: code blocks with reduced font size and no bullet
+                // Regular code blocks with reduced font size and no bullet
                 let code = cb.literal.trim().to_string();
                 if code.is_empty() {
                     continue;
@@ -757,48 +724,6 @@ fn build_pptx_chart(info: &SlideChart) -> Option<Chart> {
 fn read_chart_json(path: &Path) -> Option<SlideChart> {
     let content = std::fs::read_to_string(path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&content).ok()?;
-
-    let chart_type = json.get("type")?.as_str()?.to_string();
-    let labels: Vec<String> = json
-        .get("labels")?
-        .as_array()?
-        .iter()
-        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-        .collect();
-
-    let datasets: Vec<ChartDataset> = json
-        .get("datasets")?
-        .as_array()?
-        .iter()
-        .filter_map(|ds| {
-            let label = ds.get("label")?.as_str()?.to_string();
-            let data: Vec<f64> = ds
-                .get("data")?
-                .as_array()?
-                .iter()
-                .filter_map(|v| v.as_f64())
-                .collect();
-            Some(ChartDataset { label, data })
-        })
-        .collect();
-
-    let title = json
-        .get("title")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Chart")
-        .to_string();
-
-    Some(SlideChart {
-        title,
-        chart_type,
-        labels,
-        datasets,
-    })
-}
-
-/// Parse inline chart JSON (from a ```chart code block literal) into our intermediate model.
-fn parse_inline_chart_json(literal: &str) -> Option<SlideChart> {
-    let json: serde_json::Value = serde_json::from_str(literal).ok()?;
 
     let chart_type = json.get("type")?.as_str()?.to_string();
     let labels: Vec<String> = json

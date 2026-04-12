@@ -11,15 +11,6 @@ import { useEditorStylesStore } from "@/stores/editor-styles-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { toast } from "sonner";
 
-/** Count how many "__drawing__" placeholders appear before index i. */
-function countDrawingsBefore(svgs: string[], i: number): number {
-  let count = 0;
-  for (let j = 0; j < i; j++) {
-    if (svgs[j] === "__drawing__") count++;
-  }
-  return count;
-}
-
 interface HtmlViewerProps {
   content: string;
   filePath: string;
@@ -61,32 +52,7 @@ export function HtmlViewer({ content, filePath, fileName, projectRoot, editor, c
         const typography = presetsForBackend(useEditorStylesStore.getState().presets);
 
         // Use pre-cached SVGs (collected while WYSIWYG was still in DOM).
-        // Resolve "__drawing__" placeholders by rendering from JSON.
-        let embeddedSvgs: string[] = [];
-        if (cachedEmbeddedSvgs && cachedEmbeddedSvgs.length > 0 && editor) {
-          const { renderDrawingSvg } = await import("@/hooks/useExportOperations");
-          const resolved = await Promise.all(
-            cachedEmbeddedSvgs.map(async (svg, i) => {
-              if (svg === "__drawing__") {
-                // Find the i-th drawing node and render its SVG
-                let drawingIdx = 0;
-                let drawingJson = "";
-                editor.state.doc.descendants((node) => {
-                  if (node.type.name === "drawing" && node.attrs.drawingJson) {
-                    if (drawingIdx === countDrawingsBefore(cachedEmbeddedSvgs, i)) {
-                      drawingJson = node.attrs.drawingJson as string;
-                    }
-                    drawingIdx++;
-                  }
-                  return false;
-                });
-                return drawingJson ? await renderDrawingSvg(drawingJson) : "";
-              }
-              return svg;
-            })
-          );
-          embeddedSvgs = resolved;
-        }
+        const embeddedSvgs = cachedEmbeddedSvgs?.filter(s => s && s !== "__drawing__") ?? [];
 
         const result = await invoke<string>("render_html", {
           markdown: content,

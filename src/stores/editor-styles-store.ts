@@ -93,12 +93,18 @@ interface EditorStylesStore extends EditorStyles {
   loaded: boolean;
   systemFonts: SystemFont[];
   presets: TypographyPresets;
+  /** Per-document typography overrides from `style:` frontmatter. Merged over global presets. */
+  documentPresets: TypographyPresets | null;
 
   // New per-block-type API
   loadTypography: (notesagePath: string) => Promise<void>;
   saveTypography: (notesagePath: string) => Promise<void>;
   updatePreset: (blockType: BlockType, style: Partial<BlockTypeStyle>) => void;
   getEffectiveStyle: (blockType: BlockType) => BlockTypeStyle;
+  /** Set per-document presets (from frontmatter style:). Pass null to clear. */
+  setDocumentPresets: (presets: TypographyPresets | null) => void;
+  /** Get the effective presets (documentPresets if set, otherwise global presets). */
+  getEffectivePresets: () => TypographyPresets;
 
   // Legacy API (delegates to presets.paragraph)
   loadSettings: (notesagePath: string) => Promise<void>;
@@ -126,6 +132,7 @@ export const useEditorStylesStore = create<EditorStylesStore>()((set, get) => ({
   loaded: false,
   systemFonts: [],
   presets: { ...DEFAULT_PRESETS },
+  documentPresets: null,
 
   // -----------------------------------------------------------------------
   // New per-block-type API
@@ -185,8 +192,9 @@ export const useEditorStylesStore = create<EditorStylesStore>()((set, get) => ({
   },
 
   getEffectiveStyle: (blockType) => {
-    const { presets } = get();
-    const preset = presets[blockType];
+    const { documentPresets, presets } = get();
+    const effectivePresets = documentPresets ?? presets;
+    const preset = effectivePresets[blockType];
     // Return a full BlockTypeStyle — fill in defaults for partial types (codeBlock, blockquote)
     return {
       fontFamily: preset.fontFamily,
@@ -197,6 +205,15 @@ export const useEditorStylesStore = create<EditorStylesStore>()((set, get) => ({
       spacingAfter: "spacingAfter" in preset ? (preset as BlockTypeStyle).spacingAfter : 0,
       color: "color" in preset ? (preset as BlockTypeStyle).color : undefined,
     };
+  },
+
+  setDocumentPresets: (docPresets) => {
+    set({ documentPresets: docPresets });
+  },
+
+  getEffectivePresets: () => {
+    const { documentPresets, presets } = get();
+    return documentPresets ?? presets;
   },
 
   // -----------------------------------------------------------------------

@@ -4,6 +4,293 @@ export interface Frontmatter {
   [key: string]: unknown;
 }
 
+// ---------------------------------------------------------------------------
+// Document Style — per-document typography via `style:` frontmatter
+// ---------------------------------------------------------------------------
+
+/** Style properties applicable to a text element (body, headings, code, blockquote). */
+export interface DocumentStyleElement {
+  font?: string;
+  size?: string;         // e.g. "10.5pt", "16px", "1.2em"
+  weight?: string | number; // e.g. "bold", "normal", 400, 700
+  lineHeight?: number | string; // multiplier or CSS value
+  color?: string;
+  textAlign?: string;    // "left" | "center" | "right" | "justify"
+  align?: string;        // alias for textAlign
+  letterSpacing?: string; // e.g. "2pt", "0.05em"
+  textTransform?: string; // "uppercase" | "lowercase" | "capitalize" | "none"
+  style?: string;        // font-style: "italic" | "normal"
+  pageBreakBefore?: boolean;
+}
+
+/** Page-level settings in the style block. */
+export interface DocumentStylePage {
+  size?: string;         // e.g. "A4", "Letter", "A5"
+  margin?: string;       // e.g. "2.5cm", "1in"
+}
+
+/** Full document style parsed from `style:` frontmatter. */
+export interface DocumentStyle {
+  page?: DocumentStylePage;
+  body?: DocumentStyleElement;
+  h1?: DocumentStyleElement;
+  h2?: DocumentStyleElement;
+  h3?: DocumentStyleElement;
+  h4?: DocumentStyleElement;
+  h5?: DocumentStyleElement;
+  h6?: DocumentStyleElement;
+  code?: DocumentStyleElement;
+  blockquote?: DocumentStyleElement;
+}
+
+/**
+ * Extract and validate a `DocumentStyle` from parsed frontmatter.
+ * Returns null if no `style` key is present or it is not an object.
+ */
+export function parseDocumentStyle(frontmatter: Frontmatter | null): DocumentStyle | null {
+  if (!frontmatter || typeof frontmatter.style !== 'object' || frontmatter.style === null || Array.isArray(frontmatter.style)) {
+    return null;
+  }
+
+  const raw = frontmatter.style as Record<string, unknown>;
+  const style: DocumentStyle = {};
+
+  // Parse page
+  if (raw.page && typeof raw.page === 'object' && !Array.isArray(raw.page)) {
+    const p = raw.page as Record<string, unknown>;
+    style.page = {};
+    if (typeof p.size === 'string') style.page.size = p.size;
+    if (typeof p.margin === 'string') style.page.margin = p.margin;
+  }
+
+  // Parse element sections
+  const elementKeys = ['body', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'code', 'blockquote'] as const;
+  for (const key of elementKeys) {
+    if (raw[key] && typeof raw[key] === 'object' && !Array.isArray(raw[key])) {
+      style[key] = parseStyleElement(raw[key] as Record<string, unknown>);
+    }
+  }
+
+  // Return null if completely empty
+  if (Object.keys(style).length === 0) return null;
+
+  return style;
+}
+
+/** Parse a single style element section from raw YAML data. */
+function parseStyleElement(raw: Record<string, unknown>): DocumentStyleElement {
+  const el: DocumentStyleElement = {};
+  if (typeof raw.font === 'string') el.font = raw.font;
+  if (typeof raw.size === 'string' || typeof raw.size === 'number') el.size = String(raw.size);
+  if (typeof raw.weight === 'string' || typeof raw.weight === 'number') el.weight = raw.weight;
+  if (typeof raw.lineHeight === 'number' || typeof raw.lineHeight === 'string') el.lineHeight = raw.lineHeight;
+  if (typeof raw.color === 'string') el.color = raw.color;
+  if (typeof raw.textAlign === 'string') el.textAlign = raw.textAlign;
+  if (typeof raw.align === 'string') el.align = raw.align;
+  if (typeof raw.letterSpacing === 'string') el.letterSpacing = raw.letterSpacing;
+  if (typeof raw.textTransform === 'string') el.textTransform = raw.textTransform;
+  if (typeof raw.style === 'string') el.style = raw.style;
+  if (typeof raw.pageBreakBefore === 'boolean') el.pageBreakBefore = raw.pageBreakBefore;
+  return el;
+}
+
+// ---------------------------------------------------------------------------
+// DocumentStyle → CSS conversion (for HTML export)
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a DocumentStyle to a CSS string for HTML export.
+ * Produces rules for body, h1-h6, code/pre, blockquote, and @page.
+ */
+export function documentStyleToCSS(style: DocumentStyle): string {
+  const rules: string[] = [];
+
+  // @page rule
+  if (style.page) {
+    const pageProps: string[] = [];
+    if (style.page.size) pageProps.push(`size: ${style.page.size}`);
+    if (style.page.margin) pageProps.push(`margin: ${style.page.margin}`);
+    if (pageProps.length > 0) {
+      rules.push(`@page { ${pageProps.join('; ')}; }`);
+    }
+  }
+
+  // Element rules
+  const mapping: Array<{ key: keyof DocumentStyle; selector: string }> = [
+    { key: 'body', selector: 'body' },
+    { key: 'h1', selector: 'h1' },
+    { key: 'h2', selector: 'h2' },
+    { key: 'h3', selector: 'h3' },
+    { key: 'h4', selector: 'h4' },
+    { key: 'h5', selector: 'h5' },
+    { key: 'h6', selector: 'h6' },
+    { key: 'code', selector: 'code, pre' },
+    { key: 'blockquote', selector: 'blockquote' },
+  ];
+
+  for (const { key, selector } of mapping) {
+    const el = style[key] as DocumentStyleElement | undefined;
+    if (!el) continue;
+    const props = elementToCSS(el);
+    if (props.length > 0) {
+      rules.push(`${selector} { ${props.join('; ')}; }`);
+    }
+  }
+
+  return rules.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// DocumentStyle → TypographyPresets conversion (for editor rendering)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a size string (e.g. "10.5pt", "16px", "1.2em") and return a value in px.
+ * - `pt` values are converted to px (1pt = 4/3 px).
+ * - `px` values are used as-is.
+ * - `em` and `rem` values are multiplied by basePx (default 16).
+ * - Plain numbers are treated as px.
+ * Returns undefined if the string cannot be parsed.
+ */
+export function parseSizeToPx(value: string | undefined, basePx: number = 16): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+
+  // Try to extract number and unit
+  const match = trimmed.match(/^([0-9]*\.?[0-9]+)\s*(pt|px|em|rem)?$/i);
+  if (!match) return undefined;
+
+  const num = parseFloat(match[1]);
+  if (isNaN(num)) return undefined;
+
+  const unit = (match[2] ?? '').toLowerCase();
+  switch (unit) {
+    case 'pt': return Math.round(num * (4 / 3) * 10) / 10; // 1pt = 4/3 px
+    case 'px': return num;
+    case 'em':
+    case 'rem': return Math.round(num * basePx * 10) / 10;
+    case '': return num; // plain number = px
+    default: return undefined;
+  }
+}
+
+/**
+ * Resolve a font-weight value (string or number) to a numeric weight.
+ * Supports CSS keywords: "normal" → 400, "bold" → 700, "light" → 300, etc.
+ */
+export function parseFontWeight(value: string | number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'number') return value;
+  const lower = value.toLowerCase().trim();
+  const keywords: Record<string, number> = {
+    thin: 100, hairline: 100,
+    extralight: 200, ultralight: 200,
+    light: 300,
+    normal: 400, regular: 400,
+    medium: 500,
+    semibold: 600, demibold: 600,
+    bold: 700,
+    extrabold: 800, ultrabold: 800,
+    black: 900, heavy: 900,
+  };
+  if (keywords[lower] !== undefined) return keywords[lower];
+  const num = parseFloat(lower);
+  return isNaN(num) ? undefined : num;
+}
+
+/**
+ * Convert a DocumentStyle to a partial TypographyPresets object.
+ * Only fields specified in the style are set; callers should merge over defaults.
+ *
+ * Returns null if the style is null or would produce no overrides.
+ */
+export function documentStyleToPresets(
+  style: DocumentStyle | null,
+): Record<string, Record<string, unknown>> | null {
+  if (!style) return null;
+
+  const result: Record<string, Record<string, unknown>> = {};
+
+  // Map body → paragraph
+  if (style.body) {
+    result.paragraph = mapElementToPreset(style.body);
+  }
+
+  // Map h1-h6 → heading1-heading6
+  const headingMap: Array<{ src: keyof DocumentStyle; dst: string }> = [
+    { src: 'h1', dst: 'heading1' },
+    { src: 'h2', dst: 'heading2' },
+    { src: 'h3', dst: 'heading3' },
+    { src: 'h4', dst: 'heading4' },
+    { src: 'h5', dst: 'heading5' },
+    { src: 'h6', dst: 'heading6' },
+  ];
+  for (const { src, dst } of headingMap) {
+    const el = style[src] as DocumentStyleElement | undefined;
+    if (el) {
+      result[dst] = mapElementToPreset(el);
+    }
+  }
+
+  // Map code → codeBlock
+  if (style.code) {
+    const mapped: Record<string, unknown> = {};
+    if (style.code.font) mapped.fontFamily = style.code.font;
+    const sizePx = parseSizeToPx(style.code.size);
+    if (sizePx !== undefined) mapped.fontSize = sizePx;
+    if (Object.keys(mapped).length > 0) result.codeBlock = mapped;
+  }
+
+  // Map blockquote
+  if (style.blockquote) {
+    const mapped: Record<string, unknown> = {};
+    if (style.blockquote.font) mapped.fontFamily = style.blockquote.font;
+    const sizePx = parseSizeToPx(style.blockquote.size);
+    if (sizePx !== undefined) mapped.fontSize = sizePx;
+    const weight = parseFontWeight(style.blockquote.weight);
+    if (weight !== undefined) mapped.fontWeight = weight;
+    if (style.blockquote.color) mapped.color = style.blockquote.color;
+    if (Object.keys(mapped).length > 0) result.blockquote = mapped;
+  }
+
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+/** Map a DocumentStyleElement to partial BlockTypeStyle fields. */
+function mapElementToPreset(el: DocumentStyleElement): Record<string, unknown> {
+  const mapped: Record<string, unknown> = {};
+  if (el.font) mapped.fontFamily = el.font;
+  const sizePx = parseSizeToPx(el.size);
+  if (sizePx !== undefined) mapped.fontSize = sizePx;
+  const weight = parseFontWeight(el.weight);
+  if (weight !== undefined) mapped.fontWeight = weight;
+  if (typeof el.lineHeight === 'number') {
+    mapped.lineHeight = el.lineHeight;
+  } else if (typeof el.lineHeight === 'string') {
+    const num = parseFloat(el.lineHeight);
+    if (!isNaN(num)) mapped.lineHeight = num;
+  }
+  if (el.color) mapped.color = el.color;
+  return mapped;
+}
+
+/** Convert a DocumentStyleElement to an array of CSS property declarations. */
+function elementToCSS(el: DocumentStyleElement): string[] {
+  const props: string[] = [];
+  if (el.font) props.push(`font-family: ${el.font}`);
+  if (el.size) props.push(`font-size: ${el.size}`);
+  if (el.weight !== undefined) props.push(`font-weight: ${el.weight}`);
+  if (el.lineHeight !== undefined) props.push(`line-height: ${el.lineHeight}`);
+  if (el.color) props.push(`color: ${el.color}`);
+  const align = el.textAlign ?? el.align;
+  if (align) props.push(`text-align: ${align}`);
+  if (el.letterSpacing) props.push(`letter-spacing: ${el.letterSpacing}`);
+  if (el.textTransform) props.push(`text-transform: ${el.textTransform}`);
+  if (el.style) props.push(`font-style: ${el.style}`);
+  if (el.pageBreakBefore) props.push(`page-break-before: always`);
+  return props;
+}
+
 export interface GoalFrontmatter extends Frontmatter {
   type: 'goal';
   template: string;
