@@ -34,16 +34,6 @@ bytes = "1"
 dirs = "5"
 tauri-plugin-window-state = "2.4.1"
 
-# PDF export (Phase 4)
-typst = "0.14.2"
-typst-pdf = "0.14.2"
-typst-syntax = "0.14.2"
-typst-library = "0.14.2"
-typst-utils = "0.14.2"
-# SVG text-to-paths pre-processing and rasterization for DOCX/PPTX export
-usvg = "0.45"
-fontdb = "0.23"
-resvg = "0.45"
 chrono = { version = "0.4", default-features = false, features = ["now", "clock"] }
 comrak = { version = "0.50.0", default-features = false, features = ["syntect"] }
 

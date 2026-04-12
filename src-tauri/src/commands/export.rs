@@ -2,11 +2,8 @@ use crate::export::html_styles::{html_css, wrap_html_document};
 use crate::export::markdown_to_docx::{markdown_to_docx, DocxOptions};
 use crate::export::markdown_to_html::markdown_to_html;
 use crate::export::markdown_to_pptx::markdown_to_pptx;
-use crate::export::markdown_to_typst::markdown_to_typst;
 use crate::export::page_settings::DocumentPageSettings;
-use crate::export::templates::{generate_typst_styles, PageSize, Template, TemplateOptions};
 use crate::export::typography::TypographyPresets;
-use crate::export::typst_world::NotesageWorld;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -18,74 +15,6 @@ pub struct EmbeddedImage {
     pub data: Vec<u8>,
     pub width: u32,
     pub height: u32,
-}
-
-/// Convert markdown to PDF bytes using the Typst engine.
-#[tauri::command]
-pub async fn export_pdf(
-    markdown: String,
-    title: String,
-    template: String,
-    include_toc: bool,
-    include_page_numbers: bool,
-    page_size: String,
-    project_root: Option<String>,
-    typography: Option<TypographyPresets>,
-    page_settings: Option<DocumentPageSettings>,
-    embedded_svgs: Option<Vec<String>>,
-) -> Result<Vec<u8>, String> {
-    let page_size = PageSize::from_str(&page_size)?;
-
-    // Convert markdown to Typst markup
-    let typst_content = markdown_to_typst(&markdown, embedded_svgs.as_deref());
-
-    // Generate source: use typography presets if provided, else fall back to template
-    let presets = typography.unwrap_or_default();
-    let template_options = TemplateOptions {
-        template: Template::from_str(&template).unwrap_or(Template::Clean),
-        title,
-        include_toc,
-        include_page_numbers,
-        page_size,
-    };
-    let mut source = generate_typst_styles(
-        &typst_content,
-        &presets,
-        &template_options,
-    );
-
-    // Inject custom header/footer if page settings are provided
-    if let Some(ref settings) = page_settings {
-        use crate::export::templates::generate_typst_header_footer;
-        let hf_source = generate_typst_header_footer(settings, &template_options.title);
-        // Insert header/footer rules after the page setup line
-        source = inject_typst_header_footer(&source, &hf_source);
-    }
-
-    // Compile to PDF
-    let world = NotesageWorld::new(source);
-
-    // Resolve drawing SVG files from the project root
-    if let Some(ref root) = project_root {
-        resolve_drawing_svgs(&markdown, root, &world);
-    }
-
-    // Register embedded SVGs (from inline charts/drawings) as virtual files.
-    // Pre-process with usvg to convert <text> elements to <path> — Typst's
-    // built-in usvg doesn't have access to fonts for text rendering.
-    if let Some(ref svgs) = embedded_svgs {
-        for (i, svg) in svgs.iter().enumerate() {
-            if !svg.is_empty() {
-                let processed = preprocess_svg_text(svg);
-                world.add_file(
-                    &format!("/embedded-{}.svg", i),
-                    processed,
-                );
-            }
-        }
-    }
-
-    world.export_pdf()
 }
 
 /// Convert markdown to PPTX bytes.
@@ -118,7 +47,7 @@ pub async fn export_docx(
     project_root: Option<String>,
     typography: Option<TypographyPresets>,
     page_settings: Option<DocumentPageSettings>,
-    embedded_svgs: Option<Vec<String>>,
+    _embedded_svgs: Option<Vec<String>>,
     embedded_images: Option<Vec<EmbeddedImage>>,
 ) -> Result<Vec<u8>, String> {
     let options = DocxOptions {
@@ -165,24 +94,6 @@ pub async fn render_html(
         // Clipboard mode: return body fragment only
         Ok(body)
     }
-}
-
-/// Insert Typst header/footer rules into the source after the page setup line.
-fn inject_typst_header_footer(source: &str, hf_source: &str) -> String {
-    // Find the first #set page(...) line and insert after it
-    if let Some(pos) = source.find("#set page(paper:") {
-        if let Some(newline) = source[pos..].find('\n') {
-            let insert_pos = pos + newline + 1;
-            let mut result = String::with_capacity(source.len() + hf_source.len());
-            result.push_str(&source[..insert_pos]);
-            result.push_str(hf_source);
-            result.push('\n');
-            result.push_str(&source[insert_pos..]);
-            return result;
-        }
-    }
-    // Fallback: prepend
-    format!("{}\n{}", hf_source, source)
 }
 
 /// Generate CSS for `@page` rules and visible header/footer from page settings.
@@ -442,85 +353,6 @@ fn generate_html_typography_css(presets: &TypographyPresets) -> String {
     ));
 
     css
-}
-
-/// Cached system font database — loading system fonts is expensive (~200ms),
-/// so we do it once and reuse for all SVG processing during an export.
-use std::sync::{Arc, OnceLock};
-static FONTDB: OnceLock<Arc<fontdb::Database>> = OnceLock::new();
-
-fn shared_fontdb() -> Arc<fontdb::Database> {
-    FONTDB.get_or_init(|| {
-        let mut db = fontdb::Database::new();
-        db.load_system_fonts();
-        Arc::new(db)
-    }).clone()
-}
-
-/// Pre-process an SVG string: parse with usvg + system fonts so that `<text>`
-/// elements are converted to `<path>`. Typst's built-in usvg instance lacks
-/// font access, causing all SVG text to be silently dropped.
-pub(crate) fn preprocess_svg_text(svg_str: &str) -> Vec<u8> {
-    let mut opt = usvg::Options::default();
-    opt.fontdb = shared_fontdb();
-
-    match usvg::Tree::from_str(svg_str, &opt) {
-        Ok(tree) => tree.to_string(&usvg::WriteOptions::default()).into_bytes(),
-        Err(e) => {
-            log::warn!("[export] SVG text preprocessing failed: {}", e);
-            svg_str.as_bytes().to_vec()
-        }
-    }
-}
-
-/// Convert an SVG string to PNG bytes at 2x scale for DOCX/PPTX export.
-/// These formats don't support SVG natively — they need raster images.
-/// Returns (png_bytes, width_px, height_px) at the original SVG dimensions.
-pub(crate) fn svg_to_png(svg_str: &str) -> Option<(Vec<u8>, u32, u32)> {
-    let mut opt = usvg::Options::default();
-    opt.fontdb = shared_fontdb();
-
-    let tree = usvg::Tree::from_str(svg_str, &opt).ok()?;
-    let size = tree.size();
-    let orig_w = size.width() as u32;
-    let orig_h = size.height() as u32;
-    let scale = 2.0; // 2x for print quality
-    let width = (size.width() * scale) as u32;
-    let height = (size.height() * scale) as u32;
-
-    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)?;
-    pixmap.fill(resvg::tiny_skia::Color::WHITE);
-    let transform = resvg::tiny_skia::Transform::from_scale(scale, scale);
-    resvg::render(&tree, transform, &mut pixmap.as_mut());
-
-    Some((pixmap.encode_png().ok()?, orig_w, orig_h))
-}
-
-/// Scan markdown for `.excalidraw` image references and add corresponding SVG files
-/// to the Typst world so they can be included in the PDF.
-fn resolve_drawing_svgs(markdown: &str, project_root: &str, world: &NotesageWorld) {
-    // Simple pattern: ![...](path.excalidraw)
-    for line in markdown.lines() {
-        if let Some(start) = line.find("](") {
-            if let Some(end) = line[start..].find(')') {
-                let url = &line[start + 2..start + end];
-                if url.ends_with(".excalidraw") {
-                    let svg_relative = format!("{}.svg", url.trim_end_matches(".excalidraw"));
-                    // Resolve the SVG path on disk relative to project root
-                    let svg_disk_path = if svg_relative.starts_with('/') {
-                        // Path like /.notesage/drawings/abc.svg — relative to project root
-                        format!("{}{}", project_root, svg_relative)
-                    } else {
-                        format!("{}/{}", project_root, svg_relative)
-                    };
-                    if let Ok(data) = std::fs::read(&svg_disk_path) {
-                        // Add as virtual file with the same path used in the Typst source
-                        world.add_file(&svg_relative, data);
-                    }
-                }
-            }
-        }
-    }
 }
 
 /// Write binary data to a file on disk.

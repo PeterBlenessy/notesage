@@ -120,7 +120,6 @@ impl TypographyPresets {
 
 /// Target export format for font resolution.
 pub enum ExportFormat {
-    Typst,
     Docx,
     Html,
 }
@@ -183,7 +182,7 @@ mod tests {
 
     #[test]
     fn test_resolve_font_family() {
-        assert_eq!(resolve_font_family("Inter", ExportFormat::Typst), "Inter");
+        assert_eq!(resolve_font_family("Inter", ExportFormat::Html), "Inter");
         assert_eq!(resolve_font_family("Source Serif Pro", ExportFormat::Docx), "Source Serif 4");
         assert_eq!(resolve_font_family("Custom Font", ExportFormat::Html), "Custom Font");
     }
