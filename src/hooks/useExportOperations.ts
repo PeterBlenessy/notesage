@@ -6,6 +6,7 @@ import { tauriApi } from "@/lib/tauri";
 import { getMarkdownFromEditor } from "@/lib/markdown";
 import { serializeFrontmatter } from "@/lib/frontmatter";
 import { presetsForBackend } from "@/lib/typography-presets";
+import { generatePrintCSS } from "@/lib/print-css";
 import { collectEmbeddedImages } from "@/lib/svg-to-png";
 import { useEditorStore } from "@/stores/editor-store";
 import { useEditorStylesStore } from "@/stores/editor-styles-store";
@@ -143,16 +144,34 @@ export function useExportOperations(editor: Editor | null) {
             },
           });
         } else {
-          // Generate PDF via Tauri backend
-          const pdfBytes = await tauriApi.exportPdf({
+          // Generate PDF via WebKit: render HTML then print to PDF
+          const pageSizePoints: Record<string, { width: number; height: number }> = {
+            a4: { width: 595.28, height: 841.89 },
+            letter: { width: 612, height: 792 },
+            a5: { width: 419.53, height: 595.28 },
+          };
+          const dims = pageSizePoints[options.pageSize] ?? pageSizePoints.a4;
+
+          const rawHtml = await tauriApi.renderHtml({
             markdown,
             title,
-            template: options.template,
-            includeToc: options.includeToc,
-            includePageNumbers: options.includePageNumbers,
-            pageSize: options.pageSize,
+            theme: "light",
+            includeStyles: true,
             projectRoot: projectRoot ?? undefined,
             typography,
+          });
+
+          // Inject print-specific CSS for page layout, break control, and orphan/widow handling
+          const printCss = generatePrintCSS({
+            pageSize: options.pageSize,
+            includePageNumbers: options.includePageNumbers,
+          });
+          const html = rawHtml.replace("</head>", `<style>${printCss}</style></head>`);
+
+          const pdfBytes = await tauriApi.exportPdfWebkit({
+            html,
+            pageWidth: dims.width,
+            pageHeight: dims.height,
           });
 
           // Derive default save path from source file

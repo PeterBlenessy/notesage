@@ -583,6 +583,14 @@ export const tauriApi = {
     return await invoke<number[]>("export_pdf", options);
   },
 
+  async exportPdfWebkit(options: {
+    html: string;
+    pageWidth: number;
+    pageHeight: number;
+  }): Promise<number[]> {
+    return await invoke<number[]>("export_pdf_webkit", options);
+  },
+
   async saveBinaryFile(path: string, data: number[]): Promise<void> {
     await invoke("save_binary_file", { path, data });
   },
