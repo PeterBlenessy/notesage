@@ -3,6 +3,7 @@ import { Loader2, GitBranch } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
+import { log } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
 import { useChatStore, selectMessages, selectAllMessages, selectPendingProjectSwitch, selectPendingAgentSwitch, selectSegments } from '@/stores/chat-store';
 import { getChildren } from '@/lib/chat-tree';
@@ -142,7 +143,7 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
             instanceId,
             requestId,
             decision: 'allow_once',
-          }).catch(() => {});
+          }).catch((err) => log.warn('ai', 'Failed to auto-approve domain', err));
           return;
         }
       }

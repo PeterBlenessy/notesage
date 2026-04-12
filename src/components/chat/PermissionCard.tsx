@@ -1,5 +1,6 @@
 import { FileEdit, Pencil, Terminal, Shield, ChevronDown } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { log } from '@/lib/logger';
 import { useChatStore } from '@/stores/chat-store';
 import { Button } from '@/components/ui/button';
 import {
@@ -41,7 +42,7 @@ export function PermissionCard({ request }: PermissionCardProps) {
       instanceId: req.instanceId,
       requestId: req.requestId,
       optionId: firstOptionId,
-    }).catch(() => {});
+    }).catch((err) => log.warn('ai', 'Failed to send permission approval', err));
     removeRequest(req.requestId);
   };
 
@@ -74,7 +75,7 @@ export function PermissionCard({ request }: PermissionCardProps) {
       instanceId: request.instanceId,
       requestId: request.requestId,
       optionId: null,
-    }).catch(() => {});
+    }).catch((err) => log.warn('ai', 'Failed to send permission denial', err));
     useChatStore.getState().addMessage({
       role: 'assistant',
       content: `Tool call "${label}" was denied.`,

@@ -50,6 +50,12 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | TableSparkline | `table-sparkline.ts` | Plugin + Decoration | Detects `{{spark:...}}` patterns and renders inline SVG sparkline widgets; reveals raw text on focus |
 | TableHeaderMenu | `table-header-menu.ts` | Plugin + Decoration + DOM Event | Right-click context menu handler for column config; type badge widget decorations on header cells |
 | SendToAI | `send-to-ai.ts` | Plugin + DOM Event | Right-click "Add to chat" context menu on images and drawings; resolves image data and dispatches to chat via vision event bus |
+| Chart | `chart.ts` | Node Extension + ReactNodeViewRenderer | Inline chart blocks (10 types via Recharts) with visual data editor, `` ```chart `` fenced code block markdown |
+| Mermaid | `mermaid.ts` | Node Extension + ReactNodeViewRenderer | Mermaid diagram blocks with live rendering, `` ```mermaid `` fenced code block markdown |
+| PageBreakNode | `page-break-node.ts` | Node Extension | Explicit page break node for Print Layout mode |
+| TableColumnTypes | `table-column-types.ts` | Plugin | Column type inference and locale-aware formatting (number, currency, percentage, date) |
+| TableFormatting | `table-formatting.ts` | Plugin | Table cell formatting decorations (alignment, number formatting) |
+| TypographyOverrides | `typography-overrides.ts` | Plugin | Custom typography rules (smart quotes, em dashes, ellipsis) |
 | ~~ItemAnnotation~~ | `item-annotation.ts` | ~~Plugin + Decoration~~ | ~~Emoji annotations on list items (deferred — needs unified gutter design)~~ |
 | ~~DragHandle~~ | `drag-handle.ts` | ~~Plugin + DOM~~ | ~~Block drag handles (deferred — needs unified gutter design)~~ |
 

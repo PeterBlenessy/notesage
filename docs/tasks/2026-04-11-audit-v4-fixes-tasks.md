@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-11 |
-| **Status** | Not started |
+| **Status** | Complete |
 | **PRD** | — (audit-driven fixes) |
 | **Audit** | [2026-04-11-full](../audit/2026-04-11-full.md) |
 | **Total** | 28 tasks: 14S, 10M, 4L |
@@ -293,7 +293,7 @@
 
 ## Error UX
 
-### #25 — Show toast on action index incremental update failure
+### #25 — Show toast on action index incremental update failure ✅
 
 **Description:** In action-store.ts, when incremental action index fails after a successful file save, show a subtle warning toast instead of only logging to console. User should know their dashboard may be stale.
 
@@ -304,7 +304,7 @@
 
 ---
 
-### #26 — Show error message in symbol search when fetch fails
+### #26 — Show error message in symbol search when fetch fails ✅
 
 **Description:** In SymbolSearchResults.tsx, when `fetchItems()` or `findOccurrences()` throws, show a message in the CommandGroup (e.g., "Error loading results") instead of silently logging.
 
@@ -315,7 +315,7 @@
 
 ---
 
-### #27 — Log warnings for permission/domain approval failures
+### #27 — Log warnings for permission/domain approval failures ✅
 
 **Description:** In PermissionCard.tsx and ChatMessageList.tsx, replace `.catch(() => {})` with proper error logging and optional transient toast for critical failures (acp_permission_respond, network_domain_respond).
 
@@ -328,7 +328,7 @@
 
 ## Documentation
 
-### #28 — Update architecture docs for missing modules and extensions
+### #28 — Update architecture docs for missing modules and extensions ✅
 
 **Description:** Add 4 missing command modules to architecture.md structure tree (web_search.rs, link_preview.rs, sandbox.rs, constants.rs). Add 6 missing extensions to editor-architecture.md inventory (chart.ts, mermaid.ts, page-break-node.ts, table-column-types.ts, table-formatting.ts, typography-overrides.ts).
 

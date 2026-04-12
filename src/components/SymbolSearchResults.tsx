@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { log } from "@/lib/logger";
 import {
   CommandGroup,
   CommandItem,
@@ -24,6 +25,7 @@ export function SymbolSearchResults({
   const [drilldown, setDrilldown] = useState<string | null>(null);
   const [occurrences, setOccurrences] = useState<SymbolOccurrence[]>([]);
   const [items, setItems] = useState<{ name: string; fileCount: number }[]>([]);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const fetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fetch items from index when query changes (debounced)
@@ -34,6 +36,7 @@ export function SymbolSearchResults({
     }
 
     if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current);
+    setFetchError(null);
     const fetchStartTotal = performance.now();
     fetchTimerRef.current = setTimeout(async () => {
       try {
@@ -46,8 +49,9 @@ export function SymbolSearchResults({
         setItems(results);
         console.log('[perf:palette]', { mode: modeName, query: q, resultCount: results.length, ms: Math.round(performance.now() - fetchStartTotal) });
       } catch (error) {
-        console.error(`Failed to fetch ${config.label.toLowerCase()}:`, error);
+        log.error('palette', `Failed to fetch ${config.label.toLowerCase()}`, error);
         setItems([]);
+        setFetchError(`Error loading ${config.label.toLowerCase()}`);
       }
     }, 100);
 
@@ -77,7 +81,8 @@ export function SymbolSearchResults({
         setOccurrences(results);
       }
     } catch (error) {
-      console.error(`Failed to find ${config.labelSingular.toLowerCase()} occurrences:`, error);
+      log.error('palette', `Failed to find ${config.labelSingular.toLowerCase()} occurrences`, error);
+      setFetchError(`Error loading occurrences`);
     }
   }, [config]);
 
@@ -98,8 +103,15 @@ export function SymbolSearchResults({
 
   return (
     <>
+      {/* Error state */}
+      {fetchError && (
+        <CommandGroup heading={config.label}>
+          <div className="px-2 py-3 text-sm text-muted-foreground text-center">{fetchError}</div>
+        </CommandGroup>
+      )}
+
       {/* Item list (top level) */}
-      {!drilldown && items.length > 0 && (
+      {!drilldown && !fetchError && items.length > 0 && (
         <CommandGroup heading={config.label}>
           {items.map((item) => (
             <CommandItem

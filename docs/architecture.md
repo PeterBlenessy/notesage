@@ -29,9 +29,14 @@ note-sage/
 │   │   │   ├── dialog.rs   # Native file/folder dialogs
 │   │   │   ├── ai.rs       # AI provider commands (direct API)
 │   │   │   ├── acp.rs      # ACP agent management (spawn, auth, sessions, permissions, cleanup)
-│   │   │   ├── copilot_lsp.rs # Copilot Language Server (JSON-RPC, inline completions)
+│   │   │   ├── copilot_lsp.rs # Copilot Language Server orchestrator (commands, state)
+│   │   │   ├── copilot_protocol.rs # JSON-RPC transport, reader loop, server→client handlers
+│   │   │   ├── copilot_signin.rs   # Device code auth helpers (field extraction)
+│   │   │   ├── copilot_models.rs   # CopilotModel type, parser, fallback list
 │   │   │   ├── mcp.rs      # MCP client (JSON-RPC stdio transport, server lifecycle, tool discovery/call)
-│   │   │   ├── skills.rs   # Skill discovery, YAML parsing, bundled skill extraction
+│   │   │   ├── skills.rs   # Skill discovery, bundled skill extraction, commands
+│   │   │   ├── skills_frontmatter.rs # YAML frontmatter parsing, SkillFrontmatter struct
+│   │   │   ├── skills_tool_parser.rs # Tool definition extraction, usage comment parsing, ArgMapping
 │   │   │   ├── agents.rs   # Agent discovery, bundled agents, agent instructions
 │   │   │   ├── script_exec.rs # Skill script execution, interpreter resolution, sandboxing
 │   │   │   ├── json_rpc.rs # Shared JSON-RPC 2.0 types, Content-Length framing, pending requests
@@ -53,7 +58,11 @@ note-sage/
 │   │   │   ├── gguf_parser.rs     # GGUF binary header parser
 │   │   │   ├── network_proxy.rs   # HTTP proxy for agent network sandboxing, domain allowlists
 │   │   │   ├── credentials.rs  # OS keychain credential storage (keyring crate)
+│   │   │   ├── sandbox.rs       # Seatbelt profile generation (kernel network deny)
 │   │   │   ├── sandbox_monitor.rs # Seatbelt violation monitoring (macOS log stream)
+│   │   │   ├── web_search.rs   # DuckDuckGo web search (no API key required)
+│   │   │   ├── link_preview.rs # OpenGraph metadata fetch for link preview cards
+│   │   │   ├── constants.rs    # Shared constants (app paths, defaults)
 │   │   │   ├── acp_binary.rs   # ACP agent binary path resolution (PATH, Homebrew, npm, bundled)
 │   │   │   ├── acp_client.rs   # ACP Client trait impl (Tauri event forwarding, permission channels)
 │   │   │   ├── agent_manager.rs # Agent binary installation, versioning, progress tracking

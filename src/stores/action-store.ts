@@ -325,6 +325,10 @@ export const useActionStore = create<ActionStore>()(
           set({ actionCache: cache, actions: rebuildActions(cache) });
         } catch (error) {
           log.error('actions', 'Incremental update failed', error);
+          toast.warning('Actions dashboard may be stale', {
+            description: 'Failed to update after file save. Open Actions to refresh.',
+            duration: 4000,
+          });
         }
       },
 
