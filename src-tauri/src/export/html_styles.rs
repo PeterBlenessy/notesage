@@ -208,12 +208,6 @@ del { color: var(--muted-fg); }
   margin: 16px 0;
 }
 
-/* Print-safe defaults — ensure embedded media scales within page bounds */
-img, svg, .chart-block, .drawing-block, .mermaid-svg-container {
-  max-width: 100%;
-  height: auto;
-}
-
 /* Print styles */
 @media print {
   body { font-size: 12pt; }
@@ -221,24 +215,8 @@ img, svg, .chart-block, .drawing-block, .mermaid-svg-container {
   a { color: inherit; text-decoration: none; }
   a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 0.8em; color: #666; }
   pre { white-space: pre-wrap; word-break: break-all; }
-
-  /* Prevent breaking inside content blocks */
-  pre, table, .chart-block, .drawing-block, .mermaid-block,
-  .mermaid-svg-container, blockquote, .callout, figure {
-    break-inside: avoid;
-  }
-
-  /* Don't strand headings at page bottom */
-  h1, h2, h3, h4, h5, h6 {
-    page-break-after: avoid;
-    break-after: avoid;
-  }
-
-  /* Orphan/widow control */
-  p {
-    orphans: 3;
-    widows: 3;
-  }
+  blockquote, .callout { break-inside: avoid; }
+  h1, h2, h3, h4 { break-after: avoid; }
 }
 "##;
 
@@ -416,36 +394,14 @@ del { color: var(--muted-fg); }
   margin: 16px 0;
 }
 
-/* Print-safe defaults — ensure embedded media scales within page bounds */
-img, svg, .chart-block, .drawing-block, .mermaid-svg-container {
-  max-width: 100%;
-  height: auto;
-}
-
 @media print {
   body { font-size: 12pt; background: white; color: black; }
   .notesage-document { max-width: none; padding: 0; }
   a { color: inherit; text-decoration: none; }
   a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 0.8em; color: #666; }
   pre { white-space: pre-wrap; word-break: break-all; }
-
-  /* Prevent breaking inside content blocks */
-  pre, table, .chart-block, .drawing-block, .mermaid-block,
-  .mermaid-svg-container, blockquote, .callout, figure {
-    break-inside: avoid;
-  }
-
-  /* Don't strand headings at page bottom */
-  h1, h2, h3, h4, h5, h6 {
-    page-break-after: avoid;
-    break-after: avoid;
-  }
-
-  /* Orphan/widow control */
-  p {
-    orphans: 3;
-    widows: 3;
-  }
+  blockquote, .callout { break-inside: avoid; }
+  h1, h2, h3, h4 { break-after: avoid; }
 }
 "##;
 

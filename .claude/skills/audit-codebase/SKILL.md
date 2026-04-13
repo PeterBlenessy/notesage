@@ -17,9 +17,10 @@ Orchestrate a thorough codebase audit and produce a structured report in `docs/a
    - Previous audits in `docs/audit/` — compare findings, track regressions
 
 2. **Determine scope.** If the user provided a scope argument, narrow the audit:
-   - `full` (default) — all 12 categories
+   - `full` (default) — all 13 categories
    - `frontend` — categories 1-4, 7, 10, 11
    - `backend` — categories 5-6, 7
+   - `dependencies` — category 13 only (SBOM, vulnerabilities, upgrades)
    - A specific area name (e.g., `memory-leaks`, `security`) — just that category
 
 3. **Launch parallel audit agents.** For each category in scope, launch an Agent (`subagent_type: Explore`, `run_in_background: true`) with the corresponding sub-skill instructions. Each agent is research-only — no code changes. All agents run concurrently.
@@ -40,6 +41,11 @@ Orchestrate a thorough codebase audit and produce a structured report in `docs/a
    | 10 | `audit-error-ux` | Error boundaries, silent failures, empty states |
    | 11 | `audit-accessibility` | Keyboard nav, ARIA, contrast, focus |
    | 12 | `audit-documentation` | Doc drift, stale paths, wrong signatures |
+   | 13 | `audit-dependencies` | SBOM, vulnerabilities, staleness, upgrades, licenses |
+
+   **CRITICAL: Completeness instruction for every agent prompt.** Include this verbatim in each agent's prompt:
+
+   > "You MUST complete every step in these instructions. Do NOT skip steps due to time, output length, or perceived low priority. Partial results are unacceptable. If a command fails, report the failure and try an alternative. If a section has no findings, explicitly state that — do not omit the section. Run every command listed. Process all output. The user depends on this for security and quality decisions."
 
    For each agent, read the corresponding sub-skill's SKILL.md and include its full instructions in the agent prompt. Tell each agent to return findings in this format:
 

@@ -284,11 +284,13 @@ The actual competitive advantages are:
 ### What works in practice vs what doesn't
 
 **Proven technology (will work):**
+
 - Vector similarity search on small embedding models — this is what every RAG system in production uses. Boring, reliable.
 - FTS5 keyword matching — already battle-tested in Notesage's document index.
 - SQLite for structured memory storage — lightweight, well-understood.
 
 **Hard problems (risk of mediocre results):**
+
 - **Ingestion quality** — Will the system extract *useful* memories? Too aggressive = noise, too conservative = invisible. ChatGPT gets this wrong frequently (users complain about weird inferences). This requires careful prompt engineering and iteration.
 - **Consolidation on small models** — "Find connections between memories" sounds great but producing genuinely useful insights requires a capable model. A 1-3B model will produce more generic summaries than Claude Sonnet.
 - **Knowing when to remember vs forget** — The hardest UX problem in memory. No product has fully solved this.
@@ -298,6 +300,7 @@ The actual competitive advantages are:
 Don't pitch as "free and fast local inference" — that's a technical detail, not a user benefit.
 
 Pitch as:
+
 1. **Your memory, your rules** — per-project privacy, local storage, works with any AI provider
 2. **Memory that travels with your project** — lives in `.notesage/`, syncs, moves, can be shared
 3. **Memory you can read and edit** — human-readable file, not a black box
@@ -312,16 +315,18 @@ The local embedding model is the *enabler* (makes retrieval private and offline)
 
 | Tier | What it does | Technology | When it runs |
 | --- | --- | --- | --- |
-| **Tier 1: Math-only** | Embedding, dedup, vector search, FTS5 | Bundled `all-MiniLM-L6-v2` ONNX (23MB, downloaded on enable) | Every chat message (<30ms) |
+| **Tier 1: Math-only** | Embedding, dedup, vector search, FTS5 | Bundled `all-MiniLM-L6-v2` ONNX (23MB, downloaded on enable) | Every chat message (&lt;30ms) |
 | **Tier 2: Local LLM** | Entity extraction, summarization | Shared llama-server / Ollama / any local model | On ingest (1-3s, async) |
 | **Tier 3: Best available** | Deep consolidation, contradiction detection | User's configured provider (cloud or large local) | Idle/scheduled (background) |
 
 **Why this split matters:**
+
 - Retrieval (Tier 1) runs on every chat message — must be instant, free, offline
 - Ingestion (Tier 2) happens occasionally — can tolerate seconds of latency
 - Consolidation (Tier 3) is infrequent — can use expensive/slow providers
 
 **Local LLM resource management:**
+
 - Piggybacking: memory ops use whatever model is loaded for chat (zero extra RAM)
 - Idle processing: batch queued ingestions when user is inactive for 5+ minutes
 - Ollama advantage: concurrent models possible without conflict
@@ -329,13 +334,14 @@ The local embedding model is the *enabler* (makes retrieval private and offline)
 
 ### Embedding Model
 
-`all-MiniLM-L6-v2` from Microsoft (Sentence Transformers). Hosted on Hugging Face, **no API key needed** — direct HTTPS download (same as Whisper models). 23MB quantized ONNX. Runs in-process via `ort` Rust crate. <10ms per embedding on Apple Silicon. 512 token context (sufficient for memory summaries).
+`all-MiniLM-L6-v2` from Microsoft (Sentence Transformers). Hosted on Hugging Face, **no API key needed** — direct HTTPS download (same as Whisper models). 23MB quantized ONNX. Runs in-process via `ort` Rust crate. &lt;10ms per embedding on Apple Silicon. 512 token context (sufficient for memory summaries).
 
 Downloaded to `~/.notesage/models/embedding/` on first memory enable, with progress bar matching the Whisper download UX.
 
 ### Human-Readable Memory File
 
 `.notesage/memory-summary.md` auto-generated alongside the SQLite DB:
+
 - Grouped by memory type (Preferences, Decisions, Facts, etc.)
 - Each entry shows source and date
 - User edits detected via file watcher and synced back to DB
@@ -346,11 +352,11 @@ Downloaded to `~/.notesage/models/embedding/` on first memory enable, with progr
 | Section | Default | Configurable |
 | --- | --- | --- |
 | Agent body | Unlimited | No |
-| Project context | ~300 tokens | No |
-| Goals | ~200 tokens | No |
-| File tree | ~500 tokens | No |
-| Current file | ~100 tokens | No |
-| Agent instructions | ~500 tokens | No |
+| Project context | \~300 tokens | No |
+| Goals | \~200 tokens | No |
+| File tree | \~500 tokens | No |
+| Current file | \~100 tokens | No |
+| Agent instructions | \~500 tokens | No |
 | **Memory context** | **500 tokens** | **Yes (100-2000)** |
 | Skill descriptions | Variable | No |
 

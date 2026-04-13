@@ -275,7 +275,7 @@ const CommandList = forwardRef<CommandListRef, CommandListProps>(
     }));
 
     return (
-      <div className="z-50 min-w-[240px] rounded-lg border border-border bg-popover p-1 shadow-lg">
+      <div className="z-50 min-w-[240px] max-h-[min(360px,50vh)] overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg">
         {items.length > 0 ? (
           items.map((item, index) => {
             const isSelected = index === selectedIndex;
@@ -389,8 +389,11 @@ export const SlashCommand = Extension.create({
           return true;
         },
         items: ({ query }: { query: string }) => {
+          const q = query.toLowerCase();
           return commands.filter((item) =>
-            item.title.toLowerCase().startsWith(query.toLowerCase())
+            item.title.toLowerCase().startsWith(q) ||
+            item.title.toLowerCase().replace(/\s+/g, "").startsWith(q) ||
+            item.title.toLowerCase().split(" ").some((word) => word.startsWith(q))
           );
         },
         render: () => {
@@ -428,6 +431,11 @@ export const SlashCommand = Extension.create({
                 interactive: true,
                 trigger: "manual",
                 placement: "bottom-start",
+                popperOptions: {
+                  modifiers: [
+                    { name: "flip", options: { fallbackPlacements: ["top-start"] } },
+                  ],
+                },
               });
             },
 

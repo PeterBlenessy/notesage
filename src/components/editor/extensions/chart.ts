@@ -137,7 +137,16 @@ export const Chart = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(ChartNodeView);
+    return ReactNodeViewRenderer(ChartNodeView, {
+      // Skip React re-render when the chart node itself hasn't changed.
+      // Return true = "handled, keep alive"; return false = "destroy & recreate".
+      // Call updateProps() only when the node's attributes actually changed.
+      update: ({ oldNode, newNode, updateProps }) => {
+        if (oldNode.sameMarkup(newNode)) return true; // no change, skip re-render
+        updateProps();
+        return true;
+      },
+    });
   },
 
   addCommands() {

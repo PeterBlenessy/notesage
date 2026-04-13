@@ -99,3 +99,4 @@ Chronological log of major implementation milestones and changes.
 | 093 | [Release v0.30.2](093-release-v0.30.2.md) | PPTX viewer v2 (21 tasks), rich PPTX generation (17 tasks), 3 bug fixes |
 | 094 | [Release v0.30.3](094-release-v0.30.3.md) | PPTX viewer fidelity — text cascade, charts, tables, bullets, 20 fixes |
 | 095 | [Release v0.31.0](095-release-v0.31.0.md) | Inline attachments — portable charts/drawings in fenced code blocks, chart expansion, chat UX |
+| 096 | [Release v0.32.0](096-release-v0.32.0.md) | Document style frontmatter, TOC extension, typing perf fixes, Vite reload fix, Typst restored |

@@ -8,15 +8,19 @@ interface ActiveProject {
 }
 
 export function useActiveProject(): ActiveProject {
-  const activeTabId = useEditorStore((s) => s.activeTabId);
-  const tabs = useEditorStore((s) => s.tabs);
+  // Only subscribe to the active tab's filePath — NOT the full tabs array.
+  // tabs changes on every keystroke (content updates), which would cause
+  // every component using this hook to re-render on every character typed.
+  const activeFilePath = useEditorStore((s) => {
+    const tab = s.tabs.find((t) => t.id === s.activeTabId);
+    return tab?.filePath ?? null;
+  });
   const projects = useWorkspaceStore((s) => s.projects);
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
 
-  const activeTab = tabs.find((t) => t.id === activeTabId);
-  if (!activeTab) return { projectPath: null, metadata: null };
+  if (!activeFilePath) return { projectPath: null, metadata: null };
 
-  const project = projects.find((p) => activeTab.filePath.startsWith(p.path + '/'));
+  const project = projects.find((p) => activeFilePath.startsWith(p.path + '/'));
   if (!project) return { projectPath: null, metadata: null };
 
   return {

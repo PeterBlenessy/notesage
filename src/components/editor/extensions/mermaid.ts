@@ -68,7 +68,13 @@ export const MermaidBlock = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(MermaidPreview);
+    return ReactNodeViewRenderer(MermaidPreview, {
+      update: ({ oldNode, newNode, updateProps }) => {
+        if (oldNode.sameMarkup(newNode)) return true;
+        updateProps();
+        return true;
+      },
+    });
   },
 
   addStorage() {

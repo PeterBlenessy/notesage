@@ -12,7 +12,7 @@ use std::collections::HashMap;
 /// - `"dark"` uses a dark code highlighting theme
 ///
 /// `project_root` is used to resolve local image paths (drawings, charts).
-pub fn markdown_to_html(markdown: &str, theme: &str, project_root: Option<&str>) -> String {
+pub fn markdown_to_html(markdown: &str, theme: &str, project_root: Option<&str>, embedded_svgs: Option<&[String]>) -> String {
     // Pre-process: extract table metadata and drawing blocks before comrak parsing
     let (preprocessed, table_metadata) = preprocess_markdown(markdown, project_root);
 
@@ -48,15 +48,48 @@ pub fn markdown_to_html(markdown: &str, theme: &str, project_root: Option<&str>)
         .expect("HTML rendering failed");
 
     // Post-process the HTML
-    let html = postprocess_callouts(&html_output);
+    let html = postprocess_embedded_svgs(&html_output, embedded_svgs);
+    let html = postprocess_callouts(&html);
     let html = postprocess_link_previews(&html);
     let html = postprocess_sparklines(&html);
     let html = postprocess_drawing_placeholders(&html);
     let html = postprocess_table_footers(&html, &table_metadata);
     let html = postprocess_task_lists(&html);
-    let html = postprocess_toc(&html);
 
     html
+}
+
+/// Replace `<pre><code class="language-chart">` and `<pre><code class="language-excalidraw">`
+/// blocks with embedded SVG content from the frontend.
+fn postprocess_embedded_svgs(html: &str, embedded_svgs: Option<&[String]>) -> String {
+    let svgs = match embedded_svgs {
+        Some(s) if !s.is_empty() => s,
+        _ => return html.to_string(),
+    };
+
+    // Match <pre> blocks that syntect wraps around chart/excalidraw code
+    // Syntect output: <pre style="..."><code class="language-chart">...</code></pre>
+    // Plain comrak: <pre><code class="language-chart">...</code></pre>
+    let re = Regex::new(
+        r#"(?s)<pre[^>]*>\s*<code[^>]*class="[^"]*language-(chart|excalidraw|mermaid)[^"]*"[^>]*>.*?</code>\s*</pre>"#,
+    ).unwrap();
+
+    let mut index = 0usize;
+    re.replace_all(html, |caps: &regex::Captures| {
+        let idx = index;
+        index += 1;
+        if let Some(svg) = svgs.get(idx) {
+            if !svg.is_empty() {
+                let kind = if caps.get(1).map(|m| m.as_str()) == Some("chart") { "chart" } else { "drawing" };
+                return format!(
+                    "<div class=\"embedded-{}\" style=\"max-width:100%;margin:1em 0\">{}</div>",
+                    kind, svg,
+                );
+            }
+        }
+        // Fallback: keep original code block
+        caps.get(0).unwrap().as_str().to_string()
+    }).to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -107,12 +140,6 @@ fn preprocess_markdown(markdown: &str, project_root: Option<&str>) -> (String, T
         // Detect page break comments and replace with inline HTML
         if trimmed == "<!-- pagebreak -->" {
             result.push_str("<div style=\"page-break-before: always\"></div>\n");
-            continue;
-        }
-
-        // Detect TOC comments — will be replaced with a generated TOC in post-processing
-        if trimmed == "<!-- toc -->" {
-            result.push_str("<!-- toc-placeholder -->\n");
             continue;
         }
 
@@ -445,61 +472,6 @@ fn postprocess_task_lists(html: &str) -> String {
     )
 }
 
-/// Replace `<!-- toc-placeholder -->` with a generated table of contents
-/// built from heading tags (h1-h3) found in the HTML.
-fn postprocess_toc(html: &str) -> String {
-    if !html.contains("<!-- toc-placeholder -->") {
-        return html.to_string();
-    }
-
-    // Extract headings from the HTML
-    let heading_re = Regex::new(r"<(h[1-3])[^>]*>(.*?)</\1>").unwrap();
-    let tag_strip_re = Regex::new(r"<[^>]+>").unwrap();
-    let mut headings: Vec<(u8, String)> = Vec::new();
-
-    for caps in heading_re.captures_iter(html) {
-        let tag = caps.get(1).unwrap().as_str();
-        let level: u8 = tag[1..].parse().unwrap_or(1);
-        let inner = caps.get(2).unwrap().as_str();
-        // Strip nested HTML tags to get plain text
-        let text = tag_strip_re.replace_all(inner, "").trim().to_string();
-        if !text.is_empty() {
-            headings.push((level, text));
-        }
-    }
-
-    // Build the TOC HTML
-    let mut toc = String::new();
-    toc.push_str("<div class=\"toc-block\">\n");
-    toc.push_str("<div class=\"toc-header\">Table of Contents</div>\n");
-
-    if headings.is_empty() {
-        toc.push_str("</div>");
-    } else {
-        toc.push_str("<ul class=\"toc-list\">\n");
-        let min_level = headings.iter().map(|(l, _)| *l).min().unwrap_or(1);
-        for (level, text) in &headings {
-            let indent_class = level - min_level;
-            toc.push_str(&format!(
-                "<li class=\"toc-item toc-level-{}\"><span class=\"toc-link\">{}</span></li>\n",
-                indent_class,
-                html_escape(text),
-            ));
-        }
-        toc.push_str("</ul>\n</div>");
-    }
-
-    html.replace("<!-- toc-placeholder -->", &toc)
-}
-
-/// Minimal HTML entity escaping for TOC text.
-fn html_escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
 /// Compute and append `<tfoot>` rows for tables with aggregation metadata.
 fn postprocess_table_footers(html: &str, table_metadata: &TableMetadata) -> String {
     if table_metadata.is_empty() {
@@ -694,7 +666,7 @@ mod tests {
 
     #[test]
     fn test_headings() {
-        let html = markdown_to_html("# Heading 1\n\n## Heading 2\n\n### Heading 3", "light", None);
+        let html = markdown_to_html("# Heading 1\n\n## Heading 2\n\n### Heading 3", "light", None, None);
         assert!(html.contains("<h1>Heading 1</h1>"));
         assert!(html.contains("<h2>Heading 2</h2>"));
         assert!(html.contains("<h3>Heading 3</h3>"));
@@ -702,33 +674,33 @@ mod tests {
 
     #[test]
     fn test_paragraphs() {
-        let html = markdown_to_html("Hello world.\n\nSecond paragraph.", "light", None);
+        let html = markdown_to_html("Hello world.\n\nSecond paragraph.", "light", None, None);
         assert!(html.contains("<p>Hello world.</p>"));
         assert!(html.contains("<p>Second paragraph.</p>"));
     }
 
     #[test]
     fn test_bold_italic() {
-        let html = markdown_to_html("**bold** and *italic*", "light", None);
+        let html = markdown_to_html("**bold** and *italic*", "light", None, None);
         assert!(html.contains("<strong>bold</strong>"));
         assert!(html.contains("<em>italic</em>"));
     }
 
     #[test]
     fn test_strikethrough() {
-        let html = markdown_to_html("~~deleted~~", "light", None);
+        let html = markdown_to_html("~~deleted~~", "light", None, None);
         assert!(html.contains("<del>deleted</del>"));
     }
 
     #[test]
     fn test_inline_code() {
-        let html = markdown_to_html("Use `code` here", "light", None);
+        let html = markdown_to_html("Use `code` here", "light", None, None);
         assert!(html.contains("<code>code</code>"));
     }
 
     #[test]
     fn test_code_block_highlighted() {
-        let html = markdown_to_html("```rust\nfn main() {}\n```", "light", None);
+        let html = markdown_to_html("```rust\nfn main() {}\n```", "light", None, None);
         assert!(html.contains("<pre"));
         assert!(html.contains("<code"));
         assert!(html.contains("<span"));
@@ -736,20 +708,20 @@ mod tests {
 
     #[test]
     fn test_code_block_dark_theme() {
-        let html = markdown_to_html("```js\nconst x = 1;\n```", "dark", None);
+        let html = markdown_to_html("```js\nconst x = 1;\n```", "dark", None, None);
         assert!(html.contains("<pre"));
         assert!(html.contains("background-color:"));
     }
 
     #[test]
     fn test_links() {
-        let html = markdown_to_html("[Example](https://example.com)", "light", None);
+        let html = markdown_to_html("[Example](https://example.com)", "light", None, None);
         assert!(html.contains("<a href=\"https://example.com\">Example</a>"));
     }
 
     #[test]
     fn test_images() {
-        let html = markdown_to_html("![alt text](image.png)", "light", None);
+        let html = markdown_to_html("![alt text](image.png)", "light", None, None);
         assert!(html.contains("<img"));
         assert!(html.contains("src=\"image.png\""));
         assert!(html.contains("alt=\"alt text\""));
@@ -757,21 +729,21 @@ mod tests {
 
     #[test]
     fn test_bullet_list() {
-        let html = markdown_to_html("- Item 1\n- Item 2\n- Item 3", "light", None);
+        let html = markdown_to_html("- Item 1\n- Item 2\n- Item 3", "light", None, None);
         assert!(html.contains("<ul>"));
         assert!(html.contains("<li>Item 1</li>"));
     }
 
     #[test]
     fn test_ordered_list() {
-        let html = markdown_to_html("1. First\n2. Second", "light", None);
+        let html = markdown_to_html("1. First\n2. Second", "light", None, None);
         assert!(html.contains("<ol>"));
         assert!(html.contains("<li>First</li>"));
     }
 
     #[test]
     fn test_task_list() {
-        let html = markdown_to_html("- [x] Done\n- [ ] Not done", "light", None);
+        let html = markdown_to_html("- [x] Done\n- [ ] Not done", "light", None, None);
         assert!(html.contains("checkbox checked"), "checked task should have 'checkbox checked' class");
         assert!(html.contains("class=\"checkbox\""), "unchecked task should have 'checkbox' class");
         assert!(html.contains("task-item"), "task list items should have 'task-item' class");
@@ -780,21 +752,21 @@ mod tests {
 
     #[test]
     fn test_blockquote() {
-        let html = markdown_to_html("> A quote", "light", None);
+        let html = markdown_to_html("> A quote", "light", None, None);
         assert!(html.contains("<blockquote>"));
         assert!(html.contains("A quote"));
     }
 
     #[test]
     fn test_horizontal_rule() {
-        let html = markdown_to_html("---\n\nText after", "light", None);
+        let html = markdown_to_html("---\n\nText after", "light", None, None);
         assert!(html.contains("<hr"));
     }
 
     #[test]
     fn test_table() {
         let md = "| Col A | Col B |\n|-------|-------|\n| 1     | 2     |";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("<table>"));
         assert!(html.contains("<thead>"));
         assert!(html.contains("<tbody>"));
@@ -805,7 +777,7 @@ mod tests {
     #[test]
     fn test_frontmatter_stripped() {
         let md = "---\ntitle: Hello\ntags: [a, b]\n---\n\n# Content";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(!html.contains("title: Hello"));
         assert!(!html.contains("tags:"));
         assert!(html.contains("<h1>Content</h1>"));
@@ -814,39 +786,39 @@ mod tests {
     #[test]
     fn test_footnotes() {
         let md = "Text with a footnote[^1].\n\n[^1]: This is the footnote.";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("footnote"));
     }
 
     #[test]
     fn test_autolinks() {
-        let html = markdown_to_html("Visit https://example.com for more.", "light", None);
+        let html = markdown_to_html("Visit https://example.com for more.", "light", None, None);
         assert!(html.contains("<a href=\"https://example.com\">"));
     }
 
     #[test]
     fn test_xss_prevention() {
-        let html = markdown_to_html("<script>alert('xss')</script>", "light", None);
+        let html = markdown_to_html("<script>alert('xss')</script>", "light", None, None);
         assert!(!html.contains("<script>"));
         assert!(!html.contains("alert"));
     }
 
     #[test]
     fn test_xss_img_onerror() {
-        let html = markdown_to_html("<img src=x onerror=alert(1)>", "light", None);
+        let html = markdown_to_html("<img src=x onerror=alert(1)>", "light", None, None);
         assert!(!html.contains("onerror"));
     }
 
     #[test]
     fn test_empty_input() {
-        let html = markdown_to_html("", "light", None);
+        let html = markdown_to_html("", "light", None, None);
         assert!(html.is_empty() || html.trim().is_empty());
     }
 
     #[test]
     fn test_theme_parameter() {
-        let light = markdown_to_html("```py\nprint('hi')\n```", "light", None);
-        let dark = markdown_to_html("```py\nprint('hi')\n```", "dark", None);
+        let light = markdown_to_html("```py\nprint('hi')\n```", "light", None, None);
+        let dark = markdown_to_html("```py\nprint('hi')\n```", "dark", None, None);
         assert!(light.contains("<pre"));
         assert!(dark.contains("<pre"));
         assert_ne!(light, dark);
@@ -857,7 +829,7 @@ mod tests {
     #[test]
     fn test_callout_note() {
         let md = "> [!note]\n> This is a note.";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("callout-note"));
         assert!(html.contains("Note"));
         assert!(html.contains("This is a note."));
@@ -867,7 +839,7 @@ mod tests {
     #[test]
     fn test_callout_tip() {
         let md = "> [!tip]\n> A helpful tip.";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("callout-tip"));
         assert!(html.contains("Tip"));
     }
@@ -875,7 +847,7 @@ mod tests {
     #[test]
     fn test_callout_warning() {
         let md = "> [!warning]\n> Be careful!";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("callout-warning"));
         assert!(html.contains("Warning"));
     }
@@ -883,7 +855,7 @@ mod tests {
     #[test]
     fn test_callout_important() {
         let md = "> [!important]\n> Critical info.";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("callout-important"));
         assert!(html.contains("Important"));
     }
@@ -891,7 +863,7 @@ mod tests {
     #[test]
     fn test_callout_with_custom_title() {
         let md = "> [!note] Custom Title\n> Content here.";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("Custom Title"));
         assert!(html.contains("callout-note"));
     }
@@ -899,7 +871,7 @@ mod tests {
     #[test]
     fn test_callout_with_bold_content() {
         let md = "> [!tip]\n> This has **bold** text.";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("callout-tip"));
         assert!(html.contains("<strong>bold</strong>"));
     }
@@ -907,7 +879,7 @@ mod tests {
     #[test]
     fn test_regular_blockquote_preserved() {
         let md = "> This is a regular blockquote.";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("<blockquote>"));
         assert!(!html.contains("callout"));
     }
@@ -915,7 +887,7 @@ mod tests {
     #[test]
     fn test_callout_has_svg_icon() {
         let md = "> [!note]\n> Content.";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("<svg"));
     }
 
@@ -924,7 +896,7 @@ mod tests {
     #[test]
     fn test_sparkline_renders_svg() {
         let md = "| Data |\n|------|\n| {{spark:12,15,9,22}} |";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("<svg"));
         assert!(html.contains("polyline"));
         assert!(!html.contains("{{spark:"));
@@ -932,7 +904,7 @@ mod tests {
 
     #[test]
     fn test_sparkline_inline() {
-        let html = markdown_to_html("Values: {{spark:1,2,3,4,5}}", "light", None);
+        let html = markdown_to_html("Values: {{spark:1,2,3,4,5}}", "light", None, None);
         assert!(html.contains("<svg"));
         assert!(html.contains("polyline"));
     }
@@ -942,7 +914,7 @@ mod tests {
     #[test]
     fn test_link_preview() {
         let md = "> [!link](https://example.com)";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("link-preview"));
         assert!(html.contains("https://example.com"));
         assert!(!html.contains("<blockquote>"));
@@ -953,7 +925,7 @@ mod tests {
     #[test]
     fn test_drawing_missing_svg_placeholder() {
         let md = r#"<div data-drawing-id="test.excalidraw" data-type="drawing" class="drawing-block"></div>"#;
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("drawing-placeholder") || html.contains("Drawing"));
     }
 
@@ -962,7 +934,7 @@ mod tests {
     #[test]
     fn test_table_metadata_stripped() {
         let md = "| Price <!-- type:currency,currency:USD,summary:sum --> |\n|-------|\n| $100 |";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(!html.contains("<!--"));
         assert!(!html.contains("type:currency"));
         assert!(html.contains("Price"));
@@ -973,7 +945,7 @@ mod tests {
     #[test]
     fn test_table_footer_sum() {
         let md = "| Amount <!-- type:number,summary:sum --> |\n|--------|\n| 10 |\n| 20 |\n| 30 |";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("<tfoot>"));
         assert!(html.contains("Sum"));
         assert!(html.contains("60"));
@@ -982,7 +954,7 @@ mod tests {
     #[test]
     fn test_table_footer_avg() {
         let md = "| Score <!-- type:number,summary:avg --> |\n|-------|\n| 10 |\n| 20 |\n| 30 |";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("<tfoot>"));
         assert!(html.contains("Avg"));
         assert!(html.contains("20"));
@@ -991,7 +963,7 @@ mod tests {
     #[test]
     fn test_table_footer_currency() {
         let md = "| Price <!-- type:currency,currency:USD,summary:sum --> |\n|-------|\n| $10.00 |\n| $20.00 |";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("<tfoot>"));
         assert!(html.contains("$30.00"));
     }
@@ -999,14 +971,14 @@ mod tests {
     #[test]
     fn test_table_no_metadata_no_footer() {
         let md = "| Col A | Col B |\n|-------|-------|\n| 1 | 2 |";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(!html.contains("<tfoot>"));
     }
 
     #[test]
     fn test_table_footer_count() {
         let md = "| Items <!-- type:number,summary:count --> |\n|-------|\n| 5 |\n| 10 |\n| 15 |";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("<tfoot>"));
         assert!(html.contains("Count"));
         assert!(html.contains("3"));
@@ -1015,7 +987,7 @@ mod tests {
     #[test]
     fn test_table_footer_min_max() {
         let md = "| Val <!-- type:number,summary:min --> |\n|-----|\n| 5 |\n| 3 |\n| 8 |";
-        let html = markdown_to_html(md, "light", None);
+        let html = markdown_to_html(md, "light", None, None);
         assert!(html.contains("Min"));
         assert!(html.contains("3"));
     }

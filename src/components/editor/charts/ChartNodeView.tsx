@@ -17,15 +17,17 @@ import { useEditorStore } from "@/stores/editor-store";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-function useActiveProject(): string | undefined {
-  const tabs = useEditorStore((s) => s.tabs);
-  const activeTabId = useEditorStore((s) => s.activeTabId);
+function useActiveProjectPath(): string | undefined {
+  // Only subscribe to the active tab's filePath — NOT the full tabs array.
+  // tabs changes on every keystroke, which would re-render every chart.
+  const activeFilePath = useEditorStore((s) => {
+    const tab = s.tabs.find((t) => t.id === s.activeTabId);
+    return tab?.filePath ?? null;
+  });
   const findOwningProject = useWorkspaceStore((s) => s.findOwningProject);
 
-  const activeTab = tabs.find((t) => t.id === activeTabId);
-  if (!activeTab) return undefined;
-
-  const project = findOwningProject(activeTab.filePath);
+  if (!activeFilePath) return undefined;
+  const project = findOwningProject(activeFilePath);
   return project?.path;
 }
 
@@ -36,7 +38,7 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
   const chartJson = node.attrs.chartJson as string | null;
   const chartId = node.attrs.chartId as string | null;
   const height = (node.attrs.height as number) ?? 300;
-  const projectRoot = useActiveProject();
+  const projectRoot = useActiveProjectPath();
 
   // Inline charts: parse directly from attribute (synchronous, no loading state)
   const inlineData = useMemo(() => {

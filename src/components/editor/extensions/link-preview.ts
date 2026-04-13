@@ -185,7 +185,13 @@ export const LinkPreview = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(LinkPreviewCard);
+    return ReactNodeViewRenderer(LinkPreviewCard, {
+      update: ({ oldNode, newNode, updateProps }) => {
+        if (oldNode.sameMarkup(newNode)) return true;
+        updateProps();
+        return true;
+      },
+    });
   },
 
   addKeyboardShortcuts() {

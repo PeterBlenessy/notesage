@@ -570,13 +570,18 @@ export const tauriApi = {
   },
 
   // Export operations
-  async exportPdfWebkit(options: {
-    html: string;
+  async exportPdf(options: {
+    markdown: string;
     title: string;
-    pageWidth: number;
-    pageHeight: number;
+    template: string;
+    includeToc: boolean;
+    includePageNumbers: boolean;
+    pageSize: string;
+    projectRoot?: string;
+    typography?: BackendTypographyPresets;
+    embeddedSvgs?: string[];
   }): Promise<number[]> {
-    return await invoke<number[]>("export_pdf_webkit", options);
+    return await invoke<number[]>("export_pdf", options);
   },
 
   async saveBinaryFile(path: string, data: number[]): Promise<void> {
@@ -587,7 +592,7 @@ export const tauriApi = {
     markdown: string;
     title: string;
     template: string;
-    embeddedImages?: { data: number[]; width: number; height: number }[];
+    embeddedSvgs?: string[];
   }): Promise<number[]> {
     return await invoke<number[]>("export_pptx", options);
   },
@@ -601,7 +606,7 @@ export const tauriApi = {
     pageSize: string;
     projectRoot?: string;
     typography?: BackendTypographyPresets;
-    embeddedImages?: { data: number[]; width: number; height: number }[];
+    embeddedSvgs?: string[];
   }): Promise<number[]> {
     return await invoke<number[]>("export_docx", options);
   },
@@ -613,6 +618,7 @@ export const tauriApi = {
     includeStyles: boolean;
     projectRoot?: string;
     typography?: BackendTypographyPresets;
+    embeddedSvgs?: string[];
   }): Promise<string> {
     return await invoke<string>("render_html", options);
   },

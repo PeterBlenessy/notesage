@@ -4,7 +4,7 @@
 | --- | --- |
 | **Date** | 2026-04-10 |
 | **Severity** | Medium |
-| **Status** | Open |
+| **Status** | Deferred — cannot reproduce |
 | **Affects** | Editor content area, cursor positioning |
 
 ## Problem

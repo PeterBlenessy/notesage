@@ -137,7 +137,13 @@ export const Drawing = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(DrawingPreview);
+    return ReactNodeViewRenderer(DrawingPreview, {
+      update: ({ oldNode, newNode, updateProps }) => {
+        if (oldNode.sameMarkup(newNode)) return true;
+        updateProps();
+        return true;
+      },
+    });
   },
 
   addCommands() {

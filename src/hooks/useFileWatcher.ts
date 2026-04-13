@@ -65,13 +65,14 @@ export function useFileWatcher() {
   useEffect(() => {
     /** Shared handler for processing a single file-changed event. */
     function handleEvent(path: string, kind: FileChangedPayload["kind"]) {
-      // For create/delete events, debounce file tree refresh
-      // Refresh everything (no targetPath) to avoid path mismatch issues
-      // where FSEvents-canonicalized paths don't match stored workspace paths
+      // For create/delete events, debounce file tree refresh.
+      // Pass the parent directory so only the affected section is refreshed
+      // (not all 10 sections which takes ~2s on iCloud paths).
       if (kind === "create" || kind === "delete") {
+        const parentDir = path.substring(0, path.lastIndexOf("/"));
         clearTimeout(refreshDebounce.current);
         refreshDebounce.current = setTimeout(() => {
-          refreshFileTree();
+          refreshFileTree(parentDir);
         }, 300);
       }
 

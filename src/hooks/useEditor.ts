@@ -41,6 +41,8 @@ interface UseEditorOptions {
   documentDir?: string;
 }
 
+let serializeTimer: ReturnType<typeof setTimeout> | null = null;
+
 export function useEditor({ content, onUpdate, editable = true, documentDir }: UseEditorOptions): Editor | null {
   const editor = useTiptapEditor({
     onCreate: ({ editor }) => {
@@ -183,8 +185,15 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
     },
     onUpdate: ({ editor }) => {
       if (onUpdate) {
-        const markdown = getMarkdownFromEditor(editor);
-        onUpdate(markdown);
+        // Debounce serialization — for large documents (3000+ nodes),
+        // serializing on every keystroke is expensive. Mark dirty immediately
+        // via a lightweight check, serialize after a brief pause.
+        if (serializeTimer) clearTimeout(serializeTimer);
+        serializeTimer = setTimeout(() => {
+          const markdown = getMarkdownFromEditor(editor);
+          onUpdate(markdown);
+          serializeTimer = null;
+        }, 150);
       }
     },
   });

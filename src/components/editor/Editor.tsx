@@ -88,10 +88,31 @@ interface EditorProps {
 }
 
 export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, onOpenFile, exportOpen, onExportOpenChange, focusMode, outlineOpen, onOutlineOpenChange, updateAvailable, updateVersion, onUpdateClick, onShortcutsOpen, onOpenActions }: EditorProps) {
-  const { tabs, activeTabId, updateTabContent, setFrontmatter, recentFiles, externalChanges, clearExternalChange, toggleViewMode, setViewMode } = useEditorStore();
+  const tabs = useEditorStore((s) => s.tabs);
+  const activeTabId = useEditorStore((s) => s.activeTabId);
+  const updateTabContent = useEditorStore((s) => s.updateTabContent);
+  const setFrontmatter = useEditorStore((s) => s.setFrontmatter);
+  const recentFiles = useEditorStore((s) => s.recentFiles);
+  const externalChanges = useEditorStore((s) => s.externalChanges);
+  const clearExternalChange = useEditorStore((s) => s.clearExternalChange);
+  const toggleViewMode = useEditorStore((s) => s.toggleViewMode);
+  const setViewMode = useEditorStore((s) => s.setViewMode);
   const recentProjects = useWorkspaceStore((s) => s.recentProjects);
-  const { showFloatingToolbar, toolbarVisible, contentWidth, marginTop, marginBottom, marginLeft, marginRight, gitEnabled, printLayout, notesRootPath, sourceWordWrap, setSourceWordWrap } = useSettingsStore();
-  const editorStyles = useEditorStylesStore();
+  const showFloatingToolbar = useSettingsStore((s) => s.showFloatingToolbar);
+  const toolbarVisible = useSettingsStore((s) => s.toolbarVisible);
+  const contentWidth = useSettingsStore((s) => s.contentWidth);
+  const marginTop = useSettingsStore((s) => s.marginTop);
+  const marginBottom = useSettingsStore((s) => s.marginBottom);
+  const marginLeft = useSettingsStore((s) => s.marginLeft);
+  const marginRight = useSettingsStore((s) => s.marginRight);
+  const gitEnabled = useSettingsStore((s) => s.gitEnabled);
+  const printLayout = useSettingsStore((s) => s.printLayout);
+  const notesRootPath = useSettingsStore((s) => s.notesRootPath);
+  const sourceWordWrap = useSettingsStore((s) => s.sourceWordWrap);
+  const setSourceWordWrap = useSettingsStore((s) => s.setSourceWordWrap);
+  const editorStylesPresets = useEditorStylesStore((s) => s.presets);
+  const editorStylesDocPresets = useEditorStylesStore((s) => s.documentPresets);
+  const editorStylesSetDocPresets = useEditorStylesStore((s) => s.setDocumentPresets);
   const { projectPath } = useActiveProject();
   const commentStorageRoot = projectPath ?? (notesRootPath && !notesRootPath.startsWith('~') ? notesRootPath : null);
   const repo = useGitStore((s) => projectPath ? s.repos[projectPath] : undefined);
@@ -398,7 +419,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   // Compute per-block-type CSS variables from typography presets
   // (must be before early returns to satisfy Rules of Hooks)
   const typographyCssVars = useMemo(() => {
-    const p = editorStyles.documentPresets ?? editorStyles.presets;
+    const p = editorStylesDocPresets ?? editorStylesPresets;
     const fc = fontFamilyCSS;
     return {
       // Legacy variables (backwards compat — other CSS rules reference these)
@@ -471,26 +492,26 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
       '--ns-blockquote-font-size': `${p.blockquote.fontSize}px`,
       '--ns-blockquote-font-weight': String(p.blockquote.fontWeight),
     } as Record<`--${string}`, string>;
-  }, [editorStyles.presets, editorStyles.documentPresets]);
+  }, [editorStylesPresets, editorStylesDocPresets]);
 
   // Apply per-document typography presets from frontmatter `style:` on tab switch
   useEffect(() => {
     if (!activeTab || activeTab.fileType !== 'markdown') {
-      editorStyles.setDocumentPresets(null);
+      editorStylesSetDocPresets(null);
       return;
     }
     const docStyle = parseDocumentStyle(activeTab.frontmatter);
     if (!docStyle) {
-      editorStyles.setDocumentPresets(null);
+      editorStylesSetDocPresets(null);
       return;
     }
     const partial = documentStyleToPresets(docStyle);
     if (!partial) {
-      editorStyles.setDocumentPresets(null);
+      editorStylesSetDocPresets(null);
       return;
     }
-    const merged = mergePresets(partial as Record<string, Partial<import("@/lib/typography-presets").BlockTypeStyle>>, editorStyles.presets);
-    editorStyles.setDocumentPresets(merged);
+    const merged = mergePresets(partial as Record<string, Partial<import("@/lib/typography-presets").BlockTypeStyle>>, editorStylesPresets);
+    editorStylesSetDocPresets(merged);
   }, [activeTab?.id, activeTab?.frontmatter]);
 
   if (!activeTab) {

@@ -118,7 +118,7 @@ pub fn run() {
             git_diff_files,
             git_diff_file,
             git_worktree_list,
-            export_pdf_webkit,
+            export_pdf,
             export_pptx,
             export_docx,
             render_html,

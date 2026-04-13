@@ -102,16 +102,13 @@ File saved → Watcher detects change → Reindex (existing)
 
 **Implementation options (from lightest to heaviest):**
 
-**Option A — Query-only (no AI, instant):**
-After reindexing a file, run the tag co-occurrence query. If the file shares 2+ tags with another file and neither links to the other, surface a suggestion in the Activity panel or as a toast: "This note shares tags #X, #Y with [Other Note]. Link them?"
+**Option A — Query-only (no AI, instant)**:After reindexing a file, run the tag co-occurrence query. If the file shares 2+ tags with another file and neither links to the other, surface a suggestion in the Activity panel or as a toast: "This note shares tags #X, #Y with \[Other Note\]. Link them?"
 
 This is the lightest possible version. No AI calls, no latency, pure SQL. It catches the obvious connections.
 
-**Option B — FTS5 similarity (no AI, fast):**
-After reindexing, also run an FTS5 query using the new file's title and first heading as search terms. This catches content-similar files even when tags don't overlap. Still no AI, still fast.
+**Option B — FTS5 similarity (no AI, fast)**:After reindexing, also run an FTS5 query using the new file's title and first heading as search terms. This catches content-similar files even when tags don't overlap. Still no AI, still fast.
 
-**Option C — AI-assisted (full Karpathy pattern):**
-After reindexing, if Option A or B finds related files, pass the new file + top related files to the AI with a prompt: "Analyze how this new source relates to these existing notes. Suggest: (a) cross-references to add, (b) existing claims that this source updates or contradicts, (c) whether a synthesis page would be valuable."
+**Option C — AI-assisted (full Karpathy pattern)**:After reindexing, if Option A or B finds related files, pass the new file + top related files to the AI with a prompt: "Analyze how this new source relates to these existing notes. Suggest: (a) cross-references to add, (b) existing claims that this source updates or contradicts, (c) whether a synthesis page would be valuable."
 
 This is the `ingest-research` skill from the Knowledge Base Synthesis PRD. The key insight from Karpathy is that this should be **the default ingest path**, not a separate skill the user has to remember to invoke.
 
@@ -138,16 +135,18 @@ Most of these are pure SQL. Only contradiction detection truly needs AI. This me
 The existing PRDs explicitly defer embeddings as a non-goal ("FTS5 sufficient for personal scale"). This is a reasonable position today, but worth revisiting as a future enhancement:
 
 **When embeddings would add value:**
+
 - Tag co-occurrence misses files that discuss the same concept with different vocabulary
 - FTS5 misses semantic similarity ("machine learning" vs "neural networks" vs "deep learning")
-- As knowledge bases grow past ~500 files, keyword overlap becomes noisy
+- As knowledge bases grow past \~500 files, keyword overlap becomes noisy
 
 **How it could work in Notesage:**
+
 - Use the bundled `llama-server` to generate embeddings locally (privacy-first, no API calls)
 - Store vectors in a new `embeddings` table (SQLite can store BLOBs; or use `sqlite-vss` extension)
 - Generate embeddings for each file's title + first 500 words during indexing
 - Cosine similarity queries replace or augment FTS5 for "related files"
-- Budget: ~50ms per file for small models (e.g., `nomic-embed-text`), acceptable during incremental reindex
+- Budget: \~50ms per file for small models (e.g., `nomic-embed-text`), acceptable during incremental reindex
 
 **Not recommended for Phase 1.** Tag co-occurrence + FTS5 handles the common case. Embeddings become the next step when users hit the ceiling of keyword-based discovery.
 
@@ -248,7 +247,7 @@ Extend the existing command palette modes:
 
 ## Automatic Entity Recognition & Cross-Indexing
 
-The sections above cover file-to-file link discovery. There's a second, equally valuable problem: **recognizing words inside documents that correspond to known tags, mentions, or recurring concepts — without the user typing `#` or `@` prefixes.**
+The sections above cover file-to-file link discovery. There's a second, equally valuable problem: **recognizing words inside documents that correspond to known tags, mentions, or recurring concepts — without the user typing** `#` **or** `@` **prefixes.**
 
 Today, if a user writes "I discussed the transformer architecture with Sarah" in a note, none of that is indexed. But if the workspace already has `#transformer`, `#architecture`, and `@Sarah` in other files, the system should notice and offer to tag/link them.
 
@@ -371,7 +370,7 @@ fn split_entity_words(s: &str) -> Vec<String> {
 }
 ```
 
-**Example: what gets generated for `#machine-learning`:**
+**Example: what gets generated for** `#machine-learning`**:**
 
 | Surface form | Matches in text |
 | --- | --- |
@@ -382,7 +381,7 @@ fn split_entity_words(s: &str) -> Vec<String> {
 | `machine-learning` | "a machine-learning model" |
 | `machine_learning` | "import machine_learning" |
 
-**Example: what gets generated for `@JohnSmith`:**
+**Example: what gets generated for** `@JohnSmith`**:**
 
 | Surface form | Matches in text |
 | --- | --- |
@@ -459,7 +458,7 @@ fn build_entity_dictionary(conn: &Connection) -> EntityDictionary {
 }
 ```
 
-**Why Aho-Corasick?** The dictionary may have hundreds or thousands of patterns (especially with surface form expansion — 6x the entity count). Matching each one individually with regex would be O(n * m) per file. Aho-Corasick builds a finite automaton that matches all patterns in a single pass — O(n + matches), regardless of dictionary size. The `aho-corasick` crate is a Rust standard, already well-optimized, and supports case-insensitive matching natively.
+**Why Aho-Corasick?** The dictionary may have hundreds or thousands of patterns (especially with surface form expansion — 6x the entity count). Matching each one individually with regex would be O(n \* m) per file. Aho-Corasick builds a finite automaton that matches all patterns in a single pass — O(n + matches), regardless of dictionary size. The `aho-corasick` crate is a Rust standard, already well-optimized, and supports case-insensitive matching natively.
 
 **Multi-word matching is free with Aho-Corasick.** The automaton matches arbitrarily long patterns, not just single words. "machine learning" (with the space) is just another pattern in the automaton. The algorithm handles overlapping matches and longest-match disambiguation.
 
@@ -620,15 +619,16 @@ function deduplicateOverlapping(
 
 **Performance considerations:**
 
-With multi-word surface forms, the matching cost is higher than single-word `Set.has()`. For a dictionary of 200 entities with ~6 surface forms each (1,200 patterns) scanned against a 100KB document:
+With multi-word surface forms, the matching cost is higher than single-word `Set.has()`. For a dictionary of 200 entities with \~6 surface forms each (1,200 patterns) scanned against a 100KB document:
 
-- Naive `indexOf` loop: ~1,200 scans per text node. With ~500 text nodes in a 100KB doc, that's 600K string searches. Too slow for every keystroke.
-- **Optimization: only scan on idle.** Rebuild decorations via `requestIdleCallback` or after 300ms debounce, not on every `docChanged`. The user sees instant feedback for explicit `#tags` (existing `tag-highlight.ts` runs on every keystroke), and entity suggestions appear ~300ms later.
+- Naive `indexOf` loop: \~1,200 scans per text node. With \~500 text nodes in a 100KB doc, that's 600K string searches. Too slow for every keystroke.
+- **Optimization: only scan on idle.** Rebuild decorations via `requestIdleCallback` or after 300ms debounce, not on every `docChanged`. The user sees instant feedback for explicit `#tags` (existing `tag-highlight.ts` runs on every keystroke), and entity suggestions appear \~300ms later.
 - **Optimization: incremental.** On `docChanged`, only re-scan text nodes in the changed range (ProseMirror's `tr.steps` tell you which positions were affected). Carry forward decorations for unchanged regions via `DecorationSet.map()`.
 - **Optimization: short-circuit.** If the text node is shorter than the shortest surface form, skip it. If the dictionary is empty, the plugin is a no-op.
 - **Strategy A avoids this entirely** — the backend does the heavy matching in Rust (Aho-Corasick, single-pass, fast), and the editor just renders stored positions. The only per-keystroke cost is re-mapping positions after edits, which ProseMirror's `DecorationSet.map(tr.mapping)` handles efficiently.
 
 **Dictionary refresh:** The entity set is loaded from the SQLite index via a Tauri command (`index_entity_dictionary`) on:
+
 - Editor mount / tab switch
 - After reindexing completes (listen for `index-updated` Tauri event)
 - Not on every keystroke — the dictionary changes infrequently
@@ -662,6 +662,7 @@ Suggested entities need a visually distinct treatment from confirmed tags:
 ```
 
 Clicking a suggested entity opens a popover with actions:
+
 - **Tag it** — wraps the word with `#` prefix (turns "transformer" into "#transformer")
 - **Link to file** — if the entity matches a file title, inserts `[transformer](./transformer.md)`
 - **Dismiss** — hides the suggestion for this word in this file (persisted in `suggested_entities.status`)
@@ -803,6 +804,7 @@ CREATE INDEX IF NOT EXISTS idx_phrase_normalized ON phrase_freq(normalized);
 ```
 
 During reindexing, for each file:
+
 1. Extract bigrams/trigrams
 2. For each normalized phrase, `INSERT OR UPDATE` incrementing `file_count`
 3. On file delete/change, decrement counts (or rebuild periodically)
@@ -863,6 +865,7 @@ New file detected by watcher → file-changed event (kind: "create")
 ```
 
 This works for:
+
 - Files synced via iCloud from another device
 - Files copied from Finder into the project folder
 - Files created by external tools (AI agents, scripts, etc.)
@@ -913,14 +916,14 @@ This works for:
 
 | Operation | Budget | Frequency | Notes |
 | --- | --- | --- | --- |
-| Dictionary load from SQLite | <10ms | On tab switch, on reindex | Single query, cached |
-| Surface form generation | <5ms for 500 entities | On dictionary rebuild | ~3000 patterns (6x expansion), done once |
-| Editor decoration rebuild (Strategy A) | <1ms | On tab switch + `map()` per keystroke | Backend-computed positions, just render |
-| Editor decoration rebuild (Strategy B) | <5ms for 100KB doc | Debounced 300ms | Multi-word `indexOf` scanning, idle-time only |
-| Aho-Corasick match during reindex | <5ms per file | On file change | Single-pass, handles all surface forms |
-| Phrase extraction (bigrams) | <2ms per file | On file change | Word splitting + normalization |
-| Phrase frequency query | <50ms | On lint/manual trigger | Aggregate across all indexed files |
-| FTS5 vocab query | <50ms | On lint/manual trigger | Single-word frequency |
+| Dictionary load from SQLite | &lt;10ms | On tab switch, on reindex | Single query, cached |
+| Surface form generation | &lt;5ms for 500 entities | On dictionary rebuild | \~3000 patterns (6x expansion), done once |
+| Editor decoration rebuild (Strategy A) | &lt;1ms | On tab switch + `map()` per keystroke | Backend-computed positions, just render |
+| Editor decoration rebuild (Strategy B) | &lt;5ms for 100KB doc | Debounced 300ms | Multi-word `indexOf` scanning, idle-time only |
+| Aho-Corasick match during reindex | &lt;5ms per file | On file change | Single-pass, handles all surface forms |
+| Phrase extraction (bigrams) | &lt;2ms per file | On file change | Word splitting + normalization |
+| Phrase frequency query | &lt;50ms | On lint/manual trigger | Aggregate across all indexed files |
+| FTS5 vocab query | &lt;50ms | On lint/manual trigger | Single-word frequency |
 
 All within the existing performance budgets documented in `docs/performance-baseline.md`.
 
@@ -934,6 +937,7 @@ The most impactful idea from Karpathy's pattern isn't the wiki format — it's t
 4. **Entities should be recognized, not just typed.** The index already knows every tag and mention in the workspace. Matching plain text against that dictionary turns every document into a connected node in the knowledge graph — automatically, on every save.
 
 The existing SQLite index, comrak parser, and skill system provide the foundation. The two main additions are:
+
 - The `links` table and tag co-occurrence query for file-to-file discovery
 - The entity dictionary and `entity-suggestion` extension for intra-document recognition
 

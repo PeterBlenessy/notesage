@@ -6,7 +6,6 @@
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
-    "core:webview:allow-print",
     "opener:default",
     "dialog:default",
     "fs:allow-read-text-file",

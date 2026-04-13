@@ -19,15 +19,15 @@
 
 1. **Immediate** (security): ✅ Done
 
-   - ~~Replace `@zed-industries/claude-agent-acp` (deprecated)~~ → Replaced with `@agentclientprotocol/claude-agent-acp@0.26.0`
-   - ~~`basic-ftp` vuln~~ → Added pnpm override `basic-ftp>=5.2.2` + `@anthropic-ai/sdk>=0.81.0`. `pnpm audit` now reports 0 vulnerabilities.
+   - ~~Replace~~ `@zed-industries/claude-agent-acp` ~~(deprecated)~~ → Replaced with `@agentclientprotocol/claude-agent-acp@0.26.0`
+   - `basic-ftp` ~~vuln~~ → Added pnpm override `basic-ftp>=5.2.2` + `@anthropic-ai/sdk>=0.81.0`. `pnpm audit` now reports 0 vulnerabilities.
 
 2. **Short-term** (upgrades): ✅ Done
 
-   - ~~Upgrade Tiptap v3.19→v3.22~~ → Upgraded all 25 @tiptap/* packages to 3.22.3
+   - ~~Upgrade Tiptap v3.19→v3.22~~ → Upgraded all 25 @tiptap/\* packages to 3.22.3
    - ~~Upgrade Tailwind v4.1→v4.2~~ → Upgraded to 4.2.2
    - ~~Evaluate Vite 8 + TypeScript 6 + @vitejs/plugin-react 6~~ → All upgraded (Vite 8.0.8, TS 6.0.2, plugin-react 6.0)
-   - ~~Upgrade `lucide-react` 0.564→1.8.0~~ → Upgraded to 1.8.0 (zero icon renames needed)
+   - ~~Upgrade~~ `lucide-react` ~~0.564→1.8.0~~ → Upgraded to 1.8.0 (zero icon renames needed)
 
 3. **Monitor** (no action needed now):
 
@@ -43,8 +43,7 @@
 
 ✅ **All packages upgraded as of 2026-04-11.** No outdated packages remain.
 
-<details>
-<summary>Previous state (before upgrades)</summary>
+Previous state (before upgrades)
 
 | Package | Was | Upgraded to | Type |
 | --- | --- | --- | --- |
@@ -56,7 +55,7 @@
 | @tauri-apps/plugin-http | 2.5.7 | 2.5.8 | dep |
 | @tauri-apps/plugin-updater | 2.10.0 | 2.10.1 | dep |
 | @tauri-apps/plugin-dialog | 2.6.0 | 2.7.0 | dep |
-| @tiptap/* (25 packages) | 3.19.0 | 3.22.3 | dep |
+| @tiptap/\* (25 packages) | 3.19.0 | 3.22.3 | dep |
 | @vitejs/plugin-react | 4.7.0 | 6.0.0 | dev |
 | @vitest/coverage-istanbul | 4.0.18 | 4.1.0 | dev |
 | @playwright/test | 1.58.2 | 1.59.0 | dev |
@@ -74,8 +73,6 @@
 | vite | 7.3.2 | 8.0.8 | dev |
 | vitest | 4.0.18 | 4.1.0 | dev |
 | zustand | 5.0.11 | 5.0.12 | dep |
-
-</details>
 
 ---
 

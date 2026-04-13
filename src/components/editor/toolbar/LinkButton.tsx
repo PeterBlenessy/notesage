@@ -19,16 +19,13 @@ export function LinkButton({ editor }: { editor: Editor }) {
 
   const projects = useWorkspaceStore((s) => s.projects);
   const explorerFolders = useWorkspaceStore((s) => s.explorerFolders);
-  const tabs = useEditorStore((s) => s.tabs);
-  const activeTabId = useEditorStore((s) => s.activeTabId);
-
-  const activeFileDir = useMemo(() => {
-    const activeTab = tabs.find((t) => t.id === activeTabId);
-    if (!activeTab?.filePath) return undefined;
-    const parts = activeTab.filePath.split('/');
+  const activeFileDir = useEditorStore((s) => {
+    const tab = s.tabs.find((t) => t.id === s.activeTabId);
+    if (!tab?.filePath) return undefined;
+    const parts = tab.filePath.split('/');
     parts.pop();
     return parts.join('/');
-  }, [tabs, activeTabId]);
+  });
 
   const trees = useMemo(() => [
     ...projects.map((p) => ({

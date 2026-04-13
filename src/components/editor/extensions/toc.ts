@@ -184,7 +184,13 @@ export const TableOfContents = Node.create({
 
   addNodeView() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return ReactNodeViewRenderer(TocView as any);
+    return ReactNodeViewRenderer(TocView as any, {
+      update: ({ oldNode, newNode, updateProps }) => {
+        if (oldNode.sameMarkup(newNode)) return true;
+        updateProps();
+        return true;
+      },
+    });
   },
 
   addCommands() {

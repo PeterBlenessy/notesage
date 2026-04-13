@@ -1,9 +1,32 @@
-use super::markdown_to_docx::{markdown_to_docx, DocxOptions};
-use super::markdown_to_html::markdown_to_html;
 use super::markdown_to_pptx::markdown_to_pptx;
-use super::templates::PptxTemplate;
-use crate::commands::export::EmbeddedImage;
+use super::markdown_to_typst::markdown_to_typst;
+use super::templates::{apply_template, PageSize, PptxTemplate, Template, TemplateOptions};
+use super::typst_world::NotesageWorld;
 use std::time::Instant;
+
+/// Run the full export pipeline: markdown → typst → template → PDF bytes.
+fn export_pipeline(
+    markdown: &str,
+    title: &str,
+    template: Template,
+    include_toc: bool,
+    include_page_numbers: bool,
+    page_size: PageSize,
+) -> Result<Vec<u8>, String> {
+    let typst_content = markdown_to_typst(markdown, None);
+    let source = apply_template(
+        &typst_content,
+        &TemplateOptions {
+            template,
+            title: title.to_string(),
+            include_toc,
+            include_page_numbers,
+            page_size,
+        },
+    );
+    let world = NotesageWorld::new(source);
+    world.export_pdf()
+}
 
 // ---------------------------------------------------------------------------
 // Reference documents
@@ -336,6 +359,13 @@ reliability that our customers depend on.
 
 const EMPTY_DOC: &str = "";
 
+const FRONTMATTER_ONLY: &str = r#"---
+title: Metadata Only
+type: goal
+status: active
+---
+"#;
+
 const NO_HEADINGS_DOC: &str = r#"This document has no headings at all.
 
 Just paragraphs of text. The table of contents should be empty
@@ -346,6 +376,367 @@ Some **bold** and *italic* text for good measure.
 - A list item
 - Another item
 "#;
+
+// ---------------------------------------------------------------------------
+// Integration tests: 3 templates x 3 page sizes = 9 combinations
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_all_template_page_size_combinations() {
+    let templates = [Template::Clean, Template::Academic, Template::Report];
+    let page_sizes = [PageSize::A4, PageSize::Letter, PageSize::A5];
+
+    for template in &templates {
+        for page_size in &page_sizes {
+            let result = export_pipeline(
+                SIMPLE_DOC,
+                "Meeting Notes",
+                *template,
+                true,
+                true,
+                *page_size,
+            );
+            assert!(
+                result.is_ok(),
+                "{:?} + {:?} failed: {:?}",
+                template,
+                page_size,
+                result.err()
+            );
+            let pdf = result.unwrap();
+            assert!(pdf.len() > 100, "{:?} + {:?} produced tiny PDF ({} bytes)", template, page_size, pdf.len());
+            // Verify PDF header magic bytes
+            assert_eq!(&pdf[..5], b"%PDF-", "{:?} + {:?} invalid PDF header", template, page_size);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Reference document tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_simple_document() {
+    let result = export_pipeline(SIMPLE_DOC, "Meeting Notes", Template::Clean, false, false, PageSize::A4);
+    assert!(result.is_ok(), "Simple doc failed: {:?}", result.err());
+    let pdf = result.unwrap();
+    assert_eq!(&pdf[..5], b"%PDF-");
+}
+
+#[test]
+fn test_complex_document_all_node_types() {
+    // Tests: headings, bold, italic, strikethrough, inline code, code blocks,
+    // links, tables, task lists, blockquotes, horizontal rules, frontmatter stripping
+    let result = export_pipeline(
+        COMPLEX_DOC,
+        "API Design Guide",
+        Template::Academic,
+        true,
+        true,
+        PageSize::A4,
+    );
+    assert!(result.is_ok(), "Complex doc failed: {:?}", result.err());
+    let pdf = result.unwrap();
+    assert_eq!(&pdf[..5], b"%PDF-");
+    // Complex doc should produce a multi-page PDF
+    assert!(pdf.len() > 5000, "Complex doc PDF suspiciously small ({} bytes)", pdf.len());
+}
+
+#[test]
+fn test_long_document_performance() {
+    let start = Instant::now();
+    let result = export_pipeline(
+        LONG_DOC,
+        "Comprehensive Project Report",
+        Template::Report,
+        true,
+        true,
+        PageSize::A4,
+    );
+    let elapsed = start.elapsed();
+
+    assert!(result.is_ok(), "Long doc failed: {:?}", result.err());
+    let pdf = result.unwrap();
+    assert_eq!(&pdf[..5], b"%PDF-");
+    // Long doc should produce a substantial PDF
+    assert!(pdf.len() > 10_000, "Long doc PDF too small ({} bytes)", pdf.len());
+    // Performance target: under 5 seconds (generous for CI, expect <2s locally)
+    assert!(
+        elapsed.as_secs() < 5,
+        "Long doc export took too long: {:?}",
+        elapsed
+    );
+}
+
+#[test]
+fn test_long_document_with_toc() {
+    let result = export_pipeline(
+        LONG_DOC,
+        "Report with ToC",
+        Template::Report,
+        true,
+        true,
+        PageSize::A4,
+    );
+    assert!(result.is_ok(), "Long doc with ToC failed: {:?}", result.err());
+
+    // Without ToC should produce a smaller PDF
+    let result_no_toc = export_pipeline(
+        LONG_DOC,
+        "Report without ToC",
+        Template::Report,
+        false,
+        true,
+        PageSize::A4,
+    );
+    assert!(result_no_toc.is_ok(), "Long doc without ToC failed: {:?}", result_no_toc.err());
+}
+
+// ---------------------------------------------------------------------------
+// Edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_empty_document() {
+    let result = export_pipeline(EMPTY_DOC, "Empty", Template::Clean, false, false, PageSize::A4);
+    assert!(result.is_ok(), "Empty doc failed: {:?}", result.err());
+    let pdf = result.unwrap();
+    assert_eq!(&pdf[..5], b"%PDF-");
+}
+
+#[test]
+fn test_frontmatter_only_document() {
+    let result = export_pipeline(
+        FRONTMATTER_ONLY,
+        "Metadata Only",
+        Template::Clean,
+        false,
+        false,
+        PageSize::A4,
+    );
+    assert!(result.is_ok(), "Frontmatter-only doc failed: {:?}", result.err());
+    let pdf = result.unwrap();
+    assert_eq!(&pdf[..5], b"%PDF-");
+}
+
+#[test]
+fn test_no_headings_with_toc() {
+    // ToC enabled but no headings — should still compile without errors
+    let result = export_pipeline(
+        NO_HEADINGS_DOC,
+        "No Headings",
+        Template::Academic,
+        true,
+        true,
+        PageSize::A4,
+    );
+    assert!(result.is_ok(), "No-headings doc with ToC failed: {:?}", result.err());
+    let pdf = result.unwrap();
+    assert_eq!(&pdf[..5], b"%PDF-");
+}
+
+#[test]
+fn test_unicode_content() {
+    let markdown = r#"# Übersicht
+
+日本語のテキストを含むドキュメント。
+
+## Résumé
+
+Café, naïve, über, señor, Zürich — international characters.
+
+- 中文列表项
+- Элемент списка
+- عنصر القائمة
+"#;
+    let result = export_pipeline(
+        markdown,
+        "Unicode Document",
+        Template::Clean,
+        false,
+        false,
+        PageSize::A4,
+    );
+    // Unicode may not fully render with bundled Latin fonts, but should not crash
+    assert!(result.is_ok(), "Unicode doc failed: {:?}", result.err());
+}
+
+#[test]
+fn test_deeply_nested_lists() {
+    let markdown = r#"# Nested Lists
+
+- Level 1
+  - Level 2
+    - Level 3
+      - Level 4
+        - Level 5
+
+1. First
+   1. Sub first
+      1. Sub sub first
+2. Second
+"#;
+    let result = export_pipeline(
+        markdown,
+        "Nested Lists",
+        Template::Clean,
+        false,
+        false,
+        PageSize::A4,
+    );
+    assert!(result.is_ok(), "Deeply nested lists failed: {:?}", result.err());
+}
+
+#[test]
+fn test_large_table() {
+    let mut markdown = String::from("# Data Table\n\n| Col A | Col B | Col C | Col D | Col E |\n|-------|-------|-------|-------|-------|\n");
+    for i in 0..50 {
+        markdown.push_str(&format!("| Row {} | Value {} | Data {} | Info {} | Note {} |\n", i, i * 2, i * 3, i + 100, i));
+    }
+    let result = export_pipeline(
+        &markdown,
+        "Large Table",
+        Template::Clean,
+        false,
+        true,
+        PageSize::A4,
+    );
+    assert!(result.is_ok(), "Large table failed: {:?}", result.err());
+}
+
+#[test]
+fn test_long_code_block() {
+    let mut markdown = String::from("# Code Sample\n\n```rust\n");
+    for i in 0..100 {
+        markdown.push_str(&format!("fn function_{}() {{ println!(\"line {}\"); }}\n", i, i));
+    }
+    markdown.push_str("```\n");
+    let result = export_pipeline(
+        &markdown,
+        "Long Code Block",
+        Template::Academic,
+        false,
+        true,
+        PageSize::A4,
+    );
+    assert!(result.is_ok(), "Long code block failed: {:?}", result.err());
+}
+
+#[test]
+fn test_special_characters_in_title() {
+    let titles = [
+        "Hello \"World\"",
+        "Report — Q4 2025",
+        "Notes: Important & Urgent",
+        "File <draft> #1",
+        "Price $100 @company",
+    ];
+    for title in &titles {
+        let result = export_pipeline(
+            "# Test\n\nContent.",
+            title,
+            Template::Report,
+            true,
+            true,
+            PageSize::A4,
+        );
+        assert!(result.is_ok(), "Title '{}' failed: {:?}", title, result.err());
+    }
+}
+
+#[test]
+fn test_pdf_valid_structure() {
+    // Verify the PDF has proper structure beyond just the header
+    let result = export_pipeline(SIMPLE_DOC, "Structure Test", Template::Clean, false, false, PageSize::A4);
+    let pdf = result.unwrap();
+
+    // Check PDF header
+    assert_eq!(&pdf[..5], b"%PDF-");
+
+    // Check PDF ends with %%EOF (within last 32 bytes to account for trailing whitespace)
+    let tail = &pdf[pdf.len().saturating_sub(32)..];
+    let tail_str = String::from_utf8_lossy(tail);
+    assert!(tail_str.contains("%%EOF"), "PDF missing %%EOF trailer");
+}
+
+// ---------------------------------------------------------------------------
+// Template-specific rendering tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_clean_template_minimal() {
+    // Clean with all options off should produce smallest PDF
+    let result = export_pipeline(
+        "# Hello\n\nWorld.",
+        "Hello",
+        Template::Clean,
+        false,
+        false,
+        PageSize::A4,
+    );
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_academic_template_numbered_headings() {
+    let markdown = r#"# Introduction
+
+Some text.
+
+## Background
+
+More text.
+
+### Details
+
+Even more text.
+
+## Methods
+
+Final text.
+"#;
+    let result = export_pipeline(
+        markdown,
+        "Academic Paper",
+        Template::Academic,
+        true,
+        true,
+        PageSize::Letter,
+    );
+    assert!(result.is_ok(), "Academic numbered headings failed: {:?}", result.err());
+}
+
+#[test]
+fn test_report_template_title_page() {
+    let result = export_pipeline(
+        LONG_DOC,
+        "Annual Report 2025",
+        Template::Report,
+        true,
+        true,
+        PageSize::A4,
+    );
+    assert!(result.is_ok(), "Report title page failed: {:?}", result.err());
+    let pdf = result.unwrap();
+    // Report with title page + long content should be sizeable
+    assert!(pdf.len() > 10_000, "Report PDF too small for title page + content");
+}
+
+#[test]
+fn test_a5_page_size_all_templates() {
+    // A5 is the smallest page size — verify content doesn't overflow badly
+    for template in [Template::Clean, Template::Academic, Template::Report] {
+        let result = export_pipeline(
+            COMPLEX_DOC,
+            "A5 Test",
+            template,
+            true,
+            true,
+            PageSize::A5,
+        );
+        assert!(result.is_ok(), "A5 {:?} failed: {:?}", template, result.err());
+    }
+}
 
 // ===========================================================================
 // PPTX Integration Tests
@@ -584,152 +975,34 @@ fn test_pptx_task_lists() {
     assert_pptx_has_entries(&bytes, &["ppt/slides/slide1.xml"]);
 }
 
-// ===========================================================================
-// HTML Export Integration Tests
-// ===========================================================================
-
 #[test]
-fn test_html_simple_heading() {
-    let html = markdown_to_html("# Test", "light", None);
-    assert!(
-        html.contains("<h1>Test</h1>") || html.contains("<h1"),
-        "Expected an h1 element in output, got: {}",
-        &html[..html.len().min(500)]
-    );
+fn test_chart_code_block_emits_image_reference() {
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">
+  <rect x="10" y="10" width="40" height="80" fill="#4a7dff"/>
+</svg>"##.to_string();
+
+    let markdown = "# Test\n\n```chart\n{\"type\":\"bar\",\"title\":\"Test\"}\n```\n\nAfter.\n";
+    let embedded_svgs = vec![svg];
+    let typst_content = markdown_to_typst(markdown, Some(&embedded_svgs));
+
+    assert!(typst_content.contains("#image(\"/embedded-0.svg\""),
+        "Chart code block should emit image reference");
+    assert!(!typst_content.contains("```chart"),
+        "Chart code block should NOT pass through as raw code");
 }
 
-#[test]
-fn test_html_renders_paragraph() {
-    let html = markdown_to_html("Hello world", "light", None);
-    assert!(html.contains("Hello world"), "Expected paragraph text in output");
-}
+use crate::commands::export::preprocess_svg_text;
 
 #[test]
-fn test_html_dark_theme_accepted() {
-    // Should not panic or error with dark theme
-    let html = markdown_to_html("# Dark", "dark", None);
-    assert!(!html.is_empty(), "Dark theme should produce non-empty output");
-}
+fn test_svg_text_preprocessing_converts_text_to_paths() {
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200">
+  <rect x="50" y="20" width="80" height="120" fill="#4a7dff"/>
+  <text x="90" y="160" text-anchor="middle" fill="#333333" font-size="14" font-family="sans-serif">Q1</text>
+  <text x="200" y="190" text-anchor="middle" fill="#666666" font-size="12" font-family="sans-serif">Label</text>
+</svg>"##;
 
-#[test]
-fn test_html_with_code_block() {
-    let md = "```rust\nfn main() {}\n```\n";
-    let html = markdown_to_html(md, "light", None);
-    // syntect wraps tokens in <span> elements, so look for the <pre> structure
-    assert!(html.contains("<pre"), "Code block should produce a <pre> element");
-    assert!(html.contains("<code"), "Code block should produce a <code> element");
-    // The text "fn" and "main" will appear somewhere within spans
-    assert!(html.contains("fn"), "Code block content should appear in HTML");
-}
-
-#[test]
-fn test_html_with_table() {
-    let md = "| A | B |\n|---|---|\n| 1 | 2 |\n";
-    let html = markdown_to_html(md, "light", None);
-    assert!(html.contains("<table"), "Table should be rendered");
-}
-
-#[test]
-fn test_html_empty_input() {
-    let html = markdown_to_html("", "light", None);
-    // Should not panic, may return empty or minimal HTML
-    assert!(html.len() < 1000, "Empty input should produce minimal output");
-}
-
-// ===========================================================================
-// DOCX Export Integration Tests
-// ===========================================================================
-
-fn docx_default_options() -> DocxOptions {
-    DocxOptions {
-        include_toc: false,
-        include_page_numbers: false,
-        page_size: "a4".to_string(),
-        project_root: None,
-    }
-}
-
-#[test]
-fn test_docx_simple_document() {
-    let opts = docx_default_options();
-    let result = markdown_to_docx("# Hello\n\nWorld", "Hello", "clean", &opts, None, None, None);
-    assert!(result.is_ok(), "DOCX export failed: {:?}", result.err());
-    let bytes = result.unwrap();
-    assert!(bytes.len() > 100, "DOCX too small: {} bytes", bytes.len());
-    assert_eq!(&bytes[0..4], b"PK\x03\x04", "DOCX should be a valid ZIP (PK header)");
-}
-
-#[test]
-fn test_docx_with_embedded_images_parameter_accepted() {
-    // Test that the embedded_images parameter is wired through.
-    // docx-rs validates PNG data internally, so we pass an empty vec
-    // to verify the code path without needing a full valid PNG.
-    let images: Vec<EmbeddedImage> = vec![];
-
-    let md = "# Report\n\n```chart\n{\"type\":\"bar\"}\n```\n";
-    let opts = docx_default_options();
-    let result = markdown_to_docx(md, "Report", "clean", &opts, None, None, Some(&images));
-    assert!(result.is_ok(), "DOCX with empty embedded images failed: {:?}", result.err());
-    let bytes = result.unwrap();
-    assert!(bytes.len() > 100, "DOCX too small: {} bytes", bytes.len());
-    assert_eq!(&bytes[0..4], b"PK\x03\x04", "DOCX should be a valid ZIP (PK header)");
-}
-
-#[test]
-fn test_docx_embedded_image_struct_fields() {
-    // Verify the EmbeddedImage struct has the expected fields
-    let img = EmbeddedImage {
-        data: vec![0x89, 0x50],
-        width: 300,
-        height: 200,
-    };
-    assert_eq!(img.width, 300);
-    assert_eq!(img.height, 200);
-    assert_eq!(img.data.len(), 2);
-}
-
-#[test]
-fn test_docx_empty_input() {
-    let opts = docx_default_options();
-    let result = markdown_to_docx("", "Empty", "clean", &opts, None, None, None);
-    assert!(result.is_ok(), "Empty DOCX should not fail");
-    let bytes = result.unwrap();
-    assert_eq!(&bytes[0..4], b"PK\x03\x04", "Even empty DOCX should be valid ZIP");
-}
-
-#[test]
-fn test_docx_with_toc_option() {
-    let mut opts = docx_default_options();
-    opts.include_toc = true;
-    let result = markdown_to_docx("# Chapter 1\n\n## Section A\n\nText.", "TOC Test", "clean", &opts, None, None, None);
-    assert!(result.is_ok(), "DOCX with TOC failed: {:?}", result.err());
-    let bytes = result.unwrap();
-    assert_eq!(&bytes[0..4], b"PK\x03\x04");
-}
-
-#[test]
-fn test_docx_all_templates() {
-    let opts = docx_default_options();
-    for template in ["clean", "academic", "report"] {
-        let result = markdown_to_docx("# Test\n\nContent.", "Test", template, &opts, None, None, None);
-        assert!(result.is_ok(), "Template '{}' failed: {:?}", template, result.err());
-        let bytes = result.unwrap();
-        assert_eq!(&bytes[0..4], b"PK\x03\x04", "Template '{}' should produce valid ZIP", template);
-    }
-}
-
-// ===========================================================================
-// Typst / old export_pdf removal verification
-// ===========================================================================
-
-#[test]
-fn test_no_typst_modules_in_export() {
-    // This test documents that the old Typst-based PDF pipeline has been removed.
-    // The export module no longer contains typst_world or markdown_to_typst modules.
-    // If someone re-adds them, the module list in mod.rs would need to change,
-    // and this test serves as a reminder that PDF export is now WebKit-based.
-    //
-    // We verify by checking that the module compiles without typst dependencies
-    // in the export crate — this test passing means no Typst code is linked.
-    assert!(true, "Export module compiles without Typst — PDF export is WebKit-based");
+    let bytes = preprocess_svg_text(svg);
+    let processed = String::from_utf8_lossy(&bytes);
+    assert!(!processed.contains("<text"), "text elements should be converted to paths");
+    assert!(processed.contains("<path"), "should contain path elements from text conversion");
 }

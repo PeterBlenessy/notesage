@@ -6,12 +6,224 @@ import { tauriApi } from "@/lib/tauri";
 import { getMarkdownFromEditor } from "@/lib/markdown";
 import { serializeFrontmatter } from "@/lib/frontmatter";
 import { presetsForBackend } from "@/lib/typography-presets";
-import { collectEmbeddedImages } from "@/lib/svg-to-png";
 import { useEditorStore } from "@/stores/editor-store";
 import { useEditorStylesStore } from "@/stores/editor-styles-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import type { ExportOptions } from "@/components/ExportDialog";
+import type { ChartData, ColorScheme } from "@/lib/chart-types";
+import { COLOR_PALETTES } from "@/lib/chart-types";
+
+/**
+ * Collect SVG strings for all inline chart and drawing nodes in document order.
+ * Charts: capture rendered SVG from the DOM, then replace CSS variable
+ *         references with hex colors computed from the chart's data.
+ * Drawings: call Excalidraw's exportToSvg() with the inline JSON.
+ * Mermaid: capture rendered SVG from the DOM.
+ * Returns an ordered array matching the positional order that comrak will walk.
+ */
+export async function collectEmbeddedSvgs(editor: Editor): Promise<string[]> {
+  const svgs: string[] = [];
+  const promises: { index: number; promise: Promise<string> }[] = [];
+  let chartIndex = 0;
+  let mermaidIndex = 0;
+
+  editor.state.doc.descendants((node) => {
+    if (node.type.name === "chart" && node.attrs.chartJson) {
+      const idx = svgs.length;
+      svgs.push(""); // placeholder
+
+      // Capture SVG from the DOM
+      const chartWrappers = document.querySelectorAll(
+        ".chart-block .recharts-wrapper svg"
+      );
+      const svgEl = chartWrappers[chartIndex] as SVGSVGElement | undefined;
+      chartIndex++;
+      if (svgEl) {
+        const rawSvg = new XMLSerializer().serializeToString(svgEl);
+        const chartJson = node.attrs.chartJson as string;
+        svgs[idx] = resolveChartColors(rawSvg, chartJson);
+      }
+    } else if (node.type.name === "drawing" && node.attrs.drawingJson) {
+      const idx = svgs.length;
+      svgs.push(""); // placeholder
+      const json = node.attrs.drawingJson as string;
+
+      promises.push({
+        index: idx,
+        promise: renderDrawingSvg(json),
+      });
+    } else if (node.type.name === "mermaidBlock" && node.attrs.source) {
+      const idx = svgs.length;
+      svgs.push(""); // placeholder
+
+      // Capture rendered mermaid SVG from the DOM
+      const mermaidContainers = document.querySelectorAll(
+        ".mermaid-block .mermaid-svg-container svg"
+      );
+      const svgEl = mermaidContainers[mermaidIndex] as SVGSVGElement | undefined;
+      mermaidIndex++;
+      if (svgEl) {
+        svgs[idx] = new XMLSerializer().serializeToString(svgEl);
+      }
+    }
+    return false; // don't descend into atom nodes
+  });
+
+  // Resolve all async drawing SVG renders
+  const results = await Promise.all(promises.map((p) => p.promise));
+  for (let i = 0; i < promises.length; i++) {
+    svgs[promises[i].index] = results[i];
+  }
+
+  return svgs;
+}
+
+// ── oklch → hex conversion (pure math, no DOM) ──────────────────────
+
+/** Convert oklch(L% C H) string to #rrggbb hex. */
+function oklchToHex(oklch: string): string {
+  const m = oklch.match(/oklch\(([\d.]+)%?\s+([\d.]+)\s+([\d.]+)\)/);
+  if (!m) return "#000000";
+  let L = parseFloat(m[1]);
+  if (L > 1) L /= 100; // handle "45%" as 0.45
+  const C = parseFloat(m[2]);
+  const H = parseFloat(m[3]) * (Math.PI / 180);
+
+  // oklch → oklab
+  const a = C * Math.cos(H);
+  const b = C * Math.sin(H);
+
+  // oklab → linear sRGB
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+
+  const l3 = l_ * l_ * l_;
+  const m3 = m_ * m_ * m_;
+  const s3 = s_ * s_ * s_;
+
+  let r = +4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+  let g = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+  let bl = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
+
+  // linear sRGB → sRGB gamma
+  const gamma = (x: number) => x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+  r = Math.round(Math.max(0, Math.min(1, gamma(r))) * 255);
+  g = Math.round(Math.max(0, Math.min(1, gamma(g))) * 255);
+  bl = Math.round(Math.max(0, Math.min(1, gamma(bl))) * 255);
+
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${bl.toString(16).padStart(2, "0")}`;
+}
+
+// ── Chart color resolution (pure data, no DOM/CSS) ──────────────────
+
+/** Theme CSS variables and their hex values for export (light mode). */
+const THEME_COLORS: Record<string, string> = {
+  "color-border": "#e5e5e5",
+  "color-muted-foreground": "#737373",
+  "color-background": "#ffffff",
+  "color-muted": "#f5f5f5",
+};
+
+/**
+ * Replace all var(--color-xxx) references in a chart SVG with hex colors.
+ * Reads the chart JSON to determine the color scheme and series keys,
+ * then looks up oklch palette values and converts to hex.
+ * No DOM, no CSS, no WebKit — pure data transformation.
+ */
+export function resolveChartColors(svgString: string, chartJson: string): string {
+  // Parse the chart data to get colorScheme and series keys
+  let chartData: ChartData | null = null;
+  try {
+    chartData = JSON.parse(chartJson) as ChartData;
+  } catch {
+    return svgString;
+  }
+
+  const scheme = chartData.config?.colorScheme ?? "neutral";
+  const palette = COLOR_PALETTES[scheme as ColorScheme] ?? COLOR_PALETTES.neutral;
+  const lightColors = palette.light;
+
+  // Build a map of CSS variable name → hex color
+  const colorMap = new Map<string, string>();
+
+  // Theme variables (fixed)
+  for (const [name, hex] of Object.entries(THEME_COLORS)) {
+    colorMap.set(name, hex);
+  }
+
+  // Series-specific variables
+  const seriesKeys = chartData.series?.map((s) => s.key) ?? [];
+  if (seriesKeys.length > 0) {
+    seriesKeys.forEach((key, i) => {
+      colorMap.set(`color-${key}`, oklchToHex(lightColors[i % lightColors.length]));
+    });
+  } else {
+    // Single-series: "value" key + per-category keys (for pie/donut)
+    colorMap.set("color-value", oklchToHex(lightColors[0]));
+    chartData.data?.forEach((point, i) => {
+      colorMap.set(
+        `color-${point.category}`,
+        oklchToHex(lightColors[i % lightColors.length]),
+      );
+    });
+  }
+
+  // Build dark→light oklch mapping for inline color replacement (pie/donut/radial)
+  // These charts bake oklch values directly into fill attributes at render time.
+  // In dark mode the values are from palette.dark — we remap to palette.light for PDF.
+  const darkToLightHex = new Map<string, string>();
+  const darkColors = palette.dark;
+  for (let i = 0; i < darkColors.length; i++) {
+    darkToLightHex.set(darkColors[i], oklchToHex(lightColors[i % lightColors.length]));
+  }
+
+  // Pass 1: Replace all var(--xxx) references
+  let result = svgString.replace(/var\(--([^)]+)\)/g, (match, varName: string) => {
+    return colorMap.get(varName) ?? match;
+  });
+
+  // Pass 2: Replace any remaining inline oklch() values with hex.
+  // If the oklch value matches a dark-mode palette color, use the light-mode equivalent.
+  // Otherwise convert directly (for non-palette oklch values like theme colors).
+  result = result.replace(/oklch\([^)]+\)/g, (match) => {
+    return darkToLightHex.get(match) ?? oklchToHex(match);
+  });
+
+  return result;
+}
+
+/** Render an Excalidraw drawing JSON to an SVG string (light mode for export). */
+export async function renderDrawingSvg(drawingJson: string): Promise<string> {
+  try {
+    const scene = JSON.parse(drawingJson) as {
+      elements?: unknown[];
+      appState?: Record<string, unknown>;
+      files?: Record<string, unknown>;
+    };
+    const elements = scene.elements ?? [];
+    if (elements.length === 0) return "";
+
+    const { exportToSvg } = await import("@excalidraw/excalidraw");
+    const svgEl = await exportToSvg({
+      elements: elements as Parameters<typeof exportToSvg>[0]["elements"],
+      appState: {
+        ...(scene.appState ?? {}),
+        exportWithDarkMode: false, // always light mode for export
+        exportBackground: true,
+      },
+      files: (scene.files ?? {}) as Parameters<typeof exportToSvg>[0]["files"],
+    });
+    svgEl.removeAttribute("width");
+    svgEl.removeAttribute("height");
+    svgEl.style.width = "100%";
+    svgEl.style.height = "auto";
+    return svgEl.outerHTML;
+  } catch {
+    return "";
+  }
+}
 
 export function useExportOperations(editor: Editor | null) {
   const [isExporting, setIsExporting] = useState(false);
@@ -44,14 +256,10 @@ export function useExportOperations(editor: Editor | null) {
       // Read typography presets for export styling (PDF, DOCX, HTML)
       const typography = presetsForBackend(useEditorStylesStore.getState().presets);
 
-      try {
-        // Collect chart/drawing/mermaid SVGs from the DOM and rasterize to PNG
-        // for DOCX/PPTX formats (which cannot embed SVG directly).
-        const embeddedImages =
-          options.format === "docx" || options.format === "pptx"
-            ? await collectEmbeddedImages()
-            : undefined;
+      // Collect pre-rendered SVGs for inline charts and drawings
+      const embeddedSvgs = await collectEmbeddedSvgs(editor);
 
+      try {
         if (options.format === "docx") {
           // Generate DOCX via Tauri backend
           const docxBytes = await tauriApi.exportDocx({
@@ -63,10 +271,7 @@ export function useExportOperations(editor: Editor | null) {
             pageSize: options.pageSize,
             projectRoot: projectRoot ?? undefined,
             typography,
-            embeddedImages:
-              embeddedImages && embeddedImages.length > 0
-                ? embeddedImages
-                : undefined,
+            embeddedSvgs: embeddedSvgs.length > 0 ? embeddedSvgs : undefined,
           });
 
           // Derive default save path from source file
@@ -107,10 +312,7 @@ export function useExportOperations(editor: Editor | null) {
             markdown,
             title,
             template: options.pptxTemplate,
-            embeddedImages:
-              embeddedImages && embeddedImages.length > 0
-                ? embeddedImages
-                : undefined,
+            embeddedSvgs: embeddedSvgs.length > 0 ? embeddedSvgs : undefined,
           });
 
           // Derive default save path from source file
@@ -143,238 +345,50 @@ export function useExportOperations(editor: Editor | null) {
             },
           });
         } else {
-          // Print the document via macOS print dialog (Save as PDF).
-          // Strategy: clone the editor's rendered DOM (includes charts,
-          // drawings, mermaid as live SVG), collect page stylesheets,
-          // build a standalone HTML doc, open in a hidden Tauri window,
-          // call print() on it.
+          // Generate PDF via Tauri backend
+          const pdfBytes = await tauriApi.exportPdf({
+            markdown,
+            title,
+            template: options.template,
+            includeToc: options.includeToc,
+            includePageNumbers: options.includePageNumbers,
+            pageSize: options.pageSize,
+            projectRoot: projectRoot ?? undefined,
+            typography,
+            embeddedSvgs: embeddedSvgs.length > 0 ? embeddedSvgs : undefined,
+          });
 
-          const prosemirror = document.querySelector(".ProseMirror");
-          if (!prosemirror) {
-            toast.error("No document content to print");
+          // Derive default save path from source file
+          const defaultPath = activeTab.filePath.replace(/\.md$/i, ".pdf");
+
+          // Show native save dialog
+          const savePath = await save({
+            title: "Export PDF",
+            defaultPath,
+            filters: [{ name: "PDF", extensions: ["pdf"] }],
+          });
+
+          if (!savePath) {
             setIsExporting(false);
             return;
           }
 
-          // Canvas-based oklch→hex converter (needed before cloning)
-          const cvs = document.createElement("canvas");
-          cvs.width = 1;
-          cvs.height = 1;
-          const cvsCtx = cvs.getContext("2d")!;
-          const oklchToHex = (oklch: string): string => {
-            cvsCtx.clearRect(0, 0, 1, 1);
-            cvsCtx.fillStyle = "#000000";
-            cvsCtx.fillStyle = oklch;
-            cvsCtx.fillRect(0, 0, 1, 1);
-            const [r, g, b] = cvsCtx.getImageData(0, 0, 1, 1).data;
-            return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
-          };
+          // Write PDF to disk
+          await tauriApi.saveBinaryFile(savePath, pdfBytes);
 
-          // Resolve inline oklch() colors on the LIVE DOM before cloning.
-          // Legend swatches use background-color: oklch(...). WebKit's
-          // getComputedStyle returns oklch (not rgb), so use canvas to convert.
-          const oklchOriginals: Array<{ el: HTMLElement; prop: string; val: string }> = [];
-          prosemirror.querySelectorAll("[style]").forEach((rawEl) => {
-            const el = rawEl as HTMLElement;
-            for (const cssProp of ["background-color", "color", "border-color"]) {
-              const val = el.style.getPropertyValue(cssProp);
-              if (val && val.includes("oklch")) {
-                oklchOriginals.push({ el, prop: cssProp, val });
-                el.style.setProperty(cssProp, oklchToHex(val));
-              }
-            }
-          });
+          // Persist last-used export settings
+          const settings = useSettingsStore.getState();
+          settings.setLastExportFormat("pdf");
+          settings.setLastExportTemplate(options.template);
+          settings.setLastExportPageSize(options.pageSize);
+          settings.setLastExportIncludeToC(options.includeToc);
+          settings.setLastExportIncludePageNumbers(options.includePageNumbers);
 
-          // Deep clone captures resolved oklch values
-          const clone = prosemirror.cloneNode(true) as HTMLElement;
-          clone.removeAttribute("contenteditable");
-
-          // Restore original oklch values on the live DOM
-          for (const { el, prop, val } of oklchOriginals) {
-            el.style.setProperty(prop, val);
-          }
-
-          // Remove editor-only UI elements from the clone:
-          // - Print Layout decorations (page headers, footers, page gaps)
-          // - Interactive placeholders ("Click to add header")
-          // - Resize handles, edit overlays, sort indicators
-          for (const sel of [
-            ".page-gap", // decorative gap between pages
-            ".page-hf-editor", // inline editing UI for headers/footers
-            ".page-hf-empty", // "Click to add header/footer" placeholders
-            ".drawing-edit-overlay",
-            ".table-sort-indicator", ".table-filter-row",
-            ".cursor-ns-resize", // chart/drawing resize handles
-          ]) {
-            clone.querySelectorAll(sel).forEach((el) => el.remove());
-          }
-          // Remove contenteditable from all remaining elements
-          clone.querySelectorAll("[contenteditable]").forEach((el) => {
-            el.removeAttribute("contenteditable");
-          });
-
-          // Fix Recharts responsive containers: they use width:0;height:0 with
-          // overflow:visible, relying on JS measurement that won't run in the
-          // print window. Set explicit dimensions from the actual rendered charts.
-          const liveWrappers = prosemirror.querySelectorAll(".recharts-wrapper");
-          const cloneWrappers = clone.querySelectorAll(".recharts-wrapper");
-          cloneWrappers.forEach((wrapper, i) => {
-            const live = liveWrappers[i] as HTMLElement | undefined;
-            if (live) {
-              (wrapper as HTMLElement).style.width = `${live.offsetWidth}px`;
-              (wrapper as HTMLElement).style.height = `${live.offsetHeight}px`;
-            }
-            // Also fix the parent zero-size div
-            const parent = wrapper.parentElement;
-            if (parent && parent.style.width === "0px") {
-              parent.style.width = "100%";
-              parent.style.height = "auto";
-            }
-          });
-
-          // Collect all stylesheets from the current page
-          const styles: string[] = [];
-          for (const sheet of document.styleSheets) {
-            try {
-              for (const rule of sheet.cssRules) {
-                styles.push(rule.cssText);
-              }
-            } catch {
-              // Cross-origin sheets — skip
-            }
-          }
-
-          // printHtml is built AFTER var() resolution (below)
-
-          // Resolve var() references in the cloned body HTML.
-          // Two issues to handle:
-          // 1. WebKit returns oklch() from getComputedStyle — need canvas to convert to hex
-          // 2. Multi-series chart variables are scoped to specific [data-chart] containers
-
-          // Canvas-based oklch→hex converter
-          const canvas = document.createElement("canvas");
-          canvas.width = 1;
-          canvas.height = 1;
-          const ctx = canvas.getContext("2d")!;
-          const toHex = (cssColor: string): string => {
-            ctx.clearRect(0, 0, 1, 1);
-            ctx.fillStyle = "#000000"; // reset
-            ctx.fillStyle = cssColor;
-            ctx.fillRect(0, 0, 1, 1);
-            const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-            return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
-          };
-
-          // Build a resolver that probes ALL chart containers
-          const probe = document.createElement("div");
-          probe.style.position = "absolute";
-          probe.style.left = "-9999px";
-          const chartContainers = prosemirror.querySelectorAll("[data-chart]");
-          const globalCache = new Map<string, string>();
-
-          const resolveVar = (varName: string): string | null => {
-            const cached = globalCache.get(varName);
-            if (cached !== undefined) return cached === "" ? null : cached;
-
-            // Try each chart container (multi-series vars are scoped)
-            for (const container of chartContainers) {
-              container.appendChild(probe);
-              probe.style.backgroundColor = `var(--${varName})`;
-              const raw = window.getComputedStyle(probe).backgroundColor;
-              if (raw && raw !== "rgba(0, 0, 0, 0)" && raw !== "transparent") {
-                const hex = toHex(raw);
-                globalCache.set(varName, hex);
-                probe.remove();
-                return hex;
-              }
-            }
-            // Try document root for global theme vars
-            document.documentElement.appendChild(probe);
-            probe.style.backgroundColor = `var(--${varName})`;
-            const rootRaw = window.getComputedStyle(probe).backgroundColor;
-            probe.remove();
-            if (rootRaw && rootRaw !== "rgba(0, 0, 0, 0)" && rootRaw !== "transparent") {
-              const hex = toHex(rootRaw);
-              globalCache.set(varName, hex);
-              return hex;
-            }
-            globalCache.set(varName, "");
-            return null;
-          };
-
-          const bodyContent = clone.outerHTML;
-          // Resolve CSS var() references
-          const resolvedBody = bodyContent.replace(
-            /var\(--([^)]+)\)/g,
-            (match, varName: string) => resolveVar(varName) ?? match,
-          );
-
-          console.log(`[print] Resolved ${globalCache.size} CSS variables, ${[...globalCache.values()].filter(v => v).length} successful`);
-
-          // Build the final HTML with resolved body content
-          const finalHtml = `<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8">
-<style>${styles.join("\n")}</style>
-<style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    background: white;
-    color: black;
-    overflow: auto;
-    height: auto;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  body > * {
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 24px 48px;
-  }
-  .chart-block, .drawing-node-view, .mermaid-block,
-  .recharts-wrapper, .recharts-surface {
-    max-width: 100% !important;
-    width: 100% !important;
-    height: auto !important;
-  }
-  .recharts-wrapper svg {
-    max-width: 100% !important;
-    height: auto !important;
-  }
-  img, svg {
-    max-width: 100% !important;
-    height: auto !important;
-  }
-  @page { size: ${options.pageSize === "letter" ? "letter" : options.pageSize === "a5" ? "A5" : "A4"}; margin: 1in; }
-  pre, table, .chart-block, .drawing-node-view, .mermaid-block, blockquote {
-    break-inside: avoid;
-  }
-  h1, h2, h3, h4, h5, h6 { break-after: avoid; }
-  p { orphans: 3; widows: 3; }
-  /* Fix page header/footer zones for print */
-  .page-top-margin, .page-bottom-margin {
-    margin-left: 0 !important;
-    margin-right: 0 !important;
-    pointer-events: none;
-    height: auto !important;
-  }
-  .page-header-zone, .page-footer-zone {
-    padding: 8px 0 !important;
-    font-size: 10px;
-    color: #888;
-    display: flex;
-    justify-content: space-between;
-  }
-</style>
-</head><body>${resolvedBody}</body></html>`;
-
-          // Send to Rust to open in window and print
-          await tauriApi.exportPdfWebkit({
-            html: finalHtml,
-            title,
-            pageWidth: 0,
-            pageHeight: 0,
+          toast.success("PDF exported", {
+            action: {
+              label: "Reveal in Finder",
+              onClick: () => tauriApi.revealInFinder(savePath),
+            },
           });
         }
       } catch (error) {

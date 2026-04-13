@@ -34,6 +34,16 @@ bytes = "1"
 dirs = "5"
 tauri-plugin-window-state = "2.4.1"
 
+# PDF export (Phase 4)
+typst = "0.14.2"
+typst-pdf = "0.14.2"
+typst-syntax = "0.14.2"
+# SVG text-to-paths pre-processing and rasterization for DOCX/PPTX export
+usvg = "0.45"
+fontdb = "0.23"
+resvg = "0.45"
+typst-library = "0.14.2"
+typst-utils = "0.14.2"
 chrono = { version = "0.4", default-features = false, features = ["now", "clock"] }
 comrak = { version = "0.50.0", default-features = false, features = ["syntect"] }
 
@@ -71,7 +81,7 @@ log = "0.4"
 # Auto-update
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
-tauri-plugin-http = "2.5.7"
+tauri-plugin-http = "2"
 
 # System info (local AI memory detection)
 sysinfo = "0.35"
@@ -113,13 +123,6 @@ tauri-plugin-webdriver = { version = "0.2", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.15", features = ["metal"] }
-# WKWebView PDF export
-objc2 = "0.6"
-block2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSData", "NSError", "NSString", "NSURL", "NSObject", "NSThread"] }
-objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKWebViewConfiguration", "WKPDFConfiguration", "WKNavigation", "WKNavigationDelegate", "objc2-app-kit", "block2", "objc2-core-foundation"] }
-objc2-app-kit = { version = "0.3", features = ["NSView", "NSResponder"] }
-objc2-core-foundation = "0.3"
 
 [features]
 default = []
