@@ -545,6 +545,25 @@ export function convertInlineDrawingsToHtml(markdown: string): string {
 // ---------------------------------------------------------------------------
 
 /**
+ * Convert data URI images to HTML `<img>` tags before markdown-it parsing.
+ * markdown-it rejects bare `data:` destinations because they contain `;`, `,`
+ * and other characters it doesn't accept in link destinations. HTML `<img>` tags
+ * pass through unchanged (html: true) and Tiptap's Image node parses them.
+ */
+export function convertDataUriImagesToHtml(markdown: string): string {
+  return markdown.replace(
+    /^!\[([^\]]*)\]\((data:[^)]+)\)$/gm,
+    (_, alt: string, src: string) => {
+      const escapedSrc = src.replace(/"/g, '&quot;');
+      const altAttr = alt ? ` alt="${alt.replace(/"/g, '&quot;')}"` : '';
+      // Wrap in <p> so the image is treated as a block-level element,
+      // preventing consecutive images from merging into one paragraph.
+      return `<p><img src="${escapedSrc}"${altAttr}></p>`;
+    },
+  );
+}
+
+/**
  * Encode spaces in local image paths so markdown-it can parse them.
  * CommonMark doesn't allow spaces in bare link/image destinations.
  * We encode them as %20 before parsing and decode on serialization
@@ -557,7 +576,7 @@ export function encodeImagePathSpaces(markdown: string): string {
       if (!dest.includes(" ")) return match;
       // Angle-bracket destinations are already valid with spaces
       if (dest.startsWith("<") && dest.endsWith(">")) return match;
-      // Remote URLs and data URIs — leave as-is
+      // Remote URLs and data URIs — already handled by wrapDataUriImages
       if (/^https?:\/\//.test(dest) || dest.startsWith("data:")) return match;
       // Split optional title: path "title" or path 'title'
       const titleMatch = dest.match(/^(.+?)(\s+["'].*["'])$/);
@@ -869,7 +888,7 @@ export function getMarkdownFromEditor(editor: Editor): string {
 
 export function setMarkdownInEditor(editor: Editor, markdown: string): void {
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(markdown);
-  const encoded = encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))))))));
+  const encoded = convertDataUriImagesToHtml(encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))))))));
   setContentWithoutHistory(editor, encoded);
 
   if (metadata.size > 0) {
@@ -905,7 +924,7 @@ export function loadRawMarkdownIntoEditor(
 ): void {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(cleaned);
-  const encoded = encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))))))));
+  const encoded = convertDataUriImagesToHtml(encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))))))));
   editor.chain().setMeta("addToHistory", false).setContent(encoded).run();
 
   // Clear undo/redo history — the loaded content is a fresh baseline.
@@ -942,7 +961,7 @@ export function prepareInitialContent(rawMarkdown: string): {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(cleaned);
   return {
-    content: encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))))))),
+    content: convertDataUriImagesToHtml(encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))))))))),
     annotations,
     tableMetadata: metadata,
   };

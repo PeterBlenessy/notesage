@@ -86,6 +86,7 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
         multicolor: true,
       }),
       LocalImage.configure({
+        allowBase64: true,
         HTMLAttributes: {
           class: "rounded-lg max-w-full",
         },

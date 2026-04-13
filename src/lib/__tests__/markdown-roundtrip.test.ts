@@ -36,7 +36,7 @@ import { Drawing } from "@/components/editor/extensions/drawing";
 import { Chart } from "@/components/editor/extensions/chart";
 import { LinkPreview } from "@/components/editor/extensions/link-preview";
 import { PageBreakNode } from "@/components/editor/extensions/page-break-node";
-import { convertCalloutsToHtml, convertDrawingsToHtml, convertChartsToHtml, convertLinkPreviewsToHtml, convertPageBreaksToHtml, convertInlineChartsToHtml, convertInlineDrawingsToHtml, restorePageBreaks } from "@/lib/markdown";
+import { convertCalloutsToHtml, convertDrawingsToHtml, convertChartsToHtml, convertLinkPreviewsToHtml, convertPageBreaksToHtml, convertInlineChartsToHtml, convertInlineDrawingsToHtml, convertDataUriImagesToHtml, restorePageBreaks } from "@/lib/markdown";
 import { serializeTable } from "@/components/editor/extensions/table-markdown";
 
 // ---------------------------------------------------------------------------
@@ -107,6 +107,7 @@ function createTestEditor(content: string): Editor {
         multicolor: true,
       }),
       Image.configure({
+        allowBase64: true,
         HTMLAttributes: {
           class: "rounded-lg max-w-full",
         },
@@ -146,7 +147,7 @@ function createTestEditor(content: string): Editor {
       LinkPreview,
       PageBreakNode,
     ],
-    content: convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertPageBreaksToHtml(convertLinkPreviewsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertCalloutsToHtml(content))))))),
+    content: convertDataUriImagesToHtml(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertPageBreaksToHtml(convertLinkPreviewsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertCalloutsToHtml(content)))))))),
     editable: false,
   });
 }
