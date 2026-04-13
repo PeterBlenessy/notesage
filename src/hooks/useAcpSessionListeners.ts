@@ -59,8 +59,9 @@ export interface AcpChatListeners {
  */
 export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<AcpChatListeners> {
   let streamedContent = '';
-  // Segment tracking for tool calls — maps tool kind+timestamp to segment index
-  let lastToolCallSegmentIndex = -1;
+  // FIFO queue of pending tool_call segment indices — handles parallel tool calls
+  // (agents like Claude Code may send multiple tool_calls before any tool_results)
+  const pendingToolCallIndices: number[] = [];
 
   const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
     if (event.payload.instanceId !== deps.instanceId) return;
@@ -107,7 +108,7 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       const conv = useChatStore.getState().conversations
         .find(c => c.id === useChatStore.getState().activeConversationId);
       const msg = conv?.messages.find(m => m.timestamp === deps.assistantMessageId);
-      lastToolCallSegmentIndex = msg?.segments?.length ?? 0;
+      pendingToolCallIndices.push(msg?.segments?.length ?? 0);
       deps.pushSegment(deps.assistantMessageId, {
         type: 'tool_call',
         kind: update.kind || 'unknown',
@@ -136,9 +137,10 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
         collapsed: true,
         timestamp: Date.now(),
       } as ToolResultSegment);
-      if (lastToolCallSegmentIndex >= 0) {
-        deps.updateSegment(deps.assistantMessageId, lastToolCallSegmentIndex, { status: 'done' });
-        lastToolCallSegmentIndex = -1;
+      // Mark the oldest pending tool_call as done (FIFO — handles parallel tool calls)
+      const doneIndex = pendingToolCallIndices.shift();
+      if (doneIndex !== undefined && doneIndex >= 0) {
+        deps.updateSegment(deps.assistantMessageId, doneIndex, { status: 'done' });
       }
     } else if (update.sessionUpdate === 'agent_turn_complete') {
       deps.setActiveTool(null);
@@ -227,15 +229,24 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
  * Build a one-shot cleanup function that unlistens, denies pending permissions,
  * and resets loading/tool state. Sets `cleanupRef.current = null` at entry to
  * prevent re-entrant calls.
+ *
+ * When `cancelled` is true (user-initiated stop), the assistant message is
+ * finalized and marked as interrupted so partial content stays visible.
  */
 export function buildAcpChatCleanup(
   listeners: AcpChatListeners,
   instanceId: string,
+  assistantMessageId: number,
   cleanupRef: React.MutableRefObject<(() => void) | null>,
   setLoading: (loading: boolean) => void,
   setActiveTool: (tool: string | null) => void,
+  finalizeSegments: (messageId: number) => void,
+  setMessageInterrupted: (messageId: number) => void,
 ): () => void {
-  return () => {
+  let cleaned = false;
+  return (cancelled?: boolean) => {
+    if (cleaned) return;
+    cleaned = true;
     // Null the ref first to prevent re-entrant calls
     cleanupRef.current = null;
     listeners.unlisten();
@@ -252,6 +263,12 @@ export function buildAcpChatCleanup(
       }).catch(() => {}); // Expected: fire-and-forget deny during cleanup
     }
     usePermissionStore.getState().clearRequestsForInstance(instanceId);
+    // Finalize segments so running spinners stop
+    finalizeSegments(assistantMessageId);
+    // Mark as interrupted if this was a user-initiated cancel
+    if (cancelled) {
+      setMessageInterrupted(assistantMessageId);
+    }
     setLoading(false);
     setActiveTool(null);
   };

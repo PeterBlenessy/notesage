@@ -127,6 +127,8 @@ export interface ChatMessage {
   connectionProvider?: string;
   /** True when this message represents an error instead of a response */
   isError?: boolean;
+  /** True when the response was interrupted/cancelled before completion */
+  interrupted?: boolean;
   /** Thinking/reasoning output from models that support it (e.g. Ollama thinking models) */
   thinking?: string;
   /** Display-only content for the UI (e.g. original user text when skill body is injected into content) */

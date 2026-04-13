@@ -146,7 +146,6 @@ export const ToolCallGroup = memo(function ToolCallGroup({
   // When not actively streaming, treat all as done (safety net for missed finalizeSegments)
   const rawRunning = calls.filter((c) => c.status === 'running').length;
   const hasRunning = isActivelyStreaming && rawRunning > 0;
-  const doneCount = calls.length - (isActivelyStreaming ? rawRunning : 0);
   const allDone = !hasRunning;
 
   // Check if children have useful unique details worth showing
@@ -157,7 +156,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({
   const [userToggled, setUserToggled] = useState<boolean | null>(null);
   const isExpanded = userToggled !== null ? userToggled : hasUsefulChildren;
 
-  const statusText = hasRunning ? `${doneCount}/${calls.length}` : String(calls.length);
+  const statusText = String(calls.length);
 
   return (
     <div className="my-1 rounded-lg bg-background/80 border border-border/30 overflow-hidden">

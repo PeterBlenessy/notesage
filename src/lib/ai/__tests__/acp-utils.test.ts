@@ -137,7 +137,7 @@ describe('formatToolLabel', () => {
 
   // Title fallback
   it('uses title as fallback when args are missing', () => {
-    expect(formatToolLabel('read', {}, 'config.ts')).toBe('config.ts');  // title used as fallback label
+    expect(formatToolLabel('read', {}, 'config.ts')).toBe('Reading config.ts');  // title used with verb prefix
     expect(formatToolLabel('read', {}, '/src/config.ts')).toBe('Reading config.ts');  // title with / used
     expect(formatToolLabel('execute', {}, 'npm run build')).toBe('Running: npm run build');
     expect(formatToolLabel('fetch', {}, 'https://api.example.com')).toBe('Fetching api.example.com');

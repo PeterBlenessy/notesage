@@ -22,7 +22,7 @@ const ICON_SIZE = 14;
 const ICON_STROKE = 1.5;
 
 function getToolIcon(kind: string) {
-  switch (kind) {
+  switch (kind.toLowerCase()) {
     case 'read':
     case 'read_file':
       return <FileText size={ICON_SIZE} strokeWidth={ICON_STROKE} />;
@@ -36,11 +36,16 @@ function getToolIcon(kind: string) {
     case 'grep':
       return <Search size={ICON_SIZE} strokeWidth={ICON_STROKE} />;
     case 'web_search':
+    case 'websearch':
     case 'fetch':
+    case 'webfetch':
+    case 'web_fetch':
       return <Globe size={ICON_SIZE} strokeWidth={ICON_STROKE} />;
     case 'glob':
     case 'list':
     case 'list_directory':
+    case 'toolsearch':
+    case 'tool_search':
       return <FolderSearch size={ICON_SIZE} strokeWidth={ICON_STROKE} />;
     case 'execute_skill_script':
       return <Terminal size={ICON_SIZE} strokeWidth={ICON_STROKE} />;

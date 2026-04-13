@@ -1,4 +1,4 @@
-import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2, X, AlertTriangle, Brain, Zap, Wrench, Ban, GitBranch, Pencil, RotateCcw, Ellipsis } from 'lucide-react';
+import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2, X, AlertTriangle, Brain, Zap, Wrench, Ban, GitBranch, Pencil, RotateCcw, Ellipsis, CircleStop } from 'lucide-react';
 import { useState, useRef, useEffect, memo } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { MarkdownContent } from '@/components/MarkdownContent';
@@ -686,6 +686,14 @@ export const ChatMessage = memo(function ChatMessage({ message, isLast = false, 
             {isActivelyStreaming && (
               <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse bg-muted-foreground" />
             )}
+          </div>
+        )}
+
+        {/* Interrupted indicator */}
+        {!isUser && message.interrupted && (
+          <div className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground/60">
+            <CircleStop size={10} strokeWidth={1.5} className="shrink-0" />
+            <span className="italic">Interrupted</span>
           </div>
         )}
 

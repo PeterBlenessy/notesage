@@ -83,7 +83,7 @@ interface AcpLifecycleParams {
 }
 
 export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAcpSystemMessage }: AcpLifecycleParams) {
-  const { addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, appendTextSegment, pushSegment, updateSegment, finalizeSegments, resetAssistantMessage } = useChatStore();
+  const { addMessage, updateMessage, setMessageError, setMessageInterrupted, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, appendTextSegment, pushSegment, updateSegment, finalizeSegments, resetAssistantMessage } = useChatStore();
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const cleanupRef = useRef<(() => void) | null>(null);
 
@@ -399,16 +399,38 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         }
 
         const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId });
-        cleanupRef.current = buildAcpChatCleanup(listeners, instanceId, cleanupRef, setLoading, setActiveTool);
+        cleanupRef.current = buildAcpChatCleanup(listeners, instanceId, assistantMessageId, cleanupRef, setLoading, setActiveTool, finalizeSegments, setMessageInterrupted);
 
         try {
           // Prepend system prompt on the first message of a new session
           const effectiveSystemMessage = buildAcpSystemMessage
             ? buildAcpSystemMessage(opts?.attachedFilePaths)
             : acpSystemMessage;
-          const promptContent = isNewSession
-            ? `${effectiveSystemMessage}\n\n${content}`
-            : content;
+          let promptContent: string;
+          if (isNewSession) {
+            // Build conversation history for context restoration after interruption
+            const conv = useChatStore.getState().conversations
+              .find(c => c.id === useChatStore.getState().activeConversationId);
+            const priorMessages = conv?.messages.filter(
+              (m) => m.timestamp !== assistantMessageId && m.timestamp !== userTimestamp
+                && m.role !== 'system-status' && m.content
+            ) ?? [];
+            let historyBlock = '';
+            if (priorMessages.length > 0) {
+              const lines = priorMessages.map((m) => {
+                const prefix = m.role === 'user' ? 'User' : 'Assistant';
+                const truncated = m.content.length > 2000
+                  ? m.content.slice(0, 2000) + '\n... (truncated)'
+                  : m.content;
+                const suffix = m.interrupted ? ' [interrupted]' : '';
+                return `${prefix}${suffix}: ${truncated}`;
+              });
+              historyBlock = `\n\n<conversation-history>\nThe following is the prior conversation in this session. The user may ask you to continue from where you left off.\n\n${lines.join('\n\n')}\n</conversation-history>`;
+            }
+            promptContent = `${effectiveSystemMessage}${historyBlock}\n\n${content}`;
+          } else {
+            promptContent = content;
+          }
           // Start unresponsiveness detection timer before prompt
           startUnresponsiveTimer();
           const acpImages = opts?.attachments?.length
@@ -477,7 +499,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         setActiveTool(null);
       }
     },
-    [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, addMessage, updateMessage, setMessageError, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, appendTextSegment, pushSegment, updateSegment, finalizeSegments]
+    [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, addMessage, updateMessage, setMessageError, setMessageInterrupted, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, appendTextSegment, pushSegment, updateSegment, finalizeSegments]
   );
 
   /**
@@ -568,7 +590,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
       // Set up listeners
       const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId });
-      cleanupRef.current = buildAcpChatCleanup(listeners, instanceId, cleanupRef, setLoading, setActiveTool);
+      cleanupRef.current = buildAcpChatCleanup(listeners, instanceId, prompt.assistantMessageId, cleanupRef, setLoading, setActiveTool, finalizeSegments, setMessageInterrupted);
 
       // Resend the prompt
       const effectiveSystemMessage = buildAcpSystemMessage
@@ -606,7 +628,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       setLoading(false);
       setActiveTool(null);
     }
-  }, [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, updateMessage, addMessage, setMessageError, setLoading, setActiveTool, addActivity, completeLastActivity, completeAllActivities, appendTextSegment, pushSegment, updateSegment, finalizeSegments, resetAssistantMessage]);
+  }, [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, updateMessage, addMessage, setMessageError, setMessageInterrupted, setLoading, setActiveTool, addActivity, completeLastActivity, completeAllActivities, appendTextSegment, pushSegment, updateSegment, finalizeSegments, resetAssistantMessage]);
 
   /**
    * Cancel an active ACP chat session.
@@ -619,9 +641,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     // Clear unresponsiveness timer
     clearUnresponsiveTimer();
 
-    // Clean up listeners and reset loading state
+    // Clean up listeners, finalize segments, and mark message as interrupted
     if (cleanupRef.current) {
-      cleanupRef.current();
+      (cleanupRef.current as (cancelled?: boolean) => void)(true);
     }
 
     // Cancel ACP session if active

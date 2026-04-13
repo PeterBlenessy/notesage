@@ -91,11 +91,17 @@ export function truncateDetail(text: unknown, max = 80): string {
 
 /** Map ACP tool kind/title to a user-friendly label */
 export function formatAcpToolName(kind?: string, title?: string): string {
-  switch (kind) {
+  switch (kind?.toLowerCase()) {
     case 'fetch':
+    case 'webfetch':
+    case 'web_fetch':
+      return 'Fetching resource';
+    case 'web_search':
+    case 'websearch':
       return 'Searching the web';
     case 'bash':
     case 'terminal':
+    case 'execute':
       return 'Running command';
     case 'read':
     case 'read_file':
@@ -106,9 +112,17 @@ export function formatAcpToolName(kind?: string, title?: string): string {
       return 'Editing file';
     case 'glob':
     case 'list':
+    case 'list_directory':
       return 'Searching files';
     case 'grep':
+    case 'search':
       return 'Searching content';
+    case 'toolsearch':
+    case 'tool_search':
+      return 'ToolSearch';
+    case 'think':
+    case 'thinking':
+      return 'Thinking';
     case 'execute_skill_script':
       return 'Running skill script';
     case 'read_skill_content':
@@ -186,20 +200,23 @@ export function formatToolLabel(kind: string, args?: Record<string, unknown>, ti
   const k = kind.toLowerCase();
 
   // Filter out title if it's just the kind name (no useful info)
-  const effectiveTitle = title && title.toLowerCase() !== k && title !== 'Task' && title !== 'undefined'
+  const effectiveTitle = title && title.toLowerCase() !== k && title !== 'Task' && title !== 'undefined' && title !== 'null'
     ? title : undefined;
+
+  // Try to extract a path from the title (Claude Code often puts paths in titles)
+  const titlePath = effectiveTitle && effectiveTitle.includes('/') ? effectiveTitle : undefined;
 
   switch (k) {
     case 'read':
     case 'read_file': {
-      const path = getArg('path', 'file_path', 'file') ?? findPath() ?? (title && title.includes('/') ? title : undefined);
-      return path ? `Reading ${basename(path)}` : (effectiveTitle || 'Reading file');
+      const path = getArg('path', 'file_path', 'file') ?? findPath() ?? titlePath;
+      return path ? `Reading ${basename(path)}` : (effectiveTitle ? `Reading ${effectiveTitle}` : 'Reading file');
     }
     case 'write':
     case 'write_file':
     case 'edit': {
-      const path = getArg('path', 'file_path', 'file') ?? findPath() ?? (title && title.includes('/') ? title : undefined);
-      return path ? `Editing ${basename(path)}` : (effectiveTitle || 'Editing file');
+      const path = getArg('path', 'file_path', 'file') ?? findPath() ?? titlePath;
+      return path ? `Editing ${basename(path)}` : (effectiveTitle ? `Editing ${effectiveTitle}` : 'Editing file');
     }
     case 'bash':
     case 'terminal':
@@ -212,7 +229,7 @@ export function formatToolLabel(kind: string, args?: Record<string, unknown>, ti
     case 'glob':
     case 'list':
     case 'list_directory': {
-      const target = getArg('pattern', 'path', 'directory');
+      const target = getArg('pattern', 'path', 'directory') ?? titlePath;
       return target ? `Searching ${basename(target)}` : (effectiveTitle || 'Searching files');
     }
     case 'grep':
@@ -222,6 +239,9 @@ export function formatToolLabel(kind: string, args?: Record<string, unknown>, ti
       if (effectiveTitle) return `Searching: ${truncate(effectiveTitle, 50)}`;
       return 'Searching';
     }
+    case 'toolsearch':
+    case 'tool_search':
+      return effectiveTitle ? `ToolSearch: ${truncate(effectiveTitle, 50)}` : 'ToolSearch';
     case 'web_search': {
       const query = getArg('query', 'search_query');
       return query ? `Searching web: "${truncate(query, 40)}"` : (effectiveTitle || 'Searching the web');

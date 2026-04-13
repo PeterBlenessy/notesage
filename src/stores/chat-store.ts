@@ -85,6 +85,8 @@ interface ChatStore {
   toggleProjectPath: (path: string) => void;
   setWebSearchEnabled: (enabled: boolean) => void;
   setMessageError: (timestamp: number, error: string) => void;
+  /** Mark a message as interrupted (cancelled before completion) */
+  setMessageInterrupted: (timestamp: number) => void;
   updateMessageThinking: (timestamp: number, thinking: string) => void;
   addActivity: (messageTimestamp: number, activity: AgentActivity) => void;
   completeLastActivity: (messageTimestamp: number) => void;
@@ -362,6 +364,17 @@ export const useChatStore = create<ChatStore>()(
           messages: c.messages.map((msg) =>
             msg.timestamp === timestamp
               ? { ...msg, content: error, isError: true }
+              : msg
+          ),
+          updatedAt: nextUpdatedAt(),
+        }))),
+
+      setMessageInterrupted: (timestamp) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          messages: c.messages.map((msg) =>
+            msg.timestamp === timestamp
+              ? { ...msg, interrupted: true }
               : msg
           ),
           updatedAt: nextUpdatedAt(),
