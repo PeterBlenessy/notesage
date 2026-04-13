@@ -161,6 +161,20 @@ interface ChatStore {
 const MAX_CONVERSATIONS = 50;
 const MAX_MESSAGES_PER_CONVERSATION = 500;
 
+/**
+ * Monotonically increasing timestamp for conversation updates.
+ * Date.now() can return the same value for rapid sequential calls (same millisecond),
+ * which breaks the selectMessages selector cache — it uses updatedAt in its cache key,
+ * so two updates with the same updatedAt cause a stale cache hit and missed re-renders.
+ * This helper guarantees a unique, increasing value on every call.
+ */
+let _lastUpdatedAt = 0;
+function nextUpdatedAt(): number {
+  const now = Date.now();
+  _lastUpdatedAt = now > _lastUpdatedAt ? now : _lastUpdatedAt + 1;
+  return _lastUpdatedAt;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -204,7 +218,7 @@ export const useChatStore = create<ChatStore>()(
           title: opts?.title ?? '',
           messages: [],
           createdAt: now,
-          updatedAt: now,
+          updatedAt: nextUpdatedAt(),
           projectPaths: initialPaths,
           segments: [{
             projectPaths: initialPaths,
@@ -276,7 +290,7 @@ export const useChatStore = create<ChatStore>()(
             if (messages.length > MAX_MESSAGES_PER_CONVERSATION) {
               messages = messages.slice(messages.length - MAX_MESSAGES_PER_CONVERSATION);
             }
-            return { ...c, messages, updatedAt: Date.now(), title, activeLeafId: msgId };
+            return { ...c, messages, updatedAt: nextUpdatedAt(), title, activeLeafId: msgId };
           });
           return { conversations: pruneConversations(conversations, activeId, MAX_CONVERSATIONS) };
         });
@@ -290,14 +304,14 @@ export const useChatStore = create<ChatStore>()(
               ? { ...msg, content, ...(citations ? { citations } : {}) }
               : msg
           ),
-          updatedAt: Date.now(),
+          updatedAt: nextUpdatedAt(),
         }))),
 
       deleteMessage: (timestamp) =>
         set((state) => updateActiveConv(state, (c) => ({
           ...c,
           messages: c.messages.filter((msg) => msg.timestamp !== timestamp),
-          updatedAt: Date.now(),
+          updatedAt: nextUpdatedAt(),
         }))),
 
       deleteMessageAndDescendants: (messageId) =>
@@ -309,7 +323,7 @@ export const useChatStore = create<ChatStore>()(
             ...c,
             messages: c.messages.filter((m) => !m.id || !descendantIds.has(m.id)),
             activeLeafId: msg.parentId ?? null,
-            updatedAt: Date.now(),
+            updatedAt: nextUpdatedAt(),
           };
         })),
 
@@ -350,7 +364,7 @@ export const useChatStore = create<ChatStore>()(
               ? { ...msg, content: error, isError: true }
               : msg
           ),
-          updatedAt: Date.now(),
+          updatedAt: nextUpdatedAt(),
         }))),
 
       updateMessageThinking: (timestamp, thinking) =>
@@ -438,7 +452,7 @@ export const useChatStore = create<ChatStore>()(
       appendTextSegment: (messageTimestamp, text) =>
         set((state) => updateActiveConv(state, (c) => ({
           ...c,
-          updatedAt: Date.now(),
+          updatedAt: nextUpdatedAt(),
           messages: c.messages.map((msg) =>
             msg.timestamp === messageTimestamp ? appendTextSegmentUtil(msg, text) : msg
           ),
@@ -447,7 +461,7 @@ export const useChatStore = create<ChatStore>()(
       pushSegment: (messageTimestamp, segment) =>
         set((state) => updateActiveConv(state, (c) => ({
           ...c,
-          updatedAt: Date.now(),
+          updatedAt: nextUpdatedAt(),
           messages: c.messages.map((msg) =>
             msg.timestamp === messageTimestamp ? pushSegmentUtil(msg, segment) : msg
           ),
@@ -456,7 +470,7 @@ export const useChatStore = create<ChatStore>()(
       updateSegment: (messageTimestamp, index, patch) =>
         set((state) => updateActiveConv(state, (c) => ({
           ...c,
-          updatedAt: Date.now(),
+          updatedAt: nextUpdatedAt(),
           messages: c.messages.map((msg) =>
             msg.timestamp === messageTimestamp ? updateSegmentUtil(msg, index, patch) : msg
           ),
@@ -465,7 +479,7 @@ export const useChatStore = create<ChatStore>()(
       finalizeSegments: (messageTimestamp) =>
         set((state) => updateActiveConv(state, (c) => ({
           ...c,
-          updatedAt: Date.now(),
+          updatedAt: nextUpdatedAt(),
           messages: c.messages.map((msg) =>
             msg.timestamp === messageTimestamp ? finalizeSegmentsUtil(msg) : msg
           ),
@@ -474,7 +488,7 @@ export const useChatStore = create<ChatStore>()(
       resetAssistantMessage: (messageTimestamp) =>
         set((state) => updateActiveConv(state, (c) => ({
           ...c,
-          updatedAt: Date.now(),
+          updatedAt: nextUpdatedAt(),
           messages: c.messages.map((msg) =>
             msg.timestamp === messageTimestamp ? resetAssistantMessageUtil(msg) : msg
           ),
@@ -496,7 +510,7 @@ export const useChatStore = create<ChatStore>()(
         );
 
         const msgId = existing?.id ?? crypto.randomUUID();
-        const now = Date.now();
+        const now = nextUpdatedAt();
 
         set((s) => ({
           conversations: s.conversations.map((c) => {
@@ -551,7 +565,7 @@ export const useChatStore = create<ChatStore>()(
           activeLeafId: c.activeLeafId === messageId
             ? (c.messages.find((m) => m.id !== messageId && m.role !== 'system-status')?.id ?? null)
             : c.activeLeafId,
-          updatedAt: Date.now(),
+          updatedAt: nextUpdatedAt(),
         }))),
 
       // ----- Branching -----
@@ -603,7 +617,7 @@ export const useChatStore = create<ChatStore>()(
             newLeafId = leaves.length > 0 ? (leaves[leaves.length - 1].id ?? null) : null;
           }
 
-          return { ...c, messages: remaining, activeLeafId: newLeafId, updatedAt: Date.now() };
+          return { ...c, messages: remaining, activeLeafId: newLeafId, updatedAt: nextUpdatedAt() };
         })),
 
       // ----- Segment management -----
