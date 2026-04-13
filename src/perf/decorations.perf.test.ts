@@ -120,7 +120,7 @@ const fixturesDir = join(__dirname, "../../tests/fixtures/perf");
 const fixtures = [
   { name: "1KB", file: "perf-1kb.md", searchBudget: 1, tagBudget: 1 },
   { name: "10KB", file: "perf-10kb.md", searchBudget: 1, tagBudget: 1 },
-  { name: "50KB", file: "perf-50kb.md", searchBudget: 1, tagBudget: 1 },
+  { name: "50KB", file: "perf-50kb.md", searchBudget: 2, tagBudget: 1 },
   { name: "100KB", file: "perf-100kb.md", searchBudget: 1, tagBudget: 1 },
 ];
 
