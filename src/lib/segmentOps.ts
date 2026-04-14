@@ -16,6 +16,21 @@ export function appendTextSegment(msg: ChatMessage, text: string): ChatMessage {
 }
 
 /**
+ * Append text to the last thinking segment of a message, or create a new thinking segment.
+ * Returns a new message object with updated segments.
+ */
+export function appendThinkingSegment(msg: ChatMessage, text: string): ChatMessage {
+  const segments = [...(msg.segments || [])];
+  const last = segments[segments.length - 1];
+  if (last && last.type === 'thinking') {
+    segments[segments.length - 1] = { ...last, content: last.content + text };
+  } else {
+    segments.push({ type: 'thinking', content: text, collapsed: false, timestamp: Date.now() });
+  }
+  return { ...msg, segments };
+}
+
+/**
  * Push a new segment to the message's segments array.
  * Returns a new message object with updated segments.
  */

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   appendTextSegment,
+  appendThinkingSegment,
   pushSegment,
   updateSegment,
   finalizeSegments,
@@ -59,6 +60,63 @@ describe('appendTextSegment', () => {
     const result = appendTextSegment(msg, 'Hi');
     expect(result.segments).toHaveLength(1);
     expect((result.segments![0] as { content: string }).content).toBe('Hi');
+  });
+});
+
+describe('appendThinkingSegment', () => {
+  it('creates a new thinking segment when no segments exist', () => {
+    const msg = makeMsg();
+    const result = appendThinkingSegment(msg, 'Let me think...');
+    expect(result.segments).toHaveLength(1);
+    expect(result.segments![0].type).toBe('thinking');
+    expect((result.segments![0] as { content: string }).content).toBe('Let me think...');
+    expect((result.segments![0] as { collapsed: boolean }).collapsed).toBe(false);
+  });
+
+  it('appends to existing thinking segment', () => {
+    const msg = makeMsg({
+      segments: [{ type: 'thinking', content: 'Part 1', collapsed: false, timestamp: 1000 }],
+    });
+    const result = appendThinkingSegment(msg, ' Part 2');
+    expect(result.segments).toHaveLength(1);
+    expect((result.segments![0] as { content: string }).content).toBe('Part 1 Part 2');
+  });
+
+  it('creates new thinking segment when last segment is not thinking', () => {
+    const msg = makeMsg({
+      segments: [{ type: 'text', content: 'Hello', timestamp: 1000 }],
+    });
+    const result = appendThinkingSegment(msg, 'Reasoning...');
+    expect(result.segments).toHaveLength(2);
+    expect(result.segments![1].type).toBe('thinking');
+    expect((result.segments![1] as { content: string }).content).toBe('Reasoning...');
+  });
+
+  it('interleaves with text segments correctly', () => {
+    const msg = makeMsg({
+      segments: [
+        { type: 'thinking', content: 'First thought', collapsed: false, timestamp: 1000 },
+        { type: 'text', content: 'Response text', timestamp: 1001 },
+      ],
+    });
+    const result = appendThinkingSegment(msg, 'Second thought');
+    expect(result.segments).toHaveLength(3);
+    expect(result.segments![2].type).toBe('thinking');
+    expect((result.segments![2] as { content: string }).content).toBe('Second thought');
+  });
+
+  it('does not mutate original message', () => {
+    const original = [{ type: 'thinking' as const, content: 'original', collapsed: false, timestamp: 1000 }];
+    const msg = makeMsg({ segments: original });
+    appendThinkingSegment(msg, ' added');
+    expect(original[0].content).toBe('original');
+  });
+
+  it('creates thinking segment from empty segments array', () => {
+    const msg = makeMsg({ segments: [] });
+    const result = appendThinkingSegment(msg, 'Hmm');
+    expect(result.segments).toHaveLength(1);
+    expect((result.segments![0] as { content: string }).content).toBe('Hmm');
   });
 });
 

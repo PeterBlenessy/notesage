@@ -27,6 +27,7 @@ import { useAgentStatusStore } from '@/stores/agent-status-store';
 interface ChatListenerDeps {
   instanceId: string;
   assistantMessageId: number;
+  conversationId: string | null;
   pathFilterRoot: string | null;
   homeDir: string;
   // Chat store actions
@@ -38,6 +39,7 @@ interface ChatListenerDeps {
   completeAllActivities: (messageId: number) => void;
   // Segment actions (dual-write for chronological rendering)
   appendTextSegment: (messageId: number, text: string) => void;
+  appendThinkingSegment: (messageId: number, text: string) => void;
   pushSegment: (messageId: number, segment: Segment) => void;
   updateSegment: (messageId: number, index: number, patch: Partial<Segment>) => void;
   finalizeSegments: (messageId: number) => void;
@@ -92,6 +94,12 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
         mimeType: update.content.mimeType || 'image/png',
         timestamp: Date.now(),
       });
+    } else if (
+      update.sessionUpdate === 'agent_thought_chunk' &&
+      update.content?.type === 'text' &&
+      update.content.text
+    ) {
+      deps.appendThinkingSegment(deps.assistantMessageId, update.content.text);
     } else if (update.sessionUpdate === 'tool_call') {
       const toolLabel = formatAcpToolName(update.kind, update.title);
       deps.setActiveTool(toolLabel);
@@ -146,6 +154,14 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       deps.setActiveTool(null);
       deps.completeAllActivities(deps.assistantMessageId);
       deps.finalizeSegments(deps.assistantMessageId);
+    } else if (update.sessionUpdate === 'session_info_update' && update.title) {
+      // Agent-generated conversation title — override auto-generated title
+      if (deps.conversationId) {
+        useChatStore.getState().renameConversation(deps.conversationId, update.title);
+      }
+    } else if (update.sessionUpdate) {
+      // Unknown session update type — log for debugging, don't crash
+      log.debug('ai', `Unknown ACP session update type: ${update.sessionUpdate}`);
     }
   });
 

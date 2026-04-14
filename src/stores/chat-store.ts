@@ -6,6 +6,7 @@ import { getThread, getDescendants, getChildren, getLeaves } from '@/lib/chat-tr
 import { autoTitle, pruneConversations, pruneStaleProjectPaths as pruneStaleProjectPathsUtil } from '@/lib/conversationOps';
 import {
   appendTextSegment as appendTextSegmentUtil,
+  appendThinkingSegment as appendThinkingSegmentUtil,
   pushSegment as pushSegmentUtil,
   updateSegment as updateSegmentUtil,
   finalizeSegments as finalizeSegmentsUtil,
@@ -101,6 +102,8 @@ interface ChatStore {
 
   /** Append text to the last text segment, or create a new text segment */
   appendTextSegment: (messageTimestamp: number, text: string) => void;
+  /** Append text to the last thinking segment, or create a new thinking segment */
+  appendThinkingSegment: (messageTimestamp: number, text: string) => void;
   /** Push a new segment to the message's segments array */
   pushSegment: (messageTimestamp: number, segment: Segment) => void;
   /** Update a segment by index with a partial patch */
@@ -468,6 +471,15 @@ export const useChatStore = create<ChatStore>()(
           updatedAt: nextUpdatedAt(),
           messages: c.messages.map((msg) =>
             msg.timestamp === messageTimestamp ? appendTextSegmentUtil(msg, text) : msg
+          ),
+        }))),
+
+      appendThinkingSegment: (messageTimestamp, text) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          updatedAt: nextUpdatedAt(),
+          messages: c.messages.map((msg) =>
+            msg.timestamp === messageTimestamp ? appendThinkingSegmentUtil(msg, text) : msg
           ),
         }))),
 

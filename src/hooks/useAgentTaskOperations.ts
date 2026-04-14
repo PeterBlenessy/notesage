@@ -358,6 +358,9 @@ async function startAcpTask(
       }).catch(() => {});
       const c = cleanupMap.get(taskId);
       if (c) { c(); cleanupMap.delete(taskId); }
+    } else if (eventType) {
+      // Unknown session update type — log for debugging, don't crash
+      log.debug('ai', `Unknown ACP task session update type: ${eventType}`);
     }
   });
 
