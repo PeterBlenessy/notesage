@@ -1021,4 +1021,51 @@ mod tests {
         assert!(svg.contains("<polyline"));
         assert!(svg.contains("points="));
     }
+
+    // --- Details blocks ---
+
+    #[test]
+    fn test_details_block_does_not_break_output() {
+        let md = "# Before\n\n<details>\n<summary>Click to expand</summary>\n\nHidden content here.\n\n</details>\n\n# After";
+        let html = markdown_to_html(md, "light", None, None);
+        // comrak without unsafe_ strips raw HTML tags, but surrounding markdown renders fine
+        assert!(html.contains("<h1>Before</h1>"), "heading before details missing: {}", html);
+        assert!(html.contains("<h1>After</h1>"), "heading after details missing: {}", html);
+    }
+
+    #[test]
+    fn test_details_block_preserves_text_content() {
+        let md = "<details>\n<summary>Title</summary>\n\nBody text.\n\n</details>";
+        let html = markdown_to_html(md, "light", None, None);
+        // The text content should survive even if raw HTML tags are stripped
+        assert!(html.contains("Body text.") || html.contains("Title"),
+            "details text content should be present: {}", html);
+    }
+
+    // --- Subscript and superscript ---
+
+    #[test]
+    fn test_subscript_does_not_break_output() {
+        let md = "Water is H<sub>2</sub>O.";
+        let html = markdown_to_html(md, "light", None, None);
+        // The surrounding text must render
+        assert!(html.contains("Water is H"), "text around sub missing: {}", html);
+        assert!(html.contains("O."), "text after sub missing: {}", html);
+    }
+
+    #[test]
+    fn test_superscript_does_not_break_output() {
+        let md = "E = mc<sup>2</sup> is famous.";
+        let html = markdown_to_html(md, "light", None, None);
+        assert!(html.contains("E = mc"), "text around sup missing: {}", html);
+        assert!(html.contains("is famous."), "text after sup missing: {}", html);
+    }
+
+    #[test]
+    fn test_subscript_superscript_in_complex_doc() {
+        let md = "# Chemistry\n\nH<sub>2</sub>O and CO<sub>2</sub>\n\n# Physics\n\nE = mc<sup>2</sup>";
+        let html = markdown_to_html(md, "light", None, None);
+        assert!(html.contains("<h1>Chemistry</h1>"), "h1 Chemistry missing: {}", html);
+        assert!(html.contains("<h1>Physics</h1>"), "h1 Physics missing: {}", html);
+    }
 }

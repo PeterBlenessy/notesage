@@ -1,9 +1,10 @@
 import { Extension } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { Selection } from "@tiptap/pm/state";
 import { renderSparkline } from "@/lib/sparkline";
+import { createDecorationPlugin } from "./decoration-factory";
 
 const SPARKLINE_RE = /\{\{spark:([\d.,\s-]+)\}\}/g;
 
@@ -102,35 +103,21 @@ export const TableSparkline = Extension.create({
 
   addProseMirrorPlugins() {
     return [
-      new Plugin({
+      createDecorationPlugin({
         key: TableSparklinePluginKey,
-        state: {
-          init(_, state) {
-            return buildSparklineDecorations(state.doc, state.selection);
-          },
-          apply(tr, value, _oldState, newState) {
-            if (!tr.docChanged && !tr.selectionSet) return value;
-            const t0 = performance.now();
-            const result = buildSparklineDecorations(
-              newState.doc,
-              newState.selection,
-            );
-            sparklineCounter++;
-            if (sparklineCounter % 10 === 0) {
-              console.log("[perf:typing]", {
-                plugin: "TableSparkline",
-                docNodes: newState.doc.nodeSize,
-                decorationCount: (result as DecorationSet).find().length,
-                ms: Math.round(performance.now() - t0),
-              });
-            }
-            return result;
-          },
-        },
-        props: {
-          decorations(state) {
-            return this.getState(state);
-          },
+        buildDecorations: (state) =>
+          buildSparklineDecorations(state.doc, state.selection),
+        rebuildOnSelectionChange: true,
+        onRebuild({ docNodeSize, decorationCount, elapsedMs }) {
+          sparklineCounter++;
+          if (sparklineCounter % 10 === 0) {
+            console.log("[perf:typing]", {
+              plugin: "TableSparkline",
+              docNodes: docNodeSize,
+              decorationCount,
+              ms: elapsedMs,
+            });
+          }
         },
       }),
     ];

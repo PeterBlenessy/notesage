@@ -643,7 +643,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           >
             <div
               ref={contentRef}
-              className={`w-full ${isPaperMode ? 'paper-mode' : ''}`}
+              className={`w-full ${isPaperMode ? 'paper-mode' : ''} ${focusMode ? 'focus-mode' : ''}`}
               style={{
                 position: isPaperMode ? 'relative' as const : undefined,
                 maxWidth: maxWidth ? `${maxWidth}px` : undefined,

@@ -1316,4 +1316,46 @@ fn main() {}
         let result = world.export_pdf();
         assert!(result.is_ok(), "PDF export failed: {:?}", result.err());
     }
+
+    #[test]
+    fn test_details_block_does_not_break_output() {
+        let input = "# Before\n\n<details>\n<summary>Click to expand</summary>\n\nHidden content here.\n\n</details>\n\n# After";
+        let output = markdown_to_typst(input, None);
+        // Details blocks are raw HTML — Typst converter skips them, but surrounding
+        // content must still render correctly.
+        assert!(output.contains("= Before"), "heading before details missing: {}", output);
+        assert!(output.contains("= After"), "heading after details missing: {}", output);
+    }
+
+    #[test]
+    fn test_details_block_compiles_to_pdf() {
+        use super::super::typst_world::NotesageWorld;
+
+        let markdown = "# Test\n\n<details>\n<summary>Expand</summary>\n\nSome hidden content.\n\n</details>\n\nVisible text.\n";
+        let typst = markdown_to_typst(markdown, None);
+        let world = NotesageWorld::new(typst);
+        let result = world.export_pdf();
+        assert!(result.is_ok(), "PDF export with details block failed: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_subscript_superscript_does_not_break_output() {
+        let input = "Water is H<sub>2</sub>O and E = mc<sup>2</sup>.";
+        let output = markdown_to_typst(input, None);
+        // Sub/sup are inline HTML — Typst converter skips the tags.
+        // The surrounding text should still render.
+        assert!(output.contains("Water is H"), "text before sub missing: {}", output);
+        assert!(output.contains("O and E = mc"), "text between sub/sup missing: {}", output);
+    }
+
+    #[test]
+    fn test_subscript_superscript_compiles_to_pdf() {
+        use super::super::typst_world::NotesageWorld;
+
+        let markdown = "# Formula\n\nH<sub>2</sub>O and x<sup>2</sup>\n";
+        let typst = markdown_to_typst(markdown, None);
+        let world = NotesageWorld::new(typst);
+        let result = world.export_pdf();
+        assert!(result.is_ok(), "PDF export with sub/sup failed: {:?}", result.err());
+    }
 }

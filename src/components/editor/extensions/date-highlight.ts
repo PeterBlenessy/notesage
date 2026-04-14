@@ -1,7 +1,8 @@
 import { Extension } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
+import { createDecorationPlugin } from "./decoration-factory";
 
 // Matches //YYYY-MM-DD (with optional leading non-word char)
 const DATE_RE = /(?:^|(?:[^\w]))\/\/(\d{4}-\d{2}-\d{2})/g;
@@ -58,75 +59,64 @@ export const DateHighlight = Extension.create({
 
   addProseMirrorPlugins() {
     return [
-      new Plugin({
+      createDecorationPlugin({
         key: DateHighlightPluginKey,
-        state: {
-          init(_, state) {
-            return buildDateDecorations(state.doc);
-          },
-          apply(tr, value) {
-            if (!tr.docChanged) return value;
-            return buildDateDecorations(tr.doc);
-          },
-        },
-        props: {
-          decorations(state) {
-            return this.getState(state);
-          },
-          handleDOMEvents: {
-            mousedown(view, event) {
-              if (event.button !== 0) return false;
-              const target = (event.target as HTMLElement).closest(
-                ".date-badge"
-              ) as HTMLElement | null;
-              if (!target) return false;
+        buildDecorations: (state) => buildDateDecorations(state.doc),
+        handleDOMEvents: {
+          mousedown(view, event) {
+            if ((event as MouseEvent).button !== 0) return false;
+            const target = (event.target as HTMLElement).closest(
+              ".date-badge"
+            ) as HTMLElement | null;
+            if (!target) return false;
 
-              const date = target.getAttribute("data-date");
-              if (!date) return false;
+            const date = target.getAttribute("data-date");
+            if (!date) return false;
 
-              event.preventDefault();
-              event.stopPropagation();
+            event.preventDefault();
+            event.stopPropagation();
 
-              // Get bounding rect for positioning the popover
-              const rect = target.getBoundingClientRect();
+            // Get bounding rect for positioning the popover
+            const rect = target.getBoundingClientRect();
 
-              // Find the exact ProseMirror position of the clicked date
-              const posInfo = view.posAtCoords({
-                left: event.clientX,
-                top: event.clientY,
-              });
-              let dateFrom = -1;
-              let dateTo = -1;
-              if (posInfo) {
-                const decos = this.getState(view.state) as DecorationSet;
-                if (decos) {
-                  const found = decos.find(
-                    Math.max(0, posInfo.pos - 15),
-                    posInfo.pos + 15
-                  );
-                  for (const deco of found) {
-                    if (
-                      (
-                        deco as Decoration & {
-                          type: { attrs: Record<string, string> };
-                        }
-                      ).type.attrs?.["data-date"] === date
-                    ) {
-                      dateFrom = deco.from - 2;
-                      dateTo = deco.to;
-                      break;
-                    }
+            // Find the exact ProseMirror position of the clicked date
+            const posInfo = view.posAtCoords({
+              left: (event as MouseEvent).clientX,
+              top: (event as MouseEvent).clientY,
+            });
+            let dateFrom = -1;
+            let dateTo = -1;
+            if (posInfo) {
+              const decos = DateHighlightPluginKey.getState(
+                view.state,
+              ) as DecorationSet;
+              if (decos) {
+                const found = decos.find(
+                  Math.max(0, posInfo.pos - 15),
+                  posInfo.pos + 15
+                );
+                for (const deco of found) {
+                  if (
+                    (
+                      deco as Decoration & {
+                        type: { attrs: Record<string, string> };
+                      }
+                    ).type.attrs?.["data-date"] === date
+                  ) {
+                    dateFrom = deco.from - 2;
+                    dateTo = deco.to;
+                    break;
                   }
                 }
               }
+            }
 
-              window.dispatchEvent(
-                new CustomEvent("notesage:open-date-picker", {
-                  detail: { date, rect, from: dateFrom, to: dateTo },
-                })
-              );
-              return true;
-            },
+            window.dispatchEvent(
+              new CustomEvent("notesage:open-date-picker", {
+                detail: { date, rect, from: dateFrom, to: dateTo },
+              })
+            );
+            return true;
           },
         },
       }),

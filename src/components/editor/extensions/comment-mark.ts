@@ -118,6 +118,7 @@ export const CommentMark = Extension.create({
             if (clicked) {
               if (clicked.status === 'delegated' && clicked.delegationMode !== 'chat') {
                 // Comment is being worked on by an agent in background — notify instead of opening
+                // Must use view.dispatch here — inside ProseMirror plugin handleClick, only view is available
                 view.dispatch(
                   view.state.tr.setMeta(CommentMarkPluginKey, {
                     delegatedClick: clicked.commentId,
@@ -125,6 +126,7 @@ export const CommentMark = Extension.create({
                 );
                 return false;
               }
+              // Must use view.dispatch here — inside ProseMirror plugin handleClick, only view is available
               view.dispatch(
                 view.state.tr.setMeta(CommentMarkPluginKey, {
                   setActiveComment: clicked.commentId,
@@ -145,11 +147,12 @@ export const CommentMark = Extension.create({
         const { from, to } = this.editor.state.selection;
         if (from === to) return false;
 
-        this.editor.view.dispatch(
-          this.editor.state.tr.setMeta(CommentMarkPluginKey, {
+        this.editor.chain().command(({ tr }) => {
+          tr.setMeta(CommentMarkPluginKey, {
             requestCreateComment: { from, to },
-          })
-        );
+          });
+          return true;
+        }).run();
         return true;
       },
     };
@@ -219,40 +222,38 @@ export function setCommentDecorations(
       delegationMode: delegationModes?.[c.id],
     }));
 
-  editor.view.dispatch(
-    editor.state.tr.setMeta(CommentMarkPluginKey, {
+  editor.chain().command(({ tr }) => {
+    tr.setMeta(CommentMarkPluginKey, {
       setComments: true,
       comments: mapped,
       activeCommentId: activeCommentId ?? null,
-    })
-  );
+    });
+    return true;
+  }).run();
 }
 
 /** Clear all comment decorations. */
 export function clearCommentDecorations(editor: Editor) {
-  editor.view.dispatch(
-    editor.state.tr.setMeta(CommentMarkPluginKey, {
-      clearComments: true,
-    })
-  );
+  editor.chain().command(({ tr }) => {
+    tr.setMeta(CommentMarkPluginKey, { clearComments: true });
+    return true;
+  }).run();
 }
 
 /** Set the active (highlighted) comment. */
 export function setActiveCommentDecoration(editor: Editor, commentId: string | null) {
-  editor.view.dispatch(
-    editor.state.tr.setMeta(CommentMarkPluginKey, {
-      setActiveComment: commentId,
-    })
-  );
+  editor.chain().command(({ tr }) => {
+    tr.setMeta(CommentMarkPluginKey, { setActiveComment: commentId });
+    return true;
+  }).run();
 }
 
 /** Set or clear the pending comment range (highlight shown during creation). */
 export function setPendingCommentRange(editor: Editor, range: { from: number; to: number } | null) {
-  editor.view.dispatch(
-    editor.state.tr.setMeta(CommentMarkPluginKey, {
-      setPendingRange: range,
-    })
-  );
+  editor.chain().command(({ tr }) => {
+    tr.setMeta(CommentMarkPluginKey, { setPendingRange: range });
+    return true;
+  }).run();
 }
 
 /** Find the comment at a given position, if any. */

@@ -36,6 +36,10 @@ import { Drawing } from "@/components/editor/extensions/drawing";
 import { Chart } from "@/components/editor/extensions/chart";
 import { LinkPreview } from "@/components/editor/extensions/link-preview";
 import { PageBreakNode } from "@/components/editor/extensions/page-break-node";
+import Subscript from "@tiptap/extension-subscript";
+import Superscript from "@tiptap/extension-superscript";
+import markdownitSub from "markdown-it-sub";
+import markdownitSup from "markdown-it-sup";
 import { convertCalloutsToHtml, convertDrawingsToHtml, convertChartsToHtml, convertLinkPreviewsToHtml, convertPageBreaksToHtml, convertInlineChartsToHtml, convertInlineDrawingsToHtml, convertDataUriImagesToHtml, restorePageBreaks } from "@/lib/markdown";
 import { serializeTable } from "@/components/editor/extensions/table-markdown";
 
@@ -146,6 +150,36 @@ function createTestEditor(content: string): Editor {
       Chart,
       LinkPreview,
       PageBreakNode,
+      Subscript.extend({
+        addStorage() {
+          return {
+            ...this.parent?.(),
+            markdown: {
+              serialize: { open: "~", close: "~", expelEnclosingWhitespace: true },
+              parse: {
+                setup(md: { use: (plugin: unknown) => void }) {
+                  md.use(markdownitSub);
+                },
+              },
+            },
+          };
+        },
+      }),
+      Superscript.extend({
+        addStorage() {
+          return {
+            ...this.parent?.(),
+            markdown: {
+              serialize: { open: "^", close: "^", expelEnclosingWhitespace: true },
+              parse: {
+                setup(md: { use: (plugin: unknown) => void }) {
+                  md.use(markdownitSup);
+                },
+              },
+            },
+          };
+        },
+      }),
     ],
     content: convertDataUriImagesToHtml(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertPageBreaksToHtml(convertLinkPreviewsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertCalloutsToHtml(content)))))))),
     editable: false,

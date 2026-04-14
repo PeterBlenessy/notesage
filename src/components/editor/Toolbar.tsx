@@ -26,6 +26,8 @@ import {
   Pencil,
   BarChart3,
   Eye,
+  Subscript,
+  Superscript,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -183,6 +185,22 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
             title="Code (Cmd+E)"
           >
             <Code className="size-4" strokeWidth={1.5} />
+          </ToolbarButton>
+
+          <ToolbarButton
+            onClick={() => editor.chain().focus().toggleSubscript().run()}
+            active={editor.isActive("subscript")}
+            title="Subscript"
+          >
+            <Subscript className="size-4" strokeWidth={1.5} />
+          </ToolbarButton>
+
+          <ToolbarButton
+            onClick={() => editor.chain().focus().toggleSuperscript().run()}
+            active={editor.isActive("superscript")}
+            title="Superscript"
+          >
+            <Superscript className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <LinkButton editor={editor} />

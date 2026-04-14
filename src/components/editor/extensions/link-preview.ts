@@ -206,13 +206,13 @@ export const LinkPreview = Node.create({
         // Replace link preview with a paragraph containing the URL as text
         const url = node.attrs.url as string;
         const pos = selection.from - 1;
-        const { tr } = state;
-        tr.replaceWith(pos, pos + node.nodeSize, state.schema.nodes.paragraph.create(
-          null,
-          url ? [state.schema.text(url)] : []
-        ));
-        editor.view.dispatch(tr);
-        return true;
+        return editor.chain().command(({ tr }) => {
+          tr.replaceWith(pos, pos + node.nodeSize, state.schema.nodes.paragraph.create(
+            null,
+            url ? [state.schema.text(url)] : []
+          ));
+          return true;
+        }).run();
       },
       Delete: ({ editor }) => {
         const { state } = editor;
@@ -222,13 +222,13 @@ export const LinkPreview = Node.create({
         if (!node || node.type.name !== this.name) return false;
 
         const url = node.attrs.url as string;
-        const { tr } = state;
-        tr.replaceWith(selection.from, selection.from + node.nodeSize, state.schema.nodes.paragraph.create(
-          null,
-          url ? [state.schema.text(url)] : []
-        ));
-        editor.view.dispatch(tr);
-        return true;
+        return editor.chain().command(({ tr }) => {
+          tr.replaceWith(selection.from, selection.from + node.nodeSize, state.schema.nodes.paragraph.create(
+            null,
+            url ? [state.schema.text(url)] : []
+          ));
+          return true;
+        }).run();
       },
     };
   },

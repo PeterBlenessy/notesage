@@ -279,21 +279,21 @@ export function setSuggestion(
     originalText = doc.textBetween(from, adjustedTo, '\n');
   }
 
-  editor.view.dispatch(
-    editor.state.tr.setMeta(AISuggestionPluginKey, {
+  editor.chain().command(({ tr }) => {
+    tr.setMeta(AISuggestionPluginKey, {
       setSuggestion: true,
       suggestion: { from, to: adjustedTo, originalText, suggestedText },
-    })
-  );
+    });
+    return true;
+  }).run();
 }
 
 // Helper to clear suggestion
 export function clearSuggestion(editor: Editor) {
-  editor.view.dispatch(
-    editor.state.tr.setMeta(AISuggestionPluginKey, {
-      clearSuggestion: true,
-    })
-  );
+  editor.chain().command(({ tr }) => {
+    tr.setMeta(AISuggestionPluginKey, { clearSuggestion: true });
+    return true;
+  }).run();
 }
 
 // Helper to check if there's an active suggestion

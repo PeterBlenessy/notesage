@@ -5,7 +5,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 ## Supported Content
 
 - Headings (H1-H6), paragraphs
-- Bold, italic, underline, strikethrough, code (inline)
+- Bold, italic, underline, strikethrough, subscript (`~sub~`), superscript (`^sup^`), code (inline)
 - Bullet lists, ordered lists, task lists (checkboxes)
 - Blockquotes, callout blocks (Note, Tip, Warning, Important — Obsidian `> [!type]` syntax), horizontal rules
 - Code blocks with muted chromatic syntax highlighting (lowlight) — keywords purple, strings green, comments olive italic, numbers orange, functions blue, types teal — via `--ns-code-*` CSS variables
@@ -26,7 +26,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 
 ## Editing Features
 
-- Top toolbar with formatting controls: heading level picker, undo/redo, bold, italic, underline, strikethrough, code, text color, highlight, bullet list, ordered list, task list, indent/outdent, blockquote, callout picker (4 types), code block, horizontal rule, alignment (left/center/right), table, image, drawing, typography settings (searchable font picker with 14 presets + all installed system fonts, font size, line height, paragraph spacing), dictation
+- Top toolbar with formatting controls: heading level picker, undo/redo, bold, italic, underline, strikethrough, code, subscript, superscript, text color, highlight, bullet list, ordered list, task list, indent/outdent, blockquote, callout picker (4 types), code block, horizontal rule, alignment (left/center/right), table, image, drawing, typography settings (searchable font picker with 14 presets + all installed system fonts, font size, line height, paragraph spacing), dictation
 - Bubble menu on text selection with AI actions (Improve, Summarize, Expand) — toggleable in settings
 - Right-click "Add to chat" on images and drawing blocks sends the image to the AI chat panel as an attachment (via `SendToAI` ProseMirror plugin and vision event bus)
 - Floating table toolbar appears when cursor is inside a table — add/remove rows and columns, merge/split cells, toggle header row, delete table
@@ -54,6 +54,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 - macOS primary (arm64 + x86_64), window 1200x800 default, min 800x600
 - Native title bar, resizable
 - Light/dark mode following system preference (Cmd+T to toggle), with optional soft contrast mode for reduced eye strain
+- Focus mode (Cmd+.) dims all blocks except the one containing the cursor (opacity 0.3, 200ms transition) via `@tiptap/extension-focus` with `mode: 'all'`
 
 ## Find in Document
 

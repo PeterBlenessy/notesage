@@ -29,6 +29,12 @@ export interface Comment {
   /** ProseMirror position range at creation time */
   from: number;
   to: number;
+  /** Stable node ID (UniqueID extension) of the block containing the anchor start */
+  nodeId?: string;
+  /** Character offset within the node's text content to the anchor start */
+  nodeOffset?: number;
+  /** Character offset within the node's text content to the anchor end */
+  nodeEndOffset?: number;
   body: string;
   author: string;
   createdAt: number;
@@ -69,7 +75,7 @@ interface CommentStore {
   /** Scroll to a comment's position and then activate it (used by external navigation) */
   requestScrollToComment: (id: string) => void;
   clearScrollToComment: () => void;
-  updateCommentPositions: (documentId: string, positions: Array<{id: string; from: number; to: number; anchorText: string}>) => void;
+  updateCommentPositions: (documentId: string, positions: Array<{id: string; from: number; to: number; anchorText: string; nodeId?: string; nodeOffset?: number; nodeEndOffset?: number}>) => void;
   saveComments: (documentId: string, projectRoot: string) => Promise<void>;
   clearDocument: (documentId: string) => void;
 }
@@ -329,9 +335,23 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
       const updated = comments.map((c) => {
         const pos = posMap.get(c.id);
         if (!pos) return c;
-        if (pos.from === c.from && pos.to === c.to && pos.anchorText === c.anchorText) return c;
+        if (
+          pos.from === c.from && pos.to === c.to &&
+          pos.anchorText === c.anchorText &&
+          pos.nodeId === c.nodeId &&
+          pos.nodeOffset === c.nodeOffset &&
+          pos.nodeEndOffset === c.nodeEndOffset
+        ) return c;
         changed = true;
-        return { ...c, from: pos.from, to: pos.to, anchorText: pos.anchorText };
+        return {
+          ...c,
+          from: pos.from,
+          to: pos.to,
+          anchorText: pos.anchorText,
+          nodeId: pos.nodeId ?? c.nodeId,
+          nodeOffset: pos.nodeOffset ?? c.nodeOffset,
+          nodeEndOffset: pos.nodeEndOffset ?? c.nodeEndOffset,
+        };
       });
       if (!changed) return state;
       return {

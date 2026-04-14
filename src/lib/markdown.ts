@@ -76,23 +76,22 @@ export function applyAnnotationsToEditor(
 ): void {
   if (annotations.size === 0) return;
 
-  const { state } = editor;
-  const tr = state.tr.setMeta("addToHistory", false);
-  let itemIndex = 0;
-  let modified = false;
+  editor.chain().command(({ tr, state }) => {
+    tr.setMeta("addToHistory", false);
+    let itemIndex = 0;
+    let modified = false;
 
-  state.doc.descendants((node, pos) => {
-    if (node.type.name !== "listItem" && node.type.name !== "taskItem") return;
-    const icon = annotations.get(itemIndex);
-    itemIndex++;
-    if (!icon) return;
-    tr.setNodeAttribute(pos, "annotation", JSON.stringify({ icon }));
-    modified = true;
-  });
+    state.doc.descendants((node, pos) => {
+      if (node.type.name !== "listItem" && node.type.name !== "taskItem") return;
+      const icon = annotations.get(itemIndex);
+      itemIndex++;
+      if (!icon) return;
+      tr.setNodeAttribute(pos, "annotation", JSON.stringify({ icon }));
+      modified = true;
+    });
 
-  if (modified) {
-    editor.view.dispatch(tr);
-  }
+    return modified;
+  }).run();
 }
 
 /**
@@ -748,50 +747,49 @@ export function applyTableColumnMetadata(
 ): void {
   if (metadata.size === 0) return;
 
-  const { state } = editor;
-  const tr = state.tr.setMeta("addToHistory", false);
-  let tableIdx = 0;
-  let modified = false;
+  editor.chain().command(({ tr, state }) => {
+    tr.setMeta("addToHistory", false);
+    let tableIdx = 0;
+    let modified = false;
 
-  state.doc.descendants((node, pos) => {
-    if (node.type.name !== "table") return;
+    state.doc.descendants((node, pos) => {
+      if (node.type.name !== "table") return;
 
-    const colMeta = metadata.get(tableIdx);
-    tableIdx++;
+      const colMeta = metadata.get(tableIdx);
+      tableIdx++;
 
-    if (!colMeta) return;
+      if (!colMeta) return;
 
-    // Walk the first row to find header cells
-    const firstRow = node.firstChild;
-    if (!firstRow) return;
+      // Walk the first row to find header cells
+      const firstRow = node.firstChild;
+      if (!firstRow) return;
 
-    let colIdx = 0;
-    firstRow.forEach((_cell, cellOffset) => {
-      const meta = colMeta.get(colIdx);
-      colIdx++;
-      if (!meta) return;
+      let colIdx = 0;
+      firstRow.forEach((_cell, cellOffset) => {
+        const meta = colMeta.get(colIdx);
+        colIdx++;
+        if (!meta) return;
 
-      // pos is the table position, +1 for inside table, +cellOffset+1 for inside row
-      const cellPos = pos + 1 + cellOffset + 1;
+        // pos is the table position, +1 for inside table, +cellOffset+1 for inside row
+        const cellPos = pos + 1 + cellOffset + 1;
 
-      if (meta.colType) {
-        tr.setNodeAttribute(cellPos, "colType", meta.colType);
-        modified = true;
-      }
-      if (meta.colCurrency) {
-        tr.setNodeAttribute(cellPos, "colCurrency", meta.colCurrency);
-        modified = true;
-      }
-      if (meta.colAggregation) {
-        tr.setNodeAttribute(cellPos, "colAggregation", meta.colAggregation);
-        modified = true;
-      }
+        if (meta.colType) {
+          tr.setNodeAttribute(cellPos, "colType", meta.colType);
+          modified = true;
+        }
+        if (meta.colCurrency) {
+          tr.setNodeAttribute(cellPos, "colCurrency", meta.colCurrency);
+          modified = true;
+        }
+        if (meta.colAggregation) {
+          tr.setNodeAttribute(cellPos, "colAggregation", meta.colAggregation);
+          modified = true;
+        }
+      });
     });
-  });
 
-  if (modified) {
-    editor.view.dispatch(tr);
-  }
+    return modified;
+  }).run();
 }
 
 // ---------------------------------------------------------------------------
@@ -821,6 +819,149 @@ export function restoreTocComments(markdown: string): string {
     /^<div data-toc[^>]*><\/div>$/gm,
     '<!-- toc -->',
   );
+}
+
+// ---------------------------------------------------------------------------
+// Node ID preprocessing (UniqueID extension)
+// ---------------------------------------------------------------------------
+
+/**
+ * Regex matching `<!-- id:uuid -->` HTML comments on their own line,
+ * immediately before a block element. These persist node IDs through
+ * markdown round-trips.
+ *
+ * The UUID format: 8-4-4-4-12 hex digits (standard crypto.randomUUID).
+ */
+const NODE_ID_COMMENT_RE = /^<!-- id:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}) -->$/;
+
+/**
+ * Strip `<!-- id:uuid -->` HTML comments from markdown and collect them
+ * as an ordered list. The IDs are applied to top-level ProseMirror block
+ * nodes in order after parsing via `applyNodeIdsToEditor`.
+ *
+ * The map keys are 0-based indices corresponding to the sequential
+ * position of each ID comment relative to the blocks they precede.
+ * ID comments must appear on the line immediately before their block.
+ */
+export function stripNodeIdComments(markdown: string): {
+  cleaned: string;
+  nodeIds: Map<number, string>;
+} {
+  const lines = markdown.split('\n');
+  const result: string[] = [];
+  // Collect IDs in order: orderedIds[i] = the UUID for the i-th block that had an ID
+  const orderedIds: Array<{ id: string; blockNumber: number }> = [];
+
+  // First pass: strip ID comments and figure out which block they precede
+  let pendingId: string | null = null;
+  let blockCount = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const match = lines[i].match(NODE_ID_COMMENT_RE);
+    if (match) {
+      pendingId = match[1];
+      // Don't add to result — strip this line
+      continue;
+    }
+
+    result.push(lines[i]);
+
+    // Detect block starts in the cleaned output for numbering
+    if (lines[i].trim() !== '') {
+      const cleanedIdx = result.length - 1;
+      const prevCleanedLine = cleanedIdx > 0 ? result[cleanedIdx - 1] : '';
+      const isBlockStart = cleanedIdx === 0 || prevCleanedLine.trim() === '';
+
+      if (isBlockStart) {
+        if (pendingId) {
+          orderedIds.push({ id: pendingId, blockNumber: blockCount });
+          pendingId = null;
+        }
+        blockCount++;
+      }
+    }
+  }
+
+  const nodeIds = new Map<number, string>();
+  for (const entry of orderedIds) {
+    nodeIds.set(entry.blockNumber, entry.id);
+  }
+
+  return { cleaned: result.join('\n'), nodeIds };
+}
+
+/**
+ * Apply node IDs extracted from HTML comments to top-level block nodes
+ * in the ProseMirror document. Dispatches a single transaction with
+ * `addToHistory: false`.
+ */
+export function applyNodeIdsToEditor(
+  editor: Editor,
+  nodeIds: Map<number, string>,
+): void {
+  if (nodeIds.size === 0) return;
+
+  const { state } = editor;
+  const tr = state.tr.setMeta('addToHistory', false);
+  let blockIndex = 0;
+  let modified = false;
+
+  // Walk top-level children of the document (0-based index)
+  state.doc.forEach((node, offset) => {
+    const id = nodeIds.get(blockIndex);
+    if (id && node.type.name !== 'doc' && node.type.name !== 'text') {
+      tr.setNodeAttribute(offset, 'id', id);
+      modified = true;
+    }
+    blockIndex++;
+  });
+
+  if (modified) {
+    editor.view.dispatch(tr);
+  }
+}
+
+/**
+ * Inject `<!-- id:uuid -->` HTML comments into serialized markdown before
+ * each top-level block that has a node ID. Called during `getMarkdownFromEditor`.
+ */
+export function injectNodeIdComments(markdown: string, editor: Editor): string {
+  // Collect IDs from top-level block nodes in document order
+  const blockIds: Array<{ id: string }> = [];
+  editor.state.doc.forEach((node) => {
+    const id: unknown = node.attrs.id;
+    blockIds.push({ id: typeof id === 'string' && id ? id : '' });
+  });
+
+  // If no blocks have IDs, return unchanged
+  if (blockIds.every((b) => !b.id)) return markdown;
+
+  // Split markdown into blocks (separated by blank lines) and inject comments
+  const lines = markdown.split('\n');
+  const result: string[] = [];
+  let blockIndex = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Detect block start: non-empty line after a blank line or at start
+    if (line.trim() !== '') {
+      const prevLine = i > 0 ? lines[i - 1] : '';
+      const isBlockStart = i === 0 || prevLine.trim() === '';
+
+      if (isBlockStart && blockIndex < blockIds.length) {
+        const id = blockIds[blockIndex].id;
+        if (id) {
+          result.push(`<!-- id:${id} -->`);
+        }
+        blockIndex++;
+      }
+    }
+
+    result.push(line);
+  }
+
+  return result.join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -883,18 +1024,27 @@ export function getMarkdownFromEditor(editor: Editor): string {
   // Restore TOC comments from HTML div form
   markdown = restoreTocComments(markdown);
 
+  // Node ID injection disabled — too noisy in source mode (every paragraph gets
+  // <!-- id:uuid -->). UniqueID extension still active for in-session comment
+  // anchoring but IDs are not persisted to markdown.
+  // markdown = injectNodeIdComments(markdown, editor);
+
   // Inject {emoji} prefixes from the current ProseMirror document annotations
   return injectAnnotationsIntoMarkdown(markdown, editor);
 }
 
 
 export function setMarkdownInEditor(editor: Editor, markdown: string): void {
-  const { cleaned: noMeta, metadata } = extractTableColumnMetadata(markdown);
+  const { cleaned: noIds, nodeIds } = stripNodeIdComments(markdown);
+  const { cleaned: noMeta, metadata } = extractTableColumnMetadata(noIds);
   const encoded = convertDataUriImagesToHtml(encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))))))));
   setContentWithoutHistory(editor, encoded);
 
   if (metadata.size > 0) {
     applyTableColumnMetadata(editor, metadata);
+  }
+  if (nodeIds.size > 0) {
+    applyNodeIdsToEditor(editor, nodeIds);
   }
 }
 
@@ -925,7 +1075,8 @@ export function loadRawMarkdownIntoEditor(
   rawMarkdown: string
 ): void {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
-  const { cleaned: noMeta, metadata } = extractTableColumnMetadata(cleaned);
+  const { cleaned: noIds, nodeIds } = stripNodeIdComments(cleaned);
+  const { cleaned: noMeta, metadata } = extractTableColumnMetadata(noIds);
   const encoded = convertDataUriImagesToHtml(encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)))))))))))));
   editor.chain().setMeta("addToHistory", false).setContent(encoded).run();
 
@@ -940,6 +1091,9 @@ export function loadRawMarkdownIntoEditor(
 
   if (metadata.size > 0) {
     applyTableColumnMetadata(editor, metadata);
+  }
+  if (nodeIds.size > 0) {
+    applyNodeIdsToEditor(editor, nodeIds);
   }
 
   if (annotations.size > 0) {
@@ -959,12 +1113,15 @@ export function prepareInitialContent(rawMarkdown: string): {
   content: string;
   annotations: Map<number, string>;
   tableMetadata: TableColumnMetadataMap;
+  nodeIds: Map<number, string>;
 } {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
-  const { cleaned: noMeta, metadata } = extractTableColumnMetadata(cleaned);
+  const { cleaned: noIds, nodeIds } = stripNodeIdComments(cleaned);
+  const { cleaned: noMeta, metadata } = extractTableColumnMetadata(noIds);
   return {
     content: convertDataUriImagesToHtml(encodeImagePathSpaces(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertLinkPreviewsToHtml(convertTocToHtml(convertPageBreaksToHtml(convertCalloutsToHtml(convertMermaidToHtml(normalizeEmptyTaskItems(stripGhostTaskItems(noMeta))))))))))))),
     annotations,
     tableMetadata: metadata,
+    nodeIds,
   };
 }

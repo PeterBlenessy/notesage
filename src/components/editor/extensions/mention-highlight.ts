@@ -1,7 +1,8 @@
 import { Extension } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
+import { createDecorationPlugin } from "./decoration-factory";
 
 const MENTION_RE = /(?:^|(?:[^\w]))@([a-zA-Z][a-zA-Z0-9_-]*)/g;
 
@@ -48,42 +49,29 @@ export const MentionHighlight = Extension.create({
 
   addProseMirrorPlugins() {
     return [
-      new Plugin({
+      createDecorationPlugin({
         key: MentionHighlightPluginKey,
-        state: {
-          init(_, state) {
-            return buildMentionDecorations(state.doc);
-          },
-          apply(tr, value) {
-            if (!tr.docChanged) return value;
-            return buildMentionDecorations(tr.doc);
-          },
-        },
-        props: {
-          decorations(state) {
-            return this.getState(state);
-          },
-          handleDOMEvents: {
-            mousedown(_view, event) {
-              if (event.button !== 0) return false;
-              const target = (event.target as HTMLElement).closest(
-                ".mention-badge"
-              ) as HTMLElement | null;
-              if (!target) return false;
+        buildDecorations: (state) => buildMentionDecorations(state.doc),
+        handleDOMEvents: {
+          mousedown(_view, event) {
+            if ((event as MouseEvent).button !== 0) return false;
+            const target = (event.target as HTMLElement).closest(
+              ".mention-badge"
+            ) as HTMLElement | null;
+            if (!target) return false;
 
-              const mention = target.getAttribute("data-mention");
-              if (!mention) return false;
+            const mention = target.getAttribute("data-mention");
+            if (!mention) return false;
 
-              event.preventDefault();
-              event.stopPropagation();
+            event.preventDefault();
+            event.stopPropagation();
 
-              window.dispatchEvent(
-                new CustomEvent("notesage:open-mention-search", {
-                  detail: { mention },
-                })
-              );
-              return true;
-            },
+            window.dispatchEvent(
+              new CustomEvent("notesage:open-mention-search", {
+                detail: { mention },
+              })
+            );
+            return true;
           },
         },
       }),

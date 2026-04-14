@@ -1,7 +1,8 @@
 import { Extension } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
+import { createDecorationPlugin } from "./decoration-factory";
 
 const TAG_RE = /(?:^|(?:[^\w]))#([a-zA-Z][a-zA-Z0-9_-]*)/g;
 
@@ -50,55 +51,40 @@ export const TagHighlight = Extension.create({
 
   addProseMirrorPlugins() {
     return [
-      new Plugin({
+      createDecorationPlugin({
         key: TagHighlightPluginKey,
-        state: {
-          init(_, state) {
-            return buildTagDecorations(state.doc);
-          },
-          apply(tr, value) {
-            if (!tr.docChanged) return value;
-            const t0 = performance.now();
-            const result = buildTagDecorations(tr.doc);
-            tagHighlightCounter++;
-            if (tagHighlightCounter % 10 === 0) {
-              console.log('[perf:typing]', {
-                plugin: 'TagHighlight',
-                docNodes: tr.doc.nodeSize,
-                decorationCount: (result as DecorationSet).find().length,
-                ms: Math.round(performance.now() - t0),
-              });
-            }
-            return result;
-          },
+        buildDecorations: (state) => buildTagDecorations(state.doc),
+        onRebuild({ docNodeSize, decorationCount, elapsedMs }) {
+          tagHighlightCounter++;
+          if (tagHighlightCounter % 10 === 0) {
+            console.log('[perf:typing]', {
+              plugin: 'TagHighlight',
+              docNodes: docNodeSize,
+              decorationCount,
+              ms: elapsedMs,
+            });
+          }
         },
-        props: {
-          decorations(state) {
-            return this.getState(state);
-          },
-          // Intercept mousedown (before ProseMirror places cursor) to
-          // prevent cursor placement inside the tag and suggestion activation.
-          handleDOMEvents: {
-            mousedown(_view, event) {
-              if (event.button !== 0) return false;
-              const target = (event.target as HTMLElement).closest(
-                ".tag-badge"
-              ) as HTMLElement | null;
-              if (!target) return false;
+        handleDOMEvents: {
+          mousedown(_view, event) {
+            if ((event as MouseEvent).button !== 0) return false;
+            const target = (event.target as HTMLElement).closest(
+              ".tag-badge"
+            ) as HTMLElement | null;
+            if (!target) return false;
 
-              const tag = target.getAttribute("data-tag");
-              if (!tag) return false;
+            const tag = target.getAttribute("data-tag");
+            if (!tag) return false;
 
-              event.preventDefault();
-              event.stopPropagation();
+            event.preventDefault();
+            event.stopPropagation();
 
-              window.dispatchEvent(
-                new CustomEvent("notesage:open-tag-search", {
-                  detail: { tag },
-                })
-              );
-              return true;
-            },
+            window.dispatchEvent(
+              new CustomEvent("notesage:open-tag-search", {
+                detail: { tag },
+              })
+            );
+            return true;
           },
         },
       }),

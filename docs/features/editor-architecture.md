@@ -56,6 +56,8 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | TableColumnTypes | `table-column-types.ts` | Plugin | Column type inference and locale-aware formatting (number, currency, percentage, date) |
 | TableFormatting | `table-formatting.ts` | Plugin | Table cell formatting decorations (alignment, number formatting) |
 | TypographyOverrides | `typography-overrides.ts` | Plugin | Custom typography rules (smart quotes, em dashes, ellipsis) |
+| TrailingNode | `trailing-node.ts` | Plugin (appendTransaction) | Ensures an empty paragraph at end of document for click-below-last-block UX |
+| DecorationFactory | `decoration-factory.ts` | Utility | Shared `createDecorationPlugin()` factory reducing boilerplate in decoration extensions |
 | ~~ItemAnnotation~~ | `item-annotation.ts` | ~~Plugin + Decoration~~ | ~~Emoji annotations on list items (deferred — needs unified gutter design)~~ |
 | ~~DragHandle~~ | `drag-handle.ts` | ~~Plugin + DOM~~ | ~~Block drag handles (deferred — needs unified gutter design)~~ |
 

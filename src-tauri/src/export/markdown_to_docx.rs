@@ -2006,4 +2006,50 @@ mod tests {
         assert!(!bytes.is_empty());
         assert_eq!(&bytes[0..4], b"PK\x03\x04");
     }
+
+    #[test]
+    fn test_details_block_does_not_break_docx() {
+        let md = "# Before\n\n<details>\n<summary>Click to expand</summary>\n\nHidden content here.\n\n</details>\n\n# After";
+        let result = markdown_to_docx(
+            md,
+            "Test",
+            "clean",
+            &DocxOptions {
+                include_toc: false,
+                include_page_numbers: false,
+                page_size: "a4".to_string(),
+                project_root: None,
+            },
+            None,
+            None,
+            None,
+        );
+        assert!(result.is_ok(), "DOCX with details block failed: {:?}", result.err());
+        let bytes = result.unwrap();
+        assert!(!bytes.is_empty());
+        assert_eq!(&bytes[0..4], b"PK\x03\x04");
+    }
+
+    #[test]
+    fn test_subscript_superscript_does_not_break_docx() {
+        let md = "Water is H<sub>2</sub>O and E = mc<sup>2</sup>.";
+        let result = markdown_to_docx(
+            md,
+            "Test",
+            "clean",
+            &DocxOptions {
+                include_toc: false,
+                include_page_numbers: false,
+                page_size: "a4".to_string(),
+                project_root: None,
+            },
+            None,
+            None,
+            None,
+        );
+        assert!(result.is_ok(), "DOCX with sub/sup failed: {:?}", result.err());
+        let bytes = result.unwrap();
+        assert!(!bytes.is_empty());
+        assert_eq!(&bytes[0..4], b"PK\x03\x04");
+    }
 }

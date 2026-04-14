@@ -1873,3 +1873,19 @@ mark.dom-find-highlight-active {
   outline: 2px solid var(--color-ring);
   outline-offset: -2px;
 }
+
+/* ----------------------------------------------------------------
+   Focus mode — dim non-focused blocks when focus mode is active
+   The `has-focus` class is applied by the @tiptap/extension-focus
+   extension to the deepest node containing the cursor.
+   ---------------------------------------------------------------- */
+
+.focus-mode .ProseMirror > *:not(.has-focus) {
+  opacity: 0.3;
+  transition: opacity 200ms ease;
+}
+
+.focus-mode .ProseMirror > .has-focus {
+  opacity: 1;
+  transition: opacity 200ms ease;
+}

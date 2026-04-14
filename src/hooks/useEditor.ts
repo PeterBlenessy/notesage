@@ -1,6 +1,7 @@
 import { useEditor as useTiptapEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
+import UniqueID from "@tiptap/extension-unique-id";
 import { LocalImage } from "@/components/editor/extensions/local-image";
 import { Table } from "@tiptap/extension-table";
 import { serializeTable } from "@/components/editor/extensions/table-markdown";
@@ -27,6 +28,12 @@ import { PageBreaks } from "@/components/editor/extensions/page-breaks";
 import { LinkClick } from "@/components/editor/extensions/link-click";
 import { SendToAI } from "@/components/editor/extensions/send-to-ai";
 import { Callout } from "@/components/editor/extensions/callout";
+import { TrailingNode } from "@/components/editor/extensions/trailing-node";
+import Focus from "@tiptap/extension-focus";
+import Subscript from "@tiptap/extension-subscript";
+import Superscript from "@tiptap/extension-superscript";
+import markdownitSub from "markdown-it-sub";
+import markdownitSup from "markdown-it-sup";
 import { HeadingWithOverrides, ParagraphWithOverrides, TypographyOverrides } from "@/components/editor/extensions/typography-overrides";
 import { getMarkdownFromEditor } from "@/lib/markdown";
 import { getEditorStorage, type EditorStorageImage } from "@/lib/editor-storage";
@@ -84,6 +91,36 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       Color,
       ThemedHighlight.configure({
         multicolor: true,
+      }),
+      Subscript.extend({
+        addStorage() {
+          return {
+            ...this.parent?.(),
+            markdown: {
+              serialize: { open: "~", close: "~", expelEnclosingWhitespace: true },
+              parse: {
+                setup(md: { use: (plugin: unknown) => void }) {
+                  md.use(markdownitSub);
+                },
+              },
+            },
+          };
+        },
+      }),
+      Superscript.extend({
+        addStorage() {
+          return {
+            ...this.parent?.(),
+            markdown: {
+              serialize: { open: "^", close: "^", expelEnclosingWhitespace: true },
+              parse: {
+                setup(md: { use: (plugin: unknown) => void }) {
+                  md.use(markdownitSup);
+                },
+              },
+            },
+          };
+        },
       }),
       LocalImage.configure({
         allowBase64: true,
@@ -168,6 +205,31 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       TableHeaderMenu,
       SendToAI,
       TableOfContents,
+      UniqueID.configure({
+        attributeName: 'id',
+        types: [
+          'paragraph',
+          'heading',
+          'listItem',
+          'taskItem',
+          'codeBlock',
+          'blockquote',
+          'table',
+          'image',
+          'drawing',
+          'chart',
+          'callout',
+          'linkPreview',
+          'mermaidBlock',
+          'horizontalRule',
+        ],
+        generateID: () => crypto.randomUUID(),
+      }),
+      TrailingNode,
+      Focus.configure({
+        className: 'has-focus',
+        mode: 'all',
+      }),
     ],
     content,
     editable,
