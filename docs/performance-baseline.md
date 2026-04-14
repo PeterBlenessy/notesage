@@ -95,6 +95,36 @@ Measured with 6 iCloud projects, 3 explorer folders, 22 open tabs, 679 total fil
 
 **Known issues:** Double startup (reloadTrees runs twice), triple tree refresh, sequential skill-tool-extract is the bottleneck.
 
+### 2026-04-14 — v0.32.1 release (8b77165)
+
+6 iCloud projects, 3 explorer folders, 27 open tabs, 1,237 total files.
+
+**Skills pipeline:**
+
+| Step | ms |
+| --- | --- |
+| skill-scan | 1,860 |
+| skill-tool-extract (11 skills) | 2,455 |
+| agent-scan | 509 |
+| instruction-scan | 597 |
+| **phase1-ready (tools visible)** | **5,426** |
+| bundled-skills-extract | 1,930 |
+| bundled-agents-extract | 457 |
+| phase2-extract | 3,367 |
+| **total** | **8,793** |
+
+**Startup & trees:**
+
+| Metric | ms |
+| --- | --- |
+| trees validated (1st) | 1,996 |
+| trees validated (2nd) | 4,211 |
+| tree refresh | 10,487 |
+| tab-preload (27 tabs) | 12,829 |
+| index init (per-project) | 182–1,139 |
+
+**Comparison vs 2026-04-12:** phase1-ready improved 6,293→5,426ms (−14%). Tree refresh improved 12,804→10,487ms (−18%) despite 1,237 vs 679 files (+82%). Tab preload is new metric (27 tabs in 12.8s). No regressions.
+
 ## Notes
 
 - Parse benchmarks include Tiptap editor creation overhead (\~15ms fixed cost)

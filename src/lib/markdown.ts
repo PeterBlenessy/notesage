@@ -549,16 +549,18 @@ export function convertInlineDrawingsToHtml(markdown: string): string {
  * markdown-it rejects bare `data:` destinations because they contain `;`, `,`
  * and other characters it doesn't accept in link destinations. HTML `<img>` tags
  * pass through unchanged (html: true) and Tiptap's Image node parses them.
+ *
+ * Handles both standard `![alt](data:...)` and escaped `!\[alt\](data:...)` forms
+ * (some import tools write escaped brackets). Also handles inline data URIs that
+ * aren't on their own line.
  */
 export function convertDataUriImagesToHtml(markdown: string): string {
   return markdown.replace(
-    /^!\[([^\]]*)\]\((data:[^)]+)\)$/gm,
+    /!\\?\[([^\]\\]*?)\\?\]\((data:[^)]+)\)/g,
     (_, alt: string, src: string) => {
       const escapedSrc = src.replace(/"/g, '&quot;');
       const altAttr = alt ? ` alt="${alt.replace(/"/g, '&quot;')}"` : '';
-      // Wrap in <p> so the image is treated as a block-level element,
-      // preventing consecutive images from merging into one paragraph.
-      return `<p><img src="${escapedSrc}"${altAttr}></p>`;
+      return `<img src="${escapedSrc}"${altAttr}>`;
     },
   );
 }
