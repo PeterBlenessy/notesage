@@ -28,7 +28,6 @@ import { PageBreaks } from "@/components/editor/extensions/page-breaks";
 import { LinkClick } from "@/components/editor/extensions/link-click";
 import { SendToAI } from "@/components/editor/extensions/send-to-ai";
 import { Callout } from "@/components/editor/extensions/callout";
-import { TrailingNode } from "@/components/editor/extensions/trailing-node";
 import Focus from "@tiptap/extension-focus";
 import Subscript from "@tiptap/extension-subscript";
 import Superscript from "@tiptap/extension-superscript";
@@ -225,7 +224,6 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
         ],
         generateID: () => crypto.randomUUID(),
       }),
-      TrailingNode,
       Focus.configure({
         className: 'has-focus',
         mode: 'all',

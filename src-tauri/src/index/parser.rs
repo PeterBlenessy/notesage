@@ -387,7 +387,9 @@ fn truncate_str(s: &str, max_len: usize) -> String {
     if trimmed.len() <= max_len {
         trimmed.to_string()
     } else {
-        trimmed[..max_len].to_string()
+        // Find the nearest char boundary at or before max_len
+        let end = trimmed.floor_char_boundary(max_len);
+        trimmed[..end].to_string()
     }
 }
 
@@ -397,7 +399,8 @@ fn truncate_str_end(s: &str, max_len: usize) -> String {
     if trimmed.len() <= max_len {
         trimmed.to_string()
     } else {
-        trimmed[trimmed.len() - max_len..].to_string()
+        let start = trimmed.ceil_char_boundary(trimmed.len() - max_len);
+        trimmed[start..].to_string()
     }
 }
 

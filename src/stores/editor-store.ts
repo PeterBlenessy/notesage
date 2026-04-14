@@ -30,6 +30,8 @@ export interface Tab {
   /** Session-only: true once file content has been loaded from disk. Tabs restored
    *  on startup are created with contentLoaded=false and loaded on demand. */
   contentLoaded?: boolean;
+  /** Session-only: error message when file could not be loaded from disk (e.g., file moved/renamed). */
+  loadError?: string;
   /** Session-only: scroll to a specific tag occurrence after content loads. Cleared after use. */
   scrollToTag?: ScrollToTag;
   /** Session-only: scroll to a text match after content loads. Cleared after use. */
@@ -73,6 +75,8 @@ interface EditorStore {
   openTabPlaceholder: (filePath: string, fileName: string, fileType?: FileType) => void;
   /** Load content into a placeholder tab. */
   loadTabContent: (tabId: string, content: string, frontmatter?: Frontmatter | null) => void;
+  /** Mark a tab as having a load error (file not found, etc.). */
+  setTabLoadError: (tabId: string, error: string) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
   updateTabContent: (tabId: string, content: string, isDirty: boolean) => void;
@@ -191,6 +195,14 @@ export const useEditorStore = create<EditorStore>()(
         set((state) => ({
           tabs: state.tabs.map((t) =>
             t.id === tabId ? { ...t, content, contentLoaded: true, frontmatter: frontmatter ?? t.frontmatter, lastSavedContent: content } : t
+          ),
+        }));
+      },
+
+      setTabLoadError: (tabId, error) => {
+        set((state) => ({
+          tabs: state.tabs.map((t) =>
+            t.id === tabId ? { ...t, contentLoaded: true, loadError: error } : t
           ),
         }));
       },

@@ -158,6 +158,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         log.debug("perf:tab-load", "Tab content loaded from disk", { file: fileName, type: fileType, sizeKB, ms: +(performance.now() - t0).toFixed(1) });
       } catch (err) {
         console.warn("Failed to load tab content:", filePath, err);
+        useEditorStore.getState().setTabLoadError(id, String(err));
       }
     })();
   }, [activeTab?.id, activeTab?.contentLoaded]);
@@ -203,6 +204,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           log.debug("perf:tab-preload", "Tab preloaded", { file: fileName, type: tab.fileType, sizeKB, ms: +(performance.now() - tabT0).toFixed(1) });
         } catch (err) {
           console.warn("Failed to preload tab:", tab.filePath, err);
+          useEditorStore.getState().setTabLoadError(tab.id, String(err));
         }
       }
       if (!cancelled) {
@@ -525,6 +527,21 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         onOpenProject={onOpenProject}
         onOpenFile={onOpenFile}
       />
+    );
+  }
+
+  // Show error state for tabs whose files could not be loaded from disk
+  if (activeTab && activeTab.loadError) {
+    return (
+      <div className="h-full flex flex-col overflow-hidden">
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
+          <span>File not found</span>
+          <span className="text-xs max-w-md text-center truncate opacity-60">{activeTab.filePath}</span>
+        </div>
+        {!focusMode && (
+          <StatusBar editor={null} onShortcutsOpen={onShortcutsOpen} onOpenActions={onOpenActions} />
+        )}
+      </div>
     );
   }
 

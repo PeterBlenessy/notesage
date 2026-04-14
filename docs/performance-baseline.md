@@ -125,6 +125,38 @@ Measured with 6 iCloud projects, 3 explorer folders, 22 open tabs, 679 total fil
 
 **Comparison vs 2026-04-12:** phase1-ready improved 6,293→5,426ms (−14%). Tree refresh improved 12,804→10,487ms (−18%) despite 1,237 vs 679 files (+82%). Tab preload is new metric (27 tabs in 12.8s). No regressions.
 
+### 2026-04-14 — v0.33.0 release (edb47fe)
+
+6 iCloud projects, 3 explorer folders, 8 open tabs, 1,245 total files.
+
+**Skills pipeline:**
+
+| Step | ms |
+| --- | --- |
+| skill-scan | 872 |
+| skill-tool-extract (11 skills) | 392 |
+| agent-scan | 129 |
+| instruction-scan | 151 |
+| **phase1-ready (tools visible)** | **1,548** |
+| bundled-skills-extract | 302 |
+| bundled-agents-extract | 142 |
+| phase2-extract | 634 |
+| **total** | **2,183** |
+
+**Startup & trees:**
+
+| Metric | ms |
+| --- | --- |
+| trees validated (1st) | 1,156 |
+| trees validated (2nd) | 1,474 |
+| tree refresh | 2,592 |
+| tab-preload (7 tabs) | 1,970 |
+| index init total | 1,048 / 1,135 |
+| startup ready | 3,568 / 3,698 |
+| tabs restored | 3,267 / 3,430 |
+
+**Comparison vs v0.32.1:** phase1-ready improved 5,426→1,548ms (−71%). Skills total improved 8,793→2,183ms (−75%). Tree refresh improved 10,487→2,592ms (−75%). Startup ready improved dramatically. Fewer open tabs (8 vs 27) accounts for some improvement. No regressions from new extensions.
+
 ## Notes
 
 - Parse benchmarks include Tiptap editor creation overhead (\~15ms fixed cost)
