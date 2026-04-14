@@ -449,6 +449,8 @@ export function useCopilotChat({
               log.error('ai', 'Copilot conversation error', err);
               if (err.reason === 'model_not_supported') {
                 toast.error(`Model "${err.modelName || 'unknown'}" is not available on your Copilot plan. Try a different model in Settings > Advanced Routing.`);
+              } else if (errorMsg.includes("'max_tokens' is not supported")) {
+                toast.error('The auto-selected Copilot model has a compatibility issue. Try selecting a specific model in Settings > Advanced Routing.');
               } else {
                 toast.error(errorMsg);
               }

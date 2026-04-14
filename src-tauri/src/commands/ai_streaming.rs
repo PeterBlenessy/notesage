@@ -684,6 +684,29 @@ pub async fn ollama_chat_stream(
                     );
                 }
             }
+            // Include tool_calls on assistant messages (required for multi-turn tool calling)
+            if m.role == "assistant" {
+                if let Some(ref tcs) = m.tool_calls {
+                    if !tcs.is_empty() {
+                        msg["tool_calls"] = serde_json::json!(tcs.iter().map(|tc| {
+                            serde_json::json!({
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.name,
+                                    "arguments": tc.arguments.to_string()
+                                }
+                            })
+                        }).collect::<Vec<_>>());
+                    }
+                }
+            }
+            // Include tool_call_id on tool result messages
+            if m.role == "tool" {
+                if let Some(ref id) = m.tool_call_id {
+                    msg["tool_call_id"] = serde_json::json!(id);
+                }
+            }
             msg
         })
         .collect();
@@ -924,10 +947,34 @@ pub async fn openai_compatible_chat_stream(
                     });
                 }
             }
-            serde_json::json!({
+            let mut msg = serde_json::json!({
                 "role": m.role,
                 "content": m.content
-            })
+            });
+            // Include tool_calls on assistant messages (required for multi-turn tool calling)
+            if m.role == "assistant" {
+                if let Some(ref tcs) = m.tool_calls {
+                    if !tcs.is_empty() {
+                        msg["tool_calls"] = serde_json::json!(tcs.iter().map(|tc| {
+                            serde_json::json!({
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.name,
+                                    "arguments": tc.arguments.to_string()
+                                }
+                            })
+                        }).collect::<Vec<_>>());
+                    }
+                }
+            }
+            // Include tool_call_id on tool result messages
+            if m.role == "tool" {
+                if let Some(ref id) = m.tool_call_id {
+                    msg["tool_call_id"] = serde_json::json!(id);
+                }
+            }
+            msg
         })
         .collect();
 
