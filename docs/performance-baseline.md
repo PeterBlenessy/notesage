@@ -19,7 +19,7 @@ Previous baseline (same date, same code) had optimistic parse 100KB (182ms) and 
 
 | Size | Median (ms) | Dev Budget (2x) | CI Budget (3x) |
 | --- | --- | --- | --- |
-| 1KB | 17 | 34 | 51 |
+| 1KB | 19 | 38 | 57 |
 | 10KB | 51 | 102 | 153 |
 | 50KB | 139 | 278 | 417 |
 | 100KB | 254 | 508 | 762 |

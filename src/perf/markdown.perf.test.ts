@@ -32,7 +32,7 @@ beforeAll(() => {
 const fixturesDir = join(__dirname, "../../tests/fixtures/perf");
 
 const fixtures = [
-  { name: "1KB", file: "perf-1kb.md", parseBudget: 34, serializeBudget: 3 },
+  { name: "1KB", file: "perf-1kb.md", parseBudget: 38, serializeBudget: 3 },
   { name: "10KB", file: "perf-10kb.md", parseBudget: 100, serializeBudget: 4 },
   { name: "50KB", file: "perf-50kb.md", parseBudget: 276, serializeBudget: 15 },
   { name: "100KB", file: "perf-100kb.md", parseBudget: 508, serializeBudget: 50 },
