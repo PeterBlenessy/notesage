@@ -69,7 +69,7 @@ export type SystemStatusType = 'reconnecting' | 'reconnected' | 'failed';
 // ---------------------------------------------------------------------------
 
 interface MessageSegmentBase {
-  type: 'text' | 'thinking' | 'tool_call' | 'tool_result' | 'image';
+  type: 'text' | 'thinking' | 'tool_call' | 'tool_result' | 'image' | 'plan';
   timestamp: number;
 }
 
@@ -90,6 +90,7 @@ export interface ToolCallSegment extends MessageSegmentBase {
   label: string;
   detail?: string;
   status: 'running' | 'done' | 'error';
+  locations?: { path: string; line?: number }[];
 }
 
 export interface ToolResultSegment extends MessageSegmentBase {
@@ -107,7 +108,18 @@ export interface ImageSegment extends MessageSegmentBase {
   alt?: string;       // optional alt text / description
 }
 
-export type Segment = TextSegment | ThinkingSegment | ToolCallSegment | ToolResultSegment | ImageSegment;
+export interface PlanEntry {
+  content: string;
+  priority: 'high' | 'medium' | 'low';
+  status: 'pending' | 'in_progress' | 'completed';
+}
+
+export interface PlanSegment extends MessageSegmentBase {
+  type: 'plan';
+  entries: PlanEntry[];
+}
+
+export type Segment = TextSegment | ThinkingSegment | ToolCallSegment | ToolResultSegment | ImageSegment | PlanSegment;
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'tool' | 'system-status';

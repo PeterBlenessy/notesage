@@ -51,12 +51,26 @@ export interface AcpAgentState {
 // Session-level state (modes, config options) — module-level, reset per session
 // ---------------------------------------------------------------------------
 
+export interface AcpUsageInfo {
+  contextUsed: number;
+  contextSize: number;
+  cost?: { amount: number; currency: string };
+}
+
+export interface AcpAgentCommand {
+  name: string;
+  description: string;
+  inputHint?: string;
+}
+
 export interface AcpSessionInfo {
   modes: AcpSessionModeState | null;
   configOptions: AcpSessionConfigOption[] | null;
+  usage: AcpUsageInfo | null;
+  commands: AcpAgentCommand[];
 }
 
-let sessionInfo: AcpSessionInfo = { modes: null, configOptions: null };
+let sessionInfo: AcpSessionInfo = { modes: null, configOptions: null, usage: null, commands: [] };
 
 /** Listeners notified when session info changes (for React re-renders) */
 const sessionInfoListeners = new Set<() => void>();
@@ -95,8 +109,18 @@ export function updateConfigOptionValue(optionId: string, valueId: string): void
   }
 }
 
+export function updateUsage(usage: AcpUsageInfo): void {
+  sessionInfo = { ...sessionInfo, usage };
+  sessionInfoListeners.forEach(fn => fn());
+}
+
+export function setAvailableCommands(commands: AcpAgentCommand[]): void {
+  sessionInfo = { ...sessionInfo, commands };
+  sessionInfoListeners.forEach(fn => fn());
+}
+
 export function clearSessionInfo(): void {
-  sessionInfo = { modes: null, configOptions: null };
+  sessionInfo = { modes: null, configOptions: null, usage: null, commands: [] };
   sessionInfoListeners.forEach(fn => fn());
 }
 

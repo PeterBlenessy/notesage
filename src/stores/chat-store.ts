@@ -9,9 +9,11 @@ import {
   appendThinkingSegment as appendThinkingSegmentUtil,
   pushSegment as pushSegmentUtil,
   updateSegment as updateSegmentUtil,
+  updateOrPushPlanSegment as updateOrPushPlanSegmentUtil,
   finalizeSegments as finalizeSegmentsUtil,
   resetAssistantMessage as resetAssistantMessageUtil,
 } from '@/lib/segmentOps';
+import type { PlanEntry } from '@/lib/ai/types';
 
 /** Tracks a project context boundary within a conversation */
 export interface ConversationSegment {
@@ -110,6 +112,8 @@ interface ChatStore {
   pushSegment: (messageTimestamp: number, segment: Segment) => void;
   /** Update a segment by index with a partial patch */
   updateSegment: (messageTimestamp: number, index: number, patch: Partial<Segment>) => void;
+  /** Update or push a plan segment (full replacement) */
+  updateOrPushPlanSegment: (messageTimestamp: number, entries: PlanEntry[]) => void;
   /** Finalize all segments: collapse thinking, mark running tool_calls as done */
   finalizeSegments: (messageTimestamp: number) => void;
   /** Reset an assistant message for retry — clears content, segments, error state */
@@ -500,6 +504,15 @@ export const useChatStore = create<ChatStore>()(
           updatedAt: nextUpdatedAt(),
           messages: c.messages.map((msg) =>
             msg.timestamp === messageTimestamp ? updateSegmentUtil(msg, index, patch) : msg
+          ),
+        }))),
+
+      updateOrPushPlanSegment: (messageTimestamp, entries) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          updatedAt: nextUpdatedAt(),
+          messages: c.messages.map((msg) =>
+            msg.timestamp === messageTimestamp ? updateOrPushPlanSegmentUtil(msg, entries) : msg
           ),
         }))),
 

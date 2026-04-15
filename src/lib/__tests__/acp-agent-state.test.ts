@@ -5,6 +5,8 @@ import {
   setSessionConfigOptions,
   updateCurrentMode,
   updateConfigOptionValue,
+  updateUsage,
+  setAvailableCommands,
   clearSessionInfo,
   subscribeSessionInfo,
   getModeLabel,
@@ -233,5 +235,53 @@ describe('session info lifecycle', () => {
 
     expect(getSessionInfo().modes).toBeNull();
     expect(getSessionInfo().configOptions).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 tests
+// ---------------------------------------------------------------------------
+
+describe('usage tracking', () => {
+  it('stores usage data', () => {
+    updateUsage({ contextUsed: 4200, contextSize: 200000 });
+    const info = getSessionInfo();
+    expect(info.usage?.contextUsed).toBe(4200);
+    expect(info.usage?.contextSize).toBe(200000);
+  });
+
+  it('stores usage with cost', () => {
+    updateUsage({ contextUsed: 1000, contextSize: 100000, cost: { amount: 0.03, currency: 'USD' } });
+    expect(getSessionInfo().usage?.cost?.amount).toBe(0.03);
+  });
+
+  it('clears usage on clearSessionInfo', () => {
+    updateUsage({ contextUsed: 500, contextSize: 50000 });
+    clearSessionInfo();
+    expect(getSessionInfo().usage).toBeNull();
+  });
+});
+
+describe('agent commands', () => {
+  it('stores commands from available_commands_update', () => {
+    setAvailableCommands([
+      { name: 'compact', description: 'Compact the conversation' },
+      { name: 'clear', description: 'Clear conversation history' },
+    ]);
+    expect(getSessionInfo().commands).toHaveLength(2);
+    expect(getSessionInfo().commands[0].name).toBe('compact');
+  });
+
+  it('replaces commands on subsequent update', () => {
+    setAvailableCommands([{ name: 'old', description: 'Old command' }]);
+    setAvailableCommands([{ name: 'new', description: 'New command' }]);
+    expect(getSessionInfo().commands).toHaveLength(1);
+    expect(getSessionInfo().commands[0].name).toBe('new');
+  });
+
+  it('clears commands on clearSessionInfo', () => {
+    setAvailableCommands([{ name: 'test', description: 'Test' }]);
+    clearSessionInfo();
+    expect(getSessionInfo().commands).toHaveLength(0);
   });
 });

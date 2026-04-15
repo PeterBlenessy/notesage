@@ -1,4 +1,4 @@
-import type { ChatMessage, Segment } from '@/lib/ai/types';
+import type { ChatMessage, Segment, PlanEntry } from '@/lib/ai/types';
 
 /**
  * Append text to the last text segment of a message, or create a new text segment.
@@ -48,6 +48,24 @@ export function updateSegment(msg: ChatMessage, index: number, patch: Partial<Se
   const segments = msg.segments.map((s, i) =>
     i === index ? { ...s, ...patch } as Segment : s
   );
+  return { ...msg, segments };
+}
+
+/**
+ * Update the last plan segment if one exists, or push a new one.
+ * Plans are full replacements — the entries array replaces the previous plan entirely.
+ */
+export function updateOrPushPlanSegment(msg: ChatMessage, entries: PlanEntry[]): ChatMessage {
+  const segments = [...(msg.segments || [])];
+  let lastPlanIdx = -1;
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (segments[i].type === 'plan') { lastPlanIdx = i; break; }
+  }
+  if (lastPlanIdx >= 0) {
+    segments[lastPlanIdx] = { ...segments[lastPlanIdx], entries, timestamp: Date.now() } as Segment;
+  } else {
+    segments.push({ type: 'plan', entries, timestamp: Date.now() });
+  }
   return { ...msg, segments };
 }
 

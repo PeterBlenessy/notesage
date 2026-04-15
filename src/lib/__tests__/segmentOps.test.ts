@@ -4,6 +4,7 @@ import {
   appendThinkingSegment,
   pushSegment,
   updateSegment,
+  updateOrPushPlanSegment,
   finalizeSegments,
   resetAssistantMessage,
 } from '../segmentOps';
@@ -245,6 +246,56 @@ describe('finalizeSegments', () => {
     expect(result.segments![0].type).toBe('image');
     expect((result.segments![0] as { data: string }).data).toBe('abc123');
     expect((result.segments![1] as { status: string }).status).toBe('done');
+  });
+});
+
+describe('updateOrPushPlanSegment', () => {
+  it('pushes new plan segment when none exists', () => {
+    const msg = makeMsg({ segments: [{ type: 'text', content: 'Hello', timestamp: 1000 }] });
+    const entries = [{ content: 'Step 1', priority: 'high' as const, status: 'pending' as const }];
+    const result = updateOrPushPlanSegment(msg, entries);
+    expect(result.segments).toHaveLength(2);
+    expect(result.segments![1].type).toBe('plan');
+    expect((result.segments![1] as { entries: unknown[] }).entries).toEqual(entries);
+  });
+
+  it('replaces existing plan segment', () => {
+    const msg = makeMsg({
+      segments: [
+        { type: 'plan', entries: [{ content: 'Old step', priority: 'low', status: 'pending' }], timestamp: 1000 },
+      ],
+    });
+    const newEntries = [
+      { content: 'New step 1', priority: 'high' as const, status: 'in_progress' as const },
+      { content: 'New step 2', priority: 'medium' as const, status: 'pending' as const },
+    ];
+    const result = updateOrPushPlanSegment(msg, newEntries);
+    expect(result.segments).toHaveLength(1);
+    expect((result.segments![0] as { entries: unknown[] }).entries).toEqual(newEntries);
+  });
+
+  it('replaces the last plan segment when multiple exist', () => {
+    const msg = makeMsg({
+      segments: [
+        { type: 'plan', entries: [{ content: 'Plan 1', priority: 'low', status: 'completed' }], timestamp: 1000 },
+        { type: 'text', content: 'Some text', timestamp: 1001 },
+        { type: 'plan', entries: [{ content: 'Plan 2', priority: 'medium', status: 'pending' }], timestamp: 1002 },
+      ],
+    });
+    const newEntries = [{ content: 'Updated', priority: 'high' as const, status: 'completed' as const }];
+    const result = updateOrPushPlanSegment(msg, newEntries);
+    expect(result.segments).toHaveLength(3);
+    // First plan unchanged
+    expect((result.segments![0] as { entries: unknown[] }).entries[0]).toEqual({ content: 'Plan 1', priority: 'low', status: 'completed' });
+    // Last plan updated
+    expect((result.segments![2] as { entries: unknown[] }).entries).toEqual(newEntries);
+  });
+
+  it('does not mutate original', () => {
+    const entries = [{ content: 'Step', priority: 'medium' as const, status: 'pending' as const }];
+    const msg = makeMsg({ segments: [] });
+    updateOrPushPlanSegment(msg, entries);
+    expect(msg.segments).toHaveLength(0);
   });
 });
 

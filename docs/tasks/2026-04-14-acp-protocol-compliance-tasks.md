@@ -490,7 +490,7 @@ Also remove the thinking effort suffix logic from the model flag injection (alre
 
 ## Phase 3 — Rich Streaming Data
 
-### #13 — Usage tracking display
+### #13 — Usage tracking display ✅
 
 **Description:** Parse `usage_update` events in `useAcpSessionListeners.ts`. Store in a per-conversation usage accumulator on the chat store or a lightweight reactive ref.
 
@@ -517,7 +517,7 @@ Also parse per-turn `Usage` from `PromptResponse` if available (inputTokens, out
 
 ---
 
-### #14 — Agent plan display (PlanSegment)
+### #14 — Agent plan display (PlanSegment) ✅
 
 **Description:** Add `PlanSegment` to the `Segment` union type. Handle `plan` session updates in listeners — plans are full replacements, so update the last plan segment rather than appending.
 
@@ -544,7 +544,7 @@ Create `PlanSegmentView.tsx`: collapsible card with header "Plan" + entry count 
 
 ---
 
-### #15 — Rich tool call updates (status, locations, rawOutput)
+### #15 — Rich tool call updates (status, locations, rawOutput) ✅
 
 **Description:** Expand `tool_call_update` handling beyond label-only:
 
@@ -566,7 +566,7 @@ Update the `tool_call_update` handler to find the corresponding segment by `tool
 
 ---
 
-### #16 — Agent slash command passthrough
+### #16 — Agent slash command passthrough ✅
 
 **Description:** Handle `available_commands_update` events. Store commands in `acp-agent-state.ts` as `availableCommands: { name, description, inputHint? }[]`.
 
@@ -591,7 +591,7 @@ Update command list when new `available_commands_update` arrives.
 
 ---
 
-### #17 — Write tests for Phase 3 changes
+### #17 — Write tests for Phase 3 changes ✅
 
 **Description:** Add unit tests for:
 
@@ -612,7 +612,7 @@ Update command list when new `available_commands_update` arrives.
 
 ---
 
-### #18 — Update docs for new ACP features
+### #18 — Update docs for new ACP features ✅
 
 **Description:** Update documentation to reflect new ACP capabilities:
 

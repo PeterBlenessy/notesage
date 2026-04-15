@@ -70,12 +70,40 @@ function StatusIcon({ status }: { status: ToolCallSegment['status'] }) {
 export const ToolCallSegmentView = memo(function ToolCallSegmentView({ segment }: ToolCallSegmentViewProps) {
   return (
     <div
-      className="my-0.5 flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground bg-background/50"
+      className="my-0.5 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground bg-background/50"
       title={typeof segment.detail === 'string' ? segment.detail : (segment.detail ? JSON.stringify(segment.detail, null, 2) : undefined)}
     >
-      <span className="shrink-0 opacity-60">{getToolIcon(segment.kind)}</span>
-      <span className="truncate">{segment.label}</span>
-      <span className="shrink-0 opacity-60"><StatusIcon status={segment.status} /></span>
+      <div className="flex items-center gap-1.5">
+        <span className="shrink-0 opacity-60">{getToolIcon(segment.kind)}</span>
+        <span className="truncate">{segment.label}</span>
+        <span className="shrink-0 opacity-60"><StatusIcon status={segment.status} /></span>
+      </div>
+      {segment.locations && segment.locations.length > 0 && (
+        <div className="ml-5 mt-0.5 space-y-0.5">
+          {segment.locations.map((loc, i) => {
+            const fileName = loc.path.split('/').pop() || loc.path;
+            const display = loc.line ? `${fileName}:${loc.line}` : fileName;
+            return (
+              <button
+                key={i}
+                className="block text-[10px] text-muted-foreground/60 hover:text-foreground hover:underline transition-colors truncate max-w-full"
+                title={loc.path}
+                onClick={async () => {
+                  try {
+                    const { invoke } = await import('@tauri-apps/api/core');
+                    const { useEditorStore } = await import('@/stores/editor-store');
+                    const content = await invoke<string>('read_file', { path: loc.path });
+                    const fileName = loc.path.split('/').pop() || loc.path;
+                    useEditorStore.getState().openTab(loc.path, fileName, content);
+                  } catch { /* file may not exist */ }
+                }}
+              >
+                {display}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 });

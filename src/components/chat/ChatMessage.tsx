@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import type { ChatMessage as ChatMessageType, AgentActivity, ToolCallActivity, ToolCallStatus, Segment } from '@/lib/ai/types';
 import { TextSegmentView, ThinkingSegmentView, ToolCallSegmentView, ToolResultSegmentView, ImageSegmentView, ToolCallGroup } from './segments';
+import { PlanSegmentView } from './segments/PlanSegmentView';
 
 function ActivityIcon({ activity, isActive }: { activity: AgentActivity; isActive: boolean }) {
   if (isActive && activity.status === 'running') {
@@ -520,6 +521,14 @@ function SegmentRenderer({ segments, isActivelyStreaming }: { segments: Segment[
               <ImageSegmentView
                 key={`image-${index}`}
                 segment={segment}
+              />
+            );
+          case 'plan':
+            return (
+              <PlanSegmentView
+                key={`plan-${index}`}
+                segment={segment}
+                isStreaming={isStreamingSegment}
               />
             );
           default:

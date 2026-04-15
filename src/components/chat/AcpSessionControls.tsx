@@ -277,7 +277,47 @@ const ConfigOptionPicker = memo(function ConfigOptionPicker({ option }: { option
 });
 
 // ---------------------------------------------------------------------------
-// Combined controls — renders mode picker + config options
+// Usage indicator — shows token count and optional cost
+// ---------------------------------------------------------------------------
+
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+const UsageIndicator = memo(function UsageIndicator() {
+  const sessionInfo = useSyncExternalStore(subscribeSessionInfo, getSessionInfo);
+  const usage = sessionInfo.usage;
+  if (!usage || (usage.contextUsed === 0 && usage.contextSize === 0)) return null;
+
+  const label = usage.contextSize > 0
+    ? `${formatTokenCount(usage.contextUsed)} / ${formatTokenCount(usage.contextSize)}`
+    : formatTokenCount(usage.contextUsed);
+
+  const costTooltip = usage.cost
+    ? `${usage.cost.currency === 'USD' ? '$' : usage.cost.currency + ' '}${usage.cost.amount.toFixed(2)}`
+    : undefined;
+
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+            {label}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">
+          <p>{formatTokenCount(usage.contextUsed)} tokens used{usage.contextSize > 0 ? ` of ${formatTokenCount(usage.contextSize)} context` : ''}</p>
+          {costTooltip && <p className="text-muted-foreground">{costTooltip}</p>}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Combined controls — renders mode picker + config options + usage
 // ---------------------------------------------------------------------------
 
 export const AcpSessionControls = memo(function AcpSessionControls({ showModePicker }: { showModePicker: boolean }) {
@@ -290,7 +330,9 @@ export const AcpSessionControls = memo(function AcpSessionControls({ showModePic
     opt => opt.category !== 'model' && opt.category !== 'mode'
   );
 
-  const hasControls = (showModePicker && sessionInfo.modes && sessionInfo.modes.availableModes.length >= 2) || configOptions.length > 0;
+  const hasControls = (showModePicker && sessionInfo.modes && sessionInfo.modes.availableModes.length >= 2)
+    || configOptions.length > 0
+    || sessionInfo.usage;
   if (!hasControls) return null;
 
   return (
@@ -299,6 +341,7 @@ export const AcpSessionControls = memo(function AcpSessionControls({ showModePic
       {configOptions.map(opt => (
         <ConfigOptionPicker key={opt.id} option={opt} />
       ))}
+      <UsageIndicator />
     </div>
   );
 });

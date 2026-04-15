@@ -11,6 +11,7 @@ import { AgentCommandMenu, type AgentCommandMenuHandle } from './AgentCommandMen
 import { ContextPill } from './ContextPill';
 import { AttachmentStrip } from './AttachmentStrip';
 import type { SkillEntry, AgentEntry } from '@/stores/skill-store';
+import type { AcpAgentCommand } from '@/lib/ai/acp-agent-state';
 import type { ContextItem } from '@/hooks/useChatContext';
 import type { ImageAttachment } from '@/lib/ai/types';
 import { compressImage } from '@/lib/image-compress';
@@ -285,6 +286,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     textareaRef.current?.focus();
   };
 
+  const handleAgentCommandSelect = (cmd: AcpAgentCommand) => {
+    setMessage(`/${cmd.name} `);
+    setShowSkillMenu(false);
+    textareaRef.current?.focus();
+  };
+
   const handleAgentSelect = (agent: AgentEntry) => {
     setMessage(`@${agent.name} `);
     setShowAgentMenu(false);
@@ -407,6 +414,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           ref={menuRef}
           query={skillQuery}
           onSelect={handleSkillSelect}
+          onSelectAgentCommand={handleAgentCommandSelect}
           onClose={() => setShowSkillMenu(false)}
         />
       )}

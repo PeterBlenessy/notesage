@@ -19,7 +19,7 @@ import {
 } from '@/lib/ai/acp-utils';
 import { resetUnresponsiveTimer } from '@/hooks/useAcpLifecycle';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
-import { updateCurrentMode, updateConfigOptionValue } from '@/lib/ai/acp-agent-state';
+import { updateCurrentMode, updateConfigOptionValue, updateUsage, setAvailableCommands } from '@/lib/ai/acp-agent-state';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,6 +43,7 @@ interface ChatListenerDeps {
   appendThinkingSegment: (messageId: number, text: string) => void;
   pushSegment: (messageId: number, segment: Segment) => void;
   updateSegment: (messageId: number, index: number, patch: Partial<Segment>) => void;
+  updateOrPushPlanSegment: (messageId: number, entries: import('@/lib/ai/types').PlanEntry[]) => void;
   finalizeSegments: (messageId: number) => void;
 }
 
@@ -136,6 +137,30 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       } as ToolCallSegment);
     } else if (update.sessionUpdate === 'tool_call_update') {
       deps.setActiveTool(formatAcpToolName(update.kind, update.title));
+      // Patch the corresponding tool_call segment with richer data
+      const lastToolIdx = pendingToolCallIndices[pendingToolCallIndices.length - 1];
+      if (lastToolIdx !== undefined && lastToolIdx >= 0) {
+        const patch: Partial<ToolCallSegment> = {};
+        // Status mapping
+        const rawStatus = String(update.status ?? '');
+        if (rawStatus === 'completed') patch.status = 'done';
+        else if (rawStatus === 'failed') patch.status = 'error';
+        // Locations
+        if (Array.isArray(update.locations) && update.locations.length > 0) {
+          patch.locations = (update.locations as Array<Record<string, unknown>>).map(loc => ({
+            path: String(loc.path ?? loc.file ?? ''),
+            line: typeof loc.line === 'number' ? loc.line : undefined,
+          }));
+        }
+        // Update label if title changed
+        if (update.title) {
+          const parsedArgs = parseRawInput(update.rawInput);
+          patch.label = formatToolLabel(update.kind || 'unknown', parsedArgs, update.title);
+        }
+        if (Object.keys(patch).length > 0) {
+          deps.updateSegment(deps.assistantMessageId, lastToolIdx, patch);
+        }
+      }
     } else if (update.sessionUpdate === 'tool_result') {
       deps.setActiveTool(null);
       deps.completeLastActivity(deps.assistantMessageId);
@@ -166,6 +191,32 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
     } else if (update.sessionUpdate === 'config_option_update' && update.config_id && update.value) {
       // Agent-initiated config option change
       updateConfigOptionValue(String(update.config_id), String(update.value));
+    } else if (update.sessionUpdate === 'plan' && Array.isArray(update.entries)) {
+      // Agent execution plan — full replacement
+      const entries = (update.entries as Array<Record<string, unknown>>).map(e => ({
+        content: String(e.content ?? e.description ?? ''),
+        priority: (['high', 'medium', 'low'].includes(String(e.priority)) ? String(e.priority) : 'medium') as 'high' | 'medium' | 'low',
+        status: (['pending', 'in_progress', 'completed'].includes(String(e.status)) ? String(e.status) : 'pending') as 'pending' | 'in_progress' | 'completed',
+      }));
+      deps.updateOrPushPlanSegment(deps.assistantMessageId, entries);
+    } else if (update.sessionUpdate === 'usage_update') {
+      // Token usage and cost tracking
+      const contextUsed = typeof update.totalInputTokens === 'number' ? update.totalInputTokens + (typeof update.totalOutputTokens === 'number' ? update.totalOutputTokens : 0) : 0;
+      const contextSize = typeof update.contextWindowSize === 'number' ? update.contextWindowSize : 0;
+      const cost = (typeof update.totalCost === 'number' && typeof update.currency === 'string')
+        ? { amount: update.totalCost, currency: update.currency }
+        : undefined;
+      if (contextUsed > 0 || contextSize > 0) {
+        updateUsage({ contextUsed, contextSize, cost });
+      }
+    } else if (update.sessionUpdate === 'available_commands_update' && Array.isArray(update.commands)) {
+      // Agent slash commands
+      const commands = (update.commands as Array<Record<string, unknown>>).map(cmd => ({
+        name: String(cmd.name ?? ''),
+        description: String(cmd.description ?? ''),
+        inputHint: typeof cmd.inputHint === 'string' ? cmd.inputHint : undefined,
+      }));
+      setAvailableCommands(commands);
     } else if (update.sessionUpdate) {
       // Unknown session update type — log for debugging, don't crash
       log.debug('ai', `Unknown ACP session update type: ${update.sessionUpdate}`);
