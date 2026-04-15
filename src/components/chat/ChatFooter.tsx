@@ -10,6 +10,7 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { useSkillStore } from '@/stores/skill-store';
 import { useSettingsStore } from '@/stores/settings-store';
+import { AcpSessionControls } from './AcpSessionControls';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { useChatContext } from '@/hooks/useChatContext';
 import { useAIOperations } from '@/hooks/useAIOperations';
@@ -101,6 +102,7 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
   const { contextItems, dismissItem } = useChatContext();
 
   const toolCallingEnabled = useSettingsStore((s) => s.toolCallingEnabled);
+  const showAgentModePicker = useSettingsStore((s) => s.showAgentModePicker);
   const skillTools = useSkillStore((s) => s.skillTools);
   const toolDefs = useMemo(() => {
     if (!toolCallingEnabled) return [];
@@ -365,6 +367,7 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
                 </PopoverContent>
               </Popover>
             )}
+            <AcpSessionControls showModePicker={showAgentModePicker} />
             {goalFiles.length > 0 && (
               <TooltipProvider delayDuration={200}>
                 <Tooltip>

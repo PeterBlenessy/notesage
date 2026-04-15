@@ -37,6 +37,9 @@ pub struct SpawnResult {
     pub auth_methods: Vec<AuthMethodInfo>,
     pub sandbox_enabled: bool,
     pub network_sandbox_enabled: bool,
+    pub supports_images: bool,
+    /// AgentCapabilities from the initialize response (passed as JSON to frontend)
+    pub capabilities: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -64,6 +67,10 @@ pub struct SessionResult {
     pub session_id: String,
     pub current_model: Option<String>,
     pub available_models: Vec<AgentModelInfo>,
+    /// Session modes (passed as JSON to frontend)
+    pub modes: Option<serde_json::Value>,
+    /// Session config options (passed as JSON to frontend)
+    pub config_options: Option<serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -207,6 +214,22 @@ enum AgentCmd {
     PermissionRespond {
         request_id: String,
         option_id: Option<String>,
+    },
+    SetMode {
+        session_id: String,
+        mode_id: String,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    SetConfigOption {
+        session_id: String,
+        option_id: String,
+        value_id: String,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    SetModel {
+        session_id: String,
+        model_id: String,
+        reply: oneshot::Sender<Result<(), String>>,
     },
     Stop {
         reply: oneshot::Sender<Result<(), String>>,
@@ -455,6 +478,7 @@ fn run_agent_thread(
                     "Agent {} supports_images={}",
                     agent_binary, supports_images_flag,
                 );
+                let capabilities_json = serde_json::to_value(&resp.agent_capabilities).ok();
                 let info = InitInfo {
                     agent_name: resp.agent_info.as_ref().map(|i| i.name.clone()),
                     agent_version: resp.agent_info.as_ref().map(|i| i.version.clone()),
@@ -467,6 +491,7 @@ fn run_agent_thread(
                         })
                         .collect(),
                     supports_images: supports_images_flag,
+                    capabilities: capabilities_json,
                 };
                 let _ = init_tx.send(Ok(info));
             }
@@ -572,10 +597,17 @@ fn run_agent_thread(
                                     .collect();
                             }
 
+                            let modes = resp.modes.as_ref()
+                                .and_then(|m| serde_json::to_value(m).ok());
+                            let config_options = resp.config_options.as_ref()
+                                .and_then(|c| serde_json::to_value(c).ok());
+
                             let _ = reply.send(Ok(SessionResult {
                                 session_id: resp.session_id.to_string(),
                                 current_model,
                                 available_models,
+                                modes,
+                                config_options,
                             }));
                         }
                         Err(e) => {
@@ -612,10 +644,17 @@ fn run_agent_thread(
                                     .collect();
                             }
 
+                            let modes = resp.modes.as_ref()
+                                .and_then(|m| serde_json::to_value(m).ok());
+                            let config_options = resp.config_options.as_ref()
+                                .and_then(|c| serde_json::to_value(c).ok());
+
                             let _ = reply.send(Ok(SessionResult {
                                 session_id: sid,
                                 current_model,
                                 available_models,
+                                modes,
+                                config_options,
                             }));
                         }
                         Err(e) => {
@@ -702,6 +741,50 @@ fn run_agent_thread(
                         permission_waiters.borrow_mut().remove(&request_id)
                     {
                         let _ = tx.send(PermissionReply { option_id });
+                    }
+                }
+                AgentCmd::SetMode {
+                    session_id: sid,
+                    mode_id,
+                    reply,
+                } => {
+                    let req = SetSessionModeRequest::new(
+                        SessionId::new(sid),
+                        SessionModeId::new(mode_id),
+                    );
+                    match conn.set_session_mode(req).await {
+                        Ok(_) => { let _ = reply.send(Ok(())); }
+                        Err(e) => { let _ = reply.send(Err(format!("set_mode failed: {}", e))); }
+                    }
+                }
+                AgentCmd::SetConfigOption {
+                    session_id: sid,
+                    option_id,
+                    value_id,
+                    reply,
+                } => {
+                    let req = SetSessionConfigOptionRequest::new(
+                        SessionId::new(sid),
+                        SessionConfigId::new(option_id),
+                        SessionConfigValueId::new(value_id),
+                    );
+                    match conn.set_session_config_option(req).await {
+                        Ok(_) => { let _ = reply.send(Ok(())); }
+                        Err(e) => { let _ = reply.send(Err(format!("set_config_option failed: {}", e))); }
+                    }
+                }
+                AgentCmd::SetModel {
+                    session_id: sid,
+                    model_id,
+                    reply,
+                } => {
+                    let req = SetSessionModelRequest::new(
+                        SessionId::new(sid),
+                        ModelId::new(model_id),
+                    );
+                    match conn.set_session_model(req).await {
+                        Ok(_) => { let _ = reply.send(Ok(())); }
+                        Err(e) => { let _ = reply.send(Err(format!("set_model failed: {}", e))); }
                     }
                 }
                 AgentCmd::Stop { reply } => {
@@ -924,6 +1007,8 @@ pub async fn acp_agent_spawn(
         auth_methods: init_info.auth_methods,
         sandbox_enabled: sandbox,
         network_sandbox_enabled: has_network_sandbox,
+        supports_images: init_info.supports_images,
+        capabilities: init_info.capabilities,
     })
 }
 
@@ -1250,6 +1335,101 @@ pub async fn acp_session_cancel(
     reply_rx
         .await
         .map_err(|_| "Agent thread did not respond to cancel".to_string())?
+}
+
+/// Set the session mode for an ACP agent.
+#[tauri::command]
+pub async fn acp_session_set_mode(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+    mode_id: String,
+) -> Result<(), String> {
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    };
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+    cmd_tx
+        .send(AgentCmd::SetMode {
+            session_id,
+            mode_id,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to set_mode".to_string())?
+}
+
+/// Set a session config option for an ACP agent.
+#[tauri::command]
+pub async fn acp_session_set_config_option(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+    option_id: String,
+    value_id: String,
+) -> Result<(), String> {
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    };
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+    cmd_tx
+        .send(AgentCmd::SetConfigOption {
+            session_id,
+            option_id,
+            value_id,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to set_config_option".to_string())?
+}
+
+/// Set the model for an ACP session.
+#[tauri::command]
+pub async fn acp_session_set_model(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+    model_id: String,
+) -> Result<(), String> {
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    };
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+    cmd_tx
+        .send(AgentCmd::SetModel {
+            session_id,
+            model_id,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to set_model".to_string())?
 }
 
 /// Respond to a permission request from an ACP agent.

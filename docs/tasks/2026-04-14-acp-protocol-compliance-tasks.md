@@ -130,7 +130,7 @@ Follow existing test patterns in `src/stores/__tests__/` and `src/hooks/__tests_
 
 ## Phase 2 — Session Modes & Config Options
 
-### #7 — Extend SessionResult to include modes and config options (backend)
+### #7 — Extend SessionResult to include modes and config options (backend) ✅
 
 **Description:** Modify `acp_session_new` and `acp_session_load` in `acp.rs` to extract `modes` and `config_options` from the ACP `NewSessionResponse`/`LoadSessionResponse`. Add these fields to `SessionResult` as `Option<serde_json::Value>` (pass through as JSON to avoid tightly coupling Rust types to the protocol schema).
 
@@ -145,7 +145,7 @@ Also extract and return `AgentCapabilities` from the initialize response as part
 
 ---
 
-### #8 — Add set_mode and set_config_option Tauri commands (backend)
+### #8 — Add set_mode and set_config_option Tauri commands (backend) ✅
 
 **Description:** Add two new Tauri commands and their `AgentCmd` variants:
 
@@ -164,7 +164,7 @@ Follow the pattern of existing commands like `acp_session_cancel`. Add `SetMode`
 
 ---
 
-### #9 — Session mode picker UI
+### #9 — Session mode picker UI ✅
 
 **Description:** Add a mode picker in the chat footer. Store session modes in `acp-agent-state.ts` (new `sessionModes` and `currentModeId` fields). After `acp_session_new` returns, check for modes and store them. When user selects a mode, invoke `acp_session_set_mode`.
 
@@ -220,7 +220,7 @@ The mapping lookup should key on `(agentBinary, modeId)` so it's scoped per agen
 
 ---
 
-### #10 — Dynamic config options state and rendering
+### #10 — Dynamic config options state and rendering ✅
 
 **Description:** Store `configOptions` from session creation in `acp-agent-state.ts`. Handle `config_option_update` notifications to update options dynamically.
 
@@ -254,7 +254,7 @@ This replaces the hardcoded Codex reasoning effort suffix logic in `ensureAcpAge
 
 ---
 
-### #11 — Replace hardcoded model flags with session/set_model
+### #11 — Replace hardcoded model flags with session/set_model ✅
 
 **Description:** Instead of injecting `--model <model>` or `-c model="<model>"` CLI args at spawn time per provider in `ensureAcpAgent()`, use `session/set_model` after session creation.
 
@@ -276,7 +276,7 @@ Remove the provider-specific model flag branching (`--model` vs `-c model=`).
 
 ---
 
-### #12 — Write tests for Phase 2 changes
+### #12 — Write tests for Phase 2 changes ✅
 
 **Description:** Add unit tests for:
 

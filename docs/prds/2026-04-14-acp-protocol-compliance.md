@@ -379,13 +379,13 @@ enum AgentCmd {
 
 - [x] Thinking output from Claude Code visible in chat panel as collapsible thinking segments
 
-- [ ] Mode picker appears when agent reports available modes
+- [x] Mode picker appears when agent reports available modes
 
-- [ ] Switching modes calls `session/set_mode` and reflects in UI
+- [x] Switching modes calls `session/set_mode` and reflects in UI
 
-- [ ] Config options render dynamically from agent metadata
+- [x] Config options render dynamically from agent metadata
 
-- [ ] Changing a config option calls `session/set_config_option`
+- [x] Changing a config option calls `session/set_config_option`
 
 - [ ] Usage indicator shows live token count during streaming
 
@@ -407,7 +407,7 @@ enum AgentCmd {
 
 ### Design
 
-- [ ] Mode picker matches model picker chip style — compact, consistent
+- [x] Mode picker matches model picker chip style — compact, consistent
 
 - [ ] Usage indicator uses `text-muted-foreground`, unobtrusive in footer
 
@@ -425,7 +425,7 @@ enum AgentCmd {
 
 - [ ] Unit tests for `usage_update` parsing and accumulation
 
-- [ ] Unit tests for mode/config option state management
+- [x] Unit tests for mode/config option state management
 
 - [x] Unit tests for unknown `SessionUpdate` graceful handling
 

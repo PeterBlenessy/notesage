@@ -153,6 +153,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
     toolbarVisible, setToolbarVisible,
     externalChangeDiffReview, setExternalChangeDiffReview,
     showHiddenFiles, setShowHiddenFiles,
+    showAgentModePicker, setShowAgentModePicker,
     contentWidth, setContentWidth,
     measurementUnit, setMeasurementUnit,
     marginTop, setMarginTop,
@@ -1101,6 +1102,22 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         Show dotfiles and dot-directories (starting with &quot;.&quot;) in the sidebar file tree.
+                      </p>
+                    </div>
+
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label htmlFor="show-agent-mode-picker" className="text-sm font-medium cursor-pointer">
+                          Show Agent Mode Picker
+                        </Label>
+                        <Switch
+                          id="show-agent-mode-picker"
+                          checked={showAgentModePicker}
+                          onCheckedChange={setShowAgentModePicker}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Show a mode picker in the chat footer for agents that support modes (e.g., Claude Code: Edit/Plan/Chat). When off, the default mode is used automatically.
                       </p>
                     </div>
                   </div>

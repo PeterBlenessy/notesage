@@ -19,6 +19,7 @@ import {
 } from '@/lib/ai/acp-utils';
 import { resetUnresponsiveTimer } from '@/hooks/useAcpLifecycle';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
+import { updateCurrentMode, updateConfigOptionValue } from '@/lib/ai/acp-agent-state';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -159,6 +160,12 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       if (deps.conversationId) {
         useChatStore.getState().renameConversation(deps.conversationId, update.title);
       }
+    } else if (update.sessionUpdate === 'current_mode_update' && update.mode_id) {
+      // Agent-initiated mode change
+      updateCurrentMode(String(update.mode_id));
+    } else if (update.sessionUpdate === 'config_option_update' && update.config_id && update.value) {
+      // Agent-initiated config option change
+      updateConfigOptionValue(String(update.config_id), String(update.value));
     } else if (update.sessionUpdate) {
       // Unknown session update type — log for debugging, don't crash
       log.debug('ai', `Unknown ACP session update type: ${update.sessionUpdate}`);

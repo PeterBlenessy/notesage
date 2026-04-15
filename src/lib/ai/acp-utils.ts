@@ -14,6 +14,15 @@ export interface AcpSpawnResult {
   auth_methods: { id: string; name: string; description: string | null }[];
   sandbox_enabled: boolean;
   network_sandbox_enabled: boolean;
+  supports_images: boolean;
+  capabilities: AcpAgentCapabilities | null;
+}
+
+export interface AcpAgentCapabilities {
+  load_session?: boolean;
+  prompt_capabilities?: { image?: boolean };
+  session_capabilities?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 export interface AcpModelInfo {
@@ -22,10 +31,28 @@ export interface AcpModelInfo {
   description: string | null;
 }
 
+export interface AcpSessionModeState {
+  currentModeId: string;
+  availableModes: { id: string; name: string; description?: string }[];
+}
+
+export interface AcpSessionConfigOption {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  /** Flattened from SessionConfigKind::Select — camelCase from ACP schema */
+  currentValue?: string;
+  options?: { id: string; name: string; description?: string }[];
+  [key: string]: unknown;
+}
+
 export interface AcpSessionResult {
   session_id: string;
   current_model: string | null;
   available_models: AcpModelInfo[];
+  modes: AcpSessionModeState | null;
+  config_options: AcpSessionConfigOption[] | null;
 }
 
 export interface AcpSessionUpdate {

@@ -64,6 +64,8 @@ interface SettingsStore {
   chatHintsShown: boolean;
   /** Show dotfiles and dot-directories in the sidebar file tree */
   showHiddenFiles: boolean;
+  /** Show agent mode picker in chat footer (default: off — uses default mode automatically) */
+  showAgentModePicker: boolean;
   // System tray settings
   showInTray: boolean;
   closeToTray: boolean;
@@ -124,6 +126,7 @@ interface SettingsStore {
   setPersonasMigrated: (migrated: boolean) => void;
   setChatHintsShown: (shown: boolean) => void;
   setShowHiddenFiles: (show: boolean) => void;
+  setShowAgentModePicker: (show: boolean) => void;
   setShowInTray: (show: boolean) => void;
   setCloseToTray: (close: boolean) => void;
   setStartAtLogin: (start: boolean) => void;
@@ -155,6 +158,7 @@ export const useSettingsStore = create<SettingsStore>()(
       personasMigrated: false,
       chatHintsShown: false,
       showHiddenFiles: false,
+      showAgentModePicker: false,
       showInTray: true,
       closeToTray: false,
       startAtLogin: false,
@@ -369,6 +373,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setShowHiddenFiles: (show: boolean) => {
         set({ showHiddenFiles: show });
+      },
+
+      setShowAgentModePicker: (show: boolean) => {
+        set({ showAgentModePicker: show });
       },
 
       setShowInTray: (show: boolean) => {

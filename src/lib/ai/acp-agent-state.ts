@@ -6,7 +6,30 @@ import { log } from '@/lib/logger';
 import { usePermissionStore } from '@/stores/permission-store';
 import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import type { Connection } from '@/lib/ai/connections';
-import type { AcpSpawnResult } from '@/lib/ai/acp-utils';
+import type { AcpSpawnResult, AcpSessionModeState, AcpSessionConfigOption, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
+
+// ---------------------------------------------------------------------------
+// Claude Code mode label mapping
+// ---------------------------------------------------------------------------
+
+interface ModeLabel {
+  name: string;
+  tooltip: string;
+}
+
+const CLAUDE_CODE_MODE_LABELS: Record<string, ModeLabel> = {
+  code: { name: 'Edit', tooltip: 'Agent can read and modify your documents' },
+  architect: { name: 'Plan', tooltip: 'Agent discusses approach without making changes' },
+  ask: { name: 'Chat', tooltip: 'Conversation only — no file access' },
+};
+
+/** Get display label for a mode. Only applies Claude Code-specific labels. */
+export function getModeLabel(agentBinary: string | undefined, modeId: string, nativeName: string): ModeLabel {
+  if (agentBinary?.includes('claude') && CLAUDE_CODE_MODE_LABELS[modeId]) {
+    return CLAUDE_CODE_MODE_LABELS[modeId];
+  }
+  return { name: nativeName, tooltip: '' };
+}
 
 // ---------------------------------------------------------------------------
 // Agent state (module-level singleton — survives re-renders)
@@ -18,6 +41,68 @@ export interface AcpAgentState {
   /** Serialized sandbox scope key — used to detect when agent needs respawning. */
   sandboxScopeKey: string;
   chatSessionId: string | null;
+  /** Agent binary name (e.g., 'claude-agent-acp', 'codex-acp') */
+  agentBinary?: string;
+  /** Agent capabilities from initialize response */
+  capabilities?: AcpAgentCapabilities | null;
+}
+
+// ---------------------------------------------------------------------------
+// Session-level state (modes, config options) — module-level, reset per session
+// ---------------------------------------------------------------------------
+
+export interface AcpSessionInfo {
+  modes: AcpSessionModeState | null;
+  configOptions: AcpSessionConfigOption[] | null;
+}
+
+let sessionInfo: AcpSessionInfo = { modes: null, configOptions: null };
+
+/** Listeners notified when session info changes (for React re-renders) */
+const sessionInfoListeners = new Set<() => void>();
+
+export function getSessionInfo(): AcpSessionInfo { return sessionInfo; }
+
+export function setSessionModes(modes: AcpSessionModeState | null): void {
+  sessionInfo = { ...sessionInfo, modes };
+  sessionInfoListeners.forEach(fn => fn());
+}
+
+export function setSessionConfigOptions(configOptions: AcpSessionConfigOption[] | null): void {
+  sessionInfo = { ...sessionInfo, configOptions };
+  sessionInfoListeners.forEach(fn => fn());
+}
+
+export function updateCurrentMode(modeId: string): void {
+  if (sessionInfo.modes) {
+    sessionInfo = {
+      ...sessionInfo,
+      modes: { ...sessionInfo.modes, currentModeId: modeId },
+    };
+    sessionInfoListeners.forEach(fn => fn());
+  }
+}
+
+export function updateConfigOptionValue(optionId: string, valueId: string): void {
+  if (sessionInfo.configOptions) {
+    sessionInfo = {
+      ...sessionInfo,
+      configOptions: sessionInfo.configOptions.map(opt =>
+        opt.id === optionId ? { ...opt, currentValue: valueId } : opt
+      ),
+    };
+    sessionInfoListeners.forEach(fn => fn());
+  }
+}
+
+export function clearSessionInfo(): void {
+  sessionInfo = { modes: null, configOptions: null };
+  sessionInfoListeners.forEach(fn => fn());
+}
+
+export function subscribeSessionInfo(fn: () => void): () => void {
+  sessionInfoListeners.add(fn);
+  return () => { sessionInfoListeners.delete(fn); };
 }
 
 /** Persistent ACP agent state — survives re-renders, reset on connection change. */
@@ -42,6 +127,7 @@ export function updateAcpAgentInstanceId(newInstanceId: string): void {
 export function clearAcpAgent(): void {
   acpAgent = null;
   acpSpawnPromise = null;
+  clearSessionInfo();
 }
 
 /** Stop any running ACP agent and clear state. Called on disconnect. */
@@ -53,6 +139,7 @@ export function stopAcpAgent(): void {
     acpAgent = null;
   }
   acpSpawnPromise = null;
+  clearSessionInfo();
 }
 
 /** Maximum recursion depth for ensureAcpAgent to prevent infinite loops from racing callers. */
@@ -117,23 +204,9 @@ export async function ensureAcpAgent(connection: Connection, cwd: string, sandbo
     try {
       const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[]; envVars?: Record<string, string> };
 
-      // Inject model flag if the connection has a model configured
-      // Different agents use different flag formats:
-      //   codex-acp: -c model="<model>"
-      //   others:    --model <model>
+      // Model selection is now done post-session via session/set_model (ACP-native).
+      // CLI args are only used for non-model flags.
       const args = [...(creds.agentArgs ?? [])];
-      if (connection.config?.model) {
-        // Append reasoning effort suffix for codex-acp (e.g., "gpt-5.2-codex" -> "gpt-5.2-codex/low")
-        let modelId = connection.config.model;
-        if (creds.agentBinary === 'codex-acp' && connection.config.reasoningEffort) {
-          modelId = `${modelId}/${connection.config.reasoningEffort}`;
-        }
-        if (creds.agentBinary === 'codex-acp') {
-          args.push('-c', `model="${modelId}"`);
-        } else {
-          args.push('--model', modelId);
-        }
-      }
 
       // Build network sandbox config if enabled
       const networkSandboxEnabled = connection.networkSandboxEnabled ?? false;
@@ -185,6 +258,8 @@ export async function ensureAcpAgent(connection: Connection, cwd: string, sandbo
         connectionId: connection.id,
         sandboxScopeKey: scopeKey,
         chatSessionId: null,
+        agentBinary: creds.agentBinary,
+        capabilities: result.capabilities,
       };
       return result.instance_id;
     } finally {

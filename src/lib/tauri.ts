@@ -717,6 +717,18 @@ export const tauriApi = {
     await invoke("acp_session_cancel", { instanceId, sessionId });
   },
 
+  async acpSessionSetMode(instanceId: string, sessionId: string, modeId: string): Promise<void> {
+    await invoke("acp_session_set_mode", { instanceId, sessionId, modeId });
+  },
+
+  async acpSessionSetConfigOption(instanceId: string, sessionId: string, optionId: string, valueId: string): Promise<void> {
+    await invoke("acp_session_set_config_option", { instanceId, sessionId, optionId, valueId });
+  },
+
+  async acpSessionSetModel(instanceId: string, sessionId: string, modelId: string): Promise<void> {
+    await invoke("acp_session_set_model", { instanceId, sessionId, modelId });
+  },
+
   async acpPermissionRespond(instanceId: string, requestId: string, optionId: string | null): Promise<void> {
     await invoke("acp_permission_respond", { instanceId, requestId, optionId });
   },

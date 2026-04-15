@@ -14,6 +14,8 @@ pub(super) struct InitInfo {
     pub agent_version: Option<String>,
     pub auth_methods: Vec<super::acp::AuthMethodInfo>,
     pub supports_images: bool,
+    /// AgentCapabilities serialized as JSON (passed through to frontend)
+    pub capabilities: Option<serde_json::Value>,
 }
 
 /// Reply payload for permission responses from the frontend.

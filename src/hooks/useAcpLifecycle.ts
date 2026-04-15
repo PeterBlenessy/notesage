@@ -12,7 +12,7 @@ import { tauriApi } from '@/lib/tauri';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
 import { getAllWorkspacePaths } from '@/lib/ai/acp-utils';
-import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId } from '@/lib/ai/acp-agent-state';
+import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions } from '@/lib/ai/acp-agent-state';
 import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
 
@@ -398,6 +398,20 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
               session.current_model,
             );
           }
+
+          // Store session modes and config options for UI rendering
+          setSessionModes(session.modes ?? null);
+          setSessionConfigOptions(session.config_options ?? null);
+
+          // Set model via ACP-native mechanism (replaces CLI arg injection)
+          if (effectiveConnection?.config?.model && session.session_id) {
+            try {
+              await tauriApi.acpSessionSetModel(instanceId, session.session_id, effectiveConnection.config.model);
+            } catch (modelErr) {
+              // Agent may not support set_model — not fatal, proceed without it
+              log.debug('ai', `ACP set_model failed (agent may not support it): ${String(modelErr)}`);
+            }
+          }
         }
 
         const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId });
@@ -589,6 +603,19 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             })),
             session.current_model,
           );
+        }
+
+        // Store session modes and config options for UI rendering
+        setSessionModes(session.modes ?? null);
+        setSessionConfigOptions(session.config_options ?? null);
+
+        // Set model via ACP-native mechanism
+        if (effectiveConnection?.config?.model && session.session_id) {
+          try {
+            await tauriApi.acpSessionSetModel(instanceId, session.session_id, effectiveConnection.config.model);
+          } catch (modelErr) {
+            log.debug('ai', `ACP set_model failed on retry: ${String(modelErr)}`);
+          }
         }
       }
 
