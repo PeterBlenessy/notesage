@@ -482,19 +482,19 @@ enum AgentCmd {
 
 - [x] Unknown `SessionUpdate` types are logged and don't crash
 
-- [ ] Mode picker populated before first message (eager session creation)
+- [x] Mode picker populated before first message (eager session creation)
 
-- [ ] Connection config shows mode and thinking effort defaults from capability probe
+- [x] Connection config shows mode and thinking effort defaults from capability probe
 
-- [ ] Selecting unrestricted mode with restrictions enabled shows conflict dialog
+- [x] Selecting unrestricted mode with restrictions enabled shows conflict dialog
 
-- [ ] "Remove restrictions permanently" updates connection settings
+- [x] "Remove restrictions permanently" updates connection settings
 
-- [ ] Session restored via `session/load` when reopening existing chat (if agent supports it)
+- [x] Session restored via `session/load` when reopening existing chat (if agent supports it)
 
 - [ ] `session/load` only called when agent advertises `loadSession` capability
 
-- [ ] Hardcoded Codex `reasoningEffort` migrated to dynamic `acpDefaults.thinkingEffort`
+- [x] Hardcoded Codex `reasoningEffort` migrated to dynamic `acpDefaults.thinkingEffort`
 
 - [x] Session title from agent used in conversation history
 

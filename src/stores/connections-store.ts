@@ -158,6 +158,26 @@ export const useConnectionsStore = create<ConnectionsStore>()(
               });
           }
         }
+
+        // Migrate hardcoded reasoningEffort to acpDefaults.thinkingEffort (one-time)
+        const needsEffortMigration = state.connections.some(
+          (c) => c.config?.reasoningEffort && !c.acpDefaults?.thinkingEffort
+        );
+        if (needsEffortMigration) {
+          const migrated = state.connections.map((c) => {
+            if (c.config?.reasoningEffort && !c.acpDefaults?.thinkingEffort) {
+              const { reasoningEffort, ...restConfig } = c.config;
+              return {
+                ...c,
+                config: Object.keys(restConfig).length > 0 ? restConfig : undefined,
+                acpDefaults: { ...c.acpDefaults, thinkingEffort: reasoningEffort },
+              };
+            }
+            return c;
+          });
+          useConnectionsStore.setState({ connections: migrated });
+          log.info('connections', 'Migrated reasoningEffort to acpDefaults.thinkingEffort');
+        }
       },
     }
   )

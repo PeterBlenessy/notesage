@@ -42,6 +42,8 @@ export interface Conversation {
   } | null;
   sourceCommentId?: string;
   sourceDocumentId?: string;
+  /** ACP session ID for session restoration via session/load */
+  acpSessionId?: string;
   /** ID of the leaf message in the currently active branch (null = no messages yet) */
   activeLeafId: string | null;
 }
@@ -705,6 +707,7 @@ export const useChatStore = create<ChatStore>()(
       setSegmentSessionId: (sessionId) =>
         set((state) => updateActiveConv(state, (c) => ({
           ...c,
+          acpSessionId: sessionId,
           segments: c.segments.map((s, i) =>
             i === c.activeSegmentIndex ? { ...s, sessionId } : s
           ),

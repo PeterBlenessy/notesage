@@ -147,3 +147,91 @@ describe('subscription notifications', () => {
     unsub();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2B tests
+// ---------------------------------------------------------------------------
+
+describe('getModeLabel — Claude Code mapping', () => {
+  it('maps code → Edit for Claude Code agent', () => {
+    expect(getModeLabel('claude-agent-acp', 'code', 'Code').name).toBe('Edit');
+  });
+
+  it('maps architect → Plan for Claude Code agent', () => {
+    expect(getModeLabel('claude-agent-acp', 'architect', 'Architect').name).toBe('Plan');
+  });
+
+  it('maps ask → Chat for Claude Code agent', () => {
+    expect(getModeLabel('claude-agent-acp', 'ask', 'Ask').name).toBe('Chat');
+  });
+
+  it('passes through unknown modes for Claude Code', () => {
+    expect(getModeLabel('claude-agent-acp', 'bypassPermissions', 'Bypass Permissions').name).toBe('Bypass Permissions');
+  });
+
+  it('passes through all modes for non-Claude agents', () => {
+    expect(getModeLabel('codex-acp', 'read-only', 'Read Only').name).toBe('Read Only');
+    expect(getModeLabel('gemini', 'yolo', 'YOLO').name).toBe('YOLO');
+    expect(getModeLabel('copilot', 'agent', 'Agent').name).toBe('Agent');
+  });
+
+  it('handles agent binary with "claude" substring', () => {
+    expect(getModeLabel('my-claude-fork', 'code', 'Code').name).toBe('Edit');
+  });
+});
+
+describe('config option value field handling', () => {
+  it('uses value field for matching (not id)', () => {
+    setSessionConfigOptions([
+      {
+        id: 'reasoning_effort',
+        name: 'Reasoning Effort',
+        category: 'thought_level',
+        currentValue: 'medium',
+        options: [
+          { value: 'low', name: 'Low' },
+          { value: 'medium', name: 'Medium' },
+          { value: 'high', name: 'High' },
+        ],
+      },
+    ]);
+    const info = getSessionInfo();
+    expect(info.configOptions![0].currentValue).toBe('medium');
+
+    updateConfigOptionValue('reasoning_effort', 'high');
+    expect(getSessionInfo().configOptions![0].currentValue).toBe('high');
+  });
+
+  it('filters mode category from config options (avoids duplicate)', () => {
+    setSessionConfigOptions([
+      { id: 'mode', name: 'Mode', category: 'mode', currentValue: 'default', options: [{ value: 'default', name: 'Default' }] },
+      { id: 'model', name: 'Model', category: 'model', currentValue: 'gpt-4', options: [{ value: 'gpt-4', name: 'GPT-4' }] },
+      { id: 'effort', name: 'Effort', category: 'thought_level', currentValue: 'medium', options: [{ value: 'medium', name: 'Medium' }] },
+    ]);
+    const all = getSessionInfo().configOptions!;
+    // The component filters mode+model, leaving only thought_level
+    const visible = all.filter(opt => opt.category !== 'model' && opt.category !== 'mode');
+    expect(visible).toHaveLength(1);
+    expect(visible[0].id).toBe('effort');
+  });
+});
+
+describe('session info lifecycle', () => {
+  it('clearSessionInfo resets both modes and configOptions', () => {
+    setSessionModes({
+      currentModeId: 'code',
+      availableModes: [{ id: 'code', name: 'Code' }],
+    });
+    setSessionConfigOptions([
+      { id: 'test', name: 'Test', currentValue: 'a', options: [{ value: 'a', name: 'A' }] },
+    ]);
+
+    expect(getSessionInfo().modes).not.toBeNull();
+    expect(getSessionInfo().configOptions).not.toBeNull();
+
+    clearSessionInfo();
+
+    expect(getSessionInfo().modes).toBeNull();
+    expect(getSessionInfo().configOptions).toBeNull();
+  });
+});

@@ -187,6 +187,108 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     return () => { unlisten?.(); };
   }, []);
 
+  // ---------------------------------------------------------------------------
+  // Eager session creation — spawn agent + create session as soon as chat is
+  // opened with an ACP connection, so mode picker populates before first message.
+  // If the active conversation has a stored sessionId, try session/load first
+  // to restore agent-side conversation context.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!effectiveConnection || effectiveConnection.authMethod !== 'agent_managed') return;
+    // Skip if a session already exists or a prompt is in progress
+    if (acpAgent?.chatSessionId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const cwd = selectedProjectPaths[0] || '/tmp';
+        const sandboxScope = getAllWorkspacePaths();
+        const instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
+        if (cancelled) return;
+
+        // Only create session if one doesn't exist yet (another send may have raced)
+        if (acpAgent?.chatSessionId) return;
+
+        // Check if the active conversation has a stored session ID for restoration
+        const conv = useChatStore.getState().conversations
+          .find(c => c.id === useChatStore.getState().activeConversationId);
+        const storedSessionId = conv?.acpSessionId;
+        const supportsLoad = acpAgent?.capabilities?.load_session === true;
+
+        let session: AcpSessionResult;
+
+        if (storedSessionId && supportsLoad) {
+          // Try to restore the existing session (preserves agent-side conversation history)
+          try {
+            session = await invoke<AcpSessionResult>('acp_session_load', {
+              instanceId,
+              sessionId: storedSessionId,
+              workingDirectory: cwd,
+            });
+            log.info('ai', `ACP session restored via session/load (${storedSessionId})`);
+          } catch (loadErr) {
+            // session/load failed — fall back to new session
+            log.info('ai', `ACP session/load failed, creating new session: ${String(loadErr)}`);
+            session = await invoke<AcpSessionResult>('acp_session_new', {
+              instanceId,
+              workingDirectory: cwd,
+            });
+          }
+        } else {
+          session = await invoke<AcpSessionResult>('acp_session_new', {
+            instanceId,
+            workingDirectory: cwd,
+          });
+        }
+
+        if (cancelled || !acpAgent) return;
+
+        acpAgent.chatSessionId = session.session_id;
+        useChatStore.getState().setSegmentSessionId(session.session_id);
+
+        // Cache models
+        if (session.available_models.length > 0 && effectiveConnection) {
+          setAgentModels(
+            effectiveConnection.id,
+            session.available_models.map((m) => ({
+              modelId: m.model_id,
+              name: m.name,
+              description: m.description,
+            })),
+            session.current_model,
+          );
+        }
+
+        // Populate mode picker and config options
+        log.info('ai', `ACP eager session modes: ${JSON.stringify(session.modes)}`);
+        setSessionModes(session.modes ?? null);
+        setSessionConfigOptions(session.config_options ?? null);
+
+        // Apply user's configured defaults (only for new sessions, not restored ones)
+        if (!storedSessionId || !supportsLoad) {
+          const defaults = effectiveConnection.acpDefaults;
+          if (defaults?.modeId && session.modes && session.session_id) {
+            tauriApi.acpSessionSetMode(instanceId, session.session_id, defaults.modeId).catch(() => {});
+          }
+          if (defaults?.thinkingEffort && session.session_id) {
+            tauriApi.acpSessionSetConfigOption(instanceId, session.session_id, 'reasoning_effort', defaults.thinkingEffort).catch(() => {});
+          }
+          if (effectiveConnection.config?.model && session.session_id) {
+            tauriApi.acpSessionSetModel(instanceId, session.session_id, effectiveConnection.config.model).catch((err) => {
+              log.debug('ai', `ACP eager set_model failed: ${String(err)}`);
+            });
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          log.debug('ai', `ACP eager session creation failed (non-fatal): ${String(err)}`);
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [effectiveConnection, selectedProjectPaths]);
+
   /** Keep waiting for the agent — dismiss the banner and restart the timer. */
   const keepWaiting = useCallback(() => {
     useAgentStatusStore.getState().clearStatus();

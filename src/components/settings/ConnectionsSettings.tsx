@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { stopAcpAgent } from '@/hooks/useAIOperations';
+import { probeAcpCapabilities } from '@/lib/ai/acp-agent-state';
+import { log } from '@/lib/logger';
 import { toast } from 'sonner';
 import { ConnectionCard } from './ConnectionCard';
 import { Button } from '@/components/ui/button';
@@ -38,6 +40,7 @@ type AddFlowState =
 export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (tab: string) => void } = {}) {
   const connections = useConnectionsStore((s) => s.connections);
   const addConnection = useConnectionsStore((s) => s.addConnection);
+  const updateConnection = useConnectionsStore((s) => s.updateConnection);
   const removeConnection = useConnectionsStore((s) => s.removeConnection);
   const clearRoutingForConnection = useRoutingStore((s) => s.clearRoutingForConnection);
   const autoAssign = useRoutingStore((s) => s.autoAssign);
@@ -214,9 +217,22 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
         credentials,
       });
       autoAssign(connectionId);
+
+      // Probe capabilities in background (non-blocking — populates acpCapabilities for config dialog)
+      if (!option.lspBinary) {
+        const conn = useConnectionsStore.getState().getConnection(connectionId);
+        if (conn) {
+          probeAcpCapabilities(conn).then((caps) => {
+            updateConnection(connectionId, { acpCapabilities: caps });
+          }).catch((err) => {
+            log.warn('ai', `ACP capability probe failed for ${option.label}: ${String(err)}`);
+          });
+        }
+      }
+
       setTimeout(() => resetFlow(), 600);
     },
-    [addConnection, autoAssign, resetFlow]
+    [addConnection, autoAssign, resetFlow, updateConnection]
   );
 
   const handleDisconnect = useCallback(

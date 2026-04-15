@@ -84,7 +84,24 @@ export interface ConnectionConfig {
   temperature?: number;        // 0.0 - 2.0
   maxTokens?: number;          // Provider-specific max
   baseUrl?: string;            // Custom API endpoint override
-  reasoningEffort?: ReasoningEffort;  // Codex reasoning effort tier (appended as /low, /medium, etc.)
+  /** @deprecated Use acpDefaults.thinkingEffort instead. Kept for migration. */
+  reasoningEffort?: ReasoningEffort;
+}
+
+// --- ACP Capabilities (discovered at connection registration) ---
+
+export interface AcpDiscoveredCapabilities {
+  availableModes?: { id: string; name: string; description?: string }[];
+  configOptions?: { id: string; name: string; description?: string; category?: string; currentValue?: string; options?: { value?: string; name: string; description?: string }[] }[];
+  supportsLoadSession?: boolean;
+  supportsImages?: boolean;
+  agentVersion?: string;
+  lastProbed?: number;  // timestamp — re-probe if stale (>24h) or agent version changed
+}
+
+export interface AcpDefaults {
+  modeId?: string;           // e.g., "default", "code", "read-only"
+  thinkingEffort?: string;   // e.g., "medium", "high"
 }
 
 // --- Connections ---
@@ -106,6 +123,8 @@ export interface Connection {
   kernelNetworkDeny?: boolean;      // Kernel-enforced network deny via Seatbelt (requires networkSandboxEnabled)
   extraWritablePaths?: string[];    // Additional writable paths for the sandbox (user-configured)
   freeAccount?: boolean;            // Detected at runtime — disables reasoning effort tiers
+  acpCapabilities?: AcpDiscoveredCapabilities;  // Discovered at registration, refreshed periodically
+  acpDefaults?: AcpDefaults;        // User-chosen defaults for mode and config options
   createdAt: number;
 }
 

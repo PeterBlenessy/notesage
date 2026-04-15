@@ -297,11 +297,11 @@ Remove the provider-specific model flag branching (`--model` vs `-c model=`).
 
 ## Phase 2B — Capability Probing, Session Lifecycle & Mode-Sandbox Reconciliation
 
-### #21 — Capability probe at connection registration
+### #21 — Capability probe at connection registration ✅
 
 **Description:** After a new ACP connection is authenticated, perform a lightweight probe: spawn → initialize → `session/new` → read modes/config → stop agent. Store discovered capabilities on the `Connection` object as `acpCapabilities` (persisted). Add a "Refresh capabilities" button to the connection config dialog.
 
-Re-probe when: user clicks refresh, `lastProbed` > 24h and agent is spawned, or `agent_version` differs from stored.
+Re-probe when: user clicks refresh, `lastProbed` &gt; 24h and agent is spawned, or `agent_version` differs from stored.
 
 **Acceptance criteria:**
 
@@ -321,7 +321,7 @@ Re-probe when: user clicks refresh, `lastProbed` > 24h and agent is spawned, or 
 
 ---
 
-### #22 — Connection config defaults for mode and thinking effort
+### #22 — Connection config defaults for mode and thinking effort ✅
 
 **Description:** Add default mode and thinking effort dropdowns to the ACP connection configuration dialog. Populated from `acpCapabilities.availableModes` and `acpCapabilities.configOptions` (where `category === 'thought_level'`). Stored as `acpDefaults.modeId` and `acpDefaults.thinkingEffort`.
 
@@ -345,7 +345,7 @@ Show mode descriptions on hover. Default to the agent's reported `currentModeId`
 
 ---
 
-### #23 — Eager session creation at chat open
+### #23 — Eager session creation at chat open ✅
 
 **Description:** When the chat panel opens with an ACP connection selected (or when the user switches to an ACP connection), create the session immediately in the background. Apply user's configured defaults (`set_mode`, `set_config_option` for thinking effort). Mode picker and config dropdowns populate before the user types anything.
 
@@ -370,7 +370,7 @@ If the user switches connections before sending, stop the unused session. If the
 
 ---
 
-### #24 — Session restoration for existing chats
+### #24 — Session restoration for existing chats ✅
 
 **Description:** Store `sessionId` on the `Conversation` object (persisted). When opening an existing chat with a stored `sessionId`:
 
@@ -400,7 +400,7 @@ This enables agents to maintain server-side conversation context across app rest
 
 ---
 
-### #25 — Mode-sandbox conflict resolution dialog
+### #25 — Mode-sandbox conflict resolution dialog ✅
 
 **Description:** When the user selects a mode classified as "unrestricted" (`bypassPermissions`, `yolo`, `full-access`, `autopilot`) and the connection has sandbox or network restrictions enabled, show a confirmation dialog.
 
@@ -442,7 +442,7 @@ Modes that conflict with restrictions show a subtle lock icon in the mode picker
 
 ---
 
-### #26 — Migrate hardcoded thinking effort to dynamic config
+### #26 — Migrate hardcoded thinking effort to dynamic config ✅
 
 **Description:** Remove the hardcoded `reasoningEffort` field from the Codex connection config. Replace with `acpDefaults.thinkingEffort` populated from the capability probe. One-time migration for existing Codex connections: read `config.reasoningEffort` → write to `acpDefaults.thinkingEffort` → delete old field.
 
@@ -466,7 +466,7 @@ Also remove the thinking effort suffix logic from the model flag injection (alre
 
 ---
 
-### #27 — Write tests for Phase 2B changes
+### #27 — Write tests for Phase 2B changes ✅
 
 **Description:** Add unit tests for:
 

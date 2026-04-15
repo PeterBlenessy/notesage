@@ -5,8 +5,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { log } from '@/lib/logger';
 import { usePermissionStore } from '@/stores/permission-store';
 import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
-import type { Connection } from '@/lib/ai/connections';
-import type { AcpSpawnResult, AcpSessionModeState, AcpSessionConfigOption, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
+import type { Connection, AcpDiscoveredCapabilities } from '@/lib/ai/connections';
+import type { AcpSpawnResult, AcpSessionResult, AcpSessionModeState, AcpSessionConfigOption, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
 
 // ---------------------------------------------------------------------------
 // Claude Code mode label mapping
@@ -268,4 +268,76 @@ export async function ensureAcpAgent(connection: Connection, cwd: string, sandbo
   })();
 
   return acpSpawnPromise;
+}
+
+// ---------------------------------------------------------------------------
+// Capability probe — lightweight spawn → session → read → stop
+// ---------------------------------------------------------------------------
+
+/**
+ * Probe an ACP agent's capabilities by spawning it, creating a session,
+ * reading modes/config, and stopping. Used at connection registration time
+ * to discover what the agent supports before the user sends any messages.
+ */
+export async function probeAcpCapabilities(connection: Connection): Promise<AcpDiscoveredCapabilities> {
+  const creds = connection.credentials as { type: 'agent_managed'; agentBinary: string; agentArgs?: string[]; envVars?: Record<string, string> };
+
+  let instanceId: string | null = null;
+  try {
+    // Spawn agent (minimal config — no sandbox needed for probe)
+    const result = await invoke<AcpSpawnResult>('acp_agent_spawn', {
+      agentBinary: creds.agentBinary,
+      agentArgs: creds.agentArgs?.length ? creds.agentArgs : null,
+      role: 'interactive',
+      workingDirectory: '/tmp',
+      envVars: creds.envVars ?? null,
+      sandboxEnabled: null,
+      sandboxPaths: null,
+      networkSandboxEnabled: null,
+      networkAllowedDomains: null,
+      kernelNetworkDeny: null,
+    });
+    instanceId = result.instance_id;
+
+    // Authenticate (skip if agent handles it internally)
+    try {
+      await invoke('acp_agent_authenticate', { instanceId });
+    } catch (authErr) {
+      const msg = String(authErr).toLowerCase();
+      if (!msg.includes('not implemented') && !msg.includes('no authentication methods')) {
+        throw authErr;
+      }
+    }
+
+    // Create a session to discover modes and config options
+    const session = await invoke<AcpSessionResult>('acp_session_new', {
+      instanceId,
+      workingDirectory: '/tmp',
+    });
+
+    // Extract capabilities
+    const capabilities: AcpDiscoveredCapabilities = {
+      availableModes: session.modes?.availableModes,
+      configOptions: session.config_options?.map(opt => ({
+        id: opt.id,
+        name: opt.name,
+        description: opt.description,
+        category: opt.category,
+        currentValue: opt.currentValue,
+        options: opt.options,
+      })),
+      supportsLoadSession: result.capabilities?.load_session ?? false,
+      supportsImages: result.supports_images,
+      agentVersion: result.agent_version ?? undefined,
+      lastProbed: Date.now(),
+    };
+
+    log.info('ai', `ACP capability probe for ${creds.agentBinary}: ${JSON.stringify(capabilities)}`);
+    return capabilities;
+  } finally {
+    // Always stop the probe agent
+    if (instanceId) {
+      invoke('acp_agent_stop', { instanceId }).catch(() => {});
+    }
+  }
 }

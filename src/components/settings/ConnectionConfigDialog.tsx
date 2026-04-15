@@ -8,6 +8,14 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { tauriApi } from '@/lib/tauri';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useLocalAIStore } from '@/stores/local-ai-store';
@@ -64,6 +72,10 @@ export function ConnectionConfigDialog({
   // Reasoning effort (codex-acp) — undefined means "agent default" (no suffix appended)
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | undefined>(undefined);
 
+  // ACP defaults (mode and thinking effort from capability probe)
+  const [acpDefaultMode, setAcpDefaultMode] = useState<string | undefined>(undefined);
+  const [acpDefaultThinkingEffort, setAcpDefaultThinkingEffort] = useState<string | undefined>(undefined);
+
   // Network sandbox state
   const [networkSandbox, setNetworkSandbox] = useState(false);
   const [kernelNetworkDeny, setKernelNetworkDeny] = useState(true);
@@ -103,6 +115,8 @@ export function ConnectionConfigDialog({
       setExtraWritablePaths(connection.extraWritablePaths ?? []);
       setNewWritablePath('');
       setReasoningEffort(connection.config?.reasoningEffort ?? undefined);
+      setAcpDefaultMode(connection.acpDefaults?.modeId ?? undefined);
+      setAcpDefaultThinkingEffort(connection.acpDefaults?.thinkingEffort ?? undefined);
       setNetworkSandbox(connection.networkSandboxEnabled ?? false);
       setKernelNetworkDeny(connection.kernelNetworkDeny ?? false); // false for existing connections without the field
       setNewDomain('');
@@ -116,6 +130,21 @@ export function ConnectionConfigDialog({
       }
     }
   }, [connection, open]);
+
+  // Auto-probe ACP capabilities when opening config for agent_managed connections
+  // with missing or stale (>24h) capabilities
+  useEffect(() => {
+    if (!connection || !open || connection.authMethod !== 'agent_managed') return;
+    const caps = connection.acpCapabilities;
+    const stale = !caps?.lastProbed || (Date.now() - caps.lastProbed > 24 * 60 * 60 * 1000);
+    if (stale) {
+      import('@/lib/ai/acp-agent-state').then(({ probeAcpCapabilities }) => {
+        probeAcpCapabilities(connection).then((newCaps) => {
+          updateConnection(connection.id, { acpCapabilities: newCaps });
+        }).catch(() => {}); // Probe failure is non-blocking
+      });
+    }
+  }, [connection, open, updateConnection]);
 
   const fetchModels = useCallback(async () => {
     if (!connection) return;
@@ -172,8 +201,15 @@ export function ConnectionConfigDialog({
     if (baseUrl.trim()) config.baseUrl = baseUrl.trim();
     if (isCodexAgent && reasoningEffort && !connection.freeAccount) config.reasoningEffort = reasoningEffort;
 
+    // Save ACP defaults (mode and thinking effort)
+    const acpDefaults = (acpDefaultMode || acpDefaultThinkingEffort) ? {
+      ...(acpDefaultMode ? { modeId: acpDefaultMode } : {}),
+      ...(acpDefaultThinkingEffort ? { thinkingEffort: acpDefaultThinkingEffort } : {}),
+    } : undefined;
+
     const updates: Partial<Connection> = {
       config: Object.keys(config).length > 0 ? config : undefined,
+      acpDefaults: isAgentManaged ? acpDefaults : undefined,
       sandboxEnabled: isAgentManaged ? sandboxEnabled : undefined,
       networkSandboxEnabled: isAgentManaged ? (sandboxEnabled && networkSandbox) : undefined,
       kernelNetworkDeny: isAgentManaged ? (sandboxEnabled && networkSandbox && kernelNetworkDeny) : undefined,
@@ -265,6 +301,81 @@ export function ConnectionConfigDialog({
             onNavigateToTab={onNavigateToTab}
             onCloseDialog={() => onOpenChange(false)}
           />
+
+          {/* ── ACP Agent Defaults (mode & thinking effort) ── */}
+          {isAgentManaged && connection.acpCapabilities && (
+            <div className="space-y-3">
+              <Label className="text-sm font-semibold">Agent Defaults</Label>
+
+              {/* Default Mode */}
+              {connection.acpCapabilities.availableModes && connection.acpCapabilities.availableModes.length > 1 && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Default Mode</Label>
+                  <Select
+                    value={acpDefaultMode ?? connection.acpCapabilities.availableModes[0]?.id ?? ''}
+                    onValueChange={setAcpDefaultMode}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {connection.acpCapabilities.availableModes.map((mode) => (
+                        <SelectItem key={mode.id} value={mode.id} className="text-xs">
+                          <div>
+                            <span>{mode.name}</span>
+                            {mode.description && (
+                              <span className="ml-2 text-muted-foreground">{mode.description}</span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-muted-foreground">
+                    Applied when starting a new chat session
+                  </p>
+                </div>
+              )}
+
+              {/* Default Thinking Effort */}
+              {(() => {
+                const thinkingOpt = connection.acpCapabilities.configOptions?.find(
+                  (o) => o.category === 'thought_level'
+                );
+                if (!thinkingOpt?.options || thinkingOpt.options.length < 2) return null;
+                return (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">{thinkingOpt.name}</Label>
+                    <Select
+                      value={acpDefaultThinkingEffort ?? thinkingOpt.currentValue ?? ''}
+                      onValueChange={setAcpDefaultThinkingEffort}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {thinkingOpt.options.map((opt) => (
+                          <SelectItem key={opt.value ?? opt.name} value={opt.value ?? opt.name} className="text-xs">
+                            <div>
+                              <span>{opt.name}</span>
+                              {opt.description && (
+                                <span className="ml-2 text-muted-foreground">{opt.description}</span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {thinkingOpt.description && (
+                      <p className="text-[10px] text-muted-foreground">
+                        {thinkingOpt.description}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
 
           {/* ── API Key & Base URL ── */}
           <ApiKeyForm
