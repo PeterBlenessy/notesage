@@ -322,6 +322,15 @@ The chat footer already contains: model picker, agent picker, project selector, 
   | **Plan** | Read-only — proposes without executing | `plan` | — | `plan` | `plan` URL |
 
   Agent-specific modes not in this table (e.g., `dontAsk`) are hidden from the picker.
+
+  **Provider support matrix:**
+
+  | Common Mode | Claude Code | OpenAI Codex | Gemini CLI | GitHub Copilot CLI |
+  | --- | :---: | :---: | :---: | :---: |
+  | **Read Only** | ✅ | ✅ | ✅ | — |
+  | **Agent** | ✅ | ✅ | ✅ | ✅ |
+  | **Full Access** | ✅ | ✅ | ✅ | ✅ |
+  | **Plan** | ✅ | — | ✅ | ✅ |
 - **Config options:** Config options with `category: "mode"` filtered out (duplicates mode picker). `category: "thought_level"` renders as a labeled dropdown adjacent to the mode picker. `category: "model"` filtered out (handled by model picker). Other categories render as dropdowns. Select options use `value` field per ACP schema.
 - **Usage indicator:** Circular progress icon that fills clockwise as context is consumed. Token count and cost shown in tooltip on hover. Uses `text-muted-foreground` — unobtrusive.
 
