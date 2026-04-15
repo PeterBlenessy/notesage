@@ -402,15 +402,16 @@ This enables agents to maintain server-side conversation context across app rest
 
 ### #25 — Mode-sandbox conflict resolution dialog ✅
 
-**Description:** When the user selects a mode classified as "unrestricted" (`bypassPermissions`, `yolo`, `full-access`, `autopilot`) and the connection has sandbox or network restrictions enabled, show a confirmation dialog.
+**Description:** When the user selects the "Full Access" common mode and the connection has sandbox or network restrictions enabled, show a confirmation dialog. Conflict detection uses the common mode mapping — any agent mode ID that maps to `full_access` triggers the dialog.
 
-**Mode classification:**
+**Common mode → permission level mapping:**
 
-| Risk level | Mode IDs | Behavior |
+| Common Mode | Agent Mode IDs | Conflict? |
 | --- | --- | --- |
-| Restricted | `default`, `plan`, `dontAsk`, `ask` | No conflict |
-| Moderate | `acceptEdits`, `autoEdit`, `auto`, `code` | No conflict — sandbox enforces regardless |
-| Unrestricted | `bypassPermissions`, `yolo`, `full-access`, `autopilot` | Show conflict dialog if restrictions enabled |
+| Read Only | `default`, `read-only` | No |
+| Agent | `acceptEdits`, `auto`, `autoEdit`, `code`, copilot `#agent` | No |
+| Full Access | `bypassPermissions`, `full-access`, `yolo`, copilot `#autopilot` | Yes — show dialog if restrictions enabled |
+| Plan | `plan`, `architect`, copilot `#plan` | No |
 
 **Dialog options:**
 

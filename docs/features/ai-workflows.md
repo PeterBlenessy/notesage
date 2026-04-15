@@ -42,7 +42,7 @@ Collapsible right sidebar (Cmd+Shift+C) with streaming AI responses.
 - Domain deny/timeout messages: blocked or timed-out domain requests shown as chat messages
 - Chat panel resizable up to 50% of the content area
 - Image attachments: paste, drag-drop, or file picker to attach up to 5 images per message. Images compressed client-side (1568px max, PNG→JPEG, 5MB cap). Vision capability auto-detected per provider. Right-click "Add to chat" on editor images/drawings or sidebar image files. See [Image Attachments & Vision](ai-providers.md#image-attachments--vision) for full details.
-- **ACP session modes**: Mode picker (Shield icon) in chat footer for switching agent operating modes (e.g., Claude Code: Edit/Plan/Chat, Codex: Read Only/Default/Full Access). Hidden by default — enable in Settings > Advanced. Mode-sandbox conflict dialog prevents contradictory mode + restriction combinations.
+- **ACP session modes**: Permission-level mode picker (Shield icon) in chat footer. Agent-specific mode IDs mapped to common levels: Read Only, Agent, Full Access, Plan. Hidden by default — enable in Settings > Advanced. Full Access triggers a conflict dialog when sandbox restrictions are active.
 - **ACP config options**: Dynamic config dropdowns (e.g., thinking effort with Brain icon) populated from agent session response. Values set via `session/set_config_option`.
 - **ACP usage tracking**: Live token count displayed in chat footer during ACP sessions (e.g., "4.2K / 200K"). Cost shown on hover tooltip when agent provides it.
 - **ACP plan display**: Agent execution plans rendered as collapsible `PlanSegment` cards with step status icons (pending/in_progress/completed) and priority indicators.

@@ -310,9 +310,20 @@ The chat footer already contains: model picker, agent picker, project selector, 
 
 **New elements (Phase 2/2B/3):**
 
-- **Mode picker:** Dropdown populated from `session/new` response (or `acpCapabilities` cache before session exists). Compact chip style matching model picker. **Hidden by default** — a toggle in Settings &gt; Advanced ("Show agent mode picker") reveals it. When hidden, the user's configured default mode is used automatically. Descriptions shown on hover. Always hidden for agents that don't report modes. Shows a lock icon on modes that conflict with active sandbox restrictions.
+- **Mode picker:** Dropdown with Shield icon, populated from `session/new` response. Shows **permission-level common modes** mapped from agent-specific mode IDs — not the raw agent modes. **Hidden by default** — toggle in Settings &gt; Advanced ("Show agent mode picker"). When hidden, the user's configured default mode is used automatically. "Full Access" shows a lock icon when sandbox restrictions are active and triggers a conflict dialog on selection.
+
+  **Common mode mapping (permission levels):**
+
+  | Common Mode | Description | Claude Code | Codex | Gemini CLI | Copilot CLI |
+  | --- | --- | --- | --- | --- | --- |
+  | **Read Only** | Can read — must ask for everything else | `default` | `read-only` | `default` | — |
+  | **Agent** | Can read and edit — asks for risky ops | `acceptEdits` | `auto` | `autoEdit` | `agent` URL |
+  | **Full Access** | No permission prompts | `bypassPermissions` | `full-access` | `yolo` | `autopilot` URL |
+  | **Plan** | Read-only — proposes without executing | `plan` | — | `plan` | `plan` URL |
+
+  Agent-specific modes not in this table (e.g., `dontAsk`) are hidden from the picker.
 - **Config options:** Config options with `category: "mode"` filtered out (duplicates mode picker). `category: "thought_level"` renders as a labeled dropdown adjacent to the mode picker. `category: "model"` filtered out (handled by model picker). Other categories render as dropdowns. Select options use `value` field per ACP schema.
-- **Usage indicator:** Right-aligned in footer. Format: "4.2K / 200K" with a thin progress bar. Cost shown on hover as tooltip: "$0.03". Uses `text-muted-foreground` — unobtrusive.
+- **Usage indicator:** Circular progress icon that fills clockwise as context is consumed. Token count and cost shown in tooltip on hover. Uses `text-muted-foreground` — unobtrusive.
 
 ### Connection Config Additions (Phase 2B)
 

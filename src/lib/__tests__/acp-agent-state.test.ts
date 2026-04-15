@@ -18,25 +18,32 @@ beforeEach(() => {
   clearSessionInfo();
 });
 
-describe('getModeLabel — universal common mode mapping', () => {
-  it('maps known mode IDs to common names regardless of agent', () => {
-    expect(getModeLabel('claude-agent-acp', 'default', 'Default').name).toBe('Agent');
-    expect(getModeLabel('codex-acp', 'auto', 'Default').name).toBe('Agent');
-    expect(getModeLabel('gemini', 'default', 'Default').name).toBe('Agent');
+describe('getModeLabel — permission-level common mode mapping', () => {
+  it('maps default/read-only to Read Only', () => {
+    expect(getModeLabel(undefined, 'default', 'Default').name).toBe('Read Only');
+    expect(getModeLabel(undefined, 'read-only', 'Read Only').name).toBe('Read Only');
   });
 
-  it('maps plan modes to Plan', () => {
-    expect(getModeLabel('claude-agent-acp', 'architect', 'Architect').name).toBe('Plan');
-    expect(getModeLabel('claude-agent-acp', 'plan', 'Plan Mode').name).toBe('Plan');
+  it('maps acceptEdits/auto/autoEdit to Agent', () => {
+    expect(getModeLabel(undefined, 'acceptEdits', 'Accept Edits').name).toBe('Agent');
+    expect(getModeLabel(undefined, 'auto', 'Default').name).toBe('Agent');
+    expect(getModeLabel(undefined, 'autoEdit', 'Auto Edit').name).toBe('Agent');
   });
 
-  it('maps ask/chat modes to Chat', () => {
-    expect(getModeLabel('claude-agent-acp', 'ask', 'Ask').name).toBe('Chat');
+  it('maps bypassPermissions/full-access/yolo to Full Access', () => {
+    expect(getModeLabel(undefined, 'bypassPermissions', 'Bypass').name).toBe('Full Access');
+    expect(getModeLabel(undefined, 'full-access', 'Full Access').name).toBe('Full Access');
+    expect(getModeLabel(undefined, 'yolo', 'YOLO').name).toBe('Full Access');
+  });
+
+  it('maps plan/architect to Plan', () => {
+    expect(getModeLabel(undefined, 'plan', 'Plan').name).toBe('Plan');
+    expect(getModeLabel(undefined, 'architect', 'Architect').name).toBe('Plan');
   });
 
   it('returns native name for unmapped modes', () => {
-    expect(getModeLabel('claude-agent-acp', 'bypassPermissions', 'Bypass Permissions').name).toBe('Bypass Permissions');
-    expect(getModeLabel('gemini', 'yolo', 'YOLO').name).toBe('YOLO');
+    expect(getModeLabel(undefined, 'dontAsk', "Don't Ask").name).toBe("Don't Ask");
+    expect(getModeLabel(undefined, 'custom', 'Custom').name).toBe('Custom');
   });
 });
 
@@ -155,7 +162,7 @@ describe('subscription notifications', () => {
 // ---------------------------------------------------------------------------
 
 describe('getCommonModes — filters to Agent/Plan/Chat', () => {
-  it('maps Claude Code modes to common modes (actual ACP IDs)', () => {
+  it('maps Claude Code modes to permission levels', () => {
     const modes = getCommonModes([
       { id: 'default', name: 'Default' },
       { id: 'acceptEdits', name: 'Accept Edits' },
@@ -163,29 +170,26 @@ describe('getCommonModes — filters to Agent/Plan/Chat', () => {
       { id: 'dontAsk', name: "Don't Ask" },
       { id: 'bypassPermissions', name: 'Bypass Permissions' },
     ]);
-    // default → Agent, acceptEdits → Agent (dedup), plan → Plan, others hidden
-    expect(modes.map(m => m.name)).toEqual(['Agent', 'Plan']);
+    expect(modes.map(m => m.name)).toEqual(['Read Only', 'Agent', 'Plan', 'Full Access']);
   });
 
-  it('maps Gemini modes to common modes', () => {
+  it('maps Codex modes to permission levels', () => {
+    const modes = getCommonModes([
+      { id: 'read-only', name: 'Read Only' },
+      { id: 'auto', name: 'Default' },
+      { id: 'full-access', name: 'Full Access' },
+    ]);
+    expect(modes.map(m => m.name)).toEqual(['Read Only', 'Agent', 'Full Access']);
+  });
+
+  it('maps Gemini modes to permission levels', () => {
     const modes = getCommonModes([
       { id: 'default', name: 'Default' },
       { id: 'autoEdit', name: 'Auto Edit' },
       { id: 'yolo', name: 'YOLO' },
       { id: 'plan', name: 'Plan' },
     ]);
-    // default → Agent, autoEdit → Agent (dedup), yolo → hidden, plan → Plan
-    expect(modes.map(m => m.name)).toEqual(['Agent', 'Plan']);
-  });
-
-  it('Codex has only Agent mode (no plan/chat)', () => {
-    const modes = getCommonModes([
-      { id: 'read-only', name: 'Read Only' },
-      { id: 'auto', name: 'Default' },
-      { id: 'full-access', name: 'Full Access' },
-    ]);
-    // read-only → Agent, auto → Agent (dedup), full-access → hidden
-    expect(modes.map(m => m.name)).toEqual(['Agent']);
+    expect(modes.map(m => m.name)).toEqual(['Read Only', 'Agent', 'Full Access', 'Plan']);
   });
 
   it('maps Copilot CLI URL-based modes', () => {
@@ -194,16 +198,16 @@ describe('getCommonModes — filters to Agent/Plan/Chat', () => {
       { id: 'https://agentclientprotocol.com/protocol/session-modes#plan', name: 'Plan' },
       { id: 'https://agentclientprotocol.com/protocol/session-modes#autopilot', name: 'Autopilot' },
     ]);
-    expect(modes.map(m => m.name)).toEqual(['Agent', 'Plan']);
+    expect(modes.map(m => m.name)).toEqual(['Agent', 'Plan', 'Full Access']);
   });
 
-  it('deduplicates — first matching mode ID wins', () => {
+  it('deduplicates — first matching mode ID wins per common key', () => {
     const modes = getCommonModes([
       { id: 'default', name: 'Default' },
-      { id: 'code', name: 'Code' }, // also maps to Agent, but Agent already added
+      { id: 'read-only', name: 'Read Only' }, // also maps to read_only, but already added
     ]);
     expect(modes).toHaveLength(1);
-    expect(modes[0].name).toBe('Agent');
+    expect(modes[0].name).toBe('Read Only');
     expect(modes[0].agentModeId).toBe('default'); // first one wins
   });
 
@@ -215,15 +219,15 @@ describe('getCommonModes — filters to Agent/Plan/Chat', () => {
   });
 
   it('getCommonMode returns null for unmapped IDs', () => {
-    expect(getCommonMode('yolo')).toBeNull();
-    expect(getCommonMode('bypassPermissions')).toBeNull();
+    expect(getCommonMode('dontAsk')).toBeNull();
     expect(getCommonMode('custom-mode')).toBeNull();
   });
 
-  it('getCommonMode returns common mode for mapped IDs', () => {
-    expect(getCommonMode('default')?.key).toBe('agent');
+  it('getCommonMode returns correct common mode', () => {
+    expect(getCommonMode('default')?.key).toBe('read_only');
+    expect(getCommonMode('auto')?.key).toBe('agent');
+    expect(getCommonMode('full-access')?.key).toBe('full_access');
     expect(getCommonMode('plan')?.key).toBe('plan');
-    expect(getCommonMode('ask')?.key).toBe('chat');
   });
 });
 

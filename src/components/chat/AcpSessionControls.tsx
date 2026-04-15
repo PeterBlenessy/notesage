@@ -40,12 +40,10 @@ import type { AcpSessionConfigOption } from '@/lib/ai/acp-utils';
 // Mode-sandbox conflict detection
 // ---------------------------------------------------------------------------
 
-const UNRESTRICTED_MODE_IDS = new Set([
-  'bypassPermissions', 'yolo', 'full-access', 'autopilot', 'full_access',
-]);
-
+/** Check if a mode maps to the "Full Access" common mode (conflicts with sandbox) */
 function isUnrestrictedMode(modeId: string): boolean {
-  return UNRESTRICTED_MODE_IDS.has(modeId);
+  const common = getCommonMode(modeId);
+  return common?.key === 'full_access';
 }
 
 function hasActiveRestrictions(connectionId: string): boolean {

@@ -12,7 +12,7 @@ import type { AcpSpawnResult, AcpSessionResult, AcpSessionModeState, AcpSessionC
 // Common mode mapping — maps agent-specific mode IDs to universal display names
 // ---------------------------------------------------------------------------
 
-export type CommonModeKey = 'agent' | 'plan' | 'chat';
+export type CommonModeKey = 'read_only' | 'agent' | 'full_access' | 'plan';
 
 interface CommonMode {
   key: CommonModeKey;
@@ -21,36 +21,42 @@ interface CommonMode {
 }
 
 const COMMON_MODES: Record<CommonModeKey, CommonMode> = {
-  agent: { key: 'agent', name: 'Agent', tooltip: 'Agent can read and modify your documents' },
-  plan:  { key: 'plan',  name: 'Plan',  tooltip: 'Agent discusses approach without making changes' },
-  chat:  { key: 'chat',  name: 'Chat',  tooltip: 'Conversation only — no file access' },
+  read_only:   { key: 'read_only',    name: 'Read Only',   tooltip: 'Can read files — must ask for everything else' },
+  agent:       { key: 'agent',        name: 'Agent',       tooltip: 'Can read and edit files — asks for risky operations' },
+  full_access: { key: 'full_access',  name: 'Full Access', tooltip: 'No permission prompts — use with caution' },
+  plan:        { key: 'plan',         name: 'Plan',        tooltip: 'Read-only — proposes changes without executing' },
 };
 
 /**
- * Maps known agent mode IDs to common modes. Any mode ID not in this map
- * is considered an advanced/agent-specific mode and hidden from the footer picker.
+ * Maps known agent mode IDs to common permission-level modes.
+ * Any mode ID not in this map is hidden from the footer picker.
  *
- * Mode IDs come from actual ACP agent responses (not CLI flag names):
+ * Mode IDs come from actual ACP agent responses:
  * - Claude Code: default, acceptEdits, plan, dontAsk, bypassPermissions
  * - Codex: read-only, auto, full-access
  * - Gemini CLI: default, autoEdit, yolo, plan
  * - Copilot CLI: URL-based (agent, plan, autopilot)
  */
 const MODE_ID_TO_COMMON: Record<string, CommonModeKey> = {
-  // Agent mode — default working mode
-  'default': 'agent',
-  'code': 'agent',
-  'auto': 'agent',
-  'read-only': 'agent',
-  'acceptEdits': 'agent',
-  'autoEdit': 'agent',
+  // Read Only — can read, must ask for writes
+  'default': 'read_only',
+  'read-only': 'read_only',
+  // Agent — Copilot's "Agent" is their default working mode (read + edit)
   'https://agentclientprotocol.com/protocol/session-modes#agent': 'agent',
-  // Plan mode — read-only / planning
+  // Agent — can read and edit, asks for risky ops
+  'acceptEdits': 'agent',
+  'auto': 'agent',
+  'autoEdit': 'agent',
+  'code': 'agent',
+  // Full Access — no permission prompts
+  'bypassPermissions': 'full_access',
+  'full-access': 'full_access',
+  'yolo': 'full_access',
+  'https://agentclientprotocol.com/protocol/session-modes#autopilot': 'full_access',
+  // Plan — read-only, proposes but doesn't execute
   'architect': 'plan',
   'plan': 'plan',
   'https://agentclientprotocol.com/protocol/session-modes#plan': 'plan',
-  // Chat mode — conversation only (if agent supports it)
-  'ask': 'chat',
 };
 
 /**

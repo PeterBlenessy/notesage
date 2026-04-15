@@ -49,7 +49,7 @@ interface AIProvider {
 - ACP crate version 0.10/0.11 with `usage_update` event support
 - Network sandboxing: agent traffic routed through localhost HTTP proxy with per-agent domain allowlists (see Network Sandboxing section)
 - Context-aware chat footer: "Search" toggle for direct API connections
-- **Session modes**: Mode picker in chat footer (hidden by default, toggle in Settings > Advanced). Claude Code modes: Edit/Plan/Chat with descriptive labels. Other agents show native mode names. Mode-sandbox conflict dialog when selecting unrestricted modes with active restrictions.
+- **Session modes**: Permission-level mode picker (Shield icon) in chat footer (hidden by default, toggle in Settings > Advanced). Agent-specific mode IDs mapped to common permission levels: Read Only (can read, must ask for writes), Agent (can read and edit, asks for risky ops), Full Access (no permission prompts), Plan (read-only, proposes without executing). Mode-sandbox conflict dialog when selecting Full Access with active restrictions.
 - **Dynamic config options**: Agent-reported config options (thinking effort, etc.) rendered as dropdowns in chat footer. Config options with `category: "mode"` and `category: "model"` filtered (handled by dedicated pickers).
 - **Capability probing**: At connection registration, lightweight spawn → session → read → stop cycle discovers available modes, config options, and capabilities. Stored on connection, auto-refreshed when stale (>24h).
 - **Connection defaults**: Default mode and thinking effort configurable in connection settings dialog, applied automatically to new sessions.
