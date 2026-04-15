@@ -27,7 +27,8 @@ import { log } from '@/lib/logger';
 import {
   getSessionInfo,
   subscribeSessionInfo,
-  getModeLabel,
+  getCommonModes,
+  getCommonMode,
   updateCurrentMode,
   updateConfigOptionValue,
   acpAgent,
@@ -66,18 +67,18 @@ function ContextUsageIcon({ used, size }: { used: number; size: number }) {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" className="shrink-0">
       {/* Background circle */}
-      <circle cx="8" cy="8" r={r} fill="none" stroke="currentColor" strokeWidth="2" opacity="0.15" />
+      <circle cx="8" cy="8" r={r} fill="none" stroke="currentColor" strokeWidth="2.5" opacity="0.25" />
       {/* Progress arc */}
       <circle
         cx="8" cy="8" r={r}
         fill="none"
         stroke="currentColor"
-        strokeWidth="2"
+        strokeWidth="2.5"
         strokeDasharray={circumference}
         strokeDashoffset={offset}
         strokeLinecap="round"
         transform="rotate(-90 8 8)"
-        opacity="0.5"
+        opacity="0.7"
       />
     </svg>
   );
@@ -142,15 +143,14 @@ export const AcpModePicker = memo(function AcpModePicker() {
     toast.info('Security restrictions removed. Agent will respawn with new settings on next session.');
   }, [conflictMode, applyMode]);
 
-  if (!modes || modes.availableModes.length < 2) return null;
+  // Map agent modes to common modes (Agent/Plan/Chat) — hide agent-specific modes
+  const commonModes = modes ? getCommonModes(modes.availableModes) : [];
+  if (commonModes.length < 2) return null;
 
-  const agentBinary = acpAgent?.agentBinary;
   const connectionId = acpAgent?.connectionId;
   const restricted = connectionId ? hasActiveRestrictions(connectionId) : false;
-  const currentMode = modes.availableModes.find(m => m.id === modes.currentModeId);
-  const currentLabel = currentMode
-    ? getModeLabel(agentBinary, currentMode.id, currentMode.name)
-    : { name: modes.currentModeId, tooltip: '' };
+  const currentCommon = getCommonMode(modes!.currentModeId);
+  const currentLabel = currentCommon ?? { name: 'Agent', tooltip: '' };
 
   return (
     <>
@@ -178,29 +178,28 @@ export const AcpModePicker = memo(function AcpModePicker() {
         <PopoverContent
           align="start"
           side="top"
-          className="w-auto min-w-[140px] max-w-[300px] p-1"
+          className="w-auto min-w-[120px] max-w-[250px] p-1"
         >
-          {modes.availableModes.map((mode) => {
-            const label = getModeLabel(agentBinary, mode.id, mode.name);
-            const isActive = mode.id === modes.currentModeId;
-            const showLock = restricted && isUnrestrictedMode(mode.id);
+          {commonModes.map((cm) => {
+            const isActive = currentCommon?.key === cm.commonKey;
+            const showLock = restricted && isUnrestrictedMode(cm.agentModeId);
             return (
               <button
-                key={mode.id}
+                key={cm.commonKey}
                 className={`w-full text-left px-3 py-1.5 rounded-md text-xs transition-colors duration-150 ${
                   isActive
                     ? 'bg-muted font-medium text-foreground'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
-                onClick={() => { if (!isActive) handleSetMode(mode.id, label.name); }}
+                onClick={() => { if (!isActive) handleSetMode(cm.agentModeId, cm.name); }}
               >
                 <div className="flex items-center gap-1.5">
-                  <span>{label.name}</span>
+                  <span>{cm.name}</span>
                   {showLock && <Lock className="h-3 w-3 opacity-40" />}
                 </div>
-                {(label.tooltip || mode.description) && (
+                {cm.tooltip && (
                   <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
-                    {label.tooltip || mode.description}
+                    {cm.tooltip}
                   </div>
                 )}
               </button>

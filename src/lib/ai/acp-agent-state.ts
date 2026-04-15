@@ -9,26 +9,79 @@ import type { Connection, AcpDiscoveredCapabilities } from '@/lib/ai/connections
 import type { AcpSpawnResult, AcpSessionResult, AcpSessionModeState, AcpSessionConfigOption, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
 
 // ---------------------------------------------------------------------------
-// Claude Code mode label mapping
+// Common mode mapping — maps agent-specific mode IDs to universal display names
 // ---------------------------------------------------------------------------
 
-interface ModeLabel {
+export type CommonModeKey = 'agent' | 'plan' | 'chat';
+
+interface CommonMode {
+  key: CommonModeKey;
   name: string;
   tooltip: string;
 }
 
-const CLAUDE_CODE_MODE_LABELS: Record<string, ModeLabel> = {
-  code: { name: 'Edit', tooltip: 'Agent can read and modify your documents' },
-  architect: { name: 'Plan', tooltip: 'Agent discusses approach without making changes' },
-  ask: { name: 'Chat', tooltip: 'Conversation only — no file access' },
+const COMMON_MODES: Record<CommonModeKey, CommonMode> = {
+  agent: { key: 'agent', name: 'Agent', tooltip: 'Agent can read and modify your documents' },
+  plan:  { key: 'plan',  name: 'Plan',  tooltip: 'Agent discusses approach without making changes' },
+  chat:  { key: 'chat',  name: 'Chat',  tooltip: 'Conversation only — no file access' },
 };
 
-/** Get display label for a mode. Only applies Claude Code-specific labels. */
-export function getModeLabel(agentBinary: string | undefined, modeId: string, nativeName: string): ModeLabel {
-  if (agentBinary?.includes('claude') && CLAUDE_CODE_MODE_LABELS[modeId]) {
-    return CLAUDE_CODE_MODE_LABELS[modeId];
-  }
+/**
+ * Maps known agent mode IDs to common modes. Any mode ID not in this map
+ * is considered an advanced/agent-specific mode and hidden from the footer picker.
+ */
+const MODE_ID_TO_COMMON: Record<string, CommonModeKey> = {
+  // Claude Code
+  'default': 'agent',
+  'code': 'agent',
+  'architect': 'plan',
+  'plan': 'plan',
+  'ask': 'chat',
+  // Codex
+  'auto': 'agent',
+  'read-only': 'agent',
+  // Gemini CLI
+  'autoEdit': 'agent',
+  // Copilot CLI (URL-based IDs)
+  'https://agentclientprotocol.com/protocol/session-modes#agent': 'agent',
+  'https://agentclientprotocol.com/protocol/session-modes#plan': 'plan',
+  'https://agentclientprotocol.com/protocol/session-modes#autopilot': 'agent',
+};
+
+/**
+ * Get the common mode for an agent mode ID.
+ * Returns null for advanced/agent-specific modes that should be hidden.
+ */
+export function getCommonMode(modeId: string): CommonMode | null {
+  const key = MODE_ID_TO_COMMON[modeId];
+  return key ? COMMON_MODES[key] : null;
+}
+
+/**
+ * Get the display label for a mode. Maps to common mode names.
+ * Falls back to native name for unmapped modes.
+ */
+export function getModeLabel(_agentBinary: string | undefined, modeId: string, nativeName: string): { name: string; tooltip: string } {
+  const common = getCommonMode(modeId);
+  if (common) return { name: common.name, tooltip: common.tooltip };
   return { name: nativeName, tooltip: '' };
+}
+
+/**
+ * Filter available modes to only common modes.
+ * Returns deduplicated common modes with their corresponding agent mode IDs.
+ */
+export function getCommonModes(availableModes: { id: string; name: string; description?: string }[]): { commonKey: CommonModeKey; name: string; tooltip: string; agentModeId: string }[] {
+  const seen = new Set<CommonModeKey>();
+  const result: { commonKey: CommonModeKey; name: string; tooltip: string; agentModeId: string }[] = [];
+  for (const mode of availableModes) {
+    const common = getCommonMode(mode.id);
+    if (common && !seen.has(common.key)) {
+      seen.add(common.key);
+      result.push({ commonKey: common.key, name: common.name, tooltip: common.tooltip, agentModeId: mode.id });
+    }
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
