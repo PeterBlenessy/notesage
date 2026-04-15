@@ -1,5 +1,5 @@
 import { memo, useSyncExternalStore, useCallback, useState } from 'react';
-import { ChevronUp, Lock } from 'lucide-react';
+import { ChevronUp, Lock, Shield, Brain } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Tooltip,
@@ -118,6 +118,7 @@ export const AcpModePicker = memo(function AcpModePicker() {
                 <button
                   className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 border border-transparent hover:border-border"
                 >
+                  <Shield className="h-3 w-3" strokeWidth={1.5} />
                   {currentLabel.name}
                   <ChevronUp className="h-3 w-3 opacity-50" />
                 </button>
@@ -227,6 +228,7 @@ const ConfigOptionPicker = memo(function ConfigOptionPicker({ option }: { option
               <button
                 className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 border border-transparent hover:border-border"
               >
+                {option.category === 'thought_level' && <Brain className="h-3 w-3" strokeWidth={1.5} />}
                 {capitalizedDisplay}
                 <ChevronUp className="h-3 w-3 opacity-50" />
               </button>
