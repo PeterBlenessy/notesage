@@ -98,79 +98,129 @@ Wrap the session update handler in a try-catch or add a fallback `else` branch t
 
 **Files:** `src/hooks/useAcpSessionListeners.ts`, `src/hooks/useAgentTaskOperations.ts`
 
-### Phase 2 — Session Modes & Config Options
+### Phase 2 — Session Modes & Config Options (Implemented)
 
-**2.1 Extract modes and config from session/new response**
+Phase 2 delivered the backend infrastructure and initial UI for modes and config options:
 
-Modify `acp_session_new` (Rust) to return `modes` and `config_options` from `NewSessionResponse` alongside `session_id` and models. Add these fields to `SessionResult`.
+- `SessionResult` extended with `modes` and `config_options` (JSON pass-through)
+- `SpawnResult` extended with `capabilities` (AgentCapabilities from initialize)
+- Three new Tauri commands: `acp_session_set_mode`, `acp_session_set_config_option`, `acp_session_set_model`
+- Mode picker and config option dropdowns in chat footer (`AcpSessionControls` component)
+- `current_mode_update` and `config_option_update` event handlers
+- Hardcoded model CLI arg injection replaced with post-session `set_model`
+- `showAgentModePicker` setting in Settings &gt; Advanced
 
-```rust
-pub struct SessionResult {
-    pub session_id: String,
-    pub current_model: Option<String>,
-    pub available_models: Vec<AgentModelInfo>,
-    pub modes: Option<SessionModeState>,        // NEW
-    pub config_options: Vec<SessionConfigOption>, // NEW
+### Phase 2B — Capability Probing, Session Lifecycle & Mode-Sandbox Reconciliation
+
+Phase 2 revealed that the mode picker only populates after the first message (because ACP sessions are created on-demand). Phase 2B addresses this plus several deeper design requirements.
+
+**2B.1 Capability probe at connection registration**
+
+When a user adds a new ACP connection and authenticates successfully, perform a lightweight capability probe:
+
+1. Spawn agent → initialize → `session/new` (empty working directory `/tmp`)
+2. Read `modes` and `config_options` from the session response
+3. Store discovered capabilities on the `Connection` object as `acpCapabilities`
+4. Stop the agent subprocess
+
+This runs once at registration time (a few hundred ms for local subprocesses). The discovered data populates the connection config dialog so the user can set defaults.
+
+```typescript
+// Stored on Connection
+interface AcpDiscoveredCapabilities {
+  availableModes?: { id: string; name: string; description?: string }[];
+  configOptions?: AcpSessionConfigOption[];
+  supportsLoadSession?: boolean;
+  supportsImages?: boolean;
+  agentVersion?: string;
+  lastProbed?: number; // re-probe if stale (>24h) or agent version changed
 }
 ```
 
-**Files:** `src-tauri/src/commands/acp.rs`
+**Staleness**: Re-probe when user opens connection settings (manual refresh), when `lastProbed` &gt; 24h and agent is spawned anyway, or when `SpawnResult.agent_version` differs from stored version.
 
-**2.2 Session mode picker UI**
+**Files:** `src/lib/ai/acp-agent-state.ts`, `src/hooks/useAcpLifecycle.ts`, `src/stores/connections-store.ts`, `src/components/settings/ConnectionsSettings.tsx`
 
-Add a mode picker in the chat footer (next to the model picker). Show available modes as a dropdown. When the user selects a mode, call a new `acp_session_set_mode` Tauri command.
+**2B.2 Connection config defaults for mode and thinking effort**
 
-New Tauri command:
+Add default mode and thinking effort to the connection configuration dialog:
 
-```rust
-#[tauri::command]
-pub async fn acp_session_set_mode(
-    state: State<'_, AcpState>,
-    instance_id: String,
-    session_id: String,
-    mode_id: String,
-) -> Result<(), String>
+- **Default mode**: Dropdown populated from `acpCapabilities.availableModes`. Default: agent's own reported `currentModeId` (typically the safest). User can change to any available mode.
+- **Default thinking effort**: Dropdown populated from `acpCapabilities.configOptions` where `category === 'thought_level'`. Only shown if the agent supports it.
+
+Stored on the connection:
+
+```typescript
+interface AcpDefaults {
+  modeId?: string;           // e.g., "code", "read-only", "default"
+  thinkingEffort?: string;   // e.g., "medium", "high"
+}
 ```
 
-Handle `current_mode_update` notifications to reflect agent-initiated mode changes.
+This replaces the hardcoded `reasoningEffort` field on Codex connection config with a generic, agent-discovered mechanism.
 
-**State:** Add `sessionModes` and `currentModeId` to `acp-agent-state.ts` or a new store.
+**Files:** `src/stores/connections-store.ts`, `src/components/settings/ConnectionsSettings.tsx`, `src/lib/ai/connections.ts`
 
-**Files:** `src-tauri/src/commands/acp.rs`, `src/lib/ai/acp-agent-state.ts`, `src/components/chat/ChatFooter.tsx` (or equivalent), `src/hooks/useAcpSessionListeners.ts`
+**2B.3 Eager session creation at chat open**
 
-**2.3 Dynamic config options**
+When the user opens the chat panel (or switches to a conversation) with an ACP connection, create the session immediately in the background — before the user types their first message.
 
-Replace hardcoded thinking effort UI with dynamic config rendering:
+Flow:
 
-1. Store `configOptions` from session creation
-2. Render config options as dropdown/toggle in chat footer based on `SessionConfigOption` metadata (id, name, values, category)
-3. Call `acp_session_set_config_option` when values change
-4. Handle `config_option_update` notifications for agent-initiated changes
+1. Chat panel mounts with an ACP connection → spawn agent (if not running) + `session/new`
+2. Apply user's configured defaults: `set_mode(acpDefaults.modeId)`, `set_config_option('reasoning_effort', acpDefaults.thinkingEffort)`
+3. Mode picker and config options populate immediately (\~100ms)
+4. User sees controls while composing their first message
+5. When user sends, session already exists — prompt goes directly, no creation delay
 
-New Tauri command:
+Cleanup: If the user switches connections before sending, stop the unused session.
 
-```rust
-#[tauri::command]
-pub async fn acp_session_set_config_option(
-    state: State<'_, AcpState>,
-    instance_id: String,
-    session_id: String,
-    option_id: String,
-    value_id: String,
-) -> Result<(), String>
-```
+**Files:** `src/hooks/useAcpLifecycle.ts`, `src/lib/ai/acp-agent-state.ts`, `src/components/chat/ChatPanel.tsx`
 
-This replaces the hardcoded Codex reasoning effort suffix (`model/low`, `model/high`, etc.) with the ACP-native mechanism.
+**2B.4 Session restoration for existing chats**
 
-**Files:** `src-tauri/src/commands/acp.rs`, `src/lib/ai/acp-agent-state.ts`, `src/components/chat/ChatFooter.tsx`, `src/hooks/useAcpSessionListeners.ts`
+Store `sessionId` on the `Conversation` object (persisted). When opening an existing chat:
 
-**2.4 Replace hardcoded model flags with session/set_model**
+1. If `sessionId` exists AND agent supports `loadSession` → call `session/load`
+   - Agent retains server-side conversation history — references to earlier messages work
+   - `LoadSessionResponse` returns `modes` and `config_options` — picker populates
+2. If `session/load` fails (session expired, agent restarted) → fall back to `session/new` + history injection (current behavior)
+3. If agent doesn't support `loadSession` → always `session/new`
 
-Instead of injecting `--model <model>` or `-c model="<model>"` at spawn time per provider, use the ACP `session/set_model` method (already feature-flagged) to set the model after session creation.
+**Files:** `src/stores/chat-store.ts` (add `sessionId` to `Conversation`), `src/hooks/useAcpLifecycle.ts`
 
-Fallback: If the agent doesn't support `set_model` (check capabilities), fall back to current CLI arg injection.
+**2B.5 Mode-sandbox conflict resolution**
 
-**Files:** `src/lib/ai/acp-agent-state.ts`, `src-tauri/src/commands/acp.rs`
+When the user selects a mode that implies unrestricted access (e.g., `bypassPermissions`, `yolo`, `full-access`, `auto`) but the connection has sandbox/network restrictions enabled, show a confirmation dialog:
+
+**Mode classification:**
+
+| Risk level | Modes | Behavior |
+| --- | --- | --- |
+| Restricted | `default`, `plan`, `dontAsk` | No conflict — these modes already restrict |
+| Moderate | `acceptEdits`, `autoEdit`, `auto` | No conflict — sandbox enforces boundaries regardless |
+| Unrestricted | `bypassPermissions`, `yolo`, `full-access`, `autopilot` | Conflict if restrictions enabled — show dialog |
+
+**Conflict dialog:**
+
+> **Mode conflicts with security settings**
+>
+> "{Mode Name}" allows the agent to operate without permission checks, but this connection has security restrictions enabled that will block some operations.
+>
+> - **Keep restrictions** — Use this mode but sandbox and network limits still apply. The agent may encounter errors when blocked operations are attempted.
+> - **Remove restrictions for this session** — Temporarily disable sandbox, network restrictions, and kernel enforcement. Restrictions restore on next session.
+> - **Remove restrictions permanently** — Update connection settings to disable all restrictions. ⚠️ The agent will have unrestricted filesystem and network access.
+> - **Cancel** — Stay in current mode.
+
+"Remove permanently" updates the connection: `sandboxEnabled: false`, `networkSandboxEnabled: false`, `kernelNetworkDeny: false`. This requires agent respawn to take effect.
+
+**Files:** `src/components/chat/AcpSessionControls.tsx`, `src/stores/connections-store.ts`, new `ModeConflictDialog.tsx`
+
+**2B.6 Migrate hardcoded thinking effort to dynamic config**
+
+Remove the hardcoded `reasoningEffort` field from Codex connection config. Replace with `acpDefaults.thinkingEffort` populated from the capability probe. Existing Codex connections with `reasoningEffort` set are migrated to the new field on first load.
+
+**Files:** `src/stores/connections-store.ts`, `src/lib/ai/connections.ts`, `src/components/settings/ConnectionsSettings.tsx`
 
 ### Phase 3 — Rich Streaming Data
 
@@ -258,11 +308,17 @@ When sending `cancel`, the ACP spec requires the client to respond `Cancelled` t
 
 The chat footer already contains: model picker, agent picker, project selector, search toggle, tools indicator.
 
-**New elements (Phase 2-3):**
+**New elements (Phase 2/2B/3):**
 
-- **Mode picker:** Dropdown showing available modes. Compact chip style matching model picker. **Hidden by default** — a toggle in Settings > Advanced ("Show agent mode picker") reveals it. When hidden, the agent's first/default mode is used automatically. Writing-friendly labels applied **only for Claude Code** modes: `code` → "Edit", `architect` → "Plan", `ask` → "Chat" with descriptive tooltips. All other agents (Codex: read-only/workspace-write/full-access, Gemini: auto-approve, etc.) show their native mode names as-is — these are already human-readable and represent fundamentally different concepts (permission levels, approval levels) that shouldn't be remapped. Always hidden for agents that don't report modes (e.g., Copilot CLI).
-- **Config options:** For `thinkingEffort` category options, render as a labeled slider or small dropdown adjacent to the mode picker. Other categories render as dropdowns in a "..." overflow menu.
+- **Mode picker:** Dropdown populated from `session/new` response (or `acpCapabilities` cache before session exists). Compact chip style matching model picker. **Hidden by default** — a toggle in Settings &gt; Advanced ("Show agent mode picker") reveals it. When hidden, the user's configured default mode is used automatically. Descriptions shown on hover. Always hidden for agents that don't report modes. Shows a lock icon on modes that conflict with active sandbox restrictions.
+- **Config options:** Config options with `category: "mode"` filtered out (duplicates mode picker). `category: "thought_level"` renders as a labeled dropdown adjacent to the mode picker. `category: "model"` filtered out (handled by model picker). Other categories render as dropdowns. Select options use `value` field per ACP schema.
 - **Usage indicator:** Right-aligned in footer. Format: "4.2K / 200K" with a thin progress bar. Cost shown on hover as tooltip: "$0.03". Uses `text-muted-foreground` — unobtrusive.
+
+### Connection Config Additions (Phase 2B)
+
+- **Default mode:** Dropdown in connection config dialog, populated from capability probe. Shows agent's actual available modes with descriptions. Default: agent's own reported default (typically the safest mode).
+- **Default thinking effort:** Dropdown in connection config dialog, populated from capability probe config options where `category === 'thought_level'`. Only shown for agents that support it. Replaces the hardcoded Codex `reasoningEffort` field.
+- **Capability refresh:** Button to re-probe agent capabilities (re-runs the lightweight spawn → session → read → stop cycle).
 
 ### Plan Segment
 
@@ -350,12 +406,38 @@ interface ToolCallSegment {
 }
 ```
 
+### New/Modified Connection Types (Phase 2B)
+
+```typescript
+// Stored on Connection (persisted in connections-store)
+interface Connection {
+  // ... existing fields ...
+
+  // Discovered at registration, refreshed periodically
+  acpCapabilities?: {
+    availableModes?: { id: string; name: string; description?: string }[];
+    configOptions?: AcpSessionConfigOption[];
+    supportsLoadSession?: boolean;
+    supportsImages?: boolean;
+    agentVersion?: string;
+    lastProbed?: number; // ISO timestamp — re-probe if stale (>24h)
+  };
+
+  // User-chosen defaults (from connection config dialog)
+  acpDefaults?: {
+    modeId?: string;          // e.g., "default", "code", "read-only"
+    thinkingEffort?: string;  // e.g., "medium", "high"
+  };
+}
+```
+
 ### New Tauri Commands
 
 | Command | Parameters | Returns |
 | --- | --- | --- |
 | `acp_session_set_mode` | `instance_id, session_id, mode_id` | `()` |
 | `acp_session_set_config_option` | `instance_id, session_id, option_id, value_id` | `()` |
+| `acp_session_set_model` | `instance_id, session_id, model_id` | `()` |
 
 ### New AgentCmd Variants
 
@@ -364,6 +446,7 @@ enum AgentCmd {
     // ... existing variants ...
     SetMode { session_id: String, mode_id: String, reply: oneshot::Sender<Result<(), String>> },
     SetConfigOption { session_id: String, option_id: String, value_id: String, reply: oneshot::Sender<Result<(), String>> },
+    SetModel { session_id: String, model_id: String, reply: oneshot::Sender<Result<(), String>> },
 }
 ```
 
@@ -399,7 +482,19 @@ enum AgentCmd {
 
 - [x] Unknown `SessionUpdate` types are logged and don't crash
 
+- [ ] Mode picker populated before first message (eager session creation)
+
+- [ ] Connection config shows mode and thinking effort defaults from capability probe
+
+- [ ] Selecting unrestricted mode with restrictions enabled shows conflict dialog
+
+- [ ] "Remove restrictions permanently" updates connection settings
+
+- [ ] Session restored via `session/load` when reopening existing chat (if agent supports it)
+
 - [ ] `session/load` only called when agent advertises `loadSession` capability
+
+- [ ] Hardcoded Codex `reasoningEffort` migrated to dynamic `acpDefaults.thinkingEffort`
 
 - [x] Session title from agent used in conversation history
 

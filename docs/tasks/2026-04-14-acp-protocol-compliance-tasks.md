@@ -6,8 +6,8 @@
 | **Status** | Not started |
 | **PRD** | [acp-protocol-compliance](../prds/2026-04-14-acp-protocol-compliance.md) |
 | **Audit** | [2026-04-14-acp-audit](../audits/2026-04-14-acp-audit.md) |
-| **Total** | 20 tasks: 8S, 8M, 4L |
-| **Suggested order** | Phase 1 Quick Wins (#1-#6) → Phase 2 Modes & Config (#7-#12) → Phase 3 Rich Streaming (#13-#18) → Phase 4 Robustness (#19-#20) |
+| **Total** | 27 tasks: 9S, 10M, 5L, 3L |
+| **Suggested order** | Phase 1 Quick Wins (#1-#6) → Phase 2 Modes & Config (#7-#12) → Phase 2B Capability Probing & Session Lifecycle (#21-#27) → Phase 3 Rich Streaming (#13-#18) → Phase 4 Robustness (#19-#20) |
 
 **Risks:**
 
@@ -292,6 +292,199 @@ Remove the provider-specific model flag branching (`--model` vs `-c model=`).
 
 - `src/lib/__tests__/acp-agent-state.test.ts` (new or extend)
 - `src/hooks/__tests__/useAcpSessionListeners.test.ts`
+
+---
+
+## Phase 2B — Capability Probing, Session Lifecycle & Mode-Sandbox Reconciliation
+
+### #21 — Capability probe at connection registration
+
+**Description:** After a new ACP connection is authenticated, perform a lightweight probe: spawn → initialize → `session/new` → read modes/config → stop agent. Store discovered capabilities on the `Connection` object as `acpCapabilities` (persisted). Add a "Refresh capabilities" button to the connection config dialog.
+
+Re-probe when: user clicks refresh, `lastProbed` > 24h and agent is spawned, or `agent_version` differs from stored.
+
+**Acceptance criteria:**
+
+- After adding a new ACP connection, `acpCapabilities` is populated on the connection
+- Available modes and config options are persisted
+- Refresh button re-runs the probe and updates the data
+- Probe failure (agent binary missing, auth failed) shows toast error, doesn't block connection creation
+
+**Complexity:** M\
+**Category:** both\
+**Dependencies:** #7, #8\
+**Files:**
+
+- `src/stores/connections-store.ts` — add `acpCapabilities` and `acpDefaults` fields to `Connection`
+- `src/lib/ai/acp-agent-state.ts` — new `probeAcpCapabilities()` function
+- `src/components/settings/ConnectionsSettings.tsx` — trigger probe after auth, add refresh button
+
+---
+
+### #22 — Connection config defaults for mode and thinking effort
+
+**Description:** Add default mode and thinking effort dropdowns to the ACP connection configuration dialog. Populated from `acpCapabilities.availableModes` and `acpCapabilities.configOptions` (where `category === 'thought_level'`). Stored as `acpDefaults.modeId` and `acpDefaults.thinkingEffort`.
+
+Show mode descriptions on hover. Default to the agent's reported `currentModeId` if the user hasn't changed it.
+
+**Acceptance criteria:**
+
+- Connection config dialog shows "Default Mode" dropdown for ACP connections with discovered modes
+- Connection config dialog shows "Default Thinking Effort" dropdown when agent supports it
+- Selected defaults are persisted and used when creating new sessions
+- Dropdowns are empty/hidden if capability probe hasn't run yet
+
+**Complexity:** M\
+**Category:** frontend\
+**Dependencies:** #21\
+**Files:**
+
+- `src/components/settings/ConnectionsSettings.tsx` — mode and thinking effort dropdowns
+- `src/stores/connections-store.ts` — persist `acpDefaults`
+- `src/lib/ai/connections.ts` — type updates
+
+---
+
+### #23 — Eager session creation at chat open
+
+**Description:** When the chat panel opens with an ACP connection selected (or when the user switches to an ACP connection), create the session immediately in the background. Apply user's configured defaults (`set_mode`, `set_config_option` for thinking effort). Mode picker and config dropdowns populate before the user types anything.
+
+If the user switches connections before sending, stop the unused session. If the user sends a message while the session is still being created, await the pending creation.
+
+**Acceptance criteria:**
+
+- Mode picker is populated before the first message is sent
+- Config option dropdowns (thinking effort) are populated before the first message
+- User's configured defaults are applied to the session
+- Switching connections before sending cleans up the unused session
+- No regression: sending a message still works immediately
+
+**Complexity:** L\
+**Category:** frontend\
+**Dependencies:** #22\
+**Files:**
+
+- `src/hooks/useAcpLifecycle.ts` — eager session creation logic, default application
+- `src/lib/ai/acp-agent-state.ts` — track pending session creation
+- `src/components/chat/ChatPanel.tsx` — trigger eager creation on mount/connection change
+
+---
+
+### #24 — Session restoration for existing chats
+
+**Description:** Store `sessionId` on the `Conversation` object (persisted). When opening an existing chat with a stored `sessionId`:
+
+1. If agent supports `loadSession` capability → call `session/load` (preserves agent-side conversation history)
+2. `LoadSessionResponse` returns `modes` and `config_options` → populate picker
+3. If `session/load` fails → fall back to `session/new` + history injection (current behavior)
+4. If agent doesn't support `loadSession` → always `session/new`
+
+This enables agents to maintain server-side conversation context across app restarts.
+
+**Acceptance criteria:**
+
+- `sessionId` is stored on `Conversation` after session creation
+- Reopening an existing chat calls `session/load` when agent supports it
+- Mode picker populates from the loaded session
+- Fallback to `session/new` works when `session/load` fails
+- Agent-side conversation context is preserved (agent can reference earlier messages)
+
+**Complexity:** M\
+**Category:** both\
+**Dependencies:** #23\
+**Files:**
+
+- `src/stores/chat-store.ts` — add `sessionId` to `Conversation`
+- `src/hooks/useAcpLifecycle.ts` — `session/load` logic, fallback
+- `src/lib/ai/acp-agent-state.ts` — capability check for `loadSession`
+
+---
+
+### #25 — Mode-sandbox conflict resolution dialog
+
+**Description:** When the user selects a mode classified as "unrestricted" (`bypassPermissions`, `yolo`, `full-access`, `autopilot`) and the connection has sandbox or network restrictions enabled, show a confirmation dialog.
+
+**Mode classification:**
+
+| Risk level | Mode IDs | Behavior |
+| --- | --- | --- |
+| Restricted | `default`, `plan`, `dontAsk`, `ask` | No conflict |
+| Moderate | `acceptEdits`, `autoEdit`, `auto`, `code` | No conflict — sandbox enforces regardless |
+| Unrestricted | `bypassPermissions`, `yolo`, `full-access`, `autopilot` | Show conflict dialog if restrictions enabled |
+
+**Dialog options:**
+
+- **Keep restrictions** — Use mode but sandbox limits still apply. Agent may encounter errors.
+- **Remove restrictions for this session** — Temporarily disable restrictions (restore on next session).
+- **Remove restrictions permanently** — Update connection settings: `sandboxEnabled: false`, `networkSandboxEnabled: false`, `kernelNetworkDeny: false`. Requires agent respawn.
+- **Cancel** — Stay in current mode.
+
+Modes that conflict with restrictions show a subtle lock icon in the mode picker.
+
+**Acceptance criteria:**
+
+- Selecting an unrestricted mode with restrictions enabled shows the dialog
+- "Keep restrictions" applies the mode without changing settings
+- "Remove for session" temporarily disables restrictions
+- "Remove permanently" updates connection and respawns agent
+- "Cancel" reverts to previous mode
+- Lock icon visible on conflicting modes in the picker
+
+**Complexity:** L\
+**Category:** frontend\
+**Dependencies:** #23\
+**Files:**
+
+- `src/components/chat/AcpSessionControls.tsx` — conflict detection, lock icon
+- `src/components/chat/ModeConflictDialog.tsx` — new dialog component
+- `src/stores/connections-store.ts` — update connection restrictions
+- `src/lib/ai/acp-agent-state.ts` — session-level restriction override
+
+---
+
+### #26 — Migrate hardcoded thinking effort to dynamic config
+
+**Description:** Remove the hardcoded `reasoningEffort` field from the Codex connection config. Replace with `acpDefaults.thinkingEffort` populated from the capability probe. One-time migration for existing Codex connections: read `config.reasoningEffort` → write to `acpDefaults.thinkingEffort` → delete old field.
+
+Also remove the thinking effort suffix logic from the model flag injection (already replaced by `set_config_option` in Phase 2).
+
+**Acceptance criteria:**
+
+- Existing Codex connections with `reasoningEffort` are migrated to `acpDefaults.thinkingEffort`
+- The `reasoningEffort` field is removed from the connection config UI
+- Thinking effort is controlled via the dynamic config option dropdown in the chat footer
+- No regression for Codex users — their preferred effort level is preserved
+
+**Complexity:** S\
+**Category:** frontend\
+**Dependencies:** #22\
+**Files:**
+
+- `src/stores/connections-store.ts` — migration logic, remove `reasoningEffort` from config
+- `src/lib/ai/connections.ts` — remove `reasoningEffort` from types
+- `src/components/settings/ConnectionsSettings.tsx` — remove hardcoded effort UI
+
+---
+
+### #27 — Write tests for Phase 2B changes
+
+**Description:** Add unit tests for:
+
+- Capability probe flow (mock spawn → session → read → stop)
+- `acpDefaults` storage and application to new sessions
+- Eager session creation lifecycle (create, apply defaults, cleanup on switch)
+- Session restoration (`session/load` success, failure fallback, no-support fallback)
+- Mode-sandbox conflict detection (classify modes, detect conflicts)
+- Thinking effort migration (old field → new field)
+
+**Complexity:** M\
+**Category:** frontend\
+**Dependencies:** #21, #22, #23, #24, #25, #26\
+**Files:**
+
+- `src/lib/__tests__/acp-agent-state.test.ts` — extend
+- `src/stores/__tests__/connections-store.test.ts` — migration, defaults
+- `src/components/chat/__tests__/AcpSessionControls.test.tsx` — conflict detection
 
 ---
 
