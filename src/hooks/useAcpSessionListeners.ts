@@ -185,12 +185,14 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       if (deps.conversationId) {
         useChatStore.getState().renameConversation(deps.conversationId, update.title);
       }
-    } else if (update.sessionUpdate === 'current_mode_update' && update.mode_id) {
-      // Agent-initiated mode change
-      updateCurrentMode(String(update.mode_id));
-    } else if (update.sessionUpdate === 'config_option_update' && update.config_id && update.value) {
-      // Agent-initiated config option change
-      updateConfigOptionValue(String(update.config_id), String(update.value));
+    } else if (update.sessionUpdate === 'current_mode_update' && (update.currentModeId || update.current_mode_id)) {
+      // Agent-initiated mode change (camelCase from ACP schema)
+      updateCurrentMode(String(update.currentModeId ?? update.current_mode_id));
+    } else if (update.sessionUpdate === 'config_option_update' && (update.configId || update.config_id)) {
+      // Agent-initiated config option change (camelCase from ACP schema)
+      const configId = String(update.configId ?? update.config_id);
+      const value = String(update.value ?? update.currentValue ?? '');
+      if (configId && value) updateConfigOptionValue(configId, value);
     } else if (update.sessionUpdate === 'plan' && Array.isArray(update.entries)) {
       // Agent execution plan — full replacement
       const entries = (update.entries as Array<Record<string, unknown>>).map(e => ({
@@ -200,18 +202,20 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       }));
       deps.updateOrPushPlanSegment(deps.assistantMessageId, entries);
     } else if (update.sessionUpdate === 'usage_update') {
-      // Token usage and cost tracking
-      const contextUsed = typeof update.totalInputTokens === 'number' ? update.totalInputTokens + (typeof update.totalOutputTokens === 'number' ? update.totalOutputTokens : 0) : 0;
-      const contextSize = typeof update.contextWindowSize === 'number' ? update.contextWindowSize : 0;
-      const cost = (typeof update.totalCost === 'number' && typeof update.currency === 'string')
-        ? { amount: update.totalCost, currency: update.currency }
+      // Token usage and cost tracking — ACP UsageUpdate fields: used, size, cost: { amount, currency }
+      const contextUsed = typeof update.used === 'number' ? update.used : 0;
+      const contextSize = typeof update.size === 'number' ? update.size : 0;
+      const rawCost = update.cost as { amount?: number; currency?: string } | undefined;
+      const cost = (rawCost && typeof rawCost.amount === 'number' && typeof rawCost.currency === 'string')
+        ? { amount: rawCost.amount, currency: rawCost.currency }
         : undefined;
       if (contextUsed > 0 || contextSize > 0) {
         updateUsage({ contextUsed, contextSize, cost });
       }
-    } else if (update.sessionUpdate === 'available_commands_update' && Array.isArray(update.commands)) {
-      // Agent slash commands
-      const commands = (update.commands as Array<Record<string, unknown>>).map(cmd => ({
+    } else if (update.sessionUpdate === 'available_commands_update' && Array.isArray(update.availableCommands ?? update.available_commands)) {
+      // Agent slash commands (camelCase from ACP schema)
+      const rawCommands = (update.availableCommands ?? update.available_commands) as Array<Record<string, unknown>>;
+      const commands = rawCommands.map(cmd => ({
         name: String(cmd.name ?? ''),
         description: String(cmd.description ?? ''),
         inputHint: typeof cmd.inputHint === 'string' ? cmd.inputHint : undefined,
