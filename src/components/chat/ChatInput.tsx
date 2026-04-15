@@ -460,11 +460,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       {footer && (
         <>
           <div className="mx-3 border-t border-border" />
-          <div className="flex items-end justify-between px-3 py-1.5 gap-2">
-            <div className="flex items-center gap-2 flex-wrap min-w-0">
-              {footer}
-            </div>
-            <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2 flex-wrap px-3 py-1.5">
+            {footer}
+            <div className="flex items-center gap-1.5 ml-auto">
               {attachButton}
               {micButton}
               {stopButton}
