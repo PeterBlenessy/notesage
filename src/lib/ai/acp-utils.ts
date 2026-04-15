@@ -43,7 +43,8 @@ export interface AcpSessionConfigOption {
   category?: string;
   /** Flattened from SessionConfigKind::Select — camelCase from ACP schema */
   currentValue?: string;
-  options?: { id: string; name: string; description?: string }[];
+  /** Select options — agents use `value` field (not `id`) per ACP schema */
+  options?: { id?: string; value?: string; name: string; description?: string }[];
   [key: string]: unknown;
 }
 

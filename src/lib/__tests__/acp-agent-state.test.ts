@@ -91,7 +91,7 @@ describe('session config options state', () => {
 
   it('sets config options from session response', () => {
     setSessionConfigOptions([
-      { id: 'thinkingEffort', name: 'Thinking Effort', category: 'thinkingEffort', currentValue: 'default', options: [{ id: 'low', name: 'Low' }, { id: 'default', name: 'Default' }, { id: 'high', name: 'High' }] },
+      { id: 'thinkingEffort', name: 'Thinking Effort', category: 'thinkingEffort', currentValue: 'default', options: [{ value: 'low', name: 'Low' }, { value: 'default', name: 'Default' }, { value: 'high', name: 'High' }] },
     ]);
     const info = getSessionInfo();
     expect(info.configOptions).toHaveLength(1);
@@ -101,8 +101,8 @@ describe('session config options state', () => {
 
   it('updates config option value', () => {
     setSessionConfigOptions([
-      { id: 'thinkingEffort', name: 'Thinking Effort', currentValue: 'default', options: [{ id: 'low', name: 'Low' }, { id: 'default', name: 'Default' }] },
-      { id: 'other', name: 'Other', currentValue: 'a', options: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }] },
+      { id: 'thinkingEffort', name: 'Thinking Effort', currentValue: 'default', options: [{ value: 'low', name: 'Low' }, { value: 'default', name: 'Default' }] },
+      { id: 'other', name: 'Other', currentValue: 'a', options: [{ value: 'a', name: 'A' }, { value: 'b', name: 'B' }] },
     ]);
     updateConfigOptionValue('thinkingEffort', 'low');
     const info = getSessionInfo();
@@ -117,7 +117,7 @@ describe('session config options state', () => {
 
   it('clears config options on clearSessionInfo', () => {
     setSessionConfigOptions([
-      { id: 'test', name: 'Test', currentValue: 'a', options: [{ id: 'a', name: 'A' }] },
+      { id: 'test', name: 'Test', currentValue: 'a', options: [{ value: 'a', name: 'A' }] },
     ]);
     clearSessionInfo();
     expect(getSessionInfo().configOptions).toBeNull();
@@ -140,7 +140,7 @@ describe('subscription notifications', () => {
   it('notifies listeners on config change', () => {
     let callCount = 0;
     const unsub = subscribeSessionInfo(() => { callCount++; });
-    setSessionConfigOptions([{ id: 'a', name: 'A', currentValue: '1', options: [{ id: '1', name: '1' }] }]);
+    setSessionConfigOptions([{ id: 'a', name: 'A', currentValue: '1', options: [{ value: '1', name: '1' }] }]);
     expect(callCount).toBe(1);
     updateConfigOptionValue('a', '2');
     expect(callCount).toBe(2);
