@@ -698,7 +698,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isLast = false, 
         )}
 
         {/* Provider badge */}
-        {!isUser && message.connectionProvider && !isLoading && message.content && (
+        {!isUser && message.connectionProvider && !(isLoading && isLast) && message.content && (
           <div className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground/60">
             <ProviderLogo provider={message.connectionProvider} className="w-3 h-3" />
             <span>{message.connectionLabel || message.connectionProvider}</span>

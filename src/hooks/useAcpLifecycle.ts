@@ -400,6 +400,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           }
 
           // Store session modes and config options for UI rendering
+          log.info('ai', `ACP session modes: ${JSON.stringify(session.modes)}`);
+          log.info('ai', `ACP session config_options: ${JSON.stringify(session.config_options)}`);
           setSessionModes(session.modes ?? null);
           setSessionConfigOptions(session.config_options ?? null);
 
@@ -424,13 +426,21 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             : acpSystemMessage;
           let promptContent: string;
           if (isNewSession) {
-            // Build conversation history for context restoration after interruption
+            // Build conversation history for context restoration after interruption.
+            // Respect provider context isolation — when user chose "Start fresh",
+            // only include messages from the segment boundary onward.
             const conv = useChatStore.getState().conversations
               .find(c => c.id === useChatStore.getState().activeConversationId);
-            const priorMessages = conv?.messages.filter(
+            const segment = useChatStore.getState().getActiveSegment();
+            let allMessages = conv?.messages ?? [];
+            if (segment && !segment.historyIncluded && segment.startMessageIndex > 0) {
+              const dropCount = Math.min(segment.startMessageIndex, allMessages.length);
+              allMessages = allMessages.slice(dropCount);
+            }
+            const priorMessages = allMessages.filter(
               (m) => m.timestamp !== assistantMessageId && m.timestamp !== userTimestamp
                 && m.role !== 'system-status' && m.content
-            ) ?? [];
+            );
             let historyBlock = '';
             if (priorMessages.length > 0) {
               const lines = priorMessages.map((m) => {
