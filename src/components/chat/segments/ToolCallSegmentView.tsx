@@ -86,16 +86,19 @@ export const ToolCallSegmentView = memo(function ToolCallSegmentView({ segment }
             return (
               <button
                 key={i}
-                className="block text-[10px] text-muted-foreground/60 hover:text-foreground hover:underline transition-colors truncate max-w-full"
+                className="block text-[10px] text-muted-foreground/60 hover:text-foreground hover:underline underline-offset-2 transition-colors truncate max-w-full cursor-pointer"
                 title={loc.path}
-                onClick={async () => {
+                onClick={async (e) => {
+                  e.stopPropagation();
                   try {
                     const { invoke } = await import('@tauri-apps/api/core');
                     const { useEditorStore } = await import('@/stores/editor-store');
                     const content = await invoke<string>('read_file', { path: loc.path });
-                    const fileName = loc.path.split('/').pop() || loc.path;
-                    useEditorStore.getState().openTab(loc.path, fileName, content);
-                  } catch { /* file may not exist */ }
+                    const name = loc.path.split('/').pop() || loc.path;
+                    useEditorStore.getState().openTab(loc.path, name, content);
+                  } catch (err) {
+                    console.warn('Failed to open file:', loc.path, err);
+                  }
                 }}
               >
                 {display}

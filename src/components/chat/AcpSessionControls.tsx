@@ -28,6 +28,8 @@ import {
   getSessionInfo,
   subscribeSessionInfo,
   getModeLabel,
+  updateCurrentMode,
+  updateConfigOptionValue,
   acpAgent,
 } from '@/lib/ai/acp-agent-state';
 import { useConnectionsStore } from '@/stores/connections-store';
@@ -37,7 +39,6 @@ import type { AcpSessionConfigOption } from '@/lib/ai/acp-utils';
 // Mode-sandbox conflict detection
 // ---------------------------------------------------------------------------
 
-/** Mode IDs that imply unrestricted access — conflict with sandbox/network restrictions */
 const UNRESTRICTED_MODE_IDS = new Set([
   'bypassPermissions', 'yolo', 'full-access', 'autopilot', 'full_access',
 ]);
@@ -53,17 +54,59 @@ function hasActiveRestrictions(connectionId: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Mode Picker — compact chip for switching agent modes
+// Context usage indicator — circular progress icon
+// ---------------------------------------------------------------------------
+
+function ContextUsageIcon({ used, size }: { used: number; size: number }) {
+  const ratio = size > 0 ? Math.min(used / size, 1) : 0;
+  const r = 6;
+  const circumference = 2 * Math.PI * r;
+  const offset = circumference * (1 - ratio);
+
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" className="shrink-0">
+      {/* Background circle */}
+      <circle cx="8" cy="8" r={r} fill="none" stroke="currentColor" strokeWidth="2" opacity="0.15" />
+      {/* Progress arc */}
+      <circle
+        cx="8" cy="8" r={r}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        strokeLinecap="round"
+        transform="rotate(-90 8 8)"
+        opacity="0.5"
+      />
+    </svg>
+  );
+}
+
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+// ---------------------------------------------------------------------------
+// Mode Picker
 // ---------------------------------------------------------------------------
 
 export const AcpModePicker = memo(function AcpModePicker() {
   const sessionInfo = useSyncExternalStore(subscribeSessionInfo, getSessionInfo);
   const modes = sessionInfo.modes;
   const [conflictMode, setConflictMode] = useState<{ id: string; name: string } | null>(null);
+  const [open, setOpen] = useState(false);
 
   const applyMode = useCallback(async (modeId: string) => {
-    if (!acpAgent?.instanceId || !acpAgent.chatSessionId) return;
+    if (!acpAgent?.instanceId || !acpAgent.chatSessionId) {
+      log.warn('ai', 'Cannot set mode: no active ACP session');
+      toast.error('No active session — send a message first');
+      return;
+    }
     try {
+      updateCurrentMode(modeId);
       await tauriApi.acpSessionSetMode(acpAgent.instanceId, acpAgent.chatSessionId, modeId);
     } catch (err) {
       log.error('ai', `Failed to set mode: ${String(err)}`);
@@ -72,22 +115,22 @@ export const AcpModePicker = memo(function AcpModePicker() {
   }, []);
 
   const handleSetMode = useCallback((modeId: string, modeName: string) => {
-    // Check for mode-sandbox conflict
     if (isUnrestrictedMode(modeId) && acpAgent?.connectionId && hasActiveRestrictions(acpAgent.connectionId)) {
       setConflictMode({ id: modeId, name: modeName });
       return;
     }
     applyMode(modeId);
+    setOpen(false);
   }, [applyMode]);
 
   const handleConflictKeep = useCallback(() => {
     if (conflictMode) applyMode(conflictMode.id);
     setConflictMode(null);
+    setOpen(false);
   }, [conflictMode, applyMode]);
 
   const handleConflictRemovePermanent = useCallback(() => {
     if (!acpAgent?.connectionId) { setConflictMode(null); return; }
-    // Update connection settings to remove restrictions
     useConnectionsStore.getState().updateConnection(acpAgent.connectionId, {
       sandboxEnabled: false,
       networkSandboxEnabled: false,
@@ -95,6 +138,7 @@ export const AcpModePicker = memo(function AcpModePicker() {
     });
     if (conflictMode) applyMode(conflictMode.id);
     setConflictMode(null);
+    setOpen(false);
     toast.info('Security restrictions removed. Agent will respawn with new settings on next session.');
   }, [conflictMode, applyMode]);
 
@@ -110,7 +154,7 @@ export const AcpModePicker = memo(function AcpModePicker() {
 
   return (
     <>
-      <Popover>
+      <Popover open={open} onOpenChange={setOpen}>
         <TooltipProvider delayDuration={300}>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -166,14 +210,14 @@ export const AcpModePicker = memo(function AcpModePicker() {
       </Popover>
 
       {/* Mode-sandbox conflict dialog */}
-      <AlertDialog open={!!conflictMode} onOpenChange={(open) => { if (!open) setConflictMode(null); }}>
+      <AlertDialog open={!!conflictMode} onOpenChange={(o) => { if (!o) setConflictMode(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Mode conflicts with security settings</AlertDialogTitle>
-            <AlertDialogDescription className="space-y-2">
-              <p>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
                 <span className="font-medium">{conflictMode?.name}</span> allows the agent to operate without permission checks, but this connection has security restrictions enabled that will block some operations.
-              </p>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-col gap-2 sm:flex-col">
@@ -195,15 +239,21 @@ export const AcpModePicker = memo(function AcpModePicker() {
 });
 
 // ---------------------------------------------------------------------------
-// Config Option Picker — dropdowns for agent config options
-// Config options use { value, name } for select options (not { id, name })
+// Config Option Picker
 // ---------------------------------------------------------------------------
 
 const ConfigOptionPicker = memo(function ConfigOptionPicker({ option }: { option: AcpSessionConfigOption }) {
+  const [open, setOpen] = useState(false);
+
   const handleSetValue = useCallback(async (value: string) => {
-    if (!acpAgent?.instanceId || !acpAgent.chatSessionId) return;
+    if (!acpAgent?.instanceId || !acpAgent.chatSessionId) {
+      toast.error('No active session — send a message first');
+      return;
+    }
     try {
+      updateConfigOptionValue(option.id, value);
       await tauriApi.acpSessionSetConfigOption(acpAgent.instanceId, acpAgent.chatSessionId, option.id, value);
+      setOpen(false);
     } catch (err) {
       log.error('ai', `Failed to set config option: ${String(err)}`);
       toast.error('Failed to set config option');
@@ -213,14 +263,12 @@ const ConfigOptionPicker = memo(function ConfigOptionPicker({ option }: { option
   const options = option.options ?? [];
   if (options.length < 2) return null;
 
-  // Config select options use `value` field (not `id`)
   const currentOption = options.find(o => (o.value ?? o.name) === option.currentValue);
   const displayName = currentOption?.name ?? option.currentValue ?? option.name;
-  // Capitalize first letter of displayed name
   const capitalizedDisplay = displayName.charAt(0).toUpperCase() + displayName.slice(1);
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <TooltipProvider delayDuration={300}>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -277,14 +325,8 @@ const ConfigOptionPicker = memo(function ConfigOptionPicker({ option }: { option
 });
 
 // ---------------------------------------------------------------------------
-// Usage indicator — shows token count and optional cost
+// Usage Indicator — circular progress with tooltip
 // ---------------------------------------------------------------------------
-
-function formatTokenCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
 
 const UsageIndicator = memo(function UsageIndicator() {
   const sessionInfo = useSyncExternalStore(subscribeSessionInfo, getSessionInfo);
@@ -295,7 +337,7 @@ const UsageIndicator = memo(function UsageIndicator() {
     ? `${formatTokenCount(usage.contextUsed)} / ${formatTokenCount(usage.contextSize)}`
     : formatTokenCount(usage.contextUsed);
 
-  const costTooltip = usage.cost
+  const costText = usage.cost
     ? `${usage.cost.currency === 'USD' ? '$' : usage.cost.currency + ' '}${usage.cost.amount.toFixed(2)}`
     : undefined;
 
@@ -303,13 +345,13 @@ const UsageIndicator = memo(function UsageIndicator() {
     <TooltipProvider delayDuration={200}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="text-[10px] text-muted-foreground/60 tabular-nums">
-            {label}
+          <span className="inline-flex items-center text-muted-foreground/50 cursor-default">
+            <ContextUsageIcon used={usage.contextUsed} size={usage.contextSize} />
           </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
-          <p>{formatTokenCount(usage.contextUsed)} tokens used{usage.contextSize > 0 ? ` of ${formatTokenCount(usage.contextSize)} context` : ''}</p>
-          {costTooltip && <p className="text-muted-foreground">{costTooltip}</p>}
+          <p>{label}</p>
+          {costText && <p className="text-muted-foreground">{costText}</p>}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -317,15 +359,12 @@ const UsageIndicator = memo(function UsageIndicator() {
 });
 
 // ---------------------------------------------------------------------------
-// Combined controls — renders mode picker + config options + usage
+// Combined controls
 // ---------------------------------------------------------------------------
 
 export const AcpSessionControls = memo(function AcpSessionControls({ showModePicker }: { showModePicker: boolean }) {
   const sessionInfo = useSyncExternalStore(subscribeSessionInfo, getSessionInfo);
 
-  // Filter config options:
-  // - Skip "model" category (handled by model picker)
-  // - Skip "mode" category (duplicates the modes picker from session modes)
   const configOptions = (sessionInfo.configOptions ?? []).filter(
     opt => opt.category !== 'model' && opt.category !== 'mode'
   );
