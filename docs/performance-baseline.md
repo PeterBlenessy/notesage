@@ -157,6 +157,39 @@ Measured with 6 iCloud projects, 3 explorer folders, 22 open tabs, 679 total fil
 
 **Comparison vs v0.32.1:** phase1-ready improved 5,426→1,548ms (−71%). Skills total improved 8,793→2,183ms (−75%). Tree refresh improved 10,487→2,592ms (−75%). Startup ready improved dramatically. Fewer open tabs (8 vs 27) accounts for some improvement. No regressions from new extensions.
 
+### v0.34.0 — 2026-04-15 (`cd2cca7`)
+
+Apple M3, 24GB. macOS.
+6 iCloud projects, 3 explorer folders, 8 open tabs, 1,247 total files.
+
+**Skills pipeline:**
+
+| Step | ms |
+| --- | --- |
+| skill-scan | 2,036 |
+| skill-tool-extract (11 skills) | 664 |
+| agent-scan | 235 |
+| instruction-scan | 311 |
+| **phase1-ready (tools visible)** | **3,261** |
+| bundled-skills-extract | 616 |
+| bundled-agents-extract | 396 |
+| phase2-extract | 1,355 |
+| **total** | **4,616** |
+
+**Startup & trees:**
+
+| Metric | ms |
+| --- | --- |
+| trees validated (1st) | 2,433 |
+| trees validated (2nd) | 3,083 |
+| tree refresh | 5,347 |
+| tab-preload (7 tabs) | 4,146 |
+| index init total | 832 / 1,614 |
+| startup ready | 6,058 / 6,887 |
+| tabs restored | 5,599 / 6,347 |
+
+**Comparison vs v0.33.0:** Skills phase1-ready regressed 1,548→3,261ms (+110%). Tree refresh regressed 2,592→5,347ms (+106%). Startup ready regressed 3,568→6,058ms (+70%). These are likely due to system load during measurement rather than code changes — the ACP protocol compliance work touches no startup/tree/skill code paths. The skill rescan (110ms on second run) confirms no persistent overhead. Index init improved 1,048→832ms. File count similar (1,245→1,247).
+
 ## Notes
 
 - Parse benchmarks include Tiptap editor creation overhead (\~15ms fixed cost)

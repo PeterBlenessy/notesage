@@ -102,3 +102,4 @@ Chronological log of major implementation milestones and changes.
 | 096 | [Release v0.32.0](096-release-v0.32.0.md) | Document style frontmatter, TOC extension, typing perf fixes, Vite reload fix, Typst restored |
 | 097 | [Release v0.32.1](097-release-v0.32.1.md) | Chat truncation fix, ACP tool progress, interrupted messages, data URI images |
 | 098 | [Release v0.33.0](098-release-v0.33.0.md) | Sub/superscript, focus mode dimming, trailing node, UniqueID, decoration factory, dispatch migration |
+| 099 | [Release v0.34.0](099-release-v0.34.0.md) | ACP protocol compliance — thinking, modes, config, usage, plans, slash commands, session lifecycle |
