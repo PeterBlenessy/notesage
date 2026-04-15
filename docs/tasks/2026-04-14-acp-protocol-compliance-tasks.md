@@ -634,7 +634,7 @@ Update command list when new `available_commands_update` arrives.
 
 ## Phase 4 — Robustness
 
-### #19 — Capability checking before gated methods
+### #19 — Capability checking before gated methods ✅
 
 **Description:** Before calling capability-gated methods, check the agent's advertised capabilities (returned from #7):
 
@@ -658,7 +658,7 @@ Store capabilities in `AgentHandle` (backend) and pass to frontend via extended 
 
 ---
 
-### #20 — Cancel contract compliance
+### #20 — Cancel contract compliance ✅
 
 **Description:** Verify and fix the cancel flow to comply with ACP spec: when sending `cancel`, the client MUST respond `Cancelled` to all pending `session/request_permission` requests.
 

@@ -681,18 +681,29 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       // Try to reconnect with session/load (preserves agent-side conversation context)
       let instanceId: string;
       let isNewSession = false;
+      const supportsLoad = acpAgent?.capabilities?.load_session === true;
 
-      try {
-        const result = await invoke<{ instance_id: string }>('acp_agent_reconnect', {
-          instanceId: oldInstanceId,
-          sessionId: sessionId ?? '',
-        });
-        instanceId = result.instance_id;
-        updateAcpAgentInstanceId(instanceId);
-        log.info('ai', `ACP retry: reconnected with session/load (new instance: ${instanceId})`);
-      } catch (reconnectErr) {
-        // session/load failed — fall back to fresh session
-        log.warn('ai', `ACP retry: reconnect failed (${String(reconnectErr)}), using fresh session`);
+      if (supportsLoad && sessionId) {
+        try {
+          const result = await invoke<{ instance_id: string }>('acp_agent_reconnect', {
+            instanceId: oldInstanceId,
+            sessionId,
+          });
+          instanceId = result.instance_id;
+          updateAcpAgentInstanceId(instanceId);
+          log.info('ai', `ACP retry: reconnected with session/load (new instance: ${instanceId})`);
+        } catch (reconnectErr) {
+          // session/load failed — fall back to fresh session
+          log.warn('ai', `ACP retry: reconnect failed (${String(reconnectErr)}), using fresh session`);
+          stopAcpAgent();
+          const cwd = selectedProjectPaths[0] || '/tmp';
+          const sandboxScope = prompt.sandboxPaths ?? getAllWorkspacePaths();
+          instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
+          isNewSession = true;
+        }
+      } else {
+        // Agent doesn't support session/load — go directly to fresh session
+        log.info('ai', 'ACP retry: agent does not support session/load, using fresh session');
         stopAcpAgent();
         const cwd = selectedProjectPaths[0] || '/tmp';
         const sandboxScope = prompt.sandboxPaths ?? getAllWorkspacePaths();

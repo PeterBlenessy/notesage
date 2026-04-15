@@ -492,13 +492,13 @@ enum AgentCmd {
 
 - [x] Session restored via `session/load` when reopening existing chat (if agent supports it)
 
-- [ ] `session/load` only called when agent advertises `loadSession` capability
+- [x] `session/load` only called when agent advertises `loadSession` capability
 
 - [x] Hardcoded Codex `reasoningEffort` migrated to dynamic `acpDefaults.thinkingEffort`
 
 - [x] Session title from agent used in conversation history
 
-- [ ] Cancel properly responds `Cancelled` to all pending permission requests
+- [x] Cancel properly responds `Cancelled` to all pending permission requests
 
 ### Design
 

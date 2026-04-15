@@ -722,6 +722,9 @@ fn run_agent_thread(
                     session_id: sid,
                     reply,
                 } => {
+                    // ACP spec: when sending cancel, the client MUST respond Cancelled
+                    // to all pending session/request_permission requests
+                    permission_waiters.borrow_mut().clear();
                     let req = CancelNotification::new(SessionId::new(sid));
                     match conn.cancel(req).await {
                         Ok(_) => {
