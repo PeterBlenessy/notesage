@@ -29,23 +29,28 @@ const COMMON_MODES: Record<CommonModeKey, CommonMode> = {
 /**
  * Maps known agent mode IDs to common modes. Any mode ID not in this map
  * is considered an advanced/agent-specific mode and hidden from the footer picker.
+ *
+ * Mode IDs come from actual ACP agent responses (not CLI flag names):
+ * - Claude Code: default, acceptEdits, plan, dontAsk, bypassPermissions
+ * - Codex: read-only, auto, full-access
+ * - Gemini CLI: default, autoEdit, yolo, plan
+ * - Copilot CLI: URL-based (agent, plan, autopilot)
  */
 const MODE_ID_TO_COMMON: Record<string, CommonModeKey> = {
-  // Claude Code
+  // Agent mode — default working mode
   'default': 'agent',
   'code': 'agent',
-  'architect': 'plan',
-  'plan': 'plan',
-  'ask': 'chat',
-  // Codex
   'auto': 'agent',
   'read-only': 'agent',
-  // Gemini CLI
+  'acceptEdits': 'agent',
   'autoEdit': 'agent',
-  // Copilot CLI (URL-based IDs)
   'https://agentclientprotocol.com/protocol/session-modes#agent': 'agent',
+  // Plan mode — read-only / planning
+  'architect': 'plan',
+  'plan': 'plan',
   'https://agentclientprotocol.com/protocol/session-modes#plan': 'plan',
-  'https://agentclientprotocol.com/protocol/session-modes#autopilot': 'agent',
+  // Chat mode — conversation only (if agent supports it)
+  'ask': 'chat',
 };
 
 /**

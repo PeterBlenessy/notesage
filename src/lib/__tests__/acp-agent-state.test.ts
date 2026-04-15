@@ -155,7 +155,7 @@ describe('subscription notifications', () => {
 // ---------------------------------------------------------------------------
 
 describe('getCommonModes — filters to Agent/Plan/Chat', () => {
-  it('maps Claude Code modes to common modes', () => {
+  it('maps Claude Code modes to common modes (actual ACP IDs)', () => {
     const modes = getCommonModes([
       { id: 'default', name: 'Default' },
       { id: 'acceptEdits', name: 'Accept Edits' },
@@ -163,6 +163,7 @@ describe('getCommonModes — filters to Agent/Plan/Chat', () => {
       { id: 'dontAsk', name: "Don't Ask" },
       { id: 'bypassPermissions', name: 'Bypass Permissions' },
     ]);
+    // default → Agent, acceptEdits → Agent (dedup), plan → Plan, others hidden
     expect(modes.map(m => m.name)).toEqual(['Agent', 'Plan']);
   });
 
@@ -173,8 +174,18 @@ describe('getCommonModes — filters to Agent/Plan/Chat', () => {
       { id: 'yolo', name: 'YOLO' },
       { id: 'plan', name: 'Plan' },
     ]);
-    // default → Agent, autoEdit → Agent (deduped), plan → Plan
+    // default → Agent, autoEdit → Agent (dedup), yolo → hidden, plan → Plan
     expect(modes.map(m => m.name)).toEqual(['Agent', 'Plan']);
+  });
+
+  it('Codex has only Agent mode (no plan/chat)', () => {
+    const modes = getCommonModes([
+      { id: 'read-only', name: 'Read Only' },
+      { id: 'auto', name: 'Default' },
+      { id: 'full-access', name: 'Full Access' },
+    ]);
+    // read-only → Agent, auto → Agent (dedup), full-access → hidden
+    expect(modes.map(m => m.name)).toEqual(['Agent']);
   });
 
   it('maps Copilot CLI URL-based modes', () => {

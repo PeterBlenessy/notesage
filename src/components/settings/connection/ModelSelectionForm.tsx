@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, RefreshCw, ChevronsUpDown, Check, Brain } from 'lucide-react';
+import { Loader2, RefreshCw, ChevronsUpDown, Check } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import type { Connection, ReasoningEffort } from '@/lib/ai/connections';
 import { getAgentModels, prettyModelName } from '@/lib/ai/connections';
@@ -134,8 +134,10 @@ interface ModelSelectionFormProps {
   onTemperatureChange: (value: number | null) => void;
   maxTokensIndex: number | null;
   onMaxTokensIndexChange: (value: number | null) => void;
-  reasoningEffort: ReasoningEffort | undefined;
-  onReasoningEffortChange: (value: ReasoningEffort | undefined) => void;
+  /** @deprecated Kept for interface compat — thinking effort now managed via ACP config options */
+  reasoningEffort?: ReasoningEffort | undefined;
+  /** @deprecated */
+  onReasoningEffortChange?: (value: ReasoningEffort | undefined) => void;
   /** Local AI model state */
   localModelId: string | null;
   onLocalModelIdChange: (value: string | null) => void;
@@ -166,8 +168,7 @@ export function ModelSelectionForm({
   onTemperatureChange,
   maxTokensIndex,
   onMaxTokensIndexChange,
-  reasoningEffort,
-  onReasoningEffortChange,
+  // reasoningEffort and onReasoningEffortChange deprecated — thinking effort via ACP config options
   localModelId,
   onLocalModelIdChange,
   downloadedLocalModels,
@@ -190,7 +191,6 @@ export function ModelSelectionForm({
   const agentBinary = connection.credentials.type === 'agent_managed'
     ? connection.credentials.agentBinary
     : '';
-  const isCodexAgent = agentBinary === 'codex-acp';
   const isCopilotLsp = agentBinary === 'copilot-language-server';
 
   // Fetch models from Copilot LSP for copilot-language-server connections
@@ -389,50 +389,6 @@ export function ModelSelectionForm({
           </Popover>
         )}
       </div>}
-
-      {/* Thinking Effort — codex-acp with paid accounts */}
-      {isCodexAgent && !connection.freeAccount && (() => {
-        const EFFORT_OPTIONS: { value: ReasoningEffort | undefined; label: string }[] = [
-          { value: undefined, label: 'Default' },
-          { value: 'low', label: 'Low' },
-          { value: 'medium', label: 'Medium' },
-          { value: 'high', label: 'High' },
-          { value: 'xhigh', label: 'Extra High' },
-        ];
-        const currentIndex = EFFORT_OPTIONS.findIndex((o) => o.value === reasoningEffort);
-        return (
-          <div className="rounded-lg border border-border p-3 space-y-2.5">
-            <div className="flex items-center gap-2">
-              <Brain className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
-              <Label className="text-sm font-medium">Thinking Effort</Label>
-              <span className="text-xs text-muted-foreground ml-auto">
-                {EFFORT_OPTIONS[currentIndex]?.label ?? 'Default'}
-              </span>
-            </div>
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
-              Controls how much reasoning the model does before responding. Higher effort produces more thorough answers but uses more tokens and takes longer.
-            </p>
-            <Slider
-              min={0}
-              max={EFFORT_OPTIONS.length - 1}
-              step={1}
-              value={[currentIndex >= 0 ? currentIndex : 0]}
-              onValueChange={([val]) => onReasoningEffortChange(EFFORT_OPTIONS[val].value)}
-            />
-            <div className="flex justify-between px-0.5">
-              {EFFORT_OPTIONS.map((opt) => (
-                <span
-                  key={opt.label}
-                  className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
-                  onClick={() => onReasoningEffortChange(opt.value)}
-                >
-                  {opt.label}
-                </span>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Temperature + Response Length — direct API and local_bundled */}
       {!isAgentManaged && (
