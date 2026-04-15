@@ -12,7 +12,7 @@ import { tauriApi } from '@/lib/tauri';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
 import { getAllWorkspacePaths } from '@/lib/ai/acp-utils';
-import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions } from '@/lib/ai/acp-agent-state';
+import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue } from '@/lib/ai/acp-agent-state';
 import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
 
@@ -268,9 +268,12 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         if (!storedSessionId || !supportsLoad) {
           const defaults = effectiveConnection.acpDefaults;
           if (defaults?.modeId && session.modes && session.session_id) {
+            // Optimistically update local state (listeners aren't active yet for eager session)
+            updateCurrentMode(defaults.modeId);
             tauriApi.acpSessionSetMode(instanceId, session.session_id, defaults.modeId).catch(() => {});
           }
           if (defaults?.thinkingEffort && session.session_id) {
+            updateConfigOptionValue('reasoning_effort', defaults.thinkingEffort);
             tauriApi.acpSessionSetConfigOption(instanceId, session.session_id, 'reasoning_effort', defaults.thinkingEffort).catch(() => {});
           }
           if (effectiveConnection.config?.model && session.session_id) {
