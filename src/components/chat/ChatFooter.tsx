@@ -1,14 +1,12 @@
 import { memo, useMemo, useState, useEffect, useRef, type RefObject } from 'react';
-import { ChevronUp, FolderOpen, Check, Target, Wrench } from 'lucide-react';
+import { ChevronUp, FolderOpen, Check, Target } from 'lucide-react';
 import { toast } from 'sonner';
-import { AgentIcon } from '@/components/AgentIcon';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { useChatStore, selectPendingProjectSwitch, selectPendingAgentSwitch } from '@/stores/chat-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
-import { useSkillStore } from '@/stores/skill-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { AcpSessionControls } from './AcpSessionControls';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
@@ -27,31 +25,6 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 
-/** Convert a snake_case tool name to a pretty display name. */
-function prettyToolName(name: string): string {
-  // For skill tools, strip the skill__ prefix and show just the script part (or skill name)
-  if (name.startsWith('skill__')) {
-    const rest = name.slice(7); // strip "skill__"
-    const parts = rest.split('__');
-    // Use last part (script name) if multi-part, otherwise skill name
-    const display = parts.length > 1 ? parts[parts.length - 1] : parts[0];
-    return display.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  }
-  return name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-/** Get a pretty display name for a skill tool, including script name for multi-script skills. */
-function prettySkillToolName(toolName: string, skillName: string): string {
-  const pretty = skillName.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  // Check if this is a multi-script tool: skill__{skill}__{script}
-  const rest = toolName.slice(7); // strip "skill__"
-  const parts = rest.split('__');
-  if (parts.length > 1) {
-    const scriptPretty = parts[parts.length - 1].replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-    return `${pretty} — ${scriptPretty}`;
-  }
-  return pretty;
-}
 
 import type { EditContext } from './ChatPanel';
 
@@ -73,12 +46,6 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
   const setSelectedProjectPaths = useChatStore((s) => s.setSelectedProjectPaths);
   const toggleProjectPath = useChatStore((s) => s.toggleProjectPath);
 
-  const agents = useSkillStore((s) => s.agents);
-  const agentEnabledOverrides = useSkillStore((s) => s.agentEnabledOverrides);
-  const activeAgentName = useSkillStore((s) => s.activeAgentName);
-  const invocableAgents = useMemo(() => useSkillStore.getState().getUserInvocableAgents(), [agents, agentEnabledOverrides]);
-  const activeAgent = useMemo(() => useSkillStore.getState().getActiveAgent(), [agents, agentEnabledOverrides, activeAgentName]);
-  const setActiveAgent = useSkillStore((s) => s.setActiveAgent);
 
   const projects = useWorkspaceStore((s) => s.projects);
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
@@ -101,19 +68,10 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
   const { cancelChat } = useAIOperations();
   const { contextItems, dismissItem } = useChatContext();
 
-  const toolCallingEnabled = useSettingsStore((s) => s.toolCallingEnabled);
   const showAgentModePicker = useSettingsStore((s) => s.showAgentModePicker);
-  const skillTools = useSkillStore((s) => s.skillTools);
-  const toolDefs = useMemo(() => {
-    if (!toolCallingEnabled) return [];
-    // All tools available to all agents — user controls access via permission system
-    return useSkillStore.getState().getToolDefinitions();
-  }, [toolCallingEnabled, skillTools, activeAgentName, agents, agentEnabledOverrides]);
 
   const [providerOpen, setProviderOpen] = useState(false);
-  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
 
   // Measure the chat panel height so the textarea can cap at 40%
   const footerRef = useRef<HTMLDivElement>(null);
@@ -247,47 +205,6 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
                 )}
               </Popover>
             )}
-            <Popover open={agentPickerOpen} onOpenChange={setAgentPickerOpen}>
-              <PopoverTrigger asChild>
-                <button type="button" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent/50 active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-                  <AgentIcon icon={activeAgent?.icon} size={14} />
-                  <span>{activeAgent?.name ?? 'No agent'}</span>
-                  <ChevronUp className="h-3 w-3 opacity-50" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent side="top" align="start" className="w-56 p-1 max-h-64 overflow-y-auto thin-scrollbar">
-                {invocableAgents.map((agent) => (
-                  <button
-                    key={agent.path}
-                    onClick={() => {
-                      setActiveAgent(agent.name);
-                      setAgentPickerOpen(false);
-                    }}
-                    className={`w-full flex items-start gap-2 px-2 py-1.5 rounded text-xs transition-colors ${
-                      agent.name === activeAgent?.name
-                        ? 'bg-accent text-accent-foreground'
-                        : 'text-foreground hover:bg-accent/50'
-                    }`}
-                  >
-                    <AgentIcon icon={agent.icon} size={14} className="mt-0.5 shrink-0" />
-                    <div className="min-w-0 text-left">
-                      <div className="truncate font-medium">{agent.name}</div>
-                      {agent.description && (
-                        <div className="text-muted-foreground line-clamp-1 mt-0.5">{agent.description}</div>
-                      )}
-                    </div>
-                    {agent.name === activeAgent?.name && (
-                      <Check className="h-3 w-3 shrink-0 mt-0.5 text-muted-foreground" />
-                    )}
-                  </button>
-                ))}
-                {invocableAgents.length === 0 && (
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                    No agents discovered
-                  </div>
-                )}
-              </PopoverContent>
-            </Popover>
             <Popover open={projectOpen} onOpenChange={setProjectOpen}>
               <PopoverTrigger asChild>
                 <button type="button" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent/50 active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
@@ -331,42 +248,6 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
                 )}
               </PopoverContent>
             </Popover>
-            {toolCallingEnabled && toolDefs.length > 0 && (
-              <Popover open={toolsOpen} onOpenChange={setToolsOpen}>
-                <PopoverTrigger asChild>
-                  <button type="button" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent/50 active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-                    <Wrench className="h-3 w-3" strokeWidth={1.5} />
-                    <span>{toolDefs.length} {toolDefs.length === 1 ? 'tool' : 'tools'}</span>
-                    <ChevronUp className="h-3 w-3 opacity-50" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent side="top" align="start" className="w-64 p-1 max-h-72 overflow-y-auto thin-scrollbar">
-                  <div className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Built-in</div>
-                  {toolDefs.filter((t) => !t.name.startsWith('skill__')).map((tool) => (
-                    <div key={tool.name} className="px-2 py-1.5 text-xs text-foreground rounded">
-                      {prettyToolName(tool.name)}
-                    </div>
-                  ))}
-                  {toolDefs.some((t) => t.name.startsWith('skill__')) && (
-                    <>
-                      <div className="mx-2 my-1 border-t border-border" />
-                      <div className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Skills</div>
-                      {toolDefs.filter((t) => t.name.startsWith('skill__')).map((tool) => {
-                        const st = useSkillStore.getState().getSkillToolByName(tool.name);
-                        return (
-                          <div key={tool.name} className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs text-foreground rounded">
-                            <span className="truncate">{prettySkillToolName(tool.name, st?.skill_name ?? tool.name)}</span>
-                            <span className="shrink-0 inline-flex items-center px-1.5 py-px rounded-full text-[9px] font-medium bg-muted text-muted-foreground">
-                              {st?.explicit_schema ? 'schema' : 'auto'}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </>
-                  )}
-                </PopoverContent>
-              </Popover>
-            )}
             <AcpSessionControls showModePicker={showAgentModePicker} />
             {goalFiles.length > 0 && (
               <TooltipProvider delayDuration={200}>

@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-14 |
-| **Status** | Draft |
+| **Status** | Implemented (v0.34.0) ✅ |
 | **Priority** | High |
 | **Impact** | Closes 60% ACP feature gap — thinking in chat, session modes, usage tracking, dynamic config, richer tool call display |
 | **Audit** | [2026-04-14-acp-audit.md](../audits/2026-04-14-acp-audit.md) |
@@ -326,12 +326,14 @@ The chat footer already contains: model picker, agent picker, project selector, 
   **Provider support matrix:**
 
   | Common Mode | Claude Code | OpenAI Codex | Gemini CLI | GitHub Copilot CLI |
-  | --- | :---: | :---: | :---: | :---: |
+  | --- | --- | --- | --- | --- |
   | **Read Only** | ✅ | ✅ | ✅ | — |
   | **Agent** | ✅ | ✅ | ✅ | ✅ |
   | **Full Access** | ✅ | ✅ | ✅ | ✅ |
   | **Plan** | ✅ | — | ✅ | ✅ |
+
 - **Config options:** Config options with `category: "mode"` filtered out (duplicates mode picker). `category: "thought_level"` renders as a labeled dropdown adjacent to the mode picker. `category: "model"` filtered out (handled by model picker). Other categories render as dropdowns. Select options use `value` field per ACP schema.
+
 - **Usage indicator:** Circular progress icon that fills clockwise as context is consumed. Token count and cost shown in tooltip on hover. Uses `text-muted-foreground` — unobtrusive.
 
 ### Connection Config Additions (Phase 2B)
@@ -490,15 +492,15 @@ enum AgentCmd {
 
 - [x] Changing a config option calls `session/set_config_option`
 
-- [ ] Usage indicator shows live token count during streaming
+- [x] Usage indicator shows live token count during streaming
 
-- [ ] Cost shown on hover when agent provides it
+- [x] Cost shown on hover when agent provides it
 
-- [ ] Agent plans render as collapsible entries in message stream
+- [x] Agent plans render as collapsible entries in message stream
 
-- [ ] Tool call locations are clickable and navigate to the file
+- [x] Tool call locations are clickable and navigate to the file
 
-- [ ] Agent slash commands appear in chat input autocomplete
+- [x] Agent slash commands appear in chat input autocomplete
 
 - [x] Unknown `SessionUpdate` types are logged and don't crash
 
@@ -524,13 +526,13 @@ enum AgentCmd {
 
 - [x] Mode picker matches model picker chip style — compact, consistent
 
-- [ ] Usage indicator uses `text-muted-foreground`, unobtrusive in footer
+- [x] Usage indicator uses `text-muted-foreground`, unobtrusive in footer
 
-- [ ] Plan segment follows thinking segment collapsible pattern
+- [x] Plan segment follows thinking segment collapsible pattern
 
-- [ ] All new elements work in both light and dark mode
+- [x] All new elements work in both light and dark mode
 
-- [ ] No chromatic accent colors (strictly neutral palette per design system)
+- [x] No chromatic accent colors (strictly neutral palette per design system)
 
 ### Testing
 
@@ -538,7 +540,7 @@ enum AgentCmd {
 
 - [x] Unit tests for `session_info_update` → conversation title
 
-- [ ] Unit tests for `usage_update` parsing and accumulation
+- [ ] Unit tests for `usage_update` parsing and accumulation *(gap — no test file covers this)*
 
 - [x] Unit tests for mode/config option state management
 
@@ -546,9 +548,9 @@ enum AgentCmd {
 
 - [x] Existing ACP tests pass after crate bump
 
-- [ ] TypeScript typecheck passes
+- [x] TypeScript typecheck passes
 
-- [ ] Performance benchmarks pass within budget
+- [x] Performance benchmarks pass within budget
 
 ## Out of Scope
 

@@ -12,7 +12,7 @@ import { tauriApi } from '@/lib/tauri';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
 import { getAllWorkspacePaths } from '@/lib/ai/acp-utils';
-import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue } from '@/lib/ai/acp-agent-state';
+import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue, setAvailableCommands } from '@/lib/ai/acp-agent-state';
 import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
 
@@ -86,6 +86,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
   const { addMessage, updateMessage, setMessageError, setMessageInterrupted, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, appendTextSegment, appendThinkingSegment, pushSegment, updateSegment, updateOrPushPlanSegment, finalizeSegments, resetAssistantMessage } = useChatStore();
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const cleanupRef = useRef<(() => void) | null>(null);
+  const eagerUnlistenRef = useRef<(() => void) | null>(null);
 
   // ---------------------------------------------------------------------------
   // Unresponsive agent detection — check if alive, then show banner
@@ -259,6 +260,38 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           );
         }
 
+        // Register a lightweight listener for init-time session notifications
+        // (available_commands_update, session_info_update, etc.) that fire before
+        // the full chat listeners are set up on first prompt.
+        const eagerUnlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
+          if (event.payload.instanceId !== instanceId) return;
+          const { update } = event.payload;
+          if (update.sessionUpdate === 'available_commands_update') {
+            const rawCommands = (update.availableCommands ?? update.available_commands) as Array<Record<string, unknown>> | undefined;
+            if (Array.isArray(rawCommands)) {
+              const commands = rawCommands.map(cmd => ({
+                name: String(cmd.name ?? ''),
+                description: String(cmd.description ?? ''),
+                inputHint: typeof cmd.inputHint === 'string' ? cmd.inputHint : undefined,
+              }));
+              setAvailableCommands(commands);
+            }
+          } else if (update.sessionUpdate === 'current_mode_update' && typeof update.currentModeId === 'string') {
+            updateCurrentMode(update.currentModeId);
+          } else if (update.sessionUpdate === 'config_option_update') {
+            const configId = update.optionId ?? update.option_id;
+            const value = update.selectedValueId ?? update.selected_value_id ?? update.value;
+            if (typeof configId === 'string' && typeof value === 'string') updateConfigOptionValue(configId, value);
+          }
+        });
+        // Clean up eager listener when effect is cancelled
+        if (cancelled) { eagerUnlisten(); return; }
+
+        // Store unlisten so cleanup can call it
+        const prevEagerUnlisten = eagerUnlistenRef.current;
+        eagerUnlistenRef.current = eagerUnlisten;
+        prevEagerUnlisten?.();
+
         // Populate mode picker and config options
         log.info('ai', `ACP eager session modes: ${JSON.stringify(session.modes)}`);
         setSessionModes(session.modes ?? null);
@@ -289,7 +322,11 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      eagerUnlistenRef.current?.();
+      eagerUnlistenRef.current = null;
+    };
   }, [effectiveConnection, selectedProjectPaths]);
 
   /** Keep waiting for the agent — dismiss the banner and restart the timer. */
@@ -522,6 +559,10 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           }
         }
 
+        // Full chat listeners now take over — stop the eager listener
+        eagerUnlistenRef.current?.();
+        eagerUnlistenRef.current = null;
+
         const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId });
         cleanupRef.current = buildAcpChatCleanup(listeners, instanceId, assistantMessageId, cleanupRef, setLoading, setActiveTool, finalizeSegments, setMessageInterrupted);
 
@@ -746,6 +787,10 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           }
         }
       }
+
+      // Full chat listeners now take over — stop the eager listener
+      eagerUnlistenRef.current?.();
+      eagerUnlistenRef.current = null;
 
       // Set up listeners
       const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId });
