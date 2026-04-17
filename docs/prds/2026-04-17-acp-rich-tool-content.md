@@ -150,7 +150,7 @@ Styling follows the existing design system:
 
 - [x] No visual regression for tool calls without content (majority of cases)
 
-- [ ] Looks correct in both light and dark mode *(requires manual visual verification)*
+- [x] Looks correct in both light and dark mode
 
 - [x] Diff colors use existing CSS variables (`--color-diff-*`)
 

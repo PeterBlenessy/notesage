@@ -73,9 +73,10 @@ For tasks that ran in worktree isolation:
 
 ### 5. Manual test checkpoint
 
-Pause only for tests requiring human judgment (visual appearance, UX feel, cross-process behavior, accessibility with a real screen reader). If everything is automatable, report results and proceed.
+Pause for tests requiring human judgment (visual, UX, cross-process, a11y). An unchecked PRD quality gate that no command can verify is a manual test — don't defer it silently.
 
 1. **If manual tests are needed**: report what to test and wait for user confirmation
+   - Be specific: name the gate and what to look at. Offer to walk through it together.
 2. **If user reports issues**: fix and re-run the test gate from step 4
 3. Do NOT proceed to finalize until any required manual tests are confirmed
 
@@ -87,6 +88,7 @@ Before the task counts as done:
 2. **Mark done** in BOTH files:
    - Task breakdown: add ` ✅` at the end of the task heading (e.g., `### #35 — Title ✅`)
    - PRD: if the task completes a PRD checkbox, mark it too
+3. **Resolve remaining PRD quality gates.** Run them, hand them off with a concrete test proposal, or mark out-of-scope with a reason. Never leave a gate unchecked silently.
 
 ### 7. Propose commit & wait for approval
 
