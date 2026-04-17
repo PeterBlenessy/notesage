@@ -967,8 +967,8 @@ export const tauriApi = {
     return await invoke<string>("extract_bundled_skills");
   },
 
-  async extractBundledAgents(): Promise<string> {
-    return await invoke<string>("extract_bundled_agents");
+  async cleanupBundledAgents(): Promise<number> {
+    return await invoke<number>("cleanup_bundled_agents");
   },
 
   // Voice transcription operations

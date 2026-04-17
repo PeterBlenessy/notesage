@@ -58,8 +58,10 @@ interface SettingsStore {
   lastExportIncludePageNumbers: boolean;
   lastExportFormat: ExportFormat;
   lastPptxTemplate: string;
-  /** Whether custom personas have been migrated to agent files. Persisted. */
+  /** @deprecated Persona migration is no longer needed. Kept for persistence schema compat. */
   personasMigrated: boolean;
+  /** Whether bundled agents have been cleaned up from ~/.notesage/agents/. One-time flag. */
+  bundledAgentsCleaned: boolean;
   /** Whether the chat input syntax hints have been auto-dismissed (after first send). Persisted. */
   chatHintsShown: boolean;
   /** Show dotfiles and dot-directories in the sidebar file tree */
@@ -124,6 +126,7 @@ interface SettingsStore {
   setICloudAvailable: (available: boolean) => void;
   setICloudNotesagePath: (path: string | null) => void;
   setPersonasMigrated: (migrated: boolean) => void;
+  setBundledAgentsCleaned: (cleaned: boolean) => void;
   setChatHintsShown: (shown: boolean) => void;
   setShowHiddenFiles: (show: boolean) => void;
   setShowAgentModePicker: (show: boolean) => void;
@@ -156,6 +159,7 @@ export const useSettingsStore = create<SettingsStore>()(
       notesRootPath: "~/Notesage",
       gitEnabled: false,
       personasMigrated: false,
+      bundledAgentsCleaned: false,
       chatHintsShown: false,
       showHiddenFiles: false,
       showAgentModePicker: false,
@@ -365,6 +369,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setPersonasMigrated: (migrated: boolean) => {
         set({ personasMigrated: migrated });
+      },
+
+      setBundledAgentsCleaned: (cleaned: boolean) => {
+        set({ bundledAgentsCleaned: cleaned });
       },
 
       setChatHintsShown: (shown: boolean) => {

@@ -260,7 +260,7 @@ interface SkillStore {
 }
 
 /** Known skill source labels. Must match Rust `determine_source` / `determine_agent_source` in commands/skills.rs. */
-export type SkillSource = 'external' | 'agents' | 'gemini' | 'codex' | 'claude' | 'github' | 'notesage-global' | 'notesage-project';
+export type SkillSource = 'external' | 'agents' | 'gemini' | 'codex' | 'claude' | 'github' | 'copilot' | 'notesage-global' | 'notesage-project';
 
 /** Source priority for hierarchy resolution (higher = wins). */
 export const SOURCE_PRIORITY: Record<SkillSource, number> = {
@@ -270,6 +270,7 @@ export const SOURCE_PRIORITY: Record<SkillSource, number> = {
   'codex': 2,
   'claude': 2,
   'github': 2,
+  'copilot': 2,
   'notesage-global': 3,
   'notesage-project': 4,
 };
@@ -289,7 +290,7 @@ export const useSkillStore = create<SkillStore>()(
       rescanCounter: 0,
       skillTools: [],
       agents: [],
-      activeAgentName: 'general-assistant',
+      activeAgentName: '',
       agentEnabledOverrides: {},
 
       getActiveSkills: () => {
@@ -427,10 +428,8 @@ export const useSkillStore = create<SkillStore>()(
 
       getActiveAgent: () => {
         const { activeAgentName } = get();
-        const agent = get().getAgentByName(activeAgentName);
-        if (agent) return agent;
-        // Fallback to general-assistant
-        return get().getAgentByName('general-assistant');
+        if (!activeAgentName) return undefined;
+        return get().getAgentByName(activeAgentName);
       },
 
       scanAgents: async (baseDirs) => {

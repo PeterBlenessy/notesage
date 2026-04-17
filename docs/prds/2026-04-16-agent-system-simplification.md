@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-16 |
-| **Status** | Draft |
+| **Status** | Complete |
 | **Priority** | Medium |
 | **Impact** | Removes dead-weight bundled agents, makes `@` addressing work natively with provider subagents (Claude Code, Gemini, Copilot), expands agent discovery to all provider-native project directories |
 | **Tasks** | [agent-system-simplification-tasks](../tasks/2026-04-16-agent-system-simplification-tasks.md) |

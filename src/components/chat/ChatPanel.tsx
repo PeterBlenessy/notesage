@@ -177,21 +177,28 @@ export function ChatPanel() {
       return;
     }
 
-    // Detect @agent-name prefix — switch active agent, strip prefix from message
+    // Detect @agent-name prefix — behavior depends on connection type
     let expandedContent = content;
     const atMatch = content.match(/^@([a-z0-9][a-z0-9-]*)\s*(.*)/s);
     if (atMatch) {
       const agentName = atMatch[1];
       const restOfMessage = atMatch[2];
-      const agent = useSkillStore.getState().getAgentByName(agentName);
-      if (agent) {
-        // Switch active agent — body will be injected as system message by useAIOperations
-        setActiveAgent(agentName);
-        if (!restOfMessage.trim()) {
-          // Just "@agent-name" with no text — only switch, don't send
-          return;
+      const isPassThrough = effectiveConnection?.authMethod === 'agent_managed';
+
+      if (isPassThrough) {
+        // ACP / Copilot LSP: pass @agent-name through verbatim — the provider handles delegation
+        expandedContent = content;
+      } else {
+        // Direct API: intercept, strip prefix, swap system prompt
+        const agent = useSkillStore.getState().getAgentByName(agentName);
+        if (agent) {
+          setActiveAgent(agentName);
+          if (!restOfMessage.trim()) {
+            // Just "@agent-name" with no text — only switch, don't send
+            return;
+          }
+          expandedContent = restOfMessage;
         }
-        expandedContent = restOfMessage;
       }
     }
 

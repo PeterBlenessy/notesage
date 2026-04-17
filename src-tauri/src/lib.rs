@@ -202,7 +202,7 @@ pub fn run() {
             extract_bundled_skills,
             discover_agents,
             read_agent_content,
-            extract_bundled_agents,
+            cleanup_bundled_agents,
             mcp_start_server,
             mcp_stop_server,
             mcp_restart_server,

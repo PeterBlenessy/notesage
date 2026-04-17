@@ -3,6 +3,28 @@ import { useSkillStore, type AgentEntry } from '@/stores/skill-store';
 import { AgentIcon } from '@/components/AgentIcon';
 import { cn } from '@/lib/utils';
 
+/** Map agent source to a short display label. */
+function getSourceLabel(source: string): string | null {
+  switch (source) {
+    case 'claude': return 'claude';
+    case 'github': return 'github';
+    case 'gemini': return 'gemini';
+    case 'codex': return 'codex';
+    case 'copilot': return 'copilot';
+    case 'notesage-project': return 'project';
+    case 'notesage-global': return 'global';
+    default: return null;
+  }
+}
+
+function AgentSourceBadge({ source }: { source: string }) {
+  const label = getSourceLabel(source);
+  if (!label) return null;
+  return (
+    <span className="text-[10px] text-muted-foreground/60 font-normal shrink-0">{label}</span>
+  );
+}
+
 export interface AgentCommandMenuHandle {
   /** Handle a keydown event. Returns true if the event was consumed. */
   handleKeyDown(e: React.KeyboardEvent): boolean;
@@ -102,8 +124,11 @@ export const AgentCommandMenu = forwardRef<AgentCommandMenuHandle, AgentCommandM
             }}
           >
             <AgentIcon icon={agent.icon} size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
-            <div className="min-w-0">
-              <div className="text-sm font-medium truncate">@{agent.name}</div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-medium truncate">@{agent.name}</span>
+                <AgentSourceBadge source={agent.source} />
+              </div>
               {agent.description && (
                 <div className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{agent.description}</div>
               )}

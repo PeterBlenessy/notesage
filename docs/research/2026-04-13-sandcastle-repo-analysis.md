@@ -1,8 +1,6 @@
 # Sandcastle Repository Analysis
 
-**Date:** 2026-04-13
-**Repository:** [mattpocock/sandcastle](https://github.com/mattpocock/sandcastle) (`@ai-hero/sandcastle` v0.4.2, 581 stars)
-**Purpose:** Evaluate relevance to Notesage's sandboxing, agent orchestration, and isolation features.
+**Date:** 2026-04-13 **Repository:** [mattpocock/sandcastle](https://github.com/mattpocock/sandcastle) (`@ai-hero/sandcastle` v0.4.2, 581 stars) **Purpose:** Evaluate relevance to Notesage's sandboxing, agent orchestration, and isolation features.
 
 ## What Is Sandcastle?
 
@@ -19,7 +17,7 @@ Primary use case: take a backlog of issues, spawn N agents in N containers on se
 ## Architecture
 
 | Layer | Technology |
-|---|---|
+| --- | --- |
 | Language | TypeScript (ES modules) + Effect library |
 | Runtime | Node.js 22 |
 | Container engine | Docker, Podman (local); Vercel Firecracker, Daytona (cloud) |
@@ -60,7 +58,7 @@ Primary use case: take a backlog of issues, spawn N agents in N containers on se
 ### Where Notesage Is Already Ahead
 
 | Dimension | Sandcastle | Notesage |
-|---|---|---|
+| --- | --- | --- |
 | **Network sandboxing** | None. Docker containers get full internet access. | Two-layer: kernel-enforced Seatbelt deny + HTTP proxy with per-domain allowlists + approval UI + 30s auto-deny |
 | **Permission model** | None. `--dangerously-skip-permissions` flags everywhere. | Tiered per-tool-call approval: once / session / always |
 | **Violation monitoring** | None | Seatbelt log stream to Activity panel, dedup, rate limiting |
@@ -72,7 +70,7 @@ Primary use case: take a backlog of issues, spawn N agents in N containers on se
 ### What's Novel in Sandcastle
 
 | Feature | Description | Relevance to Notesage |
-|---|---|---|
+| --- | --- | --- |
 | **Git worktree branching** | Each agent gets its own worktree + temp branch. Work is isolated; commits merged back atomically or discarded. | **High.** Could extend existing `diff-review-store` into a first-class agent workflow. No Docker needed — pure git operations in Rust. |
 | **Completion signals** | `<promise>COMPLETE</promise>` pattern for early termination of multi-iteration loops. | **Medium.** Useful if Notesage adds autonomous multi-step agent workflows or skill script loops. |
 | **Pluggable sandbox provider interface** | `BindMountSandboxProvider` vs `IsolatedSandboxProvider` abstraction. | **Medium.** Pattern for unifying macOS Seatbelt + Linux Bubblewrap behind a common Rust trait. |
@@ -100,6 +98,7 @@ Primary use case: take a backlog of issues, spawn N agents in N containers on se
 4. Accept = merge to working branch; Reject = delete temp branch
 
 **Benefits:**
+
 - Atomic accept/reject of agent work (not per-file, per-branch)
 - No risk to working files during agent operation
 - Plays to existing strengths: git integration, diff review UI, agent task system
@@ -107,6 +106,7 @@ Primary use case: take a backlog of issues, spawn N agents in N containers on se
 - Natural extension of comment delegation workflow
 
 **Implementation notes:**
+
 - Use `git worktree add -b <branch> <path> HEAD` (already familiar Rust git operations in `git.rs`)
 - Worktrees stored in `.notesage/worktrees/` (gitignored)
 - Cleanup stale worktrees on startup

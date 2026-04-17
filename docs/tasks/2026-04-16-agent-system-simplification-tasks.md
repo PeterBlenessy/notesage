@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-16 |
-| **Status** | Not started |
+| **Status** | Complete |
 | **PRD** | [agent-system-simplification](../prds/2026-04-16-agent-system-simplification.md) |
 | **Total** | 15 tasks: 6S, 6M, 3L |
 | **Suggested order** | Backend cleanup (#1-#2) → Frontend cleanup (#3-#5) → Custom prompts (#6-#7) → @ behavior (#8-#10) → Discovery (#11) → UI polish (#12) → Tests (#13) → Docs (#14-#15) |
@@ -18,7 +18,7 @@
 
 ## Phase 1 — Backend Cleanup
 
-### #1 — Replace extract_bundled_agents with cleanup_bundled_agents (backend)
+### #1 — Replace extract_bundled_agents with cleanup_bundled_agents (backend) ✅
 
 **Description:** Replace the `extract_bundled_agents` Tauri command with a `cleanup_bundled_agents` command that removes previously extracted bundled agent files from `~/.notesage/agents/`. Only delete files matching the 7 known bundled names (general-assistant.md, creative-writer.md, technical-editor.md, fact-checker.md, academic-writer.md, copywriter.md, proofreader.md). Also remove `~/.notesage/bundled-agents/` (legacy dir) and `~/.notesage/.bundled-agents.json` (manifest). Remove all `include_str!` directives for bundled agent content.
 
@@ -37,7 +37,7 @@
 
 ---
 
-### #2 — Delete bundled agent source files
+### #2 — Delete bundled agent source files ✅
 
 **Description:** Delete the `bundled-agents/` directory and all 8 files in it (7 agent .md files + agents.md instructions file). These are no longer embedded or extracted.
 
@@ -57,7 +57,7 @@
 
 ## Phase 2 — Frontend Cleanup
 
-### #3 — Update startup to cleanup instead of extract agents
+### #3 — Update startup to cleanup instead of extract agents ✅
 
 **Description:** In `useSkillOperations.ts`, replace the `extractBundledAgents` startup call with `cleanupBundledAgents`. Gate behind a `bundledAgentsCleaned` settings flag so it runs once. Remove `migratePersonasToAgents()`, `PERSONA_TO_AGENT` mapping, and `personasMigrated` flag.
 
@@ -77,7 +77,7 @@
 
 ---
 
-### #4 — Change activeAgentName default to empty
+### #4 — Change activeAgentName default to empty ✅
 
 **Description:** Change the `activeAgentName` default in `skill-store.ts` from `'general-assistant'` to `''`. When empty, `useAIContext.ts` falls back to `'You are a helpful writing assistant.'` which is already the existing fallback behavior.
 
@@ -94,7 +94,7 @@
 
 ---
 
-### #5 — Remove bundled agents.md instructions extraction
+### #5 — Remove bundled agents.md instructions extraction ✅
 
 **Description:** The startup also extracts `bundled-agents/agents.md` to `~/.notesage/agents.md` as global agent instructions. Since we're removing bundled agents, this file is no longer relevant. Add it to the cleanup command and remove the extraction code.
 
@@ -109,7 +109,7 @@
 
 ## Phase 3 — Bundled Custom Prompts
 
-### #6 — Seed default custom prompts on first launch
+### #6 — Seed default custom prompts on first launch ✅
 
 **Description:** Add 5 bundled custom prompts to `ai-store.customPrompts` on first launch: Academic Tone, Creative Rewrite, Proofread, Marketing Copy, Technical Edit. Gate behind a `defaultPromptsBundled` flag in `ai-store` so it runs once. Never overwrite existing user prompts.
 
@@ -127,7 +127,7 @@
 
 ---
 
-### #7 — Verify BubbleMenu renders custom prompts
+### #7 — Verify BubbleMenu renders custom prompts ✅
 
 **Description:** Verify that the existing BubbleMenu correctly renders the new bundled custom prompts. The BubbleMenu already reads `customPrompts` from `ai-store` and renders them — this task is to verify the UX works well with 5 prompts (scrolling, layout, icons) and fix any visual issues.
 
@@ -147,7 +147,7 @@
 
 ## Phase 4 — @ Behavior Change
 
-### #8 — Split @ handling by connection type in ChatPanel
+### #8 — Split @ handling by connection type in ChatPanel ✅
 
 **Description:** Modify the `@` match logic in `ChatPanel.tsx` (line ~180) to check the effective connection type before deciding behavior:
 
@@ -170,7 +170,7 @@ The `effectiveConnection` is already available in the `handleSend` callback.
 
 ---
 
-### #9 — Stop injecting agent role-instructions for ACP connections
+### #9 — Stop injecting agent role-instructions for ACP connections ✅
 
 **Description:** In `useAIContext.ts`, skip the `<role-instructions>` block injection into the ACP system prompt when the effective connection is ACP. The ACP agent manages its own subagent system — Notesage shouldn't inject persona instructions.
 
@@ -189,7 +189,7 @@ Keep the `agentSystemMessage` injection for the direct API `buildComposedSystemM
 
 ---
 
-### #10 — Update AgentCommandMenu for source-aware behavior
+### #10 — Update AgentCommandMenu for source-aware behavior ✅
 
 **Description:** Update the `@` autocomplete menu (`AgentCommandMenu.tsx`) to:
 
@@ -215,7 +215,7 @@ The `AgentCommandMenu` doesn't currently know the connection type. Pass it via a
 
 ## Phase 5 — Discovery Expansion
 
-### #11 — Add project-level .claude/agents/ and .gemini/agents/ to discovery
+### #11 — Add project-level .claude/agents/ and .gemini/agents/ to discovery ✅
 
 **Description:** Update `buildDiscoveryDirs()` in `useSkillOperations.ts` to add `<project>/.claude/agents/` and `<project>/.gemini/agents/` to the `agentBaseDirs` list for every project. These are added unconditionally (not gated on connected providers).
 
@@ -237,7 +237,7 @@ The `AgentCommandMenu` doesn't currently know the connection type. Pass it via a
 
 ## Phase 6 — UI Polish
 
-### #12 — Remove agent picker remnants from footer (already done)
+### #12 — Remove agent picker remnants from footer (already done) ✅
 
 **Description:** The agent picker and tools popover were already removed from `ChatFooter.tsx` in this session. This task verifies no visual gap remains and no dead imports/state linger.
 
@@ -256,7 +256,7 @@ The `AgentCommandMenu` doesn't currently know the connection type. Pass it via a
 
 ## Phase 7 — Tests
 
-### #13 — Write tests for agent simplification changes
+### #13 — Write tests for agent simplification changes ✅
 
 **Description:** Add/update unit tests for:
 
@@ -280,7 +280,7 @@ The `AgentCommandMenu` doesn't currently know the connection type. Pass it via a
 
 ## Phase 8 — Documentation
 
-### #14 — Update feature docs for agent changes
+### #14 — Update feature docs for agent changes ✅
 
 **Description:** Update all relevant documentation to reflect the agent simplification:
 
@@ -300,7 +300,7 @@ The `AgentCommandMenu` doesn't currently know the connection type. Pass it via a
 
 ---
 
-### #15 — Update CLAUDE.md and keyboard shortcuts
+### #15 — Update CLAUDE.md and keyboard shortcuts ✅
 
 **Description:** Remove any references to bundled agents from `CLAUDE.md`. Update `docs/keyboard-shortcuts.md` if there are agent-specific shortcuts. Verify `docs/design-system.md` has no agent picker references.
 

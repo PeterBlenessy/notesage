@@ -7,14 +7,14 @@ argument-hint: "[scope: full | frontend | backend | <area>]"
 
 # Codebase Audit
 
-Orchestrate a thorough codebase audit and produce a structured report in `docs/audit/`.
+Orchestrate a thorough codebase audit and produce a structured report in `docs/audits/`.
 
 ## Process
 
 1. **Read project context:**
    - `CLAUDE.md` — conventions and tech stack
    - `docs/architecture.md` — project structure, state management, core principles
-   - Previous audits in `docs/audit/` — compare findings, track regressions
+   - Previous audits in `docs/audits/` — compare findings, track regressions
 
 2. **Determine scope.** If the user provided a scope argument, narrow the audit:
    - `full` (default) — all 13 categories
@@ -60,9 +60,9 @@ Orchestrate a thorough codebase audit and produce a structured report in `docs/a
 
 4. **Compile the report.** Once all agents complete, merge their findings into a single document following the output structure below. Count severities, write the summary table, and add section links.
 
-5. **Compare with previous audits.** If a prior audit exists in `docs/audit/`, note in the summary which findings are new, fixed, or regressed.
+5. **Compare with previous audits.** If a prior audit exists in `docs/audits/`, note in the summary which findings are new, fixed, or regressed.
 
-6. **Save to** `docs/audit/YYYY-MM-DD-<scope>.md`.
+6. **Save to** `docs/audits/YYYY-MM-DD-<scope>.md`.
 
 7. **Present a summary** to the user with the findings-by-area table and top priorities.
 

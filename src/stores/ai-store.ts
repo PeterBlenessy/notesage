@@ -18,6 +18,15 @@ export interface CustomPrompt {
   template: string;
 }
 
+/** Default custom prompts seeded on first launch. */
+const DEFAULT_CUSTOM_PROMPTS: Omit<CustomPrompt, 'id'>[] = [
+  { name: 'Academic Tone', icon: '🎓', template: 'Rewrite this text in formal academic style with precise language and structured argumentation.' },
+  { name: 'Creative Rewrite', icon: '✨', template: 'Rewrite this text with vivid, engaging language. Use metaphors, varied sentence structures, and evocative descriptions.' },
+  { name: 'Proofread', icon: '📝', template: 'Check this text for grammar, spelling, punctuation, and style issues. Fix all errors and improve clarity.' },
+  { name: 'Marketing Copy', icon: '📣', template: 'Rewrite this text as compelling marketing copy. Make it concise, persuasive, and action-oriented.' },
+  { name: 'Technical Edit', icon: '🔧', template: 'Edit this text for technical accuracy, clarity, and consistency. Improve structure and remove ambiguity.' },
+];
+
 interface AIStore {
   provider: AIProviderType | null;
   apiKeys: Record<string, string | undefined>;
@@ -30,6 +39,8 @@ interface AIStore {
   customPersonas: AIPersona[];
 
   customPrompts: CustomPrompt[];
+  /** Whether default prompts have been seeded. Prevents re-seeding on upgrade. */
+  defaultPromptsBundled: boolean;
 
   setProvider: (provider: AIProviderType | null) => void;
   setApiKey: (provider: 'anthropic' | 'openai', key: string) => void;
@@ -51,6 +62,7 @@ export const useAIStore = create<AIStore>()(
       activePersonaId: 'general',
       customPersonas: [],
       customPrompts: [],
+      defaultPromptsBundled: false,
 
       setProvider: (provider) => set({ provider }),
       setApiKey: (provider, key) =>
@@ -79,6 +91,21 @@ export const useAIStore = create<AIStore>()(
           customPrompts: state.customPrompts.filter((p) => p.id !== id),
         })),
     }),
-    { name: 'notesage-ai-settings' }
+    {
+      name: 'notesage-ai-settings',
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        if (state.defaultPromptsBundled) return;
+        // Seed default custom prompts once — never overwrite existing user prompts
+        const existing = state.customPrompts;
+        const newPrompts = DEFAULT_CUSTOM_PROMPTS
+          .filter((dp) => !existing.some((ep) => ep.name === dp.name))
+          .map((dp) => ({ ...dp, id: `default-${dp.name.toLowerCase().replace(/\s+/g, '-')}` }));
+        useAIStore.setState({
+          customPrompts: [...existing, ...newPrompts],
+          defaultPromptsBundled: true,
+        });
+      },
+    }
   )
 );

@@ -59,16 +59,26 @@ Collapsible right sidebar (Cmd+Shift+C) with streaming AI responses.
 
 ## Addressable Agents
 
-File-based agent system replacing legacy personas, aligned with industry standards.
+File-based agent system for user-created and provider-native agents.
 
-- Discover agent files from `agents/` directories: `.notesage/agents/`, `~/.notesage/agents/`, `~/.claude/agents/`, `.github/agents/`, etc.
+- Discover agent files from multiple directory sources (scanned in priority order):
+  - `<project>/.notesage/agents/` (project-level Notesage agents)
+  - `~/.notesage/agents/` (global Notesage agents)
+  - `<project>/.claude/agents/` and `~/.claude/agents/` (Claude Code agents)
+  - `<project>/.gemini/agents/` (Gemini CLI agents)
+  - `<project>/.github/agents/` (GitHub Copilot agents)
+  - `~/.codex/agents/` and other provider directories
 - Agent files: markdown with YAML frontmatter (`name`, `description`, `model`, `icon`, `allowed-tools`)
+- Source badges in `@` autocomplete menu showing agent origin (claude, github, gemini, project, global)
+- No bundled agents — users create their own or use provider-native agents from connected providers
+- **`@` behavior depends on connection type:**
+  - **ACP connections** (`agent_managed`): `@agent-name message` is passed through verbatim to the provider, which manages its own subagent system
+  - **Direct API connections** (`api_key`, `local`): `@agent-name` strips the prefix and swaps the system prompt to the agent's body content
 - Agent picker dropdown in chat footer; `@agent-name` addressing in chat input for per-message scoping
-- 7 bundled agents (General Assistant, Creative Writer, Technical Editor, Fact Checker, Academic Writer, Copywriter, Proofreader)
 - Agent-to-skill connection: `allowed-tools` frontmatter filters which skills an agent can access
 - Agents section in Settings > Skills & Agents for viewing, enabling/disabling
 - Skill & agent management: delete and move (global ↔ project) for custom items, gated behind Settings > Advanced toggle
-- One-time migration: custom personas auto-converted to agent `.md` files on first launch
+- 5 bundled custom prompts (Academic Tone, Creative Rewrite, Proofread, Marketing Copy, Technical Edit) seeded on first launch for quick AI actions via the bubble menu
 
 ## Skills & Agents Platform
 

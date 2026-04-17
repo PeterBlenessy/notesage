@@ -159,16 +159,14 @@ export function useAIContext(): UseAIContextReturn {
     return parts.join('\n\n');
   }, [agentSystemMessage, selectedProjectPaths, singleProjectPath, singleMetadata, activeTab, metadataMap]);
 
-  // ACP-specific system message builder
+  // ACP-specific system message builder — no agent role injection;
+  // ACP agents manage their own subagent system via @agent-name pass-through.
   const buildAcpSystemMessage = useCallback((attachedFilePaths?: string[]) => {
     const parts = buildProjectContext(attachedFilePaths);
     if (notesageAgentInstructions) parts.push(notesageAgentInstructions);
-    if (agentSystemMessage) {
-      parts.push(`<role-instructions>\nYou MUST adopt the following role for all responses in this conversation. This is your primary identity and overrides your default behavior:\n\n${agentSystemMessage}\n</role-instructions>`);
-    }
     if (notesageSkillDescriptions) parts.push(notesageSkillDescriptions);
     return parts.join('\n\n') || 'You are a helpful writing assistant.';
-  }, [buildProjectContext, agentSystemMessage, notesageAgentInstructions, notesageSkillDescriptions]);
+  }, [buildProjectContext, notesageAgentInstructions, notesageSkillDescriptions]);
 
   // Memoized version for ACP lifecycle hook
   const acpSystemMessage = useMemo(() => buildAcpSystemMessage(), [buildAcpSystemMessage]);

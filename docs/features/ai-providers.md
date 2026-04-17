@@ -59,6 +59,7 @@ interface AIProvider {
 - **Plan display**: `plan` session updates rendered as collapsible `PlanSegment` cards with status icons and priority dots.
 - **Agent slash commands**: `available_commands_update` events populate the `/` command menu alongside Notesage skills.
 - **Thinking segments**: `agent_thought_chunk` events rendered as collapsible thinking blocks in chat messages.
+- **`@agent-name` pass-through**: When the user sends `@agent-name message` on an ACP connection, the full text is passed verbatim to the provider — the provider's own subagent system handles agent routing. No `<role-instructions>` block is injected into the ACP system prompt.
 
 ### Path 3: Copilot LSP (for `interactive`, `agent_tasks`, and `inline_completion` use cases)
 

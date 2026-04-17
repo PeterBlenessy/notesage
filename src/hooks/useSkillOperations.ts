@@ -4,7 +4,6 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { usePermissionStore } from '@/stores/permission-store';
-import { useAIStore } from '@/stores/ai-store';
 import { tauriApi } from '@/lib/tauri';
 import { toast } from 'sonner';
 import { log } from '@/lib/logger';
@@ -16,8 +15,8 @@ function getSkillPathsForConnection(provider: ConnectionProvider, authMethod: st
   switch (provider) {
     case 'anthropic': return ['~/.claude/skills'];
     case 'openai': return ['~/.codex/skills'];
-    case 'github': return ['~/.agents/skills'];
-    case 'google': return ['~/.gemini/skills', '~/.agents/skills'];
+    case 'github': return ['~/.copilot/skills'];
+    case 'google': return ['~/.gemini/skills'];
     default: return [];
   }
 }
@@ -28,13 +27,13 @@ function getAgentPathsForConnection(provider: ConnectionProvider, authMethod: st
     switch (provider) {
       case 'anthropic': return ['~/.claude/agents'];
       case 'openai': return ['~/.codex/agents'];
-      case 'github': return ['~/.github/agents'];
+      case 'github': return ['~/.copilot/agents'];
       case 'google': return ['~/.gemini/agents'];
       default: return [];
     }
   }
   // Copilot LSP also has agents
-  if (provider === 'github') return ['~/.github/agents'];
+  if (provider === 'github') return ['~/.copilot/agents'];
   return [];
 }
 
@@ -62,111 +61,6 @@ function getConnectedProviderTypes(): string[] {
   return types;
 }
 
-/** Convert a persona name to a filesystem-safe slug for agent file naming. */
-function personaToSlug(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
-
-/** Built-in persona ID → bundled agent name mapping. */
-const PERSONA_TO_AGENT: Record<string, string> = {
-  'general': 'general-assistant',
-  'creative': 'creative-writer',
-  'technical': 'technical-editor',
-  'fact-checker': 'fact-checker',
-  'academic': 'academic-writer',
-  'copywriter': 'copywriter',
-  'proofreader': 'proofreader',
-};
-
-/**
- * One-time migration: writes custom personas as agent `.md` files,
- * maps activePersonaId → activeAgentName, and sets the migration flag.
- *
- * Re-runs if any custom persona file is missing (handles failed first attempts).
- */
-async function migratePersonasToAgents(home: string) {
-  const { personasMigrated, setPersonasMigrated } = useSettingsStore.getState();
-  const aiStore = useAIStore.getState();
-  const customPersonas = aiStore.customPersonas;
-
-  // Check if migration is needed: either flag not set, or files are missing
-  if (personasMigrated && customPersonas.length === 0) return;
-
-  const agentsDir = `${home}/.notesage/agents`;
-
-  if (customPersonas.length > 0) {
-    // Check if all expected files exist
-    let allExist = personasMigrated;
-    if (personasMigrated) {
-      for (const persona of customPersonas) {
-        const slug = personaToSlug(persona.name);
-        const filePath = `${agentsDir}/${slug}.md`;
-        try {
-          const exists = await tauriApi.pathExists(filePath);
-          if (!exists) { allExist = false; break; }
-        } catch { allExist = false; break; } // Expected: pathExists may fail for inaccessible paths
-      }
-      if (allExist) return; // All files present, nothing to do
-    }
-
-    // Ensure directory exists
-    try {
-      await tauriApi.createDirectory(agentsDir);
-    } catch {
-      // Expected: createDirectory fails if directory already exists
-    }
-
-    let migratedCount = 0;
-    for (const persona of customPersonas) {
-      const slug = personaToSlug(persona.name);
-      const filePath = `${agentsDir}/${slug}.md`;
-
-      // Build agent file content
-      const frontmatter = [
-        '---',
-        `name: "${persona.name}"`,
-        `description: "Migrated from custom persona"`,
-        persona.icon ? `icon: "${persona.icon}"` : null,
-        '---',
-      ].filter(Boolean).join('\n');
-
-      const content = `${frontmatter}\n\n${persona.systemMessage}`;
-
-      try {
-        const exists = await tauriApi.pathExists(filePath);
-        if (!exists) {
-          await tauriApi.writeFile(filePath, content);
-          migratedCount++;
-        }
-      } catch (e) {
-        log.warn('skills', `Failed to migrate persona "${persona.name}"`, e);
-      }
-    }
-
-    if (migratedCount > 0) {
-      toast.success(`Migrated ${migratedCount} custom persona${migratedCount === 1 ? '' : 's'} to agent files`);
-    }
-  }
-
-  // Map activePersonaId to activeAgentName (only on first migration)
-  if (!personasMigrated) {
-    const skillStore = useSkillStore.getState();
-    const activePersonaId = aiStore.activePersonaId;
-    const mappedAgentName = PERSONA_TO_AGENT[activePersonaId];
-    if (mappedAgentName) {
-      skillStore.setActiveAgent(mappedAgentName);
-    } else if (activePersonaId) {
-      const customPersona = customPersonas.find((p) => p.id === activePersonaId);
-      if (customPersona) {
-        const slug = customPersona.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-        skillStore.setActiveAgent(slug);
-      }
-    }
-  }
-
-  setPersonasMigrated(true);
-}
-
 // Track whether bundled extraction has already run this session.
 // Extraction only needs to happen once on startup — rescans triggered by
 // connection/project changes only re-scan directories (no extraction).
@@ -177,6 +71,7 @@ function buildDiscoveryDirs(
   home: string,
   connections: { provider: ConnectionProvider; authMethod: string; status: string }[],
   projects: { path: string }[],
+  explorerFolders: { path: string }[],
 ) {
   const baseDirs: string[] = [];
   baseDirs.push(`${home}/.notesage/skills`);
@@ -196,22 +91,50 @@ function buildDiscoveryDirs(
     }
   }
 
+  // Agent directories: global, per-project, per-explorer-folder, per-provider
   const agentBaseDirs: string[] = [];
-  agentBaseDirs.push(`${home}/.notesage/agents`);
-  for (const project of projects) {
-    agentBaseDirs.push(`${project.path}/.notesage/agents`);
-    agentBaseDirs.push(`${project.path}/.github/agents`);
-  }
   const agentSeen = new Set<string>();
+  const addAgentDir = (dir: string) => {
+    if (!agentSeen.has(dir)) {
+      agentSeen.add(dir);
+      agentBaseDirs.push(dir);
+    }
+  };
+
+  // Global Notesage agents
+  addAgentDir(`${home}/.notesage/agents`);
+
+  // Global provider agent directories — always scanned, not gated on connections.
+  // Discovery is fast (just reads directory + parses frontmatter) and showing all
+  // agents in the @ menu is useful even before connecting a provider.
+  addAgentDir(`${home}/.claude/agents`);
+  addAgentDir(`${home}/.codex/agents`);
+  addAgentDir(`${home}/.gemini/agents`);
+  addAgentDir(`${home}/.copilot/agents`);
+
+  // Per-project agent directories (all provider conventions)
+  for (const project of projects) {
+    addAgentDir(`${project.path}/.notesage/agents`);
+    addAgentDir(`${project.path}/.github/agents`);
+    addAgentDir(`${project.path}/.claude/agents`);
+    addAgentDir(`${project.path}/.gemini/agents`);
+  }
+
+  // Explorer folders — also scan for agents (same provider directories)
+  for (const folder of explorerFolders) {
+    addAgentDir(`${folder.path}/.notesage/agents`);
+    addAgentDir(`${folder.path}/.github/agents`);
+    addAgentDir(`${folder.path}/.claude/agents`);
+    addAgentDir(`${folder.path}/.gemini/agents`);
+  }
+
+  // Additional provider-specific agent directories from active connections
+  // (catches any paths not covered by the unconditional global scan above)
   for (const conn of connections) {
     if (conn.status !== 'connected' && conn.status !== 'expired') continue;
     const paths = getAgentPathsForConnection(conn.provider, conn.authMethod);
     for (const p of paths) {
-      const expanded = expandHomeSync(p, home);
-      if (!agentSeen.has(expanded)) {
-        agentSeen.add(expanded);
-        agentBaseDirs.push(expanded);
-      }
+      addAgentDir(expandHomeSync(p, home));
     }
   }
 
@@ -237,6 +160,9 @@ export function useSkillDiscovery() {
   const projectPaths = useWorkspaceStore((s) =>
     s.projects.map((p) => p.path).sort().join(',')
   );
+  const explorerPaths = useWorkspaceStore((s) =>
+    s.explorerFolders.map((f) => f.path).sort().join(',')
+  );
   const rescanCounter = useSkillStore((s) => s.rescanCounter);
 
   useEffect(() => {
@@ -245,6 +171,7 @@ export function useSkillDiscovery() {
     // Read full state inside the effect (not as a dependency)
     const connections = useConnectionsStore.getState().connections;
     const projects = useWorkspaceStore.getState().projects;
+    const explorerFolders = useWorkspaceStore.getState().explorerFolders;
 
     const run = async () => {
       log.info('skills', 'Starting skill/agent discovery pipeline');
@@ -258,11 +185,8 @@ export function useSkillDiscovery() {
       }
       log.info('skills', `Home directory: ${home}`);
 
-      // One-time migration: custom personas → agent files
-      await migratePersonasToAgents(home);
-
       // --- Phase 1: Scan existing files and populate tools immediately ---
-      const { baseDirs, agentBaseDirs } = await buildDiscoveryDirs(home, connections, projects);
+      const { baseDirs, agentBaseDirs } = buildDiscoveryDirs(home, connections, projects, explorerFolders);
 
       log.info('skills', `Scanning skills in ${baseDirs.length} directories`);
       let stepStart = performance.now();
@@ -301,7 +225,7 @@ export function useSkillDiscovery() {
       console.log('[perf:skills] phase1-ready', { skillCount: initialSkillCount, agentCount: initialAgentCount, ms: phase1Ms });
       log.info('skills', 'Phase 1 complete — tools available');
 
-      // --- Phase 2: Extract bundled files, rescan if anything changed ---
+      // --- Phase 2: Extract bundled skills + one-time bundled agent cleanup ---
       if (!bundledExtracted) {
         stepStart = performance.now();
         try {
@@ -311,17 +235,25 @@ export function useSkillDiscovery() {
         }
         console.log('[perf:skills]', { step: 'bundled-skills-extract', ms: Math.round(performance.now() - stepStart) });
 
-        stepStart = performance.now();
-        try {
-          await tauriApi.extractBundledAgents();
-        } catch (e) {
-          log.error('skills', 'Failed to extract bundled agents', e);
+        // One-time cleanup: remove previously extracted bundled agents
+        const { bundledAgentsCleaned, setBundledAgentsCleaned } = useSettingsStore.getState();
+        if (!bundledAgentsCleaned) {
+          stepStart = performance.now();
+          try {
+            const removed = await tauriApi.cleanupBundledAgents();
+            if (removed > 0) {
+              log.info('skills', `Cleaned up ${removed} bundled agent files`);
+            }
+            setBundledAgentsCleaned(true);
+          } catch (e) {
+            log.error('skills', 'Failed to clean up bundled agents', e);
+          }
+          console.log('[perf:skills]', { step: 'bundled-agents-cleanup', ms: Math.round(performance.now() - stepStart) });
         }
-        console.log('[perf:skills]', { step: 'bundled-agents-extract', ms: Math.round(performance.now() - stepStart) });
 
         bundledExtracted = true;
 
-        // Rescan to pick up any new or updated bundled skills/agents
+        // Rescan to pick up any new or updated bundled skills
         await useSkillStore.getState().scanSkills(baseDirs);
         const finalSkillCount = useSkillStore.getState().skills.length;
         await useSkillStore.getState().scanAgents(agentBaseDirs);
@@ -355,7 +287,7 @@ export function useSkillDiscovery() {
       log.error('skills', 'Unhandled error in skill/agent discovery pipeline', e);
       toast.error('Failed to load skills and agents. Check logs for details.');
     });
-  }, [skillsReady, connectionKey, projectPaths, rescanCounter]);
+  }, [skillsReady, connectionKey, projectPaths, explorerPaths, rescanCounter]);
 }
 
 /**

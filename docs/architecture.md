@@ -37,7 +37,7 @@ note-sage/
 │   │   │   ├── skills.rs   # Skill discovery, bundled skill extraction, commands
 │   │   │   ├── skills_frontmatter.rs # YAML frontmatter parsing, SkillFrontmatter struct
 │   │   │   ├── skills_tool_parser.rs # Tool definition extraction, usage comment parsing, ArgMapping
-│   │   │   ├── agents.rs   # Agent discovery, bundled agents, agent instructions
+│   │   │   ├── agents.rs   # Agent discovery, cleanup legacy bundled agents, agent instructions
 │   │   │   ├── script_exec.rs # Skill script execution, interpreter resolution, sandboxing
 │   │   │   ├── json_rpc.rs # Shared JSON-RPC 2.0 types, Content-Length framing, pending requests
 │   │   │   ├── export.rs   # PDF export commands
@@ -124,7 +124,6 @@ note-sage/
 │   ├── foliate-js/         # Vendored EPUB renderer (MIT)
 │   └── logos/              # AI provider logos
 ├── bundled-skills/         # Built-in skills (extracted to ~/.notesage/skills/)
-├── bundled-agents/         # Built-in agents (extracted to ~/.notesage/agents/)
 ├── src/perf/               # Performance benchmarks
 │   ├── harness.ts          # Benchmark runner (median timing, budget multiplier, test editor factory)
 │   ├── harness.test.ts     # Harness self-tests
@@ -214,7 +213,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `project-metadata-store` | Project metadata from `.notesage/project.json` | Full |
 | `settings-store` | Theme, soft contrast mode, UI preferences, `startupReady` flag, `toolCallingEnabled`, `searchProvider`, `showHiddenFiles`, tray settings (`showInTray`, `closeToTray`, `startAtLogin`), notification settings (`notifyAgentCompletion`, `notifyExternalChanges`) | Full (except `startupReady`) |
 | `ai-store` | AI provider config (legacy, fallback) | Full |
-| `skill-store` | Skills registry, agents, instructions, active agent | Partial (overrides + active agent) |
+| `skill-store` | Skills registry, agents, instructions, active agent (default: none) | Partial (overrides + active agent) |
 | `connections-store` | Multi-provider connections, sandbox/network config, kernel enforcement, writable paths | Full |
 | `routing-store` | Per-use-case provider routing | Full |
 | `permission-store` | ACP tool call permissions, domain allowlists, session domains, tool call permissions (`toolCallSession`, `toolCallAlways`) | Partial (`alwaysAllowed`, `alwaysAllowedDomains`, `toolCallAlways` only) |
