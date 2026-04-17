@@ -140,15 +140,26 @@ test.describe('File operations', () => {
       const editorContent = page.locator('#editor-content .ProseMirror');
       await expect(editorContent).toContainText('Welcome to Notesage', { timeout: 10000 });
 
-      // Start tracking invoke calls after the file is loaded
+      // Type something to make the tab dirty — Cmd+S is a no-op on clean tabs
+      await editorContent.click();
+      await page.keyboard.type(' test');
+
+      // Start tracking invoke calls after the edit
       // (to avoid noise from file loading calls)
       const getCalls = await trackInvokeCalls(page);
 
       // Press Cmd+S (Meta+S on macOS)
       await page.keyboard.press('Meta+s');
 
-      // Give the app a moment to process the save
-      await page.waitForTimeout(500);
+      // Wait for write_file to be called (poll instead of fixed timeout)
+      await page.waitForFunction(
+        () => {
+          const log = (window as Record<string, unknown>).__TAURI_INVOKE_LOG__ as
+            | Array<{ cmd: string }> | undefined;
+          return log?.some((c) => c.cmd === 'write_file');
+        },
+        { timeout: 5000 },
+      );
 
       // Check that write_file was called
       const calls = await getCalls();

@@ -131,7 +131,7 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
         scan_agent_instructions: () => [],
         read_agent_instructions: () => [],
         extract_bundled_skills: () => null,
-        extract_bundled_agents: () => null,
+        cleanup_bundled_agents: () => 0,
 
         // MCP
         mcp_list_servers: () => [],
