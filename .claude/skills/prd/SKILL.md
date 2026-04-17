@@ -87,6 +87,8 @@ Write a Product Requirements Document for the given feature or initiative and sa
 
 6. **Present a summary** to the user with the file path and key decisions made.
 
+7. **Log observations** to `.claude/skill-feedback.md` if anything about PRD drafting fell short (audit/research inputs that didn't translate cleanly, missing sections, wrong level of detail, ambiguities the skill should have caught). Format per `/retrospect-skills`. Both user and agent contribute.
+
 ## Output Format
 
 The PRD should be well-structured markdown, concise but thorough. Aim for completeness without padding — every section should add value.

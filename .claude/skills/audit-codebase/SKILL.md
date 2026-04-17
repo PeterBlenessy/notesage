@@ -66,6 +66,8 @@ Orchestrate a thorough codebase audit and produce a structured report in `docs/a
 
 7. **Present a summary** to the user with the findings-by-area table and top priorities.
 
+8. **Log observations** to `.claude/skill-feedback.md` if any sub-skill missed relevant findings, over-delivered noise, or had unclear scope. Format per `/retrospect-skills`. Both user and agent contribute.
+
 ## Output Structure
 
 ```markdown

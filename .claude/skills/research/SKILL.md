@@ -35,6 +35,8 @@ Investigate a topic and produce a structured research document in `docs/research
 
 6. **Present a brief summary** to the user with the file path and key findings.
 
+7. **Log observations** to `.claude/skill-feedback.md` if anything about the research flow fell short (scope too broad/narrow, missed sources, unclear output shape). Format per `/retrospect-skills`. Both user and agent contribute.
+
 ## Document Structure
 
 ```markdown

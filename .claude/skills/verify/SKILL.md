@@ -76,3 +76,7 @@ Check that an implementation meets its PRD requirements and project quality gate
    ```
 
 7. **Be honest and thorough.** The value of verification comes from catching real issues, not rubber-stamping. Flag anything questionable.
+
+8. **Log observations** to `.claude/skill-feedback.md` if verification missed anti-patterns the user spotted later, flagged false positives, or had unclear criteria. Format per `/retrospect-skills`. Both user and agent contribute.
+
+9. **If this completes a PRD**, offer to run `/retrospect-skills prds/<prd>` to review accumulated feedback across the whole feature lifecycle (research → prd → tasks → implement → verify).

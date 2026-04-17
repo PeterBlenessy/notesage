@@ -96,9 +96,12 @@ Before the task counts as done:
 4. **Run tests post-commit** to verify pre-commit hooks didn't break anything
 5. **If post-commit tests fail**: fix and create a NEW commit (never --amend)
 
-### 8. Report & wait
+### 8. Report, log, wait
 
-Report completion with a summary. Wait for user go-ahead before the next task.
+1. Report completion with a summary
+2. **Log observations** to `.claude/skill-feedback.md` if anything about the implementation flow fell short (test gate unclear, sub-agent context gap, merge friction, etc.). Format per `/retrospect-skills`. Both user and agent contribute.
+3. Wait for user go-ahead before the next task
+4. **If this was the last task in the tasks file**, offer to run `/retrospect-skills tasks/<file>` to batch-review feedback. If the tasks file also completes a PRD, offer `/retrospect-skills prds/<prd>` for the lifecycle-wide retro.
 
 ## Guidelines
 

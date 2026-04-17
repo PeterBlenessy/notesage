@@ -70,6 +70,8 @@ Break a PRD or feature description into concrete, ordered implementation tasks.
 
 8. **Present a brief summary** to the user with the file path and task count.
 
+9. **Log observations** to `.claude/skill-feedback.md` if the decomposition showed issues (duplicates, wrong sizing, missing dependencies, order problems, unclear acceptance criteria). Format per `/retrospect-skills`. Both user and agent contribute.
+
 ## Guidelines
 
 - Tasks should be small enough to complete in one sitting
