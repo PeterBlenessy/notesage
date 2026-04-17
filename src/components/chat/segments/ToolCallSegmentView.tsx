@@ -13,6 +13,8 @@ import {
   X,
 } from 'lucide-react';
 import type { ToolCallSegment } from '@/lib/ai/types';
+import { DiffContentView } from './DiffContentView';
+import { TextContentView } from './TextContentView';
 
 interface ToolCallSegmentViewProps {
   segment: ToolCallSegment;
@@ -103,6 +105,35 @@ export const ToolCallSegmentView = memo(function ToolCallSegmentView({ segment }
               >
                 {display}
               </button>
+            );
+          })}
+        </div>
+      )}
+      {segment.content && segment.content.length > 0 && (
+        <div className="ml-5 mt-0.5 space-y-0.5">
+          {segment.content.map((item, i) => {
+            if (item.type === 'diff') {
+              return (
+                <DiffContentView
+                  key={`diff-${i}`}
+                  path={item.path}
+                  oldText={item.oldText}
+                  newText={item.newText}
+                />
+              );
+            }
+            if (item.type === 'text') {
+              return <TextContentView key={`text-${i}`} text={item.text} />;
+            }
+            // Terminal variant: we don't own the terminal, render a muted placeholder
+            // so users see *something* was emitted rather than silently dropping it.
+            return (
+              <div
+                key={`terminal-${i}`}
+                className="px-1 text-[11px] text-muted-foreground/50 italic"
+              >
+                Terminal output (not yet supported)
+              </div>
             );
           })}
         </div>

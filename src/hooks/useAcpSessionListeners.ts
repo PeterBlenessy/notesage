@@ -16,6 +16,7 @@ import {
   formatAcpToolName,
   formatToolLabel,
   parseRawInput,
+  normalizeToolCallContent,
 } from '@/lib/ai/acp-utils';
 import { resetUnresponsiveTimer } from '@/hooks/useAcpLifecycle';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
@@ -76,32 +77,35 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       useAgentStatusStore.getState().clearStatus();
     }
     const { update } = event.payload;
+    // `content` is a single ContentBlock for *_chunk events and an array for tool_call_update.
+    // Narrow to the single-object form here; tool_call_update handles the array form below.
+    const chunkContent = Array.isArray(update.content) ? undefined : update.content;
 
     if (
       update.sessionUpdate === 'agent_message_chunk' &&
-      update.content?.type === 'text' &&
-      update.content.text
+      chunkContent?.type === 'text' &&
+      chunkContent.text
     ) {
-      streamedContent += update.content.text;
+      streamedContent += chunkContent.text;
       deps.updateMessage(deps.assistantMessageId, streamedContent);
-      deps.appendTextSegment(deps.assistantMessageId, update.content.text);
+      deps.appendTextSegment(deps.assistantMessageId, chunkContent.text);
     } else if (
       update.sessionUpdate === 'agent_message_chunk' &&
-      update.content?.type === 'image' &&
-      update.content.data
+      chunkContent?.type === 'image' &&
+      chunkContent.data
     ) {
       deps.pushSegment(deps.assistantMessageId, {
         type: 'image',
-        data: update.content.data,
-        mimeType: update.content.mimeType || 'image/png',
+        data: chunkContent.data,
+        mimeType: chunkContent.mimeType || 'image/png',
         timestamp: Date.now(),
       });
     } else if (
       update.sessionUpdate === 'agent_thought_chunk' &&
-      update.content?.type === 'text' &&
-      update.content.text
+      chunkContent?.type === 'text' &&
+      chunkContent.text
     ) {
-      deps.appendThinkingSegment(deps.assistantMessageId, update.content.text);
+      deps.appendThinkingSegment(deps.assistantMessageId, chunkContent.text);
     } else if (update.sessionUpdate === 'tool_call') {
       const toolLabel = formatAcpToolName(update.kind, update.title);
       deps.setActiveTool(toolLabel);
@@ -157,6 +161,11 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
           const parsedArgs = parseRawInput(update.rawInput);
           patch.label = formatToolLabel(update.kind || 'unknown', parsedArgs, update.title);
         }
+        // Rich content (Diff / Content / Terminal). Per ACP spec, this is a full replacement
+        // of the previous content array — not an append.
+        if (Array.isArray(update.content)) {
+          patch.content = normalizeToolCallContent(update.content);
+        }
         if (Object.keys(patch).length > 0) {
           deps.updateSegment(deps.assistantMessageId, lastToolIdx, patch);
         }
@@ -167,7 +176,9 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       // Segment: push result and mark the preceding tool_call as done
       deps.pushSegment(deps.assistantMessageId, {
         type: 'tool_result',
-        result: typeof update.content?.text === 'string' ? update.content.text : undefined,
+        result: (!Array.isArray(update.content) && typeof update.content?.text === 'string')
+          ? update.content.text
+          : undefined,
         collapsed: true,
         timestamp: Date.now(),
       } as ToolResultSegment);

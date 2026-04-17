@@ -2,6 +2,7 @@
 // (useAcpLifecycle, useAgentTaskOperations, useAcpSessionListeners)
 
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import type { ToolCallContentItem } from '@/lib/ai/types';
 
 // ---------------------------------------------------------------------------
 // ACP types
@@ -56,13 +57,80 @@ export interface AcpSessionResult {
   config_options: AcpSessionConfigOption[] | null;
 }
 
+/** Single content block as sent on `agent_message_chunk` / `agent_thought_chunk`. */
+export type AcpContentBlock = { type: string; text?: string; data?: string; mimeType?: string };
+
+/**
+ * Raw content items from the ACP wire for `tool_call_update`. The ACP schema uses
+ * snake_case (`old_text`, `new_text`), and `Content` wraps a ContentBlock in a `content`
+ * field. We accept both camelCase and snake_case to tolerate variant implementations,
+ * and normalize via {@link normalizeToolCallContent}.
+ */
+export interface RawToolCallContent {
+  type?: string;
+  // Diff variant
+  path?: string;
+  old_text?: string;
+  oldText?: string;
+  new_text?: string;
+  newText?: string;
+  // Terminal variant
+  terminal_id?: string;
+  terminalId?: string;
+  // Content variant (wraps a ContentBlock)
+  content?: AcpContentBlock;
+  // Direct text (some agents send text content at the top level)
+  text?: string;
+  [key: string]: unknown;
+}
+
 export interface AcpSessionUpdate {
   sessionUpdate: string;
-  content?: { type: string; text?: string; data?: string; mimeType?: string };
+  /**
+   * For `agent_message_chunk` / `agent_thought_chunk` this is a single ContentBlock object.
+   * For `tool_call_update` the ACP spec says `content` is an array of `ToolCallContent` items
+   * (Content / Diff / Terminal). Use `Array.isArray` as a type guard to narrow.
+   */
+  content?: AcpContentBlock | RawToolCallContent[];
   kind?: string;
   title?: string;
   rawInput?: string;
   [key: string]: unknown;
+}
+
+/**
+ * Normalize a raw ACP `tool_call_update` content array into the frontend discriminated
+ * union stored on `ToolCallSegment.content`. Unknown variants are dropped silently.
+ * Terminal entries are preserved so the UI can render a placeholder.
+ */
+export function normalizeToolCallContent(raw: unknown): ToolCallContentItem[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ToolCallContentItem[] = [];
+  for (const item of raw as RawToolCallContent[]) {
+    if (!item || typeof item !== 'object') continue;
+    const kind = String(item.type ?? '').toLowerCase();
+    if (kind === 'diff') {
+      const path = String(item.path ?? '');
+      const oldText = typeof item.oldText === 'string' ? item.oldText
+        : typeof item.old_text === 'string' ? item.old_text
+        : undefined;
+      const newText = typeof item.newText === 'string' ? item.newText
+        : typeof item.new_text === 'string' ? item.new_text
+        : '';
+      out.push({ type: 'diff', path, oldText, newText });
+    } else if (kind === 'terminal') {
+      const terminalId = String(item.terminalId ?? item.terminal_id ?? '');
+      if (terminalId) out.push({ type: 'terminal', terminalId });
+    } else if (kind === 'content' || kind === 'text') {
+      // `Content` variant wraps a ContentBlock in `content` field per ACP schema.
+      // Some agents also send text content as top-level `{ type: 'text', text: '...' }`.
+      const text = typeof item.content?.text === 'string' ? item.content.text
+        : typeof item.text === 'string' ? item.text
+        : undefined;
+      if (text) out.push({ type: 'text', text });
+    }
+  }
+  return out;
 }
 
 export interface AcpSessionUpdatePayload {

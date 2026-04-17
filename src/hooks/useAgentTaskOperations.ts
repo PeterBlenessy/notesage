@@ -8,7 +8,7 @@ import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import { tauriApi } from '@/lib/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { formatAcpToolName, truncateDetail } from '@/lib/ai/acp-utils';
+import { formatAcpToolName, truncateDetail, normalizeToolCallContent } from '@/lib/ai/acp-utils';
 import type { AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
 import { isToolCallAllowed } from '@/lib/ai/path-filter';
 import { log } from '@/lib/logger';
@@ -301,21 +301,23 @@ async function startAcpTask(
     if (!current) return;
 
     const eventType = update.sessionUpdate;
+    // `content` is a single ContentBlock for *_chunk events and an array for tool_call_update.
+    const chunkContent = Array.isArray(update.content) ? undefined : update.content;
 
     if (
       eventType === 'agent_message_chunk' &&
-      update.content?.type === 'text' &&
-      update.content.text
+      chunkContent?.type === 'text' &&
+      chunkContent.text
     ) {
       if (!receivedFirstChunk) {
         receivedFirstChunk = true;
         onActivity?.({ kind: 'agent_responding', label: 'Agent responding', event: 'agent_responding' });
       }
-      current.output += update.content.text;
-      onChunk?.(update.content.text);
-      if (track) useActivityStore.getState().appendPartialOutput(taskId, update.content.text);
+      current.output += chunkContent.text;
+      onChunk?.(chunkContent.text);
+      if (track) useActivityStore.getState().appendPartialOutput(taskId, chunkContent.text);
     } else if (eventType === 'agent_thought_chunk') {
-      const text = update.content?.text;
+      const text = chunkContent?.text;
       if (text && track) {
         useActivityStore.getState().appendThinkingOutput(taskId, text);
       }
@@ -334,6 +336,15 @@ async function startAcpTask(
     } else if (eventType === 'tool_call_update') {
       const label = formatAcpToolName(update.kind, update.title);
       onActivity?.({ kind: update.kind || 'unknown', label, event: 'tool_call' });
+      // Rich content (diff / text / terminal). Per ACP spec this is a full
+      // replacement — attach to the most recent tool-call activity so the
+      // activity panel can render inline diffs.
+      if (Array.isArray(update.content) && track) {
+        const content = normalizeToolCallContent(update.content);
+        if (content.length > 0) {
+          useActivityStore.getState().setLastActivityContent(taskId, content);
+        }
+      }
     } else if (eventType === 'tool_result') {
       onActivity?.({ kind: 'tool_result', label: 'Tool result', event: 'tool_result' });
       if (track) useActivityStore.getState().completeLastActivity(taskId);

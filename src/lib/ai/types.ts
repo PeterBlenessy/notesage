@@ -84,6 +84,15 @@ export interface ThinkingSegment extends MessageSegmentBase {
   collapsed: boolean;
 }
 
+/**
+ * Rich content items carried by ACP `tool_call_update` events.
+ * Maps from the ACP `ToolCallContent` discriminated union (Content/Diff/Terminal).
+ */
+export type ToolCallContentItem =
+  | { type: 'text'; text: string }
+  | { type: 'diff'; path: string; oldText?: string; newText: string }
+  | { type: 'terminal'; terminalId: string };
+
 export interface ToolCallSegment extends MessageSegmentBase {
   type: 'tool_call';
   kind: string;
@@ -91,6 +100,8 @@ export interface ToolCallSegment extends MessageSegmentBase {
   detail?: string;
   status: 'running' | 'done' | 'error';
   locations?: { path: string; line?: number }[];
+  /** Rich content from ACP tool_call_update (diffs, text, terminal refs). Full replacement per update. */
+  content?: ToolCallContentItem[];
 }
 
 export interface ToolResultSegment extends MessageSegmentBase {

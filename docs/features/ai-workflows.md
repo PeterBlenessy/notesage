@@ -202,7 +202,7 @@ Assistant messages render as an ordered stream of typed segments, matching the U
 | --- | --- | --- |
 | `TextSegment` | `content` | Markdown-rendered text (same as legacy) |
 | `ThinkingSegment` | `content`, `collapsed` | Muted italic text, collapsible. Auto-expanded while streaming, auto-collapsed on turn complete. |
-| `ToolCallSegment` | `kind`, `label`, `detail`, `status` | Compact inline: icon + descriptive label (e.g. "Reading config.ts") + status indicator. Hover shows full arguments. |
+| `ToolCallSegment` | `kind`, `label`, `detail`, `status`, `locations`, `content` | Compact inline: icon + descriptive label (e.g. "Reading config.ts") + status indicator. Hover shows full arguments. **Rich content** — when an ACP agent emits `tool_call_update.content`, embedded `Diff` blocks render as collapsible unified diffs (+/- coloring via `--color-diff-*`), `Content` text blocks as collapsible monospace output, and `Terminal` blocks as a muted placeholder. |
 | `ToolResultSegment` | `result`, `error`, `collapsed` | Collapsible monospace output, collapsed by default. Error state in red. |
 | `ImageSegment` | `data`, `mimeType`, `alt` | Base64 image rendered inline with click-to-preview overlay (centered, backdrop blur, Escape to close). |
 
@@ -220,14 +220,15 @@ Assistant messages render as an ordered stream of typed segments, matching the U
 
 | File | Purpose |
 | --- | --- |
-| `src/lib/ai/types.ts` | `Segment` union type, segment interfaces |
-| `src/lib/ai/acp-utils.ts` | `formatToolLabel`, `parseRawInput` |
+| `src/lib/ai/types.ts` | `Segment` union type, segment interfaces, `ToolCallContentItem` discriminated union |
+| `src/lib/ai/acp-utils.ts` | `formatToolLabel`, `parseRawInput`, `normalizeToolCallContent` (ACP content → frontend union) |
+| `src/lib/ai/diff-utils.ts` | `computeUnifiedDiff` — line-level diff with context windows and truncation |
 | `src/stores/chat-store.ts` | Segment store actions |
 | `src/lib/conversationOps.ts` | Pure conversation utilities (autoTitle, prune, stale path cleanup) |
 | `src/lib/segmentOps.ts` | Pure segment utilities (append, push, update, finalize, reset) |
 | `src/hooks/useDirectApiChat.ts` | Segment dual-write (direct API streaming) |
-| `src/hooks/useAcpSessionListeners.ts` | Segment dual-write (ACP streaming) |
-| `src/components/chat/segments/` | `TextSegmentView`, `ThinkingSegmentView`, `ToolCallSegmentView`, `ToolResultSegmentView`, `ImageSegmentView` |
+| `src/hooks/useAcpSessionListeners.ts` | Segment dual-write (ACP streaming), tool-call content extraction |
+| `src/components/chat/segments/` | `TextSegmentView`, `ThinkingSegmentView`, `ToolCallSegmentView`, `ToolResultSegmentView`, `ImageSegmentView`, `DiffContentView`, `TextContentView` |
 | `src/components/chat/ChatMessage.tsx` | `SegmentRenderer` — renders segments or falls back to legacy |
 
 ## Key Files

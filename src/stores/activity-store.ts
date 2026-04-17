@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { DelegationActivity } from '@/stores/comment-store';
+import type { ToolCallContentItem } from '@/lib/ai/types';
 import { createTauriStorage } from '@/lib/tauri-storage';
 
 const MAX_COMPLETED_TASKS = 100;
@@ -36,6 +37,12 @@ interface ActivityStore {
   resetTaskForContinuation(id: string): void;
   updateTaskStatus(id: string, status: AgentTaskStatus): void;
   appendActivity(id: string, activity: DelegationActivity): void;
+  /**
+   * Replace the `content` array on the most recent running tool-call activity
+   * (or the most recent activity overall if none are running). Per ACP spec,
+   * `tool_call_update.content` is a full replacement — callers should not merge.
+   */
+  setLastActivityContent(id: string, content: ToolCallContentItem[]): void;
   completeLastActivity(id: string): void;
   completeAllActivities(id: string): void;
   appendPartialOutput(id: string, chunk: string): void;
@@ -131,6 +138,22 @@ export const useActivityStore = create<ActivityStore>()(
                 break;
               }
             }
+            return { ...t, activities: updated };
+          }),
+        }));
+      },
+
+      setLastActivityContent: (id, content) => {
+        set((state) => ({
+          tasks: state.tasks.map((t) => {
+            if (t.id !== id || t.activities.length === 0) return t;
+            const updated = [...t.activities];
+            let targetIdx = -1;
+            for (let i = updated.length - 1; i >= 0; i--) {
+              if (updated[i].status === 'running') { targetIdx = i; break; }
+            }
+            if (targetIdx === -1) targetIdx = updated.length - 1;
+            updated[targetIdx] = { ...updated[targetIdx], content };
             return { ...t, activities: updated };
           }),
         }));

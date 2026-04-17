@@ -370,12 +370,13 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
           if (event.payload.instanceId !== instanceId) return;
           const { update } = event.payload;
+          const chunkContent = Array.isArray(update.content) ? undefined : update.content;
           if (
             update.sessionUpdate === 'agent_message_chunk' &&
-            update.content?.type === 'text' &&
-            update.content.text
+            chunkContent?.type === 'text' &&
+            chunkContent.text
           ) {
-            result += update.content.text;
+            result += chunkContent.text;
           }
         });
 

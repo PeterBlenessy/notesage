@@ -236,6 +236,16 @@ Script-bearing skills are automatically converted to first-class tool definition
 - `searchProvider` setting for web search backend (DuckDuckGo)
 - Tools indicator badge in chat footer showing count of available tools
 
+**Tool call content rendering (ACP):**
+
+ACP agents (Claude Code, Codex, Copilot, Gemini) can emit rich `ToolCallContent` in `tool_call_update` events — `Diff` blocks with old/new text for file edits, `Content` blocks with text output, and `Terminal` blocks referencing command output. The frontend normalizes these via `normalizeToolCallContent` in `acp-utils.ts` and renders them inline below the tool-call label in both the chat panel and the delegation activity panel:
+
+- **Diff blocks** → collapsible unified diff with line-level additions/deletions (`+/-` coloring via `--color-diff-*` CSS variables), new-file and deleted-file badges, click-to-open file path header. Uses `computeUnifiedDiff` in `src/lib/ai/diff-utils.ts` for line-mode diffing (via `diff-match-patch`) with 3-line context windows, separator markers between distant hunks, and truncation at 200 lines.
+- **Content/text blocks** → collapsible monospace output (same treatment as tool result segments).
+- **Terminal blocks** → muted placeholder ("Terminal output (not yet supported)") — full support requires the `terminal/create` client capability, which is out of scope for this batch.
+
+Direct API tool calling (Anthropic/OpenAI/Ollama/local) does not emit structured content — results are rendered as plain text in the `ToolResultSegment`.
+
 ## Image Attachments & Vision
 
 Chat messages can include up to 5 image attachments, enabling multimodal conversations with vision-capable models.

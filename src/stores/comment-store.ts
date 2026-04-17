@@ -19,6 +19,12 @@ export interface DelegationActivity {
   detail?: string;
   status: 'running' | 'done' | 'info' | 'error';
   timestamp: number;
+  /**
+   * Rich tool-call content (diffs, text, terminal refs) from ACP `tool_call_update`.
+   * Present on tool-call activities; undefined for legacy or non-tool events.
+   * Full replacement per ACP spec — newer values overwrite the previous array.
+   */
+  content?: import('@/lib/ai/types').ToolCallContentItem[];
 }
 
 export interface Comment {

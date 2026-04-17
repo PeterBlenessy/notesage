@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatToolLabel, parseRawInput } from '../acp-utils';
+import { formatToolLabel, parseRawInput, normalizeToolCallContent } from '../acp-utils';
 
 describe('formatToolLabel', () => {
   it('formats read_file with path basename', () => {
@@ -216,5 +216,86 @@ describe('parseRawInput', () => {
 
   it('returns empty object for empty string', () => {
     expect(parseRawInput('')).toEqual({});
+  });
+});
+
+describe('normalizeToolCallContent', () => {
+  it('returns empty array for non-array input', () => {
+    expect(normalizeToolCallContent(null)).toEqual([]);
+    expect(normalizeToolCallContent(undefined)).toEqual([]);
+    expect(normalizeToolCallContent({})).toEqual([]);
+    expect(normalizeToolCallContent('')).toEqual([]);
+  });
+
+  it('normalizes a Diff item with snake_case fields (ACP spec)', () => {
+    const result = normalizeToolCallContent([
+      { type: 'diff', path: '/src/App.tsx', old_text: 'old', new_text: 'new' },
+    ]);
+    expect(result).toEqual([
+      { type: 'diff', path: '/src/App.tsx', oldText: 'old', newText: 'new' },
+    ]);
+  });
+
+  it('accepts camelCase diff fields (tolerant parser)', () => {
+    const result = normalizeToolCallContent([
+      { type: 'diff', path: '/f', oldText: 'a', newText: 'b' },
+    ]);
+    expect(result).toEqual([{ type: 'diff', path: '/f', oldText: 'a', newText: 'b' }]);
+  });
+
+  it('treats a diff without old_text as a new file (undefined oldText)', () => {
+    const result = normalizeToolCallContent([
+      { type: 'diff', path: '/new.ts', new_text: 'hello' },
+    ]);
+    expect(result).toEqual([
+      { type: 'diff', path: '/new.ts', oldText: undefined, newText: 'hello' },
+    ]);
+  });
+
+  it('normalizes a Terminal item', () => {
+    expect(
+      normalizeToolCallContent([{ type: 'terminal', terminal_id: 'term-123' }]),
+    ).toEqual([{ type: 'terminal', terminalId: 'term-123' }]);
+    expect(
+      normalizeToolCallContent([{ type: 'terminal', terminalId: 'term-456' }]),
+    ).toEqual([{ type: 'terminal', terminalId: 'term-456' }]);
+  });
+
+  it('normalizes a Content variant that wraps a ContentBlock', () => {
+    const result = normalizeToolCallContent([
+      { type: 'content', content: { type: 'text', text: 'hello' } },
+    ]);
+    expect(result).toEqual([{ type: 'text', text: 'hello' }]);
+  });
+
+  it('normalizes a top-level text item', () => {
+    const result = normalizeToolCallContent([{ type: 'text', text: 'terminal output' }]);
+    expect(result).toEqual([{ type: 'text', text: 'terminal output' }]);
+  });
+
+  it('drops unknown variants silently', () => {
+    const result = normalizeToolCallContent([
+      { type: 'mysteryFuture', foo: 'bar' },
+      { type: 'text', text: 'keep me' },
+    ]);
+    expect(result).toEqual([{ type: 'text', text: 'keep me' }]);
+  });
+
+  it('drops empty terminals and text-less content', () => {
+    const result = normalizeToolCallContent([
+      { type: 'terminal', terminal_id: '' },
+      { type: 'content', content: { type: 'image', data: 'abc' } },
+      { type: 'text' },
+    ]);
+    expect(result).toEqual([]);
+  });
+
+  it('preserves order of mixed items', () => {
+    const result = normalizeToolCallContent([
+      { type: 'content', content: { type: 'text', text: 'before' } },
+      { type: 'diff', path: '/a', old_text: '1', new_text: '2' },
+      { type: 'content', content: { type: 'text', text: 'after' } },
+    ]);
+    expect(result.map((r) => r.type)).toEqual(['text', 'diff', 'text']);
   });
 });

@@ -17,6 +17,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { MarkdownContent } from '@/components/MarkdownContent';
 import { ProviderLogo } from '@/components/ProviderLogo';
+import { DiffContentView } from '@/components/chat/segments/DiffContentView';
+import { TextContentView } from '@/components/chat/segments/TextContentView';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useCommentStore } from '@/stores/comment-store';
 import type { AgentTask } from '@/stores/activity-store';
@@ -345,7 +347,7 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
               ) : (
                 <Check className="h-2.5 w-2.5 shrink-0 mt-px" strokeWidth={1.5} />
               )}
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <span className="truncate block">{a.label}</span>
                 {a.detail && (
                   <span
@@ -354,6 +356,33 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
                   >
                     {a.detail.length > 60 ? a.detail.slice(0, 60) + '\u2026' : a.detail}
                   </span>
+                )}
+                {a.content && a.content.length > 0 && (
+                  <div className="mt-0.5 space-y-0.5">
+                    {a.content.map((item, idx) => {
+                      if (item.type === 'diff') {
+                        return (
+                          <DiffContentView
+                            key={`diff-${idx}`}
+                            path={item.path}
+                            oldText={item.oldText}
+                            newText={item.newText}
+                          />
+                        );
+                      }
+                      if (item.type === 'text') {
+                        return <TextContentView key={`text-${idx}`} text={item.text} />;
+                      }
+                      return (
+                        <div
+                          key={`terminal-${idx}`}
+                          className="px-1 text-[11px] text-muted-foreground/50 italic"
+                        >
+                          Terminal output (not yet supported)
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             </div>
