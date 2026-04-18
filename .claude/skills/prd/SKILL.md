@@ -32,8 +32,11 @@ Write a Product Requirements Document for the given feature or initiative and sa
    | **Status** | Draft |
    | **Priority** | High / Medium / Low |
    | **Impact** | One-line summary of user impact |
+   | **Tasks** | — (not yet planned) |
    | **Phase** | Phase name if applicable, or omit row |
    ```
+
+   The `**Tasks**` row is a placeholder for the two-way PRD ↔ tasks link. `/plan-tasks` fills it in when the tasks file is created.
 
    ### Problem
    What user pain or gap does this feature address? Why now?

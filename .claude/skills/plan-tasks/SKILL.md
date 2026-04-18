@@ -54,7 +54,11 @@ Break a PRD or feature description into concrete, ordered implementation tasks.
    - Slug matches the PRD slug (e.g., PRD `docs/prds/2026-03-11-model-metadata-enrichment.md` → tasks file `docs/tasks/2026-03-11-model-metadata-enrichment-tasks.md`)
    - If no PRD exists, derive the slug from the feature name in lowercase-kebab-case
 
-7. **Update the source research doc** if this task breakdown traces back to a research file in `docs/research/`:
+7. **Update the PRD's header table** with a two-way link back to this new tasks file:
+   - Add or update a `**Tasks**` row: `| **Tasks** | [slug-tasks](../tasks/YYYY-MM-DD-slug-tasks.md) |`
+   - This establishes the bidirectional PRD ↔ tasks navigation. Readers should be able to jump in either direction without searching.
+
+8. **Update the source research doc** if this task breakdown traces back to a research file in `docs/research/`:
    - Find the research file (check the PRD's header for a research reference, or match by topic)
    - Add or update a Tasks row in the research doc's pipeline table:
 
@@ -68,9 +72,9 @@ Break a PRD or feature description into concrete, ordered implementation tasks.
    - Valid statuses: `Not started`, `In Progress`, `Complete`, `Partial`, `Abandoned`, `Not planned`
    - If no research doc exists for this feature, skip this step
 
-8. **Present a brief summary** to the user with the file path and task count.
+9. **Present a brief summary** to the user with the file path and task count.
 
-9. **Log observations** to `.claude/skill-feedback.md` if the decomposition showed issues (duplicates, wrong sizing, missing dependencies, order problems, unclear acceptance criteria). Format per `/retrospect-skills`. Both user and agent contribute.
+10. **Log observations** to `.claude/skill-feedback.md` if the decomposition showed issues (duplicates, wrong sizing, missing dependencies, order problems, unclear acceptance criteria). Format per `/retrospect-skills`. Both user and agent contribute.
 
 ## Guidelines
 

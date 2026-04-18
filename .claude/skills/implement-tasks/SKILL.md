@@ -45,7 +45,7 @@ For each task:
    - `CLAUDE.md` for project conventions
    - The relevant feature doc (see CLAUDE.md's docs tables)
    - Any tests written in step 1 (the implementation must make them pass)
-2. Use `isolation: "worktree"` for parallel tasks to avoid conflicts
+2. For parallel tasks, use `isolation: "worktree"`. When you do, the sub-agent prompt **must instruct it to commit inside the worktree before returning** (include the expected commit message format). Do NOT tell it to "leave changes staged" — if the sub-agent returns with no commits, the runtime may clean up the worktree and the work is lost. The parent merges via `git merge <branch-name> --no-ff` (step 3).
 3. The sub-agent implements the task following project conventions
 4. **For UI components**: the same sub-agent writes component tests after implementation (before returning) to cover the new behavior
 5. **If a sub-agent fails or returns partial work**: do NOT merge. Report the failure to the user with the agent's last output and wait for direction.
@@ -89,6 +89,7 @@ Before the task counts as done:
    - Task breakdown: add ` ✅` at the end of the task heading (e.g., `### #35 — Title ✅`)
    - PRD: if the task completes a PRD checkbox, mark it too
 3. **Resolve remaining PRD quality gates.** Run them, hand them off with a concrete test proposal, or mark out-of-scope with a reason. Never leave a gate unchecked silently.
+4. **Treat deferred acceptance criteria as incomplete.** If a sub-agent reports any criterion as "documented only", "deferred", "v1 fallback", or similar, the task is NOT done — surface it to the user and get explicit approval to ship in reduced form (with a follow-up plan) before marking ✅ or proposing a commit. See `feedback_full_coverage.md` in auto-memory.
 
 ### 7. Propose commit & wait for approval
 
