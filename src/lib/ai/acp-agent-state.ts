@@ -305,7 +305,7 @@ export async function ensureAcpAgent(connection: Connection, cwd: string, sandbo
         );
         const builtIn = providerOption?.installMeta?.allowedDomains ?? [];
         const permStore = usePermissionStore.getState();
-        const userDomains = permStore.getDomainAllowedList(connection.id);
+        const userDomains = permStore.getDomainAllowedList(connection.id, null);
         networkAllowedDomains = [...builtIn, ...userDomains];
       }
 

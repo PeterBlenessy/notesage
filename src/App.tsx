@@ -29,6 +29,7 @@ import { useActivityNavigation } from "@/hooks/useActivityNavigation";
 import { useAppLifecycle } from "@/hooks/useAppLifecycle";
 import { useTrayEvents } from "@/hooks/useTrayEvents";
 import { useTraySync } from "@/hooks/useTraySync";
+import { useApprovalMigrationToast } from "@/hooks/useApprovalMigrationToast";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -99,6 +100,7 @@ function App() {
   useSandboxViolations();
   useActionScanner();
   useTraySync();
+  useApprovalMigrationToast();
 
   // Consolidated startup effects and event listeners
   const onOpenPalette = useCallback((mode: PaletteMode, drilldown: string) => {

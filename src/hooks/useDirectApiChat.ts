@@ -228,7 +228,7 @@ export function useDirectApiChat({
             }
 
             // Check permission
-            const tier = usePermissionStore.getState().isToolAllowed(call.name);
+            const tier = usePermissionStore.getState().isToolAllowed(call.name, null, null);
 
             if (tier === 'none') {
               // Show permission card and wait for user decision
@@ -272,7 +272,7 @@ export function useDirectApiChat({
               if (decision === 'session') {
                 usePermissionStore.getState().allowToolSession(call.name);
               } else if (decision === 'always') {
-                usePermissionStore.getState().allowToolAlways(call.name);
+                usePermissionStore.getState().allowToolAlways(call.name, null, null);
               }
               // 'allow' = once, no persistence
             }

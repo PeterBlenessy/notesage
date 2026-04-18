@@ -11,23 +11,31 @@ describe('permission-store skill script permissions', () => {
 
   describe('isSkillScriptAllowed', () => {
     it('returns none by default', () => {
-      expect(usePermissionStore.getState().isSkillScriptAllowed('web-research')).toBe('none');
+      expect(usePermissionStore.getState().isSkillScriptAllowed('web-research', null, null)).toBe(
+        'none',
+      );
     });
 
     it('returns session when session-allowed', () => {
       usePermissionStore.getState().allowSkillScriptSession('web-research');
-      expect(usePermissionStore.getState().isSkillScriptAllowed('web-research')).toBe('session');
+      expect(usePermissionStore.getState().isSkillScriptAllowed('web-research', null, null)).toBe(
+        'session',
+      );
     });
 
     it('returns always when always-allowed', () => {
-      usePermissionStore.getState().allowSkillScriptAlways('web-research');
-      expect(usePermissionStore.getState().isSkillScriptAllowed('web-research')).toBe('always');
+      usePermissionStore.getState().allowSkillScriptAlways('web-research', null, null);
+      expect(usePermissionStore.getState().isSkillScriptAllowed('web-research', null, null)).toBe(
+        'always',
+      );
     });
 
     it('always takes precedence over session', () => {
       usePermissionStore.getState().allowSkillScriptSession('web-research');
-      usePermissionStore.getState().allowSkillScriptAlways('web-research');
-      expect(usePermissionStore.getState().isSkillScriptAllowed('web-research')).toBe('always');
+      usePermissionStore.getState().allowSkillScriptAlways('web-research', null, null);
+      expect(usePermissionStore.getState().isSkillScriptAllowed('web-research', null, null)).toBe(
+        'always',
+      );
     });
   });
 
@@ -49,30 +57,36 @@ describe('permission-store skill script permissions', () => {
 
   describe('allowSkillScriptAlways', () => {
     it('adds skill to always list', () => {
-      usePermissionStore.getState().allowSkillScriptAlways('skill-a');
-      expect(usePermissionStore.getState().skillScriptAlways).toContain('skill-a');
+      usePermissionStore.getState().allowSkillScriptAlways('skill-a', null, null);
+      expect(
+        usePermissionStore.getState().skillScriptAlways.some((a) => a.toolName === 'skill-a'),
+      ).toBe(true);
     });
 
     it('does not duplicate entries', () => {
-      usePermissionStore.getState().allowSkillScriptAlways('skill-a');
-      usePermissionStore.getState().allowSkillScriptAlways('skill-a');
-      expect(usePermissionStore.getState().skillScriptAlways.filter(s => s === 'skill-a')).toHaveLength(1);
+      usePermissionStore.getState().allowSkillScriptAlways('skill-a', null, null);
+      usePermissionStore.getState().allowSkillScriptAlways('skill-a', null, null);
+      expect(
+        usePermissionStore
+          .getState()
+          .skillScriptAlways.filter((a) => a.toolName === 'skill-a'),
+      ).toHaveLength(1);
     });
   });
 
   describe('removeSkillScriptAlways', () => {
     it('removes skill from always list', () => {
-      usePermissionStore.getState().allowSkillScriptAlways('skill-a');
-      usePermissionStore.getState().allowSkillScriptAlways('skill-b');
-      usePermissionStore.getState().removeSkillScriptAlways('skill-a');
+      usePermissionStore.getState().allowSkillScriptAlways('skill-a', null, null);
+      usePermissionStore.getState().allowSkillScriptAlways('skill-b', null, null);
+      usePermissionStore.getState().removeSkillScriptAlways('skill-a', null, null);
 
       const state = usePermissionStore.getState();
-      expect(state.skillScriptAlways).not.toContain('skill-a');
-      expect(state.skillScriptAlways).toContain('skill-b');
+      expect(state.skillScriptAlways.some((a) => a.toolName === 'skill-a')).toBe(false);
+      expect(state.skillScriptAlways.some((a) => a.toolName === 'skill-b')).toBe(true);
     });
 
     it('is safe to call on non-existent skill', () => {
-      usePermissionStore.getState().removeSkillScriptAlways('nonexistent');
+      usePermissionStore.getState().removeSkillScriptAlways('nonexistent', null, null);
       expect(usePermissionStore.getState().skillScriptAlways).toEqual([]);
     });
   });

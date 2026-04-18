@@ -311,7 +311,7 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       }
     }
 
-    if (usePermissionStore.getState().isAutoAllowed(toolInfo.kind)) {
+    if (usePermissionStore.getState().isAutoAllowed(toolInfo.kind, null, null)) {
       // Tool kinds in session or always allow-lists: auto-approve silently
       invoke('acp_permission_respond', {
         instanceId: deps.instanceId,

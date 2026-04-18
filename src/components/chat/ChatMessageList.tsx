@@ -141,7 +141,7 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
         );
         const builtIn = provOpt?.installMeta?.allowedDomains ?? [];
         const permStore = usePermissionStore.getState();
-        if (permStore.isDomainAllowed(connId, domain, builtIn)) {
+        if (permStore.isDomainAllowed(connId, domain, builtIn, null)) {
           invoke('network_domain_respond', {
             instanceId,
             requestId,

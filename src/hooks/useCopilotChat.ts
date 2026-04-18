@@ -195,7 +195,7 @@ export function useCopilotChat({
       assistantMessageId: number,
     ) => {
       // Check permission
-      const tier = usePermissionStore.getState().isToolAllowed(name);
+      const tier = usePermissionStore.getState().isToolAllowed(name, null, null);
 
       if (tier === 'none') {
         const decision = await new Promise<ToolCallDecision>((resolve) => {
@@ -228,7 +228,7 @@ export function useCopilotChat({
         if (decision === 'session') {
           usePermissionStore.getState().allowToolSession(name);
         } else if (decision === 'always') {
-          usePermissionStore.getState().allowToolAlways(name);
+          usePermissionStore.getState().allowToolAlways(name, null, null);
         }
       }
 
@@ -512,7 +512,7 @@ export function useCopilotChat({
                 if (decision === 'session') {
                   usePermissionStore.getState().allowToolSession(name);
                 } else if (decision === 'always') {
-                  usePermissionStore.getState().allowToolAlways(name);
+                  usePermissionStore.getState().allowToolAlways(name, null, null);
                 }
 
                 tauriApi.copilotLspToolConfirmationResponse(requestId, accepted).catch((err) =>

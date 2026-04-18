@@ -130,7 +130,7 @@ export async function ensureTaskAgent(connection: Connection, cwd: string, sandb
         );
         const builtIn = providerOption?.installMeta?.allowedDomains ?? [];
         const permStore = usePermissionStore.getState();
-        const userDomains = permStore.getDomainAllowedList(connection.id);
+        const userDomains = permStore.getDomainAllowedList(connection.id, null);
         networkAllowedDomains = [...builtIn, ...userDomains];
       }
 
