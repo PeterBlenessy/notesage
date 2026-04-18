@@ -1,4 +1,4 @@
-import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, FileText, GitBranch, Cloud, Info, Loader2, ArrowUpCircle, ScrollText, Code, Download, Blocks, FolderOpen, Trash2, Mic, Cpu, Palette, RotateCcw } from 'lucide-react';
+import { Settings, Sun, Moon, Monitor, Sparkles, Sliders, FileText, GitBranch, Cloud, Info, Loader2, ArrowUpCircle, ScrollText, Code, Download, Blocks, FolderOpen, Trash2, Mic, Cpu, Palette, RotateCcw, ShieldCheck } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,7 @@ import { SyncSettings } from './SyncSettings';
 import { SkillsSettings } from './SkillsSettings';
 import { TranscriptionSettings } from './TranscriptionSettings';
 import { LocalAISettings } from './LocalAISettings';
+import { ApprovalsSettings } from './ApprovalsSettings';
 import { ChangelogDialog } from './ChangelogDialog';
 import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore, type MeasurementUnit } from '@/stores/settings-store';
@@ -52,7 +53,7 @@ import { setLogLevel as setLoggerLevel } from '@/lib/logger';
 import type { LogLevel } from '@/lib/logger';
 import type { UpdateState } from '@/hooks/useAutoUpdate';
 
-export type SettingsTab = 'general' | 'ai' | 'local-ai' | 'prompts' | 'skills' | 'transcription' | 'editor' | 'git' | 'sync' | 'developer' | 'about';
+export type SettingsTab = 'general' | 'ai' | 'local-ai' | 'prompts' | 'skills' | 'transcription' | 'editor' | 'git' | 'sync' | 'privacy' | 'developer' | 'about';
 
 interface SettingsDialogProps {
   open?: boolean;
@@ -83,6 +84,7 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Sparkles }[] = [
   { id: 'transcription', label: 'Transcription', icon: Mic },
   { id: 'git', label: 'Version Control', icon: GitBranch },
   { id: 'sync', label: 'Sync', icon: Cloud },
+  { id: 'privacy', label: 'Privacy', icon: ShieldCheck },
   { id: 'developer', label: 'Advanced', icon: Code },
   { id: 'about', label: 'About', icon: Info },
 ];
@@ -862,6 +864,11 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
             {activeTab === 'sync' && (
               <div className="p-6">
                 <SyncSettings />
+              </div>
+            )}
+            {activeTab === 'privacy' && (
+              <div className="p-6">
+                <ApprovalsSettings />
               </div>
             )}
             {activeTab === 'developer' && (

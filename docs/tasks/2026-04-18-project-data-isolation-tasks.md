@@ -19,6 +19,7 @@ Every Track 1 leak corresponds to at least one **security-invariant test** that 
 4. **Regression lock.** Test stays in the suite forever. Any future change that re-opens the leak trips it.
 
 Two rules this discipline enforces:
+
 - **Negative tests, not only positive.** "Agent cannot read out-of-scope path" is the invariant. "Agent can read in-scope path" is a useful-but-insufficient companion.
 - **Real enforcement, not mocks, wherever practical.** Kernel-level (Seatbelt profile) for #1; real `isToolCallAllowed` + `path-filter` for #3, #6; real persist-store round trip for #4. Mock-level assertions are fine for wire-shape assertions (e.g., "Rust received the right paths") but do NOT prove the OS enforces them.
 
@@ -108,7 +109,7 @@ This is the foundation of the red-team TDD discipline. Before implementing any T
 
 ---
 
-### #3 — Settings &gt; Privacy &gt; Approvals review UI
+### #3 — Settings &gt; Privacy &gt; Approvals review UI ✅
 
 **Description:** New settings panel listing every persisted approval with its scope, allowing revoke and bulk actions. Replaces the silent flat-list behaviour; gives users a way to audit what they've granted.
 
