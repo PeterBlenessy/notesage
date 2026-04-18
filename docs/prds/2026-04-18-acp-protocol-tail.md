@@ -7,6 +7,7 @@
 | **Priority** | Low-Medium (maintenance) |
 | **Impact** | Closes remaining ACP protocol gaps after Batches B/C. Comment-delegated chats gain session continuity; agents' `resource_link` blocks render; auth flows consolidate on ACP primitives. |
 | **Audit** | [acp-audit](../audits/2026-04-14-acp-audit.md) — Batches C-bis + D |
+| **Tasks** | [2026-04-18-acp-protocol-tail-tasks](../tasks/2026-04-18-acp-protocol-tail-tasks.md) |
 
 ## Problem
 
@@ -23,16 +24,16 @@ None of these is a bug. Each is a "we can do this the ACP-native way" cleanup th
 
 1. **Restoration parity for task agents** — `useAgentTaskOperations` uses the same capability-gated restoration chain as the main chat (resume → load → list → new).
 2. **Task session cleanup** — fire best-effort `session/close` when a task completes, fails, or is cancelled.
-3. **Silent `user_message_chunk` handling** — recognize and ignore (no user-visible effect, no spurious debug logs).
-4. **Render `resource_link` content blocks** — as a simple link card within text segments.
-5. **Propagate `messageId` through prompts and streams** — enable `unstable_message_id`, set outbound message IDs on `PromptRequest`, store echoed IDs on `ChatMessage`. No user-visible change in v1; forward-compatibility groundwork.
-6. **Proper `EnvVar` auth** — migrate Gemini-style env-var credentials from the bespoke `envVars` connection field to ACP's `EnvVar` auth method, gated on the `unstable_auth_methods` feature.
+3. **Silent** `user_message_chunk` **handling** — recognize and ignore (no user-visible effect, no spurious debug logs).
+4. **Render** `resource_link` **content blocks** — as a simple link card within text segments.
+5. **Propagate** `messageId` **through prompts and streams** — enable `unstable_message_id`, set outbound message IDs on `PromptRequest`, store echoed IDs on `ChatMessage`. No user-visible change in v1; forward-compatibility groundwork.
+6. **Proper** `EnvVar` **auth** — migrate Gemini-style env-var credentials from the bespoke `envVars` connection field to ACP's `EnvVar` auth method, gated on the `unstable_auth_methods` feature.
 7. **Remove hardcoded auth status CLI checks** — rely on ACP's `authenticate` response for auth state instead of per-provider CLI probes.
 
 ## Non-Goals
 
 - **MCP server passthrough** (#23) — different enough in scope (bridging Notesage's MCP client into agent sessions) that it deserves its own PRD. Deferred.
-- **Content block beyond `resource_link`** — `audio` (#38) and `resource` embedded (#40) are still `x`. Nothing's calling for them yet.
+- **Content block beyond** `resource_link` — `audio` (#38) and `resource` embedded (#40) are still `x`. Nothing's calling for them yet.
 - **Terminal auth type** (#10) — closely related to Batch F (terminal client capability) and parked with that work.
 - **Logout** (#11) — low demand, low impact. Left for a future cleanup.
 - **Task agent concurrency** — keep one-task-at-a-time semantics; restoration + close are the only lifecycle changes.
@@ -64,7 +65,7 @@ None of these is a bug. Each is a "we can do this the ACP-native way" cleanup th
 
 ### Phase 2 — Content-block handling
 
-**`user_message_chunk` (Item #3).**
+`user_message_chunk` **(Item #3).**
 
 Add a handler branch in both `useAcpSessionListeners.ts` and `useAgentTaskOperations.ts` that explicitly acknowledges the event (so it doesn't fall through to the `Unknown session update type` debug log) and discards it. We already have the user's message locally in chat-store — echoing is redundant.
 
@@ -77,7 +78,7 @@ Add a handler branch in both `useAcpSessionListeners.ts` and `useAgentTaskOperat
 
 No UI change.
 
-**`resource_link` content blocks (Item #4).**
+`resource_link` **content blocks (Item #4).**
 
 These are top-level content blocks (same level as `text` and `image`) — arrays of them can appear in `agent_message_chunk.content`. Schema shape:
 
@@ -106,7 +107,7 @@ Render as a compact link card inline in the text segment. Reuse the existing lin
 
 ### Phase 3 — Auth consolidation
 
-**`EnvVar` auth type (Item #5).**
+`EnvVar` **auth type (Item #5).**
 
 **Prereq:** enable `unstable_auth_methods` in `Cargo.toml` for both `agent-client-protocol` and `agent-client-protocol-schema` crates.
 
@@ -116,7 +117,7 @@ Render as a compact link card inline in the text segment. Reuse the existing lin
 
 **Migration.** Existing Gemini connections keep their `envVars` intact. On auth refresh, we detect EnvVar advertisement and use the same stored values to respond — user doesn't notice.
 
-**`Authenticate` flow for status (Item #6).**
+`Authenticate` **flow for status (Item #6).**
 
 **Current state.** `acp_binary.rs` has per-provider CLI probes: `claude auth status`, `codex auth status`, `copilot auth status`. These are called before spawning the ACP subprocess to pre-check whether the user is authed.
 
@@ -159,7 +160,7 @@ Compact, single-line-optional-two-lines card. Click opens the URI — editor tab
 
 ### Auth method changes
 
-**Settings > Connections > Add connection.** The current Gemini panel prompts for "API key (paste it here)" with a link to Google AI Studio. After the migration, the same UX happens but driven by the ACP `authenticate` response rather than hardcoded fields:
+**Settings &gt; Connections &gt; Add connection.** The current Gemini panel prompts for "API key (paste it here)" with a link to Google AI Studio. After the migration, the same UX happens but driven by the ACP `authenticate` response rather than hardcoded fields:
 
 ```
 Before:                           After (EnvVar auth):
@@ -206,15 +207,25 @@ interface GenericEnvVarCredentials {
 ## Quality Gates
 
 - [ ] Enabling `unstable_auth_methods` + `unstable_message_id` doesn't break existing ACP connections (`cargo test` green in `src-tauri/`)
+
 - [ ] Reopening a comment thread after an app restart restores the agent's prior context (via `session/resume` or `session/load`, depending on capability)
+
 - [ ] Task completion fires a `session/close` call (observable in the ACP message log) when the agent supports it; errors silently tolerated
+
 - [ ] `Unknown ACP session update type: user_message_chunk` debug log no longer appears
+
 - [ ] An agent-emitted `resource_link` renders as a clickable link card inline in the message; clicking a `file://` link inside a project opens the editor tab
+
 - [ ] `PromptRequest.message_id` is set on outbound prompts; echoed `user_message_id` and response `message_id` are stored on the corresponding `ChatMessage` when the agent emits them
+
 - [ ] Gemini connection migration: existing connections with `envVars` values continue to work with no user action; fresh connections go through the EnvVar auth flow
+
 - [ ] `acp_binary.rs` has no per-provider `auth status` CLI probes
+
 - [ ] TypeScript type check passes
+
 - [ ] All existing tests continue to pass
+
 - [ ] Unit tests for `user_message_chunk` noop handler, `resource_link` rendering, `messageId` round-trip, and the `restoreOrCreateAcpSession` call site in `useAgentTaskOperations`
 
 ## Out of Scope

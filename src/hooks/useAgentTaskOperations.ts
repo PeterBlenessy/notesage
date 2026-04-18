@@ -8,8 +8,9 @@ import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import { tauriApi } from '@/lib/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { formatAcpToolName, truncateDetail, normalizeToolCallContent } from '@/lib/ai/acp-utils';
-import type { AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
+import { formatAcpToolName, truncateDetail, normalizeToolCallContent, hasSessionCapability } from '@/lib/ai/acp-utils';
+import type { AcpSessionUpdatePayload, AcpPermissionRequestPayload, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
+import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
 import { isToolCallAllowed } from '@/lib/ai/path-filter';
 import { log } from '@/lib/logger';
 
@@ -37,6 +38,8 @@ interface TaskAgentState {
   /** Project root the agent was spawned for (sandbox scope). */
   projectRoot: string;
   sessionId: string | null;
+  /** Agent-advertised capabilities from the spawn result (for session/resume, session/close, etc.). */
+  capabilities: AcpAgentCapabilities | null;
 }
 
 let taskAgent: TaskAgentState | null = null;
@@ -157,6 +160,7 @@ export async function ensureTaskAgent(connection: Connection, cwd: string, sandb
         connectionId: connection.id,
         projectRoot: cwd,
         sessionId: null,
+        capabilities: (result.capabilities ?? null) as AcpAgentCapabilities | null,
       };
 
       return result.instance_id;
@@ -284,11 +288,40 @@ async function startAcpTask(
   // Use explicit projectRoot from taskMeta (delegation/chat), fall back to chat selection
   const cwd = taskMeta?.projectRoot ?? (selectedProjectPaths[0] || '/tmp');
   const instanceId = await ensureTaskAgent(connection, cwd);
-  const session = await tauriApi.acpSessionNew(instanceId, cwd);
+
+  // Look up prior session ID from the active conversation (task conversations use the
+  // same chat-store). Use `restoreOrCreateAcpSession` so reopening a delegated comment
+  // restores the agent-side context via resume/load when capabilities allow.
+  const chatState = useChatStore.getState();
+  const activeConversationId = chatState.activeConversationId;
+  const activeConv = activeConversationId
+    ? chatState.conversations.find((c) => c.id === activeConversationId)
+    : undefined;
+  const storedSessionId = activeConv?.acpSessionId;
+
+  const session = await restoreOrCreateAcpSession({
+    instanceId,
+    cwd,
+    storedSessionId,
+    capabilities: taskAgent?.capabilities ?? null,
+  });
+
+  // Persist the (possibly new) session ID back onto the conversation so a subsequent
+  // reopen can attempt resume/load again.
+  if (activeConversationId) {
+    useChatStore.getState().setSegmentSessionId(session.session_id);
+  }
 
   const { taskId, task, track } = setupTask(prompt, taskMeta, connection);
   task.instanceId = instanceId;
   task.sessionId = session.session_id;
+
+  /** Fire a best-effort `session/close` when the task reaches a terminal state. */
+  const closeSessionIfSupported = () => {
+    if (hasSessionCapability(taskAgent?.capabilities ?? null, 'close')) {
+      tauriApi.acpSessionClose(instanceId, session.session_id).catch(() => {}); // Expected: best-effort cleanup
+    }
+  };
 
   // Listen for session updates
   let receivedFirstChunk = false;
@@ -367,6 +400,7 @@ async function startAcpTask(
       import('@/lib/notifications').then(({ notify }) => {
         notify('agent_completion', 'Agent completed', responsePreview);
       }).catch(() => {});
+      closeSessionIfSupported();
       const c = cleanupMap.get(taskId);
       if (c) { c(); cleanupMap.delete(taskId); }
     } else if (eventType) {
@@ -460,6 +494,7 @@ async function startAcpTask(
         as.completeAllActivities(taskId);
         as.updateTaskStatus(taskId, 'error');
       }
+      closeSessionIfSupported();
     })
     .finally(() => {
       const c = cleanupMap.get(taskId);
@@ -790,6 +825,10 @@ export function useAgentTaskOperations(): UseAgentTaskOperationsReturn {
           cancelled = true;
         } catch {
           // Expected: agent session may have already completed or agent crashed
+        }
+        // Best-effort session close so the agent can free resources.
+        if (hasSessionCapability(taskAgent?.capabilities ?? null, 'close')) {
+          tauriApi.acpSessionClose(task.instanceId, task.sessionId).catch(() => {}); // Expected: best-effort cleanup
         }
       }
 

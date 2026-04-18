@@ -29,6 +29,16 @@ vi.mock('@/lib/ai/acp-utils', () => ({
     return str.length > 200 ? str.slice(0, 200) : str;
   }),
   formatAcpToolName: vi.fn((kind?: string, title?: string) => title || kind || 'unknown'),
+  normalizeToolCallContent: vi.fn(() => []),
+  // Real implementation — tests drive this via the `capabilities` option.
+  hasSessionCapability: vi.fn((caps: Record<string, unknown> | null | undefined, key: 'list' | 'fork' | 'resume' | 'close') => {
+    const nested = (caps?.sessionCapabilities ?? caps?.session_capabilities) as Record<string, unknown> | undefined;
+    const value = nested?.[key];
+    return value !== undefined && value !== null;
+  }),
+  hasLoadSessionCapability: vi.fn((caps: Record<string, unknown> | null | undefined) =>
+    caps?.loadSession === true || caps?.load_session === true
+  ),
 }));
 
 vi.mock('@/lib/ai/path-filter', () => ({
@@ -147,6 +157,14 @@ function registerAcpHandlers(options?: {
   authFail?: string;
   promptFail?: string;
   agentExists?: boolean;
+  /** Capabilities payload returned by `acp_agent_spawn` (pass-through JSON). */
+  capabilities?: Record<string, unknown> | null;
+  /** When set, `acp_session_resume` returns this session (session ID comes back as-is). */
+  resumeSessionId?: string;
+  /** When true, `acp_session_close` throws to exercise error-swallow paths. */
+  closeFails?: boolean;
+  /** Session ID returned by `acp_session_new`. Defaults to TEST_SESSION_ID. */
+  newSessionId?: string;
 }): { promptDeferred: Deferred } {
   const promptDeferred = createDeferred();
 
@@ -159,6 +177,7 @@ function registerAcpHandlers(options?: {
       auth_methods: [],
       sandbox_enabled: false,
       network_sandbox_enabled: false,
+      capabilities: options?.capabilities ?? null,
     };
   });
 
@@ -175,10 +194,36 @@ function registerAcpHandlers(options?: {
 
   setMockInvokeHandler('acp_session_new', () => {
     return {
-      session_id: TEST_SESSION_ID,
+      session_id: options?.newSessionId ?? TEST_SESSION_ID,
       current_model: 'claude-4-sonnet',
       available_models: [],
     };
+  });
+
+  // Session restoration primitives — return the requested session as-is when called.
+  setMockInvokeHandler('acp_session_resume', (args) => {
+    const sessionId = options?.resumeSessionId ?? (args?.sessionId as string);
+    return {
+      session_id: sessionId,
+      current_model: 'claude-4-sonnet',
+      available_models: [],
+    };
+  });
+
+  setMockInvokeHandler('acp_session_load', (args) => ({
+    session_id: args?.sessionId as string,
+    current_model: 'claude-4-sonnet',
+    available_models: [],
+  }));
+
+  setMockInvokeHandler('acp_session_list', () => ({
+    sessions: [],
+    next_cursor: null,
+  }));
+
+  setMockInvokeHandler('acp_session_close', () => {
+    if (options?.closeFails) throw new Error('close failed');
+    return undefined;
   });
 
   setMockInvokeHandler('acp_session_prompt', () => {
@@ -1520,6 +1565,210 @@ describe('useAgentTaskOperations', () => {
       const { result } = renderHook(() => useAgentTaskOperations());
       expect(result.current.taskConnection).not.toBeNull();
       expect(result.current.taskConnection?.id).toBe(conn.id);
+    });
+  });
+
+  // ---- ACP session restoration & cleanup ----
+
+  describe('ACP session restoration', () => {
+    /**
+     * Pre-populate chat-store with a conversation carrying a stored `acpSessionId`
+     * so `startAcpTask` can attempt session/resume or session/load.
+     */
+    function seedConversationWithStoredSession(storedSessionId: string): void {
+      useChatStore.setState({
+        conversations: [{
+          id: 'conv-1',
+          title: 'Test conversation',
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          projectPaths: [],
+          segments: [{ projectPaths: [], sessionId: null, startMessageIndex: 0, historyIncluded: false }],
+          activeSegmentIndex: 0,
+          acpSessionId: storedSessionId,
+          activeLeafId: null,
+        }],
+        activeConversationId: 'conv-1',
+      });
+    }
+
+    it('calls acp_session_new on first-time task delegation (no stored session)', async () => {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const mockInvoke = vi.mocked(invoke);
+
+      const conn = makeAgentConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      setupRouting(conn.id);
+      const { promptDeferred } = registerAcpHandlers({
+        capabilities: { sessionCapabilities: { resume: {} } },
+      });
+
+      // No active conversation → storedSessionId is undefined → falls through to session/new.
+      const { result } = renderHook(() => useAgentTaskOperations());
+
+      await act(async () => {
+        await result.current.startTask('Fresh task');
+      });
+
+      const sessionNewCalls = mockInvoke.mock.calls.filter(
+        (call) => call[0] === 'acp_session_new',
+      );
+      const resumeCalls = mockInvoke.mock.calls.filter(
+        (call) => call[0] === 'acp_session_resume',
+      );
+      expect(sessionNewCalls.length).toBe(1);
+      expect(resumeCalls.length).toBe(0);
+
+      promptDeferred.resolve();
+    });
+
+    it('uses session/resume when conversation has stored session + resume capability', async () => {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const mockInvoke = vi.mocked(invoke);
+
+      const conn = makeAgentConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      setupRouting(conn.id);
+      seedConversationWithStoredSession('sess-old');
+
+      const { promptDeferred } = registerAcpHandlers({
+        capabilities: { sessionCapabilities: { resume: {} } },
+        resumeSessionId: 'sess-old',
+      });
+
+      const { result } = renderHook(() => useAgentTaskOperations());
+
+      await act(async () => {
+        await result.current.startTask('Resumed task');
+      });
+
+      const resumeCalls = mockInvoke.mock.calls.filter(
+        (call) => call[0] === 'acp_session_resume',
+      );
+      const sessionNewCalls = mockInvoke.mock.calls.filter(
+        (call) => call[0] === 'acp_session_new',
+      );
+      expect(resumeCalls.length).toBe(1);
+      expect(sessionNewCalls.length).toBe(0);
+      expect((resumeCalls[0][1] as Record<string, unknown>)?.sessionId).toBe('sess-old');
+
+      promptDeferred.resolve();
+    });
+  });
+
+  describe('ACP session close on terminal state', () => {
+    it('fires session/close on agent_turn_complete when close capability advertised', async () => {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const mockInvoke = vi.mocked(invoke);
+
+      const conn = makeAgentConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      setupRouting(conn.id);
+      const { promptDeferred } = registerAcpHandlers({
+        capabilities: { sessionCapabilities: { close: {} } },
+      });
+
+      const { result } = renderHook(() => useAgentTaskOperations());
+
+      await act(async () => {
+        await result.current.startTask('ACP task');
+      });
+
+      await act(async () => {
+        emitMockEvent('acp-session-update', {
+          instanceId: TEST_INSTANCE_ID,
+          sessionId: TEST_SESSION_ID,
+          update: { sessionUpdate: 'agent_turn_complete' },
+        });
+      });
+
+      const closeCalls = mockInvoke.mock.calls.filter(
+        (call) => call[0] === 'acp_session_close',
+      );
+      expect(closeCalls.length).toBe(1);
+      const closeArgs = closeCalls[0][1] as Record<string, unknown>;
+      expect(closeArgs.instanceId).toBe(TEST_INSTANCE_ID);
+      expect(closeArgs.sessionId).toBe(TEST_SESSION_ID);
+
+      promptDeferred.resolve();
+    });
+
+    it('skips session/close when agent does not advertise close capability', async () => {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const mockInvoke = vi.mocked(invoke);
+
+      const conn = makeAgentConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      setupRouting(conn.id);
+      // capabilities payload has NO close key
+      const { promptDeferred } = registerAcpHandlers({
+        capabilities: { sessionCapabilities: {} },
+      });
+
+      const { result } = renderHook(() => useAgentTaskOperations());
+
+      await act(async () => {
+        await result.current.startTask('ACP task');
+      });
+
+      await act(async () => {
+        emitMockEvent('acp-session-update', {
+          instanceId: TEST_INSTANCE_ID,
+          sessionId: TEST_SESSION_ID,
+          update: { sessionUpdate: 'agent_turn_complete' },
+        });
+      });
+
+      const closeCalls = mockInvoke.mock.calls.filter(
+        (call) => call[0] === 'acp_session_close',
+      );
+      expect(closeCalls.length).toBe(0);
+
+      promptDeferred.resolve();
+    });
+
+    it('swallows errors from session/close — task still transitions to done', async () => {
+      const conn = makeAgentConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      setupRouting(conn.id);
+      const { promptDeferred } = registerAcpHandlers({
+        capabilities: { sessionCapabilities: { close: {} } },
+        closeFails: true,
+      });
+
+      const { result } = renderHook(() => useAgentTaskOperations());
+
+      let taskId: string | undefined;
+      await act(async () => {
+        taskId = await result.current.startTask('ACP task');
+      });
+
+      await act(async () => {
+        emitMockEvent('acp-session-update', {
+          instanceId: TEST_INSTANCE_ID,
+          sessionId: TEST_SESSION_ID,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'Finished' },
+          },
+        });
+        emitMockEvent('acp-session-update', {
+          instanceId: TEST_INSTANCE_ID,
+          sessionId: TEST_SESSION_ID,
+          update: { sessionUpdate: 'agent_turn_complete' },
+        });
+        // Let any fire-and-forget promise rejections surface.
+        await new Promise((r) => setTimeout(r, 10));
+      });
+
+      expect(taskId).toBeDefined();
+      const task = result.current.getTask(taskId!);
+      expect(task?.status).toBe('completed');
+      const tasks = useActivityStore.getState().tasks;
+      expect(tasks[0].status).toBe('done');
+
+      promptDeferred.resolve();
     });
   });
 });

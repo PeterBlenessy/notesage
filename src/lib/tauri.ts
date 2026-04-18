@@ -238,6 +238,8 @@ export interface AcpSpawnResult {
   agent_version: string | null;
   auth_methods: { id: string; name: string; description: string | null }[];
   network_sandbox_enabled: boolean;
+  /** Agent-advertised capabilities from the `initialize` response. */
+  capabilities?: unknown;
 }
 
 // ---------------------------------------------------------------------------
