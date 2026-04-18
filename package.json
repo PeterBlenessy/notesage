@@ -24,7 +24,6 @@
     "test:e2e-real-full": "./scripts/run-real-e2e.sh"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "^0.26.0",
     "@codemirror/commands": "^6.10.3",
     "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/lang-css": "^6.3.1",
@@ -59,7 +58,6 @@
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
-    "@tippyjs/react": "^4.2.6",
     "@tiptap/core": "^3.22.3",
     "@tiptap/extension-bubble-menu": "^3.22.3",
     "@tiptap/extension-code-block-lowlight": "^3.22.3",
