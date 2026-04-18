@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useChatStore, selectProjectPaths, selectPendingProjectSwitch } from '@/stores/chat-store';
+import { useChatStore, selectProjectPaths, selectPendingProjectSwitch, getSessionIdForLeaf } from '@/stores/chat-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import type { ChatMessage, ImageAttachment } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
@@ -11,14 +11,37 @@ import { isAcpConnectionError, friendlyAcpError } from '@/lib/ai/errors';
 import { tauriApi } from '@/lib/tauri';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
-import { getAllWorkspacePaths } from '@/lib/ai/acp-utils';
+import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
+import { getAllWorkspacePaths, hasLoadSessionCapability } from '@/lib/ai/acp-utils';
 import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue, setAvailableCommands } from '@/lib/ai/acp-agent-state';
 import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
 
+/**
+ * Resolve the ACP session ID to use for the next prompt on the active conversation.
+ *
+ * Prefers a branch-specific session (attached after `session/fork` on a leaf-branch)
+ * by walking the active leaf's ancestor chain; falls back to the conversation-level
+ * session and finally to the agent's current chatSessionId.
+ */
+function resolveActiveSessionId(fallback: string | null): string | null {
+  const state = useChatStore.getState();
+  const conv = state.conversations.find((c) => c.id === state.activeConversationId);
+  if (!conv) return fallback;
+  return getSessionIdForLeaf(conv, conv.activeLeafId) ?? fallback;
+}
+
 // Re-export for backward compatibility
 export { stopAcpAgent } from '@/lib/ai/acp-agent-state';
 export { truncateDetail, formatAcpToolName } from '@/lib/ai/acp-utils';
+
+/**
+ * In-flight promise for the eager session-creation effect. React 18 strict mode
+ * and store rehydration can each trigger the effect multiple times at startup;
+ * without this lock all firings would race and create redundant ACP sessions.
+ * Subsequent callers await the first one instead of duplicating the work.
+ */
+let eagerSessionPromise: Promise<void> | null = null;
 
 // ---------------------------------------------------------------------------
 // Unresponsiveness detection timer (60s inactivity → recovery)
@@ -85,6 +108,7 @@ interface AcpLifecycleParams {
 export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAcpSystemMessage }: AcpLifecycleParams) {
   const { addMessage, updateMessage, setMessageError, setMessageInterrupted, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, appendTextSegment, appendThinkingSegment, pushSegment, updateSegment, updateOrPushPlanSegment, finalizeSegments, resetAssistantMessage } = useChatStore();
   const selectedProjectPaths = useChatStore(selectProjectPaths);
+  const activeConversationId = useChatStore((s) => s.activeConversationId);
   const cleanupRef = useRef<(() => void) | null>(null);
   const eagerUnlistenRef = useRef<(() => void) | null>(null);
 
@@ -196,53 +220,63 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!effectiveConnection || effectiveConnection.authMethod !== 'agent_managed') return;
-    // Skip if a session already exists or a prompt is in progress
-    if (acpAgent?.chatSessionId) return;
 
-    let cancelled = false;
-    (async () => {
+    // Look up the conversation we should be attached to.
+    const targetConv = useChatStore.getState().conversations.find((c) => c.id === activeConversationId);
+    const targetSessionId = targetConv?.acpSessionId;
+
+    // Skip only when the agent is already attached to the right session. This lets
+    // switching conversations re-trigger restoration for the new conversation's
+    // stored session (otherwise a chat switch leaves the agent on the previous
+    // conversation's session and prompts go to the wrong timeline).
+    if (acpAgent?.chatSessionId && targetSessionId && acpAgent.chatSessionId === targetSessionId) return;
+    // Brand-new conversations have no stored session — keep whatever session the
+    // agent currently has; the prompt-send path creates a fresh one on first message.
+    if (acpAgent?.chatSessionId && !targetSessionId) return;
+    // Skip if another firing of this effect is already doing the work (React strict
+    // mode + hydration state changes can fire this effect multiple times at startup;
+    // without the lock, all firings race to create/resume redundantly).
+    if (eagerSessionPromise) return;
+
+    eagerSessionPromise = (async () => {
       try {
-        const cwd = selectedProjectPaths[0] || '/tmp';
-        const sandboxScope = getAllWorkspacePaths();
-        const instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
-        if (cancelled) return;
-
-        // Only create session if one doesn't exist yet (another send may have raced)
-        if (acpAgent?.chatSessionId) return;
-
-        // Check if the active conversation has a stored session ID for restoration
-        const conv = useChatStore.getState().conversations
-          .find(c => c.id === useChatStore.getState().activeConversationId);
-        const storedSessionId = conv?.acpSessionId;
-        const supportsLoad = acpAgent?.capabilities?.load_session === true;
-
-        let session: AcpSessionResult;
-
-        if (storedSessionId && supportsLoad) {
-          // Try to restore the existing session (preserves agent-side conversation history)
-          try {
-            session = await invoke<AcpSessionResult>('acp_session_load', {
-              instanceId,
-              sessionId: storedSessionId,
-              workingDirectory: cwd,
-            });
-            log.info('ai', `ACP session restored via session/load (${storedSessionId})`);
-          } catch (loadErr) {
-            // session/load failed — fall back to new session
-            log.info('ai', `ACP session/load failed, creating new session: ${String(loadErr)}`);
-            session = await invoke<AcpSessionResult>('acp_session_new', {
-              instanceId,
-              workingDirectory: cwd,
-            });
-          }
-        } else {
-          session = await invoke<AcpSessionResult>('acp_session_new', {
-            instanceId,
-            workingDirectory: cwd,
+        // Wait for the persisted chat-store to rehydrate. The tauri-storage backend
+        // is async, so the initial in-memory `conversations` array is empty — without
+        // this gate, `storedSessionId` reads undefined and we never attempt resume/load.
+        // See `docs/prds/2026-04-17-acp-session-lifecycle-completeness.md` for context.
+        const persistApi = (useChatStore as unknown as { persist?: { hasHydrated?: () => boolean; onFinishHydration?: (cb: () => void) => () => void } }).persist;
+        if (persistApi?.hasHydrated && !persistApi.hasHydrated()) {
+          await new Promise<void>((resolve) => {
+            const unsub = persistApi.onFinishHydration?.(() => { unsub?.(); resolve(); });
+            // Safety net in case hydration has already completed between the check and the subscribe.
+            if (persistApi.hasHydrated?.()) { unsub?.(); resolve(); }
           });
         }
 
-        if (cancelled || !acpAgent) return;
+        const cwd = selectedProjectPaths[0] || '/tmp';
+        const sandboxScope = getAllWorkspacePaths();
+        const instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
+
+        // Re-read the target session after the async hydration/spawn waits — the
+        // active conversation may have changed while we were waiting.
+        const conv = useChatStore.getState().conversations
+          .find(c => c.id === useChatStore.getState().activeConversationId);
+        const storedSessionId = conv?.acpSessionId;
+
+        // If the agent is already attached to the right session, nothing to do.
+        if (acpAgent?.chatSessionId && storedSessionId && acpAgent.chatSessionId === storedSessionId) return;
+        // If the conversation has no stored session and the agent has any current session,
+        // keep it — new chats shouldn't disturb the agent's current session.
+        if (acpAgent?.chatSessionId && !storedSessionId) return;
+
+        const session: AcpSessionResult = await restoreOrCreateAcpSession({
+          instanceId,
+          cwd,
+          storedSessionId,
+          capabilities: acpAgent?.capabilities,
+        });
+
+        if (!acpAgent) return;
 
         acpAgent.chatSessionId = session.session_id;
         useChatStore.getState().setSegmentSessionId(session.session_id);
@@ -284,9 +318,6 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             if (typeof configId === 'string' && typeof value === 'string') updateConfigOptionValue(configId, value);
           }
         });
-        // Clean up eager listener when effect is cancelled
-        if (cancelled) { eagerUnlisten(); return; }
-
         // Store unlisten so cleanup can call it
         const prevEagerUnlisten = eagerUnlistenRef.current;
         eagerUnlistenRef.current = eagerUnlisten;
@@ -297,8 +328,10 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         setSessionModes(session.modes ?? null);
         setSessionConfigOptions(session.config_options ?? null);
 
-        // Apply user's configured defaults (only for new sessions, not restored ones)
-        if (!storedSessionId || !supportsLoad) {
+        // Apply user's configured defaults only for fresh sessions. A restoration hit
+        // returns the agent's existing mode/config — don't overwrite it.
+        const restored = session.session_id === storedSessionId;
+        if (!restored) {
           const defaults = effectiveConnection.acpDefaults;
           if (defaults?.modeId && session.modes && session.session_id) {
             // Optimistically update local state (listeners aren't active yet for eager session)
@@ -316,18 +349,20 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           }
         }
       } catch (err) {
-        if (!cancelled) {
-          log.debug('ai', `ACP eager session creation failed (non-fatal): ${String(err)}`);
-        }
+        log.debug('ai', `ACP eager session creation failed (non-fatal): ${String(err)}`);
       }
-    })();
+    })().finally(() => {
+      eagerSessionPromise = null;
+    });
 
     return () => {
-      cancelled = true;
+      // Tear down the init-time session listener. Safe to call on strict-mode
+      // re-mount cleanups too: the ref is re-populated when the first firing
+      // finishes attaching the listener (only one firing runs thanks to the lock).
       eagerUnlistenRef.current?.();
       eagerUnlistenRef.current = null;
     };
-  }, [effectiveConnection, selectedProjectPaths]);
+  }, [effectiveConnection, selectedProjectPaths, activeConversationId]);
 
   /** Keep waiting for the agent — dismiss the banner and restart the timer. */
   const keepWaiting = useCallback(() => {
@@ -612,7 +647,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             : null;
           await invoke('acp_session_prompt', {
             instanceId,
-            sessionId: acpAgent!.chatSessionId,
+            sessionId: resolveActiveSessionId(acpAgent!.chatSessionId),
             content: promptContent,
             images: acpImages,
           });
@@ -723,7 +758,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       // Try to reconnect with session/load (preserves agent-side conversation context)
       let instanceId: string;
       let isNewSession = false;
-      const supportsLoad = acpAgent?.capabilities?.load_session === true;
+      const supportsLoad = hasLoadSessionCapability(acpAgent?.capabilities);
 
       if (supportsLoad && sessionId) {
         try {
@@ -812,7 +847,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           : null;
         await invoke('acp_session_prompt', {
           instanceId,
-          sessionId: acpAgent!.chatSessionId,
+          sessionId: resolveActiveSessionId(acpAgent!.chatSessionId),
           content: promptContent,
           images: retryImages,
         });

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AIProviderType } from './ai/types';
 import type { BackendTypographyPresets } from './typography-presets';
+import type { AcpListResult, AcpSessionResult } from './ai/acp-utils';
 
 export interface FileEntry {
   name: string;
@@ -237,10 +238,6 @@ export interface AcpSpawnResult {
   agent_version: string | null;
   auth_methods: { id: string; name: string; description: string | null }[];
   network_sandbox_enabled: boolean;
-}
-
-export interface AcpSessionResult {
-  session_id: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -703,6 +700,30 @@ export const tauriApi = {
 
   async acpSessionNew(instanceId: string, workingDirectory: string): Promise<AcpSessionResult> {
     return await invoke<AcpSessionResult>("acp_session_new", { instanceId, workingDirectory });
+  },
+
+  async acpSessionLoad(instanceId: string, sessionId: string, workingDirectory: string): Promise<AcpSessionResult> {
+    return await invoke<AcpSessionResult>("acp_session_load", { instanceId, sessionId, workingDirectory });
+  },
+
+  async acpSessionClose(instanceId: string, sessionId: string): Promise<void> {
+    await invoke("acp_session_close", { instanceId, sessionId });
+  },
+
+  async acpSessionList(instanceId: string, cwd?: string, cursor?: string): Promise<AcpListResult> {
+    return await invoke<AcpListResult>("acp_session_list", {
+      instanceId,
+      cwd: cwd ?? null,
+      cursor: cursor ?? null,
+    });
+  },
+
+  async acpSessionResume(instanceId: string, sessionId: string, workingDirectory: string): Promise<AcpSessionResult> {
+    return await invoke<AcpSessionResult>("acp_session_resume", { instanceId, sessionId, workingDirectory });
+  },
+
+  async acpSessionFork(instanceId: string, sessionId: string, workingDirectory: string): Promise<AcpSessionResult> {
+    return await invoke<AcpSessionResult>("acp_session_fork", { instanceId, sessionId, workingDirectory });
   },
 
   async acpSessionPrompt(instanceId: string, sessionId: string, content: string, images?: Array<{ data: string; mime_type: string }>): Promise<void> {

@@ -19,11 +19,54 @@ export interface AcpSpawnResult {
   capabilities: AcpAgentCapabilities | null;
 }
 
+/**
+ * Session sub-capabilities from ACP `AgentCapabilities.sessionCapabilities`.
+ * The ACP schema encodes each as `Option<Session*Capabilities>` — `null`/missing
+ * means unsupported, a non-null object means supported (we don't use the nested fields yet).
+ */
+export interface AcpSessionCapabilities {
+  list?: unknown;
+  fork?: unknown;
+  resume?: unknown;
+  close?: unknown;
+}
+
+/**
+ * Agent capabilities as delivered over the wire. ACP schema uses
+ * `#[serde(rename_all = "camelCase")]`, so JSON keys are camelCase.
+ * We accept snake_case aliases as a safety net for older/custom agents
+ * that may not follow the spec exactly.
+ */
 export interface AcpAgentCapabilities {
+  loadSession?: boolean;
+  /** @deprecated snake_case alias — prefer `loadSession`. */
   load_session?: boolean;
-  prompt_capabilities?: { image?: boolean };
-  session_capabilities?: Record<string, unknown>;
+  promptCapabilities?: { image?: boolean };
+  sessionCapabilities?: AcpSessionCapabilities;
+  /** @deprecated snake_case alias — prefer `sessionCapabilities`. */
+  session_capabilities?: AcpSessionCapabilities;
   [key: string]: unknown;
+}
+
+/** True when the agent advertises `loadSession` (tolerant of snake_case). */
+export function hasLoadSessionCapability(
+  caps: AcpAgentCapabilities | null | undefined,
+): boolean {
+  return caps?.loadSession === true || caps?.load_session === true;
+}
+
+/**
+ * Returns true when the agent advertises the given session sub-capability.
+ * ACP sends each capability as a nullable object — any non-null value counts as supported.
+ * Tolerant of snake_case payloads.
+ */
+export function hasSessionCapability(
+  caps: AcpAgentCapabilities | null | undefined,
+  key: 'list' | 'fork' | 'resume' | 'close',
+): boolean {
+  const nested = caps?.sessionCapabilities ?? caps?.session_capabilities;
+  const value = nested?.[key];
+  return value !== undefined && value !== null;
 }
 
 export interface AcpModelInfo {
@@ -55,6 +98,18 @@ export interface AcpSessionResult {
   available_models: AcpModelInfo[];
   modes: AcpSessionModeState | null;
   config_options: AcpSessionConfigOption[] | null;
+}
+
+/** One session entry returned by `session/list`. */
+export interface AcpSessionInfo {
+  session_id: string;
+  cwd?: string;
+}
+
+/** Response from `session/list` — sessions plus an optional pagination cursor. */
+export interface AcpListResult {
+  sessions: AcpSessionInfo[];
+  next_cursor: string | null;
 }
 
 /** Single content block as sent on `agent_message_chunk` / `agent_thought_chunk`. */

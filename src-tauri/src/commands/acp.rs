@@ -73,6 +73,18 @@ pub struct SessionResult {
     pub config_options: Option<serde_json::Value>,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AcpSessionInfo {
+    pub session_id: String,
+    pub cwd: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct AcpListResult {
+    pub sessions: Vec<AcpSessionInfo>,
+    pub next_cursor: Option<String>,
+}
+
 // ---------------------------------------------------------------------------
 // Managed state
 // ---------------------------------------------------------------------------
@@ -230,6 +242,25 @@ enum AgentCmd {
         session_id: String,
         model_id: String,
         reply: oneshot::Sender<Result<(), String>>,
+    },
+    CloseSession {
+        session_id: String,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    ListSessions {
+        cwd: Option<String>,
+        cursor: Option<String>,
+        reply: oneshot::Sender<Result<AcpListResult, String>>,
+    },
+    ResumeSession {
+        session_id: String,
+        working_directory: String,
+        reply: oneshot::Sender<Result<SessionResult, String>>,
+    },
+    ForkSession {
+        session_id: String,
+        working_directory: String,
+        reply: oneshot::Sender<Result<SessionResult, String>>,
     },
     Stop {
         reply: oneshot::Sender<Result<(), String>>,
@@ -788,6 +819,115 @@ fn run_agent_thread(
                     match conn.set_session_model(req).await {
                         Ok(_) => { let _ = reply.send(Ok(())); }
                         Err(e) => { let _ = reply.send(Err(format!("set_model failed: {}", e))); }
+                    }
+                }
+                AgentCmd::CloseSession {
+                    session_id: sid,
+                    reply,
+                } => {
+                    let req = CloseSessionRequest::new(SessionId::new(sid));
+                    match conn.close_session(req).await {
+                        Ok(_) => { let _ = reply.send(Ok(())); }
+                        Err(e) => { let _ = reply.send(Err(format!("close_session failed: {}", e))); }
+                    }
+                }
+                AgentCmd::ListSessions { cwd, cursor, reply } => {
+                    let mut req = ListSessionsRequest::new();
+                    if let Some(c) = cwd { req = req.cwd(Some(PathBuf::from(c))); }
+                    if let Some(c) = cursor { req = req.cursor(Some(c)); }
+                    match conn.list_sessions(req).await {
+                        Ok(resp) => {
+                            let sessions: Vec<crate::commands::acp::AcpSessionInfo> =
+                                resp.sessions.iter().map(|s| crate::commands::acp::AcpSessionInfo {
+                                    session_id: s.session_id.to_string(),
+                                    cwd: Some(s.cwd.to_string_lossy().into_owned()),
+                                }).collect();
+                            let _ = reply.send(Ok(crate::commands::acp::AcpListResult {
+                                sessions,
+                                next_cursor: resp.next_cursor.clone(),
+                            }));
+                        }
+                        Err(e) => { let _ = reply.send(Err(format!("list_sessions failed: {}", e))); }
+                    }
+                }
+                AgentCmd::ResumeSession {
+                    session_id: sid,
+                    working_directory: cwd,
+                    reply,
+                } => {
+                    let req = ResumeSessionRequest::new(
+                        SessionId::new(sid.clone()),
+                        PathBuf::from(cwd),
+                    );
+                    match conn.resume_session(req).await {
+                        Ok(resp) => {
+                            let mut current_model = None;
+                            let mut available_models = Vec::new();
+                            if let Some(ref model_state) = resp.models {
+                                current_model = Some(model_state.current_model_id.to_string());
+                                available_models = model_state
+                                    .available_models
+                                    .iter()
+                                    .map(|m| AgentModelInfo {
+                                        model_id: m.model_id.to_string(),
+                                        name: m.name.clone(),
+                                        description: m.description.clone(),
+                                    })
+                                    .collect();
+                            }
+                            let modes = resp.modes.as_ref()
+                                .and_then(|m| serde_json::to_value(m).ok());
+                            let config_options = resp.config_options.as_ref()
+                                .and_then(|c| serde_json::to_value(c).ok());
+                            let _ = reply.send(Ok(SessionResult {
+                                session_id: sid,
+                                current_model,
+                                available_models,
+                                modes,
+                                config_options,
+                            }));
+                        }
+                        Err(e) => { let _ = reply.send(Err(format!("resume_session failed: {}", e))); }
+                    }
+                }
+                AgentCmd::ForkSession {
+                    session_id: sid,
+                    working_directory: cwd,
+                    reply,
+                } => {
+                    let req = ForkSessionRequest::new(
+                        SessionId::new(sid),
+                        PathBuf::from(cwd),
+                    );
+                    match conn.fork_session(req).await {
+                        Ok(resp) => {
+                            let mut current_model = None;
+                            let mut available_models = Vec::new();
+                            if let Some(ref model_state) = resp.models {
+                                current_model = Some(model_state.current_model_id.to_string());
+                                available_models = model_state
+                                    .available_models
+                                    .iter()
+                                    .map(|m| AgentModelInfo {
+                                        model_id: m.model_id.to_string(),
+                                        name: m.name.clone(),
+                                        description: m.description.clone(),
+                                    })
+                                    .collect();
+                            }
+                            let modes = resp.modes.as_ref()
+                                .and_then(|m| serde_json::to_value(m).ok());
+                            let config_options = resp.config_options.as_ref()
+                                .and_then(|c| serde_json::to_value(c).ok());
+                            let _ = reply.send(Ok(SessionResult {
+                                session_id: resp.session_id.to_string(),
+                                current_model,
+                                available_models,
+                                modes,
+                                config_options,
+                            }));
+                        }
+                        Err(e) => { let _ = reply.send(Err(format!("fork_session failed: {}", e))); }
                     }
                 }
                 AgentCmd::Stop { reply } => {
@@ -1433,6 +1573,129 @@ pub async fn acp_session_set_model(
     reply_rx
         .await
         .map_err(|_| "Agent thread did not respond to set_model".to_string())?
+}
+
+/// Close an ACP session. Best-effort — agents may not support this.
+/// Capability-gated on `session_capabilities.close` from the frontend.
+#[tauri::command]
+pub async fn acp_session_close(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+) -> Result<(), String> {
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    };
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+    cmd_tx
+        .send(AgentCmd::CloseSession { session_id, reply: reply_tx })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to close_session".to_string())?
+}
+
+/// List the agent's sessions, optionally filtered by `cwd` and paginated via `cursor`.
+/// Capability-gated on `session_capabilities.list` from the frontend.
+#[tauri::command]
+pub async fn acp_session_list(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    cwd: Option<String>,
+    cursor: Option<String>,
+) -> Result<AcpListResult, String> {
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    };
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+    cmd_tx
+        .send(AgentCmd::ListSessions { cwd, cursor, reply: reply_tx })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to list_sessions".to_string())?
+}
+
+/// Resume an existing ACP session. Lightweight alternative to `session/load` when the
+/// agent still has the session in memory. Capability-gated on `session_capabilities.resume`.
+#[tauri::command]
+pub async fn acp_session_resume(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+    working_directory: String,
+) -> Result<SessionResult, String> {
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    };
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+    cmd_tx
+        .send(AgentCmd::ResumeSession {
+            session_id,
+            working_directory,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    let result = reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to resume_session".to_string())??;
+
+    Ok(result)
+}
+
+/// Fork an existing ACP session, returning a new session ID that inherits the agent's state.
+/// Capability-gated on `session_capabilities.fork` from the frontend.
+#[tauri::command]
+pub async fn acp_session_fork(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+    working_directory: String,
+) -> Result<SessionResult, String> {
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    };
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+    cmd_tx
+        .send(AgentCmd::ForkSession {
+            session_id,
+            working_directory,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    let result = reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to fork_session".to_string())??;
+
+    Ok(result)
 }
 
 /// Respond to a permission request from an ACP agent.

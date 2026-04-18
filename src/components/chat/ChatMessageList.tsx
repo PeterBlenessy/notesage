@@ -5,8 +5,11 @@ import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import { log } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
-import { useChatStore, selectMessages, selectAllMessages, selectPendingProjectSwitch, selectPendingAgentSwitch, selectSegments } from '@/stores/chat-store';
+import { useChatStore, selectMessages, selectAllMessages, selectPendingProjectSwitch, selectPendingAgentSwitch, selectSegments, getSessionIdForLeaf } from '@/stores/chat-store';
 import { getChildren } from '@/lib/chat-tree';
+import { acpAgent } from '@/lib/ai/acp-agent-state';
+import { hasSessionCapability } from '@/lib/ai/acp-utils';
+import { tauriApi } from '@/lib/tauri';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
@@ -179,8 +182,31 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
     if (prevUser) onResend?.(prevUser);
   }, [onResend]);
 
-  const handleBranch = useCallback((timestamp: number) => {
-    branchFromMessage(timestamp);
+  const handleBranch = useCallback(async (timestamp: number) => {
+    // Determine if this is a leaf branch (branching from the current thread's end) and
+    // whether the agent supports session/fork. Leaf branches with fork capability get an
+    // isolated agent-side session; everything else continues to share conv.acpSessionId.
+    const state = useChatStore.getState();
+    const conv = state.conversations.find((c) => c.id === state.activeConversationId);
+    const branchPoint = conv?.messages.find((m) => m.timestamp === timestamp);
+    const isLeafBranch = !!(conv && branchPoint?.id && branchPoint.id === conv.activeLeafId);
+
+    let forkedSessionId: string | undefined;
+    if (isLeafBranch && acpAgent?.capabilities && hasSessionCapability(acpAgent.capabilities, 'fork')) {
+      const currentSessionId = conv ? getSessionIdForLeaf(conv, conv.activeLeafId) : undefined;
+      if (currentSessionId && acpAgent.instanceId) {
+        const cwd = selectedProjectPaths[0] || '/tmp';
+        try {
+          const result = await tauriApi.acpSessionFork(acpAgent.instanceId, currentSessionId, cwd);
+          forkedSessionId = result.session_id;
+        } catch (err) {
+          log.info('ai', `ACP session/fork failed (falling back to shared session): ${String(err)}`);
+          toast('Fork unavailable — branch will share the original session.');
+        }
+      }
+    }
+
+    branchFromMessage(timestamp, forkedSessionId);
     toast('Branched conversation', {
       description: 'Type a new message to continue on this branch.',
     });
@@ -190,7 +216,7 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
       const textarea = document.querySelector<HTMLTextAreaElement>('.chat-input-textarea');
       textarea?.focus();
     });
-  }, [branchFromMessage, scrollToEnd]);
+  }, [branchFromMessage, scrollToEnd, selectedProjectPaths]);
 
   return (
     <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 py-4">

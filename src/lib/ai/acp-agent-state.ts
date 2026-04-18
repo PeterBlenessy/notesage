@@ -414,7 +414,7 @@ export async function probeAcpCapabilities(connection: Connection): Promise<AcpD
         currentValue: opt.currentValue,
         options: opt.options,
       })),
-      supportsLoadSession: result.capabilities?.load_session ?? false,
+      supportsLoadSession: result.capabilities?.loadSession ?? result.capabilities?.load_session ?? false,
       supportsImages: result.supports_images,
       agentVersion: result.agent_version ?? undefined,
       lastProbed: Date.now(),

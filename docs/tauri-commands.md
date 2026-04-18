@@ -422,6 +422,95 @@ listen<{ text: string }>('copilot-chat-chunk', (event) => {
 await tauriApi.copilotLspConversationDestroy(conversationId);
 ```
 
+## ACP Session Lifecycle
+
+Located in `src-tauri/src/commands/acp.rs`. All four commands forward directly to the ACP `ClientSideConnection`; capability gating (`sessionCapabilities.{list, fork, resume, close}`) is done on the frontend — the backend is a passthrough.
+
+### acp_session_close
+
+Close an existing ACP session. Best-effort — agents without `session_capabilities.close` will error; the frontend swallows errors since closing is cleanup.
+
+```rust
+#[tauri::command]
+pub async fn acp_session_close(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+) -> Result<(), String>
+```
+
+### acp_session_list
+
+List sessions owned by the agent. Optional `cwd` filter and pagination cursor.
+
+```rust
+#[tauri::command]
+pub async fn acp_session_list(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    cwd: Option<String>,
+    cursor: Option<String>,
+) -> Result<AcpListResult, String>
+
+pub struct AcpSessionInfo {
+    pub session_id: String,
+    pub cwd: Option<String>,
+}
+
+pub struct AcpListResult {
+    pub sessions: Vec<AcpSessionInfo>,
+    pub next_cursor: Option<String>,
+}
+```
+
+### acp_session_resume
+
+Resume a live agent-side session. Lightweight alternative to `session/load` when the agent still has the session in memory.
+
+```rust
+#[tauri::command]
+pub async fn acp_session_resume(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+    working_directory: String,
+) -> Result<SessionResult, String>
+```
+
+### acp_session_fork
+
+Fork an existing session, returning a new session ID that inherits the current agent state.
+
+```rust
+#[tauri::command]
+pub async fn acp_session_fork(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+    working_directory: String,
+) -> Result<SessionResult, String>
+```
+
+**Frontend usage:**
+
+```typescript
+// Restoration preference chain lives in `restoreOrCreateAcpSession`:
+//   resume → load → list (sanity check) → new
+const session = await restoreOrCreateAcpSession({
+  instanceId,
+  cwd,
+  storedSessionId: conv.acpSessionId,
+  capabilities: acpAgent.capabilities,
+});
+
+// Fork a branch from the current leaf (only activates when the agent has fork capability)
+const forked = await tauriApi.acpSessionFork(instanceId, currentSessionId, cwd);
+chatStore.branchFromMessage(messageTimestamp, forked.session_id);
+
+// Close on conversation delete (best-effort, fire-and-forget)
+await tauriApi.acpSessionClose(instanceId, sessionId);
+```
+
 ## Credential Operations
 
 Located in `src-tauri/src/commands/credentials.rs`

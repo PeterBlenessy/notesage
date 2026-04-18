@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { formatToolLabel, parseRawInput, normalizeToolCallContent } from '../acp-utils';
+import {
+  formatToolLabel,
+  parseRawInput,
+  normalizeToolCallContent,
+  hasSessionCapability,
+  type AcpAgentCapabilities,
+} from '../acp-utils';
 
 describe('formatToolLabel', () => {
   it('formats read_file with path basename', () => {
@@ -297,5 +303,48 @@ describe('normalizeToolCallContent', () => {
       { type: 'content', content: { type: 'text', text: 'after' } },
     ]);
     expect(result.map((r) => r.type)).toEqual(['text', 'diff', 'text']);
+  });
+});
+
+describe('hasSessionCapability', () => {
+  const withCaps = (caps: AcpAgentCapabilities['sessionCapabilities']): AcpAgentCapabilities => ({
+    sessionCapabilities: caps,
+  });
+  const withSnakeCaps = (caps: AcpAgentCapabilities['session_capabilities']): AcpAgentCapabilities => ({
+    session_capabilities: caps,
+  });
+
+  it('returns false when capabilities are null/undefined', () => {
+    expect(hasSessionCapability(null, 'list')).toBe(false);
+    expect(hasSessionCapability(undefined, 'fork')).toBe(false);
+    expect(hasSessionCapability({}, 'resume')).toBe(false);
+  });
+
+  it('returns false when the sessionCapabilities block is absent', () => {
+    const caps: AcpAgentCapabilities = { loadSession: true };
+    expect(hasSessionCapability(caps, 'close')).toBe(false);
+  });
+
+  it('accepts snake_case payload as a fallback', () => {
+    expect(hasSessionCapability(withSnakeCaps({ list: {} }), 'list')).toBe(true);
+  });
+
+  it('returns false when the sub-capability is null', () => {
+    expect(hasSessionCapability(withCaps({ list: null }), 'list')).toBe(false);
+  });
+
+  it('returns false when the sub-capability is missing', () => {
+    expect(hasSessionCapability(withCaps({ fork: {} }), 'close')).toBe(false);
+  });
+
+  it('returns true for any non-null object value', () => {
+    expect(hasSessionCapability(withCaps({ list: {} }), 'list')).toBe(true);
+    expect(hasSessionCapability(withCaps({ fork: { someField: true } }), 'fork')).toBe(true);
+    expect(hasSessionCapability(withCaps({ resume: {} }), 'resume')).toBe(true);
+    expect(hasSessionCapability(withCaps({ close: {} }), 'close')).toBe(true);
+  });
+
+  it('treats truthy primitives as supported (agents may serialize capability as bool)', () => {
+    expect(hasSessionCapability(withCaps({ list: true as unknown }), 'list')).toBe(true);
   });
 });

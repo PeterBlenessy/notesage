@@ -54,7 +54,9 @@ interface AIProvider {
 - **Capability probing**: At connection registration, lightweight spawn → session → read → stop cycle discovers available modes, config options, and capabilities. Stored on connection, auto-refreshed when stale (>24h).
 - **Connection defaults**: Default mode and thinking effort configurable in connection settings dialog, applied automatically to new sessions.
 - **Eager session creation**: Session created when chat panel opens (before first message), so mode picker and config options are immediately available.
-- **Session restoration**: `acpSessionId` stored per conversation. Reopening an existing chat attempts `session/load` (preserves agent-side history), falls back to `session/new`.
+- **Session restoration**: `acpSessionId` stored per conversation. Reopening an existing chat runs a capability-gated preference chain via `restoreOrCreateAcpSession`: `session/resume` (live takeover) → `session/load` (replay) → `session/list` (sanity check) → `session/new` (fresh). Each step is optional based on agent capabilities.
+- **Session forking on branch**: Branching from the current leaf with an agent that advertises `session.fork` calls `session/fork` to give the new branch its own isolated agent-side session. Branches from historical messages share the parent session (ACP has no primitive to rewind agent state). Per-branch session IDs live on `Conversation.branchSessions`; the resolver `getSessionIdForLeaf` walks the active leaf's ancestors at prompt-send time.
+- **Session close on delete**: Deleting a conversation fires best-effort `session/close` for its shared session and any per-branch sessions, so agents can free resources. Skipped when the agent doesn't advertise `session.close`.
 - **Usage tracking**: `usage_update` events parsed and displayed as token count in chat footer with cost tooltip.
 - **Plan display**: `plan` session updates rendered as collapsible `PlanSegment` cards with status icons and priority dots.
 - **Agent slash commands**: `available_commands_update` events populate the `/` command menu alongside Notesage skills.

@@ -12,6 +12,27 @@ import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
 import { getThread, getLeaves } from '@/lib/chat-tree';
 import type { ChatMessage } from '@/lib/ai/types';
+import { acpAgent } from '@/lib/ai/acp-agent-state';
+import { hasSessionCapability } from '@/lib/ai/acp-utils';
+
+/**
+ * Fire best-effort `session/close` for every ACP session owned by the conversation
+ * (the shared `acpSessionId` plus any per-branch sessions from `session/fork`) so
+ * the agent can release resources. Errors are swallowed — the conversation is being
+ * deleted regardless. Skipped when the agent doesn't advertise `session.close`.
+ */
+function closeAgentSessionsAndDelete(conv: Conversation): void {
+  if (!acpAgent || !hasSessionCapability(acpAgent.capabilities, 'close')) return;
+  const instanceId = acpAgent.instanceId;
+  const sessionIds = new Set<string>();
+  if (conv.acpSessionId) sessionIds.add(conv.acpSessionId);
+  for (const id of Object.values(conv.branchSessions ?? {})) {
+    if (id) sessionIds.add(id);
+  }
+  for (const sessionId of sessionIds) {
+    tauriApi.acpSessionClose(instanceId, sessionId).catch(() => {}); // Expected: best-effort, agent may reject or be gone
+  }
+}
 
 interface ChatHistoryViewProps {
   onSelectConversation: (id: string) => void;
@@ -234,7 +255,7 @@ export const ChatHistoryView = memo(function ChatHistoryView({ onSelectConversat
                   </DropdownMenu>
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
+                    onClick={(e) => { e.stopPropagation(); closeAgentSessionsAndDelete(conv); deleteConversation(conv.id); }}
                     className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors active:opacity-75"
                     title="Delete conversation"
                   >

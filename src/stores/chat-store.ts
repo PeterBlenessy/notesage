@@ -46,6 +46,19 @@ export interface Conversation {
   sourceDocumentId?: string;
   /** ACP session ID for session restoration via session/load */
   acpSessionId?: string;
+  /**
+   * Per-branch ACP session IDs, keyed by the new branch's first message ID (assigned when
+   * the first message after branching is added). Populated only when `session/fork` was
+   * used on a leaf-branch. Historical branches and pre-migration conversations continue
+   * to share `acpSessionId`.
+   */
+  branchSessions?: Record<string, string>;
+  /**
+   * Staged fork session — waits for the next `addMessage` whose parentId matches to be
+   * attached to `branchSessions`. Cleared after consumption or on any other mutation that
+   * invalidates the pending fork (e.g. switching branches).
+   */
+  pendingBranchSession?: { parentId: string; sessionId: string } | null;
   /** ID of the leaf message in the currently active branch (null = no messages yet) */
   activeLeafId: string | null;
 }
@@ -138,7 +151,12 @@ interface ChatStore {
   // ---------------------------------------------------------------------------
 
   /** Create a branch starting after the message with the given timestamp */
-  branchFromMessage: (messageTimestamp: number) => void;
+  /**
+   * Branch from a specific message. When `forkedSessionId` is provided (caller has
+   * already obtained a fresh ACP session via `session/fork`), stage it as
+   * `pendingBranchSession` so the next addMessage attaches the session to the new branch.
+   */
+  branchFromMessage: (messageTimestamp: number, forkedSessionId?: string) => void;
   /** Switch to a different branch by setting the active leaf */
   switchBranch: (leafId: string) => void;
   /** Delete a branch by its leaf ID (removes the first diverging message and all its descendants) */
@@ -301,7 +319,23 @@ export const useChatStore = create<ChatStore>()(
             if (messages.length > MAX_MESSAGES_PER_CONVERSATION) {
               messages = messages.slice(messages.length - MAX_MESSAGES_PER_CONVERSATION);
             }
-            return { ...c, messages, updatedAt: nextUpdatedAt(), title, activeLeafId: msgId };
+            // If there's a staged fork session waiting for this parent, attach it
+            // to the new message and clear the pending flag.
+            let branchSessions = c.branchSessions;
+            let pendingBranchSession = c.pendingBranchSession;
+            if (pendingBranchSession && pendingBranchSession.parentId === parentId) {
+              branchSessions = { ...(c.branchSessions ?? {}), [msgId]: pendingBranchSession.sessionId };
+              pendingBranchSession = null;
+            }
+            return {
+              ...c,
+              messages,
+              updatedAt: nextUpdatedAt(),
+              title,
+              activeLeafId: msgId,
+              branchSessions,
+              pendingBranchSession,
+            };
           });
           return { conversations: pruneConversations(conversations, activeId, MAX_CONVERSATIONS) };
         });
@@ -610,12 +644,19 @@ export const useChatStore = create<ChatStore>()(
 
       // ----- Branching -----
 
-      branchFromMessage: (messageTimestamp) =>
+      branchFromMessage: (messageTimestamp, forkedSessionId) =>
         set((state) => updateActiveConv(state, (c) => {
           const branchPoint = c.messages.find((m) => m.timestamp === messageTimestamp);
           if (!branchPoint?.id) return c;
-          // Set activeLeafId to the branch point — the next addMessage will chain from here
-          return { ...c, activeLeafId: branchPoint.id };
+          const next: Partial<Conversation> = { activeLeafId: branchPoint.id };
+          if (forkedSessionId) {
+            // Stage the fork session; it will be attached to the next new message's ID.
+            next.pendingBranchSession = { parentId: branchPoint.id, sessionId: forkedSessionId };
+          } else {
+            // Clear any stale pending fork from an earlier abandoned branch click.
+            next.pendingBranchSession = null;
+          }
+          return { ...c, ...next };
         })),
 
       switchBranch: (leafId) =>
@@ -897,6 +938,32 @@ export function selectAllMessages(state: Pick<ChatStore, 'conversations' | 'acti
 export function selectActiveLeafId(state: Pick<ChatStore, 'conversations' | 'activeConversationId'>): string | null {
   if (!state.activeConversationId) return null;
   return state.conversations.find((c) => c.id === state.activeConversationId)?.activeLeafId ?? null;
+}
+
+/**
+ * Resolve the ACP session ID to use for a given branch leaf.
+ *
+ * Walks the leaf's ancestor chain and returns the first branch-specific session
+ * found in `branchSessions`. Falls back to the conversation-level `acpSessionId`
+ * when no branch match is found — preserves pre-fork behavior for existing chats
+ * and for historical (non-leaf) branching.
+ */
+export function getSessionIdForLeaf(conv: Conversation, leafId: string | null): string | undefined {
+  if (!conv.branchSessions || Object.keys(conv.branchSessions).length === 0) {
+    return conv.acpSessionId;
+  }
+  if (leafId) {
+    // Check direct hit first (cheap)
+    const direct = conv.branchSessions[leafId];
+    if (direct) return direct;
+    // Walk up the thread and return the first ancestor with a branch session.
+    const thread = getThread(conv.messages, leafId);
+    for (let i = thread.length - 1; i >= 0; i--) {
+      const id = thread[i].id;
+      if (id && conv.branchSessions[id]) return conv.branchSessions[id];
+    }
+  }
+  return conv.acpSessionId;
 }
 
 /** Project paths from the active conversation. Use: `useChatStore(selectProjectPaths)` */
