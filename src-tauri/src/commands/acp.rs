@@ -42,11 +42,58 @@ pub struct SpawnResult {
     pub capabilities: Option<serde_json::Value>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct AuthMethodInfo {
-    pub id: String,
+/// Variant-aware auth method descriptor forwarded to the frontend.
+///
+/// Mirrors ACP's `AuthMethod` enum (see `agent-client-protocol-schema::agent::AuthMethod`)
+/// with the `unstable_auth_methods` feature enabled. The `EnvVar` variant carries the
+/// list of environment variables the client must collect from the user, plus an optional
+/// link to the credentials page.
+///
+/// Serialized as an externally-tagged discriminated union via `#[serde(tag = "type")]`.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AuthMethodInfo {
+    /// Agent handles authentication internally (OAuth, keychain, etc.).
+    /// This is the default when ACP doesn't specify a `type`.
+    Agent {
+        id: String,
+        name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+    },
+    /// User supplies env var values; client passes them via environment at spawn time.
+    EnvVar {
+        id: String,
+        name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+        vars: Vec<AuthEnvVar>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        link: Option<String>,
+    },
+}
+
+impl AuthMethodInfo {
+    pub fn id(&self) -> &str {
+        match self {
+            AuthMethodInfo::Agent { id, .. } => id,
+            AuthMethodInfo::EnvVar { id, .. } => id,
+        }
+    }
+}
+
+/// Environment variable descriptor for `AuthMethodInfo::EnvVar`.
+///
+/// Mirrors ACP's `AuthEnvVar`. `secret` defaults to true (password-style input);
+/// `optional` defaults to false.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthEnvVar {
     pub name: String,
-    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub secret: bool,
+    pub optional: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -483,8 +530,10 @@ fn run_agent_thread(
             Implementation::new("Notesage", env!("CARGO_PKG_VERSION")),
         );
 
-        // Store auth methods from init response for later use
-        let auth_method_ids: Vec<(String, String, Option<String>)>;
+        // Store auth methods from init response for later use — variant-aware so the
+        // authenticate command can look up EnvVar vs Agent methods without a second
+        // round-trip to the agent.
+        let auth_methods_info: Vec<AuthMethodInfo>;
 
         match conn.initialize(init_req).await {
             Ok(resp) => {
@@ -495,15 +544,46 @@ fn run_agent_thread(
                     resp.agent_info.as_ref().map(|i| format!("{} {}", i.name, i.version)),
                     resp.auth_methods.iter().map(|m| format!("{}({})", m.id(), m.name())).collect::<Vec<_>>(),
                 );
-                auth_method_ids = resp
+                auth_methods_info = resp
                     .auth_methods
                     .iter()
-                    .map(|m| {
-                        (
-                            m.id().to_string(),
-                            m.name().to_string(),
-                            m.description().map(|s| s.to_string()),
-                        )
+                    .map(|m| match m {
+                        AuthMethod::EnvVar(e) => AuthMethodInfo::EnvVar {
+                            id: e.id.to_string(),
+                            name: e.name.clone(),
+                            description: e.description.clone(),
+                            vars: e
+                                .vars
+                                .iter()
+                                .map(|v| super::acp::AuthEnvVar {
+                                    name: v.name.clone(),
+                                    label: v.label.clone(),
+                                    secret: v.secret,
+                                    optional: v.optional,
+                                })
+                                .collect(),
+                            link: e.link.clone(),
+                        },
+                        AuthMethod::Terminal(_) => {
+                            // Terminal variant support is Batch F territory — surface it as
+                            // a plain `Agent`-style info block so the UI still shows the ID/name.
+                            AuthMethodInfo::Agent {
+                                id: m.id().to_string(),
+                                name: m.name().to_string(),
+                                description: m.description().map(|s| s.to_string()),
+                            }
+                        }
+                        AuthMethod::Agent(_) => AuthMethodInfo::Agent {
+                            id: m.id().to_string(),
+                            name: m.name().to_string(),
+                            description: m.description().map(|s| s.to_string()),
+                        },
+                        // Non-exhaustive guard: any future ACP variant surfaces as Agent.
+                        _ => AuthMethodInfo::Agent {
+                            id: m.id().to_string(),
+                            name: m.name().to_string(),
+                            description: m.description().map(|s| s.to_string()),
+                        },
                     })
                     .collect();
 
@@ -517,14 +597,7 @@ fn run_agent_thread(
                 let info = InitInfo {
                     agent_name: resp.agent_info.as_ref().map(|i| i.name.clone()),
                     agent_version: resp.agent_info.as_ref().map(|i| i.version.clone()),
-                    auth_methods: auth_method_ids
-                        .iter()
-                        .map(|(id, name, desc)| AuthMethodInfo {
-                            id: id.clone(),
-                            name: name.clone(),
-                            description: desc.clone(),
-                        })
-                        .collect(),
+                    auth_methods: auth_methods_info.clone(),
                     supports_images: supports_images_flag,
                     capabilities: capabilities_json,
                 };
@@ -543,7 +616,7 @@ fn run_agent_thread(
                 AgentCmd::Authenticate { method_id, reply } => {
                     // If agent has no auth methods, it handles auth internally
                     // (e.g., claude-agent-acp v0.24+ uses stored CLI credentials)
-                    if auth_method_ids.is_empty() {
+                    if auth_methods_info.is_empty() {
                         log::info!(
                             target: "notesage::acp",
                             "[{}] Agent has no auth methods — assuming internally authenticated",
@@ -559,7 +632,7 @@ fn run_agent_thread(
                     // Pick the method: explicit ID, or first available
                     let selected_id = match &method_id {
                         Some(id) => {
-                            if auth_method_ids.iter().any(|(mid, _, _)| mid == id) {
+                            if auth_methods_info.iter().any(|m| m.id() == id) {
                                 id.clone()
                             } else {
                                 let _ = reply.send(Err(format!(
@@ -571,7 +644,7 @@ fn run_agent_thread(
                         }
                         None => {
                             // Fallback to first available method
-                            auth_method_ids.first().unwrap().0.clone()
+                            auth_methods_info.first().unwrap().id().to_string()
                         }
                     };
 
@@ -1747,7 +1820,76 @@ pub async fn acp_permission_respond(
 
 #[cfg(test)]
 mod tests {
+    use super::{AuthEnvVar, AuthMethodInfo};
     use agent_client_protocol::{ContentBlock, PromptRequest, SessionId, TextContent};
+
+    /// `AuthMethodInfo::EnvVar` must round-trip through serde so the frontend receives
+    /// the full `{ vars, link }` payload. Tagged as `{ "type": "env_var", ... }`.
+    #[test]
+    fn auth_method_info_env_var_serializes_vars_and_link() {
+        let info = AuthMethodInfo::EnvVar {
+            id: "api-key".to_string(),
+            name: "API Key".to_string(),
+            description: Some("Paste your provider key".to_string()),
+            vars: vec![
+                AuthEnvVar {
+                    name: "OPENAI_API_KEY".to_string(),
+                    label: Some("API Key".to_string()),
+                    secret: true,
+                    optional: false,
+                },
+                AuthEnvVar {
+                    name: "OPENAI_ORG_ID".to_string(),
+                    label: None,
+                    secret: false,
+                    optional: true,
+                },
+            ],
+            link: Some("https://example.com/keys".to_string()),
+        };
+
+        let json = serde_json::to_value(&info).expect("AuthMethodInfo must serialize");
+        assert_eq!(json.get("type").and_then(|v| v.as_str()), Some("env_var"));
+        assert_eq!(json.get("id").and_then(|v| v.as_str()), Some("api-key"));
+        assert_eq!(json.get("name").and_then(|v| v.as_str()), Some("API Key"));
+        assert_eq!(
+            json.get("link").and_then(|v| v.as_str()),
+            Some("https://example.com/keys"),
+        );
+
+        let vars = json.get("vars").and_then(|v| v.as_array()).expect("vars[]");
+        assert_eq!(vars.len(), 2);
+        assert_eq!(vars[0].get("name").and_then(|v| v.as_str()), Some("OPENAI_API_KEY"));
+        assert_eq!(vars[0].get("secret").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(vars[0].get("optional").and_then(|v| v.as_bool()), Some(false));
+        assert_eq!(vars[1].get("optional").and_then(|v| v.as_bool()), Some(true));
+
+        // Round-trip back to AuthMethodInfo and confirm the EnvVar variant is preserved.
+        let round: AuthMethodInfo =
+            serde_json::from_value(json).expect("AuthMethodInfo must deserialize");
+        match round {
+            AuthMethodInfo::EnvVar { vars, link, .. } => {
+                assert_eq!(vars.len(), 2);
+                assert_eq!(vars[0].name, "OPENAI_API_KEY");
+                assert_eq!(link.as_deref(), Some("https://example.com/keys"));
+            }
+            _ => panic!("Expected EnvVar variant after round-trip"),
+        }
+    }
+
+    /// `AuthMethodInfo::Agent` serializes as `{ "type": "agent", ... }`.
+    #[test]
+    fn auth_method_info_agent_serializes_without_vars() {
+        let info = AuthMethodInfo::Agent {
+            id: "default".to_string(),
+            name: "Default".to_string(),
+            description: None,
+        };
+        let json = serde_json::to_value(&info).expect("AuthMethodInfo must serialize");
+        assert_eq!(json.get("type").and_then(|v| v.as_str()), Some("agent"));
+        assert!(json.get("vars").is_none(), "Agent variant should not carry vars");
+        assert!(json.get("link").is_none(), "Agent variant should not carry link");
+    }
 
     /// `PromptRequest::message_id()` is a `#[cfg(feature = "unstable_message_id")]`-gated
     /// builder. This test confirms the Cargo feature is enabled and that the resulting

@@ -8,11 +8,44 @@ import type { ToolCallContentItem } from '@/lib/ai/types';
 // ACP types
 // ---------------------------------------------------------------------------
 
+/** Env var descriptor from ACP `AuthMethod::EnvVar`. */
+export interface AuthEnvVar {
+  /** Name of the environment variable (e.g. `GEMINI_API_KEY`). */
+  name: string;
+  /** Optional user-facing label; falls back to `name` in the UI. */
+  label?: string;
+  /** Password-style input if true (default per ACP spec). */
+  secret: boolean;
+  /** Marks the var as skippable in the UI. */
+  optional: boolean;
+}
+
+/**
+ * Variant-aware auth method descriptor. Mirrors ACP's `AuthMethod` enum with
+ * `unstable_auth_methods` enabled. The generic EnvVar flow in `ConnectAgent.tsx`
+ * uses the `env_var` variant's `vars[]` and `link` to drive the input form.
+ */
+export type AuthMethodInfo =
+  | {
+      type: 'agent';
+      id: string;
+      name: string;
+      description?: string | null;
+    }
+  | {
+      type: 'env_var';
+      id: string;
+      name: string;
+      description?: string | null;
+      vars: AuthEnvVar[];
+      link?: string | null;
+    };
+
 export interface AcpSpawnResult {
   instance_id: string;
   agent_name: string | null;
   agent_version: string | null;
-  auth_methods: { id: string; name: string; description: string | null }[];
+  auth_methods: AuthMethodInfo[];
   sandbox_enabled: boolean;
   network_sandbox_enabled: boolean;
   supports_images: boolean;

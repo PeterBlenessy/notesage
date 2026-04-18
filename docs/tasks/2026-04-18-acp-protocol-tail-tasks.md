@@ -130,7 +130,7 @@
 
 ## Phase 3 — Auth Consolidation
 
-### #6 — Enable `unstable_auth_methods` Cargo features
+### #6 — Enable `unstable_auth_methods` Cargo features ✅
 
 **Description:** Add `unstable_auth_methods` to the feature list on both `agent-client-protocol` and `agent-client-protocol-schema` crates in `src-tauri/Cargo.toml`. This unblocks `AuthMethod::EnvVar` and `AuthMethod::Terminal` variants (the Terminal variant stays unused — that's Batch F territory).
 
@@ -147,7 +147,7 @@
 
 ---
 
-### #7 — Handle `AuthMethod::EnvVar` in the authenticate flow
+### #7 — Handle `AuthMethod::EnvVar` in the authenticate flow ✅
 
 **Description:** Recognize and forward the `EnvVar` auth method variant from the agent's `authenticate` response up to the frontend. Required vars propagate to the UI so the user can enter values.
 
@@ -186,7 +186,7 @@
 
 ---
 
-### #9 — Delete hardcoded `<provider> auth status` CLI probes
+### #9 — Delete hardcoded `<provider> auth status` CLI probes ✅
 
 **Description:** Remove the per-provider CLI probes in `acp_binary.rs` (`claude auth status`, `codex auth status`, `copilot auth status`). Auth state now comes from the ACP `authenticate` response, not from out-of-band CLI calls.
 
@@ -205,7 +205,7 @@
 
 ---
 
-### #10 — Stored-artifact fast path for auth state
+### #10 — Stored-artifact fast path for auth state ✅
 
 **Description:** Before spawning an agent purely to discover it needs auth, short-circuit when a credential artifact exists for the connection (keychain entry, stored envVars, etc.). This preserves the "don't spawn unless needed" property that the old CLI probes provided.
 
@@ -224,7 +224,7 @@
 
 ---
 
-### #11 — Sunset the custom `envVars` connection field (if redundant)
+### #11 — Sunset the custom `envVars` connection field (if redundant) ✅
 
 **Description:** Audit whether the bespoke `credentials.envVars` TypeScript field is still needed after #6–#9, or whether it can be fully replaced by the generic EnvVar auth flow. Delete if possible; keep with a comment if still needed for migration.
 

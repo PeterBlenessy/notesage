@@ -232,11 +232,32 @@ export interface ActionItem {
 
 export type DomainDecision = 'allow_once' | 'allow_session' | 'allow_always' | 'deny';
 
+/**
+ * Auth method descriptor from ACP `initialize`. Matches the Rust
+ * `AuthMethodInfo` enum shape (externally-tagged union via `type`).
+ * See `src/lib/ai/acp-utils.ts` for the canonical definition.
+ */
+export type AcpAuthMethodInfo =
+  | {
+      type: 'agent';
+      id: string;
+      name: string;
+      description?: string | null;
+    }
+  | {
+      type: 'env_var';
+      id: string;
+      name: string;
+      description?: string | null;
+      vars: { name: string; label?: string; secret: boolean; optional: boolean }[];
+      link?: string | null;
+    };
+
 export interface AcpSpawnResult {
   instance_id: string;
   agent_name: string | null;
   agent_version: string | null;
-  auth_methods: { id: string; name: string; description: string | null }[];
+  auth_methods: AcpAuthMethodInfo[];
   network_sandbox_enabled: boolean;
   /** Agent-advertised capabilities from the `initialize` response. */
   capabilities?: unknown;

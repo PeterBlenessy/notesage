@@ -1,15 +1,25 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { Check, Loader2, AlertCircle, RefreshCw, Download } from 'lucide-react';
+import { Check, Loader2, AlertCircle, RefreshCw, Download, ExternalLink } from 'lucide-react';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { ProviderOption } from '@/lib/ai/connections';
+import type { AcpSpawnResult, AuthEnvVar, AuthMethodInfo } from '@/lib/ai/acp-utils';
 import { CONNECTION_TIMEOUT_MS, withTimeout, getInstallGuide, getAuthGuide, SetupGuideView } from './connection-utils';
 
-type AgentPhase = 'checking' | 'not_installed' | 'installing' | 'not_authenticated' | 'connecting' | 'authenticating' | 'connected' | 'error';
+type AgentPhase = 'checking' | 'not_installed' | 'installing' | 'not_authenticated' | 'env_var_auth' | 'connecting' | 'authenticating' | 'connected' | 'error';
+
+/** Extract the first `env_var` auth method from a spawn result, if any. */
+function findEnvVarAuthMethod(methods: AuthMethodInfo[]): (AuthMethodInfo & { type: 'env_var' }) | null {
+  for (const m of methods) {
+    if (m.type === 'env_var') return m;
+  }
+  return null;
+}
 
 export function ConnectAgent({
   option,
@@ -27,7 +37,10 @@ export function ConnectAgent({
   const [installProgress, setInstallProgress] = useState<{ phase: string; progress: number; total: number; message: string } | null>(null);
   const [showManualGuide, setShowManualGuide] = useState(false);
   const [binarySource, setBinarySource] = useState<'managed' | 'system' | null>(null);
-  const [apiKeyInput, setApiKeyInput] = useState('');
+  /** Agent-advertised EnvVar auth method used when `phase === 'env_var_auth'`. */
+  const [envVarMethod, setEnvVarMethod] = useState<(AuthMethodInfo & { type: 'env_var' }) | null>(null);
+  /** User-entered values keyed by env var name. */
+  const [envValues, setEnvValues] = useState<Record<string, string>>({});
   const isRetryRef = useRef(false);
   const onConnectedRef = useRef(onConnected);
   onConnectedRef.current = onConnected;
@@ -54,7 +67,7 @@ export function ConnectAgent({
 
       try {
         const avail = await withTimeout(
-          invoke<{ installed: boolean; path: string | null; authenticated: boolean | null }>('acp_agent_check_availability', {
+          invoke<{ installed: boolean; path: string | null }>('acp_agent_check_availability', {
             agentId: binary,
           }),
           CONNECTION_TIMEOUT_MS,
@@ -77,18 +90,6 @@ export function ConnectAgent({
           setPhase('not_installed');
           return;
         }
-        // If not authenticated, check if this agent can handle in-app auth.
-        // Some agents (e.g., Gemini) try to open a browser from the subprocess
-        // which fails silently. For those, show the manual guide immediately.
-        if (avail.authenticated === false) {
-          // Agents whose OAuth flow requires browser access from the subprocess
-          // can't authenticate via ACP — show manual guide directly
-          const needsManualAuth = ['gemini'];
-          if (needsManualAuth.includes(binary)) {
-            setPhase('not_authenticated');
-            return;
-          }
-        }
       } catch (err) {
         if (!active) return;
         await endRetry();
@@ -102,14 +103,26 @@ export function ConnectAgent({
         return;
       }
 
-      // Phase 2: Spawn agent and authenticate
+      // Phase 2: Spawn agent, read auth methods, and authenticate.
+      //
+      // Auth state now comes from the ACP `initialize` response — no CLI probes.
+      // If the agent advertises `AuthMethod::EnvVar`, collect values via a generic
+      // form and stop the probe agent; the caller will re-spawn with env vars.
+      //
+      // Stored-artifact fast path (PRD #10): for fresh "Add Connection" flows
+      // there are no stored credentials yet, so the short-circuit wouldn't fire
+      // anyway. Existing connections reconnect via `useAcpLifecycle` which can
+      // short-circuit on `credentials.envVars` presence. We accept the one-time
+      // probe spawn here (30s timeout; typical ~1–3s) in exchange for removing
+      // the hardcoded CLI probes. If this becomes friction, a future pass can
+      // short-circuit on `option.provider === 'google'` to skip the probe.
       await endRetry();
       setPhase('connecting');
       let instanceId: string | null = null;
 
       try {
         const result = await withTimeout(
-          invoke<{ instance_id: string }>('acp_agent_spawn', {
+          invoke<AcpSpawnResult>('acp_agent_spawn', {
             agentBinary: binary,
             agentArgs: option.agentArgs ?? null,
             role: 'interactive',
@@ -123,6 +136,21 @@ export function ConnectAgent({
           return;
         }
         instanceId = result.instance_id;
+
+        // If the agent advertises EnvVar auth, collect credentials before continuing.
+        // The probe agent is stopped — on submit, a fresh connection is registered with
+        // `envVars` stored on the connection; the real agent spawn happens at use time.
+        const envVar = findEnvVarAuthMethod(result.auth_methods);
+        if (envVar) {
+          invoke('acp_agent_stop', { instanceId }).catch(() => {});
+          if (!active) return;
+          setEnvVarMethod(envVar);
+          const initial: Record<string, string> = {};
+          for (const v of envVar.vars) initial[v.name] = '';
+          setEnvValues(initial);
+          setPhase('env_var_auth');
+          return;
+        }
 
         // Switch to authenticating phase — the agent may open a browser
         setPhase('authenticating');
@@ -305,6 +333,36 @@ export function ConnectAgent({
         </div>
       )}
 
+      {phase === 'env_var_auth' && envVarMethod && (
+        <EnvVarAuthForm
+          method={envVarMethod}
+          values={envValues}
+          onChange={setEnvValues}
+          error={error}
+          onSubmit={() => {
+            const filled: Record<string, string> = {};
+            for (const v of envVarMethod.vars) {
+              const val = (envValues[v.name] ?? '').trim();
+              if (val) filled[v.name] = val;
+            }
+            onConnectedRef.current(option, filled);
+          }}
+          onBack={onBack}
+          onSignInWithTerminal={async () => {
+            // Terminal fallback for OAuth-based methods that complement EnvVar auth.
+            const guide = getAuthGuide(binary);
+            const cmd = guide.steps.find((s) => s.command)?.command;
+            if (cmd) {
+              try {
+                await invoke('run_in_terminal', { command: cmd });
+              } catch {
+                navigator.clipboard.writeText(cmd).catch(() => {});
+              }
+            }
+          }}
+        />
+      )}
+
       {phase === 'not_authenticated' && (
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
@@ -316,88 +374,26 @@ export function ConnectAgent({
             </div>
           )}
 
-          {/* Gemini: show API key input (best in-app UX) + terminal fallback */}
-          {binary === 'gemini' ? (
-            <>
-              <div className="space-y-2">
-                <Input
-                  type="password"
-                  placeholder="Paste your Gemini API key"
-                  value={apiKeyInput}
-                  onChange={(e) => setApiKeyInput(e.target.value)}
-                  className="text-sm h-8"
-                />
-                <Button
-                  size="sm"
-                  className="w-full"
-                  disabled={!apiKeyInput.trim()}
-                  onClick={() => {
-                    onConnectedRef.current(option, { GEMINI_API_KEY: apiKeyInput.trim() });
-                  }}
-                >
-                  Connect with API key
-                </Button>
-                <p className="text-[11px] text-muted-foreground text-center">
-                  Free API key from{' '}
-                  <button
-                    className="underline hover:text-foreground transition-colors cursor-pointer"
-                    onClick={() => window.open('https://aistudio.google.com/apikey', '_blank')}
-                  >
-                    Google AI Studio
-                  </button>
-                </p>
-              </div>
-              <div className="relative py-1">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t border-border" />
-                </div>
-                <div className="relative flex justify-center text-[10px]">
-                  <span className="bg-background px-2 text-muted-foreground">or</span>
-                </div>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full"
-                onClick={async () => {
-                  try {
-                    await invoke('run_in_terminal', { command: 'cd /tmp && gemini' });
-                  } catch {
-                    navigator.clipboard.writeText('cd /tmp && gemini').catch(() => {});
-                  }
-                }}
-              >
-                Sign in with Google via Terminal
-              </Button>
-              <p className="text-[11px] text-muted-foreground text-center">
-                Opens Terminal for Google OAuth sign-in. Click Retry when done.
-              </p>
-            </>
-          ) : (
-            /* Other agents: terminal sign-in button */
-            <>
-              <Button
-                size="sm"
-                className="w-full"
-                onClick={async () => {
-                  const guide = getAuthGuide(binary);
-                  const cmd = guide.steps.find((s) => s.command)?.command;
-                  if (cmd) {
-                    try {
-                      await invoke('run_in_terminal', { command: cmd });
-                    } catch {
-                      if (cmd) navigator.clipboard.writeText(cmd).catch(() => {});
-                    }
-                  }
-                }}
-              >
-                Sign in to {option.label}
-              </Button>
-              <p className="text-[11px] text-muted-foreground text-center">
-                Opens a terminal window to complete sign-in. Click Retry when done.
-              </p>
-            </>
-          )}
+          <Button
+            size="sm"
+            className="w-full"
+            onClick={async () => {
+              const guide = getAuthGuide(binary);
+              const cmd = guide.steps.find((s) => s.command)?.command;
+              if (cmd) {
+                try {
+                  await invoke('run_in_terminal', { command: cmd });
+                } catch {
+                  if (cmd) navigator.clipboard.writeText(cmd).catch(() => {});
+                }
+              }
+            }}
+          >
+            Sign in to {option.label}
+          </Button>
+          <p className="text-[11px] text-muted-foreground text-center">
+            Opens a terminal window to complete sign-in. Click Retry when done.
+          </p>
 
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
@@ -461,6 +457,125 @@ export function ConnectAgent({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Generic form driven by the agent-advertised `AuthMethod::EnvVar` payload.
+ * Renders one input per `vars[]` entry (password-style by default), shows the
+ * optional `link` as a "Get yours at" helper, and offers a terminal sign-in
+ * fallback for agents that support both OAuth and env-var auth.
+ */
+function EnvVarAuthForm({
+  method,
+  values,
+  onChange,
+  error,
+  onSubmit,
+  onBack,
+  onSignInWithTerminal,
+}: {
+  method: AuthMethodInfo & { type: 'env_var' };
+  values: Record<string, string>;
+  onChange: (v: Record<string, string>) => void;
+  error: string | null;
+  onSubmit: () => void;
+  onBack: () => void;
+  onSignInWithTerminal: () => Promise<void> | void;
+}) {
+  const requiredVars = method.vars.filter((v) => !v.optional);
+  const allRequiredFilled = requiredVars.every((v) => (values[v.name] ?? '').trim().length > 0);
+
+  const displayLabel = (v: AuthEnvVar) => (v.label && v.label.trim() ? v.label.trim() : v.name);
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        {method.description ?? `${method.name} — enter the required credentials to sign in.`}
+      </p>
+
+      {error && (
+        <div className="p-2 rounded-lg bg-destructive/10 border border-destructive/20">
+          <p className="text-xs text-destructive/80 break-words">{error}</p>
+        </div>
+      )}
+
+      <div className="space-y-2.5">
+        {method.vars.map((v) => (
+          <div key={v.name} className="space-y-1">
+            <Label className="text-xs text-muted-foreground">
+              {displayLabel(v)}
+              {v.optional && <span className="ml-1 text-[10px]">(optional)</span>}
+            </Label>
+            <Input
+              type={v.secret ? 'password' : 'text'}
+              placeholder={v.name}
+              value={values[v.name] ?? ''}
+              onChange={(e) => onChange({ ...values, [v.name]: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && allRequiredFilled) onSubmit();
+              }}
+              className="text-sm h-8"
+            />
+          </div>
+        ))}
+      </div>
+
+      <Button
+        size="sm"
+        className="w-full"
+        disabled={!allRequiredFilled}
+        onClick={onSubmit}
+      >
+        Connect
+      </Button>
+
+      {method.link && (
+        <p className="text-[11px] text-muted-foreground text-center">
+          Get yours at{' '}
+          <button
+            className="inline-flex items-center gap-0.5 underline hover:text-foreground transition-colors cursor-pointer"
+            onClick={() => window.open(method.link!, '_blank')}
+          >
+            {(() => {
+              try {
+                return new URL(method.link).hostname.replace(/^www\./, '');
+              } catch {
+                return method.link;
+              }
+            })()}
+            <ExternalLink className="h-3 w-3" strokeWidth={1.5} />
+          </button>
+        </p>
+      )}
+
+      <div className="relative py-1">
+        <div className="absolute inset-0 flex items-center">
+          <span className="w-full border-t border-border" />
+        </div>
+        <div className="relative flex justify-center text-[10px]">
+          <span className="bg-background px-2 text-muted-foreground">or</span>
+        </div>
+      </div>
+
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full"
+        onClick={onSignInWithTerminal}
+      >
+        Sign in via Terminal
+      </Button>
+      <p className="text-[11px] text-muted-foreground text-center">
+        Opens a terminal window to complete sign-in. Click Retry when done.
+      </p>
+
+      <div className="flex gap-2">
+        <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
+          Back
+        </Button>
+      </div>
     </div>
   );
 }

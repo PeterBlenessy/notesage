@@ -69,8 +69,8 @@ fs_extra = "1.3"
 libc = "0.2"
 
 # ACP - Agent Client Protocol (Phase 6)
-agent-client-protocol = { version = "0.10.4", features = ["unstable_session_model", "unstable_session_usage", "unstable_session_close", "unstable_session_fork", "unstable_session_resume", "unstable_message_id"] }
-agent-client-protocol-schema = { version = "0.11.4", features = ["unstable_session_model", "unstable_session_usage", "unstable_session_close", "unstable_session_fork", "unstable_session_resume", "unstable_message_id"] }
+agent-client-protocol = { version = "0.10.4", features = ["unstable_session_model", "unstable_session_usage", "unstable_session_close", "unstable_session_fork", "unstable_session_resume", "unstable_message_id", "unstable_auth_methods"] }
+agent-client-protocol-schema = { version = "0.11.4", features = ["unstable_session_model", "unstable_session_usage", "unstable_session_close", "unstable_session_fork", "unstable_session_resume", "unstable_message_id", "unstable_auth_methods"] }
 async-trait = "0.1"
 tokio-util = { version = "0.7", features = ["compat"] }
 

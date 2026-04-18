@@ -15,7 +15,6 @@ pub struct AgentAvailability {
     pub installed: bool,
     pub path: Option<String>,
     pub version: Option<String>,
-    pub authenticated: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -120,143 +119,17 @@ pub fn resolve_agent_binary(agent_id: &str, app: &AppHandle) -> Option<String> {
     None
 }
 
-/// Resolve a CLI binary by name, checking common install locations.
-/// Used by `check_agent_auth` to find the underlying CLI that manages auth
-/// (e.g., `claude`, `codex`, `copilot`) which may differ from the ACP adapter binary.
-fn resolve_cli_binary(name: &str) -> Option<String> {
-    // Try PATH via `which` — use login shell PATH if available
-    let which_cmd = if cfg!(target_os = "windows") {
-        "where"
-    } else {
-        "which"
-    };
-
-    let mut cmd = Command::new(which_cmd);
-    cmd.arg(name);
-    if let Some(path) = get_shell_path() {
-        cmd.env("PATH", path);
-    }
-    if let Ok(output) = cmd.output() {
-        if output.status.success() {
-            let p = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !p.is_empty() {
-                return Some(p);
-            }
-        }
-    }
-
-    // Fallback: check common install locations (macOS GUI apps have minimal PATH)
-    let home = dirs::home_dir().unwrap_or_default();
-    let mut candidates: Vec<PathBuf> = vec![
-        home.join(".local/bin").join(name),
-    ];
-    for path in constants::MACOS_FALLBACK_BIN_PATHS {
-        candidates.push(PathBuf::from(path).join(name));
-    }
-    candidates.extend([
-        home.join(".npm-global/bin").join(name),
-        home.join("Library/pnpm").join(name),
-        home.join(".local/share/pnpm").join(name),
-        home.join(".volta/bin").join(name),
-        home.join(".cargo/bin").join(name),
-    ]);
-
-    for candidate in &candidates {
-        if candidate.exists() {
-            return Some(candidate.to_string_lossy().to_string());
-        }
-    }
-
-    None
-}
-
-/// Check the auth status of the underlying CLI tool for an ACP agent.
-/// For claude-agent-acp, checks `claude auth status` since the adapter
-/// uses Claude Code's stored credentials internally.
-pub fn check_agent_auth(agent_id: &str) -> Option<bool> {
-    // Map agent adapter binary → underlying CLI that manages auth
-    match agent_id {
-        "claude-agent-acp" => {
-            let cli = resolve_cli_binary("claude")?;
-            match Command::new(&cli).args(["auth", "status"]).output() {
-                Ok(output) if output.status.success() => {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    Some(stdout.contains("\"loggedIn\": true") || stdout.contains("\"loggedIn\":true"))
-                }
-                _ => None,
-            }
-        }
-        "codex-acp" | "codex" => {
-            let cli = resolve_cli_binary("codex")?;
-            match Command::new(&cli).args(["auth", "status"]).output() {
-                Ok(output) if output.status.success() => {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    Some(stdout.contains("\"loggedIn\": true") || stdout.contains("\"loggedIn\":true")
-                        || stdout.contains("authenticated"))
-                }
-                _ => None,
-            }
-        }
-        "copilot" => {
-            let cli = resolve_cli_binary("copilot")?;
-            match Command::new(&cli).args(["auth", "status"]).output() {
-                Ok(output) if output.status.success() => {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    Some(stdout.contains("Logged in") || stdout.contains("authenticated")
-                        || stdout.contains("\"loggedIn\": true") || stdout.contains("\"loggedIn\":true"))
-                }
-                _ => None,
-            }
-        }
-        "gemini" => {
-            // Check GEMINI_API_KEY env var first
-            if std::env::var("GEMINI_API_KEY").map(|v| !v.is_empty()).unwrap_or(false) {
-                return Some(true);
-            }
-
-            let home = dirs::home_dir().unwrap_or_default();
-
-            // Gemini CLI stores the selected auth type in ~/.gemini/settings.json
-            // at the path: security.auth.selectedType
-            // Valid values: "login_with_google", "use_gemini", "use_vertex_ai", "gateway"
-            let settings = home.join(".gemini/settings.json");
-            if settings.exists() {
-                if let Ok(content) = std::fs::read_to_string(&settings) {
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                        let selected_type = json
-                            .get("security")
-                            .and_then(|s| s.get("auth"))
-                            .and_then(|a| a.get("selectedType"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-                        if !selected_type.is_empty() {
-                            // For OAuth ("login_with_google"), also verify cached credentials exist
-                            if selected_type == "login_with_google" {
-                                // Check for cached OAuth credentials file in ~/.gemini/
-                                let creds_exist = home.join(".gemini/google_oauth_credentials.json").exists()
-                                    || home.join(".gemini/oauth_credentials.json").exists()
-                                    || home.join(".gemini/credentials.json").exists();
-                                return Some(creds_exist);
-                            }
-                            // For API key or Vertex AI, selectedType being set means configured
-                            return Some(true);
-                        }
-                    }
-                }
-            }
-
-            // No settings file or no selectedType → not authenticated
-            Some(false)
-        }
-        _ => None,
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Tauri commands
 // ---------------------------------------------------------------------------
 
 /// Check whether an ACP agent binary is installed on the system.
+///
+/// Auth state is no longer pre-checked here — the frontend spawns the agent and
+/// reads the `AuthMethod` list from the ACP `initialize` response. The
+/// per-provider CLI probes (claude/codex/copilot `auth` subcommands) and the
+/// Gemini settings-file inspector were deleted in favor of ACP-native auth
+/// discovery (`unstable_auth_methods`).
 #[tauri::command]
 pub async fn acp_agent_check_availability(
     app: AppHandle,
@@ -269,7 +142,6 @@ pub async fn acp_agent_check_availability(
             installed: false,
             path: None,
             version: None,
-            authenticated: None,
         });
     }
 
@@ -288,12 +160,9 @@ pub async fn acp_agent_check_availability(
         _ => None,
     };
 
-    let authenticated = check_agent_auth(&agent_id);
-
     Ok(AgentAvailability {
         installed: true,
         path,
         version,
-        authenticated,
     })
 }
