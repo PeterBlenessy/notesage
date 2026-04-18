@@ -225,6 +225,40 @@ Apple M3, 24GB. macOS.
 
 **Comparison vs v0.34.0:** phase1-ready similar 3,261→3,603ms (+10%, within noise). Skills total improved 4,616→4,322ms (−6%) — `bundled-agents-extract` eliminated (was 396ms), replaced by one-time cleanup. Tree refresh improved 5,347→4,886ms (−9%). Startup ready improved 6,058→5,965ms (−2%). Agent count dropped from 8 (7 bundled + 1 user) to 1 (user only). No regressions.
 
+### v0.36.0 — 2026-04-18 (uncommitted, base `4a5ea7a`)
+
+Apple M3, 24GB. macOS.
+6 iCloud projects, 3 explorer folders, 6 open tabs, 1,259 total files.
+
+**Skills pipeline:**
+
+| Step | ms |
+| --- | --- |
+| skill-scan | 2,928 |
+| skill-tool-extract (11 skills) | 466 |
+| agent-scan | 115 |
+| instruction-scan | 114 |
+| **phase1-ready (tools visible)** | **3,624** |
+| bundled-skills-extract | 382 |
+| phase2-extract | 614 |
+| **total** | **4,238** |
+
+**Startup & trees:**
+
+| Metric | ms |
+| --- | --- |
+| trees validated (1st) | 3,123 |
+| trees validated (2nd) | 3,504 |
+| tree refresh | 4,664 |
+| tab-preload (5 tabs) | 3,926 |
+| index init total | 637 / 1,190 |
+| startup ready | 5,246 / 5,812 |
+| tabs restored | 5,047 / 5,556 |
+
+**Rescan (second run):** skill-scan 25ms, skill-tool-extract 35ms, agent-scan 13ms, instruction-scan 7ms, phase1-ready 81ms, total 81ms.
+
+**Comparison vs v0.35.0:** phase1-ready 3,603→3,624ms (±0%, noise). Skills total 4,322→4,238ms (−2%). Tree refresh 4,886→4,664ms (−5%). **Startup ready 5,965→5,246ms (−12%)** and **tabs restored 5,650→5,047ms (−11%)** — both meaningful improvements. Index init total 1,128→637ms on first run, 1,140→1,190ms on second (first-run improvement; second run noise). No regressions. Batch B + C added rendering work in chat but didn't touch the startup hot path, consistent with flat/better numbers.
+
 ## Notes
 
 - Parse benchmarks include Tiptap editor creation overhead (\~15ms fixed cost)
