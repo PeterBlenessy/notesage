@@ -69,7 +69,7 @@ This is the foundation of the red-team TDD discipline. Before implementing any T
 
 ## Phase 1 — Data Model Foundations
 
-### #1 — Add `aiLock` field to `ProjectMetadata`
+### #1 — Add `aiLock` field to `ProjectMetadata` ✅
 
 **Description:** Introduce the hard-lock data structure that every enforcement point will read. Pure data-model work — no UI, no enforcement yet.
 

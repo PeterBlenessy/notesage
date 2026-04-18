@@ -338,3 +338,82 @@ describe('setClean', () => {
     expect(useProjectMetadataStore.getState().isDirty('/no/such/path')).toBe(false);
   });
 });
+
+describe('aiLock', () => {
+  it('createDefaultMetadata omits aiLock by default', () => {
+    const meta = createDefaultMetadata('new-project');
+    expect(meta.aiLock).toBeUndefined();
+  });
+
+  it('setMetadata + getMetadata round-trips aiLock', () => {
+    const lockedAt = 1_713_456_789_000;
+    const meta = makeMetadata({
+      aiLock: {
+        connectionId: 'conn-claude-code',
+        lockedAt,
+        reason: 'legal workload',
+      },
+    });
+    useProjectMetadataStore.getState().setMetadata('/path/locked', meta);
+
+    const loaded = useProjectMetadataStore.getState().getMetadata('/path/locked');
+    expect(loaded?.aiLock).toEqual({
+      connectionId: 'conn-claude-code',
+      lockedAt,
+      reason: 'legal workload',
+    });
+  });
+
+  it('persists and rehydrates via JSON round-trip (project.json shape)', () => {
+    const meta = makeMetadata({
+      aiLock: {
+        connectionId: 'conn-xyz',
+        lockedAt: 1_713_000_000_000,
+        reason: 'sensitive data',
+      },
+    });
+    // Mirrors what useProjectMetadata does when writing/reading project.json
+    const serialized = JSON.stringify(meta, null, 2);
+    const parsed = JSON.parse(serialized) as ProjectMetadata;
+
+    expect(parsed.aiLock?.connectionId).toBe('conn-xyz');
+    expect(parsed.aiLock?.lockedAt).toBe(1_713_000_000_000);
+    expect(parsed.aiLock?.reason).toBe('sensitive data');
+  });
+
+  it('round-trips aiLock without the optional reason field', () => {
+    const meta = makeMetadata({
+      aiLock: {
+        connectionId: 'conn-minimal',
+        lockedAt: 1_713_000_000_000,
+      },
+    });
+    const parsed = JSON.parse(JSON.stringify(meta)) as ProjectMetadata;
+
+    expect(parsed.aiLock).toEqual({
+      connectionId: 'conn-minimal',
+      lockedAt: 1_713_000_000_000,
+    });
+    expect(parsed.aiLock).not.toHaveProperty('reason');
+  });
+
+  it('metadata without aiLock round-trips unchanged (backward compat)', () => {
+    const meta = makeMetadata();
+    const parsed = JSON.parse(JSON.stringify(meta)) as ProjectMetadata;
+    expect(parsed.aiLock).toBeUndefined();
+    expect(parsed).toEqual(meta);
+  });
+
+  it('ai.provider and aiLock are independent fields', () => {
+    // The PRD distinction: ai.provider is a soft default; aiLock is a hard
+    // enforcement. Setting one must not touch the other.
+    const meta = makeMetadata({
+      ai: { provider: 'conn-default', agentName: null, projectContext: '' },
+      aiLock: { connectionId: 'conn-locked', lockedAt: 1 },
+    });
+    const parsed = JSON.parse(JSON.stringify(meta)) as ProjectMetadata;
+
+    expect(parsed.ai.provider).toBe('conn-default');
+    expect(parsed.aiLock?.connectionId).toBe('conn-locked');
+  });
+});

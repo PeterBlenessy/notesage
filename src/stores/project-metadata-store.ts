@@ -7,11 +7,26 @@ export interface ProjectMetadata {
   citationFormat?: 'links' | 'footnotes' | 'academic';
   citationStyle?: 'apa' | 'mla' | 'chicago';
   ai: {
+    // Soft default for this project — the initial connection selected in the
+    // chat footer when a conversation opens here. Overridable per chat. For
+    // hard enforcement that refuses to send to any other connection, see
+    // `aiLock` below (added in the project-data-isolation PRD).
     provider: string | null; // Connection ID (v2) or legacy provider name
     /** @deprecated Use agentName instead. Kept for migration compatibility. */
     personaId?: string | null;
     agentName: string | null;
     projectContext: string;
+  };
+  /**
+   * Hard lock to a specific connection. When set, every send path
+   * (new message, resend, edit, delegation, inline action) must route to
+   * this connection or be refused. Enforcement is wired up by later tasks
+   * in the project-data-isolation PRD; this field is pure data for now.
+   */
+  aiLock?: {
+    connectionId: string;
+    lockedAt: number;
+    reason?: string;
   };
 }
 
