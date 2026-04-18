@@ -728,8 +728,20 @@ export const tauriApi = {
     return await invoke<AcpSessionResult>("acp_session_fork", { instanceId, sessionId, workingDirectory });
   },
 
-  async acpSessionPrompt(instanceId: string, sessionId: string, content: string, images?: Array<{ data: string; mime_type: string }>): Promise<void> {
-    await invoke("acp_session_prompt", { instanceId, sessionId, content, images: images ?? null });
+  async acpSessionPrompt(
+    instanceId: string,
+    sessionId: string,
+    content: string,
+    images?: Array<{ data: string; mime_type: string }>,
+    messageId?: string,
+  ): Promise<void> {
+    await invoke("acp_session_prompt", {
+      instanceId,
+      sessionId,
+      content,
+      images: images ?? null,
+      messageId: messageId ?? null,
+    });
   },
 
   async acpSupportsImages(instanceId: string): Promise<boolean> {

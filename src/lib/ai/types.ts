@@ -168,6 +168,13 @@ export interface ChatMessage {
   segments?: Segment[];
   /** Image attachments on this message */
   attachments?: ImageAttachment[];
+  /**
+   * Optional ACP protocol-level message ID (forward-compatibility plumbing for
+   * `unstable_message_id`). For user messages, set to the outbound `PromptRequest.message_id`;
+   * for assistant messages, populated from `agent_message_chunk.message_id` when the agent emits it.
+   * Absent when the agent/protocol doesn't support message IDs.
+   */
+  acpMessageId?: string;
   // --- system-status fields (role: 'system-status') ---
   /** Status type for reconnection messages */
   statusType?: SystemStatusType;

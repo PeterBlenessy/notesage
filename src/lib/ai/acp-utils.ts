@@ -113,7 +113,44 @@ export interface AcpListResult {
 }
 
 /** Single content block as sent on `agent_message_chunk` / `agent_thought_chunk`. */
-export type AcpContentBlock = { type: string; text?: string; data?: string; mimeType?: string };
+export type AcpContentBlock = {
+  type: string;
+  text?: string;
+  data?: string;
+  mimeType?: string;
+  /** Resource link fields (type === 'resource_link') */
+  uri?: string;
+  name?: string;
+  description?: string;
+  size?: number;
+};
+
+/**
+ * Format an ACP `resource_link` content block as markdown. The inline markdown renderer
+ * downstream handles click navigation (internal file links open as tabs; external URLs
+ * open in the system browser via `link-click` extension + `src/lib/link-utils.ts`).
+ *
+ * - Name falls back to the URI basename when missing.
+ * - A one-line description is appended on a new line, truncated to ~80 chars.
+ */
+export function formatResourceLinkAsMarkdown(block: AcpContentBlock): string {
+  const uri = String(block.uri ?? '');
+  if (!uri) return '';
+  const basename = (u: string): string => {
+    // Strip query/hash for the derived display name
+    const clean = u.split('#')[0].split('?')[0];
+    const parts = clean.replace(/\\/g, '/').split('/');
+    const last = parts[parts.length - 1] || clean;
+    return last || u;
+  };
+  const label = block.name && block.name.trim() ? block.name.trim() : basename(uri);
+  const base = `[${label}](${uri})`;
+  const desc = typeof block.description === 'string' ? block.description.trim() : '';
+  if (!desc) return base;
+  const MAX = 80;
+  const truncated = desc.length > MAX ? desc.slice(0, MAX).trimEnd() + '\u2026' : desc;
+  return `${base}\n${truncated}`;
+}
 
 /**
  * Raw content items from the ACP wire for `tool_call_update`. The ACP schema uses

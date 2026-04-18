@@ -17,6 +17,7 @@ import {
   formatToolLabel,
   parseRawInput,
   normalizeToolCallContent,
+  formatResourceLinkAsMarkdown,
 } from '@/lib/ai/acp-utils';
 import { resetUnresponsiveTimer } from '@/hooks/useAcpLifecycle';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
@@ -81,6 +82,31 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
     // Narrow to the single-object form here; tool_call_update handles the array form below.
     const chunkContent = Array.isArray(update.content) ? undefined : update.content;
 
+    // ACP `unstable_message_id` (forward-compat): persist agent-side message IDs when emitted.
+    // On `agent_message_chunk`, the schema carries `messageId` (assistant's own ID) and may
+    // echo the outbound `user_message_id` the client provided on `PromptRequest.message_id`.
+    // No user-visible effect in v1 — this is future-proofing for features that reference
+    // specific messages by stable protocol ID.
+    if (update.sessionUpdate === 'agent_message_chunk') {
+      const assistantAcpId = typeof update.messageId === 'string' && update.messageId
+        ? update.messageId
+        : typeof update.message_id === 'string' && update.message_id
+          ? update.message_id
+          : undefined;
+      if (assistantAcpId) {
+        useChatStore.getState().setMessageAcpId(deps.assistantMessageId, assistantAcpId);
+      }
+      const echoedUserAcpId = typeof update.userMessageId === 'string' && update.userMessageId
+        ? update.userMessageId
+        : typeof update.user_message_id === 'string' && update.user_message_id
+          ? update.user_message_id
+          : undefined;
+      if (echoedUserAcpId) {
+        // The user message has `timestamp = assistantMessageId - 1` per acpSendChatMessage.
+        useChatStore.getState().setMessageAcpId(deps.assistantMessageId - 1, echoedUserAcpId);
+      }
+    }
+
     if (
       update.sessionUpdate === 'agent_message_chunk' &&
       chunkContent?.type === 'text' &&
@@ -89,6 +115,19 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       streamedContent += chunkContent.text;
       deps.updateMessage(deps.assistantMessageId, streamedContent);
       deps.appendTextSegment(deps.assistantMessageId, chunkContent.text);
+    } else if (
+      update.sessionUpdate === 'agent_message_chunk' &&
+      chunkContent?.type === 'resource_link' &&
+      chunkContent.uri
+    ) {
+      // Render resource_link inline as a markdown link. The existing markdown renderer
+      // + link-click extension handle navigation (internal file → tab, external → browser).
+      const markdown = formatResourceLinkAsMarkdown(chunkContent);
+      if (markdown) {
+        streamedContent += markdown;
+        deps.updateMessage(deps.assistantMessageId, streamedContent);
+        deps.appendTextSegment(deps.assistantMessageId, markdown);
+      }
     } else if (
       update.sessionUpdate === 'agent_message_chunk' &&
       chunkContent?.type === 'image' &&
@@ -232,6 +271,9 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
         inputHint: typeof cmd.inputHint === 'string' ? cmd.inputHint : undefined,
       }));
       setAvailableCommands(commands);
+    } else if (update.sessionUpdate === 'user_message_chunk') {
+      // Agent echoes user message as received — we already have it locally.
+      // Recognize explicitly to suppress the "Unknown session update" debug log.
     } else if (update.sessionUpdate) {
       // Unknown session update type — log for debugging, don't crash
       log.debug('ai', `Unknown ACP session update type: ${update.sessionUpdate}`);

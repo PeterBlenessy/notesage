@@ -8,7 +8,7 @@ import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import { tauriApi } from '@/lib/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { formatAcpToolName, truncateDetail, normalizeToolCallContent, hasSessionCapability } from '@/lib/ai/acp-utils';
+import { formatAcpToolName, truncateDetail, normalizeToolCallContent, hasSessionCapability, formatResourceLinkAsMarkdown } from '@/lib/ai/acp-utils';
 import type { AcpSessionUpdatePayload, AcpPermissionRequestPayload, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
 import { isToolCallAllowed } from '@/lib/ai/path-filter';
@@ -349,6 +349,22 @@ async function startAcpTask(
       current.output += chunkContent.text;
       onChunk?.(chunkContent.text);
       if (track) useActivityStore.getState().appendPartialOutput(taskId, chunkContent.text);
+    } else if (
+      eventType === 'agent_message_chunk' &&
+      chunkContent?.type === 'resource_link' &&
+      chunkContent.uri
+    ) {
+      // Render resource_link inline as a markdown link (same treatment as chat path).
+      const markdown = formatResourceLinkAsMarkdown(chunkContent);
+      if (markdown) {
+        if (!receivedFirstChunk) {
+          receivedFirstChunk = true;
+          onActivity?.({ kind: 'agent_responding', label: 'Agent responding', event: 'agent_responding' });
+        }
+        current.output += markdown;
+        onChunk?.(markdown);
+        if (track) useActivityStore.getState().appendPartialOutput(taskId, markdown);
+      }
     } else if (eventType === 'agent_thought_chunk') {
       const text = chunkContent?.text;
       if (text && track) {
@@ -403,6 +419,9 @@ async function startAcpTask(
       closeSessionIfSupported();
       const c = cleanupMap.get(taskId);
       if (c) { c(); cleanupMap.delete(taskId); }
+    } else if (eventType === 'user_message_chunk') {
+      // Agent echoes user message as received — we already have it locally.
+      // Recognize explicitly to suppress the "Unknown session update" debug log.
     } else if (eventType) {
       // Unknown session update type — log for debugging, don't crash
       log.debug('ai', `Unknown ACP task session update type: ${eventType}`);

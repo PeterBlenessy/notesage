@@ -39,6 +39,23 @@ vi.mock('@/lib/ai/acp-utils', () => ({
   hasLoadSessionCapability: vi.fn((caps: Record<string, unknown> | null | undefined) =>
     caps?.loadSession === true || caps?.load_session === true
   ),
+  // Minimal real implementation so resource_link rendering test exercises the helper.
+  formatResourceLinkAsMarkdown: vi.fn((block: { uri?: string; name?: string; description?: string }) => {
+    const uri = String(block.uri ?? '');
+    if (!uri) return '';
+    const basename = (u: string): string => {
+      const clean = u.split('#')[0].split('?')[0];
+      const parts = clean.replace(/\\/g, '/').split('/');
+      return parts[parts.length - 1] || clean;
+    };
+    const label = block.name && block.name.trim() ? block.name.trim() : basename(uri);
+    const base = `[${label}](${uri})`;
+    const desc = typeof block.description === 'string' ? block.description.trim() : '';
+    if (!desc) return base;
+    const MAX = 80;
+    const truncated = desc.length > MAX ? desc.slice(0, MAX).trimEnd() + '\u2026' : desc;
+    return `${base}\n${truncated}`;
+  }),
 }));
 
 vi.mock('@/lib/ai/path-filter', () => ({
@@ -1767,6 +1784,190 @@ describe('useAgentTaskOperations', () => {
       expect(task?.status).toBe('completed');
       const tasks = useActivityStore.getState().tasks;
       expect(tasks[0].status).toBe('done');
+
+      promptDeferred.resolve();
+    });
+  });
+
+  // ---- Task #3: user_message_chunk silent noop ----
+
+  describe('ACP user_message_chunk', () => {
+    it('does not mutate task state nor log "Unknown" for user_message_chunk events', async () => {
+      const { log } = await import('@/lib/logger');
+      const logDebug = vi.mocked(log.debug);
+
+      const conn = makeAgentConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      setupRouting(conn.id);
+      const { promptDeferred } = registerAcpHandlers();
+
+      const chunks: string[] = [];
+      const activities: TaskActivityEvent[] = [];
+      const callbacks: TaskCallbacks = {
+        onChunk: (c) => chunks.push(c),
+        onActivity: (a) => activities.push(a),
+      };
+
+      const { result } = renderHook(() => useAgentTaskOperations());
+
+      let taskId: string | undefined;
+      await act(async () => {
+        taskId = await result.current.startTask('ACP task', callbacks);
+      });
+
+      await act(async () => {
+        emitMockEvent('acp-session-update', {
+          instanceId: TEST_INSTANCE_ID,
+          sessionId: TEST_SESSION_ID,
+          update: {
+            sessionUpdate: 'user_message_chunk',
+            content: { type: 'text', text: 'echoed user text' },
+          },
+        });
+      });
+
+      // No mutation — no chunks delivered, no activities fired.
+      expect(chunks.length).toBe(0);
+      expect(activities.length).toBe(0);
+
+      // Task output should still be empty.
+      const task = result.current.getTask(taskId!);
+      expect(task?.output).toBe('');
+
+      // Critically: no "Unknown ACP task session update type" debug log.
+      const unknownCalls = logDebug.mock.calls.filter((call) =>
+        typeof call[1] === 'string' && /unknown/i.test(call[1] as string),
+      );
+      expect(unknownCalls.length).toBe(0);
+
+      promptDeferred.resolve();
+    });
+  });
+
+  // ---- Task #4: resource_link rendering ----
+
+  describe('ACP resource_link content', () => {
+    it('renders a resource_link chunk as a markdown link in task output', async () => {
+      const conn = makeAgentConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      setupRouting(conn.id);
+      const { promptDeferred } = registerAcpHandlers();
+
+      const chunks: string[] = [];
+      const callbacks: TaskCallbacks = {
+        onChunk: (c) => chunks.push(c),
+      };
+
+      const { result } = renderHook(() => useAgentTaskOperations());
+
+      let taskId: string | undefined;
+      await act(async () => {
+        taskId = await result.current.startTask('ACP task', callbacks);
+      });
+
+      await act(async () => {
+        emitMockEvent('acp-session-update', {
+          instanceId: TEST_INSTANCE_ID,
+          sessionId: TEST_SESSION_ID,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: {
+              type: 'resource_link',
+              uri: 'https://example.com/docs/intro',
+              name: 'Introduction',
+            },
+          },
+        });
+      });
+
+      expect(chunks).toEqual(['[Introduction](https://example.com/docs/intro)']);
+
+      const task = result.current.getTask(taskId!);
+      expect(task?.output).toBe('[Introduction](https://example.com/docs/intro)');
+
+      // partial output should also have landed in the activity store.
+      const tasks = useActivityStore.getState().tasks;
+      expect(tasks[0].partialOutput).toBe('[Introduction](https://example.com/docs/intro)');
+
+      promptDeferred.resolve();
+    });
+
+    it('falls back to URI basename when name is missing', async () => {
+      const conn = makeAgentConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      setupRouting(conn.id);
+      const { promptDeferred } = registerAcpHandlers();
+
+      const chunks: string[] = [];
+      const callbacks: TaskCallbacks = {
+        onChunk: (c) => chunks.push(c),
+      };
+
+      const { result } = renderHook(() => useAgentTaskOperations());
+
+      await act(async () => {
+        await result.current.startTask('ACP task', callbacks);
+      });
+
+      await act(async () => {
+        emitMockEvent('acp-session-update', {
+          instanceId: TEST_INSTANCE_ID,
+          sessionId: TEST_SESSION_ID,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: {
+              type: 'resource_link',
+              uri: 'file:///path/to/readme.md',
+            },
+          },
+        });
+      });
+
+      expect(chunks).toEqual(['[readme.md](file:///path/to/readme.md)']);
+      promptDeferred.resolve();
+    });
+
+    it('appends description on a new line (truncated to ~80 chars)', async () => {
+      const conn = makeAgentConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      setupRouting(conn.id);
+      const { promptDeferred } = registerAcpHandlers();
+
+      const chunks: string[] = [];
+      const callbacks: TaskCallbacks = {
+        onChunk: (c) => chunks.push(c),
+      };
+
+      const { result } = renderHook(() => useAgentTaskOperations());
+
+      await act(async () => {
+        await result.current.startTask('ACP task', callbacks);
+      });
+
+      const longDesc = 'x'.repeat(120);
+      await act(async () => {
+        emitMockEvent('acp-session-update', {
+          instanceId: TEST_INSTANCE_ID,
+          sessionId: TEST_SESSION_ID,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: {
+              type: 'resource_link',
+              uri: 'https://example.com/foo',
+              name: 'Foo',
+              description: longDesc,
+            },
+          },
+        });
+      });
+
+      expect(chunks.length).toBe(1);
+      const emitted = chunks[0];
+      expect(emitted.startsWith('[Foo](https://example.com/foo)\n')).toBe(true);
+      // Description line is truncated with ellipsis — shorter than the raw 120 chars.
+      const descLine = emitted.split('\n')[1];
+      expect(descLine.length).toBeLessThanOrEqual(81);
+      expect(descLine.endsWith('\u2026')).toBe(true);
 
       promptDeferred.resolve();
     });

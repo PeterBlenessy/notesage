@@ -217,6 +217,10 @@ enum AgentCmd {
         session_id: String,
         content: String,
         images: Option<Vec<super::ai::ImageData>>,
+        /// Optional client-generated message ID — forwarded as `PromptRequest.message_id`
+        /// when the `unstable_message_id` feature is enabled. The agent MAY echo this
+        /// back as `user_message_id` on subsequent `agent_message_chunk` events.
+        message_id: Option<String>,
         reply: oneshot::Sender<Result<(), String>>,
     },
     Cancel {
@@ -698,6 +702,7 @@ fn run_agent_thread(
                     session_id: sid,
                     content,
                     images,
+                    message_id,
                     reply,
                 } => {
                     // Run prompt in a spawn_local so the command loop remains
@@ -709,9 +714,10 @@ fn run_agent_thread(
                     tokio::task::spawn_local(async move {
                         log::info!(
                             target: "notesage::acp",
-                            "[{}] Prompt started (session={}, content_len={}, images={})",
+                            "[{}] Prompt started (session={}, content_len={}, images={}, has_message_id={})",
                             prompt_binary, prompt_sid, content.len(),
                             images.as_ref().map_or(0, |v| v.len()),
+                            message_id.is_some(),
                         );
                         let start = std::time::Instant::now();
                         let mut blocks: Vec<ContentBlock> = Vec::new();
@@ -724,10 +730,13 @@ fn run_agent_thread(
                             }
                         }
                         blocks.push(ContentBlock::Text(TextContent::new(content)));
-                        let req = PromptRequest::new(
+                        let mut req = PromptRequest::new(
                             SessionId::new(sid),
                             blocks,
                         );
+                        if let Some(mid) = message_id {
+                            req = req.message_id(mid);
+                        }
                         match conn.prompt(req).await {
                             Ok(_) => {
                                 log::info!(
@@ -1399,6 +1408,10 @@ pub async fn acp_session_load(
 /// Send a prompt to an ACP session. Blocks until the agent completes the turn.
 /// Session updates are emitted as `acp-session-update` Tauri events.
 /// Permission requests are emitted as `acp-permission-request` events.
+///
+/// The optional `message_id` parameter is forwarded on the `PromptRequest` when the
+/// `unstable_message_id` feature is enabled in the ACP crate. Agents that recognize it
+/// MAY echo the value back on `agent_message_chunk` events as `user_message_id`.
 #[tauri::command]
 pub async fn acp_session_prompt(
     state: State<'_, AcpState>,
@@ -1406,6 +1419,7 @@ pub async fn acp_session_prompt(
     session_id: String,
     content: String,
     images: Option<Vec<super::ai::ImageData>>,
+    message_id: Option<String>,
 ) -> Result<(), String> {
     let cmd_tx = {
         let agents = state.agents.lock().await;
@@ -1422,6 +1436,7 @@ pub async fn acp_session_prompt(
             session_id,
             content,
             images,
+            message_id,
             reply: reply_tx,
         })
         .await
@@ -1724,4 +1739,50 @@ pub async fn acp_permission_respond(
         .map_err(|_| "Agent thread is no longer running".to_string())?;
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use agent_client_protocol::{ContentBlock, PromptRequest, SessionId, TextContent};
+
+    /// `PromptRequest::message_id()` is a `#[cfg(feature = "unstable_message_id")]`-gated
+    /// builder. This test confirms the Cargo feature is enabled and that the resulting
+    /// request serializes with the `messageId` field — the same wire shape that agents
+    /// will see and MAY echo back as `user_message_id`.
+    #[test]
+    fn prompt_request_carries_message_id_when_set() {
+        let blocks = vec![ContentBlock::Text(TextContent::new("hello".to_string()))];
+        let req = PromptRequest::new(SessionId::new("sess-1".to_string()), blocks)
+            .message_id("user-uuid-1".to_string());
+
+        let json = serde_json::to_value(&req).expect("PromptRequest must serialize");
+        assert_eq!(
+            json.get("messageId").and_then(|v| v.as_str()),
+            Some("user-uuid-1"),
+            "PromptRequest should serialize `messageId` (camelCase) when set via the builder"
+        );
+        assert_eq!(
+            json.get("sessionId").and_then(|v| v.as_str()),
+            Some("sess-1"),
+        );
+    }
+
+    /// When `message_id` is not set, the field is omitted from the serialized JSON
+    /// (serde `skip_serializing_if = "Option::is_none"`) — so agents that don't know
+    /// about the unstable feature simply don't see the key.
+    #[test]
+    fn prompt_request_omits_message_id_when_absent() {
+        let blocks = vec![ContentBlock::Text(TextContent::new("hi".to_string()))];
+        let req = PromptRequest::new(SessionId::new("sess-2".to_string()), blocks);
+
+        let json = serde_json::to_value(&req).expect("PromptRequest must serialize");
+        assert!(
+            json.get("messageId").is_none(),
+            "messageId should be omitted when builder not called (got {json:?})",
+        );
+    }
 }

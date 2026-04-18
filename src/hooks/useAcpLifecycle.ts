@@ -381,6 +381,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     attachments?: ImageAttachment[];
     pathFilterRoot: string | null;
     homeDir: string;
+    /** Outbound ACP message_id (UUID) for the user message — forwarded on retry. */
+    userMessageAcpId?: string;
   } | null>(null);
 
   /**
@@ -485,6 +487,14 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       const userTimestamp = Date.now();
       const userMessage: ChatMessage = { role: 'user', content, timestamp: userTimestamp, displayContent: opts?.displayContent, skillName: opts?.skillName, attachments: opts?.attachments, ...(opts?.parentId !== undefined ? { parentId: opts.parentId } : {}) };
       addMessage(userMessage);
+      // Resolve the UUID id that addMessage generated — we'll pass it as the outbound
+      // ACP message_id so the agent can echo it back as `user_message_id`.
+      const userMessageAcpId = (() => {
+        const st = useChatStore.getState();
+        const conv = st.conversations.find((c) => c.id === st.activeConversationId);
+        const found = conv?.messages.find((m) => m.timestamp === userTimestamp && m.role === 'user');
+        return found?.id;
+      })();
       const assistantMessageId = userTimestamp + 1;
       addMessage({
         role: 'assistant',
@@ -527,6 +537,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         attachments: opts?.attachments,
         pathFilterRoot,
         homeDir,
+        userMessageAcpId,
       };
 
       try {
@@ -650,6 +661,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             sessionId: resolveActiveSessionId(acpAgent!.chatSessionId),
             content: promptContent,
             images: acpImages,
+            messageId: userMessageAcpId ?? null,
           });
         } finally {
           clearUnresponsiveTimer();
@@ -850,6 +862,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           sessionId: resolveActiveSessionId(acpAgent!.chatSessionId),
           content: promptContent,
           images: retryImages,
+          messageId: prompt.userMessageAcpId ?? null,
         });
       } finally {
         clearUnresponsiveTimer();

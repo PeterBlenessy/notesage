@@ -59,7 +59,7 @@
 
 ## Phase 2 — Streaming / Content Blocks
 
-### #3 — Recognize `user_message_chunk` as a silent noop
+### #3 — Recognize `user_message_chunk` as a silent noop ✅
 
 **Description:** Add an explicit branch for `user_message_chunk` in both the chat and task session listeners so it no longer falls through to the `Unknown ACP session update type` debug log. Discards the chunk — no user-visible effect.
 
@@ -79,7 +79,7 @@
 
 ---
 
-### #4 — Render `resource_link` content blocks inline
+### #4 — Render `resource_link` content blocks inline ✅
 
 **Description:** When an agent emits a `resource_link` content block (URI + optional name/description/mimeType/size), render it as a compact link inline in the chat. File URIs that resolve inside a project open as editor tabs; other URIs open in the system browser.
 
@@ -103,7 +103,7 @@
 
 ---
 
-### #5 — Propagate `messageId` through ACP prompts and streams
+### #5 — Propagate `messageId` through ACP prompts and streams ✅
 
 **Description:** Enable `unstable_message_id` and plumb message IDs end-to-end. On outbound `session/prompt`, populate `PromptRequest.message_id` with the UUID Notesage already generates for `ChatMessage.id`. On inbound stream events, read the optional `user_message_id` echo and the agent's own `message_id` and persist both on the corresponding `ChatMessage`. No user-visible change in v1; forward-compatibility groundwork.
 
@@ -273,8 +273,8 @@
 - `docs/features/ai-workflows.md` (delegation section) — note that delegation now restores agent-side context via `session/resume` / `session/load`
 - `docs/features/ai-providers.md` (ACP section) — note EnvVar auth flow, mention `resource_link` rendering
 - `docs/tauri-commands.md` — remove stale references to the deleted `auth status` probes if any exist
-- `docs/audits/2026-04-14-acp-audit.md` — mark rows for #9 (EnvVar auth), #35 (user_message_chunk), #39 (resource_link), #59 (messageId tracking), and the Auth status pre-check row as ✅ Shipped in v0.XX.X; update feature matrix summary
-- Mark this tasks file ✅ complete; tick PRD quality gates
+- `docs/audits/2026-04-14-acp-audit.md` — mark rows for #9 (EnvVar auth), #35 (user_message_chunk), #39 (resource_link), #59 (messageId tracking), and the Auth status pre-check row as <span style="color: rgb(34, 197, 94);">✔</span> Shipped in v0.XX.X; update feature matrix summary
+- Mark this tasks file <span style="color: rgb(34, 197, 94);">✔</span> complete; tick PRD quality gates
 - Mark the audit's bundled "Batch C-bis + D — ACP Protocol Tail" entry as shipped
 
 **Complexity:** S **Category:** docs **Dependencies:** #12 **Files:**

@@ -105,6 +105,8 @@ interface ChatStore {
   setMessageError: (timestamp: number, error: string) => void;
   /** Mark a message as interrupted (cancelled before completion) */
   setMessageInterrupted: (timestamp: number) => void;
+  /** Store the ACP protocol-level message ID on a message (from agent echo). */
+  setMessageAcpId: (timestamp: number, acpMessageId: string) => void;
   updateMessageThinking: (timestamp: number, thinking: string) => void;
   addActivity: (messageTimestamp: number, activity: AgentActivity) => void;
   completeLastActivity: (messageTimestamp: number) => void;
@@ -418,6 +420,17 @@ export const useChatStore = create<ChatStore>()(
           messages: c.messages.map((msg) =>
             msg.timestamp === timestamp
               ? { ...msg, interrupted: true }
+              : msg
+          ),
+          updatedAt: nextUpdatedAt(),
+        }))),
+
+      setMessageAcpId: (timestamp, acpMessageId) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          messages: c.messages.map((msg) =>
+            msg.timestamp === timestamp && msg.acpMessageId !== acpMessageId
+              ? { ...msg, acpMessageId }
               : msg
           ),
           updatedAt: nextUpdatedAt(),
