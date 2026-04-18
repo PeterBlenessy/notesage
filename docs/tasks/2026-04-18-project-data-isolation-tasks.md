@@ -6,8 +6,23 @@
 | **Status** | Not started |
 | **PRD** | [project-data-isolation](../prds/2026-04-18-project-data-isolation.md) |
 | **Audit** | [project-isolation](../audits/2026-04-18-project-isolation.md) |
-| **Total** | 33 tasks: 15S, 15M, 3L |
-| **Suggested order** | Foundations (#1–#3) → Track 1 Critical (#4–#9) → Track 1 High (#10–#22) → Track 2 hardening (#23–#27) → Track 3 correctness (#28–#31) → Verification & docs (#32–#33) |
+| **Total** | 34 tasks: 15S, 16M, 3L |
+| **Suggested order** | Verification harness (#0) → Foundations (#1–#3) → Track 1 Critical (#4–#9) → Track 1 High (#10–#22) → Track 2 hardening (#23–#27) → Track 3 correctness (#28–#31) → Verification & docs (#32–#33) |
+
+## Execution discipline — red-team TDD
+
+Every Track 1 leak corresponds to at least one **security-invariant test** that codifies "this attack must fail." The loop per leak:
+
+1. **Red (attack).** Write a test that performs the leak's repro from the audit and asserts the **current** (insecure) behavior. The test passes — proves the leak is real and reproducible.
+2. **Flip assertion.** Change the test to assert the attack *must fail*. The test now fails.
+3. **Green (fix).** Implement the scope narrowing. Test passes.
+4. **Regression lock.** Test stays in the suite forever. Any future change that re-opens the leak trips it.
+
+Two rules this discipline enforces:
+- **Negative tests, not only positive.** "Agent cannot read out-of-scope path" is the invariant. "Agent can read in-scope path" is a useful-but-insufficient companion.
+- **Real enforcement, not mocks, wherever practical.** Kernel-level (Seatbelt profile) for #1; real `isToolCallAllowed` + `path-filter` for #3, #6; real persist-store round trip for #4. Mock-level assertions are fine for wire-shape assertions (e.g., "Rust received the right paths") but do NOT prove the OS enforces them.
+
+`"Track 1 done"` means every Critical+High leak has an invariant test landed **and** the test is green **and** git blame shows the test was the driver (written before or alongside the fix commit).
 
 **Risks / open questions:**
 
@@ -16,8 +31,39 @@
 - **Cross-project mode opt-in.** Relaxes the primary security guarantee. Requires a clear settings description and a warning banner when enabled.
 - `ai.provider` **vs** `aiLock`**.** Existing field is a soft default; the new `aiLock` is hard enforcement. Document the distinction in migration notes to avoid confusion.
 - **Copilot LSP rejection semantics.** Silent deny on out-of-scope URIs could confuse users who expect completions everywhere. Surface the reason ("Outside project scope — completions disabled for this file") as a toast/indicator.
-- **Integration test environment.** Track 1 gates require real OS sandbox verification (kernel denies writes). Depends on a test harness that can spawn a real ACP agent and observe Seatbelt log stream — not currently in CI. May require a `@slow` test tag run locally only.
+- **Integration test environment.** Track 1 gates require real OS sandbox verification (kernel denies writes). Addressed by task #0 — a `@slow` / `#[ignore]` harness that spawns a real ACP agent and observes Seatbelt denials. Runs locally, not in CI. Every Critical/High leak has an attack test authored against this harness (red-team TDD).
 - **Red-team pass scheduling.** Needs a second engineer (or a disciplined solo run with the leak repro doc open). Plan for this before any public launch messaging.
+
+---
+
+## Phase 0 — Verification Harness
+
+### #0 — Kernel-level sandbox verification harness
+
+**Description:** Establish the test scaffolding that every Track 1 batch depends on. Spawns a real ACP agent with a scoped Seatbelt profile and asserts OS-level denial of out-of-scope writes. Runs locally (`@slow` / `#[ignore]`), not in CI, because it depends on macOS Seatbelt.
+
+This is the foundation of the red-team TDD discipline. Before implementing any Track 1 fix, write an attack test in this harness that reproduces the leak, then flip the assertion and land the fix.
+
+**Acceptance criteria:**
+
+- New file `src-tauri/tests/sandbox_isolation.rs` (or equivalent Rust integration-test file / shell harness under `e2e-real/`) with helpers:
+  - `spawn_test_acp_agent_with_sandbox(writable_paths: &[&str]) -> TestAgent` — spawns a minimal ACP agent under the same Seatbelt profile `acp_agent_spawn` builds, returning a handle we can drive.
+  - `run_bash(agent: &TestAgent, command: &str) -> Result<Output, SandboxDenied>` — runs an arbitrary shell command via the agent's bash tool, returns an error variant when the kernel denies.
+  - `observe_sandbox_denials(agent: &TestAgent) -> Vec<DenialEntry>` — reads macOS `log stream` output for Seatbelt deny lines scoped to the agent PID (reuse `sandbox_monitor.rs` where possible).
+- One **sentinel test** using the harness: agent given `writable_paths = [tmpdir_A]` attempts `echo test > tmpdir_B/evil.txt` — assert Seatbelt denies AND the file was not created. This is the failing-by-design test for leak #1; it currently **passes** (agent succeeds) because the leak is open. Mark it with a comment noting it will flip to deny-expected in task #4.
+- `#[ignore]` annotation + `@slow` tag so it doesn't run in normal `cargo test` / CI.
+- Developer docs: a short `docs/testing/isolation-harness.md` or `src-tauri/tests/README.md` section explaining how to run (`cargo test -- --ignored sandbox`), what it proves, and how to author new attack tests.
+
+**Non-goals:**
+
+- Full CI integration (harness is local-only — macOS Seatbelt unavailable on Linux CI runners).
+- Windows/Linux equivalents (scope limited to macOS for Track 1).
+
+**Complexity:** M **Category:** backend **Dependencies:** None (prerequisite for #4, #6, #8) **Files:**
+
+- `src-tauri/tests/sandbox_isolation.rs` (new)
+- `src-tauri/tests/README.md` (new or extended)
+- `docs/testing/isolation-harness.md` (new, optional) OR extend `docs/architecture.md` with a testing section
 
 ---
 

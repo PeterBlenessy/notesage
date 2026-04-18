@@ -51,6 +51,19 @@ The 22 leaks fall into three tracks with explicit ship gates:
 - **Track 2 — Hardening (silent context/metadata injection).** 6 Medium leaks. Should land before public launch, not a hard blocker.
 - **Track 3 — Correctness fixes.** 4 Low leaks. Can follow public launch.
 
+### Execution discipline — red-team TDD
+
+Every Track 1 fix is driven by a **security-invariant test** that codifies the attack. The per-leak loop:
+
+1. **Red (attack).** Write a test that reproduces the leak and asserts the *current* insecure behavior — i.e., the attack succeeds today. Test passes; proves the leak is real and reproducible.
+2. **Flip.** Change the assertion to require the attack *must fail*. Test now fails.
+3. **Green (fix).** Implement the scope narrowing. Test passes.
+4. **Regression lock.** Test stays in the suite forever.
+
+The prerequisite is task #0 in the tasks file: a kernel-level sandbox verification harness that spawns a real ACP agent under a real Seatbelt profile and observes denial entries in the macOS unified log. Mock-level assertions are acceptable for wire-shape claims ("Rust received these paths") but never for isolation guarantees ("the OS actually blocks the write").
+
+A post-Track-1 cold-read re-audit (tasks #32, #33) produces a dated follow-up document re-running the investigation process against the fixed code. Every original leak must be confirmed closed with a commit hash.
+
 ### Track 1 — Blockers (must-ship)
 
 #### 1.1 Per-chat sandbox scope selector (leak #1)
