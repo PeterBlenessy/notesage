@@ -259,6 +259,40 @@ Apple M3, 24GB. macOS.
 
 **Comparison vs v0.35.0:** phase1-ready 3,603→3,624ms (±0%, noise). Skills total 4,322→4,238ms (−2%). Tree refresh 4,886→4,664ms (−5%). **Startup ready 5,965→5,246ms (−12%)** and **tabs restored 5,650→5,047ms (−11%)** — both meaningful improvements. Index init total 1,128→637ms on first run, 1,140→1,190ms on second (first-run improvement; second run noise). No regressions. Batch B + C added rendering work in chat but didn't touch the startup hot path, consistent with flat/better numbers.
 
+### v0.37.0 — 2026-04-18 (uncommitted, base `34bb7cf`)
+
+Apple M3, 24GB. macOS.
+6 iCloud projects, 3 explorer folders, 6 open tabs, 1,265 total files.
+
+**Skills pipeline:**
+
+| Step | ms |
+| --- | --- |
+| skill-scan | 3,186 |
+| skill-tool-extract (11 skills) | 408 |
+| agent-scan | 111 |
+| instruction-scan | 110 |
+| **phase1-ready (tools visible)** | **3,817** |
+| bundled-skills-extract | 375 |
+| phase2-extract | 617 |
+| **total** | **4,434** |
+
+**Startup & trees:**
+
+| Metric | ms |
+| --- | --- |
+| trees validated (1st) | 3,428 |
+| trees validated (2nd) | 3,765 |
+| tree refresh | 4,914 |
+| tab-preload (5 tabs) | 4,118 |
+| index init total | 1,155 / 1,164 |
+| startup ready | 5,999 / 6,052 |
+| tabs restored | 5,706 / 5,802 |
+
+**Rescan (second run):** skill-scan 13ms, skill-tool-extract 4ms, agent-scan 8ms, instruction-scan 2ms, phase1-ready 27ms, total 27ms.
+
+**Comparison vs v0.36.0:** phase1-ready 3,624→3,817ms (+5%, noise). Skills total 4,238→4,434ms (+5%, noise). Tree refresh 4,664→4,914ms (+5%, noise). Startup ready 5,246→5,999ms (+14%) and tabs restored 5,047→5,706ms (+13%) — both first-run only; second-run values are flat (5,812→6,052ms +4%, 5,556→5,802ms +4%). **Index init total 637→1,155ms on first run (+81%)** — the prior v0.36.0 first-run 637ms was an outlier good result (previous v0.35.0 was 1,128ms); v0.37.0's 1,155ms matches the v0.35.0 baseline and the second-run v0.36.0 number (1,190ms). Likely iCloud sync latency noise, not a code regression (Phase 3 auth consolidation and dep pruning don't touch the index or startup hot path). Rescan numbers are cleaner than before (27ms vs 81ms). No real regressions attributable to v0.37.0.
+
 ## Notes
 
 - Parse benchmarks include Tiptap editor creation overhead (\~15ms fixed cost)

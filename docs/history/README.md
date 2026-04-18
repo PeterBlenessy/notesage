@@ -105,3 +105,4 @@ Chronological log of major implementation milestones and changes.
 | 099 | [Release v0.34.0](099-release-v0.34.0.md) | ACP protocol compliance — thinking, modes, config, usage, plans, slash commands, session lifecycle |
 | 100 | [Release v0.35.0](100-release-v0.35.0.md) | Agent simplification — remove bundled agents, @ pass-through for ACP, expanded discovery, custom prompts |
 | 101 | [Release v0.36.0](101-release-v0.36.0.md) | ACP session lifecycle — resume/list/fork/close; inline diff + text content blocks; 4 race/casing fixes |
+| 102 | [Release v0.37.0](102-release-v0.37.0.md) | ACP Protocol Tail — task agent parity + close, EnvVar auth, resource_link, messageId; 5 security advisories closed |
