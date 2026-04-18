@@ -250,7 +250,7 @@ async fn run_log_stream(
 ///   "Sandbox: curl(12345) deny(1) network-outbound remote:*:443"
 ///   "Sandbox: node(12345) deny(1) file-read-data /Users/x/.ssh/id_rsa"
 ///   "5 duplicate reports for Sandbox: node(12345) deny(1) network-outbound remote:*:443"
-fn parse_violation_message(msg: &str) -> (String, String) {
+pub fn parse_violation_message(msg: &str) -> (String, String) {
     // Find "deny(N) " and extract what follows
     if let Some(deny_pos) = msg.find("deny(") {
         let after_deny = &msg[deny_pos..];

@@ -38,7 +38,7 @@ Two rules this discipline enforces:
 
 ## Phase 0 — Verification Harness
 
-### #0 — Kernel-level sandbox verification harness
+### #0 — Kernel-level sandbox verification harness ✅
 
 **Description:** Establish the test scaffolding that every Track 1 batch depends on. Spawns a real ACP agent with a scoped Seatbelt profile and asserts OS-level denial of out-of-scope writes. Runs locally (`@slow` / `#[ignore]`), not in CI, because it depends on macOS Seatbelt.
 

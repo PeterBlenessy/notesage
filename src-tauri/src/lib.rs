@@ -3,6 +3,12 @@ mod export;
 mod index;
 mod tray;
 
+// Re-exports for integration tests under `tests/`. Kept narrow — only the
+// primitives tests need to drive the real sandbox plumbing from outside the
+// crate (see `tests/sandbox_isolation.rs`).
+pub use commands::sandbox;
+pub use commands::sandbox_monitor;
+
 use commands::*;
 use index::IndexState;
 use tauri::{Emitter, Manager, RunEvent};
