@@ -62,7 +62,7 @@ export function PermissionCard({ request }: PermissionCardProps) {
 
   const handleAllowAlways = () => {
     const store = usePermissionStore.getState();
-    store.allowAlways(request.toolKind);
+    store.allowAlways(request.toolKind, null, null);
     // Approve this request + any other pending requests of the same kind
     const pending = store.requests.filter((r) => r.toolKind === request.toolKind);
     for (const req of pending) {

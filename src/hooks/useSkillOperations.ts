@@ -310,7 +310,7 @@ export function useSkillOperations() {
     workingDir?: string,
   ): Promise<ScriptResult> => {
     // Check permission
-    const tier = usePermissionStore.getState().isSkillScriptAllowed(skillName);
+    const tier = usePermissionStore.getState().isSkillScriptAllowed(skillName, null, null);
     if (tier === 'none') {
       // Caller is responsible for showing permission UI and retrying
       throw new Error(`PERMISSION_REQUIRED:${skillName}`);

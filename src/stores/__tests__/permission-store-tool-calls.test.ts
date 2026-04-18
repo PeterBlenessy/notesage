@@ -29,27 +29,29 @@ describe('permission-store tool call permissions', () => {
 
   describe('isToolAllowed', () => {
     it('returns always for auto-allowed tools (read_file)', () => {
-      expect(usePermissionStore.getState().isToolAllowed('read_file')).toBe('always');
+      expect(usePermissionStore.getState().isToolAllowed('read_file', null, null)).toBe('always');
     });
 
     it('returns none for unknown tools initially', () => {
-      expect(usePermissionStore.getState().isToolAllowed('write_file')).toBe('none');
+      expect(usePermissionStore.getState().isToolAllowed('write_file', null, null)).toBe('none');
     });
 
     it('returns session after allowToolSession', () => {
       usePermissionStore.getState().allowToolSession('write_file');
-      expect(usePermissionStore.getState().isToolAllowed('write_file')).toBe('session');
+      expect(usePermissionStore.getState().isToolAllowed('write_file', null, null)).toBe('session');
     });
 
     it('returns always after allowToolAlways', () => {
-      usePermissionStore.getState().allowToolAlways('execute_skill_script');
-      expect(usePermissionStore.getState().isToolAllowed('execute_skill_script')).toBe('always');
+      usePermissionStore.getState().allowToolAlways('execute_skill_script', null, null);
+      expect(
+        usePermissionStore.getState().isToolAllowed('execute_skill_script', null, null),
+      ).toBe('always');
     });
 
     it('always takes precedence over session', () => {
       usePermissionStore.getState().allowToolSession('write_file');
-      usePermissionStore.getState().allowToolAlways('write_file');
-      expect(usePermissionStore.getState().isToolAllowed('write_file')).toBe('always');
+      usePermissionStore.getState().allowToolAlways('write_file', null, null);
+      expect(usePermissionStore.getState().isToolAllowed('write_file', null, null)).toBe('always');
     });
   });
 
@@ -71,30 +73,34 @@ describe('permission-store tool call permissions', () => {
 
   describe('allowToolAlways', () => {
     it('adds tool to always list', () => {
-      usePermissionStore.getState().allowToolAlways('tool-a');
-      expect(usePermissionStore.getState().toolCallAlways).toContain('tool-a');
+      usePermissionStore.getState().allowToolAlways('tool-a', null, null);
+      expect(
+        usePermissionStore.getState().toolCallAlways.some((a) => a.toolName === 'tool-a'),
+      ).toBe(true);
     });
 
     it('does not duplicate entries', () => {
-      usePermissionStore.getState().allowToolAlways('tool-a');
-      usePermissionStore.getState().allowToolAlways('tool-a');
-      expect(usePermissionStore.getState().toolCallAlways.filter(s => s === 'tool-a')).toHaveLength(1);
+      usePermissionStore.getState().allowToolAlways('tool-a', null, null);
+      usePermissionStore.getState().allowToolAlways('tool-a', null, null);
+      expect(
+        usePermissionStore.getState().toolCallAlways.filter((a) => a.toolName === 'tool-a'),
+      ).toHaveLength(1);
     });
   });
 
   describe('removeToolAlways', () => {
     it('removes tool from always list', () => {
-      usePermissionStore.getState().allowToolAlways('tool-a');
-      usePermissionStore.getState().allowToolAlways('tool-b');
-      usePermissionStore.getState().removeToolAlways('tool-a');
+      usePermissionStore.getState().allowToolAlways('tool-a', null, null);
+      usePermissionStore.getState().allowToolAlways('tool-b', null, null);
+      usePermissionStore.getState().removeToolAlways('tool-a', null, null);
 
       const state = usePermissionStore.getState();
-      expect(state.toolCallAlways).not.toContain('tool-a');
-      expect(state.toolCallAlways).toContain('tool-b');
+      expect(state.toolCallAlways.some((a) => a.toolName === 'tool-a')).toBe(false);
+      expect(state.toolCallAlways.some((a) => a.toolName === 'tool-b')).toBe(true);
     });
 
     it('is safe to call on non-existent tool', () => {
-      usePermissionStore.getState().removeToolAlways('nonexistent');
+      usePermissionStore.getState().removeToolAlways('nonexistent', null, null);
       expect(usePermissionStore.getState().toolCallAlways).toEqual([]);
     });
   });

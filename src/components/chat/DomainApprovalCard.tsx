@@ -66,14 +66,14 @@ export function DomainApprovalCard({ request, onResolved }: DomainApprovalCardPr
 
   const handleAllowSession = () => {
     respond('allow_session');
-    usePermissionStore.getState().allowDomain(request.connectionId, request.domain, 'session');
+    usePermissionStore.getState().allowDomain(request.connectionId, request.domain, 'session', null);
     setResolved(`Allowed ${request.domain} for session`);
     setTimeout(() => onResolved(request.requestId), 2000);
   };
 
   const handleAllowAlways = () => {
     respond('allow_always');
-    usePermissionStore.getState().allowDomain(request.connectionId, request.domain, 'always');
+    usePermissionStore.getState().allowDomain(request.connectionId, request.domain, 'always', null);
     setResolved(`Allowed ${request.domain} always`);
     setTimeout(() => onResolved(request.requestId), 2000);
   };

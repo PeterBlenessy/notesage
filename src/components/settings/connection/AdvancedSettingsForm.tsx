@@ -43,7 +43,7 @@ export function AdvancedSettingsForm({
   onNewDomainChange,
 }: AdvancedSettingsFormProps) {
   const isAgentManaged = connection.authMethod === 'agent_managed';
-  const domainAlwaysAllowed = usePermissionStore((s) => s.domainAlwaysAllowed);
+  const domainsByConn = usePermissionStore((s) => s.domainAlwaysAllowed);
 
   if (!isAgentManaged) return null;
 
@@ -156,7 +156,12 @@ export function AdvancedSettingsForm({
                 (o) => o.agentBinary === ab || o.lspBinary === ab
               );
               const builtInDomains = provOpt?.installMeta?.allowedDomains ?? [];
-              const userDomains = domainAlwaysAllowed[connection.id] ?? [];
+              // The settings UI surfaces the "global" (cross-project) bucket of
+              // always-allowed domains for this connection. Per-project buckets
+              // land here via the per-project scope enforcement work (tasks
+              // #6/#8/#12) — the shape supports them even though this UI doesn't
+              // expose per-project scoping yet.
+              const userDomains = domainsByConn[connection.id]?.global ?? [];
               const telemetryEnabled = TELEMETRY_DOMAINS.some((d) =>
                 userDomains.includes(d)
               );
@@ -164,11 +169,11 @@ export function AdvancedSettingsForm({
                 const store = usePermissionStore.getState();
                 if (enabled) {
                   for (const d of TELEMETRY_DOMAINS) {
-                    store.allowDomain(connection.id, d, 'always');
+                    store.allowDomain(connection.id, d, 'always', null);
                   }
                 } else {
                   for (const d of TELEMETRY_DOMAINS) {
-                    store.removeDomain(connection.id, d);
+                    store.removeDomain(connection.id, d, null);
                   }
                 }
               };
@@ -209,7 +214,7 @@ export function AdvancedSettingsForm({
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">User</span>
                         <button
                           className="text-muted-foreground hover:text-destructive transition-colors"
-                          onClick={() => usePermissionStore.getState().removeDomain(connection.id, d)}
+                          onClick={() => usePermissionStore.getState().removeDomain(connection.id, d, null)}
                           title="Remove"
                         >
                           <XIcon className="h-3 w-3" strokeWidth={1.5} />
@@ -226,7 +231,7 @@ export function AdvancedSettingsForm({
                       className="h-7 text-xs flex-1"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && newDomain.trim()) {
-                          usePermissionStore.getState().allowDomain(connection.id, newDomain.trim(), 'always');
+                          usePermissionStore.getState().allowDomain(connection.id, newDomain.trim(), 'always', null);
                           onNewDomainChange('');
                         }
                       }}
@@ -235,7 +240,7 @@ export function AdvancedSettingsForm({
                       variant="ghost" size="icon" className="h-7 w-7 shrink-0"
                       onClick={() => {
                         if (newDomain.trim()) {
-                          usePermissionStore.getState().allowDomain(connection.id, newDomain.trim(), 'always');
+                          usePermissionStore.getState().allowDomain(connection.id, newDomain.trim(), 'always', null);
                           onNewDomainChange('');
                         }
                       }}

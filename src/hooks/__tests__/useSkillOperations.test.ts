@@ -552,7 +552,7 @@ describe('useSkillOperations', () => {
 
   describe('executeScript', () => {
     it('executes script when permission is always-allowed', async () => {
-      usePermissionStore.getState().allowSkillScriptAlways('test-skill');
+      usePermissionStore.getState().allowSkillScriptAlways('test-skill', null, null);
 
       const { result } = renderHook(() => useSkillOperations());
 
@@ -620,7 +620,7 @@ describe('useSkillOperations', () => {
     });
 
     it('passes empty args array by default', async () => {
-      usePermissionStore.getState().allowSkillScriptAlways('test-skill');
+      usePermissionStore.getState().allowSkillScriptAlways('test-skill', null, null);
 
       const { result } = renderHook(() => useSkillOperations());
 
@@ -638,7 +638,7 @@ describe('useSkillOperations', () => {
     });
 
     it('passes null workingDir when not specified', async () => {
-      usePermissionStore.getState().allowSkillScriptAlways('test-skill');
+      usePermissionStore.getState().allowSkillScriptAlways('test-skill', null, null);
 
       const { result } = renderHook(() => useSkillOperations());
 
