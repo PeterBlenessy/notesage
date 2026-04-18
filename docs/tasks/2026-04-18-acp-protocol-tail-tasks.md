@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-18 |
-| **Status** | Not started |
+| **Status** | Complete — all 13 tasks shipped in v0.37.0 ✅ |
 | **PRD** | [acp-protocol-tail](../prds/2026-04-18-acp-protocol-tail.md) |
 | **Audit** | [acp-audit](../audits/2026-04-14-acp-audit.md) — Batches C-bis + D |
 | **Total** | 13 tasks: 8S, 5M |
@@ -243,7 +243,7 @@
 
 ## Phase 4 — Verification & Docs
 
-### #12 — Integration tests
+### #12 — Integration tests ✅
 
 **Description:** Add integration-style tests covering the interactions between the phases. Existing unit tests from #1–#10 cover individual changes; this task catches the cross-cutting cases.
 
@@ -264,7 +264,7 @@
 
 ---
 
-### #13 — Documentation updates
+### #13 — Documentation updates ✅
 
 **Description:** Reflect the new capability in the appropriate docs and mark audit rows shipped.
 

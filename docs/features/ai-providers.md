@@ -35,8 +35,9 @@ interface AIProvider {
 
 - Uses the `agent-client-protocol` Rust crate to communicate with agent subprocesses over stdio
 - Agent processes spawned with `kill_on_drop(true)` — SIGKILL sent when `Child` is dropped
-- Agent auth: ACP `authenticate` method delegates to the agent subprocess. Most agents open a browser for OAuth. Agents that can't open a browser from a subprocess (e.g., Gemini CLI — same limitation as Zed editor #43288) fall back to API key input or terminal-based auth.
+- Agent auth: ACP `authenticate` method delegates to the agent subprocess. Most agents open a browser for OAuth. Agents that can't open a browser from a subprocess (e.g., Gemini CLI — same limitation as Zed editor #43288) fall back to API key input or terminal-based auth. Auth state comes from the ACP `authenticate` response — there are no per-provider CLI `auth status` probes.
 - Gemini CLI auth: in-app API key input (from Google AI Studio, free) stored as `envVars` in connection credentials and passed at spawn time. Terminal-based Google OAuth as secondary option via `run_in_terminal` command.
+- **EnvVar auth flow**: Agents advertising `AuthMethod::EnvVar` drive a generic credential form — required variable names, labels, and the "get credentials" link all come from the agent. Submitted values are stored in `credentials.envVars` (keychain) and passed to the child process as environment variables on spawn. This replaces the Gemini-specific API-key panel; new EnvVar-auth agents work without per-provider UI code.
 - Agent subprocess stderr is logged at info level for auth debugging
 - Prompts sent via `acp_session_prompt`, responses streamed as `acp-session-update` Tauri events
 - Four supported agents: Claude Code (`claude-agent-acp`), Codex (`codex-acp`), Copilot (`copilot --acp`), Gemini CLI (`gemini --acp`)
@@ -247,6 +248,8 @@ ACP agents (Claude Code, Codex, Copilot, Gemini) can emit rich `ToolCallContent`
 - **Terminal blocks** → muted placeholder ("Terminal output (not yet supported)") — full support requires the `terminal/create` client capability, which is out of scope for this batch.
 
 Direct API tool calling (Anthropic/OpenAI/Ollama/local) does not emit structured content — results are rendered as plain text in the `ToolResultSegment`.
+
+**Resource link content blocks (ACP):** Agents can emit `resource_link` content blocks alongside text in `agent_message_chunk` (URI + optional `name`, `description`, `mimeType`, `size`). Notesage normalizes these in `acp-utils.ts` and appends them as markdown links to the current text segment — the existing markdown renderer handles the rendering. `file://` URIs that resolve inside a known project open as editor tabs; other URIs open via `openExternal`. `name` (or the URI basename) is used as the link text.
 
 ## Image Attachments & Vision
 

@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-18 |
-| **Status** | Draft |
+| **Status** | Shipped in v0.37.0 |
 | **Priority** | Low-Medium (maintenance) |
 | **Impact** | Closes remaining ACP protocol gaps after Batches B/C. Comment-delegated chats gain session continuity; agents' `resource_link` blocks render; auth flows consolidate on ACP primitives. |
 | **Audit** | [acp-audit](../audits/2026-04-14-acp-audit.md) — Batches C-bis + D |
@@ -206,27 +206,27 @@ interface GenericEnvVarCredentials {
 
 ## Quality Gates
 
-- [ ] Enabling `unstable_auth_methods` + `unstable_message_id` doesn't break existing ACP connections (`cargo test` green in `src-tauri/`)
+- [x] Enabling `unstable_auth_methods` + `unstable_message_id` doesn't break existing ACP connections (`cargo test` green in `src-tauri/` — 615 pass)
 
-- [ ] Reopening a comment thread after an app restart restores the agent's prior context (via `session/resume` or `session/load`, depending on capability)
+- [x] Reopening a comment thread after an app restart restores the agent's prior context (via `session/resume` or `session/load`, depending on capability) — Task #1
 
-- [ ] Task completion fires a `session/close` call (observable in the ACP message log) when the agent supports it; errors silently tolerated
+- [x] Task completion fires a `session/close` call (observable in the ACP message log) when the agent supports it; errors silently tolerated — Task #2
 
-- [ ] `Unknown ACP session update type: user_message_chunk` debug log no longer appears
+- [x] `Unknown ACP session update type: user_message_chunk` debug log no longer appears — Task #3
 
-- [ ] An agent-emitted `resource_link` renders as a clickable link card inline in the message; clicking a `file://` link inside a project opens the editor tab
+- [x] An agent-emitted `resource_link` renders as a clickable link card inline in the message; clicking a `file://` link inside a project opens the editor tab — Task #4
 
-- [ ] `PromptRequest.message_id` is set on outbound prompts; echoed `user_message_id` and response `message_id` are stored on the corresponding `ChatMessage` when the agent emits them
+- [x] `PromptRequest.message_id` is set on outbound prompts; echoed `user_message_id` and response `message_id` are stored on the corresponding `ChatMessage` when the agent emits them — Task #5
 
-- [ ] Gemini connection migration: existing connections with `envVars` values continue to work with no user action; fresh connections go through the EnvVar auth flow
+- [x] Gemini connection migration: existing connections with `envVars` values continue to work with no user action; fresh connections go through the EnvVar auth flow — Tasks #7/#8 (manually verified)
 
-- [ ] `acp_binary.rs` has no per-provider `auth status` CLI probes
+- [x] `acp_binary.rs` has no per-provider `auth status` CLI probes — Task #9 (grep returns 0)
 
-- [ ] TypeScript type check passes
+- [x] TypeScript type check passes
 
-- [ ] All existing tests continue to pass
+- [x] All existing tests continue to pass (2779 frontend, 615 rust)
 
-- [ ] Unit tests for `user_message_chunk` noop handler, `resource_link` rendering, `messageId` round-trip, and the `restoreOrCreateAcpSession` call site in `useAgentTaskOperations`
+- [x] Unit tests for `user_message_chunk` noop handler, `resource_link` rendering, `messageId` round-trip, and the `restoreOrCreateAcpSession` call site in `useAgentTaskOperations` — Phases 1–3 + Task #12
 
 ## Out of Scope
 

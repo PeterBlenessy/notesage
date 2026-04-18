@@ -1,6 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import { isExternalUrl, isLocalFilePath, computeRelativePath, searchWorkspaceFiles, OPENABLE_EXTENSIONS } from '../link-utils';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import '@/test/tauri-mock';
+import { setMockInvokeHandler } from '@/test/tauri-mock';
+import { isExternalUrl, isLocalFilePath, computeRelativePath, searchWorkspaceFiles, OPENABLE_EXTENSIONS, handleLinkNavigation } from '../link-utils';
 import type { FileEntry } from '@/lib/tauri';
+
+// Mock the opener plugin — `handleLinkNavigation` uses it for external URLs.
+vi.mock('@tauri-apps/plugin-opener', () => ({
+  openUrl: vi.fn(() => Promise.resolve()),
+}));
 
 describe('isExternalUrl', () => {
   it('detects http URLs', () => {
@@ -168,3 +175,74 @@ describe('searchWorkspaceFiles', () => {
     expect(results[0].relativePath).toBe('./docs/editor.md');
   });
 });
+
+// ---------------------------------------------------------------------------
+// handleLinkNavigation — covers the "file:// inside project vs external URL"
+// split for ACP `resource_link` rendering (PRD #12, bullet 5).
+//
+// The markdown emitted by `formatResourceLinkAsMarkdown` flows through the
+// editor's normal link-click extension, which delegates to `handleLinkNavigation`.
+// These tests exercise that helper directly so we don't need to spin up
+// ProseMirror just to prove the split works.
+// ---------------------------------------------------------------------------
+
+describe('handleLinkNavigation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('opens external http URLs via openUrl (no editor tab opened)', async () => {
+    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    const mockOpenUrl = vi.mocked(openUrl);
+    const openTab = vi.fn();
+
+    await handleLinkNavigation('https://example.com/docs/intro', openTab, ['/project']);
+
+    expect(mockOpenUrl).toHaveBeenCalledTimes(1);
+    expect(mockOpenUrl).toHaveBeenCalledWith('https://example.com/docs/intro');
+    expect(openTab).not.toHaveBeenCalled();
+  });
+
+  it('opens absolute file path inside project via in-app openTab (no openUrl)', async () => {
+    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    const mockOpenUrl = vi.mocked(openUrl);
+    setMockInvokeHandler('read_file', () => '# Hello');
+
+    const openTab = vi.fn();
+
+    await handleLinkNavigation('/project/notes/readme.md', openTab, ['/project']);
+
+    expect(openTab).toHaveBeenCalledTimes(1);
+    const [path, name, content, _fm, fileType] = openTab.mock.calls[0];
+    expect(path).toBe('/project/notes/readme.md');
+    expect(name).toBe('readme.md');
+    // Frontmatter is parsed for markdown, body stripped to raw content.
+    expect(content).toBe('# Hello');
+    expect(fileType).toBe('markdown');
+    // External opener never invoked for a file that resolved in-app.
+    expect(mockOpenUrl).not.toHaveBeenCalled();
+  });
+
+  it('falls back to openUrl for non-openable external-looking paths', async () => {
+    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    const mockOpenUrl = vi.mocked(openUrl);
+    const openTab = vi.fn();
+
+    // No known file extension and not an http/mailto scheme → falls through to openUrl.
+    await handleLinkNavigation('ftp://example.com/file', openTab, ['/project']);
+
+    expect(mockOpenUrl).toHaveBeenCalledWith('ftp://example.com/file');
+    expect(openTab).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NOTE: Rendering of ACP `resource_link` content → markdown link is already
+// covered in:
+//   - src/hooks/__tests__/useAcpSessionListeners.test.ts (chat path)
+//   - src/hooks/__tests__/useAgentTaskOperations.test.ts (task path)
+// Those tests assert the emitted text contains `[name](uri)`. The click-handler
+// tests above prove that such a link — once rendered in the editor — routes
+// `file://`/local paths through the in-app opener and everything else through
+// `openUrl`, closing the loop on PRD #12 bullet 5.
+// ---------------------------------------------------------------------------

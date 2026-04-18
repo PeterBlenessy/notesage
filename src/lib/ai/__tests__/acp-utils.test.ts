@@ -1,10 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, expectTypeOf } from 'vitest';
 import {
   formatToolLabel,
   parseRawInput,
   normalizeToolCallContent,
   hasSessionCapability,
   type AcpAgentCapabilities,
+  type AcpSpawnResult,
+  type AuthEnvVar,
+  type AuthMethodInfo,
 } from '../acp-utils';
 
 describe('formatToolLabel', () => {
@@ -346,5 +349,96 @@ describe('hasSessionCapability', () => {
 
   it('treats truthy primitives as supported (agents may serialize capability as bool)', () => {
     expect(hasSessionCapability(withCaps({ list: true as unknown }), 'list')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AuthMethodInfo — EnvVar discriminated-union round-trip
+//
+// Rust-side serde round-trip is tested in `src-tauri/src/commands/acp.rs`:
+// `auth_method_info_env_var_serializes_vars_and_link`. The tests below assert
+// the TypeScript consumer side: given a mocked `AcpSpawnResult` with an
+// `env_var` method, `type: 'env_var'` narrows and exposes `vars[]` / `link`
+// typed fields — the shape the generic EnvVar auth UI depends on.
+// ---------------------------------------------------------------------------
+
+describe('AuthMethodInfo discriminated union (EnvVar e2e)', () => {
+  /** A mocked `AcpSpawnResult` as would be returned by `acp_agent_spawn`
+   *  when the agent advertises an `AuthMethod::EnvVar` (see Rust `acp.rs`). */
+  const MOCK_SPAWN_RESULT: AcpSpawnResult = {
+    instance_id: 'inst-1',
+    agent_name: 'gemini',
+    agent_version: '1.0.0',
+    auth_methods: [
+      {
+        type: 'env_var',
+        id: 'api-key',
+        name: 'API Key',
+        description: 'Paste your Gemini key from Google AI Studio',
+        vars: [
+          { name: 'GEMINI_API_KEY', label: 'API Key', secret: true, optional: false },
+        ],
+        link: 'https://aistudio.google.com/app/apikey',
+      },
+    ],
+    sandbox_enabled: false,
+    network_sandbox_enabled: false,
+    supports_images: false,
+    capabilities: null,
+  };
+
+  it('preserves `vars[]` and `link` through the spawn payload', () => {
+    const [method] = MOCK_SPAWN_RESULT.auth_methods;
+    expect(method.type).toBe('env_var');
+
+    if (method.type !== 'env_var') throw new Error('guard failed');
+
+    // Discriminated-union narrowing must expose `vars` / `link` as typed fields.
+    expectTypeOf(method.vars).toEqualTypeOf<AuthEnvVar[]>();
+    expectTypeOf(method.link).toEqualTypeOf<string | null | undefined>();
+
+    expect(method.vars).toHaveLength(1);
+    expect(method.vars[0]).toEqual({
+      name: 'GEMINI_API_KEY',
+      label: 'API Key',
+      secret: true,
+      optional: false,
+    });
+    expect(method.link).toBe('https://aistudio.google.com/app/apikey');
+  });
+
+  it('agent-variant methods do NOT carry vars/link (narrowing blocks access)', () => {
+    const agentMethod: AuthMethodInfo = {
+      type: 'agent',
+      id: 'default',
+      name: 'Default',
+      description: null,
+    };
+    expect(agentMethod.type).toBe('agent');
+
+    if (agentMethod.type !== 'agent') throw new Error('guard failed');
+    // `vars` / `link` are not present on the `agent` variant — this is
+    // enforced at compile time by the discriminated union and confirmed
+    // at runtime here.
+    expect((agentMethod as unknown as Record<string, unknown>).vars).toBeUndefined();
+    expect((agentMethod as unknown as Record<string, unknown>).link).toBeUndefined();
+  });
+
+  it('finds the first `env_var` method in a mixed list (the ConnectAgent pattern)', () => {
+    // Mirrors the `findEnvVarAuthMethod` helper used by `ConnectAgent.tsx`.
+    const methods: AuthMethodInfo[] = [
+      { type: 'agent', id: 'oauth', name: 'OAuth' },
+      {
+        type: 'env_var',
+        id: 'api-key',
+        name: 'API Key',
+        vars: [{ name: 'FOO', label: 'Foo', secret: true, optional: false }],
+        link: 'https://example.com/keys',
+      },
+    ];
+    const envVar = methods.find((m): m is AuthMethodInfo & { type: 'env_var' } => m.type === 'env_var');
+    expect(envVar).toBeDefined();
+    expect(envVar?.vars[0].name).toBe('FOO');
+    expect(envVar?.link).toBe('https://example.com/keys');
   });
 });

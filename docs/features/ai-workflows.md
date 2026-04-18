@@ -128,6 +128,7 @@ Document comments with AI agent delegation — foundational infrastructure for h
 - Agent replies displayed as threaded responses with author attribution and timestamps
 - Per-comment activity log showing agent steps (tool calls, permissions, errors)
 - Uses `agent_tasks` routing slot via `useAgentTaskOperations`
+- Session continuity: comment-delegated tasks now restore agent-side context through the same capability-gated `restoreOrCreateAcpSession` chain used by main chat (`session/resume` → `session/load` → `session/list` → `session/new`). When a task reaches a terminal state (completed, failed, or cancelled) it fires a best-effort `session/close` so the agent can free resources — gated on `sessionCapabilities.close`.
 
 **Multi-turn threads & apply-to-document:**
 
