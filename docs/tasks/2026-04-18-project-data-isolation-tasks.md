@@ -87,7 +87,7 @@ This is the foundation of the red-team TDD discipline. Before implementing any T
 
 ---
 
-### #2 — Migrate `permission-store` approvals to `ScopedApproval[]`
+### #2 — Migrate `permission-store` approvals to `ScopedApproval[]` ✅
 
 **Description:** Replace flat `string[]` approval lists with structured `(toolName, connectionId, projectRoot)` triples. Includes a one-time migration that moves existing approvals into a legacy bucket (`connectionId: null, projectRoot: null`) preserving current behaviour, and a migration toast inviting the user to review.
 
