@@ -2,6 +2,11 @@ import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useActivityStore } from "@/stores/activity-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { useChatStore, selectProjectPaths } from "@/stores/chat-store";
+import { useSettingsStore } from "@/stores/settings-store";
+import { buildTrayRecents, type TrayRecentFile } from "@/lib/tray-recents";
+
+export type { TrayRecentFile };
 
 /**
  * Keep the system tray badge count and recent files in sync with app state.
@@ -17,17 +22,19 @@ export function useTraySync() {
     invoke("update_tray_badge", { count: pendingCount }).catch(() => {});
   }, [tasks]);
 
-  // Sync recent files from editor store
+  // Sync recent files from editor store, filtered by active chat scope.
+  // `files` is the scoped list (primary submenu); `allFiles` is the unfiltered
+  // list exposed via the "All recent" submenu as an opt-in escape hatch.
   const tabs = useEditorStore((s) => s.tabs);
+  const selectedProjectPaths = useChatStore(selectProjectPaths);
+  const notesRootPath = useSettingsStore((s) => s.notesRootPath);
   useEffect(() => {
-    const recentFiles = tabs
-      .filter((t) => t.filePath)
-      .slice(-5)
-      .reverse()
-      .map((t) => ({
-        name: t.filePath.split("/").pop() ?? t.filePath,
-        path: t.filePath,
-      }));
-    invoke("update_tray_recent", { files: recentFiles }).catch(() => {});
-  }, [tabs]);
+    const { scoped, all } = buildTrayRecents({
+      tabs,
+      selectedProjectPaths,
+      notesRootPath,
+      limit: 5,
+    });
+    invoke("update_tray_recent", { files: scoped, allFiles: all }).catch(() => {});
+  }, [tabs, selectedProjectPaths, notesRootPath]);
 }

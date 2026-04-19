@@ -29,7 +29,7 @@ pub struct RecentFile {
 
 /// Set up the system tray icon and menu. Called from `lib.rs` setup.
 pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let menu = build_tray_menu(app.handle(), 0, &[])?;
+    let menu = build_tray_menu(app.handle(), 0, &[], None)?;
 
     // Load the "N" tray icon as a macOS template image.
     // Template images are tinted by the system to match the menu bar (light/dark).
@@ -98,24 +98,16 @@ fn handle_tray_icon_event(tray: &tauri::tray::TrayIcon<Wry>, event: TrayIconEven
     }
 }
 
-fn build_tray_menu(
+fn append_recent_items(
     app: &AppHandle,
-    badge_count: u32,
-    recent_files: &[RecentFile],
-) -> Result<Menu<Wry>, tauri::Error> {
-    let actions_label = if badge_count > 0 {
-        format!("Open Actions ({})", badge_count)
-    } else {
-        "Open Actions".to_string()
-    };
-
-    // Build recent files submenu
-    let recent_submenu = Submenu::with_id(app, "recent", "Recent", true)?;
-    if recent_files.is_empty() {
+    submenu: &Submenu<Wry>,
+    files: &[RecentFile],
+) -> Result<(), tauri::Error> {
+    if files.is_empty() {
         let empty = MenuItem::with_id(app, "recent-empty", "No Recent Files", false, None::<&str>)?;
-        recent_submenu.append(&empty)?;
+        submenu.append(&empty)?;
     } else {
-        for file in recent_files.iter().take(5) {
+        for file in files.iter().take(5) {
             let item = MenuItem::with_id(
                 app,
                 format!("recent-{}", file.path),
@@ -123,24 +115,53 @@ fn build_tray_menu(
                 true,
                 None::<&str>,
             )?;
-            recent_submenu.append(&item)?;
+            submenu.append(&item)?;
         }
     }
+    Ok(())
+}
 
-    let menu = Menu::with_items(
-        app,
-        &[
-            &MenuItem::with_id(app, "new-note", "New Note", true, Some("CmdOrCtrl+N"))?,
-            &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, "open-actions", &actions_label, true, None::<&str>)?,
-            &PredefinedMenuItem::separator(app)?,
-            &recent_submenu,
-            &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, "show-window", "Show Notesage", true, None::<&str>)?,
-            &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, "quit", "Quit Notesage", true, Some("CmdOrCtrl+Q"))?,
-        ],
-    )?;
+fn build_tray_menu(
+    app: &AppHandle,
+    badge_count: u32,
+    recent_files: &[RecentFile],
+    all_recent_files: Option<&[RecentFile]>,
+) -> Result<Menu<Wry>, tauri::Error> {
+    let actions_label = if badge_count > 0 {
+        format!("Open Actions ({})", badge_count)
+    } else {
+        "Open Actions".to_string()
+    };
+
+    // Scoped recent submenu — filtered to the active chat's selected projects.
+    let recent_submenu = Submenu::with_id(app, "recent", "Recent", true)?;
+    append_recent_items(app, &recent_submenu, recent_files)?;
+
+    // "All recent" is only shown when it would differ from the scoped list —
+    // i.e. the frontend passed an explicit unfiltered superset. Keeps the menu
+    // tidy when no project is selected (scoped == all).
+    let all_recent_submenu = match all_recent_files {
+        Some(all) if all.len() != recent_files.len() => {
+            let sub = Submenu::with_id(app, "recent-all", "All Recent", true)?;
+            append_recent_items(app, &sub, all)?;
+            Some(sub)
+        }
+        _ => None,
+    };
+
+    let menu = Menu::new(app)?;
+    menu.append(&MenuItem::with_id(app, "new-note", "New Note", true, Some("CmdOrCtrl+N"))?)?;
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(app, "open-actions", &actions_label, true, None::<&str>)?)?;
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&recent_submenu)?;
+    if let Some(all_sub) = &all_recent_submenu {
+        menu.append(all_sub)?;
+    }
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(app, "show-window", "Show Notesage", true, None::<&str>)?)?;
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(app, "quit", "Quit Notesage", true, Some("CmdOrCtrl+Q"))?)?;
 
     Ok(menu)
 }
@@ -182,7 +203,7 @@ pub async fn update_tray_badge(app: AppHandle, count: u32) -> Result<(), String>
 
     // Rebuild menu with updated badge count
     let recent: Vec<RecentFile> = Vec::new();
-    let menu = build_tray_menu(&app, count, &recent).map_err(|e| e.to_string())?;
+    let menu = build_tray_menu(&app, count, &recent, None).map_err(|e| e.to_string())?;
     if let Some(tray) = get_tray(&app) {
         tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
     }
@@ -191,12 +212,22 @@ pub async fn update_tray_badge(app: AppHandle, count: u32) -> Result<(), String>
 }
 
 /// Update the tray recent files submenu.
+///
+/// `files` is the scoped list (filtered by the active chat's selected projects).
+/// `all_files` is the unfiltered superset used to populate the "All Recent"
+/// submenu; when omitted or equal in size to `files`, the extra submenu is
+/// hidden.
 #[tauri::command]
-pub async fn update_tray_recent(app: AppHandle, files: Vec<RecentFile>) -> Result<(), String> {
+pub async fn update_tray_recent(
+    app: AppHandle,
+    files: Vec<RecentFile>,
+    all_files: Option<Vec<RecentFile>>,
+) -> Result<(), String> {
     let state = app.state::<TrayState>();
     let count = *state.badge_count.lock().map_err(|e| e.to_string())?;
 
-    let menu = build_tray_menu(&app, count, &files).map_err(|e| e.to_string())?;
+    let menu = build_tray_menu(&app, count, &files, all_files.as_deref())
+        .map_err(|e| e.to_string())?;
     if let Some(tray) = get_tray(&app) {
         tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
     }
