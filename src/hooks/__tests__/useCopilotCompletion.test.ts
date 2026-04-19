@@ -232,6 +232,11 @@ function setupWithProject(path = '/project') {
   useWorkspaceStore.setState({
     projects: [{ path, fileTree: [] }],
   });
+  // Seed a conversation scoped to this project so the task #16 scope gate
+  // (URI must be under `selectedProjectPaths`) lets didOpen/didChange/didFocus
+  // through for the default `/project/...` tab fixtures. Tests that need a
+  // different footer scope override by calling `setupConversation()` after.
+  setupConversation([path]);
 }
 
 // ---------------------------------------------------------------------------
@@ -1247,6 +1252,192 @@ describe('useCopilotCompletion', () => {
       expect(invoke).toHaveBeenCalledWith('copilot_lsp_start', {
         workingDirectory: '/workspace/project-B',
       });
+    });
+  });
+
+  // =========================================================================
+  // Track 1 Critical leak — Task #16
+  //
+  // Regression lock: the Copilot LSP must not receive document content
+  // (`textDocument/didOpen`, `textDocument/didChange`) for tabs whose paths
+  // fall outside the chat footer's selected projects + notes root. Without
+  // this gate, a tab from an unrelated project leaks file contents to the
+  // LSP — and onward to GitHub's servers — purely because it happens to be
+  // the currently active editor tab.
+  //
+  // These tests are the red-team invariant: any regression that re-opens
+  // the leak trips them.
+  // =========================================================================
+
+  describe('Track 1 leak #16 — document sync scope gate', () => {
+    beforeEach(() => {
+      useSettingsStore.setState({ homeDir: '/Users/tester', notesRootPath: '/Users/tester/Notesage' });
+    });
+
+    it('suppresses didOpen for a tab outside the selected project scope', async () => {
+      const conn = makeAgentManagedConnection();
+      setupWithConnection(conn);
+      useWorkspaceStore.setState({
+        projects: [
+          { path: '/workspace/project-A', fileTree: [] },
+          { path: '/workspace/project-B', fileTree: [] },
+        ],
+      });
+      // Footer is scoped to A; the active tab is inside B — leak candidate.
+      setupConversation(['/workspace/project-A']);
+      setupWithTab(makeTab({ filePath: '/workspace/project-B/secrets.md' }));
+
+      renderHook(() => useCopilotCompletion(makeMockEditor('secret content')));
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      // INVARIANT: no LSP document traffic for an out-of-scope tab.
+      const didOpen = vi.mocked(invoke).mock.calls.filter((c) => c[0] === 'copilot_lsp_did_open');
+      const didFocus = vi.mocked(invoke).mock.calls.filter((c) => c[0] === 'copilot_lsp_did_focus');
+      expect(didOpen).toHaveLength(0);
+      expect(didFocus).toHaveLength(0);
+    });
+
+    it('suppresses didChange for a tab outside the selected project scope', async () => {
+      const conn = makeAgentManagedConnection();
+      setupWithConnection(conn);
+      useWorkspaceStore.setState({
+        projects: [
+          { path: '/workspace/project-A', fileTree: [] },
+          { path: '/workspace/project-B', fileTree: [] },
+        ],
+      });
+      setupConversation(['/workspace/project-A']);
+      setupWithTab(makeTab({ filePath: '/workspace/project-B/secrets.md' }));
+
+      const editor = makeMockEditor('secret content');
+      renderHook(() => useCopilotCompletion(editor));
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      vi.mocked(invoke).mockClear();
+
+      // Simulate the user typing into an out-of-scope tab. Without the
+      // gate, this would fire `copilot_lsp_did_change` with the tab's full
+      // content.
+      act(() => {
+        (editor as unknown as { _emit: (event: string) => void })._emit('update');
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      const didChange = vi.mocked(invoke).mock.calls.filter((c) => c[0] === 'copilot_lsp_did_change');
+      expect(didChange).toHaveLength(0);
+    });
+
+    it('ALLOWS didOpen/didChange for a tab inside the selected project (in-scope positive)', async () => {
+      const conn = makeAgentManagedConnection();
+      setupWithConnection(conn);
+      useWorkspaceStore.setState({
+        projects: [{ path: '/workspace/project-A', fileTree: [] }],
+      });
+      setupConversation(['/workspace/project-A']);
+      setupWithTab(makeTab({ filePath: '/workspace/project-A/file.md' }));
+
+      const editor = makeMockEditor('hello');
+      renderHook(() => useCopilotCompletion(editor));
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(invoke).toHaveBeenCalledWith('copilot_lsp_did_open', {
+        uri: '/workspace/project-A/file.md',
+        content: expect.any(String),
+        version: 0,
+      });
+
+      vi.mocked(invoke).mockClear();
+
+      act(() => {
+        (editor as unknown as { _emit: (event: string) => void })._emit('update');
+      });
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(invoke).toHaveBeenCalledWith('copilot_lsp_did_change', expect.objectContaining({
+        uri: '/workspace/project-A/file.md',
+      }));
+    });
+
+    it('ALLOWS didOpen for a tab under the notes root even when no project is selected', async () => {
+      const conn = makeAgentManagedConnection();
+      setupWithConnection(conn);
+      useWorkspaceStore.setState({
+        projects: [{ path: '/workspace/unused', fileTree: [] }],
+      });
+      // No conversation — selectedProjectPaths is empty. But the tab is
+      // under the notes root, which is always in scope.
+      setupWithTab(makeTab({ filePath: '/Users/tester/Notesage/journal.md' }));
+
+      renderHook(() => useCopilotCompletion(makeMockEditor('my notes')));
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(invoke).toHaveBeenCalledWith('copilot_lsp_did_open', {
+        uri: '/Users/tester/Notesage/journal.md',
+        content: expect.any(String),
+        version: 0,
+      });
+    });
+
+    it('closes the previously open in-scope doc when switching to an out-of-scope tab', async () => {
+      const conn = makeAgentManagedConnection();
+      setupWithConnection(conn);
+      useWorkspaceStore.setState({
+        projects: [
+          { path: '/workspace/project-A', fileTree: [] },
+          { path: '/workspace/project-B', fileTree: [] },
+        ],
+      });
+      setupConversation(['/workspace/project-A']);
+
+      const tabA = makeTab({ id: 'tab-A', filePath: '/workspace/project-A/file.md', fileName: 'file.md' });
+      const tabB = makeTab({ id: 'tab-B', filePath: '/workspace/project-B/secrets.md', fileName: 'secrets.md' });
+
+      useEditorStore.setState({ tabs: [tabA, tabB], activeTabId: 'tab-A' });
+
+      const editor = makeMockEditor('hello');
+      const { rerender } = renderHook(() => useCopilotCompletion(editor));
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      vi.mocked(invoke).mockClear();
+
+      act(() => {
+        useEditorStore.setState({ activeTabId: 'tab-B' });
+      });
+
+      rerender();
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      // The previously open in-scope doc must be closed (stale content must
+      // not sit in the LSP), but no didOpen for the out-of-scope replacement.
+      expect(invoke).toHaveBeenCalledWith('copilot_lsp_did_close', {
+        uri: '/workspace/project-A/file.md',
+      });
+      const didOpen = vi.mocked(invoke).mock.calls.filter((c) => c[0] === 'copilot_lsp_did_open');
+      expect(didOpen).toHaveLength(0);
     });
   });
 });

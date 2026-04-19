@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { toast } from 'sonner';
 import { log } from '@/lib/logger';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -16,6 +17,7 @@ import {
   GhostTextPluginKey,
 } from '@/components/editor/extensions';
 import { requestCopilotCompletion, notifyCompletionAccepted } from '@/lib/copilot-shared';
+import { isUriInScope, type UriScope } from '@/lib/ai/uri-scope';
 
 /**
  * Manages the Copilot Language Server lifecycle and ghost text completions.
@@ -125,6 +127,37 @@ export function useCopilotCompletion(editor: Editor | null) {
   // (Skipped in source mode — useCopilotCompletionCM handles its own sync)
   // -------------------------------------------------------------------------
 
+  // Task #16 — URI scope gate. didOpen/didChange/didFocus for tabs OUTSIDE
+  // the selected projects (+ notes root) must produce NO LSP traffic — that
+  // content is not the agent's to see. `notesRootPath` is included because
+  // the user's personal notes library is a legitimate workspace location.
+  const notesRootPath = useSettingsStore((s) => s.notesRootPath);
+  const homeDir = useSettingsStore((s) => s.homeDir);
+  const resolvedNotesRoot =
+    notesRootPath && notesRootPath.startsWith('~')
+      ? homeDir
+        ? notesRootPath.replace('~', homeDir)
+        : null
+      : notesRootPath || null;
+  const scope: UriScope = {
+    projectRoots: selectedProjectPaths,
+    notesRootPath: resolvedNotesRoot,
+  };
+
+  // Per-tab toast suppression — task #16 requires "once per tab" notice
+  // when completions are disabled for an out-of-scope file. A Set of tab
+  // paths we've already toasted for is sufficient because sonner dedupes
+  // by toast id anyway, and we only surface the notice on tab activation.
+  const toastedTabs = useRef<Set<string>>(new Set());
+
+  const notifyOutOfScope = useCallback((filePath: string) => {
+    if (toastedTabs.current.has(filePath)) return;
+    toastedTabs.current.add(filePath);
+    toast.info('Completions disabled for this file — outside selected project scope', {
+      id: `copilot-scope-${filePath}`,
+    });
+  }, []);
+
   const isSourceMode = activeTab?.viewMode === 'source';
 
   useEffect(() => {
@@ -142,9 +175,23 @@ export function useCopilotCompletion(editor: Editor | null) {
 
     const uri = activeTab.filePath;
 
-    // Close previous document if different
+    // Close previous document if different. We ALWAYS close the previously
+    // tracked URI even if the new URI is out of scope — the LSP otherwise
+    // keeps stale content from a prior in-scope tab.
     if (openDocUri.current && openDocUri.current !== uri) {
       invoke('copilot_lsp_did_close', { uri: openDocUri.current }).catch(() => {});
+      openDocUri.current = null;
+    }
+
+    // Task #16 scope gate — no LSP traffic for out-of-scope tabs.
+    if (!isUriInScope(uri, scope)) {
+      notifyOutOfScope(uri);
+      // Also clear any stale ghost text — a leftover decoration from a
+      // previous in-scope tab must not linger on the blocked one.
+      if (editor && hasActiveGhostText(editor)) {
+        clearGhostText(editor);
+      }
+      return;
     }
 
     // Open new document — send ProseMirror plain text so positions match.
@@ -169,7 +216,8 @@ export function useCopilotCompletion(editor: Editor | null) {
     if (editor && hasActiveGhostText(editor)) {
       clearGhostText(editor);
     }
-  }, [lspReady, activeTab?.filePath, isSourceMode, editor]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lspReady, activeTab?.filePath, isSourceMode, editor, selectedProjectPaths, resolvedNotesRoot]);
 
   // Cleanup: close doc on unmount
   useEffect(() => {
@@ -246,6 +294,15 @@ export function useCopilotCompletion(editor: Editor | null) {
       // Ensure document is opened before sending changes
       if (openDocUri.current !== activeTab.filePath) return;
 
+      // Task #16 scope gate — belt-and-suspenders. The didOpen gate above
+      // is the primary enforcement (no in-scope didOpen → openDocUri stays
+      // null → handleUpdate returns early on the check above). This check
+      // covers the rare race where an in-flight tab's scope changed since
+      // didOpen was sent.
+      if (!isUriInScope(activeTab.filePath, scope)) {
+        return;
+      }
+
       // Send didChange — use ProseMirror plain text so positions match
       docVersion.current += 1;
       const content = editor.state.doc.textBetween(0, editor.state.doc.content.size, '\n');
@@ -278,7 +335,8 @@ export function useCopilotCompletion(editor: Editor | null) {
         clearTimeout(completionTimeout.current);
       }
     };
-  }, [editor, connection?.id, lspReady, isSourceMode, activeTab?.filePath, requestCompletion]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, connection?.id, lspReady, isSourceMode, activeTab?.filePath, requestCompletion, selectedProjectPaths, resolvedNotesRoot]);
 
   // -------------------------------------------------------------------------
   // Clear ghost text when completions are disabled for the active tab

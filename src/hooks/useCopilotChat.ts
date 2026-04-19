@@ -12,6 +12,7 @@ import { useToolPermissionStore, type ToolCallDecision } from '@/stores/tool-per
 import { executeToolCall } from '@/lib/tool-executor';
 import { formatToolLabel } from '@/lib/ai/acp-utils';
 import { friendlyAIError } from '@/lib/ai/errors';
+import { isUriInScope, type UriScope } from '@/lib/ai/uri-scope';
 import { log } from '@/lib/logger';
 import { toast } from 'sonner';
 import type { ChatMessage, ImageAttachment, ToolCallSegment, ToolDefinition } from '@/lib/ai/types';
@@ -538,7 +539,15 @@ export function useCopilotChat({
               ? editorState.tabs.find((t) => t.id === editorState.activeTabId)
               : null;
 
-            const context = activeTab
+            // Task #16 — context-request scope gate. The LSP asks for the
+            // "currently editing" document; if the active tab is outside
+            // `selectedProjectPaths` (+ notes root), we must return an empty
+            // context. Returning null would signal "no active tab" — same
+            // observable behaviour, no content leaks out.
+            const contextScope = buildContextScope();
+            const inScope = activeTab ? isUriInScope(activeTab.filePath, contextScope) : false;
+
+            const context = activeTab && inScope
               ? {
                   uri: `file://${activeTab.filePath}`,
                   content: activeTab.content,
@@ -578,12 +587,22 @@ export function useCopilotChat({
         const activeTab = editorState.activeTabId
           ? editorState.tabs.find((t) => t.id === editorState.activeTabId)
           : null;
-        const docUri = activeTab?.filePath ? `file://${activeTab.filePath}` : undefined;
-        const docLang = activeTab?.filePath ? getLanguageId(activeTab.filePath) : undefined;
+
+        // Task #16 — scope gate for the "active document" context that
+        // piggybacks on conversation/create and conversation/turn. If the
+        // active tab lives outside the selected projects (+ notes root),
+        // we must NOT push it to the LSP, even implicitly through docUri/
+        // docLang on the conversation call.
+        const sendScope = buildContextScope();
+        const activeInScope = activeTab ? isUriInScope(activeTab.filePath, sendScope) : false;
+        const docUri = activeTab?.filePath && activeInScope ? `file://${activeTab.filePath}` : undefined;
+        const docLang = activeTab?.filePath && activeInScope ? getLanguageId(activeTab.filePath) : undefined;
 
         // Ensure the LSP knows about the active document (textDocument/didOpen)
         // so conversation/context and doc references can resolve the file.
-        if (activeTab?.filePath && activeTab?.content != null) {
+        // Out-of-scope tabs are skipped — we do not want that content in the
+        // LSP's document store.
+        if (activeTab?.filePath && activeTab?.content != null && activeInScope) {
           tauriApi.copilotLspDidOpen(activeTab.filePath, activeTab.content, 1)
             .catch(() => {}); // fire-and-forget, may already be open
         }
@@ -670,6 +689,31 @@ export function useCopilotChat({
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Build the URI scope used to gate context-request and active-document push.
+ * Reads directly from stores (not from closures) because it's called inside
+ * async event handlers where the captured hook-state may be stale.
+ *
+ * Scope = selected project paths (from the chat footer) ∪ `~/Notesage`
+ * resolved to an absolute path. Empty `selectedProjectPaths` does NOT
+ * fall back to "allow everything" — matches task #8's semantics.
+ */
+function buildContextScope(): UriScope {
+  const chatState = useChatStore.getState();
+  const projectRoots = selectProjectPaths(chatState);
+  const settings = useSettingsStore.getState();
+  const raw = settings.notesRootPath;
+  let notesRootPath: string | null = null;
+  if (raw) {
+    if (raw.startsWith('~')) {
+      notesRootPath = settings.homeDir ? raw.replace('~', settings.homeDir) : null;
+    } else {
+      notesRootPath = raw;
+    }
+  }
+  return { projectRoots, notesRootPath };
+}
 
 /** Derive a language ID from a file path extension for LSP context. */
 function getLanguageId(filePath: string): string {
