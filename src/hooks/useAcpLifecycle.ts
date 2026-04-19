@@ -36,6 +36,16 @@ function resolveActiveSessionId(fallback: string | null): string | null {
 export { stopAcpAgent } from '@/lib/ai/acp-agent-state';
 export { truncateDetail, formatAcpToolName } from '@/lib/ai/acp-utils';
 
+// Lazy-resolved home directory for path filtering. Stable per OS session;
+// memoised so the path-filter hot path doesn't await Tauri IPC every prompt.
+let _homeDir: string | null = null;
+async function getHomeDirCached(): Promise<string> {
+  if (!_homeDir) {
+    _homeDir = await tauriApi.getHomeDir();
+  }
+  return _homeDir;
+}
+
 /**
  * In-flight promise for the eager session-creation effect. React 18 strict mode
  * and store rehydration can each trigger the effect multiple times at startup;
@@ -384,7 +394,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     attachedFilePaths?: string[];
     sandboxPaths?: string[];
     attachments?: ImageAttachment[];
-    pathFilterRoot: string | null;
+    pathFilterRoots: string[];
     homeDir: string;
     /** Outbound ACP message_id (UUID) for the user message — forwarded on retry. */
     userMessageAcpId?: string;
@@ -510,14 +520,21 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         connectionProvider: effectiveConnection.provider,
       });
 
-      // Path filtering: resolve once, available in both try and catch (retry) blocks
-      const pathFilterRoot = opts?.sandboxPaths ? (selectedProjectPaths[0] || null) : null;
-      const homeDir = pathFilterRoot ? await tauriApi.getHomeDir() : '';
+      // Sandbox scope: comment-sourced chats stick to the source project (`opts.sandboxPaths`);
+      // regular chats use selected projects unless the user opted into cross-project mode.
+      // The path filter mirrors the kernel sandbox so denials match what Seatbelt would block.
+      const sandboxScope = opts?.sandboxPaths ?? getChatSandboxScope(
+        { projectPaths: selectedProjectPaths },
+        effectiveConnection,
+        useSettingsStore.getState().crossProjectMode,
+      );
+      const pathFilterRoots = sandboxScope;
+      const homeDir = await getHomeDirCached();
 
       const listenerDeps = {
         assistantMessageId,
         conversationId: useChatStore.getState().activeConversationId,
-        pathFilterRoot,
+        pathFilterRoots,
         homeDir,
         updateMessage,
         addMessage,
@@ -540,20 +557,13 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         attachedFilePaths: opts?.attachedFilePaths,
         sandboxPaths: opts?.sandboxPaths,
         attachments: opts?.attachments,
-        pathFilterRoot,
+        pathFilterRoots,
         homeDir,
         userMessageAcpId,
       };
 
       try {
         const cwd = selectedProjectPaths[0] || '/tmp';
-        // Comment-sourced chats (opts.sandboxPaths set): scope to source project only — preserved.
-        // Regular chats: only the selected projects, unless the user opted into cross-project mode.
-        const sandboxScope = opts?.sandboxPaths ?? getChatSandboxScope(
-          { projectPaths: selectedProjectPaths },
-          effectiveConnection,
-          useSettingsStore.getState().crossProjectMode,
-        );
         const instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
 
         // Block sending if a project switch is pending user decision
@@ -757,29 +767,14 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     const oldInstanceId = acpAgent.instanceId;
     const agentLabel = effectiveConnection.label || effectiveConnection.provider || 'the agent';
 
-    const listenerDeps = {
-      assistantMessageId: prompt.assistantMessageId,
-      conversationId: useChatStore.getState().activeConversationId,
-      pathFilterRoot: prompt.pathFilterRoot,
-      homeDir: prompt.homeDir,
-      updateMessage,
-      addMessage,
-      setActiveTool,
-      addActivity,
-      completeLastActivity,
-      completeAllActivities,
-      appendTextSegment,
-      appendThinkingSegment,
-      pushSegment,
-      updateSegment,
-      updateOrPushPlanSegment,
-      finalizeSegments,
-    };
-
     try {
       // Try to reconnect with session/load (preserves agent-side conversation context)
       let instanceId: string;
       let isNewSession = false;
+      // Path filter must mirror the kernel sandbox actually in effect for this attempt.
+      // Reconnect-success keeps the original spawn's sandbox; fresh-session paths
+      // recompute against the current selection.
+      let pathFilterRoots: string[] = prompt.pathFilterRoots;
       const supportsLoad = hasLoadSessionCapability(acpAgent?.capabilities);
 
       if (supportsLoad && sessionId) {
@@ -802,6 +797,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             useSettingsStore.getState().crossProjectMode,
           );
           instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
+          pathFilterRoots = sandboxScope;
           isNewSession = true;
         }
       } else {
@@ -815,8 +811,28 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           useSettingsStore.getState().crossProjectMode,
         );
         instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
+        pathFilterRoots = sandboxScope;
         isNewSession = true;
       }
+
+      const listenerDeps = {
+        assistantMessageId: prompt.assistantMessageId,
+        conversationId: useChatStore.getState().activeConversationId,
+        pathFilterRoots,
+        homeDir: prompt.homeDir,
+        updateMessage,
+        addMessage,
+        setActiveTool,
+        addActivity,
+        completeLastActivity,
+        completeAllActivities,
+        appendTextSegment,
+        appendThinkingSegment,
+        pushSegment,
+        updateSegment,
+        updateOrPushPlanSegment,
+        finalizeSegments,
+      };
 
       // Create new session if reconnect with session/load failed
       if (isNewSession) {

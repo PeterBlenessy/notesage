@@ -286,4 +286,67 @@ describe('isToolCallAllowed', () => {
       expect(isToolCallAllowed('read', input, PROJECT, HOME).allowed).toBe(false);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Multi-root support (task #6)
+  //
+  // Red-team invariants that codify "agent scoped to projects A+B cannot
+  // touch project C". A path is allowed iff it lies inside ANY configured
+  // project root (or system / safe-home dirs). Single-string callers MUST
+  // continue to work — same semantics, single-element array.
+  // -------------------------------------------------------------------------
+  describe('multi-root support', () => {
+    const PROJECT_B = '/Users/peter/Development/project-b';
+    const PROJECT_C = '/Users/peter/Development/project-c';
+
+    it('allows path inside any of the configured roots', () => {
+      const input = JSON.stringify({ file_path: PROJECT_B + '/src/main.ts' });
+      expect(isToolCallAllowed('read', input, [PROJECT, PROJECT_B], HOME)).toEqual({ allowed: true });
+    });
+
+    it('allows path inside the first root', () => {
+      const input = JSON.stringify({ file_path: PROJECT + '/src/main.ts' });
+      expect(isToolCallAllowed('read', input, [PROJECT, PROJECT_B], HOME)).toEqual({ allowed: true });
+    });
+
+    it('denies path outside every configured root', () => {
+      const input = JSON.stringify({ file_path: PROJECT_C + '/secret.env' });
+      const result = isToolCallAllowed('read', input, [PROJECT, PROJECT_B], HOME);
+      expect(result.allowed).toBe(false);
+      expect(result.deniedPath).toBe(PROJECT_C + '/secret.env');
+    });
+
+    it('denies bash command targeting a path outside every root', () => {
+      const result = isToolCallAllowed(
+        'bash',
+        `cat ${PROJECT_C}/secret.env`,
+        [PROJECT, PROJECT_B],
+        HOME,
+      );
+      expect(result.allowed).toBe(false);
+    });
+
+    it('still allows system paths regardless of root list', () => {
+      const input = JSON.stringify({ file_path: '/usr/local/bin/node' });
+      expect(isToolCallAllowed('read', input, [PROJECT, PROJECT_B], HOME)).toEqual({ allowed: true });
+    });
+
+    it('treats single-element array identically to legacy string arg', () => {
+      const input = JSON.stringify({ file_path: PROJECT_B + '/file.txt' });
+      const arrayResult = isToolCallAllowed('read', input, [PROJECT], HOME);
+      const stringResult = isToolCallAllowed('read', input, PROJECT, HOME);
+      expect(arrayResult).toEqual(stringResult);
+      expect(arrayResult.allowed).toBe(false);
+    });
+
+    it('denies when roots array is empty (no project => no allowed path)', () => {
+      const input = JSON.stringify({ file_path: PROJECT + '/file.txt' });
+      expect(isToolCallAllowed('read', input, [], HOME).allowed).toBe(false);
+    });
+
+    it('allows system path even when roots array is empty', () => {
+      const input = JSON.stringify({ file_path: '/tmp/scratch.txt' });
+      expect(isToolCallAllowed('read', input, [], HOME)).toEqual({ allowed: true });
+    });
+  });
 });

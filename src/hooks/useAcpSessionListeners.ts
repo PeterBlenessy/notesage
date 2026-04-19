@@ -31,7 +31,12 @@ interface ChatListenerDeps {
   instanceId: string;
   assistantMessageId: number;
   conversationId: string | null;
-  pathFilterRoot: string | null;
+  /**
+   * Project roots that bound the agent's filesystem reach. Mirrors the kernel
+   * sandbox so the application-level filter denies the same paths Seatbelt would
+   * block. Empty array means no project scope (system + safe-home paths only).
+   */
+  pathFilterRoots: string[];
   homeDir: string;
   // Chat store actions
   updateMessage: (id: number, content: string) => void;
@@ -296,19 +301,20 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       firstOptionId = typeof opt === 'string' ? opt : String(opt?.optionId ?? opt?.id ?? '');
     }
 
-    // Path filtering for comment-sourced chats: deny tool calls outside project scope
-    if (deps.pathFilterRoot) {
-      const filterResult = isToolCallAllowed(toolInfo.kind, toolInfo.input, deps.pathFilterRoot, deps.homeDir);
-      if (!filterResult.allowed) {
-        log.info('ai', `Chat tool call denied: ${toolInfo.title} targets ${filterResult.deniedPath} outside project ${deps.pathFilterRoot}`);
-        deps.addMessage({
-          role: 'system',
-          content: `Tool call denied: **${toolInfo.title}** \u2014 targets path outside project scope (\`${filterResult.deniedPath}\`)`,
-          timestamp: Date.now(),
-        });
-        invoke('acp_permission_respond', { instanceId: deps.instanceId, requestId: payload.requestId, optionId: null }).catch(() => {}); // Expected: fire-and-forget deny
-        return;
-      }
+    // Path filtering runs unconditionally and BEFORE auto-approval — a denied path
+    // must stay denied even if the tool kind is on the auto-allow list. Mirrors the
+    // kernel sandbox so the user sees a clear in-app reason matching what Seatbelt blocks.
+    const filterResult = isToolCallAllowed(toolInfo.kind, toolInfo.input, deps.pathFilterRoots, deps.homeDir);
+    if (!filterResult.allowed) {
+      const scopeLabel = deps.pathFilterRoots.length > 0 ? deps.pathFilterRoots.join(', ') : '(no project selected)';
+      log.info('ai', `Chat tool call denied: ${toolInfo.title} targets ${filterResult.deniedPath} outside scope ${scopeLabel}`);
+      deps.addMessage({
+        role: 'system',
+        content: `Tool call denied: **${toolInfo.title}** \u2014 targets path outside project scope (\`${filterResult.deniedPath}\`)`,
+        timestamp: Date.now(),
+      });
+      invoke('acp_permission_respond', { instanceId: deps.instanceId, requestId: payload.requestId, optionId: null }).catch(() => {}); // Expected: fire-and-forget deny
+      return;
     }
 
     if (usePermissionStore.getState().isAutoAllowed(toolInfo.kind, null, null)) {

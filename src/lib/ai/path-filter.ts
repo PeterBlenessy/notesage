@@ -113,28 +113,31 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
 }
 
 /**
- * Check whether a single path is allowed given a project root.
+ * Check whether a single path is allowed given one or more project roots.
+ *
+ * Allowed iff the path lies inside ANY configured root, OR matches a
+ * system prefix, OR matches a safe ~/ subdir. Empty `projectRoots`
+ * means no project scope — only system + safe-home paths are allowed.
  */
 export function isPathAllowed(
   filePath: string,
-  projectRoot: string,
+  projectRoots: string | string[],
   homeDir: string,
 ): boolean {
-  // Normalize trailing slashes for consistent comparison
   const normalized = filePath.endsWith('/') ? filePath.slice(0, -1) : filePath;
-  const normalizedRoot = projectRoot.endsWith('/') ? projectRoot.slice(0, -1) : projectRoot;
+  const roots = typeof projectRoots === 'string' ? [projectRoots] : projectRoots;
 
-  // Within project root — always allowed
-  if (normalized === normalizedRoot || normalized.startsWith(normalizedRoot + '/')) {
-    return true;
+  for (const root of roots) {
+    const normalizedRoot = root.endsWith('/') ? root.slice(0, -1) : root;
+    if (normalized === normalizedRoot || normalized.startsWith(normalizedRoot + '/')) {
+      return true;
+    }
   }
 
-  // System paths — always allowed
   if (SYSTEM_PREFIXES.some((prefix) => normalized === prefix || normalized.startsWith(prefix + '/'))) {
     return true;
   }
 
-  // Agent config/tooling dirs in home — always allowed
   const normalizedHome = homeDir.endsWith('/') ? homeDir.slice(0, -1) : homeDir;
   if (SAFE_HOME_DIRS.some((dir) => {
     const full = normalizedHome + '/' + dir;
@@ -143,7 +146,6 @@ export function isPathAllowed(
     return true;
   }
 
-  // Everything else — denied
   return false;
 }
 
@@ -165,13 +167,17 @@ export interface ToolCallFilterResult {
 /**
  * Check whether a tool call should be allowed based on path analysis.
  *
+ * `projectRoots` may be a single string (legacy single-project chats and
+ * delegation/inline paths) or an array (multi-select chats). A path is
+ * allowed iff it lies inside ANY configured root.
+ *
  * Returns { allowed: true } if the call is safe, or
  * { allowed: false, deniedPath } if a path outside the project was found.
  */
 export function isToolCallAllowed(
   toolKind: string,
   rawInput: string,
-  projectRoot: string,
+  projectRoots: string | string[],
   homeDir: string,
 ): ToolCallFilterResult {
   const kind = toolKind.toLowerCase();
@@ -206,7 +212,7 @@ export function isToolCallAllowed(
 
   // Check each extracted path
   for (const p of paths) {
-    if (!isPathAllowed(p, projectRoot, homeDir)) {
+    if (!isPathAllowed(p, projectRoots, homeDir)) {
       return { allowed: false, deniedPath: p };
     }
   }

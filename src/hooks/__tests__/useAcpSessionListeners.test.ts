@@ -5,7 +5,7 @@
 // and `unstable_message_id` (acpMessageId) propagation onto ChatMessages.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { emitMockEvent } from '@/test/tauri-mock';
+import { emitMockEvent, setMockInvokeHandler } from '@/test/tauri-mock';
 import '@/test/tauri-mock';
 
 // ---------------------------------------------------------------------------
@@ -41,6 +41,7 @@ vi.mock('@/lib/ai/acp-agent-state', () => ({
 
 import { setupAcpChatListeners } from '@/hooks/useAcpSessionListeners';
 import { useChatStore } from '@/stores/chat-store';
+import { usePermissionStore } from '@/stores/permission-store';
 import type { ChatMessage, Segment } from '@/lib/ai/types';
 
 // ---------------------------------------------------------------------------
@@ -73,7 +74,13 @@ function seedChatStoreWithUserAndAssistant(): void {
   });
 }
 
-/** Build the `ChatListenerDeps` object with thin store-wired action stubs. */
+/**
+ * Build the `ChatListenerDeps` object with thin store-wired action stubs.
+ *
+ * `pathFilterRoots: []` is the secure default — no project scope means only system /
+ * safe-home paths pass the filter. Tests that fire `acp-permission-request` for any
+ * other path will see auto-deny; override `pathFilterRoots` per-test to widen scope.
+ */
 function makeDeps(): Parameters<typeof setupAcpChatListeners>[0] {
   const store = useChatStore.getState();
   const recordedSegments: Segment[] = [];
@@ -81,7 +88,7 @@ function makeDeps(): Parameters<typeof setupAcpChatListeners>[0] {
     instanceId: INSTANCE_ID,
     assistantMessageId: ASSISTANT_TIMESTAMP,
     conversationId: 'conv-l',
-    pathFilterRoot: null,
+    pathFilterRoots: [],
     homeDir: '/Users/test',
     updateMessage: (id, content) => store.updateMessage(id, content),
     addMessage: (m: ChatMessage) => store.addMessage(m),
@@ -310,6 +317,112 @@ describe('setupAcpChatListeners', () => {
 
       expect(getAssistantMessage()?.acpMessageId).toBeUndefined();
       expect(getUserMessage()?.acpMessageId).toBeUndefined();
+
+      unlisten();
+      unlistenPermission();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Path-filter enforcement on permission requests (task #6)
+  //
+  // Red-team invariants for project isolation. The path filter must run
+  // unconditionally and BEFORE auto-approval — otherwise an auto-allowed
+  // tool kind (e.g. `read`) silently leaks files from other projects.
+  // -------------------------------------------------------------------------
+  describe('path filter on permission requests', () => {
+    const PROJECT_A = '/Users/peter/Development/project-a';
+    const PROJECT_B = '/Users/peter/Development/project-b';
+
+    beforeEach(() => {
+      usePermissionStore.getState().clearAll();
+    });
+
+    function makeScopedDeps(roots: string[]): Parameters<typeof setupAcpChatListeners>[0] {
+      const base = makeDeps();
+      return { ...base, pathFilterRoots: roots, homeDir: '/Users/peter' };
+    }
+
+    function emitPermissionRequest(filePath: string, toolKind = 'read'): void {
+      emitMockEvent('acp-permission-request', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        requestId: 'req-1',
+        toolCall: {
+          kind: toolKind,
+          title: `${toolKind} ${filePath}`,
+          rawInput: JSON.stringify({ file_path: filePath }),
+        },
+        options: [{ optionId: 'allow_once', kind: 'allow_once', name: 'Allow once' }],
+      });
+    }
+
+    it('denies an auto-allowed read targeting an out-of-scope path', async () => {
+      // Seed `read` into the session-allow list so the auto-approve branch is taken
+      // unless the path filter blocks first. This is the red-team invariant.
+      usePermissionStore.getState().allowSession('read');
+
+      let respondedOptionId: unknown = 'unset';
+      setMockInvokeHandler('acp_permission_respond', (args) => {
+        respondedOptionId = args?.optionId;
+        return undefined;
+      });
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeScopedDeps([PROJECT_A]));
+
+      emitPermissionRequest(PROJECT_B + '/secrets.env');
+
+      // The path filter must run BEFORE auto-allow — denial wins.
+      expect(respondedOptionId).toBeNull();
+
+      // System message records the denial so the user has a trail.
+      const conv = useChatStore.getState().conversations.find((c) => c.id === 'conv-l');
+      const denyMsg = conv?.messages.find((m) => m.role === 'system' && /denied/i.test(m.content));
+      expect(denyMsg).toBeDefined();
+      expect(denyMsg?.content).toContain(PROJECT_B);
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('allows a read targeting a path inside any of the configured roots', async () => {
+      usePermissionStore.getState().allowSession('read');
+
+      let respondedOptionId: unknown = 'unset';
+      setMockInvokeHandler('acp_permission_respond', (args) => {
+        respondedOptionId = args?.optionId;
+        return undefined;
+      });
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(
+        makeScopedDeps([PROJECT_A, PROJECT_B]),
+      );
+
+      emitPermissionRequest(PROJECT_B + '/src/main.ts');
+
+      // `read` is auto-allowed and the path is in scope — should auto-approve.
+      expect(respondedOptionId).toBe('allow_once');
+
+      const conv = useChatStore.getState().conversations.find((c) => c.id === 'conv-l');
+      const denyMsg = conv?.messages.find((m) => m.role === 'system' && /denied/i.test(m.content));
+      expect(denyMsg).toBeUndefined();
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('denies an out-of-scope path even with empty roots (no project selected)', async () => {
+      let respondedOptionId: unknown = 'unset';
+      setMockInvokeHandler('acp_permission_respond', (args) => {
+        respondedOptionId = args?.optionId;
+        return undefined;
+      });
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeScopedDeps([]));
+
+      emitPermissionRequest('/Users/peter/Documents/secret.txt');
+
+      expect(respondedOptionId).toBeNull();
 
       unlisten();
       unlistenPermission();

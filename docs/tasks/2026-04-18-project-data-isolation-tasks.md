@@ -171,7 +171,7 @@ This is the foundation of the red-team TDD discipline. Before implementing any T
 
 ---
 
-### #6 — Unconditional ACP path filter with multi-root support
+### #6 — Unconditional ACP path filter with multi-root support ✅
 
 **Description:** Remove the `opts.sandboxPaths` gate in `useAcpLifecycle.ts:509`. Set `pathFilterRoot` unconditionally for single-project chats. For multi-select, extend `isToolCallAllowed` to accept `projectRoots: string[]` and allow paths inside any of them.
 
