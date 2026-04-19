@@ -262,6 +262,7 @@ export async function ensureAcpAgent(
 
   // Respawn if connection changed OR sandbox scope changed
   if (acpAgent && (acpAgent.connectionId !== connection.id || acpAgent.sandboxScopeKey !== scopeKey)) {
+    const connectionChanged = acpAgent.connectionId !== connection.id;
     if (acpAgent.sandboxScopeKey !== scopeKey) {
       log.info(
         'ai',
@@ -275,6 +276,14 @@ export async function ensureAcpAgent(
     }
     acpAgent = null;
     acpSpawnPromise = null;
+    // When the connection itself changed, the previous agent's sessionInfo
+    // (modes, currentModeId, configOptions, usage, commands) no longer
+    // applies. Clearing here ensures the footer's "currently selected"
+    // state falls back to the new connection's defaults instead of showing
+    // the previous agent's values until session/new completes.
+    if (connectionChanged) {
+      clearSessionInfo();
+    }
   }
 
   // Verify the backend still has this agent (may be gone after app restart or crash)

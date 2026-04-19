@@ -248,7 +248,7 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
                 )}
               </PopoverContent>
             </Popover>
-            <AcpSessionControls showModePicker={showAgentModePicker} />
+            <AcpSessionControls showModePicker={showAgentModePicker} connection={effectiveConnection ?? undefined} />
             {goalFiles.length > 0 && (
               <TooltipProvider delayDuration={200}>
                 <Tooltip>

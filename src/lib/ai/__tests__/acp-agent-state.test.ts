@@ -91,6 +91,53 @@ describe('ensureAcpAgent', () => {
     expect(mod.acpAgent!.connectionId).toBe('conn-b');
   });
 
+  it('clears sessionInfo when respawning for a connection change (footer-freshness invariant)', async () => {
+    // Regression lock for the chat-footer UX bug on 2026-04-19: stale modes
+    // and currentModeId from the previous agent were bleeding across to the
+    // new agent because ensureAcpAgent stopped the backend but never cleared
+    // the module-level sessionInfo. Fixing it makes the footer's "currently
+    // selected" fallback chain (live sessionInfo → connection.acpDefaults →
+    // first available) produce correct output immediately on switch.
+    setupDefaultHandlers();
+    let spawnCount = 0;
+    setMockInvokeHandler('acp_agent_spawn', () => {
+      spawnCount++;
+      return { instance_id: `inst-${spawnCount}` };
+    });
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+    mod.clearSessionInfo();
+
+    // Seed session state as if the previous agent had a live session.
+    mod.setSessionModes({
+      currentModeId: 'acceptEdits',
+      availableModes: [
+        { id: 'default', name: 'Default' },
+        { id: 'acceptEdits', name: 'Accept Edits' },
+      ],
+    });
+    mod.setSessionConfigOptions([
+      { id: 'reasoning_effort', name: 'Reasoning Effort', category: 'thought_level', currentValue: 'high' },
+    ]);
+    expect(mod.getSessionInfo().modes?.currentModeId).toBe('acceptEdits');
+    expect(mod.getSessionInfo().configOptions?.length).toBe(1);
+
+    const connA = makeConnection({ id: 'conn-a' });
+    const connB = makeConnection({ id: 'conn-b' });
+
+    await mod.ensureAcpAgent(connA, '/tmp');
+    // Same-connection reuse should NOT clear sessionInfo.
+    await mod.ensureAcpAgent(connA, '/tmp');
+    expect(mod.getSessionInfo().modes?.currentModeId).toBe('acceptEdits');
+
+    // Connection change MUST clear sessionInfo so stale modes/configOptions
+    // from the prior agent don't leak into the new agent's footer.
+    await mod.ensureAcpAgent(connB, '/tmp');
+    expect(mod.getSessionInfo().modes).toBeNull();
+    expect(mod.getSessionInfo().configOptions).toBeNull();
+  });
+
   it('throws after exceeding max retry depth instead of infinite recursion', async () => {
     setupDefaultHandlers();
     setMockInvokeHandler('acp_agent_spawn', () => ({
@@ -108,11 +155,12 @@ describe('ensureAcpAgent', () => {
       conn: Connection,
       cwd: string,
       sandboxPaths?: string[],
+      callerTag?: string,
       depth?: number,
     ) => Promise<string>;
 
     await expect(
-      ensureFn(makeConnection({ id: 'conn-b' }), '/tmp', undefined, 4),
+      ensureFn(makeConnection({ id: 'conn-b' }), '/tmp', undefined, 'test', 4),
     ).rejects.toThrow('Agent spawn failed after multiple retries');
   });
 
@@ -130,10 +178,11 @@ describe('ensureAcpAgent', () => {
       conn: Connection,
       cwd: string,
       sandboxPaths?: string[],
+      callerTag?: string,
       depth?: number,
     ) => Promise<string>;
 
-    const result = await ensureFn(makeConnection(), '/tmp', undefined, 0);
+    const result = await ensureFn(makeConnection(), '/tmp', undefined, 'test', 0);
     expect(result).toBe('inst-ok');
   });
 

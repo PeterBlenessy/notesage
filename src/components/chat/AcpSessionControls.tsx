@@ -35,6 +35,7 @@ import {
 } from '@/lib/ai/acp-agent-state';
 import { useConnectionsStore } from '@/stores/connections-store';
 import type { AcpSessionConfigOption } from '@/lib/ai/acp-utils';
+import type { Connection } from '@/lib/ai/connections';
 
 // ---------------------------------------------------------------------------
 // Mode-sandbox conflict detection
@@ -92,9 +93,14 @@ function formatTokenCount(n: number): string {
 // Mode Picker
 // ---------------------------------------------------------------------------
 
-export const AcpModePicker = memo(function AcpModePicker() {
+export const AcpModePicker = memo(function AcpModePicker({ connection }: { connection: Connection }) {
+  // Available modes come from the connection's capability probe (persisted at
+  // registration, refreshed ≥24h later). The live session's `modes` field is
+  // used only to determine the currently-selected value for highlighting.
+  // This lets the footer populate instantly on agent switch, without waiting
+  // for session/new to complete.
   const sessionInfo = useSyncExternalStore(subscribeSessionInfo, getSessionInfo);
-  const modes = sessionInfo.modes;
+  const availableModes = connection.acpCapabilities?.availableModes ?? [];
   const [conflictMode, setConflictMode] = useState<{ id: string; name: string } | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -142,13 +148,23 @@ export const AcpModePicker = memo(function AcpModePicker() {
   }, [conflictMode, applyMode]);
 
   // Map agent modes to common modes (Agent/Plan/Chat) — hide agent-specific modes
-  const commonModes = modes ? getCommonModes(modes.availableModes) : [];
+  const commonModes = getCommonModes(availableModes);
   if (commonModes.length < 2) return null;
 
-  const connectionId = acpAgent?.connectionId;
-  const restricted = connectionId ? hasActiveRestrictions(connectionId) : false;
-  const currentCommon = getCommonMode(modes!.currentModeId);
-  const currentLabel = currentCommon ?? { name: 'Agent', tooltip: '' };
+  const restricted = hasActiveRestrictions(connection.id);
+  // Currently-selected mode resolution, preferring most-recent truth:
+  //   1. Live session (if a session is currently active for this agent)
+  //   2. User-configured default on the connection (acpDefaults.modeId)
+  //   3. First mapped common mode (so the picker has something selected)
+  // Note: when the user switches connections, sessionInfo is cleared by
+  // ensureAcpAgent → clearSessionInfo, so (1) won't bleed across agents.
+  const currentModeId =
+    sessionInfo.modes?.currentModeId
+    ?? connection.acpDefaults?.modeId
+    ?? commonModes[0]?.agentModeId
+    ?? null;
+  const currentCommon = currentModeId ? getCommonMode(currentModeId) : null;
+  const currentLabel = currentCommon ?? { name: commonModes[0]?.name ?? 'Agent', tooltip: '' };
 
   return (
     <>
@@ -239,7 +255,20 @@ export const AcpModePicker = memo(function AcpModePicker() {
 // Config Option Picker
 // ---------------------------------------------------------------------------
 
-const ConfigOptionPicker = memo(function ConfigOptionPicker({ option }: { option: AcpSessionConfigOption }) {
+/**
+ * `option` carries the static capability data (id/name/description/options list)
+ * discovered at probe time. `liveCurrentValue` comes from sessionInfo when a
+ * session is active, overriding the probe-time currentValue so changes made
+ * mid-conversation are reflected immediately. When no session is live the
+ * picker falls back to the probe-time currentValue (initial default).
+ */
+const ConfigOptionPicker = memo(function ConfigOptionPicker({
+  option,
+  liveCurrentValue,
+}: {
+  option: AcpSessionConfigOption;
+  liveCurrentValue?: string;
+}) {
   const [open, setOpen] = useState(false);
 
   const handleSetValue = useCallback(async (value: string) => {
@@ -260,8 +289,9 @@ const ConfigOptionPicker = memo(function ConfigOptionPicker({ option }: { option
   const options = option.options ?? [];
   if (options.length < 2) return null;
 
-  const currentOption = options.find(o => (o.value ?? o.name) === option.currentValue);
-  const displayName = currentOption?.name ?? option.currentValue ?? option.name;
+  const currentValue = liveCurrentValue ?? option.currentValue;
+  const currentOption = options.find(o => (o.value ?? o.name) === currentValue);
+  const displayName = currentOption?.name ?? currentValue ?? option.name;
   const capitalizedDisplay = displayName.charAt(0).toUpperCase() + displayName.slice(1);
 
   return (
@@ -296,7 +326,7 @@ const ConfigOptionPicker = memo(function ConfigOptionPicker({ option }: { option
         </div>
         {options.map((opt) => {
           const optValue = opt.value ?? opt.name;
-          const isActive = optValue === option.currentValue;
+          const isActive = optValue === currentValue;
           return (
             <button
               key={optValue}
@@ -359,23 +389,50 @@ const UsageIndicator = memo(function UsageIndicator() {
 // Combined controls
 // ---------------------------------------------------------------------------
 
-export const AcpSessionControls = memo(function AcpSessionControls({ showModePicker }: { showModePicker: boolean }) {
+export const AcpSessionControls = memo(function AcpSessionControls({
+  showModePicker,
+  connection,
+}: {
+  showModePicker: boolean;
+  connection?: Connection;
+}) {
   const sessionInfo = useSyncExternalStore(subscribeSessionInfo, getSessionInfo);
 
-  const configOptions = (sessionInfo.configOptions ?? []).filter(
+  if (!connection) return null;
+
+  // Available modes + config options come from the connection's probed
+  // capabilities (captured at registration, refreshed ≥24h later) — not from
+  // the live session response. This gives the footer instant response on agent
+  // switch, with no wait for session/new. `category` filter excludes mode/model
+  // which have dedicated pickers (mode picker above, model picker elsewhere).
+  const capabilities = connection.acpCapabilities;
+  const availableModes = capabilities?.availableModes ?? [];
+  const configOptions = (capabilities?.configOptions ?? []).filter(
     opt => opt.category !== 'model' && opt.category !== 'mode'
   );
 
-  const hasControls = (showModePicker && sessionInfo.modes && sessionInfo.modes.availableModes.length >= 2)
+  // Build a lookup of live current values from sessionInfo — used by each
+  // config picker to highlight the currently-selected entry. Falls back to the
+  // probe-time currentValue when no session is live for this connection.
+  const liveCurrentValues = new Map<string, string | undefined>();
+  for (const opt of sessionInfo.configOptions ?? []) {
+    liveCurrentValues.set(opt.id, opt.currentValue);
+  }
+
+  const hasControls = (showModePicker && availableModes.length >= 2)
     || configOptions.length > 0
     || sessionInfo.usage;
   if (!hasControls) return null;
 
   return (
     <div className="flex items-center gap-1">
-      {showModePicker && <AcpModePicker />}
+      {showModePicker && <AcpModePicker connection={connection} />}
       {configOptions.map(opt => (
-        <ConfigOptionPicker key={opt.id} option={opt} />
+        <ConfigOptionPicker
+          key={opt.id}
+          option={opt as AcpSessionConfigOption}
+          liveCurrentValue={liveCurrentValues.get(opt.id)}
+        />
       ))}
       <UsageIndicator />
     </div>

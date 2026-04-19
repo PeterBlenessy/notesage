@@ -1,68 +1,65 @@
-# Chat Footer UX — Task Breakdown
+# Chat Footer — Capability Source-of-Truth Fix
 
 |  |  |
 | --- | --- |
 | **Date** | 2026-04-19 |
 | **Status** | Not started |
-| **PRD** | None (scoped UX bugs, not a feature) |
-| **Total** | 3 tasks: 2S, 1M |
+| **Related** | [ACP protocol compliance PRD](../prds/2026-04-14-acp-protocol-compliance.md) (capability probe) |
+| **Total** | 1 task (S) |
 
-Discovered during #6d manual testing on 2026-04-19 — the chat footer's dropdown/selector behavior doesn't match user expectations when switching agents. These are independent of the sandbox work but worth fixing together.
+## Background
 
----
+The ACP footer (`AcpSessionControls`) has three widgets: mode picker, dynamic config-option pickers (thinking effort etc.), and usage indicator. Each widget reads its data from `sessionInfo` — a module-level snapshot of the *live* session's response. That's the wrong source of truth for "what options are available."
 
-### #1 — Mode / permission-level labels must be consistent across agents
+Capabilities — the set of modes and config options an agent supports — are **already** discovered at connection-registration time via `probeAcpCapabilities()` (`src/lib/ai/acp-agent-state.ts:392`) and persisted on the `Connection` record as `acpCapabilities.availableModes` and `acpCapabilities.configOptions`. Re-probed if stale (>24h).
 
-**Description:** The PRD (`docs/features/ai-workflows.md`) established a common internal vocabulary for permission levels — "Read Only", "Agent", "Full Access", "Plan" — with per-agent translation under the hood. Each agent reports its own mode IDs via ACP (Claude Code: `default` / `acceptEdits` / `plan` / `dontAsk` / `bypassPermissions`; Gemini: `default` / `autoEdit` / `yolo` / `plan`; etc.) and we map those to the common labels. User reports seeing agent-specific raw labels in the footer for at least one agent — the mapping layer isn't applying uniformly.
+But the footer ignores that and waits for a live `session/new` response before rendering anything. Until the user sends a message (which is what triggers session creation in most flows), the footer shows stale data from the previous agent.
 
-**Acceptance criteria:**
+## Observed behavior (2026-04-19)
 
-- For every supported ACP agent (Claude Code, Codex, Copilot, Gemini), the mode picker in the chat footer displays the common Notesage labels: "Read Only" / "Agent" / "Full Access" / "Plan" (or whichever four we settle on).
-- Under the hood, the selected common-label maps to the agent-specific mode ID and calls `acpSessionSetMode` with the correct raw ID.
-- Modes the agent doesn't support (e.g. an agent without a "Plan" equivalent) are hidden from the dropdown rather than shown as "not available" or "unknown".
-- Component test: mount the mode picker with each agent's reported modes array; assert rendered labels match the common vocabulary.
+User switched between all four ACP agents and documented:
 
-**Complexity:** S **Category:** frontend **Dependencies:** None **Files:**
+- **Claude → Gemini:** picker keeps "Read Only" (Claude's value) until message sent. On send, flips to "Full Access" (Gemini's YOLO is its default).
+- **Claude → Codex:** picker keeps "Read Only". On send, **the mode picker disappears entirely** and the Reasoning Effort picker appears. Wildly unexpected.
+- **Codex → Copilot:** picker shows nothing. On send, Copilot's 3 modes appear.
+- **Claude (4 modes) → Copilot (3 modes):** picker shows 4 stale options until send, then updates to 3.
 
-- `src/components/chat/ChatFooter.tsx` (exact filename TBD — mode picker dropdown)
-- `src/lib/ai/acp-utils.ts` (or wherever the mode-ID-to-common-label map lives)
-- Component tests
+## Root cause
 
----
+Two connected bugs:
 
-### #2 — Footer dropdowns refresh instantly on agent switch
+1. **Wrong data source for "what's available."** Available modes/config options should come from `connection.acpCapabilities`, not from the live `sessionInfo`. The capability probe already answered this question at connection-add time; the footer should just display it.
 
-**Description:** When the user switches to a different agent via the connection picker, the mode dropdown and config-option dropdowns in the footer should immediately reflect the new agent's reported options. Currently the dropdowns appear to lag — either showing the previous agent's options or requiring a page refresh / chat reopen to update.
+2. **Stale `sessionInfo` across agent switch.** `ensureAcpAgent` stops the old agent when the connection changes (line ~255 of `acp-agent-state.ts`), but does not call `clearSessionInfo()`. The previous agent's modes and `currentModeId` linger in the module-level state until a new `setSessionModes(...)` fires — which is not until session/new completes on the new agent. Needs an explicit clear on connection change.
 
-This is likely a React-render dependency issue: the footer derives its options from the currently-active agent's session capabilities, and some effect or selector isn't re-running on connection change.
+## Division of responsibility after fix
 
-**Acceptance criteria:**
+| Data | Source | Lifecycle |
+| --- | --- | --- |
+| **Available** modes and config options | `connection.acpCapabilities` | Set at connection add (probe), refreshed ≥24h later |
+| **Currently selected** value (highlight) | `sessionInfo.modes?.currentModeId` / `sessionInfo.configOptions[n].currentValue` — with fallback to `connection.acpDefaults.*` and then first available | Live; cleared on agent switch |
+| Usage counters | `sessionInfo.usage` | Live |
 
-- Switching connections in the footer triggers a fresh derivation of mode options + config options from the newly-active agent's session response.
-- No stale options from the prior agent.
-- Test: mount footer, switch active connection prop, assert dropdown contents update within a single render.
+## Acceptance criteria (outcome-shaped)
 
-**Complexity:** S **Category:** frontend **Dependencies:** #1 (same area of code) **Files:**
+- Switching agents in the chat footer **instantly** updates the mode picker options and config-option pickers to reflect the new agent's capabilities. No wait for a message to be sent.
+- Codex's mode picker appears on switch (its capabilities were captured at probe time, regardless of whether Codex reports modes via legacy `modes` field or via `configOptions[category=mode]`).
+- Copilot's 3 modes show immediately on switch from Claude, not 4 stale ones.
+- Reasoning Effort picker appears immediately for agents that support it, hidden for those that don't.
+- No regression: mode picker + config pickers continue to work correctly after a message is sent (i.e. highlight correctly reflects whatever mode/value is actually live on the agent-side session).
+- `sessionInfo` is cleared when `ensureAcpAgent` respawns for a connection change, so stale highlights never bleed across.
 
-- `src/components/chat/ChatFooter.tsx`
-- `src/stores/...` — the store that tracks current agent session state
+## Files
 
----
+- `src/components/chat/AcpSessionControls.tsx` — read available from `connection.acpCapabilities`, current selected from `sessionInfo` with fallback
+- `src/components/chat/ChatFooter.tsx` — pass `effectiveConnection` prop into `AcpSessionControls`
+- `src/lib/ai/acp-agent-state.ts` — `ensureAcpAgent` calls `clearSessionInfo()` on connection-change respawn
+- `src/components/chat/__tests__/AcpSessionControls.test.tsx` (new) — component tests feeding different connections to assert picker output
+- `src/lib/__tests__/acp-agent-state.test.ts` — add test that ensureAcpAgent clears sessionInfo on connection change
 
-### #3 — Config-option widgets render only for agents that support them
+## Complexity: S (~45 min focused work)
 
-**Description:** Thinking effort (reasoning_effort) is a config option specific to Codex and some Claude modes. Today the footer appears to render the thinking-effort dropdown universally, which is noise for agents that don't report that config option. Each agent's session response advertises which `config_options` it supports — the footer should render only those.
+## Non-goals
 
-Related: some agents report `configOptions` with `category: "mode"` and `category: "model"` — these are already handled by dedicated pickers, so the generic config-option renderer should skip them.
-
-**Acceptance criteria:**
-
-- Footer renders only the config options the active agent's session reported (excluding `category: "mode"` and `category: "model"` which have dedicated pickers).
-- Gemini and Codex: verify thinking-effort only shows when Codex is active.
-- Agent reporting no non-mode/non-model config options shows no generic config widget.
-- Component tests per agent.
-
-**Complexity:** M **Category:** frontend **Dependencies:** #2 **Files:**
-
-- `src/components/chat/ChatFooter.tsx`
-- Related config-option rendering components
+- Changing the mode-click behavior when no session exists (still shows "send a message first" toast). User flow: they see available options, pick one after first send. Future enhancement could queue the intent and apply on session creation, but not in scope for this fix.
+- Re-probing capabilities on agent switch. The probe already runs at registration and auto-refreshes. Re-probe-on-switch would add latency for no benefit.
