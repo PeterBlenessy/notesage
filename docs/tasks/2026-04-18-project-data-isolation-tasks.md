@@ -152,7 +152,7 @@ This is the foundation of the red-team TDD discipline. Before implementing any T
 
 ---
 
-### #5 — Cross-project mode opt-in setting
+### #5 — Cross-project mode opt-in setting ✅
 
 **Description:** Add `crossProjectMode: boolean` to `settings-store` (default false) and surface it in Settings &gt; Advanced with a clear warning ("Exposes all workspace folders to the agent — disables project isolation").
 

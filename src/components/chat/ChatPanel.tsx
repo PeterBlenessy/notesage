@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { Plus, MessageSquare, History } from 'lucide-react';
+import { Plus, MessageSquare, History, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useChatStore, selectMessages, selectProjectPaths, selectPendingProjectSwitch, selectPendingAgentSwitch } from '@/stores/chat-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { useAIStore } from '@/stores/ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
@@ -50,6 +51,7 @@ export function ChatPanel() {
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
   const interactiveConnection = useRoutingStore((s) => s.getConnectionForUseCase('interactive'));
   const allConnections = useConnectionsStore((s) => s.connections);
+  const crossProjectMode = useSettingsStore((s) => s.crossProjectMode);
 
   // Stabilize array identity — only update reference when values actually change
   const stableProjectPathsRef = useRef(rawProjectPaths);
@@ -356,6 +358,19 @@ export function ChatPanel() {
         onEdit={handleEdit}
         onPrefill={handlePrefill}
       />
+
+      {crossProjectMode && (
+        <div
+          role="status"
+          className="px-3 py-1.5 border-t border-border bg-muted/40 flex items-center gap-2 text-[11px] text-muted-foreground"
+        >
+          <AlertTriangle className="h-3 w-3 shrink-0" strokeWidth={1.5} />
+          <span>
+            <span className="font-medium text-foreground">Cross-project mode:</span>{' '}
+            agent has access to all workspace folders.
+          </span>
+        </div>
+      )}
 
       <ChatFooter
         onSend={handleSend}

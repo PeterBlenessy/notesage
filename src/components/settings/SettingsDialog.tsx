@@ -156,6 +156,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
     externalChangeDiffReview, setExternalChangeDiffReview,
     showHiddenFiles, setShowHiddenFiles,
     showAgentModePicker, setShowAgentModePicker,
+    crossProjectMode, setCrossProjectMode,
     contentWidth, setContentWidth,
     measurementUnit, setMeasurementUnit,
     marginTop, setMarginTop,
@@ -1125,6 +1126,22 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         Show a mode picker in the chat footer for agents that support modes (e.g., Claude Code: Edit/Plan/Chat). When off, the default mode is used automatically.
+                      </p>
+                    </div>
+
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label htmlFor="cross-project-mode" className="text-sm font-medium cursor-pointer">
+                          Cross-Project Mode
+                        </Label>
+                        <Switch
+                          id="cross-project-mode"
+                          checked={crossProjectMode}
+                          onCheckedChange={setCrossProjectMode}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Exposes <span className="font-medium text-foreground">all workspace folders</span> to the AI agent — disables project isolation. Only enable for power-user workflows that explicitly need multi-project visibility. A persistent banner appears in the chat panel while this is on.
                       </p>
                     </div>
                   </div>

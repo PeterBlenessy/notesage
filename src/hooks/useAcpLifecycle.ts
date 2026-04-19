@@ -10,6 +10,7 @@ import { log } from '@/lib/logger';
 import { isAcpConnectionError, friendlyAcpError } from '@/lib/ai/errors';
 import { tauriApi } from '@/lib/tauri';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
 import { getChatSandboxScope, hasLoadSessionCapability } from '@/lib/ai/acp-utils';
@@ -254,11 +255,10 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         }
 
         const cwd = selectedProjectPaths[0] || '/tmp';
-        // crossProjectMode is false until task #5 wires the settings-store toggle.
         const sandboxScope = getChatSandboxScope(
           { projectPaths: selectedProjectPaths },
           effectiveConnection,
-          false,
+          useSettingsStore.getState().crossProjectMode,
         );
         const instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
 
@@ -548,11 +548,11 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       try {
         const cwd = selectedProjectPaths[0] || '/tmp';
         // Comment-sourced chats (opts.sandboxPaths set): scope to source project only — preserved.
-        // Regular chats: only the selected projects, not the whole workspace.
+        // Regular chats: only the selected projects, unless the user opted into cross-project mode.
         const sandboxScope = opts?.sandboxPaths ?? getChatSandboxScope(
           { projectPaths: selectedProjectPaths },
           effectiveConnection,
-          false,
+          useSettingsStore.getState().crossProjectMode,
         );
         const instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
 
@@ -799,7 +799,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           const sandboxScope = prompt.sandboxPaths ?? getChatSandboxScope(
             { projectPaths: selectedProjectPaths },
             effectiveConnection,
-            false,
+            useSettingsStore.getState().crossProjectMode,
           );
           instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
           isNewSession = true;
@@ -812,7 +812,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         const sandboxScope = prompt.sandboxPaths ?? getChatSandboxScope(
           { projectPaths: selectedProjectPaths },
           effectiveConnection,
-          false,
+          useSettingsStore.getState().crossProjectMode,
         );
         instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
         isNewSession = true;

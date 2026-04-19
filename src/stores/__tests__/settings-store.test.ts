@@ -130,6 +130,7 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   typewriterScrolling: false,
   externalChangeDiffReview: false,
   showHiddenFiles: false,
+  crossProjectMode: false,
   sourceWordWrap: true,
   copilotMaxCompletionChars: 80,
   fimContextChars: 500,
@@ -196,6 +197,7 @@ describe('initial state defaults', () => {
     expect(s.typewriterScrolling).toBe(false);
     expect(s.externalChangeDiffReview).toBe(false);
     expect(s.showHiddenFiles).toBe(false);
+    expect(s.crossProjectMode).toBe(false);
     expect(s.sourceWordWrap).toBe(true);
     expect(s.copilotMaxCompletionChars).toBe(80);
     expect(s.fimContextChars).toBe(500);
@@ -336,6 +338,14 @@ describe('boolean setters', () => {
     expect(useSettingsStore.getState().showHiddenFiles).toBe(true);
     useSettingsStore.getState().setShowHiddenFiles(false);
     expect(useSettingsStore.getState().showHiddenFiles).toBe(false);
+  });
+
+  it('setCrossProjectMode', () => {
+    expect(useSettingsStore.getState().crossProjectMode).toBe(false);
+    useSettingsStore.getState().setCrossProjectMode(true);
+    expect(useSettingsStore.getState().crossProjectMode).toBe(true);
+    useSettingsStore.getState().setCrossProjectMode(false);
+    expect(useSettingsStore.getState().crossProjectMode).toBe(false);
   });
 
   it('setSourceWordWrap', () => {

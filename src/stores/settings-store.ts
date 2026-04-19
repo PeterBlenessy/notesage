@@ -68,6 +68,13 @@ interface SettingsStore {
   showHiddenFiles: boolean;
   /** Show agent mode picker in chat footer (default: off — uses default mode automatically) */
   showAgentModePicker: boolean;
+  /**
+   * Cross-project mode: when true, the ACP agent's filesystem sandbox is widened
+   * to ALL workspace projects + explorer folders, not just the projects selected
+   * in the chat footer. Default false. Opt-in escape hatch — disables the
+   * primary project-isolation guarantee from the project-data-isolation PRD.
+   */
+  crossProjectMode: boolean;
   // System tray settings
   showInTray: boolean;
   closeToTray: boolean;
@@ -130,6 +137,7 @@ interface SettingsStore {
   setChatHintsShown: (shown: boolean) => void;
   setShowHiddenFiles: (show: boolean) => void;
   setShowAgentModePicker: (show: boolean) => void;
+  setCrossProjectMode: (enabled: boolean) => void;
   setShowInTray: (show: boolean) => void;
   setCloseToTray: (close: boolean) => void;
   setStartAtLogin: (start: boolean) => void;
@@ -163,6 +171,7 @@ export const useSettingsStore = create<SettingsStore>()(
       chatHintsShown: false,
       showHiddenFiles: false,
       showAgentModePicker: false,
+      crossProjectMode: false,
       showInTray: true,
       closeToTray: false,
       startAtLogin: false,
@@ -385,6 +394,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setShowAgentModePicker: (show: boolean) => {
         set({ showAgentModePicker: show });
+      },
+
+      setCrossProjectMode: (enabled: boolean) => {
+        set({ crossProjectMode: enabled });
       },
 
       setShowInTray: (show: boolean) => {
