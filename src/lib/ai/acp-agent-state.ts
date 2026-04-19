@@ -316,10 +316,15 @@ export async function ensureAcpAgent(connection: Connection, cwd: string, sandbo
         workingDirectory: cwd,
         envVars: creds.envVars ?? null,
         sandboxEnabled: connection.sandboxEnabled ?? null,
-        sandboxPaths: [
-          ...(sandboxPaths ?? []),
-          ...(connection.extraWritablePaths ?? []),
-        ].length > 0 ? [...(sandboxPaths ?? []), ...(connection.extraWritablePaths ?? [])] : null,
+        // Deduplicate — `getChatSandboxScope` may already include extraWritablePaths;
+        // non-chat callers (comment delegation, inline actions) pass them separately.
+        sandboxPaths: (() => {
+          const merged = [...new Set<string>([
+            ...(sandboxPaths ?? []),
+            ...(connection.extraWritablePaths ?? []),
+          ])];
+          return merged.length > 0 ? merged : null;
+        })(),
         networkSandboxEnabled: networkSandboxEnabled || null,
         networkAllowedDomains,
         kernelNetworkDeny: connection.kernelNetworkDeny ?? null,

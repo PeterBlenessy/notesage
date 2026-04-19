@@ -12,7 +12,7 @@ import { tauriApi } from '@/lib/tauri';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
-import { getAllWorkspacePaths, hasLoadSessionCapability } from '@/lib/ai/acp-utils';
+import { getChatSandboxScope, hasLoadSessionCapability } from '@/lib/ai/acp-utils';
 import { acpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue, setAvailableCommands } from '@/lib/ai/acp-agent-state';
 import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
@@ -254,7 +254,12 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         }
 
         const cwd = selectedProjectPaths[0] || '/tmp';
-        const sandboxScope = getAllWorkspacePaths();
+        // crossProjectMode is false until task #5 wires the settings-store toggle.
+        const sandboxScope = getChatSandboxScope(
+          { projectPaths: selectedProjectPaths },
+          effectiveConnection,
+          false,
+        );
         const instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
 
         // Re-read the target session after the async hydration/spawn waits — the
@@ -542,8 +547,13 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
       try {
         const cwd = selectedProjectPaths[0] || '/tmp';
-        // Comment-sourced chats: scope to source project only. Regular chats: all workspace folders.
-        const sandboxScope = opts?.sandboxPaths ?? getAllWorkspacePaths();
+        // Comment-sourced chats (opts.sandboxPaths set): scope to source project only — preserved.
+        // Regular chats: only the selected projects, not the whole workspace.
+        const sandboxScope = opts?.sandboxPaths ?? getChatSandboxScope(
+          { projectPaths: selectedProjectPaths },
+          effectiveConnection,
+          false,
+        );
         const instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
 
         // Block sending if a project switch is pending user decision
@@ -786,7 +796,11 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           log.warn('ai', `ACP retry: reconnect failed (${String(reconnectErr)}), using fresh session`);
           stopAcpAgent();
           const cwd = selectedProjectPaths[0] || '/tmp';
-          const sandboxScope = prompt.sandboxPaths ?? getAllWorkspacePaths();
+          const sandboxScope = prompt.sandboxPaths ?? getChatSandboxScope(
+            { projectPaths: selectedProjectPaths },
+            effectiveConnection,
+            false,
+          );
           instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
           isNewSession = true;
         }
@@ -795,7 +809,11 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         log.info('ai', 'ACP retry: agent does not support session/load, using fresh session');
         stopAcpAgent();
         const cwd = selectedProjectPaths[0] || '/tmp';
-        const sandboxScope = prompt.sandboxPaths ?? getAllWorkspacePaths();
+        const sandboxScope = prompt.sandboxPaths ?? getChatSandboxScope(
+          { projectPaths: selectedProjectPaths },
+          effectiveConnection,
+          false,
+        );
         instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
         isNewSession = true;
       }

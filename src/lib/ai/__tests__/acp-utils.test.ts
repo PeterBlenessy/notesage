@@ -1,14 +1,17 @@
-import { describe, it, expect, expectTypeOf } from 'vitest';
+import { describe, it, expect, expectTypeOf, beforeEach } from 'vitest';
 import {
   formatToolLabel,
   parseRawInput,
   normalizeToolCallContent,
   hasSessionCapability,
+  getChatSandboxScope,
   type AcpAgentCapabilities,
   type AcpSpawnResult,
   type AuthEnvVar,
   type AuthMethodInfo,
 } from '../acp-utils';
+import { useWorkspaceStore } from '@/stores/workspace-store';
+import type { Connection } from '@/lib/ai/connections';
 
 describe('formatToolLabel', () => {
   it('formats read_file with path basename', () => {
@@ -440,5 +443,124 @@ describe('AuthMethodInfo discriminated union (EnvVar e2e)', () => {
     expect(envVar).toBeDefined();
     expect(envVar?.vars[0].name).toBe('FOO');
     expect(envVar?.link).toBe('https://example.com/keys');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getChatSandboxScope
+// ---------------------------------------------------------------------------
+
+describe('getChatSandboxScope', () => {
+  beforeEach(() => {
+    useWorkspaceStore.setState({
+      projects: [],
+      explorerFolders: [],
+    });
+  });
+
+  function makeConnection(overrides: Partial<Connection> = {}): Connection {
+    return {
+      id: 'conn-1',
+      provider: 'anthropic',
+      authMethod: 'agent_managed',
+      status: 'connected',
+      label: 'Claude Code',
+      credentials: { type: 'agent_managed', agentBinary: 'claude-agent-acp' },
+      capabilities: ['interactive'],
+      createdAt: 1,
+      ...overrides,
+    } as Connection;
+  }
+
+  it('normal mode: returns conv.projectPaths ∪ extraWritablePaths', () => {
+    const conv = { projectPaths: ['/work/projA', '/work/projB'] };
+    const connection = makeConnection({ extraWritablePaths: ['/tmp/agent-work'] });
+
+    const scope = getChatSandboxScope(conv, connection, false);
+
+    expect(scope.sort()).toEqual(['/tmp/agent-work', '/work/projA', '/work/projB']);
+  });
+
+  it('normal mode: ignores workspace projects/folders not in conv.projectPaths', () => {
+    useWorkspaceStore.setState({
+      projects: [
+        { path: '/work/projA', fileTree: [] },
+        { path: '/work/projB', fileTree: [] },
+        { path: '/work/projC', fileTree: [] },
+      ],
+      explorerFolders: [{ path: '/elsewhere/explorer', fileTree: [] }],
+    });
+    const conv = { projectPaths: ['/work/projA'] };
+    const connection = makeConnection();
+
+    const scope = getChatSandboxScope(conv, connection, false);
+
+    expect(scope).toEqual(['/work/projA']);
+  });
+
+  it('cross-project mode: unions ALL workspace paths + extraWritablePaths', () => {
+    useWorkspaceStore.setState({
+      projects: [
+        { path: '/work/projA', fileTree: [] },
+        { path: '/work/projB', fileTree: [] },
+      ],
+      explorerFolders: [{ path: '/elsewhere', fileTree: [] }],
+    });
+    const conv = { projectPaths: ['/work/projA'] };
+    const connection = makeConnection({ extraWritablePaths: ['/tmp/agent-work'] });
+
+    const scope = getChatSandboxScope(conv, connection, true);
+
+    expect(scope.sort()).toEqual(['/elsewhere', '/tmp/agent-work', '/work/projA', '/work/projB']);
+  });
+
+  it('empty conv.projectPaths returns extraWritablePaths only', () => {
+    const conv = { projectPaths: [] };
+    const connection = makeConnection({ extraWritablePaths: ['/tmp/agent-work'] });
+
+    expect(getChatSandboxScope(conv, connection, false)).toEqual(['/tmp/agent-work']);
+  });
+
+  it('no extraWritablePaths: just returns conv.projectPaths', () => {
+    const conv = { projectPaths: ['/work/projA'] };
+    const connection = makeConnection(); // no extraWritablePaths
+
+    expect(getChatSandboxScope(conv, connection, false)).toEqual(['/work/projA']);
+  });
+
+  it('deduplicates when extraWritablePaths overlaps conv.projectPaths', () => {
+    const conv = { projectPaths: ['/work/projA'] };
+    const connection = makeConnection({ extraWritablePaths: ['/work/projA', '/tmp/agent-work'] });
+
+    const scope = getChatSandboxScope(conv, connection, false);
+
+    expect(scope.sort()).toEqual(['/tmp/agent-work', '/work/projA']);
+    expect(scope.filter((p) => p === '/work/projA')).toHaveLength(1);
+  });
+
+  it('cross-project mode: deduplicates overlapping workspace + extraWritablePaths', () => {
+    useWorkspaceStore.setState({
+      projects: [{ path: '/work/projA', fileTree: [] }],
+      explorerFolders: [{ path: '/work/projA', fileTree: [] }], // intentional duplicate
+    });
+    const conv = { projectPaths: ['/work/projA'] };
+    const connection = makeConnection({ extraWritablePaths: ['/work/projA'] });
+
+    const scope = getChatSandboxScope(conv, connection, true);
+
+    expect(scope).toEqual(['/work/projA']);
+  });
+
+  it('returns a new array (not mutating inputs)', () => {
+    const convPaths = ['/work/projA'];
+    const extraPaths = ['/tmp/agent-work'];
+    const conv = { projectPaths: convPaths };
+    const connection = makeConnection({ extraWritablePaths: extraPaths });
+
+    const scope = getChatSandboxScope(conv, connection, false);
+    expect(scope).not.toBe(convPaths);
+    expect(scope).not.toBe(extraPaths);
+    expect(convPaths).toEqual(['/work/projA']); // unchanged
+    expect(extraPaths).toEqual(['/tmp/agent-work']); // unchanged
   });
 });

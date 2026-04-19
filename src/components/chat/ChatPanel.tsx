@@ -227,7 +227,7 @@ export function ChatPanel() {
     const activeConv = convs.find((c) => c.id === activeId);
     const sandboxPaths = activeConv?.sourceCommentId && activeConv.projectPaths.length > 0
       ? activeConv.projectPaths
-      : undefined; // undefined = all workspace folders (default)
+      : undefined; // undefined = default scope from getChatSandboxScope (selected projects only)
 
     const sendOpts: Record<string, unknown> = { ...(skillName ? { displayContent: content, skillName } : {}), attachedFilePaths, sandboxPaths, attachments };
     if (editContextRef.current) {

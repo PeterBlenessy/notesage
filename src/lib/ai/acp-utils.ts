@@ -3,6 +3,7 @@
 
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { ToolCallContentItem } from '@/lib/ai/types';
+import type { Connection } from '@/lib/ai/connections';
 
 // ---------------------------------------------------------------------------
 // ACP types
@@ -512,11 +513,43 @@ export function formatToolLabel(kind: string, args?: Record<string, unknown>, ti
   }
 }
 
-/** Get all workspace folder paths (projects + explorer folders) for sandbox scope */
-export function getAllWorkspacePaths(): string[] {
+/**
+ * Get all workspace folder paths (projects + explorer folders). Internal helper —
+ * callers should use `getChatSandboxScope` instead to respect per-chat project scope.
+ * Calling this directly re-introduces the broad-scope leak that the
+ * project-data-isolation PRD closes.
+ */
+function getAllWorkspacePaths(): string[] {
   const ws = useWorkspaceStore.getState();
   const paths = new Set<string>();
   for (const p of ws.projects) paths.add(p.path);
   for (const f of ws.explorerFolders) paths.add(f.path);
+  return [...paths];
+}
+
+/**
+ * Resolve the sandbox scope for a chat conversation — the set of filesystem
+ * paths the ACP agent is allowed to write to.
+ *
+ * Default mode (`crossProjectMode = false`): only the projects explicitly
+ * selected in the chat footer (`conv.projectPaths`), unioned with the
+ * connection's `extraWritablePaths`. This is the primary isolation guarantee
+ * established by the project-data-isolation PRD.
+ *
+ * Cross-project mode (`crossProjectMode = true`): all workspace projects and
+ * explorer folders are unioned in. Opt-in escape hatch for power-user workflows
+ * that need multi-project visibility; a settings toggle surfaces the risk.
+ */
+export function getChatSandboxScope(
+  conv: { projectPaths: string[] },
+  connection: Pick<Connection, 'extraWritablePaths'>,
+  crossProjectMode: boolean,
+): string[] {
+  const paths = new Set<string>();
+  if (crossProjectMode) {
+    for (const p of getAllWorkspacePaths()) paths.add(p);
+  }
+  for (const p of conv.projectPaths) paths.add(p);
+  for (const p of connection.extraWritablePaths ?? []) paths.add(p);
   return [...paths];
 }

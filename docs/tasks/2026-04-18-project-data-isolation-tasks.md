@@ -131,7 +131,7 @@ This is the foundation of the red-team TDD discipline. Before implementing any T
 
 ## Phase 2 — Track 1 Critical: Sandbox & Scope
 
-### #4 — `getChatSandboxScope()` selector + respawn on change
+### #4 — `getChatSandboxScope()` selector + respawn on change ✅
 
 **Description:** Replace `getAllWorkspacePaths()` at the four call sites in `useAcpLifecycle.ts` with a selector that returns `conv.projectPaths + connection.extraWritablePaths`. Existing `sandboxScopeKey` keying in `acp-agent-state.ts:250-261` already triggers respawn; verify the new selector flows through it correctly.
 
