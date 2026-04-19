@@ -82,21 +82,46 @@ export function useMcpDiscovery() {
     let cancelled = false;
 
     const run = async () => {
-      // Collect base dirs for config discovery
-      const baseDirs: string[] = [];
-      for (const project of projects) {
-        baseDirs.push(project.path);
-      }
-
       try {
-        // Discover configs from Notesage config files
-        const configs: McpServerConfig[] = await invoke('mcp_discover_configs', {
-          baseDirs,
+        // Task #20: scan per project so each server can be tagged with its
+        // `projectRoot`. The Rust `mcp_discover_configs` includes the global
+        // ~/.notesage/mcp.json in every call, so:
+        //  1. Call once with `baseDirs: []` to pick up global entries — tag
+        //     these with `projectRoot: null`.
+        //  2. Call once per project and take only the project-sourced entries
+        //     from each result, tagging them with that project's path.
+        //
+        // Running scans in parallel keeps startup latency bounded by the
+        // slowest single scan rather than summing across all projects.
+        const globalConfigs: McpServerConfig[] = await invoke('mcp_discover_configs', {
+          baseDirs: [],
         });
+
+        const perProjectResults = await Promise.all(
+          projects.map(async (p) => {
+            const configs: McpServerConfig[] = await invoke('mcp_discover_configs', {
+              baseDirs: [p.path],
+            });
+            return { projectPath: p.path, configs };
+          }),
+        );
 
         if (cancelled) return;
 
-        const entries = configs.map(configToEntry);
+        const entries: McpServerEntry[] = [];
+        for (const c of globalConfigs) {
+          entries.push({ ...configToEntry(c), projectRoot: null });
+        }
+        for (const { projectPath, configs } of perProjectResults) {
+          for (const c of configs) {
+            // `mcp_discover_configs` echoes the global entries in every call.
+            // We already captured them in the global pass above; filter to
+            // project-sourced entries only so we don't double-count.
+            if (c.source !== 'notesage_project') continue;
+            entries.push({ ...configToEntry(c), projectRoot: projectPath });
+          }
+        }
+
         useMcpStore.getState().setServers(entries);
 
         // Auto-start enabled servers concurrently

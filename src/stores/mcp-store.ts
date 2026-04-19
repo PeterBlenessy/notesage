@@ -32,6 +32,16 @@ export interface McpServerEntry {
   status: McpServerStatus;
   error?: string;
   tools: McpToolInfo[];
+  /**
+   * Project root this server was discovered under. `null` (or missing) means
+   * the server is global — either from `~/.notesage/mcp.json` or imported from
+   * a system-wide external source (Claude Desktop, Cursor, VS Code).
+   *
+   * Scoped getters (`getActiveServers`, `getActiveTools`) use this field to
+   * enforce per-project isolation (Task #20) — a server discovered under
+   * Project A must not expose its tools to a chat scoped to Project B.
+   */
+  projectRoot?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -61,6 +71,49 @@ interface McpStore {
 
   /** Get a server by ID. */
   getServer(id: string): McpServerEntry | undefined;
+
+  /**
+   * Active (enabled) servers, filtered by project scope (Task #20).
+   *
+   * - Servers with `projectRoot == null` (or missing — legacy) are treated as
+   *   global and always included.
+   * - Servers with a `projectRoot` string are included only if that root is in
+   *   `selectedProjectPaths`.
+   * - When `selectedProjectPaths` is `undefined` (back-compat for unscoped UI
+   *   callers), no scoping is applied and all enabled servers are returned.
+   *   Tool-composition callers must pass an explicit (possibly empty) array
+   *   to opt into isolation.
+   */
+  getActiveServers(selectedProjectPaths?: string[]): McpServerEntry[];
+
+  /**
+   * Flattened list of MCP tools available in the current scope. Only includes
+   * tools from servers that are (a) enabled, (b) running, and (c) either
+   * global or attached to a selected project.
+   *
+   * This is the scope-gated source of truth for the chat tool registry —
+   * future tool-composition sites that wire MCP tools into `ai_chat_stream`
+   * should read from here rather than iterating `state.servers` directly.
+   */
+  getActiveTools(selectedProjectPaths?: string[]): McpToolInfo[];
+}
+
+/**
+ * Filter servers by project scope for Task #20 isolation.
+ *
+ * See `getActiveServers` doc for semantics. Split out so both `getActiveServers`
+ * and `getActiveTools` use the same filter rule.
+ */
+function filterByScope(
+  entries: McpServerEntry[],
+  selectedProjectPaths: string[] | undefined,
+): McpServerEntry[] {
+  if (selectedProjectPaths === undefined) return entries;
+  const selected = new Set(selectedProjectPaths);
+  return entries.filter((s) => {
+    if (s.projectRoot == null) return true; // global (including legacy)
+    return selected.has(s.projectRoot);
+  });
 }
 
 export const useMcpStore = create<McpStore>()(
@@ -147,6 +200,22 @@ export const useMcpStore = create<McpStore>()(
 
       getServer(id: string) {
         return get().servers.find((s) => s.id === id);
+      },
+
+      getActiveServers(selectedProjectPaths) {
+        const scoped = filterByScope(get().servers, selectedProjectPaths);
+        return scoped.filter((s) => s.enabled);
+      },
+
+      getActiveTools(selectedProjectPaths) {
+        const scoped = filterByScope(get().servers, selectedProjectPaths);
+        const out: McpToolInfo[] = [];
+        for (const s of scoped) {
+          if (!s.enabled) continue;
+          if (s.status !== 'running') continue;
+          for (const t of s.tools) out.push(t);
+        }
+        return out;
       },
     }),
     {
