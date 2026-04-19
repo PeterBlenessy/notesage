@@ -16,10 +16,11 @@ use super::network_proxy::NetworkSandboxConfig;
 /// - `Literal(rel)`: `$HOME/rel` exactly (for sibling state files like
 ///   `~/.claude.json` and narrow keychain reads)
 ///
-/// Keyed by the raw `agent_binary` string passed to `acp_agent_spawn` (the
-/// command name — not the resolved absolute path) so callers don't need to
-/// do any path extraction. Adding a new agent requires extending this match
-/// plus adding a matching Rust unit test.
+/// Accepts either the raw command name (`"codex-acp"`) or an absolute path
+/// (`"/opt/homebrew/bin/copilot"`, `"/Users/peter/.notesage/agents/bin/codex-acp"`).
+/// The basename is extracted before matching — callers don't need to normalize.
+/// Adding a new agent requires extending this match plus adding a matching
+/// Rust unit test.
 #[cfg(target_os = "macos")]
 #[derive(Clone, Debug)]
 pub(crate) enum SandboxEntry {
@@ -36,7 +37,16 @@ pub(crate) fn agent_config_entries(agent_binary: &str) -> Vec<SandboxEntry> {
     // may need to reach those regardless of provider.
     let mut entries = vec![SandboxEntry::Subpath(".notesage")];
 
-    match agent_binary {
+    // Extract the command basename so callers can pass either the raw name
+    // or a resolved absolute path. Seatbelt spawns receive the resolved path
+    // (see acp.rs:run_agent_thread) — matching on the full path would miss
+    // every arm and silently strip Bucket C, denying ~/.codex, ~/.copilot, etc.
+    let cmd = Path::new(agent_binary)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(agent_binary);
+
+    match cmd {
         // Anthropic Claude Code via claude-agent-acp. The agent also reads a
         // sibling FILE ~/.claude.json (project state, ~41KB) at session/new
         // time; missing the file causes its internal `query()` subprocess to
@@ -1125,6 +1135,34 @@ mod tests {
                 assert!(
                     !has_keychain,
                     "{binary} mapping must NOT include login.keychain-db — Copilot-specific"
+                );
+            }
+        }
+
+        // Regression lock: acp.rs passes the RESOLVED absolute path to
+        // sandboxed_command, not the raw command name. Before the basename
+        // extraction in agent_config_entries, every absolute-path caller
+        // fell into the `_` arm, silently stripping Bucket C and denying
+        // ~/.codex, ~/.copilot, etc. — reproduced 2026-04-19 in user testing:
+        // all three of Claude/Codex/Copilot failed at session/new because
+        // config reads returned EPERM. Gemini worked because its OAuth
+        // cache lives outside ~/.gemini.
+        #[test]
+        fn agent_config_entries_resolves_absolute_paths() {
+            let cases = [
+                ("/opt/homebrew/bin/claude-agent-acp", ".claude"),
+                ("/Users/peter/.notesage/agents/bin/codex-acp", ".codex"),
+                ("/opt/homebrew/bin/copilot", ".copilot"),
+                ("/opt/homebrew/bin/gemini", ".gemini"),
+            ];
+            for (full_path, expected_subpath) in cases {
+                let entries = agent_config_entries(full_path);
+                let has_expected = entries.iter().any(|e|
+                    matches!(e, SandboxEntry::Subpath(r) if *r == expected_subpath)
+                );
+                assert!(
+                    has_expected,
+                    "Absolute path {full_path} must resolve to {expected_subpath} (basename extraction); got {entries:?}"
                 );
             }
         }
