@@ -50,6 +50,8 @@ interface ProjectMetadataStore {
   setMetadata: (projectPath: string, metadata: ProjectMetadata) => void;
   updateMetadata: (projectPath: string, updates: Partial<Pick<ProjectMetadata, 'name' | 'description' | 'citationFormat' | 'citationStyle'>>) => void;
   updateAI: (projectPath: string, updates: Partial<ProjectMetadata['ai']>) => void;
+  setAiLock: (projectPath: string, connectionId: string, reason?: string) => void;
+  clearAiLock: (projectPath: string) => void;
   removeMetadata: (projectPath: string) => void;
   getMetadata: (projectPath: string) => ProjectMetadata | undefined;
   isDirty: (projectPath: string) => boolean;
@@ -98,6 +100,42 @@ export const useProjectMetadataStore = create<ProjectMetadataStore>((set, get) =
             ...existing,
             ai: { ...existing.ai, ...updates },
           },
+        },
+        dirtyPaths: newDirty,
+      };
+    }),
+
+  setAiLock: (projectPath, connectionId, reason) =>
+    set((state) => {
+      const existing = state.metadataMap[projectPath];
+      if (!existing) return state;
+      const newDirty = new Set(state.dirtyPaths);
+      newDirty.add(projectPath);
+      const aiLock: ProjectMetadata['aiLock'] = {
+        connectionId,
+        lockedAt: Date.now(),
+        ...(reason && reason.trim().length > 0 ? { reason: reason.trim() } : {}),
+      };
+      return {
+        metadataMap: {
+          ...state.metadataMap,
+          [projectPath]: { ...existing, aiLock },
+        },
+        dirtyPaths: newDirty,
+      };
+    }),
+
+  clearAiLock: (projectPath) =>
+    set((state) => {
+      const existing = state.metadataMap[projectPath];
+      if (!existing || !existing.aiLock) return state;
+      const newDirty = new Set(state.dirtyPaths);
+      newDirty.add(projectPath);
+      const { aiLock: _aiLock, ...rest } = existing;
+      return {
+        metadataMap: {
+          ...state.metadataMap,
+          [projectPath]: rest as ProjectMetadata,
         },
         dirtyPaths: newDirty,
       };

@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Folder, FolderOpen, Settings, X, ExternalLink, GitCommitVertical, GitBranch, Target, FilePlus, FolderPlus } from "lucide-react";
+import { ChevronRight, Folder, FolderOpen, Lock, Settings, X, ExternalLink, GitCommitVertical, GitBranch, Target, FilePlus, FolderPlus } from "lucide-react";
 import { parseNotesageDrop } from "@/lib/drag-utils";
 import { SyncedIcon } from "./SyncedIcon";
 import { tauriApi } from "@/lib/tauri";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
+import { useConnectionsStore } from "@/stores/connections-store";
+import { describeLockTarget } from "@/lib/ai/project-lock";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useSyncStore } from "@/stores/sync-store";
@@ -48,6 +56,12 @@ export function ProjectItem({
   );
   const project = useWorkspaceStore(selectProject);
   const metadata = useProjectMetadataStore((s) => s.metadataMap[projectPath]);
+  const connections = useConnectionsStore((s) => s.connections);
+  const aiLock = metadata?.aiLock;
+  const lockedConnection = aiLock ? connections.find((c) => c.id === aiLock.connectionId) : undefined;
+  const lockTooltip = aiLock
+    ? `Locked to ${describeLockTarget(aiLock.connectionId, lockedConnection?.label)} — only this provider can access`
+    : null;
   const { isExpanded, toggleFolder } = useWorkspaceStore();
   const gitEnabled = useSettingsStore((s) => s.gitEnabled);
   const isSynced = useSyncStore((s) => s.syncedProjectPaths.includes(projectPath));
@@ -146,7 +160,29 @@ export function ProjectItem({
               )}
               aria-hidden="true"
             />
-            <SyncedIcon icon={expanded ? FolderOpen : Folder} synced={isSynced} folder />
+            {aiLock ? (
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      data-testid="project-lock-badge"
+                      className="relative shrink-0 h-3.5 w-3.5"
+                      aria-label={lockTooltip ?? 'Locked project'}
+                    >
+                      <SyncedIcon icon={expanded ? FolderOpen : Folder} synced={isSynced} folder />
+                      <span className="absolute -right-[3px] -bottom-[1px] flex items-center justify-center h-[11px] w-[11px] rounded-full bg-background">
+                        <Lock className="h-[8px] w-[8px] text-muted-foreground" strokeWidth={2} aria-hidden="true" />
+                      </span>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>
+                    {lockTooltip}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (
+              <SyncedIcon icon={expanded ? FolderOpen : Folder} synced={isSynced} folder />
+            )}
             <span className="truncate flex-1">{displayName}</span>
             <button
               onClick={(e) => {

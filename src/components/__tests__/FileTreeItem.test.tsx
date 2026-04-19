@@ -508,3 +508,94 @@ describe('FileTree', () => {
     expect(treeEl.getAttribute('aria-label')).toBe('File explorer');
   });
 });
+
+// ---------------------------------------------------------------------------
+// AI Provider Lock badge (#13) — lock overlay on project folder icon
+// ---------------------------------------------------------------------------
+
+describe('FileTreeItem — AI Provider Lock badge', () => {
+  const defaultProps = { level: 0, onFileClick: vi.fn() };
+
+  it('renders padlock overlay on project folder when aiLock is set', () => {
+    const entry = createMockFileEntry({
+      name: 'Alpha',
+      path: '/workspace/Alpha',
+      is_directory: true,
+      children: [createMockFileEntry({ name: '.notesage', path: '/workspace/Alpha/.notesage', is_directory: true, children: [] })],
+    });
+
+    useProjectMetadataStore.setState({
+      metadataMap: {
+        '/workspace/Alpha': {
+          version: 1,
+          name: 'Alpha',
+          description: '',
+          ai: { provider: null, agentName: null, projectContext: '' },
+          aiLock: { connectionId: 'conn-claude', lockedAt: 1 },
+        },
+      },
+    });
+
+    renderWithProviders(
+      <FileTreeItem entry={entry} {...defaultProps} />,
+    );
+
+    expect(screen.getByTestId('project-lock-badge')).toBeTruthy();
+  });
+
+  it('does not render padlock overlay when aiLock is unset', () => {
+    const entry = createMockFileEntry({
+      name: 'Alpha',
+      path: '/workspace/Alpha',
+      is_directory: true,
+      children: [createMockFileEntry({ name: '.notesage', path: '/workspace/Alpha/.notesage', is_directory: true, children: [] })],
+    });
+
+    useProjectMetadataStore.setState({
+      metadataMap: {
+        '/workspace/Alpha': {
+          version: 1,
+          name: 'Alpha',
+          description: '',
+          ai: { provider: null, agentName: null, projectContext: '' },
+        },
+      },
+    });
+
+    renderWithProviders(
+      <FileTreeItem entry={entry} {...defaultProps} />,
+    );
+
+    expect(screen.queryByTestId('project-lock-badge')).toBeNull();
+  });
+
+  it('does not render padlock overlay on non-project folders even with metadata entries', () => {
+    const entry = createMockFileEntry({
+      name: 'subfolder',
+      path: '/workspace/Alpha/subfolder',
+      is_directory: true,
+      children: [],
+    });
+
+    // Even if some metadata is present at this unrelated path, the lock badge
+    // only applies to project folders.
+    useProjectMetadataStore.setState({
+      metadataMap: {
+        '/workspace/Alpha/subfolder': {
+          version: 1,
+          name: 'subfolder',
+          description: '',
+          ai: { provider: null, agentName: null, projectContext: '' },
+          aiLock: { connectionId: 'conn-claude', lockedAt: 1 },
+        },
+      },
+    });
+
+    renderWithProviders(
+      <FileTreeItem entry={entry} {...defaultProps} />,
+    );
+
+    // subfolder isn't a project (no .notesage child, not in projects list)
+    expect(screen.queryByTestId('project-lock-badge')).toBeNull();
+  });
+});

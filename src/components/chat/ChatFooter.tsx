@@ -10,6 +10,7 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { AcpSessionControls } from './AcpSessionControls';
+import { ExplainLockDialog } from './ExplainLockDialog';
 import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { useChatContext } from '@/hooks/useChatContext';
 import { useAIOperations } from '@/hooks/useAIOperations';
@@ -85,6 +86,12 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
 
   const [providerOpen, setProviderOpen] = useState(false);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
+  const [explainLockOpen, setExplainLockOpen] = useState(false);
+
+  const lockedProjectPaths = useMemo(
+    () => selectedProjectPaths.filter((p) => !!getProjectLock(p, metadataMap)),
+    [selectedProjectPaths, metadataMap],
+  );
 
   // Handler bridge: the "+" menu's "Attach image" entry calls into ChatInput's
   // exposed imperative handle. Defined here because the menu lives in the
@@ -260,58 +267,73 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
               </PopoverContent>
             </Popover>
             {(interactiveConnections.length > 0 || hasProjectOverride) && (
-              <Popover open={providerOpen} onOpenChange={hasProjectOverride ? undefined : setProviderOpen}>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    data-testid="chat-footer-provider"
-                    data-locked={isProviderLocked ? 'true' : 'false'}
-                    className={`flex items-center gap-1 h-7 px-2 rounded-md text-xs font-medium text-muted-foreground transition-colors duration-150 border border-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                      hasProjectOverride ? 'cursor-default' : 'hover:text-foreground hover:bg-muted hover:border-border active:opacity-75'
-                    }`}
-                    title={
-                      isProviderLocked
-                        ? `Locked to ${describeLockTarget(activeLockConnectionId!, lockedConnection?.label)} by project`
-                        : hasProjectOverride
-                        ? `Set by project: ${singleMetadata?.name || singleProjectPath}`
-                        : effectiveConnection?.label ?? 'Select provider'
-                    }
-                    aria-label={effectiveConnection?.label ?? 'Select provider'}
-                  >
-                    {effectiveConnection ? (
-                      <ProviderLogo provider={effectiveConnection.provider} className="w-[18px] h-[18px]" bare />
-                    ) : (
-                      <span className="text-xs">Provider</span>
-                    )}
-                    {isProviderLocked ? (
-                      <Lock className="h-3 w-3 opacity-60" strokeWidth={1.5} />
-                    ) : !hasProjectOverride ? (
-                      <ChevronUp className="h-3 w-3 opacity-50" />
-                    ) : null}
-                  </button>
-                </PopoverTrigger>
-                {!hasProjectOverride && (
-                <PopoverContent side="top" align="start" className="w-52 p-1">
-                  {interactiveConnections.map((conn) => (
+              isProviderLocked ? (
+                <button
+                  type="button"
+                  data-testid="chat-footer-provider"
+                  data-locked="true"
+                  onClick={() => setExplainLockOpen(true)}
+                  className="flex items-center gap-1 h-7 px-2 rounded-md text-xs font-medium text-muted-foreground transition-colors duration-150 border border-transparent hover:text-foreground hover:bg-muted hover:border-border focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  title={`Locked to ${describeLockTarget(activeLockConnectionId!, lockedConnection?.label)} by project — click to learn more`}
+                  aria-label={`Provider locked to ${describeLockTarget(activeLockConnectionId!, lockedConnection?.label)}. Click to learn more.`}
+                >
+                  {effectiveConnection ? (
+                    <ProviderLogo provider={effectiveConnection.provider} className="w-[18px] h-[18px]" bare />
+                  ) : (
+                    <span className="text-xs">Provider</span>
+                  )}
+                  <Lock className="h-3 w-3 opacity-60" strokeWidth={1.5} aria-hidden="true" />
+                </button>
+              ) : (
+                <Popover open={providerOpen} onOpenChange={hasProjectOverride ? undefined : setProviderOpen}>
+                  <PopoverTrigger asChild>
                     <button
-                      key={conn.id}
-                      onClick={() => {
-                        setRouting('interactive', conn.id);
-                        setProviderOpen(false);
-                      }}
-                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${
-                        effectiveConnection?.id === conn.id
-                          ? 'bg-accent text-accent-foreground'
-                          : 'text-foreground hover:bg-accent/50'
+                      type="button"
+                      data-testid="chat-footer-provider"
+                      data-locked="false"
+                      className={`flex items-center gap-1 h-7 px-2 rounded-md text-xs font-medium text-muted-foreground transition-colors duration-150 border border-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                        hasProjectOverride ? 'cursor-default' : 'hover:text-foreground hover:bg-muted hover:border-border active:opacity-75'
                       }`}
+                      title={
+                        hasProjectOverride
+                          ? `Set by project: ${singleMetadata?.name || singleProjectPath}`
+                          : effectiveConnection?.label ?? 'Select provider'
+                      }
+                      aria-label={effectiveConnection?.label ?? 'Select provider'}
                     >
-                      <ProviderLogo provider={conn.provider} className="w-4 h-4" />
-                      <span className="truncate">{conn.label}</span>
+                      {effectiveConnection ? (
+                        <ProviderLogo provider={effectiveConnection.provider} className="w-[18px] h-[18px]" bare />
+                      ) : (
+                        <span className="text-xs">Provider</span>
+                      )}
+                      {!hasProjectOverride ? (
+                        <ChevronUp className="h-3 w-3 opacity-50" />
+                      ) : null}
                     </button>
-                  ))}
-                </PopoverContent>
-                )}
-              </Popover>
+                  </PopoverTrigger>
+                  {!hasProjectOverride && (
+                  <PopoverContent side="top" align="start" className="w-52 p-1">
+                    {interactiveConnections.map((conn) => (
+                      <button
+                        key={conn.id}
+                        onClick={() => {
+                          setRouting('interactive', conn.id);
+                          setProviderOpen(false);
+                        }}
+                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${
+                          effectiveConnection?.id === conn.id
+                            ? 'bg-accent text-accent-foreground'
+                            : 'text-foreground hover:bg-accent/50'
+                        }`}
+                      >
+                        <ProviderLogo provider={conn.provider} className="w-4 h-4" />
+                        <span className="truncate">{conn.label}</span>
+                      </button>
+                    ))}
+                  </PopoverContent>
+                  )}
+                </Popover>
+              )
             )}
             <AcpSessionControls showModePicker={showAgentModePicker} connection={effectiveConnection ?? undefined} />
             {goalFiles.length > 0 && (
@@ -333,6 +355,11 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
             )}
           </>
         }
+      />
+      <ExplainLockDialog
+        open={explainLockOpen}
+        onOpenChange={setExplainLockOpen}
+        lockedProjectPaths={lockedProjectPaths}
       />
     </div>
   );

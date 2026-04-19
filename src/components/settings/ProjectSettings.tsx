@@ -1,6 +1,17 @@
 import { useState, useCallback, useEffect } from 'react';
-import { ArrowRight, Check, Cloud, FolderOpen, Loader2, X } from 'lucide-react';
+import { ArrowRight, Check, Cloud, FolderOpen, Loader2, Lock, Unlock, X } from 'lucide-react';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
+import { LockProjectDialog } from './LockProjectDialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useSkillStore } from '@/stores/skill-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useSyncStore } from '@/stores/sync-store';
@@ -38,7 +49,7 @@ interface ProjectSettingsProps {
 
 export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }: ProjectSettingsProps) {
   const metadata = useProjectMetadataStore((s) => s.metadataMap[projectPath]);
-  const { updateMetadata, updateAI } = useProjectMetadataStore();
+  const { updateMetadata, updateAI, clearAiLock } = useProjectMetadataStore();
   const connections = useConnectionsStore((s) => s.connections);
   const getUserInvocableAgents = useSkillStore((s) => s.getUserInvocableAgents);
   const { icloudAvailable, icloudNotesagePath, notesRootPath } = useSettingsStore();
@@ -54,6 +65,8 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
   const [applying, setApplying] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [localName, setLocalName] = useState(metadata?.name ?? '');
+  const [lockDialogOpen, setLockDialogOpen] = useState(false);
+  const [unlockDialogOpen, setUnlockDialogOpen] = useState(false);
 
   // Sync localName when metadata.name changes externally (e.g., after rename completes)
   useEffect(() => {
@@ -174,6 +187,18 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
 
   const allAgents = metadata ? getUserInvocableAgents() : [];
   const selectedConnection = metadata ? connections.find((c) => c.id === metadata.ai.provider) : undefined;
+
+  const aiLock = metadata?.aiLock;
+  const lockedConnection = aiLock ? connections.find((c) => c.id === aiLock.connectionId) : undefined;
+  const lockedAtDate = aiLock ? new Date(aiLock.lockedAt) : null;
+  const lockedAtLabel = lockedAtDate
+    ? lockedAtDate.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+    : '';
+
+  const handleConfirmUnlock = () => {
+    clearAiLock(projectPath);
+    setUnlockDialogOpen(false);
+  };
 
   return (
     <div className="space-y-6">
@@ -415,8 +440,98 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
         </div>
       </div>
 
+      <div className="h-px bg-border" />
+
+      {/* AI Provider Lock */}
+      <div className="space-y-4">
+        <div>
+          <Label className="text-sm font-semibold">AI Provider Lock</Label>
+          <p className="text-xs text-muted-foreground mt-1">
+            Hard-restrict this project to a single AI provider. Locked projects refuse to send to
+            any other provider — for chat, resend, comment delegation, and inline actions.
+          </p>
+        </div>
+
+        <div
+          data-testid="project-lock-status"
+          className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
+        >
+          {aiLock ? (
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
+                  <Label className="text-sm font-medium">Locked</Label>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  This project is locked to{' '}
+                  <span className="font-medium text-foreground">
+                    {lockedConnection?.label ?? aiLock.connectionId}
+                  </span>
+                  {lockedAtLabel ? ` since ${lockedAtLabel}` : ''}.
+                </p>
+                {aiLock.reason && (
+                  <p className="text-xs text-muted-foreground mt-1 italic">&ldquo;{aiLock.reason}&rdquo;</p>
+                )}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs shrink-0"
+                onClick={() => setUnlockDialogOpen(true)}
+              >
+                <Unlock className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+                Unlock
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <Label className="text-sm font-medium">Not locked</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Any configured provider can be used with this project.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs shrink-0"
+                onClick={() => setLockDialogOpen(true)}
+                disabled={connections.length === 0}
+              >
+                <Lock className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+                Lock to provider
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+
       </>
       )}
+
+      <LockProjectDialog
+        open={lockDialogOpen}
+        onOpenChange={setLockDialogOpen}
+        projectPath={projectPath}
+        projectName={metadata?.name ?? projectPath}
+      />
+
+      <AlertDialog open={unlockDialogOpen} onOpenChange={setUnlockDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unlock this project?</AlertDialogTitle>
+            <AlertDialogDescription>
+              After unlocking, any configured AI provider can access this project again. You can
+              re-lock it at any time.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmUnlock}>Unlock</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Sync Section */}
       {showSyncSection && (

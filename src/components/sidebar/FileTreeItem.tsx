@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
-import { ChevronRight, ChevronDown, Folder, FolderOpen, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown, Eye, MessageSquare } from "lucide-react";
+import { ChevronRight, ChevronDown, Folder, FolderOpen, FolderDot, FilePlus, FolderPlus, FolderInput, Pencil, Trash2, ExternalLink, GitCommitVertical, FileDown, Eye, MessageSquare, Lock } from "lucide-react";
 import { FileIcon } from "./FileIcon";
 import { FolderPickerItem } from "./FolderPickerItem";
 import { NewFolderDialog } from "./NewFolderDialog";
@@ -90,6 +90,11 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
     projects.some((p) => p.path === entry.path) ||
     entry.children?.some((c) => c.name === ".notesage" && c.is_directory)
   );
+
+  // AI provider lock — padlock overlay on project folder icon when set.
+  const aiLock = entry.is_directory ? metadataMap[entry.path]?.aiLock : undefined;
+  const isLocked = isProjectFolder && !!aiLock;
+  const lockedLabel = metadataMap[entry.path]?.name || entry.name;
 
   useEffect(() => {
     if (isRenaming) {
@@ -454,17 +459,39 @@ const FileTreeItemInner = memo(function FileTreeItem({ entry, level, onFileClick
               <span className="w-3.5 shrink-0" aria-hidden="true" />
             )}
 
-            <span aria-hidden="true">
-              {entry.is_directory ? (
-                isProjectFolder
-                  ? <FolderDot className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" strokeWidth={1.5} />
-                  : expanded
-                    ? <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" strokeWidth={1.5} />
-                    : <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" strokeWidth={1.5} />
-              ) : (
-                <FileIcon fileName={entry.name} />
-              )}
-            </span>
+            {entry.is_directory && isLocked ? (
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      data-testid="project-lock-badge"
+                      className="relative shrink-0 h-3.5 w-3.5"
+                      aria-label={`Locked — ${lockedLabel} is restricted to a single AI provider`}
+                    >
+                      <FolderDot className="h-3.5 w-3.5 text-muted-foreground/70" strokeWidth={1.5} aria-hidden="true" />
+                      <span className="absolute -right-[3px] -bottom-[1px] flex items-center justify-center h-[11px] w-[11px] rounded-full bg-background">
+                        <Lock className="h-[8px] w-[8px] text-muted-foreground" strokeWidth={2} aria-hidden="true" />
+                      </span>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>
+                    Locked to a single AI provider — Project Settings to unlock
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (
+              <span aria-hidden="true">
+                {entry.is_directory ? (
+                  isProjectFolder
+                    ? <FolderDot className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" strokeWidth={1.5} />
+                    : expanded
+                      ? <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" strokeWidth={1.5} />
+                      : <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" strokeWidth={1.5} />
+                ) : (
+                  <FileIcon fileName={entry.name} />
+                )}
+              </span>
+            )}
 
             {isRenaming ? (
               <input

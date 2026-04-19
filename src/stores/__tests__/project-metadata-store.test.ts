@@ -416,4 +416,57 @@ describe('aiLock', () => {
     expect(parsed.ai.provider).toBe('conn-default');
     expect(parsed.aiLock?.connectionId).toBe('conn-locked');
   });
+
+  it('setAiLock writes the lock with current timestamp and marks the project dirty', () => {
+    const path = '/path/lockable';
+    useProjectMetadataStore.getState().setMetadata(path, makeMetadata());
+
+    const before = Date.now();
+    useProjectMetadataStore.getState().setAiLock(path, 'conn-claude', 'sensitive');
+    const after = Date.now();
+
+    const meta = useProjectMetadataStore.getState().getMetadata(path);
+    expect(meta?.aiLock?.connectionId).toBe('conn-claude');
+    expect(meta?.aiLock?.reason).toBe('sensitive');
+    expect(meta?.aiLock?.lockedAt).toBeGreaterThanOrEqual(before);
+    expect(meta?.aiLock?.lockedAt).toBeLessThanOrEqual(after);
+    expect(useProjectMetadataStore.getState().isDirty(path)).toBe(true);
+  });
+
+  it('setAiLock omits the reason field when the input is empty or whitespace', () => {
+    const path = '/path/lockable-no-reason';
+    useProjectMetadataStore.getState().setMetadata(path, makeMetadata());
+
+    useProjectMetadataStore.getState().setAiLock(path, 'conn-claude', '   ');
+
+    const meta = useProjectMetadataStore.getState().getMetadata(path);
+    expect(meta?.aiLock?.connectionId).toBe('conn-claude');
+    expect(meta?.aiLock).not.toHaveProperty('reason');
+  });
+
+  it('clearAiLock removes the aiLock field and marks the project dirty', () => {
+    const path = '/path/unlockable';
+    useProjectMetadataStore.getState().setMetadata(
+      path,
+      makeMetadata({ aiLock: { connectionId: 'conn-claude', lockedAt: 1 } }),
+    );
+    useProjectMetadataStore.getState().setClean(path);
+    expect(useProjectMetadataStore.getState().isDirty(path)).toBe(false);
+
+    useProjectMetadataStore.getState().clearAiLock(path);
+
+    const meta = useProjectMetadataStore.getState().getMetadata(path);
+    expect(meta?.aiLock).toBeUndefined();
+    expect(useProjectMetadataStore.getState().isDirty(path)).toBe(true);
+  });
+
+  it('clearAiLock is a no-op when the project is not locked', () => {
+    const path = '/path/no-lock';
+    useProjectMetadataStore.getState().setMetadata(path, makeMetadata());
+    useProjectMetadataStore.getState().setClean(path);
+
+    useProjectMetadataStore.getState().clearAiLock(path);
+
+    expect(useProjectMetadataStore.getState().isDirty(path)).toBe(false);
+  });
 });
