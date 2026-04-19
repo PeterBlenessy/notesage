@@ -619,7 +619,12 @@ async function startCopilotLspTask(
 
     try {
       const { executeToolCall } = await import('@/lib/tool-executor');
-      const result = await executeToolCall(event.payload.id, name, args);
+      const scopeRoot = taskMeta?.projectRoot;
+      const scopeHomeDir = await getHomeDir();
+      const result = await executeToolCall(event.payload.id, name, args, {
+        projectRoots: scopeRoot ? [scopeRoot] : [],
+        homeDir: scopeHomeDir,
+      });
       await tauriApi.copilotLspToolResult(requestId, {
         status: 'success',
         content: [{ value: typeof result === 'string' ? result : JSON.stringify(result) }],

@@ -9,6 +9,42 @@ import { findTextInDoc } from '@/lib/pm-text-search';
 import { setCommentDecorations } from '@/components/editor/extensions/comment-mark';
 import type { SkillContent, ScriptResult, ArgMapping } from '@/lib/tauri';
 import type { ToolResult } from '@/lib/ai/types';
+import { isToolCallAllowed, isPathAllowed } from '@/lib/ai/path-filter';
+
+export interface ToolCallScope {
+  projectRoots: string[];
+  homeDir: string;
+}
+
+const SCOPE_DENIAL_MESSAGE = 'Denied: path outside project scope';
+
+const FILESYSTEM_TOOLS: ReadonlySet<string> = new Set([
+  'read_file',
+  'list_directory',
+  'write_file',
+]);
+
+/**
+ * Gate a single model-provided path against the chat scope. Used by tools
+ * whose IPC fan-out is not visible to `isToolCallAllowed` (e.g. comments
+ * tools that invoke `read_file` internally, or `generate_pptx` writing a
+ * model-supplied `output_path`). Missing scope = deny, matching the
+ * primitive filesystem-tool gate.
+ */
+function denyIfPathOutOfScope(
+  path: string,
+  scope: ToolCallScope | undefined,
+  toolCallId: string,
+): ToolResult | null {
+  const roots = scope?.projectRoots ?? [];
+  const homeDir = scope?.homeDir ?? '';
+  if (isPathAllowed(path, roots, homeDir)) return null;
+  return {
+    tool_call_id: toolCallId,
+    content: SCOPE_DENIAL_MESSAGE,
+    is_error: true,
+  };
+}
 
 /**
  * Convert structured JSON arguments to string[] for execute_skill_script,
@@ -183,13 +219,32 @@ async function getCommentContext(filePath?: string): Promise<CommentContext | nu
 /**
  * Execute a tool call by name and return the result.
  * Routes to the appropriate Tauri command based on tool name.
+ *
+ * `scope` constrains filesystem-touching tools (`read_file`, `list_directory`,
+ * `write_file`) to paths inside the chat's selected project roots. A missing
+ * `scope` is treated as deny for those tools — the secure default. Non-FS
+ * tools are unaffected.
  */
 export async function executeToolCall(
   toolCallId: string,
   name: string,
   args: Record<string, unknown>,
+  scope?: ToolCallScope,
 ): Promise<ToolResult> {
   try {
+    if (FILESYSTEM_TOOLS.has(name)) {
+      const roots = scope?.projectRoots ?? [];
+      const homeDir = scope?.homeDir ?? '';
+      const check = isToolCallAllowed(name, JSON.stringify(args), roots, homeDir);
+      if (!check.allowed) {
+        return {
+          tool_call_id: toolCallId,
+          content: SCOPE_DENIAL_MESSAGE,
+          is_error: true,
+        };
+      }
+    }
+
     let content: string;
 
     switch (name) {
@@ -277,7 +332,13 @@ export async function executeToolCall(
         const comments = args.comments as Array<{ anchor_text: string; body: string; occurrence?: number }>;
         if (!comments || !Array.isArray(comments)) throw new Error('Missing required argument: comments');
 
-        const ctx = await getCommentContext(args.file_path as string | undefined);
+        const filePathArg = args.file_path as string | undefined;
+        if (filePathArg) {
+          const denial = denyIfPathOutOfScope(filePathArg, scope, toolCallId);
+          if (denial) return denial;
+        }
+
+        const ctx = await getCommentContext(filePathArg);
         if (!ctx) throw new Error('Cannot determine document context — provide file_path or open a document');
 
         const { commentKey, storageRoot, fileName, isActiveTab } = ctx;
@@ -355,7 +416,12 @@ export async function executeToolCall(
       }
 
       case 'list_comments': {
-        const ctx = await getCommentContext(args.file_path as string | undefined);
+        const filePathArg = args.file_path as string | undefined;
+        if (filePathArg) {
+          const denial = denyIfPathOutOfScope(filePathArg, scope, toolCallId);
+          if (denial) return denial;
+        }
+        const ctx = await getCommentContext(filePathArg);
         if (!ctx) throw new Error('Cannot determine document context — provide file_path or open a document');
 
         const { commentKey, storageRoot } = ctx;
@@ -382,7 +448,13 @@ export async function executeToolCall(
         const commentIds = args.comment_ids as string[];
         if (!commentIds || !Array.isArray(commentIds)) throw new Error('Missing required argument: comment_ids');
 
-        const ctx = await getCommentContext(args.file_path as string | undefined);
+        const filePathArg = args.file_path as string | undefined;
+        if (filePathArg) {
+          const denial = denyIfPathOutOfScope(filePathArg, scope, toolCallId);
+          if (denial) return denial;
+        }
+
+        const ctx = await getCommentContext(filePathArg);
         if (!ctx) throw new Error('Cannot determine document context — provide file_path or open a document');
 
         const { commentKey, storageRoot, isActiveTab } = ctx;
@@ -430,6 +502,11 @@ export async function executeToolCall(
         const template = args.template as string | undefined;
         const outputPath = args.output_path as string | undefined;
         const markdownArg = args.markdown as string | undefined;
+
+        if (outputPath) {
+          const denial = denyIfPathOutOfScope(outputPath, scope, toolCallId);
+          if (denial) return denial;
+        }
 
         // Get markdown content
         let markdown: string;

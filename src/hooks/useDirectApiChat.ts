@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { useChatStore } from '@/stores/chat-store';
+import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import { useToolPermissionStore, type ToolCallDecision } from '@/stores/tool-permission-store';
@@ -315,7 +315,12 @@ export function useDirectApiChat({
               timestamp: Date.now(),
             } as ToolCallSegment);
 
-            const result = await executeToolCall(call.id, call.name, call.arguments);
+            const scopeRoots = opts?.sandboxPaths ?? selectProjectPaths(useChatStore.getState());
+            const scopeHomeDir = useSettingsStore.getState().homeDir ?? '';
+            const result = await executeToolCall(call.id, call.name, call.arguments, {
+              projectRoots: scopeRoots,
+              homeDir: scopeHomeDir,
+            });
 
             // Update activity to done
             addActivity(assistantMessageId, {

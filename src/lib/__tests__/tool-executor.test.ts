@@ -1,11 +1,29 @@
 // @vitest-environment jsdom
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@/test/tauri-mock';
 import { setMockInvokeHandler } from '@/test/tauri-mock';
 import { useSkillStore } from '@/stores/skill-store';
+import { useEditorStore } from '@/stores/editor-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useSettingsStore } from '@/stores/settings-store';
+import { useCommentStore } from '@/stores/comment-store';
 import { executeToolCall, mapArgsToStringArray } from '@/lib/tool-executor';
 import type { ArgMapping } from '@/lib/tauri';
+
+vi.mock('@/lib/editor-bridge', () => ({
+  getEditorRef: () => ({ state: { doc: null } }),
+  setEditorRef: vi.fn(),
+}));
+
+vi.mock('@/lib/pm-text-search', () => ({
+  findTextInDoc: () => null,
+}));
+
+vi.mock('@/components/editor/extensions/comment-mark', () => ({
+  setCommentDecorations: vi.fn(),
+  CommentMarkPluginKey: { getState: () => null },
+}));
 
 describe('executeToolCall', () => {
   beforeEach(() => {
@@ -47,9 +65,12 @@ describe('executeToolCall', () => {
         throw new Error('File not found');
       });
 
-      const result = await executeToolCall('call-3', 'read_file', {
-        path: '/nonexistent',
-      });
+      const result = await executeToolCall(
+        'call-3',
+        'read_file',
+        { path: '/tmp/nonexistent' },
+        { projectRoots: ['/tmp'], homeDir: '/Users/tester' },
+      );
 
       expect(result).toEqual({
         tool_call_id: 'call-3',
@@ -413,7 +434,393 @@ describe('executeToolCall', () => {
       });
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Scope enforcement — leak #8 red-team invariants
+  //
+  // A direct-API chat scoped to Project A must NOT be able to read, list, or
+  // write files in Project B or anywhere else outside the configured
+  // projectRoots. Missing scope defaults to DENY — the secure default.
+  // ---------------------------------------------------------------------------
+
+  describe('scope enforcement (leak #8)', () => {
+    const homeDir = '/Users/tester';
+    const projectA = '/Users/tester/Projects/project-a';
+    const projectB = '/Users/tester/Projects/project-b';
+
+    it('denies read_file outside scope when scope = projectA', async () => {
+      let readCalled = false;
+      setMockInvokeHandler('read_file', () => {
+        readCalled = true;
+        return '# project-b secret';
+      });
+
+      const result = await executeToolCall(
+        'attack-1',
+        'read_file',
+        { path: `${projectB}/secrets.md` },
+        { projectRoots: [projectA], homeDir },
+      );
+
+      expect(result.is_error).toBe(true);
+      expect(result.content).toBe('Denied: path outside project scope');
+      expect(readCalled).toBe(false);
+    });
+
+    it('allows read_file inside scope', async () => {
+      setMockInvokeHandler('read_file', () => '# in-scope content');
+
+      const result = await executeToolCall(
+        'ok-1',
+        'read_file',
+        { path: `${projectA}/notes.md` },
+        { projectRoots: [projectA], homeDir },
+      );
+
+      expect(result.is_error).toBe(false);
+      expect(result.content).toBe('# in-scope content');
+    });
+
+    it('allows read_file inside any of multiple scope roots', async () => {
+      setMockInvokeHandler('read_file', () => '# content');
+
+      const result = await executeToolCall(
+        'ok-2',
+        'read_file',
+        { path: `${projectB}/doc.md` },
+        { projectRoots: [projectA, projectB], homeDir },
+      );
+
+      expect(result.is_error).toBe(false);
+    });
+
+    it('denies list_directory outside scope', async () => {
+      let listCalled = false;
+      setMockInvokeHandler('list_files_shallow', () => {
+        listCalled = true;
+        return [];
+      });
+
+      const result = await executeToolCall(
+        'attack-2',
+        'list_directory',
+        { path: `${projectB}/src` },
+        { projectRoots: [projectA], homeDir },
+      );
+
+      expect(result.is_error).toBe(true);
+      expect(result.content).toBe('Denied: path outside project scope');
+      expect(listCalled).toBe(false);
+    });
+
+    it('denies write_file outside scope', async () => {
+      let writeCalled = false;
+      setMockInvokeHandler('write_file', () => {
+        writeCalled = true;
+        return undefined;
+      });
+
+      const result = await executeToolCall(
+        'attack-3',
+        'write_file',
+        { path: `${projectB}/evil.md`, content: 'exfiltrated' },
+        { projectRoots: [projectA], homeDir },
+      );
+
+      expect(result.is_error).toBe(true);
+      expect(result.content).toBe('Denied: path outside project scope');
+      expect(writeCalled).toBe(false);
+    });
+
+    it('missing scope denies filesystem tools (secure default)', async () => {
+      let readCalled = false;
+      setMockInvokeHandler('read_file', () => {
+        readCalled = true;
+        return '# leaked';
+      });
+
+      const result = await executeToolCall('default-deny-1', 'read_file', {
+        path: `${projectA}/notes.md`,
+      });
+
+      expect(result.is_error).toBe(true);
+      expect(result.content).toBe('Denied: path outside project scope');
+      expect(readCalled).toBe(false);
+    });
+
+    it('missing scope denies list_directory', async () => {
+      let called = false;
+      setMockInvokeHandler('list_files_shallow', () => {
+        called = true;
+        return [];
+      });
+
+      const result = await executeToolCall('default-deny-2', 'list_directory', {
+        path: `${projectA}/src`,
+      });
+
+      expect(result.is_error).toBe(true);
+      expect(called).toBe(false);
+    });
+
+    it('missing scope denies write_file', async () => {
+      let called = false;
+      setMockInvokeHandler('write_file', () => {
+        called = true;
+        return undefined;
+      });
+
+      const result = await executeToolCall('default-deny-3', 'write_file', {
+        path: `${projectA}/out.md`,
+        content: 'x',
+      });
+
+      expect(result.is_error).toBe(true);
+      expect(called).toBe(false);
+    });
+
+    it('does not affect non-filesystem tools (web_search)', async () => {
+      setMockInvokeHandler('web_search', () => [
+        { title: 'T', url: 'https://x', snippet: 's' },
+      ]);
+
+      const result = await executeToolCall(
+        'ok-websearch',
+        'web_search',
+        { query: 'test' },
+        { projectRoots: [projectA], homeDir },
+      );
+
+      expect(result.is_error).toBe(false);
+      expect(result.content).toContain('https://x');
+    });
+
+    it('does not affect non-filesystem tools when scope is missing', async () => {
+      setMockInvokeHandler('web_search', () => []);
+
+      const result = await executeToolCall('ok-websearch-noscope', 'web_search', {
+        query: 'test',
+      });
+
+      expect(result.is_error).toBe(false);
+    });
+
+    // -------------------------------------------------------------------------
+    // Implicit-filesystem tools — model-provided paths gated like primitives
+    // -------------------------------------------------------------------------
+
+    function resetDocStores() {
+      useEditorStore.setState({ tabs: [], activeTabId: null });
+      useWorkspaceStore.setState({ projects: [], explorerFolders: [] });
+      useSettingsStore.setState({ notesRootPath: '/Users/tester/Notesage' });
+      useCommentStore.setState({ commentsByDocument: {} });
+    }
+
+    it('denies add_comments with out-of-scope file_path', async () => {
+      resetDocStores();
+      useWorkspaceStore.setState({
+        projects: [{ path: projectB, fileTree: [] }],
+      });
+
+      let readCalled = false;
+      setMockInvokeHandler('read_file', () => {
+        readCalled = true;
+        return '---\nid: leaked-uuid\n---\n# secret content';
+      });
+
+      const result = await executeToolCall(
+        'attack-add-comments',
+        'add_comments',
+        {
+          file_path: `${projectB}/secrets.md`,
+          comments: [{ anchor_text: 'secret', body: 'leaked' }],
+        },
+        { projectRoots: [projectA], homeDir },
+      );
+
+      expect(result.is_error).toBe(true);
+      expect(result.content).toBe('Denied: path outside project scope');
+      expect(readCalled).toBe(false);
+    });
+
+    it('denies list_comments with out-of-scope file_path', async () => {
+      resetDocStores();
+      useWorkspaceStore.setState({
+        projects: [{ path: projectB, fileTree: [] }],
+      });
+
+      let readCalled = false;
+      setMockInvokeHandler('read_file', () => {
+        readCalled = true;
+        return '---\nid: leaked-uuid\n---\n';
+      });
+
+      const result = await executeToolCall(
+        'attack-list-comments',
+        'list_comments',
+        { file_path: `${projectB}/private.md` },
+        { projectRoots: [projectA], homeDir },
+      );
+
+      expect(result.is_error).toBe(true);
+      expect(result.content).toBe('Denied: path outside project scope');
+      expect(readCalled).toBe(false);
+    });
+
+    it('denies resolve_comments with out-of-scope file_path', async () => {
+      resetDocStores();
+      useWorkspaceStore.setState({
+        projects: [{ path: projectB, fileTree: [] }],
+      });
+
+      let readCalled = false;
+      setMockInvokeHandler('read_file', () => {
+        readCalled = true;
+        return '---\nid: leaked-uuid\n---\n';
+      });
+
+      const result = await executeToolCall(
+        'attack-resolve-comments',
+        'resolve_comments',
+        {
+          file_path: `${projectB}/notes.md`,
+          comment_ids: ['c1'],
+        },
+        { projectRoots: [projectA], homeDir },
+      );
+
+      expect(result.is_error).toBe(true);
+      expect(result.content).toBe('Denied: path outside project scope');
+      expect(readCalled).toBe(false);
+    });
+
+    it('denies generate_pptx with out-of-scope output_path', async () => {
+      resetDocStores();
+
+      let saveCalled = false;
+      setMockInvokeHandler('export_pptx', () => [0x50, 0x4b]);
+      setMockInvokeHandler('save_binary_file', () => {
+        saveCalled = true;
+        return undefined;
+      });
+
+      const result = await executeToolCall(
+        'attack-pptx',
+        'generate_pptx',
+        {
+          markdown: '# Slides',
+          template: 'simple',
+          output_path: `${projectB}/exfil.pptx`,
+        },
+        { projectRoots: [projectA], homeDir },
+      );
+
+      expect(result.is_error).toBe(true);
+      expect(result.content).toBe('Denied: path outside project scope');
+      expect(saveCalled).toBe(false);
+    });
+
+    it('allows generate_pptx with no output_path — derived path is not model-controlled', async () => {
+      resetDocStores();
+      setActiveTabAt(`${projectA}/slides.md`);
+
+      setMockInvokeHandler('read_file', () => '# Slides');
+      setMockInvokeHandler('export_pptx', () => [0x50, 0x4b]);
+      let savedPath: string | undefined;
+      setMockInvokeHandler('save_binary_file', (args) => {
+        savedPath = args?.path as string;
+        return undefined;
+      });
+
+      const result = await executeToolCall(
+        'ok-pptx-derived',
+        'generate_pptx',
+        { template: 'simple' },
+        { projectRoots: [projectA], homeDir },
+      );
+
+      expect(result.is_error).toBe(false);
+      expect(savedPath).toBe(`${projectA}/slides.pptx`);
+    });
+
+    it('allows add_comments without file_path (active-tab path is not model-controlled)', async () => {
+      resetDocStores();
+      useWorkspaceStore.setState({
+        projects: [{ path: projectA, fileTree: [] }],
+      });
+      setActiveTabAt(`${projectA}/doc.md`, 'doc-uuid-allow-1');
+      useCommentStore.setState({
+        commentsByDocument: { 'doc-uuid-allow-1': [] },
+        saveComments: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const result = await executeToolCall(
+        'ok-add-comments-active',
+        'add_comments',
+        { comments: [{ anchor_text: 'whatever', body: 'note' }] },
+        { projectRoots: [projectA], homeDir },
+      );
+
+      expect(result.is_error).toBe(false);
+      expect(result.content).toContain('Added 0');
+    });
+
+    it('allows list_comments without file_path (active-tab path is not model-controlled)', async () => {
+      resetDocStores();
+      useWorkspaceStore.setState({
+        projects: [{ path: projectA, fileTree: [] }],
+      });
+      setActiveTabAt(`${projectA}/doc.md`, 'doc-uuid-allow-2');
+      useCommentStore.setState({ commentsByDocument: { 'doc-uuid-allow-2': [] } });
+
+      const result = await executeToolCall(
+        'ok-list-comments-active',
+        'list_comments',
+        {},
+        { projectRoots: [projectA], homeDir },
+      );
+
+      expect(result.is_error).toBe(false);
+      expect(result.content).toBe('No comments found on this document.');
+    });
+
+    it('allows resolve_comments without file_path (active-tab path is not model-controlled)', async () => {
+      resetDocStores();
+      useWorkspaceStore.setState({
+        projects: [{ path: projectA, fileTree: [] }],
+      });
+      setActiveTabAt(`${projectA}/doc.md`, 'doc-uuid-allow-3');
+      useCommentStore.setState({
+        commentsByDocument: { 'doc-uuid-allow-3': [] },
+        saveComments: vi.fn().mockResolvedValue(undefined),
+      });
+
+      const result = await executeToolCall(
+        'ok-resolve-comments-active',
+        'resolve_comments',
+        { comment_ids: ['nonexistent'] },
+        { projectRoots: [projectA], homeDir },
+      );
+
+      expect(result.is_error).toBe(false);
+      expect(result.content).toContain('Resolved 0');
+    });
+  });
 });
+
+function setActiveTabAt(filePath: string, frontmatterId?: string) {
+  const tab = {
+    id: 'tab-scope-1',
+    filePath,
+    fileName: filePath.split('/').pop() || 'file.md',
+    content: '',
+    contentLoaded: true,
+    isDirty: false,
+    frontmatter: frontmatterId ? { id: frontmatterId } : null,
+    fileType: 'markdown' as const,
+  };
+  useEditorStore.setState({ tabs: [tab], activeTabId: 'tab-scope-1' });
+}
 
 // ---------------------------------------------------------------------------
 // mapArgsToStringArray — standalone unit tests
