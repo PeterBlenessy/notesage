@@ -1,5 +1,5 @@
-import { memo, useMemo, useState, useEffect, useRef, type RefObject } from 'react';
-import { ChevronUp, FolderOpen, Check, Target } from 'lucide-react';
+import { memo, useMemo, useState, useEffect, useRef, useCallback, type RefObject } from 'react';
+import { ChevronUp, Check, Target, Plus, ImagePlus, FolderOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { useChatStore, selectPendingProjectSwitch, selectPendingAgentSwitch } from '@/stores/chat-store';
@@ -71,7 +71,15 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
   const showAgentModePicker = useSettingsStore((s) => s.showAgentModePicker);
 
   const [providerOpen, setProviderOpen] = useState(false);
-  const [projectOpen, setProjectOpen] = useState(false);
+  const [plusMenuOpen, setPlusMenuOpen] = useState(false);
+
+  // Handler bridge: the "+" menu's "Attach image" entry calls into ChatInput's
+  // exposed imperative handle. Defined here because the menu lives in the
+  // footer but the file-picker wiring lives in ChatInput.
+  const handlePlusMenuAttachImage = useCallback(() => {
+    setPlusMenuOpen(false);
+    chatInputRef?.current?.openAttachDialog();
+  }, [chatInputRef]);
 
   // Measure the chat panel height so the textarea can cap at 40%
   const footerRef = useRef<HTMLDivElement>(null);
@@ -90,16 +98,10 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
     return () => observer.disconnect();
   }, []);
 
-  const projectLabel = useMemo(() => {
-    if (selectedProjectPaths.length === 0) return 'No projects';
-    if (selectedProjectPaths.length === 1) {
-      const meta = metadataMap[selectedProjectPaths[0]];
-      return meta?.name || selectedProjectPaths[0].split('/').pop() || 'Project';
-    }
-    const allSelected = projects.length > 0 && selectedProjectPaths.length === projects.length;
-    if (allSelected) return 'All projects';
-    return `${selectedProjectPaths.length} projects`;
-  }, [selectedProjectPaths, metadataMap, projects.length]);
+  // Note: `projectLabel` used to drive a dedicated project pill button in the
+  // footer. Removed 2026-04-19 when project selection merged into the "+" menu.
+  // The popover itself shows per-project names inline, so no aggregate label
+  // is needed anymore.
 
   const allSelected = projects.length > 0 && selectedProjectPaths.length === projects.length;
 
@@ -163,22 +165,87 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
         maxTextareaHeight={maxTextareaHeight}
         footer={
           <>
+            {/* "+" consolidated menu: attach image + project multi-select.
+                Replaces the standalone image-attach button (previously in
+                ChatInput's tool group) and the standalone project pill. */}
+            <Popover open={plusMenuOpen} onOpenChange={setPlusMenuOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center gap-1 h-7 px-2 rounded-md text-xs font-medium text-muted-foreground transition-colors duration-150 border border-transparent hover:text-foreground hover:bg-muted hover:border-border active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  aria-label="Add image or choose projects"
+                >
+                  <Plus className="h-4 w-4" strokeWidth={1.5} />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent side="top" align="start" className="w-56 p-1">
+                {supportsVision && (
+                  <>
+                    <button
+                      onClick={handlePlusMenuAttachImage}
+                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50"
+                    >
+                      <ImagePlus className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+                      <span>Attach image…</span>
+                    </button>
+                    <div className="mx-2 my-1 border-t border-border" />
+                  </>
+                )}
+                <div className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                  <FolderOpen className="h-3 w-3" strokeWidth={1.5} />
+                  Projects
+                </div>
+                {projects.length > 1 && (
+                  <button
+                    onClick={handleToggleAll}
+                    className="w-full flex items-center justify-between px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50"
+                  >
+                    <span>{allSelected ? 'Deselect all' : 'Select all'}</span>
+                    {allSelected && <Check className="h-3 w-3 text-muted-foreground" />}
+                  </button>
+                )}
+                {projects.map((project) => {
+                  const meta = metadataMap[project.path];
+                  const name = meta?.name || project.path.split('/').pop() || 'Project';
+                  const isChecked = selectedProjectPaths.includes(project.path);
+                  return (
+                    <button
+                      key={project.path}
+                      onClick={() => handleProjectToggle(project.path)}
+                      className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50"
+                    >
+                      <span className="truncate">{name}</span>
+                      {isChecked && <Check className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                    </button>
+                  );
+                })}
+                {projects.length === 0 && (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                    No projects open
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
             {(interactiveConnections.length > 0 || hasProjectOverride) && (
               <Popover open={providerOpen} onOpenChange={hasProjectOverride ? undefined : setProviderOpen}>
                 <PopoverTrigger asChild>
                   <button
                     type="button"
-                    className={`flex items-center gap-1.5 text-xs text-muted-foreground transition-colors rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                      hasProjectOverride ? 'cursor-default' : 'hover:text-foreground hover:bg-accent/50 active:opacity-75'
+                    className={`flex items-center gap-1 h-7 px-2 rounded-md text-xs font-medium text-muted-foreground transition-colors duration-150 border border-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                      hasProjectOverride ? 'cursor-default' : 'hover:text-foreground hover:bg-muted hover:border-border active:opacity-75'
                     }`}
-                    title={hasProjectOverride ? `Set by project: ${singleMetadata?.name || singleProjectPath}` : undefined}
+                    title={
+                      hasProjectOverride
+                        ? `Set by project: ${singleMetadata?.name || singleProjectPath}`
+                        : effectiveConnection?.label ?? 'Select provider'
+                    }
+                    aria-label={effectiveConnection?.label ?? 'Select provider'}
                   >
-                    {effectiveConnection && (
-                      <ProviderLogo provider={effectiveConnection.provider} className="w-3.5 h-3.5" />
+                    {effectiveConnection ? (
+                      <ProviderLogo provider={effectiveConnection.provider} className="w-5 h-5" bare />
+                    ) : (
+                      <span className="text-xs">Provider</span>
                     )}
-                    <span className="max-w-[80px] truncate">
-                      {effectiveConnection?.label ?? 'Select provider'}
-                    </span>
                     {!hasProjectOverride && <ChevronUp className="h-3 w-3 opacity-50" />}
                   </button>
                 </PopoverTrigger>
@@ -205,49 +272,6 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
                 )}
               </Popover>
             )}
-            <Popover open={projectOpen} onOpenChange={setProjectOpen}>
-              <PopoverTrigger asChild>
-                <button type="button" className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 hover:bg-accent/50 active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-                  <FolderOpen className="h-3 w-3" strokeWidth={1.5} />
-                  <span className="max-w-[100px] truncate">{projectLabel}</span>
-                  <ChevronUp className="h-3 w-3 opacity-50" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent side="top" align="start" className="w-52 p-1">
-                {projects.length > 1 && (
-                  <>
-                    <button
-                      onClick={handleToggleAll}
-                      className="w-full flex items-center justify-between px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50"
-                    >
-                      <span>{allSelected ? 'Deselect all' : 'Select all'}</span>
-                      {allSelected && <Check className="h-3 w-3 text-muted-foreground" />}
-                    </button>
-                    <div className="mx-2 my-1 border-t border-border" />
-                  </>
-                )}
-                {projects.map((project) => {
-                  const meta = metadataMap[project.path];
-                  const name = meta?.name || project.path.split('/').pop() || 'Project';
-                  const isChecked = selectedProjectPaths.includes(project.path);
-                  return (
-                    <button
-                      key={project.path}
-                      onClick={() => handleProjectToggle(project.path)}
-                      className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded text-xs transition-colors text-foreground hover:bg-accent/50"
-                    >
-                      <span className="truncate">{name}</span>
-                      {isChecked && <Check className="h-3 w-3 shrink-0 text-muted-foreground" />}
-                    </button>
-                  );
-                })}
-                {projects.length === 0 && (
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                    No projects open
-                  </div>
-                )}
-              </PopoverContent>
-            </Popover>
             <AcpSessionControls showModePicker={showAgentModePicker} connection={effectiveConnection ?? undefined} />
             {goalFiles.length > 0 && (
               <TooltipProvider delayDuration={200}>

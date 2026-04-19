@@ -2,6 +2,8 @@
 @source "../**/*.{ts,tsx,js,jsx}";
 @source "../../index.html";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-family-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --font-family-mono: ui-monospace, "SFMono-Regular", "SF Mono", "Menlo", "Consolas", "Liberation Mono", monospace;

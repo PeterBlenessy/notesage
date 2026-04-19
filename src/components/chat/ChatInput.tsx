@@ -21,6 +21,11 @@ import { parseNotesageDrop } from '@/lib/drag-utils';
 
 export interface ChatInputHandle {
   prefill: (text: string) => void;
+  /**
+   * Trigger the OS image-picker dialog. Exposed so external UI (the footer's
+   * "+" consolidated menu) can invoke attach without its own dialog wiring.
+   */
+  openAttachDialog: () => void;
 }
 
 interface ChatInputProps {
@@ -51,6 +56,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<SkillCommandMenuHandle>(null);
   const agentMenuRef = useRef<AgentCommandMenuHandle>(null);
+  // Indirection so useImperativeHandle can forward to a function defined
+  // later in the component (handleAttachClick at line ~219).
+  const attachHandlerRef = useRef<(() => void) | null>(null);
   const { startDictation, stopDictation, isDictating, interimText, finalText } = useSpeechRecognition();
 
   useImperativeHandle(ref, () => ({
@@ -66,6 +74,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           el.style.height = `${el.scrollHeight}px`;
         }
       });
+    },
+    openAttachDialog: () => {
+      attachHandlerRef.current?.();
     },
   }), []);
 
@@ -216,6 +227,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     }
   }, [supportsVision, addAttachment]);
 
+  // Keep the ref in sync so the exposed `openAttachDialog` handle calls into
+  // the current closure (addAttachment captures latest state).
   const handleAttachClick = useCallback(async () => {
     try {
       const selected = await openFileDialog({
@@ -238,6 +251,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       // User cancelled dialog — no action needed
     }
   }, [addAttachment]);
+  attachHandlerRef.current = handleAttachClick;
 
   const handleSubmit = () => {
     if ((message.trim() || pendingAttachments.length > 0) && !disabled) {
@@ -471,7 +485,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           <div className="flex items-center gap-2 flex-wrap px-3 py-1.5">
             {footer}
             <div className="flex items-center gap-1.5 ml-auto">
-              {attachButton}
+              {/* attachButton removed — image attach moved to the "+" menu in ChatFooter */}
               {micButton}
               {stopButton}
               {sendButton}

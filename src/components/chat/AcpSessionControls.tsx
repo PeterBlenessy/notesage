@@ -66,13 +66,13 @@ function ContextUsageIcon({ used, size }: { used: number; size: number }) {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" className="shrink-0">
       {/* Background circle */}
-      <circle cx="8" cy="8" r={r} fill="none" stroke="currentColor" strokeWidth="2.5" opacity="0.25" />
+      <circle cx="8" cy="8" r={r} fill="none" stroke="currentColor" strokeWidth="2" opacity="0.25" />
       {/* Progress arc */}
       <circle
         cx="8" cy="8" r={r}
         fill="none"
         stroke="currentColor"
-        strokeWidth="2.5"
+        strokeWidth="2"
         strokeDasharray={circumference}
         strokeDashoffset={offset}
         strokeLinecap="round"
@@ -174,9 +174,9 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
             <TooltipTrigger asChild>
               <PopoverTrigger asChild>
                 <button
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 border border-transparent hover:border-border"
+                  className="flex items-center gap-1 h-7 px-2 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 border border-transparent hover:border-border"
                 >
-                  <Shield className="h-3 w-3" strokeWidth={1.5} />
+                  <Shield className="h-4 w-4" strokeWidth={1.5} />
                   {currentLabel.name}
                   <ChevronUp className="h-3 w-3 opacity-50" />
                 </button>
@@ -256,6 +256,47 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
 // ---------------------------------------------------------------------------
 
 /**
+ * Pretty-format a config option value name for display.
+ *
+ * Agents frequently send the raw value string as the name (e.g.
+ * `{value: "medium", name: "medium"}`), producing an all-lowercase label that
+ * looks like an internal key rather than a human label in the dropdown.
+ * This helper expands known short-codes and capitalizes the rest.
+ *
+ * Known expansions mapped to proper Title Case (covers the common cases we
+ * ship today; unknown values fall through to "capitalize first letter").
+ */
+const PRETTY_NAME_MAP: Record<string, string> = {
+  // Reasoning effort (Codex, Copilot, Claude subset)
+  minimal: 'Minimal',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra High',
+};
+
+function prettifyOptionName(name: string): string {
+  const key = name.toLowerCase();
+  if (PRETTY_NAME_MAP[key]) return PRETTY_NAME_MAP[key];
+  // Fallback: capitalize first letter, leave the rest as the agent sent it.
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/**
+ * Short abbreviation for the footer trigger when space matters (e.g.
+ * thought_level, which typically has 4–5 values and appears alongside other
+ * compact widgets). The Brain icon gives the category context, so a single
+ * letter is enough for most users.
+ */
+const THOUGHT_LEVEL_ABBREV: Record<string, string> = {
+  minimal: 'Min',
+  low: 'L',
+  medium: 'M',
+  high: 'H',
+  xhigh: 'X',
+};
+
+/**
  * `option` carries the static capability data (id/name/description/options list)
  * discovered at probe time. `liveCurrentValue` comes from sessionInfo when a
  * session is active, overriding the probe-time currentValue so changes made
@@ -291,8 +332,14 @@ const ConfigOptionPicker = memo(function ConfigOptionPicker({
 
   const currentValue = liveCurrentValue ?? option.currentValue;
   const currentOption = options.find(o => (o.value ?? o.name) === currentValue);
-  const displayName = currentOption?.name ?? currentValue ?? option.name;
-  const capitalizedDisplay = displayName.charAt(0).toUpperCase() + displayName.slice(1);
+  const rawDisplayName = currentOption?.name ?? currentValue ?? option.name;
+  // thought_level uses a 1-char abbreviation (Min/L/M/H/X) alongside the Brain
+  // icon — keeps the footer compact since reasoning effort is a scalar value
+  // most users scan rather than read. Other categories show the prettified
+  // Title Case name directly.
+  const triggerLabel = option.category === 'thought_level'
+    ? (THOUGHT_LEVEL_ABBREV[rawDisplayName.toLowerCase()] ?? prettifyOptionName(rawDisplayName))
+    : prettifyOptionName(rawDisplayName);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -301,10 +348,10 @@ const ConfigOptionPicker = memo(function ConfigOptionPicker({
           <TooltipTrigger asChild>
             <PopoverTrigger asChild>
               <button
-                className="flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 border border-transparent hover:border-border"
+                className="flex items-center gap-1 h-7 px-2 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 border border-transparent hover:border-border"
               >
-                {option.category === 'thought_level' && <Brain className="h-3 w-3" strokeWidth={1.5} />}
-                {capitalizedDisplay}
+                {option.category === 'thought_level' && <Brain className="h-4 w-4" strokeWidth={1.5} />}
+                {triggerLabel}
                 <ChevronUp className="h-3 w-3 opacity-50" />
               </button>
             </PopoverTrigger>
@@ -337,7 +384,7 @@ const ConfigOptionPicker = memo(function ConfigOptionPicker({
               }`}
               onClick={() => { if (!isActive) handleSetValue(optValue); }}
             >
-              <div>{opt.name}</div>
+              <div>{prettifyOptionName(opt.name)}</div>
               {opt.description && (
                 <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
                   {opt.description}
@@ -368,11 +415,14 @@ const UsageIndicator = memo(function UsageIndicator() {
     ? `${usage.cost.currency === 'USD' ? '$' : usage.cost.currency + ' '}${usage.cost.amount.toFixed(2)}`
     : undefined;
 
+  // Bordered pill to match the other footer buttons. Just the icon at rest —
+  // the token count (and optional cost) live in the tooltip, which gives the
+  // same affordance without consuming horizontal space.
   return (
     <TooltipProvider delayDuration={200}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="inline-flex items-center text-muted-foreground/50 cursor-default">
+          <span className="inline-flex items-center h-7 px-2 rounded-md text-muted-foreground/60 transition-colors duration-150 border border-transparent hover:text-foreground hover:bg-muted hover:border-border cursor-default">
             <ContextUsageIcon used={usage.contextUsed} size={usage.contextSize} />
           </span>
         </TooltipTrigger>
