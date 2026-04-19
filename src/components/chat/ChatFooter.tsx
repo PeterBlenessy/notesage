@@ -242,7 +242,7 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
                     aria-label={effectiveConnection?.label ?? 'Select provider'}
                   >
                     {effectiveConnection ? (
-                      <ProviderLogo provider={effectiveConnection.provider} className="w-5 h-5" bare />
+                      <ProviderLogo provider={effectiveConnection.provider} className="w-[18px] h-[18px]" bare />
                     ) : (
                       <span className="text-xs">Provider</span>
                     )}
