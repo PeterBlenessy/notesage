@@ -413,6 +413,100 @@ fn sandbox_sentinel_denies_writes_outside_writable_paths() {
 }
 
 // ---------------------------------------------------------------------------
+// Leak #6d — sibling-path read at a neutral $HOME location
+//
+// The residual leak #6c did NOT close: two projects at sibling paths outside
+// Apple's TCC-managed areas (e.g. ~/Code/A and ~/Code/B, ~/Development/X and
+// ~/Development/Y, ~/work/client-foo and ~/work/client-bar). #6c's deny-by-
+// enumeration only covered Documents, Desktop, Downloads, iCloud and PIM
+// dirs — ~/Code and similar were broadly readable.
+//
+// Invariant (post-#6d): with writable_paths = [project_a] at a neutral $HOME
+// location, the agent CANNOT read project_b sitting next to it. The only
+// thing protecting project_b is that it's under $HOME and not in the allow
+// list — the deny-by-default rule on $HOME is what catches it.
+//
+// This test currently FAILS on #6c's profile (reads of neutral $HOME paths
+// succeed) and PASSES on #6d's profile (deny $HOME + explicit allows only).
+// It is the red-team regression lock for the full-isolation shape.
+// ---------------------------------------------------------------------------
+
+#[test]
+#[ignore = "requires macOS Seatbelt; run with `cargo test -- --ignored sandbox`"]
+fn leak_6d_sibling_path_at_neutral_home_location_is_denied() {
+    // Scratch at the NEUTRAL $HOME path — ~/notesage-sandbox-tests/, not
+    // inside ~/Documents or any TCC-managed area. This is exactly where #6c's
+    // deny-by-enumeration leaves the leak open; #6d's deny-by-default closes
+    // it via the blanket `(deny file-read* (subpath $HOME))` rule.
+    let scratch = ScratchRoot::new();
+    let project_a = scratch.subdir("project-a");
+    let project_b = scratch.subdir("project-b");
+
+    let target = project_b.join("secrets.txt");
+    fs::write(&target, "neutral-home-sibling-leak").expect("seed out-of-scope file");
+
+    let allowed = project_a.join("ok.txt");
+    fs::write(&allowed, "in-scope content").expect("seed in-scope file");
+
+    let agent = spawn_test_acp_agent_with_sandbox(&[&project_a.to_string_lossy()]);
+
+    // In-scope read MUST succeed.
+    let result = run_bash(&agent, &format!("cat {}", shell_escape(&allowed)))
+        .expect("bash should spawn");
+    assert!(
+        result.is_success(),
+        "in-scope read must succeed, got status={:?} stderr={}",
+        result.status_code,
+        result.stderr,
+    );
+    assert!(result.stdout.contains("in-scope content"));
+
+    // The invariant: sibling path at a neutral $HOME location must be denied.
+    let result = run_bash(&agent, &format!("cat {}", shell_escape(&target)))
+        .expect("bash should spawn");
+    assert!(
+        !result.is_success(),
+        "sibling-path read at neutral $HOME must be denied; cat succeeded with status={:?} stdout={:?} — the leak is back",
+        result.status_code,
+        result.stdout,
+    );
+    assert!(
+        result.looks_sandbox_denied(),
+        "stderr must indicate a sandbox denial (EACCES). stderr={}",
+        result.stderr,
+    );
+    assert!(
+        !result.stdout.contains("neutral-home-sibling-leak"),
+        "denied read must NOT have returned the file content; stdout={:?}",
+        result.stdout,
+    );
+
+    // System paths (outside $HOME) MUST stay readable — agents need them for init.
+    let result = run_bash(&agent, "cat /usr/bin/true > /dev/null && echo ok")
+        .expect("bash should spawn");
+    assert!(
+        result.is_success(),
+        "system path read must still work; stderr={}",
+        result.stderr,
+    );
+    assert!(result.stdout.trim() == "ok");
+
+    // Common Node tooling dirs MUST stay readable — otherwise agents can't init.
+    // `~/.npm` may not exist on every dev machine; this just asserts that IF it
+    // exists, reading its contents does not return EACCES.
+    let npm_cache = dirs::home_dir().unwrap().join(".npm");
+    if npm_cache.exists() {
+        let result = run_bash(&agent, &format!("ls {} > /dev/null 2>&1 && echo ok || echo denied", shell_escape(&npm_cache)))
+            .expect("bash should spawn");
+        assert_eq!(
+            result.stdout.trim(), "ok",
+            "~/.npm must be readable for Node agents; got stdout={:?}",
+            result.stdout,
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

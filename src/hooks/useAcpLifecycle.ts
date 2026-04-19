@@ -264,13 +264,20 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           });
         }
 
-        const cwd = selectedProjectPaths[0] || '/tmp';
+        // Re-read project paths from the store after hydration — the `selectedProjectPaths`
+        // closure value was captured when the effect dispatched (pre-hydration), and is
+        // stale once the persist middleware populates `conversations`. Using the stale
+        // value spawns the agent with an empty scope, which then triggers a respawn
+        // later when any caller fires with the hydrated scope. Task #6d diagnostic.
+        const freshPaths = selectProjectPaths(useChatStore.getState());
+        const cwd = freshPaths[0] || '/tmp';
         const sandboxScope = getChatSandboxScope(
-          { projectPaths: selectedProjectPaths },
+          { projectPaths: freshPaths },
           effectiveConnection,
           useSettingsStore.getState().crossProjectMode,
         );
-        const instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
+        log.info('ai', `[eager] activeConversationId=${useChatStore.getState().activeConversationId} freshPaths=[${freshPaths.join('|')}] scope=[${sandboxScope.join('|')}] closurePaths=[${selectedProjectPaths.join('|')}]`);
+        const instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope, 'eager');
 
         // Re-read the target session after the async hydration/spawn waits — the
         // active conversation may have changed while we were waiting.
@@ -411,7 +418,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       const attemptGenerate = async (): Promise<string> => {
         const cwd = selectedProjectPaths[0] || '/tmp';
         const inlineSandboxPaths = cwd !== '/tmp' ? [cwd] : [];
-        const instanceId = await ensureAcpAgent(effectiveConnection, cwd, inlineSandboxPaths);
+        const instanceId = await ensureAcpAgent(effectiveConnection, cwd, inlineSandboxPaths, 'inline');
 
         const session = await invoke<AcpSessionResult>('acp_session_new', {
           instanceId,
@@ -570,7 +577,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
       try {
         const cwd = selectedProjectPaths[0] || '/tmp';
-        const instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
+        log.info('ai', `[send-chat] selectedProjectPaths=[${selectedProjectPaths.join('|')}] sandboxScope=[${sandboxScope.join('|')}] optsSandboxPaths=${opts?.sandboxPaths ? `[${opts.sandboxPaths.join('|')}]` : 'undef'}`);
+        const instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope, 'send-chat');
 
         // Block sending if a project switch is pending user decision
         const pendingSwitch = selectPendingProjectSwitch(useChatStore.getState());
@@ -802,7 +810,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             effectiveConnection,
             useSettingsStore.getState().crossProjectMode,
           );
-          instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
+          instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope, 'retry-reconnect-failed');
           pathFilterRoots = sandboxScope;
           isNewSession = true;
         }
@@ -816,7 +824,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           effectiveConnection,
           useSettingsStore.getState().crossProjectMode,
         );
-        instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope);
+        instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope, 'retry-no-load-support');
         pathFilterRoots = sandboxScope;
         isNewSession = true;
       }

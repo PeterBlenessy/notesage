@@ -147,61 +147,121 @@ pub fn generate_seatbelt_profile(
         r#"(version 1)
 (deny default)
 
-;; --- READ POLICY (kernel-enforced project isolation, task #6c) ---
+;; --- READ POLICY (kernel-enforced project isolation, task #6d) ---
 ;;
 ;; Seatbelt evaluates rules in order; the LAST matching rule wins. The chain
-;; below: broad allow → deny known user-data areas (Documents, Desktop, Downloads,
-;; Movies, Music, Pictures, iCloud Mobile Documents — Apple's TCC boundary) →
-;; re-allow the selected project (which may be inside iCloud) → deny sensitive
-;; dotfiles last.
+;; below enforces full project isolation: agent can read system paths outside
+;; $HOME, language tooling / runtime dirs, its own config, and the selected
+;; project. Everything else under $HOME is denied — including sibling projects
+;; at neutral paths (~/Code/A vs ~/Code/B), which #6c's TCC-enumeration shape
+;; left open.
 ;;
-;; Why this shape (not deny-everything-in-$HOME):
-;;   A blanket `(deny file-read* (subpath "$HOME"))` proved too strict: the
-;;   ACP agent subprocess reads many unpredictable paths under $HOME during
-;;   init (node_modules, dotfiles, OS caches the agent's runtime happens to
-;;   stat, etc.). Missing even one path deadlocks init with an opaque
-;;   "server shut down unexpectedly". The enumeration approach below matches
-;;   macOS's own TCC model — Documents, Desktop, Downloads, iCloud are user
-;;   data; everything else is treated as tooling/system.
+;; Allow-list rationale (Bucket B: runtime, Bucket C: per-agent config):
 ;;
-;; Limitation of this shape:
-;;   Two projects at sibling paths NOT in the deny list (e.g. `~/Code/A` and
-;;   `~/Code/B`, or `~/Development/A` and `~/Development/B`) are both readable
-;;   when either is selected. The user's original reproducible leak (through
-;;   iCloud Mobile Documents) IS closed. A future task could add
-;;   user-configurable deny paths, or shift to an allow-list model once we
-;;   understand each agent's exact read footprint.
+;;   Node runtime + package managers — agents are Node processes that read
+;;   node_modules from wherever their install path lives. On most dev
+;;   machines that's /opt/homebrew (outside $HOME, allowed at level 1) but
+;;   some users install via nvm/volta/fnm/asdf (under $HOME).
+;;
+;;   ~/.npm, ~/.npm-global, ~/.nvm, ~/.volta, ~/.fnm, ~/.asdf
+;;   ~/.yarn, ~/.pnpm, ~/.bun, ~/.deno
+;;   ~/.cargo, ~/.rustup                (ripgrep etc. if built from source)
+;;   ~/.local, ~/.config, ~/.cache      (XDG)
+;;   ~/.gitconfig, ~/.ssh/known_hosts?  (git ops — note ~/.ssh is denied below,
+;;                                      known_hosts reads handled by git-over-
+;;                                      HTTPS, not SSH, so not re-allowed here)
+;;
+;;   Agent config dirs:
+;;   ~/.claude, ~/.codex, ~/.copilot, ~/.gemini, ~/.notesage
+;;
+;;   macOS native caches and prefs that Node / GUI-adjacent tools hit:
+;;   ~/Library/Caches, ~/Library/Application Support, ~/Library/Preferences
+;;   (user-data subdirs like Messages/Mail/iCloud are denied by NOT re-allowing
+;;   their specific subpaths; the broader Library allow covers only the
+;;   general cache/prefs tier. Sensitive subdirs like Application Support/
+;;   AddressBook are explicitly denied later.)
+;;
+;; Why we don't just allow $HOME broadly: sibling-path leak is the primary
+;; threat. A deny-by-default rule on $HOME + a curated re-allow list is the
+;; only shape that closes it. See #6c task entry for the failed enumeration
+;; attempt and the research log explaining why this is the only viable model.
 
 ;; 1. Broad allow — covers /usr, /bin, /Library, /System, /opt, /Applications,
-;;    and most of $HOME (dotfiles, tooling caches, ~/Library app support).
+;;    /private/var, /tmp. Agents need system libraries; Homebrew node_modules
+;;    (the most common install) live at /opt/homebrew/lib/node_modules.
 (allow file-read*)
 
-;; 2. Deny user-data areas under $HOME (Apple TCC boundary + iCloud).
-(deny file-read*
-  (subpath "{home}/Documents")
-  (subpath "{home}/Desktop")
-  (subpath "{home}/Downloads")
-  (subpath "{home}/Movies")
-  (subpath "{home}/Music")
-  (subpath "{home}/Pictures")
-  (subpath "{home}/Public")
-  (subpath "{home}/Library/Mobile Documents")
-  (subpath "{home}/Library/Messages")
-  (subpath "{home}/Library/Mail")
-  (subpath "{home}/Library/Calendars")
-  (subpath "{home}/Library/Contacts")
-  (subpath "{home}/Library/Application Support/AddressBook"))
+;; 2. Deny every read inside $HOME by default.
+(deny file-read* (subpath "{home}"))
 
-;; 3. Re-allow the selected project(s) — crucial when a project lives inside
-;;    a denied area (e.g. an iCloud project under Mobile Documents, or a
-;;    project in ~/Documents).
+;; 3a. Allow stat/readdir on $HOME itself (literal — NOT subpath, so its
+;;     children stay denied). Without this, fs.watch/kqueue on any allowed
+;;     subpath (like ~/.claude or a writable_path) fails because the parent-
+;;     chain traversal hits $HOME and gets EPERM. Verified 2026-04-19 via
+;;     claude-agent-acp:stderr logs.
+(allow file-read* (literal "{home}"))
+
+;; 3b. Re-allow Bucket B (language tooling / Node runtime) under $HOME.
+;;     `login.keychain-db` specifically (LITERAL, not the whole Keychains dir)
+;;     is the macOS user keychain file where GitHub Copilot CLI stores its
+;;     OAuth token under service name `copilot-cli` — documented behavior,
+;;     see https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-
+;;     copilot-cli/authenticate-copilot-cli. The file is encrypted at rest
+;;     (AES-256-GCM with per-row keys; see Apple Keychain Data Protection
+;;     docs); actual decryption requires the user's login password routed
+;;     through securityd + TCC, so the read itself exposes ciphertext only.
+;;     We narrow to the single file rather than the whole `Keychains/`
+;;     subdir so ACL-controlled siblings (metadata.keychain-db, per-user
+;;     subdirs) stay denied.
+(allow file-read*
+  (subpath "{home}/.npm")
+  (subpath "{home}/.npm-global")
+  (subpath "{home}/.nvm")
+  (subpath "{home}/.volta")
+  (subpath "{home}/.fnm")
+  (subpath "{home}/.asdf")
+  (subpath "{home}/.yarn")
+  (subpath "{home}/.pnpm")
+  (subpath "{home}/.bun")
+  (subpath "{home}/.deno")
+  (subpath "{home}/.cargo")
+  (subpath "{home}/.rustup")
+  (subpath "{home}/.local")
+  (subpath "{home}/.config")
+  (subpath "{home}/.cache")
+  (subpath "{home}/Library/Caches")
+  (subpath "{home}/Library/Application Support")
+  (subpath "{home}/Library/Preferences")
+  (literal "{home}/Library/Keychains/login.keychain-db")
+  (literal "{home}/.gitconfig")
+  (literal "{home}/.gitignore_global"))
+
+;; 4. Re-allow Bucket C (per-agent config dirs + adjacent state files).
+;;    Most agents keep state in a dot-directory, but claude-agent-acp also
+;;    reads a sibling FILE `~/.claude.json` at session/new time (its project
+;;    state/config, ~41KB). Without the literal file re-allow, claude's
+;;    internal `query()` subprocess dies silently with "Query closed before
+;;    response received" — identified via binary-search under sandbox-exec
+;;    on 2026-04-19.
+(allow file-read*
+  (subpath "{home}/.claude")
+  (subpath "{home}/.codex")
+  (subpath "{home}/.copilot")
+  (subpath "{home}/.gemini")
+  (subpath "{home}/.notesage")
+  (literal "{home}/.claude.json")
+  (literal "{home}/.claude.json.backup"))
+
+;; 5. Re-allow the selected project(s) — writable_paths. Critical: this is
+;;    the ONLY content under $HOME that's project-specific; everything else
+;;    above is agent/runtime infrastructure.
 {writable_read_allow}
 
-;; 4. Re-allow ancestors of each writable path as a literal (the dir itself,
-;;    not its children) so parent-chain operations like fs.watch and
-;;    workspace-marker discovery work even when the project is inside a
-;;    denied area. Children of the ancestor (i.e. sibling projects) remain
-;;    denied because `(literal)` does not cover descendants.
+;; 6. Re-allow ancestors of each writable path as a literal (the dir itself,
+;;    not its children). Lets fs.watch's parent-chain check and workspace-
+;;    marker discovery work when a project is nested deep. Children of the
+;;    ancestor (sibling projects) remain denied because `(literal)` does not
+;;    cover descendants — only the exact path matches.
 {ancestor_literal_allow}
 
 ;; Allow writing to specified directories, temp, device nodes, and agent config dirs
@@ -216,6 +276,8 @@ pub fn generate_seatbelt_profile(
   (subpath "{home}/.copilot")
   (subpath "{home}/.notesage")
   (subpath "{home}/.config")
+  (literal "{home}/.claude.json")
+  (literal "{home}/.claude.json.backup")
   (literal "/dev/null")
   (literal "/dev/tty")
   (literal "/dev/zero")
@@ -428,13 +490,41 @@ mod tests {
         }
 
         #[test]
-        fn read_policy_denies_user_data_areas() {
-            // Task #6c: the profile must deny reads in known user-data areas
-            // under $HOME — Apple's TCC boundary plus iCloud Mobile Documents
-            // (the user's reproducible leak path on 2026-04-19). Each entry
-            // below was identified as user-private content that an agent
-            // scoped to one project should never reach.
-            let id = "test-userdata-deny";
+        fn read_policy_denies_home_by_default() {
+            // Task #6d: the profile must deny all reads inside $HOME by
+            // default. This is the rule that closes the sibling-path leak
+            // (~/Code/A vs ~/Code/B) that #6c's enumeration shape left open.
+            // Without this rule, ANY path in $HOME not explicitly denied was
+            // broadly readable — an agent scoped to Project A could still
+            // `cat` files in every other user directory outside the curated
+            // deny list.
+            let id = "test-home-deny";
+            let result = generate_seatbelt_profile(id, &[], None, false);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            let home = dirs::home_dir().unwrap();
+            let expected = format!("(deny file-read* (subpath \"{}\"))", home.display());
+            assert!(
+                content.contains(&expected),
+                "Profile must deny reads inside $HOME by default; expected `{}` in:\n{}",
+                expected, content,
+            );
+        }
+
+        #[test]
+        fn read_policy_reallows_runtime_and_agent_configs() {
+            // After the deny-by-default on $HOME, the profile MUST re-allow
+            // everything an ACP Node agent needs at init: language tooling
+            // (~/.npm, ~/.nvm, ~/.yarn, ~/.volta, ~/.cargo, ~/.local, …),
+            // XDG dirs (~/.config, ~/.cache), macOS native caches and prefs
+            // (~/Library/Caches, ~/Library/Preferences, ~/Library/Application
+            // Support), and each supported agent's config dir. Missing any
+            // of these will deadlock agent init — the failure mode we saw
+            // on 2026-04-19 when deny-by-default was tried without a
+            // complete allow list.
+            let id = "test-runtime-reallow";
             let result = generate_seatbelt_profile(id, &[], None, false);
             let path = result.expect("should generate profile");
             let content = std::fs::read_to_string(&path).unwrap();
@@ -443,36 +533,68 @@ mod tests {
             let home = dirs::home_dir().unwrap();
             let home_str = home.to_string_lossy();
             for dir in [
-                "Documents",
-                "Desktop",
-                "Downloads",
-                "Movies",
-                "Music",
-                "Pictures",
-                "Public",
-                "Library/Mobile Documents",
-                "Library/Messages",
-                "Library/Mail",
-                "Library/Calendars",
-                "Library/Contacts",
+                // Bucket B — language tooling
+                ".npm", ".npm-global", ".nvm", ".volta", ".fnm", ".asdf",
+                ".yarn", ".pnpm", ".bun", ".deno", ".cargo", ".rustup",
+                // XDG
+                ".local", ".config", ".cache",
+                // macOS native caches / prefs
+                "Library/Caches", "Library/Application Support", "Library/Preferences",
+                // Bucket C — agent configs
+                ".claude", ".codex", ".copilot", ".gemini", ".notesage",
             ] {
                 let needle = format!("(subpath \"{}/{}\")", home_str, dir);
                 assert!(
                     content.contains(&needle),
-                    "Profile must deny reads in {}; expected line containing `{}` in:\n{}",
+                    "Profile must re-allow reads in {}; expected `{}` in:\n{}",
                     dir, needle, content,
                 );
             }
         }
 
         #[test]
-        fn read_policy_keeps_broad_allow_for_tooling() {
-            // The broad `(allow file-read*)` rule must remain the first read
-            // rule — agents need to read system libs, language tooling, their
-            // own config, OS caches, etc. The deny block above narrows it to
-            // user-data areas only. Removing the broad allow would deadlock
-            // agent init (the failure observed on 2026-04-19 when an
-            // alternative deny-everything-in-$HOME profile was tried).
+        fn read_policy_narrows_keychain_to_login_db_only() {
+            // Task #6d: GitHub Copilot CLI reads `~/Library/Keychains/login.keychain-db`
+            // to resolve its OAuth token from the macOS Keychain (service name
+            // `copilot-cli`). The FILE is encrypted at rest — reading it alone
+            // exposes ciphertext; decryption still requires securityd + TCC.
+            //
+            // The profile MUST use a (literal) rule for the single file, not a
+            // (subpath) for the whole Keychains directory — sibling files
+            // (metadata.keychain-db, per-user keychain subdirs) may have stricter
+            // access controls and the broader rule would bypass them.
+            let id = "test-keychain-narrow";
+            let result = generate_seatbelt_profile(id, &[], None, false);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            let home = dirs::home_dir().unwrap();
+            let home_str = home.to_string_lossy();
+            let expected_literal = format!(
+                "(literal \"{}/Library/Keychains/login.keychain-db\")",
+                home_str
+            );
+            assert!(
+                content.contains(&expected_literal),
+                "Profile must allow login.keychain-db by literal; expected `{}` in:\n{}",
+                expected_literal, content,
+            );
+
+            let forbidden_subpath = format!("(subpath \"{}/Library/Keychains\")", home_str);
+            assert!(
+                !content.contains(&forbidden_subpath),
+                "Profile must NOT allow the whole Keychains/ dir via subpath — use the narrow literal instead. Found: `{}`",
+                forbidden_subpath,
+            );
+        }
+
+        #[test]
+        fn read_policy_keeps_broad_allow_for_system_paths() {
+            // The broad `(allow file-read*)` rule must remain the FIRST read
+            // rule — it covers everything outside $HOME (system libs, Homebrew,
+            // /Applications, /usr, /private). The $HOME deny that follows
+            // narrows the scope without blocking system access.
             let id = "test-broad-allow";
             let result = generate_seatbelt_profile(id, &[], None, false);
             let path = result.expect("should generate profile");
@@ -481,7 +603,7 @@ mod tests {
 
             assert!(
                 content.contains("(allow file-read*)"),
-                "Profile must keep the broad `(allow file-read*)` rule; without it agents can't init. Profile:\n{}",
+                "Profile must keep broad `(allow file-read*)`; without it /usr, /opt/homebrew, /Applications become unreadable. Profile:\n{}",
                 content,
             );
         }

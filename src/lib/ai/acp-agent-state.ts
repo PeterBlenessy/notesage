@@ -238,18 +238,35 @@ const MAX_ENSURE_DEPTH = 3;
  * Reuses the existing agent if the connection matches. Stops and replaces
  * if the connection changed.
  *
+ * @param callerTag Short identifier for the call site (e.g. 'eager', 'send-chat',
+ *   'retry-reconnect-failed'). Used only for structured diagnostic logging; does
+ *   not affect behavior. Present so we can trace respawn cascades without guessing.
  * @param depth Internal recursion counter — callers should not set this.
  */
-export async function ensureAcpAgent(connection: Connection, cwd: string, sandboxPaths?: string[], depth = 0): Promise<string> {
+export async function ensureAcpAgent(
+  connection: Connection,
+  cwd: string,
+  sandboxPaths?: string[],
+  callerTag: string = 'unknown',
+  depth = 0,
+): Promise<string> {
   if (depth > MAX_ENSURE_DEPTH) {
     throw new Error('Agent spawn failed after multiple retries');
   }
   const scopeKey = (sandboxPaths ?? []).sort().join('|');
 
+  log.info(
+    'ai',
+    `[ensureAcpAgent:${callerTag}] conn=${connection.id} scope=[${scopeKey}] cwd=${cwd} currentAgent=${acpAgent ? `conn=${acpAgent.connectionId} scope=[${acpAgent.sandboxScopeKey}] session=${acpAgent.chatSessionId ?? 'none'}` : 'none'}`,
+  );
+
   // Respawn if connection changed OR sandbox scope changed
   if (acpAgent && (acpAgent.connectionId !== connection.id || acpAgent.sandboxScopeKey !== scopeKey)) {
     if (acpAgent.sandboxScopeKey !== scopeKey) {
-      log.info('ai', 'Chat agent sandbox scope changed, respawning');
+      log.info(
+        'ai',
+        `[ensureAcpAgent:${callerTag}] sandbox scope changed, respawning. old=[${acpAgent.sandboxScopeKey}] new=[${scopeKey}]`,
+      );
     }
     try {
       await invoke('acp_agent_stop', { instanceId: acpAgent.instanceId });
@@ -284,7 +301,7 @@ export async function ensureAcpAgent(connection: Connection, cwd: string, sandbo
       return instanceId;
     }
     // Agent changed or was replaced during await — restart the entire check
-    return ensureAcpAgent(connection, cwd, sandboxPaths, depth + 1);
+    return ensureAcpAgent(connection, cwd, sandboxPaths, `${callerTag}-retry`, depth + 1);
   }
 
   // Wrap spawn in a tracked promise so concurrent callers await instead of double-spawning

@@ -6,7 +6,7 @@
 | **Status** | Not started |
 | **PRD** | [project-data-isolation](../prds/2026-04-18-project-data-isolation.md) |
 | **Audit** | [project-isolation](../audits/2026-04-18-project-isolation.md) |
-| **Total** | 37 tasks: 16S, 16M, 5L (added #6b project-scoped auto-allow, #6c kernel deny-by-enumeration, #6d future allow-list hardening — see #6c for the research log on why deny-by-default failed) |
+| **Total** | 37 tasks: 16S, 16M, 5L (added #6b project-scoped auto-allow, #6c kernel deny-by-enumeration, #6d full deny-by-default allow-list — all landed 2026-04-19. See #6c for the research log on why the first deny-by-default attempt failed, and #6d for the allow-list discovery process.) |
 | **Suggested order** | Verification harness (#0) → Foundations (#1–#3) → Track 1 Critical (#4–#9) → Track 1 High (#10–#22) → Track 2 hardening (#23–#27) → Track 3 correctness (#28–#31) → Verification & docs (#32–#33) |
 
 ## Execution discipline — red-team TDD
@@ -262,25 +262,34 @@ Pivoted to **deny-by-enumeration** matching macOS's TCC (Transparency Consent Co
 
 ---
 
-### #6d — Tighten read isolation to allow-list model (follow-up to #6c)
+### #6d — Tighten read isolation to allow-list model ✅ (follow-up to #6c)
 
-**Description:** #6c shipped a deny-by-enumeration model (deny known user-data areas, broadly allow elsewhere) because deny-by-default broke agent init. To close the remaining sibling-path leak (e.g. `~/Code/A` vs `~/Code/B`), we need a true allow-list: deny `$HOME` reads broadly, then surface every path each ACP agent legitimately needs at init and re-allow it.
+**Description:** #6c shipped a deny-by-enumeration model (deny known user-data areas, broadly allow elsewhere) because deny-by-default broke agent init. #6d closes the remaining sibling-path leak (e.g. `~/Code/A` vs `~/Code/B`) by switching to a true allow-list: deny `$HOME` reads broadly, then explicitly re-allow every path the supported ACP agents need at init.
 
-**Investigation required (per agent):**
+**How the allow list was determined (2026-04-19):**
 
-For each of the four supported ACP agents (Claude Code, Codex, Copilot, Gemini), instrument the Seatbelt profile to log every denied read during init, then add each one to the safe-home allow list. Likely candidates beyond `SAFE_HOME_DIRS`: agent-specific node_modules locations, npm global install paths (`~/.npm-global`, `~/.yarn`), language version managers (`~/.asdf`, `~/.rbenv`, `~/.pyenv`), VSCode-style cache dirs.
+Binary-searched against each ACP agent (`claude-agent-acp`, `copilot --acp`, `gemini --acp`, `codex-acp`) under progressively narrower sandbox profiles until `session/new` returned a `sessionId` for all four. Beyond the generic runtime/XDG buckets, two non-obvious paths were identified:
 
-**Acceptance criteria:**
+- `~/.claude.json` (sibling FILE, not inside `~/.claude/`) — Claude Code's project-state blob (\~41KB). Without it, claude-agent-acp spawns its internal `claude` subprocess via the SDK's `query()`, the subprocess dies silently, and we see "Query closed before response received" at the top level.
+- `~/Library/Keychains/login.keychain-db` — GitHub Copilot CLI reads this directly via `node-keytar`'s legacy `SecKeychainFindGenericPassword` path. Decryption still goes through `securityd` + TCC, so the read exposes ciphertext only. Narrowed to the single file via `(literal)` so `metadata.keychain-db` and per-user keychain subdirs stay denied.
 
-- Profile uses `(deny file-read* (subpath "$HOME"))` followed by an explicit allow list covering every path each agent needs to read for init + normal tool calls.
-- All four agents complete a normal "open chat → ask agent to list files in project → ask to read a file" flow without errors.
-- The sibling-path leak (two projects at `~/Code/A`, `~/Code/B`) is closed: with A selected, the agent cannot read B.
-- Integration test in `sandbox_isolation.rs` covers the sibling-path scenario and asserts deny.
+**Acceptance criteria (all met):**
+
+- Profile uses `(deny file-read* (subpath "$HOME"))` followed by an explicit allow list (Bucket B runtime, Bucket C per-agent config, `.claude.json`, `login.keychain-db` literal). ✅
+- All four supported ACP agents complete init + `session/new` without errors under the profile. Verified 2026-04-19 via manual reproduction outside the app and test flows inside. ✅
+- Sibling-path leak closed: integration test `leak_6d_sibling_path_at_neutral_home_location_is_denied` in `src-tauri/tests/sandbox_isolation.rs` asserts that with `writable_paths = [project_a]` at a neutral `~/` location, reading `project_b` (sibling) returns EACCES. ✅
+- Unit tests: `read_policy_denies_home_by_default`, `read_policy_reallows_runtime_and_agent_configs`, `read_policy_narrows_keychain_to_login_db_only`, `read_policy_keeps_broad_allow_for_system_paths`. ✅
+
+**Risks acknowledged:**
+
+- Future agent updates (upstream npm/homebrew) may introduce new path dependencies we haven't enumerated, silently breaking the sandbox. Mitigation: observability PRD `2026-04-19-agent-sandbox-observability.md` captures the path forward for detecting + communicating such regressions.
 
 **Complexity:** L **Category:** backend **Dependencies:** #6c **Files:**
 
 - `src-tauri/src/commands/sandbox.rs`
 - `src-tauri/tests/sandbox_isolation.rs`
+- `src/lib/ai/acp-agent-state.ts` — added `callerTag` diagnostic (helped identify a pre-existing eager-session respawn race)
+- `src/hooks/useAcpLifecycle.ts` — eager-session effect re-reads `selectedProjectPaths` from store after hydration (fixes stale-closure race)
 
 ---
 
