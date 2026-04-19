@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react';
+import { toast } from 'sonner';
 import { useAIStore } from '@/stores/ai-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
@@ -10,10 +11,12 @@ import { useAIContext } from '@/hooks/useAIContext';
 import { useDirectApiChat } from '@/hooks/useDirectApiChat';
 import { useAcpLifecycle } from '@/hooks/useAcpLifecycle';
 import { useCopilotChat } from '@/hooks/useCopilotChat';
+import { findLockConflict, ProjectLockViolation, describeLockTarget } from '@/lib/ai/project-lock';
 
 // Re-export ACP utilities for external consumers
 export { stopAcpAgent } from '@/lib/ai/acp-agent-state';
 export { truncateDetail, formatAcpToolName } from '@/lib/ai/acp-utils';
+export { ProjectLockViolation };
 
 // ---------------------------------------------------------------------------
 // Hook — routes AI operations between direct API and ACP paths
@@ -117,9 +120,23 @@ export function useAIOperations() {
     composedSystemMessage,
   });
 
-  // Route generateText based on connection type
+  const assertLockAllowsSend = useCallback((): void => {
+    const attemptedId = effectiveConnection?.id ?? null;
+    const conflict = findLockConflict(selectedProjectPaths, metadataMap, attemptedId);
+    if (!conflict) return;
+    const lockedConn = connections.find((c) => c.id === conflict.lockedConnectionId);
+    const lockedLabel = describeLockTarget(conflict.lockedConnectionId, lockedConn?.label);
+    const projectName = metadataMap[conflict.projectPath]?.name || conflict.projectPath;
+    toast.error(
+      `"${projectName}" is locked to ${lockedLabel}. Switch provider to that connection to send.`,
+      { id: `project-lock-violation:${conflict.projectPath}` },
+    );
+    throw new ProjectLockViolation(conflict.projectPath, conflict.lockedConnectionId, attemptedId);
+  }, [effectiveConnection, selectedProjectPaths, metadataMap, connections]);
+
   const generateText = useCallback(
     async (prompt: string): Promise<string> => {
+      assertLockAllowsSend();
       if (effectiveConnection?.credentials && 'agentBinary' in effectiveConnection.credentials && effectiveConnection.credentials.agentBinary === 'copilot-language-server') {
         return copilotGenerateText(prompt);
       }
@@ -128,12 +145,12 @@ export function useAIOperations() {
       }
       return directGenerateText(prompt);
     },
-    [effectiveConnection, copilotGenerateText, acpGenerateText, directGenerateText]
+    [effectiveConnection, copilotGenerateText, acpGenerateText, directGenerateText, assertLockAllowsSend]
   );
 
-  // Route sendChatMessage based on connection type
   const sendChatMessage = useCallback(
     async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null; attachments?: ImageAttachment[] }) => {
+      assertLockAllowsSend();
       if (effectiveConnection?.credentials && 'agentBinary' in effectiveConnection.credentials && effectiveConnection.credentials.agentBinary === 'copilot-language-server') {
         return copilotSendChatMessage(content, messages, opts);
       }
@@ -142,7 +159,7 @@ export function useAIOperations() {
       }
       return directSendChatMessage(content, messages, opts);
     },
-    [effectiveConnection, copilotSendChatMessage, acpSendChatMessage, directSendChatMessage]
+    [effectiveConnection, copilotSendChatMessage, acpSendChatMessage, directSendChatMessage, assertLockAllowsSend]
   );
 
   // Route cancelChat — always clean up direct listeners, then delegate ACP/Copilot if needed

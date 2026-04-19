@@ -2,13 +2,14 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@/test/tauri-mock';
+import { toast } from 'sonner';
 import { renderHook, act } from '@testing-library/react';
-import { useAIOperations } from '@/hooks/useAIOperations';
+import { useAIOperations, ProjectLockViolation } from '@/hooks/useAIOperations';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useAIStore } from '@/stores/ai-store';
 import { useChatStore } from '@/stores/chat-store';
-import { useProjectMetadataStore } from '@/stores/project-metadata-store';
+import { useProjectMetadataStore, type ProjectMetadata } from '@/stores/project-metadata-store';
 import type { Connection } from '@/lib/ai/connections';
 
 // ---------------------------------------------------------------------------
@@ -370,6 +371,244 @@ describe('useAIOperations', () => {
       });
 
       expect(mockDirectGenerateText).toHaveBeenCalledWith('no provider');
+    });
+  });
+
+  // ---- aiLock enforcement (red-team TDD) ----
+  //
+  // Attack scenario per leak #8 / PRD 1.5: the user has locked Project A to
+  // Claude Code (`aiLock.connectionId = 'conn-claude'`). The chat footer is
+  // somehow set to OpenAI. The user presses Send. PRE-FIX the send routed to
+  // OpenAI — the lock was advisory. POST-FIX it's refused with a toast and a
+  // ProjectLockViolation is thrown, no downstream provider is called.
+
+  describe('aiLock enforcement', () => {
+    function seedLockedProject(lockedConnectionId: string, projectPath = '/locked-project'): void {
+      useChatStore.setState({
+        conversations: [{
+          id: 'conv-lock',
+          title: '',
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          projectPaths: [projectPath],
+          segments: [{ projectPaths: [projectPath], sessionId: null, startMessageIndex: 0, historyIncluded: false }],
+          activeSegmentIndex: 0,
+          pendingProjectSwitch: null,
+          activeLeafId: null,
+        }],
+        activeConversationId: 'conv-lock',
+      });
+      const meta: ProjectMetadata = {
+        version: 1,
+        name: 'Locked Project',
+        description: '',
+        ai: { provider: null, agentName: null, projectContext: '' },
+        aiLock: { connectionId: lockedConnectionId, lockedAt: Date.now() },
+      };
+      useProjectMetadataStore.setState({ metadataMap: { [projectPath]: meta } });
+    }
+
+    beforeEach(() => {
+      vi.mocked(toast.error).mockClear();
+    });
+
+    it('blocks new message send to a mismatching provider (direct API path)', async () => {
+      const lockedConn = makeConnection({ id: 'conn-claude', label: 'Claude' });
+      const wrongConn = makeConnection({ id: 'conn-openai', label: 'OpenAI' });
+      useConnectionsStore.setState({ connections: [lockedConn, wrongConn] });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: wrongConn.id },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: null },
+        },
+      });
+      seedLockedProject(lockedConn.id);
+
+      const { result } = renderHook(() => useAIOperations());
+
+      await expect(
+        act(async () => {
+          await result.current.sendChatMessage('attack', []);
+        }),
+      ).rejects.toBeInstanceOf(ProjectLockViolation);
+
+      expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
+      expect(mockAcpSendChatMessage).not.toHaveBeenCalled();
+      expect(toast.error).toHaveBeenCalled();
+    });
+
+    it('blocks resend to a mismatching provider', async () => {
+      const lockedConn = makeConnection({ id: 'conn-claude' });
+      const wrongConn = makeConnection({ id: 'conn-openai' });
+      useConnectionsStore.setState({ connections: [lockedConn, wrongConn] });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: wrongConn.id },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: null },
+        },
+      });
+      seedLockedProject(lockedConn.id);
+
+      const { result } = renderHook(() => useAIOperations());
+
+      await expect(
+        act(async () => {
+          await result.current.sendChatMessage('resend attack', [
+            { role: 'user', content: 'earlier', timestamp: 1 },
+          ]);
+        }),
+      ).rejects.toBeInstanceOf(ProjectLockViolation);
+
+      expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
+    });
+
+    it('blocks inline action via direct API path', async () => {
+      const lockedConn = makeConnection({ id: 'conn-claude' });
+      const wrongConn = makeConnection({ id: 'conn-openai' });
+      useConnectionsStore.setState({ connections: [lockedConn, wrongConn] });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: wrongConn.id },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: null },
+        },
+      });
+      seedLockedProject(lockedConn.id);
+
+      const { result } = renderHook(() => useAIOperations());
+
+      await expect(
+        act(async () => {
+          await result.current.generateText('Improve this selection');
+        }),
+      ).rejects.toBeInstanceOf(ProjectLockViolation);
+
+      expect(mockDirectGenerateText).not.toHaveBeenCalled();
+    });
+
+    it('blocks inline action via ACP path', async () => {
+      const lockedConn = makeConnection({ id: 'conn-claude' });
+      const wrongAcp = makeAgentConnection({ id: 'conn-copilot' });
+      useConnectionsStore.setState({ connections: [lockedConn, wrongAcp] });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: wrongAcp.id },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: null },
+        },
+      });
+      seedLockedProject(lockedConn.id);
+
+      const { result } = renderHook(() => useAIOperations());
+
+      await expect(
+        act(async () => {
+          await result.current.generateText('Improve via ACP');
+        }),
+      ).rejects.toBeInstanceOf(ProjectLockViolation);
+
+      expect(mockAcpGenerateText).not.toHaveBeenCalled();
+    });
+
+    it('allows send when the current provider matches the lock', async () => {
+      const lockedConn = makeConnection({ id: 'conn-claude' });
+      useConnectionsStore.setState({ connections: [lockedConn] });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: lockedConn.id },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: null },
+        },
+      });
+      seedLockedProject(lockedConn.id);
+
+      const { result } = renderHook(() => useAIOperations());
+
+      await act(async () => {
+        await result.current.sendChatMessage('ok', []);
+      });
+
+      expect(mockDirectSendChatMessage).toHaveBeenCalled();
+    });
+
+    it('allows send when no projects are locked (regression lock for unlocked path)', async () => {
+      const conn = makeConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: conn.id },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: null },
+        },
+      });
+
+      const { result } = renderHook(() => useAIOperations());
+
+      await act(async () => {
+        await result.current.sendChatMessage('normal', []);
+      });
+
+      expect(mockDirectSendChatMessage).toHaveBeenCalled();
+      expect(toast.error).not.toHaveBeenCalled();
+    });
+
+    it('blocks when any project in multi-select is locked to a different connection', async () => {
+      const lockedConn = makeConnection({ id: 'conn-claude' });
+      const wrongConn = makeConnection({ id: 'conn-openai' });
+      useConnectionsStore.setState({ connections: [lockedConn, wrongConn] });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: wrongConn.id },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: null },
+        },
+      });
+
+      useChatStore.setState({
+        conversations: [{
+          id: 'conv-multi',
+          title: '',
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          projectPaths: ['/free-project', '/locked-project'],
+          segments: [{ projectPaths: ['/free-project', '/locked-project'], sessionId: null, startMessageIndex: 0, historyIncluded: false }],
+          activeSegmentIndex: 0,
+          pendingProjectSwitch: null,
+          activeLeafId: null,
+        }],
+        activeConversationId: 'conv-multi',
+      });
+      useProjectMetadataStore.setState({
+        metadataMap: {
+          '/free-project': {
+            version: 1,
+            name: 'Free',
+            description: '',
+            ai: { provider: null, agentName: null, projectContext: '' },
+          },
+          '/locked-project': {
+            version: 1,
+            name: 'Locked',
+            description: '',
+            ai: { provider: null, agentName: null, projectContext: '' },
+            aiLock: { connectionId: lockedConn.id, lockedAt: Date.now() },
+          },
+        },
+      });
+
+      const { result } = renderHook(() => useAIOperations());
+
+      await expect(
+        act(async () => {
+          await result.current.sendChatMessage('multi attack', []);
+        }),
+      ).rejects.toBeInstanceOf(ProjectLockViolation);
+
+      expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
     });
   });
 

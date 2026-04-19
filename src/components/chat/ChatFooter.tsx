@@ -1,6 +1,7 @@
 import { memo, useMemo, useState, useEffect, useRef, useCallback, type RefObject } from 'react';
-import { ChevronUp, Check, Target, Plus, ImagePlus, FolderOpen } from 'lucide-react';
+import { ChevronUp, Check, Target, Plus, ImagePlus, FolderOpen, Lock } from 'lucide-react';
 import { toast } from 'sonner';
+import { getProjectLock, getUniqueLockedConnectionIds, describeLockTarget } from '@/lib/ai/project-lock';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { useChatStore, selectPendingProjectSwitch, selectPendingAgentSwitch } from '@/stores/chat-store';
 import { useConnectionsStore } from '@/stores/connections-store';
@@ -61,8 +62,20 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
     if (!projectProviderOverride) return null;
     return allConnections.find((c) => c.id === projectProviderOverride) ?? null;
   }, [projectProviderOverride, allConnections]);
-  const effectiveConnection = projectOverrideConnection ?? interactiveConnection;
-  const hasProjectOverride = !!projectOverrideConnection;
+
+  const lockedConnectionIds = useMemo(
+    () => getUniqueLockedConnectionIds(selectedProjectPaths, metadataMap),
+    [selectedProjectPaths, metadataMap],
+  );
+  const activeLockConnectionId = lockedConnectionIds.length === 1 ? lockedConnectionIds[0] : null;
+  const lockedConnection = useMemo(
+    () => (activeLockConnectionId ? allConnections.find((c) => c.id === activeLockConnectionId) ?? null : null),
+    [activeLockConnectionId, allConnections],
+  );
+  const isProviderLocked = !!activeLockConnectionId;
+
+  const effectiveConnection = lockedConnection ?? projectOverrideConnection ?? interactiveConnection;
+  const hasProjectOverride = !!projectOverrideConnection || isProviderLocked;
 
   const { goalFiles } = useGoalsDiscovery(singleProjectPath);
   const { cancelChat } = useAIOperations();
@@ -112,6 +125,26 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
     const isSelected = selectedProjectPaths.includes(path);
     if (isSelected) {
       toggleProjectPath(path);
+      return;
+    }
+
+    const newLock = getProjectLock(path, metadataMap);
+    const existingLockIds = new Set<string>();
+    for (const sp of selectedProjectPaths) {
+      const l = getProjectLock(sp, metadataMap);
+      if (l) existingLockIds.add(l.connectionId);
+    }
+    if (newLock && existingLockIds.size > 0 && !existingLockIds.has(newLock.connectionId)) {
+      toast.error('These projects are locked to different providers.', { id: 'provider-lock-conflict' });
+      return;
+    }
+    if (!newLock && existingLockIds.size > 0) {
+      const lockedId = Array.from(existingLockIds)[0];
+      const lockedConn = allConnections.find((c) => c.id === lockedId);
+      toast.error(
+        `Current selection is locked to ${describeLockTarget(lockedId, lockedConn?.label)}. Unlock or deselect first.`,
+        { id: 'provider-lock-conflict' },
+      );
       return;
     }
 
@@ -231,11 +264,15 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
                 <PopoverTrigger asChild>
                   <button
                     type="button"
+                    data-testid="chat-footer-provider"
+                    data-locked={isProviderLocked ? 'true' : 'false'}
                     className={`flex items-center gap-1 h-7 px-2 rounded-md text-xs font-medium text-muted-foreground transition-colors duration-150 border border-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                       hasProjectOverride ? 'cursor-default' : 'hover:text-foreground hover:bg-muted hover:border-border active:opacity-75'
                     }`}
                     title={
-                      hasProjectOverride
+                      isProviderLocked
+                        ? `Locked to ${describeLockTarget(activeLockConnectionId!, lockedConnection?.label)} by project`
+                        : hasProjectOverride
                         ? `Set by project: ${singleMetadata?.name || singleProjectPath}`
                         : effectiveConnection?.label ?? 'Select provider'
                     }
@@ -246,7 +283,11 @@ export const ChatFooter = memo(function ChatFooter({ onSend, selectedProjectPath
                     ) : (
                       <span className="text-xs">Provider</span>
                     )}
-                    {!hasProjectOverride && <ChevronUp className="h-3 w-3 opacity-50" />}
+                    {isProviderLocked ? (
+                      <Lock className="h-3 w-3 opacity-60" strokeWidth={1.5} />
+                    ) : !hasProjectOverride ? (
+                      <ChevronUp className="h-3 w-3 opacity-50" />
+                    ) : null}
                   </button>
                 </PopoverTrigger>
                 {!hasProjectOverride && (

@@ -9,7 +9,9 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { useActivityStore } from '@/stores/activity-store';
 import { useChatStore } from '@/stores/chat-store';
 import { usePermissionStore } from '@/stores/permission-store';
+import { useProjectMetadataStore, type ProjectMetadata } from '@/stores/project-metadata-store';
 import type { Connection } from '@/lib/ai/connections';
+import { ProjectLockViolation } from '@/lib/ai/project-lock';
 import {
   useAgentTaskOperations,
   stopTaskAgent,
@@ -155,6 +157,7 @@ function resetStores() {
   useConnectionsStore.setState({ connections: [] });
   useActivityStore.setState({ tasks: [], isManuallyHidden: false });
   useChatStore.setState({ conversations: [], activeConversationId: null });
+  useProjectMetadataStore.setState({ metadataMap: {} });
   usePermissionStore.setState({
     alwaysAllowed: [],
     domainSessionAllowed: {},
@@ -354,6 +357,90 @@ describe('useAgentTaskOperations', () => {
       let taskId: string | undefined;
       await act(async () => {
         taskId = await result.current.startTask('Ollama prompt');
+      });
+
+      expect(taskId).toBeDefined();
+    });
+  });
+
+  // ---- aiLock enforcement on comment delegation (red-team TDD) ----
+  //
+  // Attack: the comment lives in Project A, which is locked to Claude Code. The
+  // global `agent_tasks` routing points at OpenAI. PRE-FIX startTask happily
+  // spawns an OpenAI agent for the locked project. POST-FIX the locked
+  // connection is used; or, if that connection is missing, the task is refused
+  // with a toast and ProjectLockViolation.
+
+  describe('aiLock enforcement on comment delegation', () => {
+    function setProjectLock(projectPath: string, connectionId: string): void {
+      const meta: ProjectMetadata = {
+        version: 1,
+        name: 'Locked',
+        description: '',
+        ai: { provider: null, agentName: null, projectContext: '' },
+        aiLock: { connectionId, lockedAt: Date.now() },
+      };
+      useProjectMetadataStore.setState({ metadataMap: { [projectPath]: meta } });
+    }
+
+    it('uses the locked connection instead of the agent_tasks routing slot', async () => {
+      const lockedConn = makeAgentConnection({ id: 'conn-claude', provider: 'anthropic', label: 'Claude' });
+      const wrongConn = makeApiKeyConnection({ id: 'conn-openai', provider: 'openai', label: 'OpenAI' });
+      useConnectionsStore.setState({ connections: [lockedConn, wrongConn] });
+      setupRouting(wrongConn.id);
+      setProjectLock('/locked-project', lockedConn.id);
+      registerAcpHandlers();
+
+      const { result } = renderHook(() => useAgentTaskOperations());
+
+      let taskId: string | undefined;
+      await act(async () => {
+        taskId = await result.current.startTask('delegate', undefined, {
+          type: 'comment',
+          label: 'lock route',
+          projectRoot: '/locked-project',
+        });
+      });
+
+      expect(taskId).toBeDefined();
+      const task = useActivityStore.getState().tasks.find((t) => t.id === taskId);
+      expect(task?.connectionProvider).toBe('anthropic');
+    });
+
+    it('refuses to start the task when the locked connection is not available', async () => {
+      const wrongConn = makeApiKeyConnection({ id: 'conn-openai' });
+      useConnectionsStore.setState({ connections: [wrongConn] });
+      setupRouting(wrongConn.id);
+      setProjectLock('/locked-project', 'conn-missing');
+
+      const { result } = renderHook(() => useAgentTaskOperations());
+
+      await expect(
+        act(async () => {
+          await result.current.startTask('delegate', undefined, {
+            type: 'comment',
+            label: 'lock route',
+            projectRoot: '/locked-project',
+          });
+        }),
+      ).rejects.toBeInstanceOf(ProjectLockViolation);
+    });
+
+    it('allows the task through the normal agent_tasks route when no lock is set', async () => {
+      const conn = makeApiKeyConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      setupRouting(conn.id);
+      registerDirectApiHandlers();
+
+      const { result } = renderHook(() => useAgentTaskOperations());
+
+      let taskId: string | undefined;
+      await act(async () => {
+        taskId = await result.current.startTask('free', undefined, {
+          type: 'comment',
+          label: 'no lock',
+          projectRoot: '/free-project',
+        });
       });
 
       expect(taskId).toBeDefined();

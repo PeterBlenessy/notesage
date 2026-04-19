@@ -1,7 +1,10 @@
 import { useCallback } from 'react';
+import { toast } from 'sonner';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
 import { usePermissionStore } from '@/stores/permission-store';
+import { useProjectMetadataStore } from '@/stores/project-metadata-store';
+import { useConnectionsStore } from '@/stores/connections-store';
 import { useActivityStore, type AgentTaskType } from '@/stores/activity-store';
 import type { Connection } from '@/lib/ai/connections';
 import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
@@ -12,6 +15,7 @@ import { formatAcpToolName, truncateDetail, normalizeToolCallContent, hasSession
 import type { AcpSessionUpdatePayload, AcpPermissionRequestPayload, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
 import { isToolCallAllowed } from '@/lib/ai/path-filter';
+import { getProjectLock, ProjectLockViolation, describeLockTarget } from '@/lib/ai/project-lock';
 import { log } from '@/lib/logger';
 
 // Lazy-resolved home directory for path filtering
@@ -821,20 +825,36 @@ export function useAgentTaskOperations(): UseAgentTaskOperationsReturn {
       callbacks?: TaskCallbacks,
       taskMeta?: TaskMeta,
     ): Promise<string> => {
-      if (!taskConnection) {
+      const metadataMap = useProjectMetadataStore.getState().metadataMap;
+      const sourceProjectRoot = taskMeta?.projectRoot ?? (selectedProjectPaths[0] ?? null);
+      const sourceLock = sourceProjectRoot ? getProjectLock(sourceProjectRoot, metadataMap) : null;
+
+      let resolvedConnection: Connection | null = taskConnection;
+      if (sourceLock) {
+        const allConnections = useConnectionsStore.getState().connections;
+        const lockedConn = allConnections.find((c) => c.id === sourceLock.connectionId) ?? null;
+        if (!lockedConn) {
+          const label = describeLockTarget(sourceLock.connectionId);
+          toast.error(`Project is locked to ${label}, but that connection is not available.`, {
+            id: `project-lock-violation:${sourceProjectRoot}`,
+          });
+          throw new ProjectLockViolation(sourceProjectRoot!, sourceLock.connectionId, taskConnection?.id ?? null);
+        }
+        resolvedConnection = lockedConn;
+      }
+
+      if (!resolvedConnection) {
         throw new Error('No connection configured for agent tasks. Set up routing in Settings.');
       }
 
-      // Route based on auth method
-      if (taskConnection.authMethod === 'agent_managed') {
-        // Check if this is a Copilot LSP connection (uses conversation/* methods, not ACP)
-        const creds = taskConnection.credentials;
+      if (resolvedConnection.authMethod === 'agent_managed') {
+        const creds = resolvedConnection.credentials;
         if ('agentBinary' in creds && creds.agentBinary === 'copilot-language-server') {
-          return startCopilotLspTask(prompt, callbacks, taskMeta, taskConnection);
+          return startCopilotLspTask(prompt, callbacks, taskMeta, resolvedConnection);
         }
-        return startAcpTask(prompt, callbacks, taskMeta, taskConnection, selectedProjectPaths);
+        return startAcpTask(prompt, callbacks, taskMeta, resolvedConnection, selectedProjectPaths);
       }
-      return startDirectApiTask(prompt, callbacks, taskMeta, taskConnection);
+      return startDirectApiTask(prompt, callbacks, taskMeta, resolvedConnection);
     },
     [taskConnection, selectedProjectPaths]
   );
