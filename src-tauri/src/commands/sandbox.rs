@@ -51,10 +51,20 @@ pub(crate) fn agent_config_entries(agent_binary: &str) -> Vec<SandboxEntry> {
         // sibling FILE ~/.claude.json (project state, ~41KB) at session/new
         // time; missing the file causes its internal `query()` subprocess to
         // die silently. See task #6d research log.
+        //
+        // Also reads the macOS login keychain via node-keytar at session/prompt
+        // time to resolve its OAuth token. Without keychain access, session/new
+        // succeeds (file-based ~/.claude.json read works) but session/prompt
+        // fails with code -32000 "Authentication required" — observed
+        // 2026-04-19. Narrowed to the single keychain FILE so sibling entries
+        // stay denied, same shape as the Copilot arm below.
         "claude-agent-acp" => {
             entries.push(SandboxEntry::Subpath(".claude"));
             entries.push(SandboxEntry::Literal(".claude.json"));
             entries.push(SandboxEntry::Literal(".claude.json.backup"));
+            entries.push(SandboxEntry::Literal(
+                "Library/Keychains/login.keychain-db",
+            ));
         }
         // OpenAI Codex via codex-acp.
         "codex-acp" => {
@@ -922,10 +932,13 @@ mod tests {
                 );
             }
 
-            // Copilot-only keychain literal MUST NOT appear for Claude.
+            // Keychain literal IS present — Claude's SDK reads OAuth tokens
+            // via node-keytar at session/prompt time (same shape as Copilot).
+            // Narrowed to the single login.keychain-db file so metadata /
+            // per-user keychains stay denied.
             assert!(
-                !content.contains("Library/Keychains/login.keychain-db"),
-                "Claude profile must NOT allow login.keychain-db — that's Copilot-specific:\n{}",
+                content.contains("Library/Keychains/login.keychain-db"),
+                "Claude profile must allow login.keychain-db literal — required for session/prompt OAuth:\n{}",
                 content,
             );
         }
@@ -1125,8 +1138,12 @@ mod tests {
         }
 
         #[test]
-        fn agent_config_entries_non_copilot_excludes_keychain() {
-            for binary in ["claude-agent-acp", "codex-acp", "gemini", "random-agent"] {
+        fn agent_config_entries_codex_gemini_exclude_keychain() {
+            // Codex and Gemini don't use the macOS keychain — their OAuth
+            // state lives in ~/.codex and ~/.gemini respectively. Claude
+            // and Copilot both use node-keytar and need login.keychain-db
+            // (covered by dedicated tests below).
+            for binary in ["codex-acp", "gemini", "random-agent"] {
                 let entries = agent_config_entries(binary);
                 let has_keychain = entries.iter().any(|e| matches!(
                     e,
@@ -1134,9 +1151,26 @@ mod tests {
                 ));
                 assert!(
                     !has_keychain,
-                    "{binary} mapping must NOT include login.keychain-db — Copilot-specific"
+                    "{binary} mapping must NOT include login.keychain-db"
                 );
             }
+        }
+
+        #[test]
+        fn agent_config_entries_claude_includes_keychain() {
+            // Regression lock: Claude Code's SDK reads OAuth tokens from the
+            // macOS keychain via node-keytar at session/prompt time. Without
+            // it, session/new succeeds but session/prompt returns -32000
+            // "Authentication required" — observed 2026-04-19.
+            let entries = agent_config_entries("claude-agent-acp");
+            let has_keychain = entries.iter().any(|e| matches!(
+                e,
+                SandboxEntry::Literal("Library/Keychains/login.keychain-db")
+            ));
+            assert!(
+                has_keychain,
+                "Claude mapping must include login.keychain-db literal (node-keytar OAuth token)"
+            );
         }
 
         // Regression lock: acp.rs passes the RESOLVED absolute path to
