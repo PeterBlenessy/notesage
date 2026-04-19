@@ -6,7 +6,7 @@
 | **Status** | Not started |
 | **PRD** | [project-data-isolation](../prds/2026-04-18-project-data-isolation.md) |
 | **Audit** | [project-isolation](../audits/2026-04-18-project-isolation.md) |
-| **Total** | 36 tasks: 16S, 16M, 4L (added #6b project-scoped auto-allow + #6c kernel-level read denial after #6's literal fix proved insufficient — see #6c "Why this is the only viable enforcement layer" for the research log) |
+| **Total** | 37 tasks: 16S, 16M, 5L (added #6b project-scoped auto-allow, #6c kernel deny-by-enumeration, #6d future allow-list hardening — see #6c for the research log on why deny-by-default failed) |
 | **Suggested order** | Verification harness (#0) → Foundations (#1–#3) → Track 1 Critical (#4–#9) → Track 1 High (#10–#22) → Track 2 hardening (#23–#27) → Track 3 correctness (#28–#31) → Verification & docs (#32–#33) |
 
 ## Execution discipline — red-team TDD
@@ -241,22 +241,46 @@ The kernel sandbox is the only enforcement boundary the agent cannot bypass. Eac
 - All four supported ACP agents (Claude Code, Codex, Copilot, Gemini) complete a normal "read a file in the selected project, edit it, save it" workflow without permission errors.
 - The frontend cancel from #6b becomes redundant for kernel-supported reads but stays in place as defense-in-depth (catches violations on platforms without Seatbelt, and makes the violation visible in chat even when the kernel denies silently).
 
-**Implementation sketch:**
+**Implementation note (2026-04-19):**
 
-- Replace `(allow file-read*)` with `(deny file-read* (subpath "{home}"))` followed by explicit `(allow file-read* (subpath …))` for each `writable_paths` entry, system prefixes (`/usr`, `/bin`, `/Library`, etc.), and safe home dirs (`~/.claude`, `~/.codex`, etc. — the same set as `SAFE_HOME_DIRS` in `src/lib/ai/path-filter.ts`).
-- Keep `(allow file-read*)` for everything outside `$HOME` so system libraries continue to work.
-- Verify with each agent's normal workflow before merging.
+The first attempt — `(deny file-read* (subpath "$HOME"))` followed by explicit re-allows — broke ACP agent initialization. The agent subprocess reads many unpredictable paths under `$HOME` during startup (node_modules in obscure locations, dotfiles for OS caches, `~/Library` subpaths the runtime happens to stat, etc.). Missing even one path resulted in an opaque "Query closed before response received" / "server shut down unexpectedly" failure with no clear signal which path was denied. Both Claude Code and Copilot CLI failed identically.
+
+Pivoted to **deny-by-enumeration** matching macOS's TCC (Transparency Consent Control) model: deny the known user-data areas under `$HOME` (Documents, Desktop, Downloads, Movies, Music, Pictures, Public, Library/Mobile Documents, Library/Messages, Library/Mail, Library/Calendars, Library/Contacts, Library/Application Support/AddressBook), keep everything else broadly readable. The selected project's writable_paths are re-allowed AFTER the denies so an iCloud project (under Mobile Documents) or a project under \~/Documents still works.
+
+**Limitation acknowledged:** two projects at sibling paths NOT in the deny list (e.g. `~/Code/A` and `~/Code/B`) are both readable when either is selected. The user's reproducible leak (through iCloud Mobile Documents) IS closed. Hardening to a full allow-list model is a future task — needs per-agent investigation of every path the agent reads at init.
 
 **Risks:**
 
-- Agents that read from `~/Documents`, `~/Downloads`, or other non-safe home dirs will break. Mitigate by surveying current agent behavior; add discovered paths to the allow-list with a comment explaining why each is needed.
-- Cross-device differences (developer machines vs. user machines) could mean the developer's profile passes locally but breaks on a user with a different `$HOME` layout. Document required structure.
+- New macOS versions may add user-data dirs we haven't enumerated; the deny list needs to grow with the platform.
+- A user who keeps personal files at `~/Notes` or `~/Personal` (outside the deny list) would not get isolation for those folders. The Documents/Desktop/iCloud coverage matches what most users put under Apple's TCC-managed locations.
 
 **Complexity:** L **Category:** backend **Dependencies:** #6b, #0 (verification harness) **Files:**
 
 - `src-tauri/src/commands/sandbox.rs` — selective read profile
 - `src-tauri/tests/sandbox_isolation.rs` — kernel-level deny test (extend or use harness from #0)
 - `src/lib/ai/path-filter.ts` — keep frontend filter as defense-in-depth (no change required, but document the relationship in a comment)
+
+---
+
+### #6d — Tighten read isolation to allow-list model (follow-up to #6c)
+
+**Description:** #6c shipped a deny-by-enumeration model (deny known user-data areas, broadly allow elsewhere) because deny-by-default broke agent init. To close the remaining sibling-path leak (e.g. `~/Code/A` vs `~/Code/B`), we need a true allow-list: deny `$HOME` reads broadly, then surface every path each ACP agent legitimately needs at init and re-allow it.
+
+**Investigation required (per agent):**
+
+For each of the four supported ACP agents (Claude Code, Codex, Copilot, Gemini), instrument the Seatbelt profile to log every denied read during init, then add each one to the safe-home allow list. Likely candidates beyond `SAFE_HOME_DIRS`: agent-specific node_modules locations, npm global install paths (`~/.npm-global`, `~/.yarn`), language version managers (`~/.asdf`, `~/.rbenv`, `~/.pyenv`), VSCode-style cache dirs.
+
+**Acceptance criteria:**
+
+- Profile uses `(deny file-read* (subpath "$HOME"))` followed by an explicit allow list covering every path each agent needs to read for init + normal tool calls.
+- All four agents complete a normal "open chat → ask agent to list files in project → ask to read a file" flow without errors.
+- The sibling-path leak (two projects at `~/Code/A`, `~/Code/B`) is closed: with A selected, the agent cannot read B.
+- Integration test in `sandbox_isolation.rs` covers the sibling-path scenario and asserts deny.
+
+**Complexity:** L **Category:** backend **Dependencies:** #6c **Files:**
+
+- `src-tauri/src/commands/sandbox.rs`
+- `src-tauri/tests/sandbox_isolation.rs`
 
 ---
 

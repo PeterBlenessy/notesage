@@ -31,7 +31,7 @@ pub fn generate_seatbelt_profile(
     // Write to temp dir — profile lives only as long as the agent process.
     let profile_path = std::env::temp_dir().join(format!("notesage-sandbox-{}.sb", instance_id));
 
-    // Build writable subpath entries
+    // Build writable subpath entries (used by both file-write and file-read allow blocks)
     let writable_entries: Vec<String> = writable_paths
         .iter()
         .map(|p| format!("  (subpath \"{}\")", p))
@@ -40,6 +40,59 @@ pub fn generate_seatbelt_profile(
         String::new()
     } else {
         writable_entries.join("\n")
+    };
+    // The full file-read re-allow block for the selected project(s). Skipped
+    // entirely when no writable_paths are configured (e.g. inline-action callers
+    // that pass an empty list), so we don't emit an invalid `(allow file-read*\n)`.
+    let writable_read_allow = if writable_entries.is_empty() {
+        String::new()
+    } else {
+        format!("(allow file-read*\n{})", writable_entries.join("\n"))
+    };
+
+    // Ancestor literal-allow entries (task #6c).
+    //
+    // When a writable path is INSIDE a denied subpath (e.g. an iCloud project
+    // under `~/Library/Mobile Documents`), the deny rule blocks reads on every
+    // ancestor directory — including directories the agent needs to `stat` or
+    // `fs.watch`. Node's fs.watch on a file inside the project traverses the
+    // parent chain to register the watcher; if any ancestor is unreadable, the
+    // watch syscall returns EPERM.
+    //
+    // `(literal "PATH")` matches the exact path only, NOT its descendants. So
+    // allowing a literal ancestor lets the agent stat/readdir that directory
+    // (filenames visible) without exposing sibling contents (which fall under
+    // the original deny subpath).
+    //
+    // Stop walking at `$HOME`: paths outside $HOME are broadly readable
+    // (covered by the top-level `(allow file-read*)` rule).
+    let ancestor_literal_allow = {
+        let home_path = home.clone();
+        let mut ancestors: std::collections::BTreeSet<std::path::PathBuf> =
+            std::collections::BTreeSet::new();
+        for path in writable_paths {
+            let p = std::path::Path::new(path);
+            for ancestor in p.ancestors().skip(1) {
+                let s = ancestor.to_string_lossy();
+                // Stop at or above $HOME — everything outside is already allowed.
+                if s.len() <= home_path.to_string_lossy().len() {
+                    break;
+                }
+                ancestors.insert(ancestor.to_path_buf());
+            }
+        }
+        if ancestors.is_empty() {
+            String::new()
+        } else {
+            let entries: Vec<String> = ancestors
+                .iter()
+                .map(|p| format!("  (literal \"{}\")", p.display()))
+                .collect();
+            format!(
+                ";; Ancestor directories of writable_paths — literal allow lets the\n;; agent stat/readdir each parent so `fs.watch` and workspace-marker\n;; traversal work, without re-exposing sibling contents.\n(allow file-read*\n{})",
+                entries.join("\n")
+            )
+        }
     };
 
     // Network block: kernel-enforced deny or legacy allow-all.
@@ -94,8 +147,62 @@ pub fn generate_seatbelt_profile(
         r#"(version 1)
 (deny default)
 
-;; Allow reading system files (agents need binaries, libraries, configs)
+;; --- READ POLICY (kernel-enforced project isolation, task #6c) ---
+;;
+;; Seatbelt evaluates rules in order; the LAST matching rule wins. The chain
+;; below: broad allow → deny known user-data areas (Documents, Desktop, Downloads,
+;; Movies, Music, Pictures, iCloud Mobile Documents — Apple's TCC boundary) →
+;; re-allow the selected project (which may be inside iCloud) → deny sensitive
+;; dotfiles last.
+;;
+;; Why this shape (not deny-everything-in-$HOME):
+;;   A blanket `(deny file-read* (subpath "$HOME"))` proved too strict: the
+;;   ACP agent subprocess reads many unpredictable paths under $HOME during
+;;   init (node_modules, dotfiles, OS caches the agent's runtime happens to
+;;   stat, etc.). Missing even one path deadlocks init with an opaque
+;;   "server shut down unexpectedly". The enumeration approach below matches
+;;   macOS's own TCC model — Documents, Desktop, Downloads, iCloud are user
+;;   data; everything else is treated as tooling/system.
+;;
+;; Limitation of this shape:
+;;   Two projects at sibling paths NOT in the deny list (e.g. `~/Code/A` and
+;;   `~/Code/B`, or `~/Development/A` and `~/Development/B`) are both readable
+;;   when either is selected. The user's original reproducible leak (through
+;;   iCloud Mobile Documents) IS closed. A future task could add
+;;   user-configurable deny paths, or shift to an allow-list model once we
+;;   understand each agent's exact read footprint.
+
+;; 1. Broad allow — covers /usr, /bin, /Library, /System, /opt, /Applications,
+;;    and most of $HOME (dotfiles, tooling caches, ~/Library app support).
 (allow file-read*)
+
+;; 2. Deny user-data areas under $HOME (Apple TCC boundary + iCloud).
+(deny file-read*
+  (subpath "{home}/Documents")
+  (subpath "{home}/Desktop")
+  (subpath "{home}/Downloads")
+  (subpath "{home}/Movies")
+  (subpath "{home}/Music")
+  (subpath "{home}/Pictures")
+  (subpath "{home}/Public")
+  (subpath "{home}/Library/Mobile Documents")
+  (subpath "{home}/Library/Messages")
+  (subpath "{home}/Library/Mail")
+  (subpath "{home}/Library/Calendars")
+  (subpath "{home}/Library/Contacts")
+  (subpath "{home}/Library/Application Support/AddressBook"))
+
+;; 3. Re-allow the selected project(s) — crucial when a project lives inside
+;;    a denied area (e.g. an iCloud project under Mobile Documents, or a
+;;    project in ~/Documents).
+{writable_read_allow}
+
+;; 4. Re-allow ancestors of each writable path as a literal (the dir itself,
+;;    not its children) so parent-chain operations like fs.watch and
+;;    workspace-marker discovery work even when the project is inside a
+;;    denied area. Children of the ancestor (i.e. sibling projects) remain
+;;    denied because `(literal)` does not cover descendants.
+{ancestor_literal_allow}
 
 ;; Allow writing to specified directories, temp, device nodes, and agent config dirs
 (allow file-write*
@@ -115,7 +222,8 @@ pub fn generate_seatbelt_profile(
   (literal "/dev/random")
   (literal "/dev/urandom"))
 
-;; DENY reading sensitive directories (non-configurable)
+;; DENY reading sensitive directories (non-configurable; comes last so it
+;; overrides every prior allow).
 (deny file-read*
   (subpath "{home}/.ssh")
   (subpath "{home}/.aws")
@@ -141,6 +249,8 @@ pub fn generate_seatbelt_profile(
 (allow ipc-posix-shm*)
 "#,
         writable_block = writable_block,
+        writable_read_allow = writable_read_allow,
+        ancestor_literal_allow = ancestor_literal_allow,
         home = home_str,
         network_block = network_block,
     );
@@ -314,6 +424,87 @@ mod tests {
             assert!(
                 content.contains(r#"(subpath "/home/test")"#),
                 "Profile must allow /home/test"
+            );
+        }
+
+        #[test]
+        fn read_policy_denies_user_data_areas() {
+            // Task #6c: the profile must deny reads in known user-data areas
+            // under $HOME — Apple's TCC boundary plus iCloud Mobile Documents
+            // (the user's reproducible leak path on 2026-04-19). Each entry
+            // below was identified as user-private content that an agent
+            // scoped to one project should never reach.
+            let id = "test-userdata-deny";
+            let result = generate_seatbelt_profile(id, &[], None, false);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            let home = dirs::home_dir().unwrap();
+            let home_str = home.to_string_lossy();
+            for dir in [
+                "Documents",
+                "Desktop",
+                "Downloads",
+                "Movies",
+                "Music",
+                "Pictures",
+                "Public",
+                "Library/Mobile Documents",
+                "Library/Messages",
+                "Library/Mail",
+                "Library/Calendars",
+                "Library/Contacts",
+            ] {
+                let needle = format!("(subpath \"{}/{}\")", home_str, dir);
+                assert!(
+                    content.contains(&needle),
+                    "Profile must deny reads in {}; expected line containing `{}` in:\n{}",
+                    dir, needle, content,
+                );
+            }
+        }
+
+        #[test]
+        fn read_policy_keeps_broad_allow_for_tooling() {
+            // The broad `(allow file-read*)` rule must remain the first read
+            // rule — agents need to read system libs, language tooling, their
+            // own config, OS caches, etc. The deny block above narrows it to
+            // user-data areas only. Removing the broad allow would deadlock
+            // agent init (the failure observed on 2026-04-19 when an
+            // alternative deny-everything-in-$HOME profile was tried).
+            let id = "test-broad-allow";
+            let result = generate_seatbelt_profile(id, &[], None, false);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            assert!(
+                content.contains("(allow file-read*)"),
+                "Profile must keep the broad `(allow file-read*)` rule; without it agents can't init. Profile:\n{}",
+                content,
+            );
+        }
+
+        #[test]
+        fn writable_paths_appear_in_both_read_and_write_allows() {
+            // Same path list must be allowed for BOTH file-read and file-write.
+            // Closing only writes (the pre-#6c behaviour) leaves the read leak
+            // open — agent can read every file but only write to the project.
+            let id = "test-writable-read-allow";
+            let project = "/tmp/notesage-test-project";
+            let result = generate_seatbelt_profile(id, &[project.to_string()], None, false);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            // Two `(subpath "$project")` occurrences expected: one in the
+            // file-read re-allow, one in the file-write allow.
+            let count = content.matches(&format!(r#"(subpath "{}")"#, project)).count();
+            assert!(
+                count >= 2,
+                "Project path must appear in both read and write allow blocks (found {} occurrences)",
+                count,
             );
         }
 

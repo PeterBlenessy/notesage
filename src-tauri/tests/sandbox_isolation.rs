@@ -280,6 +280,12 @@ pub fn observe_sandbox_denials(agent: &TestAgent) -> Vec<DenialEntry> {
 /// `~/.config`, etc.). Caller-controlled writable paths go under here so the
 /// sandbox profile alone determines whether writes succeed.
 ///
+/// `under_user_data: true` puts the scratch root under `~/Documents` — one of
+/// the deny-listed user-data areas in the read-isolation profile (#6c). Use
+/// this when the test asserts read denial, so paths lie inside the deny
+/// boundary. Use `false` (default) for write-isolation tests where the
+/// neutral `~/notesage-sandbox-tests/` path is what we want.
+///
 /// Cleaned up by the returned guard's Drop.
 struct ScratchRoot {
     path: PathBuf,
@@ -287,9 +293,22 @@ struct ScratchRoot {
 
 impl ScratchRoot {
     fn new() -> Self {
+        Self::new_at(false)
+    }
+
+    fn new_under_user_data() -> Self {
+        Self::new_at(true)
+    }
+
+    fn new_at(under_user_data: bool) -> Self {
         let home = dirs::home_dir().expect("HOME must be set for sandbox tests");
         let nonce = uuid::Uuid::new_v4();
-        let path = home.join(format!("notesage-sandbox-tests/{}", nonce));
+        let parent = if under_user_data {
+            home.join("Documents/notesage-sandbox-tests")
+        } else {
+            home.join("notesage-sandbox-tests")
+        };
+        let path = parent.join(nonce.to_string());
         fs::create_dir_all(&path).expect("create scratch root");
         ScratchRoot { path }
     }
@@ -402,4 +421,99 @@ fn sandbox_sentinel_denies_writes_outside_writable_paths() {
 /// characters — single-quoting is sufficient and removes any ambiguity.
 fn shell_escape(p: &Path) -> String {
     format!("'{}'", p.display())
+}
+
+// ---------------------------------------------------------------------------
+// Leak #6c — kernel-level read denial for out-of-scope paths
+//
+// The leak: the Seatbelt profile uses `(allow file-read*)`, so the kernel
+// imposes no read restriction. With Project A as the only writable path, the
+// agent could still read every other file in the user's home (other projects,
+// iCloud Drive, ~/Documents, etc.). Frontend filters can't catch this for
+// agents that handle reads internally (Claude Code uses fs.readFile inside
+// its own subprocess — no ACP `tool_call` event ever reaches the client).
+//
+// Manual repro on 2026-04-19:
+//   Project selected: ~/Library/Mobile Documents/.../Private Notes
+//   Asked Claude Code: "read ~/Library/Mobile Documents/.../AI adoption/foo.md"
+//   Result: file content returned. No permission prompt, no error.
+//
+// Invariant (post-fix):
+//   With writable_paths = [project_a], the agent CANNOT read a file at
+//   project_b (a sibling user-data path under $HOME) — `cat` returns EACCES.
+//
+// System paths (/usr, /bin, /Library outside Mobile Documents, etc.) MUST
+// stay readable, otherwise agents can't find their dependencies.
+// ---------------------------------------------------------------------------
+
+#[test]
+#[ignore = "requires macOS Seatbelt; run with `cargo test -- --ignored sandbox`"]
+fn leak_6c_kernel_denies_reads_outside_writable_paths() {
+    // Scratch under ~/Documents — one of the deny-listed user-data areas in
+    // the #6c read-isolation profile. Project-A is in writable_paths
+    // (re-allowed); project-B is denied because it sits in the same denied
+    // area but was not selected.
+    let scratch = ScratchRoot::new_under_user_data();
+    let project_a = scratch.subdir("project-a");
+    let project_b = scratch.subdir("project-b");
+
+    // Seed a file in project_b that the agent should NOT be able to read.
+    let target = project_b.join("secrets.txt");
+    fs::write(&target, "do-not-read-me").expect("seed out-of-scope file");
+
+    // Sanity: also seed a file in project_a — the in-scope read must succeed.
+    let allowed = project_a.join("ok.txt");
+    fs::write(&allowed, "in-scope content").expect("seed in-scope file");
+
+    let agent = spawn_test_acp_agent_with_sandbox(&[&project_a.to_string_lossy()]);
+
+    // In-scope read MUST succeed.
+    let result = run_bash(&agent, &format!("cat {}", shell_escape(&allowed)))
+        .expect("bash should spawn");
+    assert!(
+        result.is_success(),
+        "in-scope read must succeed, got status={:?} stderr={}",
+        result.status_code,
+        result.stderr,
+    );
+    assert!(
+        result.stdout.contains("in-scope content"),
+        "stdout should contain the file content; got {:?}",
+        result.stdout,
+    );
+
+    // The invariant. Out-of-scope read MUST be kernel-denied.
+    let result = run_bash(&agent, &format!("cat {}", shell_escape(&target)))
+        .expect("bash should spawn");
+    assert!(
+        !result.is_success(),
+        "out-of-scope read must fail; cat succeeded with status={:?}, stdout={:?}, leak reproduced",
+        result.status_code,
+        result.stdout,
+    );
+    assert!(
+        result.looks_sandbox_denied(),
+        "stderr must indicate a sandbox denial (EACCES). stderr={}",
+        result.stderr,
+    );
+    assert!(
+        !result.stdout.contains("do-not-read-me"),
+        "denied read must NOT have returned the file content; stdout={:?}",
+        result.stdout,
+    );
+
+    // System paths MUST stay readable — agents need binaries and libraries.
+    // /usr/bin/true exists on every macOS install.
+    let result = run_bash(&agent, "cat /usr/bin/true > /dev/null && echo ok")
+        .expect("bash should spawn");
+    assert!(
+        result.is_success(),
+        "system path read must still work for agents to find dependencies; stderr={}",
+        result.stderr,
+    );
+    assert!(
+        result.stdout.trim() == "ok",
+        "system read should print 'ok'; got {:?}",
+        result.stdout,
+    );
 }

@@ -316,9 +316,9 @@ None — isolation enforcement happens in Rust at the sandbox level (`sandbox.rs
 
 - [ ] `acp_agent_spawn` is invoked with sandbox paths exactly matching `selectedProjectPaths + extraWritablePaths` (covered by new integration test)
 
-- [ ] An ACP chat scoped to project A cannot read/write files in project B at the kernel level (integration test via `acp_agent_spawn` + Seatbelt violation monitor)
+- [x] An ACP chat scoped to project A cannot read/write files in project B at the kernel level (writes covered since launch via Seatbelt writable_paths; reads closed by #6c — see `tests/sandbox_isolation.rs::leak_6c_kernel_denies_reads_outside_writable_paths` and the manual repro from 2026-04-19. Limitation: deny is enumeration-based — sibling-path leak `~/Code/A` vs `~/Code/B` is tracked in #6d)
 
-- [ ] `isToolCallAllowed` fires for every ACP tool call in regular chat, not only comment delegation (#6 wired the permission-request path; #6b extends to `tool_call` events as defense-in-depth; #6c adds kernel-level deny in Seatbelt for true prevention — gate closes when #6c lands)
+- [x] `isToolCallAllowed` fires for every ACP tool call in regular chat, not only comment delegation (#6 wired the permission-request path; #6c closes the read leak at the kernel via Seatbelt deny on user-data areas. Verified manually 2026-04-19: with Project A selected, agent reads in Project B return EACCES; adding Project B to the footer respawns the sandbox and reads succeed. #6d tracks future tightening to a full allow-list model)
 
 - [ ] Direct-API `read_file`/`list_directory`/`write_file` deny paths outside `selectedProjectPaths` (integration test)
 
