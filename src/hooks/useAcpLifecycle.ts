@@ -117,7 +117,7 @@ interface AcpLifecycleParams {
 }
 
 export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAcpSystemMessage }: AcpLifecycleParams) {
-  const { addMessage, updateMessage, setMessageError, setMessageInterrupted, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, appendTextSegment, appendThinkingSegment, pushSegment, updateSegment, updateOrPushPlanSegment, finalizeSegments, resetAssistantMessage } = useChatStore();
+  const { addMessage, updateMessage, setMessageError, setMessageInterrupted, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, setLastActivityApprovalMode, appendTextSegment, appendThinkingSegment, pushSegment, updateSegment, updateOrPushPlanSegment, finalizeSegments, resetAssistantMessage } = useChatStore();
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const cleanupRef = useRef<(() => void) | null>(null);
@@ -555,6 +555,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         addActivity,
         completeLastActivity,
         completeAllActivities,
+        setLastActivityApprovalMode,
         appendTextSegment,
         appendThinkingSegment,
         pushSegment,
@@ -754,7 +755,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         setActiveTool(null);
       }
     },
-    [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, addMessage, updateMessage, setMessageError, setMessageInterrupted, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, appendTextSegment, appendThinkingSegment, pushSegment, updateSegment, updateOrPushPlanSegment, finalizeSegments]
+    [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, addMessage, updateMessage, setMessageError, setMessageInterrupted, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, setLastActivityApprovalMode, appendTextSegment, appendThinkingSegment, pushSegment, updateSegment, updateOrPushPlanSegment, finalizeSegments]
   );
 
   /**
@@ -842,6 +843,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         addActivity,
         completeLastActivity,
         completeAllActivities,
+        setLastActivityApprovalMode,
         appendTextSegment,
         appendThinkingSegment,
         pushSegment,
@@ -931,7 +933,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       setLoading(false);
       setActiveTool(null);
     }
-  }, [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, updateMessage, addMessage, setMessageError, setMessageInterrupted, setLoading, setActiveTool, addActivity, completeLastActivity, completeAllActivities, appendTextSegment, appendThinkingSegment, pushSegment, updateSegment, updateOrPushPlanSegment, finalizeSegments, resetAssistantMessage]);
+  }, [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, updateMessage, addMessage, setMessageError, setMessageInterrupted, setLoading, setActiveTool, addActivity, completeLastActivity, completeAllActivities, setLastActivityApprovalMode, appendTextSegment, appendThinkingSegment, pushSegment, updateSegment, updateOrPushPlanSegment, finalizeSegments, resetAssistantMessage]);
 
   /**
    * Cancel an active ACP chat session.

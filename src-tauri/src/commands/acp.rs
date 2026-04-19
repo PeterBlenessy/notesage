@@ -385,7 +385,7 @@ fn run_agent_thread(
         // Spawn agent process — optionally wrapped in OS-level sandbox
         // Inject login shell PATH so the agent (and child processes) can find tools
         let mut spawn_cmd = if sandbox_enabled {
-            match super::sandbox::sandboxed_command(&sandbox_instance_id, &sandbox_writable_paths, network_config.as_ref(), kernel_network_deny) {
+            match super::sandbox::sandboxed_command(&sandbox_instance_id, &agent_binary, &sandbox_writable_paths, network_config.as_ref(), kernel_network_deny) {
                 Ok((program, prefix_args)) => {
                     log::info!(target: "notesage::acp", "Spawning {} in sandbox ({})", agent_binary, program);
                     let mut cmd = tokio::process::Command::new(&program);

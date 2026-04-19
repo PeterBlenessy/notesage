@@ -8,6 +8,8 @@ import { useDirectApiChat } from '@/hooks/useDirectApiChat';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useSkillStore } from '@/stores/skill-store';
 import { useChatStore } from '@/stores/chat-store';
+import { usePermissionStore } from '@/stores/permission-store';
+import { useToolPermissionStore } from '@/stores/tool-permission-store';
 import { invoke } from '@tauri-apps/api/core';
 import type { ResolvedCredentials } from '@/lib/ai/credentials';
 
@@ -340,6 +342,108 @@ describe('useDirectApiChat — abort mid-stream', () => {
     // Late chunks should be no-ops (no crash, no state update)
     act(() => {
       emitMockEvent('ai-stream-chunk', 'late chunk after cancel');
+    });
+  });
+});
+
+describe('useDirectApiChat — approvalMode on activities (task #22)', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({
+      toolCallingEnabled: true,
+      chatHistoryLimit: 0,
+      requireAllToolConfirmations: false,
+    });
+    useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
+    useChatStore.getState().clearMessages();
+    usePermissionStore.setState({
+      requests: [],
+      sessionAllowed: new Set(),
+      alwaysAllowed: [],
+      domainSessionAllowed: {},
+      domainAlwaysAllowed: {},
+      skillScriptSession: new Set(),
+      skillScriptAlways: [],
+      toolCallSession: new Set(),
+      toolCallAlways: [],
+    });
+    useToolPermissionStore.getState().setPending(null);
+    vi.mocked(invoke).mockClear();
+
+    // Mock web_search tool call emit + result
+    setMockInvokeHandler('web_search', async () => [
+      { title: 'r1', url: 'https://example.com', snippet: 's1' },
+    ]);
+  });
+
+  it('tags an auto-allowed tool activity with approvalMode="auto"', async () => {
+    // Stream that emits a single tool_call on the FIRST invoke only, then done
+    // on the continuation invoke — otherwise handleToolCalls re-invokes forever.
+    let invokeCount = 0;
+    setMockInvokeHandler('ai_chat_stream', async () => {
+      invokeCount++;
+      if (invokeCount === 1) {
+        setTimeout(() => {
+          emitMockEvent('ai-tool-call', {
+            id: 'call-1',
+            name: 'web_search',
+            arguments: { query: 'cats' },
+          });
+          emitMockEvent('ai-tool-calls-done', null);
+        }, 0);
+      } else {
+        // Continuation turn — just end the stream.
+        setTimeout(() => emitMockEvent('ai-stream-done', null), 0);
+      }
+    });
+
+    const { result } = renderDirectApiChat();
+    await act(async () => {
+      await result.current.sendChatMessage('search for cats', []);
+    });
+    // Allow microtasks + permission-store promise resolution
+    await act(async () => { await new Promise((r) => setTimeout(r, 100)); });
+
+    const conv = useChatStore.getState().conversations[0];
+    const assistantMsg = conv?.messages.find((m) => m.role === 'assistant');
+    expect(assistantMsg).toBeDefined();
+    const toolActs = (assistantMsg!.activities ?? []).filter((a) => a.kind === 'tool_call');
+    expect(toolActs.length).toBeGreaterThan(0);
+    // Every auto-allowed activity row must be tagged 'auto'
+    expect(toolActs.every((a) => a.approvalMode === 'auto')).toBe(true);
+  });
+
+  it('with requireAllToolConfirmations=true, previously auto-allowed tools hit the permission prompt', async () => {
+    useSettingsStore.setState({ requireAllToolConfirmations: true });
+
+    // The stream emits a single web_search tool_call. Because requireAllToolConfirmations
+    // forces tier='none', the hook should await the permission promise — we detect this
+    // by observing the pending state on useToolPermissionStore.
+    setMockInvokeHandler('ai_chat_stream', async () => {
+      setTimeout(() => {
+        emitMockEvent('ai-tool-call', {
+          id: 'call-1',
+          name: 'web_search',
+          arguments: { query: 'cats' },
+        });
+        emitMockEvent('ai-tool-calls-done', null);
+      }, 0);
+    });
+
+    const { result } = renderDirectApiChat();
+    // Send without awaiting — pending permission never resolves in this test.
+    await act(async () => {
+      void result.current.sendChatMessage('search for cats', []);
+    });
+    // Allow the tool_call event and microtasks to settle so setPending fires.
+    await act(async () => { await new Promise((r) => setTimeout(r, 80)); });
+
+    const pending = useToolPermissionStore.getState().pending;
+    expect(pending).not.toBeNull();
+    expect(pending!.name).toBe('web_search');
+
+    // Clean up — cancel so the pending promise doesn't leak across tests.
+    act(() => {
+      result.current.cancelDirectChat();
     });
   });
 });

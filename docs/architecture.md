@@ -328,6 +328,12 @@ Structured performance logging embedded in production code via `src/lib/logger.t
 - No direct frontend filesystem access
 - OS-level filesystem sandboxing (Seatbelt on macOS) with configurable writable paths per connection
 
+**Tauri capability surface (hardened 2026-04-19, task #21 in project-data-isolation):**
+
+- `src-tauri/capabilities/default.json` grants only `core:default`, `dialog:default`, `opener:default`, `updater:default`, `process:default`, a narrow `http:default` allowlist scoped to the Notesage GitHub release endpoint, `notification:*`, and `autostart:default`. No `fs:allow-*` permissions are granted — the renderer never imports `@tauri-apps/plugin-fs`, so a compromised frontend dependency cannot bypass the vetted Rust commands in `commands/file.rs`.
+- `tauri.conf.json`'s `assetProtocol.scope.allow` is a finite list of Tauri path variables (`$HOME`, `$APPDATA`, `$APPLOCALDATA`, `$APPCACHE`, `$RESOURCE`, `$TEMP`) instead of `**`. The asset protocol (used by `convertFileSrc` for images, drawing SVGs, and the PDF/EPUB/DOCX/PPTX viewers) can no longer serve files outside the user's home directory or the app's own sandboxed areas, closing the silent-exfil path where agent-authored markdown could point to `/etc/hosts`, `/private/var/...`, etc.
+- Regression lock: `src/lib/__tests__/tauri-capability-surface.test.ts` asserts the narrowed scope and the absence of `fs:allow-*` permissions; future config tweaks that re-open the hole will fail this test.
+
 **Network Sandboxing:**
 
 - **Two layers of enforcement:**

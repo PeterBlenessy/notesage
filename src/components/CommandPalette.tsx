@@ -34,10 +34,17 @@ import { SymbolSearchResults } from "@/components/SymbolSearchResults";
 import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useChatStore, selectProjectPaths } from "@/stores/chat-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { FileEntry, IndexContentSearchResult, IndexResearchResult, tauriApi } from "@/lib/tauri";
-import type { PaletteMode, SymbolSearchConfig } from "@/lib/command-palette";
-import { deriveMode, getQuery, getPrefixForMode, getPlaceholder, getSearchPaths } from "@/lib/command-palette";
+import type { PaletteMode, PaletteSearchScope, SymbolSearchConfig } from "@/lib/command-palette";
+import {
+  deriveMode,
+  getQuery,
+  getPrefixForMode,
+  getPlaceholder,
+  resolveSearchPaths,
+} from "@/lib/command-palette";
 
 const MAX_FILE_RESULTS = 50;
 
@@ -77,6 +84,23 @@ export function CommandPalette({
   // Derive mode from input prefix (or external files mode)
   const mode = deriveMode(input, initialMode === "files" ? "files" : undefined);
   const query = getQuery(input, mode);
+
+  // --- Search scope (per-session "Search all projects" toggle) ---
+  // Default scope = active conversation's selectedProjectPaths (or 'all' if none).
+  // The toggle below lets the user flip to 'all' for the current session only
+  // (non-persisted — resets on palette close).
+  const selectedProjectPaths = useChatStore(selectProjectPaths);
+  const [searchAllProjects, setSearchAllProjects] = useState(false);
+  const scope: PaletteSearchScope = useMemo(() => {
+    if (searchAllProjects) return "all";
+    return selectedProjectPaths.length > 0 ? selectedProjectPaths : "all";
+  }, [searchAllProjects, selectedProjectPaths]);
+  const scopeIsRestricted = scope !== "all";
+
+  // Reset the session toggle whenever the palette closes.
+  useEffect(() => {
+    if (!open) setSearchAllProjects(false);
+  }, [open]);
 
   // Set initial input when palette opens with a mode.
   // Use a ref to move the cursor after the prefix on the first focus
@@ -146,7 +170,7 @@ export function CommandPalette({
     researchSearchTimerRef.current = setTimeout(async () => {
       researchSearchTimerRef.current = null;
       try {
-        const paths = getSearchPaths();
+        const paths = resolveSearchPaths(scope);
         const q = query.trim();
         const ipcStart = performance.now();
         const results = await tauriApi.indexSearchResearch(paths, q || undefined, undefined, 50);
@@ -165,7 +189,7 @@ export function CommandPalette({
     return () => {
       if (researchSearchTimerRef.current) clearTimeout(researchSearchTimerRef.current);
     };
-  }, [mode, open, query]);
+  }, [mode, open, query, scope]);
 
   // --- Content search (files mode, FTS5) ---
   const [contentMatches, setContentMatches] = useState<IndexContentSearchResult[]>([]);
@@ -196,7 +220,7 @@ export function CommandPalette({
     contentSearchTimerRef.current = setTimeout(async () => {
       contentSearchTimerRef.current = null;
       try {
-        const searchPaths = getSearchPaths();
+        const searchPaths = resolveSearchPaths(scope);
         if (searchPaths.length > 0) {
           const ipcStart = performance.now();
           const matches = await tauriApi.indexSearchContent(searchPaths, q, 50);
@@ -218,7 +242,7 @@ export function CommandPalette({
     return () => {
       if (contentSearchTimerRef.current) clearTimeout(contentSearchTimerRef.current);
     };
-  }, [mode, open, query]);
+  }, [mode, open, query, scope]);
 
   // --- Workspace files ---
   const recentFiles = useEditorStore(s => s.recentFiles);
@@ -266,12 +290,21 @@ export function CommandPalette({
     flatten(notesTree);
 
     const seen = new Set<string>();
-    return files.filter((f) => {
+    const deduped = files.filter((f) => {
       if (seen.has(f.path)) return false;
       seen.add(f.path);
       return true;
     });
-  }, [explorerFolders, projects, notesTree]);
+
+    // Apply scope filter: when restricted to specific project paths, only
+    // show files living under one of those roots. `all` keeps every file.
+    if (scope === "all") return deduped;
+    const roots = Array.isArray(scope) ? scope : [];
+    if (roots.length === 0) return deduped;
+    return deduped.filter((f) =>
+      roots.some((root) => f.path === root || f.path.startsWith(root + "/")),
+    );
+  }, [explorerFolders, projects, notesTree, scope]);
 
   const recentPaths = useMemo(
     () => new Set(recentFiles.map((r) => r.path)),
@@ -459,6 +492,7 @@ export function CommandPalette({
             query={query}
             open={open}
             drilldownName={drilldownName}
+            scope={scope}
             onSelect={handleSymbolSelect}
           />
         )}
@@ -470,6 +504,7 @@ export function CommandPalette({
             query={query}
             open={open}
             drilldownName={drilldownName}
+            scope={scope}
             onSelect={handleSymbolSelect}
           />
         )}
@@ -684,6 +719,25 @@ export function CommandPalette({
           <span className="flex items-center gap-1">
             <kbd className="inline-flex items-center justify-center min-w-[20px] h-[18px] px-1 rounded-sm border border-border bg-background font-mono text-xs shadow-[0_1px_0_0_var(--color-border)]">esc</kbd> close
           </span>
+          {selectedProjectPaths.length > 0 && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={searchAllProjects}
+              aria-label="Search all projects"
+              onClick={() => setSearchAllProjects((v) => !v)}
+              className="flex items-center gap-1 rounded-sm px-1.5 h-[18px] border border-border bg-background transition-colors hover:bg-muted"
+              title={
+                searchAllProjects
+                  ? "Currently searching all projects. Click to scope to selected projects."
+                  : "Currently scoped to selected projects. Click to search all projects."
+              }
+            >
+              <span className={scopeIsRestricted ? "text-muted-foreground" : "text-foreground"}>
+                {scopeIsRestricted ? "scoped" : "all projects"}
+              </span>
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {mode !== "files" && (

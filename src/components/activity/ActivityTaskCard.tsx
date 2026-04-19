@@ -19,9 +19,46 @@ import { MarkdownContent } from '@/components/MarkdownContent';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { DiffContentView } from '@/components/chat/segments/DiffContentView';
 import { TextContentView } from '@/components/chat/segments/TextContentView';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useCommentStore } from '@/stores/comment-store';
 import type { AgentTask } from '@/stores/activity-store';
+import type { ActivityApprovalMode } from '@/lib/ai/types';
+
+/**
+ * Small badge next to each activity row signalling *how* the tool call was
+ * authorized. Strictly neutral palette: muted grey for auto, solid foreground
+ * for user-approved, destructive red for denied. Hover tooltip explains.
+ */
+function ApprovalBadge({ mode }: { mode: ActivityApprovalMode }) {
+  const label = mode === 'auto' ? 'Auto' : mode === 'user' ? 'Approved' : 'Denied';
+  const tooltip =
+    mode === 'auto'
+      ? 'Auto-approved — this tool is on the auto-allow list'
+      : mode === 'user'
+        ? 'You approved this tool call'
+        : 'This tool call was denied (out of scope or rejected)';
+  const cls =
+    mode === 'auto'
+      ? 'bg-muted/60 text-muted-foreground'
+      : mode === 'user'
+        ? 'bg-foreground/10 text-foreground'
+        : 'bg-destructive/15 text-destructive';
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-[1px] text-[9px] font-medium leading-none transition-colors duration-150 ${cls}`}
+        >
+          {label}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="left" sideOffset={4}>
+        <p className="text-xs">{tooltip}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 function formatElapsed(startedAt: number, completedAt?: number): string {
   const end = completedAt ?? Date.now();
@@ -327,6 +364,7 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
 
       {/* Expanded activity log */}
       {expanded && task.activities.length > 0 && (
+        <TooltipProvider delayDuration={300}>
         <div className="pl-5 space-y-0.5 max-h-60 overflow-y-auto thin-scrollbar">
           {task.activities.map((a, i) => {
             // If the task itself is finished, no activity should show a spinner
@@ -348,14 +386,23 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
                 <Check className="h-2.5 w-2.5 shrink-0 mt-px" strokeWidth={1.5} />
               )}
               <div className="min-w-0 flex-1">
-                <span className="truncate block">{a.label}</span>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="truncate min-w-0 flex-1">{a.label}</span>
+                  {a.approvalMode && <ApprovalBadge mode={a.approvalMode} />}
+                </div>
                 {a.detail && (
-                  <span
-                    className="truncate block text-muted-foreground/50"
-                    title={a.detail}
-                  >
-                    {a.detail.length > 60 ? a.detail.slice(0, 60) + '\u2026' : a.detail}
-                  </span>
+                  // Tooltip exposes the full argument (path/query/etc) on hover.
+                  // `truncate block` renders a shortened visual line.
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="truncate block text-muted-foreground/50 cursor-help">
+                        {a.detail.length > 60 ? a.detail.slice(0, 60) + '\u2026' : a.detail}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="left" sideOffset={4} className="max-w-md">
+                      <p className="text-xs break-all whitespace-pre-wrap">{a.detail}</p>
+                    </TooltipContent>
+                  </Tooltip>
                 )}
                 {a.content && a.content.length > 0 && (
                   <div className="mt-0.5 space-y-0.5">
@@ -389,6 +436,7 @@ export function ActivityTaskCard({ task, onCancel, onRemove, onClick }: Activity
             );
           })}
         </div>
+        </TooltipProvider>
       )}
     </div>
   );

@@ -375,11 +375,15 @@ async function startAcpTask(
       const detail = truncateDetail(update.rawInput, 200);
       onActivity?.({ kind: update.kind || 'unknown', label, detail: detail || undefined, event: 'tool_call' });
       if (track) {
+        // Optimistic `approvalMode: 'auto'`. Task-delegation flow auto-approves
+        // every tool call (the comment is a one-shot delegation — no interactive
+        // permission prompts). Path-filter denials below patch it to 'denied'.
         useActivityStore.getState().appendActivity(taskId, {
           label,
           detail: detail || undefined,
           status: 'running',
           timestamp: Date.now(),
+          approvalMode: 'auto',
         });
       }
     } else if (eventType === 'tool_call_update') {
@@ -458,6 +462,7 @@ async function startAcpTask(
             detail: result.deniedPath,
             status: 'error',
             timestamp: Date.now(),
+            approvalMode: 'denied',
           });
         }
         tauriApi.acpPermissionRespond(instanceId, payload.requestId, null).catch(() => {}); // Expected: fire-and-forget permission deny

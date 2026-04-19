@@ -96,6 +96,7 @@ function makeDeps(): Parameters<typeof setupAcpChatListeners>[0] {
     addActivity: (id, a) => store.addActivity(id, a),
     completeLastActivity: (id) => store.completeLastActivity(id),
     completeAllActivities: (id) => store.completeAllActivities(id),
+    setLastActivityApprovalMode: (id, mode) => store.setLastActivityApprovalMode(id, mode),
     appendTextSegment: (id, t) => store.appendTextSegment(id, t),
     appendThinkingSegment: (id, t) => store.appendThinkingSegment(id, t),
     pushSegment: (id, seg) => { recordedSegments.push(seg); store.pushSegment(id, seg); },

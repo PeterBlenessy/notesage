@@ -25,6 +25,12 @@ export interface DelegationActivity {
    * Full replacement per ACP spec — newer values overwrite the previous array.
    */
   content?: import('@/lib/ai/types').ToolCallContentItem[];
+  /**
+   * How this tool call was authorized (auto / user / denied). Recorded so the
+   * Activity panel can visually distinguish auto-approved silent calls from
+   * user-approved or denied ones. Optional for legacy/non-tool activities.
+   */
+  approvalMode?: import('@/lib/ai/types').ActivityApprovalMode;
 }
 
 export interface Comment {

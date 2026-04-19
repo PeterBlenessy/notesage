@@ -43,8 +43,14 @@ vi.mock('@/lib/tauri', () => ({
   FileEntry: {},
 }));
 
+// Symbol search mock — captures the `scope` prop so tests can assert
+// scoped vs "all projects" propagation.
+const symbolSearchSpy = vi.fn();
 vi.mock('@/components/SymbolSearchResults', () => ({
-  SymbolSearchResults: () => null,
+  SymbolSearchResults: (props: { scope?: unknown }) => {
+    symbolSearchSpy(props);
+    return null;
+  },
 }));
 
 vi.mock('@/lib/command-palette', () => ({
@@ -66,6 +72,13 @@ vi.mock('@/lib/command-palette', () => ({
   }),
   getPlaceholder: vi.fn(() => 'Search files and commands...'),
   getSearchPaths: vi.fn(() => []),
+  getAllSearchPaths: vi.fn(() => ['/project-a', '/project-b']),
+  getDefaultPaletteScope: vi.fn(() => 'all'),
+  resolveSearchPaths: vi.fn((scope: unknown) => {
+    if (scope === 'all') return ['/project-a', '/project-b'];
+    if (Array.isArray(scope)) return scope as string[];
+    return ['/project-a', '/project-b'];
+  }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -117,6 +130,28 @@ vi.mock('@/stores/settings-store', () => {
       { getState: () => store },
     ),
   };
+});
+
+// Mutable chat-store mock — tests tweak `projectPaths` to drive the palette's
+// default scope.
+const chatStoreState: {
+  conversations: { id: string; projectPaths: string[] }[];
+  activeConversationId: string | null;
+} = {
+  conversations: [],
+  activeConversationId: null,
+};
+
+vi.mock('@/stores/chat-store', () => {
+  const selectProjectPaths = (s: typeof chatStoreState) => {
+    if (!s.activeConversationId) return [];
+    return s.conversations.find((c) => c.id === s.activeConversationId)?.projectPaths ?? [];
+  };
+  const useChatStore = Object.assign(
+    vi.fn((selector: (s: typeof chatStoreState) => unknown) => selector(chatStoreState)),
+    { getState: () => chatStoreState },
+  );
+  return { useChatStore, selectProjectPaths };
 });
 
 // ---------------------------------------------------------------------------
@@ -227,5 +262,113 @@ describe('CommandPalette', () => {
       },
       { timeout: 2000 },
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Scope behaviour (task #25)
+// ---------------------------------------------------------------------------
+
+describe('CommandPalette — search scope', () => {
+  beforeEach(() => {
+    registerDefaultHandlers();
+    symbolSearchSpy.mockClear();
+    chatStoreState.conversations = [];
+    chatStoreState.activeConversationId = null;
+  });
+
+  it("hides the scope toggle when no projects are selected (defaults to 'all')", () => {
+    renderWithProviders(<CommandPalette {...defaultProps()} />);
+    // No selection → no "scoped" or "all projects" chip to toggle.
+    expect(screen.queryByRole('switch', { name: /search all projects/i })).toBeNull();
+  });
+
+  it('shows the scope toggle in "scoped" state when the active conversation has selected projects', () => {
+    chatStoreState.conversations = [
+      { id: 'c1', projectPaths: ['/project-a'] },
+    ];
+    chatStoreState.activeConversationId = 'c1';
+
+    renderWithProviders(<CommandPalette {...defaultProps()} />);
+    const toggle = screen.getByRole('switch', { name: /search all projects/i });
+    expect(toggle).toBeTruthy();
+    // Default: aria-checked false, label reads "scoped" (narrow scope).
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(toggle.textContent).toMatch(/scoped/i);
+  });
+
+  it('toggle flips label to "all projects" and flags aria-checked=true', async () => {
+    chatStoreState.conversations = [
+      { id: 'c1', projectPaths: ['/project-a'] },
+    ];
+    chatStoreState.activeConversationId = 'c1';
+
+    renderWithProviders(<CommandPalette {...defaultProps()} />);
+    const toggle = screen.getByRole('switch', { name: /search all projects/i });
+    const { fireEvent } = await import('@testing-library/react');
+    fireEvent.click(toggle);
+
+    // After clicking the label flips.
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(toggle.textContent).toMatch(/all projects/i);
+  });
+
+  it('propagates scoped project paths to SymbolSearchResults for tags mode', async () => {
+    chatStoreState.conversations = [
+      { id: 'c1', projectPaths: ['/project-a'] },
+    ];
+    chatStoreState.activeConversationId = 'c1';
+
+    renderWithProviders(<CommandPalette {...defaultProps({ initialMode: 'tags' })} />);
+    // Last call captures the scope the palette passed in tags mode.
+    const calls = symbolSearchSpy.mock.calls;
+    const lastCall = calls[calls.length - 1]?.[0];
+    expect(lastCall?.scope).toEqual(['/project-a']);
+  });
+
+  it("propagates 'all' scope to SymbolSearchResults after toggle is flipped", async () => {
+    chatStoreState.conversations = [
+      { id: 'c1', projectPaths: ['/project-a'] },
+    ];
+    chatStoreState.activeConversationId = 'c1';
+
+    renderWithProviders(<CommandPalette {...defaultProps({ initialMode: 'tags' })} />);
+    const toggle = screen.getByRole('switch', { name: /search all projects/i });
+    const { fireEvent } = await import('@testing-library/react');
+    fireEvent.click(toggle);
+
+    // After toggle ON the palette re-renders SymbolSearchResults with scope 'all'.
+    const calls = symbolSearchSpy.mock.calls;
+    const lastCall = calls[calls.length - 1]?.[0];
+    expect(lastCall?.scope).toBe('all');
+  });
+
+  it("scope stays 'all' by default across @ and ? prefixes when nothing is selected", async () => {
+    // No selection means 'all' for every mode.
+    renderWithProviders(<CommandPalette {...defaultProps({ initialMode: 'mentions' })} />);
+    const calls = symbolSearchSpy.mock.calls;
+    const lastCall = calls[calls.length - 1]?.[0];
+    expect(lastCall?.scope).toBe('all');
+  });
+
+  it('passes selected project paths to research (?) index queries', async () => {
+    chatStoreState.conversations = [
+      { id: 'c1', projectPaths: ['/project-a', '/project-b'] },
+    ];
+    chatStoreState.activeConversationId = 'c1';
+    const { tauriApi } = await import('@/lib/tauri');
+
+    renderWithProviders(<CommandPalette {...defaultProps({ initialMode: 'research' })} />);
+    const { waitFor } = await import('@testing-library/react');
+    // Debounced 300ms — give it time.
+    await waitFor(
+      () => {
+        expect(tauriApi.indexSearchResearch).toHaveBeenCalled();
+      },
+      { timeout: 2000 },
+    );
+    const calls = vi.mocked(tauriApi.indexSearchResearch).mock.calls;
+    const lastCall = calls[calls.length - 1];
+    expect(lastCall?.[0]).toEqual(['/project-a', '/project-b']);
   });
 });

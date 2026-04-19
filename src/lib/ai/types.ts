@@ -6,12 +6,28 @@ export interface Citation {
   citedText: string;
 }
 
+/**
+ * Approval mode for a tool invocation — recorded on the activity so the
+ * user has a visible trail of *how* a tool call was authorized.
+ *
+ * - `'auto'`: auto-approved by the built-in auto-allow list (read-only tools)
+ *             or by a persisted/session "always allow" grant.
+ * - `'user'`: explicitly approved by the user via a permission card.
+ * - `'denied'`: blocked by path filter, by the user's deny action, or by
+ *               `requireAllToolConfirmations` being on and the user denying.
+ *
+ * When `undefined` (legacy activities), the UI falls back to no badge.
+ */
+export type ActivityApprovalMode = 'auto' | 'user' | 'denied';
+
 export interface AgentActivity {
   kind: string;
   label: string;
   detail?: string;
   status: 'running' | 'done';
   timestamp: number;
+  /** How this tool call was authorized. Optional for backward compat with old messages. */
+  approvalMode?: ActivityApprovalMode;
 }
 
 export interface ToolDefinition {
@@ -43,6 +59,8 @@ export interface ToolCallActivity {
   error?: string;
   startedAt: number;
   completedAt?: number;
+  /** How this tool call was authorized (auto / user / denied). */
+  approvalMode?: ActivityApprovalMode;
 }
 
 export interface ImageAttachment {

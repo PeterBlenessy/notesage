@@ -11,7 +11,7 @@ import { flushSync } from "react-dom";
 import { cn } from "@/lib/utils";
 import { Hash } from "lucide-react";
 import { tauriApi } from "@/lib/tauri";
-import { getSearchPaths } from "@/lib/command-palette";
+import { getAllSearchPaths } from "@/lib/command-palette";
 
 interface TagItem {
   name: string;
@@ -197,7 +197,7 @@ export const TagSuggestion = Extension.create({
         },
         items: async ({ query }: { query: string }): Promise<TagItem[]> => {
           try {
-            const paths = getSearchPaths();
+            const paths = getAllSearchPaths();
             const tags = await tauriApi.indexTags(paths, query || undefined);
             return tags.slice(0, 20).map((t) => ({ name: t.tag }));
           } catch {

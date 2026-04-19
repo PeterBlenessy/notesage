@@ -111,6 +111,12 @@ interface ChatStore {
   addActivity: (messageTimestamp: number, activity: AgentActivity) => void;
   completeLastActivity: (messageTimestamp: number) => void;
   completeAllActivities: (messageTimestamp: number) => void;
+  /**
+   * Patch the `approvalMode` on the most recent running activity (or last overall).
+   * Used when a permission decision arrives after the activity is created
+   * (ACP path: activity added on `tool_call`, decision made on `acp-permission-request`).
+   */
+  setLastActivityApprovalMode: (messageTimestamp: number, mode: import('@/lib/ai/types').ActivityApprovalMode) => void;
   addToolCallsToMessage: (messageTimestamp: number, toolCalls: ToolCall[]) => void;
   addToolCallActivity: (messageTimestamp: number, activity: ToolCallActivity) => void;
   updateToolCallActivity: (messageTimestamp: number, toolCallId: string, updates: Partial<ToolCallActivity>) => void;
@@ -478,6 +484,22 @@ export const useChatStore = create<ChatStore>()(
             const activities = msg.activities.map((a) =>
               a.status === 'running' ? { ...a, status: 'done' as const } : a
             );
+            return { ...msg, activities };
+          }),
+        }))),
+
+      setLastActivityApprovalMode: (messageTimestamp, mode) =>
+        set((state) => updateActiveConv(state, (c) => ({
+          ...c,
+          messages: c.messages.map((msg) => {
+            if (msg.timestamp !== messageTimestamp || !msg.activities || msg.activities.length === 0) return msg;
+            const activities = [...msg.activities];
+            let targetIdx = -1;
+            for (let i = activities.length - 1; i >= 0; i--) {
+              if (activities[i].status === 'running') { targetIdx = i; break; }
+            }
+            if (targetIdx === -1) targetIdx = activities.length - 1;
+            activities[targetIdx] = { ...activities[targetIdx], approvalMode: mode };
             return { ...msg, activities };
           }),
         }))),

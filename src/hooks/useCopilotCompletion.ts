@@ -7,6 +7,7 @@ import { useRoutingStore } from '@/stores/routing-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useEditorStore } from '@/stores/editor-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
 import {
   setGhostText,
   clearGhostText,
@@ -34,7 +35,12 @@ export function useCopilotCompletion(editor: Editor | null) {
   const connection = rawConnection?.authMethod === 'agent_managed' ? rawConnection : null;
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
-  const workingDir = projects[0]?.path ?? null;
+  // Working directory for the LSP must reflect the chat footer's project
+  // selection (Track 1 isolation — task #15). Falling back to the first
+  // workspace folder only when no conversation is active keeps the LSP
+  // bootable before any chat is opened.
+  const selectedProjectPaths = useChatStore(selectProjectPaths);
+  const workingDir = selectedProjectPaths[0] ?? projects[0]?.path ?? null;
 
   // lspReady as state so dependent effects re-run when it changes
   const [lspReady, setLspReady] = useState(false);
@@ -50,6 +56,12 @@ export function useCopilotCompletion(editor: Editor | null) {
   // shutting down, and are harmless (no data loss, no user impact).
   // -------------------------------------------------------------------------
 
+  // Track the last workingDir we sent to the LSP so we can detect changes
+  // and notify via `workspace/didChangeWorkspaceFolders`. The backend's
+  // `copilot_lsp_start` is idempotent: calling it again with a new
+  // directory emits the notification rather than restarting the process.
+  const sentWorkingDir = useRef<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -58,11 +70,16 @@ export function useCopilotCompletion(editor: Editor | null) {
       if (lspReady) {
         invoke('copilot_lsp_stop').catch(() => {});
         setLspReady(false);
+        sentWorkingDir.current = null;
       }
       return;
     }
 
-    // Start LSP
+    // Start LSP — or, if already running, notify of workspace folder change.
+    // Task #15 (Track 1 isolation): the working directory must follow the
+    // chat footer's project selection. When the selection changes while the
+    // LSP is up, we re-invoke `copilot_lsp_start` so the backend emits
+    // `workspace/didChangeWorkspaceFolders`.
     if (!lspReady) {
       // Reset doc tracking — new LSP session has no open documents
       openDocUri.current = null;
@@ -71,23 +88,37 @@ export function useCopilotCompletion(editor: Editor | null) {
       invoke('copilot_lsp_start', { workingDirectory: workingDir })
         .then(() => {
           if (!cancelled) {
+            sentWorkingDir.current = workingDir;
             setLspReady(true);
           }
         })
         .catch((err) => {
           log.error('copilot', 'Failed to start LSP', err);
         });
+    } else if (sentWorkingDir.current !== workingDir) {
+      sentWorkingDir.current = workingDir;
+      invoke('copilot_lsp_start', { workingDirectory: workingDir }).catch((err) => {
+        log.error('copilot', 'Failed to update LSP workspace folder', err);
+      });
     }
 
     return () => {
       cancelled = true;
-      if (lspReady) {
-        invoke('copilot_lsp_stop').catch(() => {});
-        setLspReady(false);
-      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connection?.id, workingDir]);
+  }, [connection?.id, workingDir, lspReady]);
+
+  // Stop the LSP when the connection changes or the hook unmounts.
+  // Pulled out of the start effect so a working-directory change does NOT
+  // trigger a stop — the backend handles folder updates in-place.
+  useEffect(() => {
+    if (!connection) return;
+    return () => {
+      invoke('copilot_lsp_stop').catch(() => {});
+      setLspReady(false);
+      sentWorkingDir.current = null;
+    };
+  }, [connection?.id]);
 
   // -------------------------------------------------------------------------
   // Document sync: didOpen/didClose/didFocus on tab changes

@@ -304,6 +304,97 @@ describe('completeLastActivity', () => {
 });
 
 // ===========================================================================
+// setLastActivityApprovalMode
+// ===========================================================================
+
+describe('setLastActivityApprovalMode', () => {
+  it('patches approvalMode on the most recent running activity', () => {
+    useActivityStore.getState().addTask(makeTask({ id: 'task-1' }));
+    useActivityStore.getState().appendActivity('task-1', makeActivity({ label: 'a1', status: 'done' }));
+    useActivityStore.getState().appendActivity('task-1', makeActivity({ label: 'a2', status: 'running' }));
+
+    useActivityStore.getState().setLastActivityApprovalMode('task-1', 'user');
+
+    const activities = useActivityStore.getState().tasks[0].activities;
+    // Patched the running one, not the earlier completed one
+    expect(activities[0].approvalMode).toBeUndefined();
+    expect(activities[1].approvalMode).toBe('user');
+  });
+
+  it('falls back to the last activity when none are running', () => {
+    useActivityStore.getState().addTask(makeTask({ id: 'task-1' }));
+    useActivityStore.getState().appendActivity('task-1', makeActivity({ label: 'a1', status: 'done' }));
+    useActivityStore.getState().appendActivity('task-1', makeActivity({ label: 'a2', status: 'done' }));
+
+    useActivityStore.getState().setLastActivityApprovalMode('task-1', 'denied');
+
+    const activities = useActivityStore.getState().tasks[0].activities;
+    expect(activities[0].approvalMode).toBeUndefined();
+    expect(activities[1].approvalMode).toBe('denied');
+  });
+
+  it('supports all three approval modes', () => {
+    useActivityStore.getState().addTask(makeTask({ id: 't-auto' }));
+    useActivityStore.getState().appendActivity('t-auto', makeActivity());
+    useActivityStore.getState().setLastActivityApprovalMode('t-auto', 'auto');
+
+    useActivityStore.getState().addTask(makeTask({ id: 't-user' }));
+    useActivityStore.getState().appendActivity('t-user', makeActivity());
+    useActivityStore.getState().setLastActivityApprovalMode('t-user', 'user');
+
+    useActivityStore.getState().addTask(makeTask({ id: 't-den' }));
+    useActivityStore.getState().appendActivity('t-den', makeActivity());
+    useActivityStore.getState().setLastActivityApprovalMode('t-den', 'denied');
+
+    const all = useActivityStore.getState().tasks;
+    expect(all.find((t) => t.id === 't-auto')?.activities[0].approvalMode).toBe('auto');
+    expect(all.find((t) => t.id === 't-user')?.activities[0].approvalMode).toBe('user');
+    expect(all.find((t) => t.id === 't-den')?.activities[0].approvalMode).toBe('denied');
+  });
+
+  it('does nothing when the task has no activities', () => {
+    useActivityStore.getState().addTask(makeTask({ id: 'empty' }));
+    useActivityStore.getState().setLastActivityApprovalMode('empty', 'auto');
+    expect(useActivityStore.getState().tasks[0].activities).toEqual([]);
+  });
+
+  it('does nothing for a non-existent task', () => {
+    useActivityStore.getState().addTask(makeTask({ id: 'task-1' }));
+    useActivityStore.getState().appendActivity('task-1', makeActivity());
+    useActivityStore.getState().setLastActivityApprovalMode('nonexistent', 'auto');
+    // Untouched
+    expect(useActivityStore.getState().tasks[0].activities[0].approvalMode).toBeUndefined();
+  });
+});
+
+// ===========================================================================
+// approvalMode is preserved on appendActivity / persistence
+// ===========================================================================
+
+describe('approvalMode preservation', () => {
+  it('appendActivity retains approvalMode passed in', () => {
+    useActivityStore.getState().addTask(makeTask({ id: 'task-1' }));
+    useActivityStore.getState().appendActivity('task-1', {
+      ...makeActivity({ label: 'ReadFile' }),
+      approvalMode: 'auto',
+    });
+    useActivityStore.getState().appendActivity('task-1', {
+      ...makeActivity({ label: 'WriteFile' }),
+      approvalMode: 'user',
+    });
+    useActivityStore.getState().appendActivity('task-1', {
+      ...makeActivity({ label: 'Denied', status: 'error' }),
+      approvalMode: 'denied',
+    });
+
+    const activities = useActivityStore.getState().tasks[0].activities;
+    expect(activities[0].approvalMode).toBe('auto');
+    expect(activities[1].approvalMode).toBe('user');
+    expect(activities[2].approvalMode).toBe('denied');
+  });
+});
+
+// ===========================================================================
 // completeAllActivities
 // ===========================================================================
 

@@ -1,15 +1,28 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { tauriApi } from '@/lib/tauri';
-import type { SkillEntry, SkillToolEntry, AgentInstruction, AgentEntry } from '@/lib/tauri';
+import type {
+  SkillEntry as TauriSkillEntry,
+  SkillToolEntry,
+  AgentInstruction as TauriAgentInstruction,
+  AgentEntry as TauriAgentEntry,
+} from '@/lib/tauri';
 import type { ToolDefinition } from '@/lib/ai/types';
 import { log } from '@/lib/logger';
 
 
 // Re-export types from tauri.ts for consumers that import from skill-store
-export type { SkillEntry, SkillToolEntry, SkillContent, ScriptResult, AgentInstruction, AgentEntry, AgentContent } from '@/lib/tauri';
+export type { SkillToolEntry, SkillContent, ScriptResult, AgentContent } from '@/lib/tauri';
 export type { ArgMapping, ArgMappingType } from '@/lib/tauri';
 export type { ToolDefinition } from '@/lib/ai/types';
+
+// Augment backend-sourced entries with an optional `projectRoot` the store
+// attaches at scan time. Null/undefined = global (not project-scoped). Scoped
+// getters filter on this field against `selectedProjectPaths` to honour
+// per-project isolation (Task #18).
+export type SkillEntry = TauriSkillEntry & { projectRoot?: string | null };
+export type AgentEntry = TauriAgentEntry & { projectRoot?: string | null };
+export type AgentInstruction = TauriAgentInstruction & { projectRoot?: string | null };
 
 // --- Built-in tools for local AI tool calling ---
 
@@ -193,29 +206,51 @@ interface SkillStore {
 
   // --- Skill methods ---
 
-  /** Get active skills: enabled, respecting hierarchy (same-name: project > global > external). */
-  getActiveSkills: () => SkillEntry[];
+  /**
+   * Get active skills: enabled, respecting hierarchy (same-name: project > global > external).
+   *
+   * If `selectedProjectPaths` is provided, project-scoped skills are filtered
+   * to only those matching. Global skills are always included. If omitted,
+   * all skills are returned (back-compat for UI display). System-prompt callers
+   * must always pass an explicit array to opt into isolation.
+   */
+  getActiveSkills: (selectedProjectPaths?: string[]) => SkillEntry[];
 
-  /** Get a skill by name from active skills. */
+  /** Get a skill by name from active skills (unscoped — back-compat). */
   getSkillByName: (name: string) => SkillEntry | undefined;
 
-  /** Format active skill descriptions for AI system message injection. */
-  getSkillDescriptionsForPrompt: () => string;
+  /**
+   * Format active skill descriptions for AI system message injection.
+   * Scoped to `selectedProjectPaths` — project A's skills do not leak into project B.
+   */
+  getSkillDescriptionsForPrompt: (selectedProjectPaths?: string[]) => string;
 
-  /** Get Notesage-specific skill descriptions only (for ACP injection). */
-  getNotesageSkillDescriptionsForPrompt: () => string;
+  /** Get Notesage-specific skill descriptions only (for ACP injection), scoped. */
+  getNotesageSkillDescriptionsForPrompt: (selectedProjectPaths?: string[]) => string;
 
-  /** Get merged agent instructions concatenated by priority order. */
-  getMergedAgentInstructions: () => string;
+  /**
+   * Get merged agent instructions concatenated by priority order.
+   * Scoped to `selectedProjectPaths` — project A's CLAUDE.md/AGENTS.md do not leak into project B.
+   */
+  getMergedAgentInstructions: (selectedProjectPaths?: string[]) => string;
 
-  /** Get Notesage-specific agent instructions only (for ACP injection). */
-  getNotesageAgentInstructions: () => string;
+  /** Get Notesage-specific agent instructions only (for ACP injection), scoped. */
+  getNotesageAgentInstructions: (selectedProjectPaths?: string[]) => string;
 
-  /** Scan for skills in the given base directories. */
-  scanSkills: (baseDirs: string[]) => Promise<void>;
+  /**
+   * Scan for skills. Accepts a legacy flat array (all entries treated as global)
+   * or a per-project form that annotates entries with their projectRoot.
+   */
+  scanSkills: (
+    input: string[] | { globalDirs: string[]; byProject: Record<string, string[]> },
+  ) => Promise<void>;
 
-  /** Scan for agent instruction files. */
-  scanAgentInstructions: (projectRoot: string | null, providers: string[]) => Promise<void>;
+  /**
+   * Scan for agent instruction files. Pass zero or more project roots plus the
+   * active provider list. Project-scoped entries are annotated with their root
+   * so scoped getters can filter.
+   */
+  scanAgentInstructions: (projectRoots: string[], providers: string[]) => Promise<void>;
 
   /** Toggle a skill's enabled state. */
   toggleSkill: (skillPath: string, enabled: boolean) => void;
@@ -225,11 +260,15 @@ interface SkillStore {
 
   // --- Agent methods ---
 
-  /** Get hierarchy-resolved agents (same-name: project > global > bundled > external). */
-  getActiveAgents: () => AgentEntry[];
+  /**
+   * Get hierarchy-resolved agents (same-name: project > global > bundled > external).
+   * Scoped: when `selectedProjectPaths` is provided, project-scoped agents are
+   * filtered to only those matching. If omitted, returns all (back-compat for UI).
+   */
+  getActiveAgents: (selectedProjectPaths?: string[]) => AgentEntry[];
 
   /** Get user-invocable agents (filtered by user_invocable !== false and enabled). */
-  getUserInvocableAgents: () => AgentEntry[];
+  getUserInvocableAgents: (selectedProjectPaths?: string[]) => AgentEntry[];
 
   /** Get a specific agent by name from hierarchy-resolved agents. */
   getAgentByName: (name: string) => AgentEntry | undefined;
@@ -237,8 +276,10 @@ interface SkillStore {
   /** Get the currently active agent entry. Falls back to general-assistant. */
   getActiveAgent: () => AgentEntry | undefined;
 
-  /** Scan for addressable agent files. */
-  scanAgents: (baseDirs: string[]) => Promise<void>;
+  /** Scan for addressable agent files. Accepts legacy flat or per-project form. */
+  scanAgents: (
+    input: string[] | { globalDirs: string[]; byProject: Record<string, string[]> },
+  ) => Promise<void>;
 
   /** Set the active agent by name. */
   setActiveAgent: (name: string) => void;
@@ -279,6 +320,29 @@ function getSourcePriority(source: string): number {
   return SOURCE_PRIORITY[source as SkillSource] ?? 1;
 }
 
+/**
+ * Filter entries by project scope for Task #18 isolation.
+ *
+ * - Entries with `projectRoot == null` (or unannotated, legacy) are treated as
+ *   global and always included.
+ * - Entries with a `projectRoot` string are included only if that root is in
+ *   `selectedProjectPaths`.
+ * - When `selectedProjectPaths` is `undefined` (back-compat for UI callers),
+ *   no scoping is applied. System-prompt callers must always pass an explicit
+ *   (possibly empty) array to opt into isolation.
+ */
+function filterByScope<T extends { projectRoot?: string | null }>(
+  entries: T[],
+  selectedProjectPaths: string[] | undefined,
+): T[] {
+  if (selectedProjectPaths === undefined) return entries;
+  const selected = new Set(selectedProjectPaths);
+  return entries.filter((e) => {
+    if (e.projectRoot == null) return true; // global
+    return selected.has(e.projectRoot);
+  });
+}
+
 export const useSkillStore = create<SkillStore>()(
   persist(
     (set, get) => ({
@@ -293,12 +357,13 @@ export const useSkillStore = create<SkillStore>()(
       activeAgentName: '',
       agentEnabledOverrides: {},
 
-      getActiveSkills: () => {
+      getActiveSkills: (selectedProjectPaths) => {
         const { skills, enabledOverrides } = get();
+        const scoped = filterByScope(skills, selectedProjectPaths);
 
         // Group by name, keep highest priority
         const byName = new Map<string, SkillEntry>();
-        for (const skill of skills) {
+        for (const skill of scoped) {
           const existing = byName.get(skill.name);
           if (!existing || getSourcePriority(skill.source) > getSourcePriority(existing.source)) {
             byName.set(skill.name, skill);
@@ -317,8 +382,8 @@ export const useSkillStore = create<SkillStore>()(
         return get().getActiveSkills().find((s) => s.name === name);
       },
 
-      getSkillDescriptionsForPrompt: () => {
-        const active = get().getActiveSkills();
+      getSkillDescriptionsForPrompt: (selectedProjectPaths) => {
+        const active = get().getActiveSkills(selectedProjectPaths);
         if (active.length === 0) return '';
 
         // Exclude skills that have been converted to tools (they're in the tools array now)
@@ -333,8 +398,8 @@ export const useSkillStore = create<SkillStore>()(
         return `\n\nAvailable skills:\n${lines.join('\n')}`;
       },
 
-      getNotesageSkillDescriptionsForPrompt: () => {
-        const active = get().getActiveSkills().filter(
+      getNotesageSkillDescriptionsForPrompt: (selectedProjectPaths) => {
+        const active = get().getActiveSkills(selectedProjectPaths).filter(
           (s) => s.source === 'notesage-project' || s.source === 'notesage-global'
         );
         if (active.length === 0) return '';
@@ -345,20 +410,22 @@ export const useSkillStore = create<SkillStore>()(
         return `\n\n<notesage-skills>\nThe user has Notesage skills installed. To use a skill, read its SKILL.md file for instructions.\n\n${lines.join('\n')}\n</notesage-skills>`;
       },
 
-      getMergedAgentInstructions: () => {
+      getMergedAgentInstructions: (selectedProjectPaths) => {
         const { agentInstructions } = get();
-        if (agentInstructions.length === 0) return '';
+        const scoped = filterByScope(agentInstructions, selectedProjectPaths);
+        if (scoped.length === 0) return '';
 
-        return agentInstructions
+        return scoped
           .slice()
           .sort((a, b) => a.priority - b.priority)
           .map((i) => i.content)
           .join('\n\n');
       },
 
-      getNotesageAgentInstructions: () => {
+      getNotesageAgentInstructions: (selectedProjectPaths) => {
         const { agentInstructions } = get();
-        const notesageOnly = agentInstructions.filter(
+        const scoped = filterByScope(agentInstructions, selectedProjectPaths);
+        const notesageOnly = scoped.filter(
           (i) => i.source_type === 'notesage-project' || i.source_type === 'notesage-global'
         );
         if (notesageOnly.length === 0) return '';
@@ -370,21 +437,60 @@ export const useSkillStore = create<SkillStore>()(
           .join('\n\n');
       },
 
-      scanSkills: async (baseDirs) => {
+      scanSkills: async (input) => {
         set({ isScanning: true });
         try {
-          const skills = await tauriApi.discoverSkills(baseDirs);
-          set({ skills, lastScanTimestamp: Date.now(), isScanning: false });
+          // Legacy flat-array form → treat all as global (no project annotation).
+          if (Array.isArray(input)) {
+            const skills = await tauriApi.discoverSkills(input);
+            set({ skills, lastScanTimestamp: Date.now(), isScanning: false });
+            return;
+          }
+
+          // Per-project form: scan global + each project separately, annotate projectRoot.
+          const { globalDirs, byProject } = input;
+          const globalSkills = globalDirs.length > 0 ? await tauriApi.discoverSkills(globalDirs) : [];
+          const projectSkills: SkillEntry[] = [];
+          for (const [projectRoot, dirs] of Object.entries(byProject)) {
+            if (dirs.length === 0) continue;
+            const discovered = await tauriApi.discoverSkills(dirs);
+            for (const s of discovered) {
+              projectSkills.push({ ...s, projectRoot });
+            }
+          }
+          // Annotate global explicitly with null so `filterByScope` treats as global.
+          const annotatedGlobal: SkillEntry[] = globalSkills.map((s) => ({ ...s, projectRoot: null }));
+          set({
+            skills: [...annotatedGlobal, ...projectSkills],
+            lastScanTimestamp: Date.now(),
+            isScanning: false,
+          });
         } catch (e) {
-          log.error('skills', `Skill discovery failed for dirs: ${baseDirs.join(', ')}`, e);
+          log.error('skills', `Skill discovery failed`, e);
           set({ isScanning: false });
         }
       },
 
-      scanAgentInstructions: async (projectRoot, providers) => {
+      scanAgentInstructions: async (projectRoots, providers) => {
         try {
-          const agentInstructions = await tauriApi.readAgentInstructions(projectRoot, providers);
-          set({ agentInstructions });
+          const all: AgentInstruction[] = [];
+          // Always run once with projectRoot=null to pick up the global
+          // ~/.notesage/agents.md. Project-scoped instructions get their
+          // projectRoot annotation in the per-project pass below.
+          const globalOnly = await tauriApi.readAgentInstructions(null, providers);
+          for (const i of globalOnly) all.push({ ...i, projectRoot: null });
+
+          for (const root of projectRoots) {
+            if (!root) continue;
+            const perProject = await tauriApi.readAgentInstructions(root, providers);
+            for (const i of perProject) {
+              // Skip the global entry the backend always includes; we already
+              // captured it in the null-root pass above.
+              if (i.source_type === 'notesage-global') continue;
+              all.push({ ...i, projectRoot: root });
+            }
+          }
+          set({ agentInstructions: all });
         } catch (e) {
           console.error('Agent instruction discovery failed:', e);
         }
@@ -399,12 +505,13 @@ export const useSkillStore = create<SkillStore>()(
 
       // --- Agent methods ---
 
-      getActiveAgents: () => {
+      getActiveAgents: (selectedProjectPaths) => {
         const { agents, agentEnabledOverrides } = get();
+        const scoped = filterByScope(agents, selectedProjectPaths);
 
         // Group by name, keep highest priority
         const byName = new Map<string, AgentEntry>();
-        for (const agent of agents) {
+        for (const agent of scoped) {
           const existing = byName.get(agent.name);
           if (!existing || getSourcePriority(agent.source) > getSourcePriority(existing.source)) {
             byName.set(agent.name, agent);
@@ -418,8 +525,8 @@ export const useSkillStore = create<SkillStore>()(
         });
       },
 
-      getUserInvocableAgents: () => {
-        return get().getActiveAgents().filter((a) => a.user_invocable !== false);
+      getUserInvocableAgents: (selectedProjectPaths) => {
+        return get().getActiveAgents(selectedProjectPaths).filter((a) => a.user_invocable !== false);
       },
 
       getAgentByName: (name) => {
@@ -432,12 +539,28 @@ export const useSkillStore = create<SkillStore>()(
         return get().getAgentByName(activeAgentName);
       },
 
-      scanAgents: async (baseDirs) => {
+      scanAgents: async (input) => {
         try {
-          const agents = await tauriApi.discoverAgents(baseDirs);
-          set({ agents });
+          if (Array.isArray(input)) {
+            const agents = await tauriApi.discoverAgents(input);
+            set({ agents });
+            return;
+          }
+
+          const { globalDirs, byProject } = input;
+          const globalAgents = globalDirs.length > 0 ? await tauriApi.discoverAgents(globalDirs) : [];
+          const projectAgents: AgentEntry[] = [];
+          for (const [projectRoot, dirs] of Object.entries(byProject)) {
+            if (dirs.length === 0) continue;
+            const discovered = await tauriApi.discoverAgents(dirs);
+            for (const a of discovered) {
+              projectAgents.push({ ...a, projectRoot });
+            }
+          }
+          const annotatedGlobal: AgentEntry[] = globalAgents.map((a) => ({ ...a, projectRoot: null }));
+          set({ agents: [...annotatedGlobal, ...projectAgents] });
         } catch (e) {
-          log.error('skills', `Agent discovery failed for dirs: ${baseDirs.join(', ')}`, e);
+          log.error('skills', `Agent discovery failed`, e);
         }
       },
 

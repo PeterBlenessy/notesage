@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { tauriApi } from '@/lib/tauri';
-import { useChatStore } from '@/stores/chat-store';
+import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useSkillStore } from '@/stores/skill-store';
 import { useRoutingStore } from '@/stores/routing-store';
@@ -70,11 +70,17 @@ export function useCopilotChat({
     && effectiveConnection.credentials.agentBinary === 'copilot-language-server';
 
   const projects = useWorkspaceStore((s) => s.projects);
-  const workingDir = projects[0]?.path ?? null;
+  // Working directory for the Copilot LSP must reflect the chat footer's
+  // project selection (Track 1 isolation — task #15). The first workspace
+  // folder is only a fallback for when no chat is active yet, so the LSP
+  // can still come up before the user opens a conversation.
+  const selectedProjectPaths = useChatStore(selectProjectPaths);
+  const workingDir = selectedProjectPaths[0] ?? projects[0]?.path ?? null;
 
   // Ensure the Copilot LSP process is running when this connection is active.
   // copilot_lsp_start is safe to call when already running — it reuses the
-  // existing process and updates the workspace folder.
+  // existing process and emits `workspace/didChangeWorkspaceFolders` when
+  // the directory differs from the last one seen by the backend.
   useEffect(() => {
     if (!isCopilotLsp || !workingDir) return;
     tauriApi.copilotLspStart(workingDir).catch((err) => {

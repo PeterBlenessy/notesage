@@ -138,6 +138,7 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   chatHistoryLimit: 0,
   skillManagement: false,
   toolCallingEnabled: true,
+  requireAllToolConfirmations: false,
   logLevel: 'warn',
   autoCheckUpdates: true,
   lastUpdateCheck: null,
@@ -205,6 +206,7 @@ describe('initial state defaults', () => {
     expect(s.chatHistoryLimit).toBe(0);
     expect(s.skillManagement).toBe(false);
     expect(s.toolCallingEnabled).toBe(true);
+    expect(s.requireAllToolConfirmations).toBe(false);
     expect(s.logLevel).toBe('warn');
     expect(s.autoCheckUpdates).toBe(true);
     expect(s.lastUpdateCheck).toBeNull();
@@ -369,6 +371,14 @@ describe('boolean setters', () => {
     expect(useSettingsStore.getState().toolCallingEnabled).toBe(false);
     useSettingsStore.getState().setToolCallingEnabled(true);
     expect(useSettingsStore.getState().toolCallingEnabled).toBe(true);
+  });
+
+  it('setRequireAllToolConfirmations defaults to false and can be toggled', () => {
+    expect(useSettingsStore.getState().requireAllToolConfirmations).toBe(false);
+    useSettingsStore.getState().setRequireAllToolConfirmations(true);
+    expect(useSettingsStore.getState().requireAllToolConfirmations).toBe(true);
+    useSettingsStore.getState().setRequireAllToolConfirmations(false);
+    expect(useSettingsStore.getState().requireAllToolConfirmations).toBe(false);
   });
 
   it('setAutoCheckUpdates', () => {

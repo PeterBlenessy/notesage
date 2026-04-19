@@ -339,7 +339,7 @@ export function ChatPanel() {
       </div>
 
       {chatView === 'history' ? (
-        <ChatHistoryView onSelectConversation={handleSelectConversation} />
+        <ChatHistoryView onSelectConversation={handleSelectConversation} selectedProjectPaths={selectedProjectPaths} />
       ) : (
       <>
 

@@ -11,8 +11,10 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { useEditorStore } from '@/stores/editor-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useChatStore } from '@/stores/chat-store';
 import type { Connection } from '@/lib/ai/connections';
 import type { Editor } from '@tiptap/core';
+import type { Conversation } from '@/stores/chat-store';
 
 // ---------------------------------------------------------------------------
 // Mock modules
@@ -179,6 +181,33 @@ function resetStores() {
   useSettingsStore.setState({
     inlineCompletionsDisabled: false,
   });
+  useChatStore.setState({ conversations: [], activeConversationId: null });
+}
+
+/**
+ * Seed a conversation with the given projectPaths and make it active.
+ * Used by the Track 1 Critical leak tests for task #15.
+ */
+function setupConversation(projectPaths: string[]) {
+  const convId = 'conv-copilot-isolation-test';
+  const now = Date.now();
+  const conv: Conversation = {
+    id: convId,
+    title: 'Isolation Test',
+    messages: [],
+    createdAt: now,
+    updatedAt: now,
+    projectPaths,
+    segments: [{ projectPaths, sessionId: null, startMessageIndex: 0, historyIncluded: false }],
+    activeSegmentIndex: 0,
+    pendingProjectSwitch: null,
+    activeLeafId: null,
+  };
+  useChatStore.setState({
+    conversations: [conv],
+    activeConversationId: convId,
+  });
+  return convId;
 }
 
 function setupWithConnection(connection: Connection) {
@@ -1102,6 +1131,122 @@ describe('useCopilotCompletion', () => {
       });
 
       expect(mockRequestCopilotCompletion).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // Track 1 Critical leak — Task #15
+  //
+  // Regression lock: Copilot LSP `workingDirectory` must reflect the chat
+  // footer's project selection (`selectedProjectPaths[0]`), NOT the first
+  // workspace folder (`projects[0].path`). Without this, a Copilot LSP chat
+  // scoped to Project B on the footer silently boots the LSP against
+  // Project A (the first workspace), leaking Project A as the workspace
+  // folder to the agent.
+  //
+  // These tests were authored alongside the fix (red-team TDD).
+  // =========================================================================
+
+  describe('Track 1 leak #15 — workingDir reflects footer selection, not workspace order', () => {
+    it('starts LSP with selectedProjectPaths[0] when it differs from projects[0]', async () => {
+      const conn = makeAgentManagedConnection();
+      setupWithConnection(conn);
+
+      // Workspace has two projects. The footer selection is the SECOND one.
+      useWorkspaceStore.setState({
+        projects: [
+          { path: '/workspace/project-A', fileTree: [] },
+          { path: '/workspace/project-B', fileTree: [] },
+        ],
+      });
+      setupConversation(['/workspace/project-B']);
+
+      renderHook(() => useCopilotCompletion(null));
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      // INVARIANT: the LSP must be told about the user-selected project,
+      // not the first workspace folder.
+      expect(invoke).toHaveBeenCalledWith('copilot_lsp_start', {
+        workingDirectory: '/workspace/project-B',
+      });
+      expect(invoke).not.toHaveBeenCalledWith('copilot_lsp_start', {
+        workingDirectory: '/workspace/project-A',
+      });
+    });
+
+    it('falls back to projects[0] when no conversation is active', async () => {
+      // Backward-compat: if nothing is selected in the chat footer yet (e.g.
+      // opening the app, no chat opened), we still want the LSP to come up
+      // against some working directory rather than failing outright.
+      const conn = makeAgentManagedConnection();
+      setupWithConnection(conn);
+      useWorkspaceStore.setState({
+        projects: [{ path: '/workspace/project-A', fileTree: [] }],
+      });
+      // No conversation seeded — selectedProjectPaths is empty
+
+      renderHook(() => useCopilotCompletion(null));
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(invoke).toHaveBeenCalledWith('copilot_lsp_start', {
+        workingDirectory: '/workspace/project-A',
+      });
+    });
+
+    it('re-runs LSP start (→ workspace folder change) when footer selection changes', async () => {
+      const conn = makeAgentManagedConnection();
+      setupWithConnection(conn);
+      useWorkspaceStore.setState({
+        projects: [
+          { path: '/workspace/project-A', fileTree: [] },
+          { path: '/workspace/project-B', fileTree: [] },
+        ],
+      });
+      setupConversation(['/workspace/project-A']);
+
+      const { rerender } = renderHook(() => useCopilotCompletion(null));
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      // Initial: LSP started against A
+      expect(invoke).toHaveBeenCalledWith('copilot_lsp_start', {
+        workingDirectory: '/workspace/project-A',
+      });
+
+      vi.mocked(invoke).mockClear();
+
+      // Switch the footer selection to B
+      act(() => {
+        useChatStore.setState((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.id === 'conv-copilot-isolation-test'
+              ? { ...c, projectPaths: ['/workspace/project-B'] }
+              : c,
+          ),
+        }));
+      });
+
+      rerender();
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      // The backend `copilot_lsp_start` fans this into a
+      // `workspace/didChangeWorkspaceFolders` notification when the LSP is
+      // already running. Our contract at the hook boundary is just that we
+      // invoke `copilot_lsp_start` with the NEW selection.
+      expect(invoke).toHaveBeenCalledWith('copilot_lsp_start', {
+        workingDirectory: '/workspace/project-B',
+      });
     });
   });
 });

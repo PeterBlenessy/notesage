@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Trash2, MessageSquare, Clock, Download, GitBranch } from 'lucide-react';
 import { useChatStore, type Conversation } from '@/stores/chat-store';
 import {
@@ -36,6 +36,13 @@ function closeAgentSessionsAndDelete(conv: Conversation): void {
 
 interface ChatHistoryViewProps {
   onSelectConversation: (id: string) => void;
+  selectedProjectPaths: string[];
+}
+
+function conversationInScope(conv: Conversation, scope: string[]): boolean {
+  if (scope.length === 0) return true;
+  if (!conv.projectPaths || conv.projectPaths.length === 0) return false;
+  return conv.projectPaths.some((p) => scope.includes(p));
 }
 
 function formatMessagesAsMarkdown(messages: ChatMessage[]): string[] {
@@ -110,10 +117,24 @@ function saveExport(content: string, filename: string, format: 'markdown' | 'jso
   });
 }
 
-export const ChatHistoryView = memo(function ChatHistoryView({ onSelectConversation }: ChatHistoryViewProps) {
+export const ChatHistoryView = memo(function ChatHistoryView({
+  onSelectConversation,
+  selectedProjectPaths,
+}: ChatHistoryViewProps) {
   const conversations = useChatStore((s) => s.conversations);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const deleteConversation = useChatStore((s) => s.deleteConversation);
+
+  const hasScope = selectedProjectPaths.length > 0;
+  const [showAllProjects, setShowAllProjects] = useState(false);
+  const scopeActive = hasScope && !showAllProjects;
+
+  const visibleConversations = useMemo(() => {
+    const filtered = scopeActive
+      ? conversations.filter((c) => conversationInScope(c, selectedProjectPaths))
+      : conversations;
+    return [...filtered].sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [conversations, selectedProjectPaths, scopeActive]);
 
   const handleExportMarkdown = (conv: Conversation) => {
     const title = conv.title || 'conversation';
@@ -184,15 +205,37 @@ export const ChatHistoryView = memo(function ChatHistoryView({ onSelectConversat
     saveExport(content, `${slug}.json`, 'json');
   };
 
-  return (
-    <div className="flex-1 overflow-y-auto">
-      {conversations.length === 0 ? (
+  if (conversations.length === 0) {
+    return (
+      <div className="flex-1 overflow-y-auto">
         <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
           No conversations yet
         </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      {hasScope && (
+        <div className="flex items-center justify-between h-8 px-4 text-[11px] text-muted-foreground border-b border-border">
+          <span>{scopeActive ? 'Current project' : 'All projects'}</span>
+          <button
+            type="button"
+            onClick={() => setShowAllProjects((v) => !v)}
+            className="hover:text-foreground transition-colors"
+          >
+            {scopeActive ? 'Show all projects' : 'Show current project only'}
+          </button>
+        </div>
+      )}
+      {visibleConversations.length === 0 ? (
+        <div className="flex items-center justify-center h-full text-muted-foreground text-sm px-4 text-center">
+          No conversations for the selected project(s)
+        </div>
       ) : (
         <div className="divide-y divide-border">
-          {[...conversations].sort((a, b) => b.updatedAt - a.updatedAt).map((conv) => {
+          {visibleConversations.map((conv) => {
             const branchCount = getBranchCount(conv);
             return (
               <div

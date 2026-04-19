@@ -2,6 +2,77 @@ use std::path::{Path, PathBuf};
 
 use super::network_proxy::NetworkSandboxConfig;
 
+/// Classify the relevant config subpaths for a given agent binary name.
+///
+/// Each supported ACP agent reads from a small, distinct set of paths under
+/// `$HOME`. Task #24 narrows the sandbox profile to only emit the subpaths
+/// relevant to the spawning agent so — for example — `claude-agent-acp`
+/// can't read `~/.codex` or `~/.gemini` even though those dirs exist on
+/// disk. The pre-#24 profile granted every agent writable access to every
+/// provider's config dir.
+///
+/// Returned entries are [`SandboxEntry`] variants:
+/// - `Subpath(rel)`: `$HOME/rel` and all descendants (recursive)
+/// - `Literal(rel)`: `$HOME/rel` exactly (for sibling state files like
+///   `~/.claude.json` and narrow keychain reads)
+///
+/// Keyed by the raw `agent_binary` string passed to `acp_agent_spawn` (the
+/// command name — not the resolved absolute path) so callers don't need to
+/// do any path extraction. Adding a new agent requires extending this match
+/// plus adding a matching Rust unit test.
+#[cfg(target_os = "macos")]
+#[derive(Clone, Debug)]
+pub(crate) enum SandboxEntry {
+    /// `$HOME`-relative path, allowed as `(subpath ...)` — recursive.
+    Subpath(&'static str),
+    /// `$HOME`-relative path, allowed as `(literal ...)` — exact match only.
+    Literal(&'static str),
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn agent_config_entries(agent_binary: &str) -> Vec<SandboxEntry> {
+    // Always include Notesage's own config dir — the app itself writes
+    // bundled skills/agents and meta state there, and the agent process
+    // may need to reach those regardless of provider.
+    let mut entries = vec![SandboxEntry::Subpath(".notesage")];
+
+    match agent_binary {
+        // Anthropic Claude Code via claude-agent-acp. The agent also reads a
+        // sibling FILE ~/.claude.json (project state, ~41KB) at session/new
+        // time; missing the file causes its internal `query()` subprocess to
+        // die silently. See task #6d research log.
+        "claude-agent-acp" => {
+            entries.push(SandboxEntry::Subpath(".claude"));
+            entries.push(SandboxEntry::Literal(".claude.json"));
+            entries.push(SandboxEntry::Literal(".claude.json.backup"));
+        }
+        // OpenAI Codex via codex-acp.
+        "codex-acp" => {
+            entries.push(SandboxEntry::Subpath(".codex"));
+        }
+        // GitHub Copilot CLI (`copilot --acp`) and Copilot Language Server.
+        // Copilot reads the macOS login keychain via node-keytar to resolve
+        // its OAuth token (service name `copilot-cli`). Narrowed to the
+        // single keychain FILE so sibling entries (metadata.keychain-db,
+        // per-user keychain subdirs) stay denied.
+        "copilot" | "copilot-language-server" => {
+            entries.push(SandboxEntry::Subpath(".copilot"));
+            entries.push(SandboxEntry::Literal(
+                "Library/Keychains/login.keychain-db",
+            ));
+        }
+        // Google Gemini CLI via `gemini --acp`.
+        "gemini" => {
+            entries.push(SandboxEntry::Subpath(".gemini"));
+        }
+        // Unknown / custom agent binaries get only `.notesage` — defense in
+        // depth: no cross-agent config leakage by default.
+        _ => {}
+    }
+
+    entries
+}
+
 /// Generate a macOS Seatbelt (.sb) sandbox profile for an agent process.
 ///
 /// The profile is written to a temp file tied to the agent's instance ID.
@@ -16,9 +87,15 @@ use super::network_proxy::NetworkSandboxConfig;
 ///   (deny default) blocks all network and only the proxy port is allowed.
 ///   When false, (allow network*) permits all network (proxy env vars are the only enforcement).
 /// - Allows process execution (agents spawn git, grep, etc.)
+///
+/// `agent_binary` is the raw command name (e.g. `"claude-agent-acp"`,
+/// `"codex-acp"`, `"copilot"`, `"gemini"`). It drives the Bucket C
+/// (per-agent config) narrowing from task #24 — the profile emits only
+/// the subpaths for this specific agent.
 #[cfg(target_os = "macos")]
 pub fn generate_seatbelt_profile(
     instance_id: &str,
+    agent_binary: &str,
     writable_paths: &[String],
     network_config: Option<&NetworkSandboxConfig>,
     kernel_network_deny: bool,
@@ -27,6 +104,49 @@ pub fn generate_seatbelt_profile(
         .ok_or_else(|| "Cannot determine home directory".to_string())?;
 
     let home_str = home.to_string_lossy();
+
+    // Task #24: agent-specific config re-allow list. Only the paths THIS
+    // agent binary needs — not a blanket grant that leaks sibling agent
+    // config state.
+    let agent_entries = agent_config_entries(agent_binary);
+    let agent_read_lines: Vec<String> = agent_entries
+        .iter()
+        .map(|e| match e {
+            SandboxEntry::Subpath(rel) => {
+                format!("  (subpath \"{}/{}\")", home_str, rel)
+            }
+            SandboxEntry::Literal(rel) => {
+                format!("  (literal \"{}/{}\")", home_str, rel)
+            }
+        })
+        .collect();
+    let agent_config_read_allow = if agent_read_lines.is_empty() {
+        String::new()
+    } else {
+        format!(
+            ";; 4. Re-allow Bucket C — per-agent config dirs + adjacent state\n;;    files. Narrowed to the paths THIS agent_binary needs (task #24).\n;;    Sibling agents' config dirs stay denied by rule 2 above.\n(allow file-read*\n{})",
+            agent_read_lines.join("\n")
+        )
+    };
+    // Matching write-allow entries. Keychain literal is read-only for
+    // Copilot — never grant write access to it.
+    let agent_write_lines: Vec<String> = agent_entries
+        .iter()
+        .map(|e| match e {
+            SandboxEntry::Subpath(rel) => {
+                format!("  (subpath \"{}/{}\")", home_str, rel)
+            }
+            SandboxEntry::Literal(rel) => {
+                format!("  (literal \"{}/{}\")", home_str, rel)
+            }
+        })
+        .filter(|line| !line.contains("Library/Keychains/"))
+        .collect();
+    let agent_config_write_allow = if agent_write_lines.is_empty() {
+        String::new()
+    } else {
+        agent_write_lines.join("\n")
+    };
 
     // Write to temp dir — profile lives only as long as the agent process.
     let profile_path = std::env::temp_dir().join(format!("notesage-sandbox-{}.sb", instance_id));
@@ -202,17 +322,9 @@ pub fn generate_seatbelt_profile(
 (allow file-read* (literal "{home}"))
 
 ;; 3b. Re-allow Bucket B (language tooling / Node runtime) under $HOME.
-;;     `login.keychain-db` specifically (LITERAL, not the whole Keychains dir)
-;;     is the macOS user keychain file where GitHub Copilot CLI stores its
-;;     OAuth token under service name `copilot-cli` — documented behavior,
-;;     see https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-
-;;     copilot-cli/authenticate-copilot-cli. The file is encrypted at rest
-;;     (AES-256-GCM with per-row keys; see Apple Keychain Data Protection
-;;     docs); actual decryption requires the user's login password routed
-;;     through securityd + TCC, so the read itself exposes ciphertext only.
-;;     We narrow to the single file rather than the whole `Keychains/`
-;;     subdir so ACL-controlled siblings (metadata.keychain-db, per-user
-;;     subdirs) stay denied.
+;;     Bucket C (per-agent config + Copilot keychain literal) is emitted
+;;     separately below, driven by the agent_binary identifier (task #24)
+;;     so each agent only gets its own config dir.
 (allow file-read*
   (subpath "{home}/.npm")
   (subpath "{home}/.npm-global")
@@ -232,25 +344,10 @@ pub fn generate_seatbelt_profile(
   (subpath "{home}/Library/Caches")
   (subpath "{home}/Library/Application Support")
   (subpath "{home}/Library/Preferences")
-  (literal "{home}/Library/Keychains/login.keychain-db")
   (literal "{home}/.gitconfig")
   (literal "{home}/.gitignore_global"))
 
-;; 4. Re-allow Bucket C (per-agent config dirs + adjacent state files).
-;;    Most agents keep state in a dot-directory, but claude-agent-acp also
-;;    reads a sibling FILE `~/.claude.json` at session/new time (its project
-;;    state/config, ~41KB). Without the literal file re-allow, claude's
-;;    internal `query()` subprocess dies silently with "Query closed before
-;;    response received" — identified via binary-search under sandbox-exec
-;;    on 2026-04-19.
-(allow file-read*
-  (subpath "{home}/.claude")
-  (subpath "{home}/.codex")
-  (subpath "{home}/.copilot")
-  (subpath "{home}/.gemini")
-  (subpath "{home}/.notesage")
-  (literal "{home}/.claude.json")
-  (literal "{home}/.claude.json.backup"))
+{agent_config_read_allow}
 
 ;; 5. Re-allow the selected project(s) — writable_paths. Critical: this is
 ;;    the ONLY content under $HOME that's project-specific; everything else
@@ -264,20 +361,16 @@ pub fn generate_seatbelt_profile(
 ;;    cover descendants — only the exact path matches.
 {ancestor_literal_allow}
 
-;; Allow writing to specified directories, temp, device nodes, and agent config dirs
+;; Allow writing to specified directories, temp, device nodes, and the
+;; agent's OWN config dirs (narrowed by agent_binary — task #24). Keychain
+;; is read-only; filtered out of the write-allow list in Rust.
 (allow file-write*
 {writable_block}
   (subpath "/tmp")
   (subpath "/private/tmp")
   (subpath "/private/var/folders")
-  (subpath "{home}/.gemini")
-  (subpath "{home}/.claude")
-  (subpath "{home}/.codex")
-  (subpath "{home}/.copilot")
-  (subpath "{home}/.notesage")
   (subpath "{home}/.config")
-  (literal "{home}/.claude.json")
-  (literal "{home}/.claude.json.backup")
+{agent_config_write_allow}
   (literal "/dev/null")
   (literal "/dev/tty")
   (literal "/dev/zero")
@@ -313,6 +406,8 @@ pub fn generate_seatbelt_profile(
         writable_block = writable_block,
         writable_read_allow = writable_read_allow,
         ancestor_literal_allow = ancestor_literal_allow,
+        agent_config_read_allow = agent_config_read_allow,
+        agent_config_write_allow = agent_config_write_allow,
         home = home_str,
         network_block = network_block,
     );
@@ -330,14 +425,18 @@ pub fn generate_seatbelt_profile(
 
 /// Build the command and args for a sandboxed agent spawn on macOS.
 /// Returns (program, prefix_args) that should be prepended to the actual agent command.
+///
+/// `agent_binary` drives per-agent config subpath narrowing (task #24).
+/// Pass the raw command name, not the resolved absolute path.
 #[cfg(target_os = "macos")]
 pub fn sandboxed_command(
     instance_id: &str,
+    agent_binary: &str,
     writable_paths: &[String],
     network_config: Option<&NetworkSandboxConfig>,
     kernel_network_deny: bool,
 ) -> Result<(String, Vec<String>), String> {
-    let profile_path = generate_seatbelt_profile(instance_id, writable_paths, network_config, kernel_network_deny)?;
+    let profile_path = generate_seatbelt_profile(instance_id, agent_binary, writable_paths, network_config, kernel_network_deny)?;
     Ok((
         "sandbox-exec".to_string(),
         vec![
@@ -388,6 +487,7 @@ pub fn should_sandbox_by_default(binary_path: &str) -> bool {
 #[cfg(target_os = "linux")]
 pub fn sandboxed_command(
     _instance_id: &str,
+    _agent_binary: &str, // Per-agent narrowing not yet implemented on Linux
     writable_paths: &[String],
     network_config: Option<&NetworkSandboxConfig>,
     _kernel_network_deny: bool, // Not implemented on Linux — ignored
@@ -456,7 +556,7 @@ mod tests {
         #[test]
         fn profile_contains_deny_default() {
             let id = "test-deny-default";
-            let result = generate_seatbelt_profile(id, &[], None, false);
+            let result = generate_seatbelt_profile(id, "claude-agent-acp", &[], None, false);
             let path = result.expect("should generate profile");
             let content = std::fs::read_to_string(&path).unwrap();
             cleanup_profile(id);
@@ -474,7 +574,7 @@ mod tests {
                 "/tmp/mydir".to_string(),
                 "/home/test".to_string(),
             ];
-            let result = generate_seatbelt_profile(id, &paths, None, false);
+            let result = generate_seatbelt_profile(id, "claude-agent-acp", &paths, None, false);
             let path = result.expect("should generate profile");
             let content = std::fs::read_to_string(&path).unwrap();
             cleanup_profile(id);
@@ -499,7 +599,7 @@ mod tests {
             // `cat` files in every other user directory outside the curated
             // deny list.
             let id = "test-home-deny";
-            let result = generate_seatbelt_profile(id, &[], None, false);
+            let result = generate_seatbelt_profile(id, "claude-agent-acp", &[], None, false);
             let path = result.expect("should generate profile");
             let content = std::fs::read_to_string(&path).unwrap();
             cleanup_profile(id);
@@ -525,7 +625,7 @@ mod tests {
             // on 2026-04-19 when deny-by-default was tried without a
             // complete allow list.
             let id = "test-runtime-reallow";
-            let result = generate_seatbelt_profile(id, &[], None, false);
+            let result = generate_seatbelt_profile(id, "claude-agent-acp", &[], None, false);
             let path = result.expect("should generate profile");
             let content = std::fs::read_to_string(&path).unwrap();
             cleanup_profile(id);
@@ -540,8 +640,12 @@ mod tests {
                 ".local", ".config", ".cache",
                 // macOS native caches / prefs
                 "Library/Caches", "Library/Application Support", "Library/Preferences",
-                // Bucket C — agent configs
-                ".claude", ".codex", ".copilot", ".gemini", ".notesage",
+                // Bucket C — this profile is for claude-agent-acp, so only
+                // ~/.claude (plus the app's own ~/.notesage) is re-allowed.
+                // Sibling agent dirs (.codex/.copilot/.gemini) are asserted
+                // absent by `profile_does_not_leak_sibling_agent_configs`
+                // below (task #24).
+                ".claude", ".notesage",
             ] {
                 let needle = format!("(subpath \"{}/{}\")", home_str, dir);
                 assert!(
@@ -554,17 +658,19 @@ mod tests {
 
         #[test]
         fn read_policy_narrows_keychain_to_login_db_only() {
-            // Task #6d: GitHub Copilot CLI reads `~/Library/Keychains/login.keychain-db`
-            // to resolve its OAuth token from the macOS Keychain (service name
-            // `copilot-cli`). The FILE is encrypted at rest — reading it alone
-            // exposes ciphertext; decryption still requires securityd + TCC.
+            // Task #6d + #24: GitHub Copilot CLI reads
+            // `~/Library/Keychains/login.keychain-db` to resolve its OAuth
+            // token from the macOS Keychain (service name `copilot-cli`).
+            // The FILE is encrypted at rest — reading it alone exposes
+            // ciphertext; decryption still requires securityd + TCC.
             //
-            // The profile MUST use a (literal) rule for the single file, not a
-            // (subpath) for the whole Keychains directory — sibling files
-            // (metadata.keychain-db, per-user keychain subdirs) may have stricter
-            // access controls and the broader rule would bypass them.
+            // Two invariants:
+            // 1. Copilot profile MUST allow the single keychain file by
+            //    (literal), NOT the whole Keychains/ subpath.
+            // 2. Non-Copilot agents MUST NOT get the keychain literal at
+            //    all — they have no reason to touch node-keytar state.
             let id = "test-keychain-narrow";
-            let result = generate_seatbelt_profile(id, &[], None, false);
+            let result = generate_seatbelt_profile(id, "copilot", &[], None, false);
             let path = result.expect("should generate profile");
             let content = std::fs::read_to_string(&path).unwrap();
             cleanup_profile(id);
@@ -577,7 +683,7 @@ mod tests {
             );
             assert!(
                 content.contains(&expected_literal),
-                "Profile must allow login.keychain-db by literal; expected `{}` in:\n{}",
+                "Copilot profile must allow login.keychain-db by literal; expected `{}` in:\n{}",
                 expected_literal, content,
             );
 
@@ -596,7 +702,7 @@ mod tests {
             // /Applications, /usr, /private). The $HOME deny that follows
             // narrows the scope without blocking system access.
             let id = "test-broad-allow";
-            let result = generate_seatbelt_profile(id, &[], None, false);
+            let result = generate_seatbelt_profile(id, "claude-agent-acp", &[], None, false);
             let path = result.expect("should generate profile");
             let content = std::fs::read_to_string(&path).unwrap();
             cleanup_profile(id);
@@ -615,7 +721,7 @@ mod tests {
             // open — agent can read every file but only write to the project.
             let id = "test-writable-read-allow";
             let project = "/tmp/notesage-test-project";
-            let result = generate_seatbelt_profile(id, &[project.to_string()], None, false);
+            let result = generate_seatbelt_profile(id, "claude-agent-acp", &[project.to_string()], None, false);
             let path = result.expect("should generate profile");
             let content = std::fs::read_to_string(&path).unwrap();
             cleanup_profile(id);
@@ -633,7 +739,7 @@ mod tests {
         #[test]
         fn sensitive_directories_denied() {
             let id = "test-sensitive-deny";
-            let result = generate_seatbelt_profile(id, &[], None, false);
+            let result = generate_seatbelt_profile(id, "claude-agent-acp", &[], None, false);
             let path = result.expect("should generate profile");
             let content = std::fs::read_to_string(&path).unwrap();
             cleanup_profile(id);
@@ -659,7 +765,7 @@ mod tests {
         fn network_proxy_only_when_kernel_deny_true() {
             let id = "test-proxy-only";
             let nc = make_network_config(8080);
-            let result = generate_seatbelt_profile(id, &[], Some(&nc), true);
+            let result = generate_seatbelt_profile(id, "claude-agent-acp", &[], Some(&nc), true);
             let path = result.expect("should generate profile");
             let content = std::fs::read_to_string(&path).unwrap();
             cleanup_profile(id);
@@ -678,7 +784,7 @@ mod tests {
         fn network_allow_all_when_kernel_deny_false() {
             let id = "test-allow-all-net";
             let nc = make_network_config(9999);
-            let result = generate_seatbelt_profile(id, &[], Some(&nc), false);
+            let result = generate_seatbelt_profile(id, "claude-agent-acp", &[], Some(&nc), false);
             let path = result.expect("should generate profile");
             let content = std::fs::read_to_string(&path).unwrap();
             cleanup_profile(id);
@@ -692,7 +798,7 @@ mod tests {
         #[test]
         fn network_allow_all_fallback_no_proxy() {
             let id = "test-no-proxy-fallback";
-            let result = generate_seatbelt_profile(id, &[], None, true);
+            let result = generate_seatbelt_profile(id, "claude-agent-acp", &[], None, true);
             let path = result.expect("should generate profile");
             let content = std::fs::read_to_string(&path).unwrap();
             cleanup_profile(id);
@@ -706,7 +812,7 @@ mod tests {
         #[test]
         fn profile_path_in_temp_dir_with_correct_name() {
             let id = "test-path-pattern";
-            let result = generate_seatbelt_profile(id, &[], None, false);
+            let result = generate_seatbelt_profile(id, "claude-agent-acp", &[], None, false);
             let path = result.expect("should generate profile");
             cleanup_profile(id);
 
@@ -726,7 +832,7 @@ mod tests {
         #[test]
         fn cleanup_profile_removes_file() {
             let id = "test-cleanup";
-            let result = generate_seatbelt_profile(id, &[], None, false);
+            let result = generate_seatbelt_profile(id, "claude-agent-acp", &[], None, false);
             let path = result.expect("should generate profile");
 
             assert!(path.exists(), "Profile file must exist after generation");
@@ -737,7 +843,7 @@ mod tests {
         #[test]
         fn sandboxed_command_returns_sandbox_exec() {
             let id = "test-cmd";
-            let (program, args) = sandboxed_command(id, &[], None, false)
+            let (program, args) = sandboxed_command(id, "claude-agent-acp", &[], None, false)
                 .expect("sandboxed_command should succeed");
             cleanup_profile(id);
 
@@ -746,6 +852,281 @@ mod tests {
                 args.contains(&"-f".to_string()),
                 "Args must contain -f flag"
             );
+        }
+
+        // ---------------------------------------------------------------------
+        // Task #24 — per-agent writable config subpath
+        //
+        // The pre-#24 profile granted every agent writable access to every
+        // supported agent's config dir (~/.claude, ~/.codex, ~/.copilot,
+        // ~/.gemini). A claude-agent-acp instance could therefore read (and
+        // write to) ~/.codex/ — leaking another provider's state. These tests
+        // lock in the narrowing: each profile only emits the config
+        // directories + adjacent state files for its own agent_binary.
+        // ---------------------------------------------------------------------
+
+        /// Helper: generate profile, read it, clean up, return contents.
+        fn profile_contents(id: &str, agent_binary: &str) -> String {
+            let result = generate_seatbelt_profile(id, agent_binary, &[], None, false);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+            content
+        }
+
+        /// Helper: build a `(subpath "$HOME/<rel>")` needle.
+        fn home_subpath_needle(rel: &str) -> String {
+            let home = dirs::home_dir().unwrap();
+            format!("(subpath \"{}/{}\")", home.to_string_lossy(), rel)
+        }
+
+        /// Helper: build a `(literal "$HOME/<rel>")` needle.
+        fn home_literal_needle(rel: &str) -> String {
+            let home = dirs::home_dir().unwrap();
+            format!("(literal \"{}/{}\")", home.to_string_lossy(), rel)
+        }
+
+        #[test]
+        fn claude_profile_does_not_leak_sibling_agent_configs() {
+            let content = profile_contents("task24-claude", "claude-agent-acp");
+
+            // Own config present (subpath for the dir + literal for the
+            // sibling state file).
+            assert!(
+                content.contains(&home_subpath_needle(".claude")),
+                "Claude profile must re-allow ~/.claude — got:\n{}",
+                content,
+            );
+            assert!(
+                content.contains(&home_literal_needle(".claude.json")),
+                "Claude profile must re-allow ~/.claude.json literal — got:\n{}",
+                content,
+            );
+
+            // Sibling agent dirs MUST be absent.
+            for sibling in [".codex", ".copilot", ".gemini"] {
+                assert!(
+                    !content.contains(&home_subpath_needle(sibling)),
+                    "Claude profile must NOT contain ~{}— leak of sibling agent config:\n{}",
+                    sibling, content,
+                );
+            }
+
+            // Copilot-only keychain literal MUST NOT appear for Claude.
+            assert!(
+                !content.contains("Library/Keychains/login.keychain-db"),
+                "Claude profile must NOT allow login.keychain-db — that's Copilot-specific:\n{}",
+                content,
+            );
+        }
+
+        #[test]
+        fn codex_profile_does_not_leak_sibling_agent_configs() {
+            let content = profile_contents("task24-codex", "codex-acp");
+
+            assert!(
+                content.contains(&home_subpath_needle(".codex")),
+                "Codex profile must re-allow ~/.codex — got:\n{}",
+                content,
+            );
+
+            for sibling in [".claude", ".copilot", ".gemini"] {
+                assert!(
+                    !content.contains(&home_subpath_needle(sibling)),
+                    "Codex profile must NOT contain ~{} — leak of sibling agent config:\n{}",
+                    sibling, content,
+                );
+            }
+            assert!(
+                !content.contains(".claude.json"),
+                "Codex profile must NOT contain .claude.json literal:\n{}",
+                content,
+            );
+            assert!(
+                !content.contains("Library/Keychains/login.keychain-db"),
+                "Codex profile must NOT allow login.keychain-db — Copilot-specific:\n{}",
+                content,
+            );
+        }
+
+        #[test]
+        fn copilot_profile_does_not_leak_sibling_agent_configs() {
+            let content = profile_contents("task24-copilot", "copilot");
+
+            assert!(
+                content.contains(&home_subpath_needle(".copilot")),
+                "Copilot profile must re-allow ~/.copilot — got:\n{}",
+                content,
+            );
+            // Copilot-specific: narrow keychain literal IS allowed.
+            assert!(
+                content.contains("Library/Keychains/login.keychain-db"),
+                "Copilot profile must allow login.keychain-db (node-keytar OAuth):\n{}",
+                content,
+            );
+
+            for sibling in [".claude", ".codex", ".gemini"] {
+                assert!(
+                    !content.contains(&home_subpath_needle(sibling)),
+                    "Copilot profile must NOT contain ~{} — leak of sibling agent config:\n{}",
+                    sibling, content,
+                );
+            }
+            assert!(
+                !content.contains(".claude.json"),
+                "Copilot profile must NOT contain .claude.json literal:\n{}",
+                content,
+            );
+        }
+
+        #[test]
+        fn copilot_lsp_binary_also_gets_copilot_config() {
+            // Both `copilot` (CLI) and `copilot-language-server` (LSP) map
+            // to the same Copilot config narrowing.
+            let content = profile_contents("task24-copilot-lsp", "copilot-language-server");
+            assert!(
+                content.contains(&home_subpath_needle(".copilot")),
+                "copilot-language-server must re-allow ~/.copilot:\n{}",
+                content,
+            );
+            assert!(
+                content.contains("Library/Keychains/login.keychain-db"),
+                "copilot-language-server must allow login.keychain-db:\n{}",
+                content,
+            );
+        }
+
+        #[test]
+        fn gemini_profile_does_not_leak_sibling_agent_configs() {
+            let content = profile_contents("task24-gemini", "gemini");
+
+            assert!(
+                content.contains(&home_subpath_needle(".gemini")),
+                "Gemini profile must re-allow ~/.gemini — got:\n{}",
+                content,
+            );
+
+            for sibling in [".claude", ".codex", ".copilot"] {
+                assert!(
+                    !content.contains(&home_subpath_needle(sibling)),
+                    "Gemini profile must NOT contain ~{} — leak of sibling agent config:\n{}",
+                    sibling, content,
+                );
+            }
+            assert!(
+                !content.contains(".claude.json"),
+                "Gemini profile must NOT contain .claude.json literal:\n{}",
+                content,
+            );
+            assert!(
+                !content.contains("Library/Keychains/login.keychain-db"),
+                "Gemini profile must NOT allow login.keychain-db — Copilot-specific:\n{}",
+                content,
+            );
+        }
+
+        #[test]
+        fn unknown_agent_binary_gets_only_notesage_config() {
+            // Defensive default: if an unknown/custom agent binary is
+            // spawned under the sandbox, we don't leak any provider's
+            // config dir. Only Notesage's own ~/.notesage remains so the
+            // app itself can read bundled skills/meta.
+            let content = profile_contents("task24-unknown", "some-random-agent");
+
+            assert!(
+                content.contains(&home_subpath_needle(".notesage")),
+                "Unknown-agent profile must still re-allow ~/.notesage:\n{}",
+                content,
+            );
+            for sibling in [".claude", ".codex", ".copilot", ".gemini"] {
+                assert!(
+                    !content.contains(&home_subpath_needle(sibling)),
+                    "Unknown-agent profile must NOT contain ~{} — defense in depth:\n{}",
+                    sibling, content,
+                );
+            }
+            assert!(
+                !content.contains(".claude.json"),
+                "Unknown-agent profile must NOT contain .claude.json literal:\n{}",
+                content,
+            );
+            assert!(
+                !content.contains("Library/Keychains/login.keychain-db"),
+                "Unknown-agent profile must NOT allow login.keychain-db:\n{}",
+                content,
+            );
+        }
+
+        #[test]
+        fn writable_block_narrowed_to_own_agent() {
+            // Task #24 also narrows the file-write* block — a Claude profile
+            // must NOT permit writes to ~/.codex, ~/.copilot, ~/.gemini.
+            // Writes to the agent's OWN config dir remain allowed so it can
+            // update its own state.
+            let content = profile_contents("task24-write-claude", "claude-agent-acp");
+
+            // The file-write* block is the one that appears AFTER the
+            // `(allow file-write*` opening. A simple substring check on
+            // the sibling path is sufficient — if any section contains it,
+            // the profile leaks write access.
+            for sibling in [".codex", ".copilot", ".gemini"] {
+                assert!(
+                    !content.contains(&home_subpath_needle(sibling)),
+                    "Claude profile must NOT grant any access (read or write) to ~{}:\n{}",
+                    sibling, content,
+                );
+            }
+        }
+
+        #[test]
+        fn agent_config_entries_claude() {
+            // Direct coverage of the mapping helper — locks in the exact
+            // entry shape so future regressions surface here, not only in
+            // the full-profile integration tests.
+            let entries = agent_config_entries("claude-agent-acp");
+            let has_claude_subpath = entries.iter().any(|e| matches!(e, SandboxEntry::Subpath(".claude")));
+            let has_claude_json = entries.iter().any(|e| matches!(e, SandboxEntry::Literal(".claude.json")));
+            let has_claude_json_backup = entries.iter().any(|e| matches!(e, SandboxEntry::Literal(".claude.json.backup")));
+            let has_notesage = entries.iter().any(|e| matches!(e, SandboxEntry::Subpath(".notesage")));
+            assert!(has_claude_subpath, "Missing .claude subpath entry");
+            assert!(has_claude_json, "Missing .claude.json literal entry");
+            assert!(has_claude_json_backup, "Missing .claude.json.backup literal entry");
+            assert!(has_notesage, "Missing .notesage subpath entry");
+            // No cross-agent contamination
+            for rel in [".codex", ".copilot", ".gemini"] {
+                assert!(
+                    !entries.iter().any(|e| matches!(e, SandboxEntry::Subpath(r) if *r == rel)),
+                    "claude mapping must not include {rel}"
+                );
+            }
+        }
+
+        #[test]
+        fn agent_config_entries_copilot_includes_keychain() {
+            let entries = agent_config_entries("copilot");
+            let has_keychain = entries.iter().any(|e| matches!(
+                e,
+                SandboxEntry::Literal("Library/Keychains/login.keychain-db")
+            ));
+            assert!(
+                has_keychain,
+                "Copilot mapping must include login.keychain-db literal (node-keytar OAuth)"
+            );
+        }
+
+        #[test]
+        fn agent_config_entries_non_copilot_excludes_keychain() {
+            for binary in ["claude-agent-acp", "codex-acp", "gemini", "random-agent"] {
+                let entries = agent_config_entries(binary);
+                let has_keychain = entries.iter().any(|e| matches!(
+                    e,
+                    SandboxEntry::Literal("Library/Keychains/login.keychain-db")
+                ));
+                assert!(
+                    !has_keychain,
+                    "{binary} mapping must NOT include login.keychain-db — Copilot-specific"
+                );
+            }
         }
     }
 

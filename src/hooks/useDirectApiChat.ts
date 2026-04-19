@@ -227,8 +227,13 @@ export function useDirectApiChat({
               continue;
             }
 
-            // Check permission
-            const tier = usePermissionStore.getState().isToolAllowed(call.name, null, null);
+            // Check permission. `requireAllToolConfirmations` globally overrides
+            // auto-allow so even read-only/built-in tools prompt every time.
+            const requireAll = useSettingsStore.getState().requireAllToolConfirmations;
+            const rawTier = usePermissionStore.getState().isToolAllowed(call.name, null, null);
+            const tier = requireAll ? 'none' : rawTier;
+            // Tracks how this specific call was authorized — recorded on the activity.
+            let approvalMode: import('@/lib/ai/types').ActivityApprovalMode = 'auto';
 
             if (tier === 'none') {
               // Show permission card and wait for user decision
@@ -251,6 +256,7 @@ export function useDirectApiChat({
                   detail: 'Permission denied',
                   status: 'done',
                   timestamp: Date.now(),
+                  approvalMode: 'denied',
                 });
                 pushSegment(assistantMessageId, {
                   type: 'tool_call',
@@ -268,7 +274,12 @@ export function useDirectApiChat({
                 continue;
               }
 
-              // Update permissions based on decision
+              // User approved.
+              approvalMode = 'user';
+
+              // Update permissions based on decision. Under `requireAllToolConfirmations`
+              // we honour session/always so the user isn't drowned in prompts on every
+              // turn — but the global flag still means each *new* tool kind prompts.
               if (decision === 'session') {
                 usePermissionStore.getState().allowToolSession(call.name);
               } else if (decision === 'always') {
@@ -284,6 +295,7 @@ export function useDirectApiChat({
               detail: 'running',
               status: 'running',
               timestamp: Date.now(),
+              approvalMode,
             });
 
             // Push tool call segment (running)
@@ -312,6 +324,7 @@ export function useDirectApiChat({
               detail: result.is_error ? result.content : 'completed',
               status: 'done',
               timestamp: Date.now(),
+              approvalMode,
             });
 
             // Update tool call segment to done and push tool result segment

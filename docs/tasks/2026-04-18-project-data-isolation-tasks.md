@@ -293,7 +293,7 @@ Binary-searched against each ACP agent (`claude-agent-acp`, `copilot --acp`, `ge
 
 ---
 
-### #7 — Integration test: ACP sandbox paths match selected scope
+### #7 — Integration test: ACP sandbox paths match selected scope ✅
 
 **Description:** Assert that `acp_agent_spawn` is invoked with sandbox paths exactly equal to `selectedProjectPaths + extraWritablePaths` for regular chat, and exactly equal to `[cwd]` for comment delegation and inline actions.
 
@@ -448,7 +448,7 @@ Binary-searched against each ACP agent (`claude-agent-acp`, `copilot --acp`, `ge
 
 ## Phase 4 — Track 1 Critical: Copilot LSP
 
-### #15 — Copilot LSP `workingDir` = `selectedProjectPaths[0]`
+### #15 — Copilot LSP `workingDir` = `selectedProjectPaths[0]` ✅
 
 **Description:** Replace hard-coded `projects[0]?.path` with the chat footer selection at LSP initialization and per-conversation workingDir.
 
@@ -509,7 +509,7 @@ Binary-searched against each ACP agent (`claude-agent-acp`, `copilot --acp`, `ge
 
 ## Phase 6 — Track 1 High: Per-Project Registries
 
-### #18 — Per-project skill + agent registry
+### #18 — Per-project skill + agent registry ✅
 
 **Description:** `useSkillOperations.ts` today unions all projects' `.notesage/skills/` + `.claude/skills/` etc. into a single global registry. Rework to produce per-project registries keyed by project path, plus a global registry from `~/.notesage/` etc. System-prompt composition pulls only from `global ∪ selectedProjects`.
 
@@ -532,7 +532,7 @@ Binary-searched against each ACP agent (`claude-agent-acp`, `copilot --acp`, `ge
 
 ---
 
-### #19 — Fix `read_agent_instructions` caller to use `selectedProjectPaths[0]`
+### #19 — Fix `read_agent_instructions` caller to use `selectedProjectPaths[0]` ✅
 
 **Description:** Small but high-impact: `useSkillOperations.ts:218` currently calls `read_agent_instructions` with `projects[0]`. This silently ships project A's `CLAUDE.md` into project B's chat.
 
@@ -568,7 +568,7 @@ Binary-searched against each ACP agent (`claude-agent-acp`, `copilot --acp`, `ge
 
 ## Phase 7 — Track 1 High: Tauri Capabilities
 
-### #21 — Narrow `assetProtocol.scope` + drop unused `fs:allow-*`
+### #21 — Narrow `assetProtocol.scope` + drop unused `fs:allow-*` ✅
 
 **Description:** `tauri.conf.json`'s `assetProtocol.scope.allow = ["**"]` lets the renderer load any file as an asset — a silent exfil path. Narrow to a curated list and drop unused `fs:allow-*` plugin capabilities.
 
@@ -590,7 +590,7 @@ Binary-searched against each ACP agent (`claude-agent-acp`, `copilot --acp`, `ge
 
 ## Phase 8 — Track 1 Medium: Activity Panel Visibility
 
-### #22 — Auto-approved badge + path tooltip + require-confirm toggle
+### #22 — Auto-approved badge + path tooltip + require-confirm toggle ✅
 
 **Description:** Make auto-approved tool calls visible in the activity panel so the user always has a trail. Add a global "require confirmation for all tool calls" toggle.
 
@@ -633,7 +633,7 @@ Binary-searched against each ACP agent (`claude-agent-acp`, `copilot --acp`, `ge
 
 ---
 
-### #24 — Per-agent writable config subpath
+### #24 — Per-agent writable config subpath ✅
 
 **Description:** `sandbox.rs:101-111` grants every agent writable access to all agent config dirs (`~/.claude`, `~/.codex`, etc.). Narrow to just the relevant agent's subpath.
 
@@ -652,7 +652,7 @@ Binary-searched against each ACP agent (`claude-agent-acp`, `copilot --acp`, `ge
 
 ---
 
-### #25 — Per-project command palette / autocomplete
+### #25 — Per-project command palette / autocomplete ✅
 
 **Description:** `@` mentions, `#` tags, and research (`?`) searches currently query all project indexes. Filter to `selectedProjectPaths` by default; add an "All projects" toggle.
 
@@ -670,7 +670,7 @@ Binary-searched against each ACP agent (`claude-agent-acp`, `copilot --acp`, `ge
 
 ---
 
-### #26 — History tab project scope
+### #26 — History tab project scope ✅
 
 **Description:** The History tab surfaces all past conversations regardless of project. Filter to conversations whose `projectPaths` intersect `selectedProjectPaths`.
 

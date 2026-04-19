@@ -99,8 +99,8 @@ export function NewAgentWizard({ open, onOpenChange }: NewAgentWizardProps) {
       await invoke('write_file', { path: targetPath, content });
 
       // Trigger rescan of agent instructions
-      const projectRoot = projects.length > 0 ? projects[0].path : null;
-      await useSkillStore.getState().scanAgentInstructions(projectRoot, []);
+      const projectRoots = projects.map((p) => p.path);
+      await useSkillStore.getState().scanAgentInstructions(projectRoots, []);
 
       toast.success('Agent instructions saved', {
         description: scope === 'project' ? '.notesage/agents.md' : '~/.notesage/agents.md',

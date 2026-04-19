@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useChatStore, selectProjectPaths } from "@/stores/chat-store";
 
 // ---------------------------------------------------------------------------
 // Palette mode type & prefix map
@@ -99,7 +100,11 @@ export interface SymbolSearchConfig {
 // Shared search path helper
 // ---------------------------------------------------------------------------
 
-export function getSearchPaths(): string[] {
+/**
+ * All indexed workspace paths (explorer folders, projects, notes root).
+ * This is the "universe" the palette and suggestion plugins can search over.
+ */
+export function getAllSearchPaths(): string[] {
   const ws = useWorkspaceStore.getState();
   const settings = useSettingsStore.getState();
   const paths: string[] = [];
@@ -107,4 +112,46 @@ export function getSearchPaths(): string[] {
   for (const project of ws.projects) paths.push(project.path);
   if (settings.notesRootPath) paths.push(settings.notesRootPath);
   return paths;
+}
+
+/**
+ * Scope describing which project roots a palette search covers.
+ * - `'all'` — search every indexed workspace path.
+ * - `string[]` — search only the given paths; empty array falls back to `'all'`.
+ */
+export type PaletteSearchScope = "all" | string[];
+
+/**
+ * Resolve a scope to a concrete list of paths.
+ *
+ * - `'all'` → all indexed workspace paths.
+ * - `string[]` → intersects the requested paths with indexed paths so callers
+ *   cannot leak outside known workspace folders. An empty intersection falls
+ *   back to all indexed paths (prevents "no selection = no results" surprise).
+ */
+export function resolveSearchPaths(scope: PaletteSearchScope): string[] {
+  const all = getAllSearchPaths();
+  if (scope === "all") return all;
+  if (!Array.isArray(scope) || scope.length === 0) return all;
+  const allSet = new Set(all);
+  const scoped = scope.filter((p) => allSet.has(p));
+  return scoped.length > 0 ? scoped : all;
+}
+
+/**
+ * Default scope for the command palette: the active chat conversation's
+ * selected project paths, or `'all'` if none are selected.
+ */
+export function getDefaultPaletteScope(): PaletteSearchScope {
+  const selected = selectProjectPaths(useChatStore.getState());
+  return selected.length > 0 ? selected : "all";
+}
+
+/**
+ * Convenience for callers that don't track a scope themselves.
+ * Callers that track a scope (e.g. the palette's "Search all projects"
+ * toggle) should call `resolveSearchPaths(scope)` directly.
+ */
+export function getSearchPaths(scope?: PaletteSearchScope): string[] {
+  return resolveSearchPaths(scope ?? getDefaultPaletteScope());
 }

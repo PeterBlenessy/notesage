@@ -43,6 +43,13 @@ interface SettingsStore {
   skillManagement: boolean;
   /** Global toggle — controls whether tools are sent with direct API chat requests */
   toolCallingEnabled: boolean;
+  /**
+   * When true, every tool call requires explicit user approval — even the
+   * built-in read-only / auto-allowed tools (read_file, list_directory,
+   * web_search, etc.) will prompt. Gives paranoid users a global kill-switch
+   * for silent tool execution. Default false.
+   */
+  requireAllToolConfirmations: boolean;
   /** Web search provider for client-side search tool */
   searchProvider: 'duckduckgo';
   /** @deprecated Use logLevel instead. Kept for migration. */
@@ -116,6 +123,7 @@ interface SettingsStore {
   setChatHistoryLimit: (limit: number) => void;
   setSkillManagement: (enabled: boolean) => void;
   setToolCallingEnabled: (enabled: boolean) => void;
+  setRequireAllToolConfirmations: (enabled: boolean) => void;
   setLogLevel: (level: LogLevel) => void;
   setAutoCheckUpdates: (enabled: boolean) => void;
   setLastUpdateCheck: (timestamp: string | null) => void;
@@ -192,6 +200,7 @@ export const useSettingsStore = create<SettingsStore>()(
       chatHistoryLimit: 0,
       skillManagement: false,
       toolCallingEnabled: true,
+      requireAllToolConfirmations: false,
       searchProvider: 'duckduckgo' as const,
       logLevel: 'warn',
       autoCheckUpdates: true,
@@ -314,6 +323,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setToolCallingEnabled: (enabled: boolean) => {
         set({ toolCallingEnabled: enabled });
+      },
+
+      setRequireAllToolConfirmations: (enabled: boolean) => {
+        set({ requireAllToolConfirmations: enabled });
       },
 
       setLogLevel: (level: LogLevel) => {

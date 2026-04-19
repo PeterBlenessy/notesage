@@ -31,7 +31,14 @@
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": ["**"],
+          "allow": [
+            "$HOME/**",
+            "$APPDATA/**",
+            "$APPLOCALDATA/**",
+            "$APPCACHE/**",
+            "$RESOURCE/**",
+            "$TEMP/**"
+          ],
           "requireLiteralLeadingDot": false
         }
       }

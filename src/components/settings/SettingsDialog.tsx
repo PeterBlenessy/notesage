@@ -167,6 +167,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
     printLayout, setPrintLayout,
     chatHistoryLimit, setChatHistoryLimit,
     toolCallingEnabled, setToolCallingEnabled,
+    requireAllToolConfirmations, setRequireAllToolConfirmations,
     skillManagement, setSkillManagement,
     logLevel, setLogLevel,
     autoCheckUpdates, setAutoCheckUpdates,
@@ -1065,6 +1066,25 @@ export function SettingsDialog({ open, onOpenChange, initialTab, updateState, on
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         Enable tool calling in chat for local AI and API key connections. When on, AI can search the web, read files, and execute skills during conversations — safe tools run automatically, others require your approval. When off, chat is text-only.
+                      </p>
+                    </div>
+
+                    <div className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
+                      <div className="flex items-center justify-between gap-3">
+                        <Label
+                          htmlFor="require-all-tool-confirmations"
+                          className="text-sm font-medium cursor-pointer"
+                        >
+                          Require Confirmation for All Tool Calls
+                        </Label>
+                        <Switch
+                          id="require-all-tool-confirmations"
+                          checked={requireAllToolConfirmations}
+                          onCheckedChange={setRequireAllToolConfirmations}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Prompt for approval on every single tool call — including auto-allowed read-only tools like file reads and web searches. Disables silent tool execution. Off by default.
                       </p>
                     </div>
 

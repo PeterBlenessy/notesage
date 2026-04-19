@@ -11,7 +11,7 @@ import { flushSync } from "react-dom";
 import { cn } from "@/lib/utils";
 import { AtSign } from "lucide-react";
 import { tauriApi } from "@/lib/tauri";
-import { getSearchPaths } from "@/lib/command-palette";
+import { getAllSearchPaths } from "@/lib/command-palette";
 
 interface MentionItem {
   name: string;
@@ -188,7 +188,7 @@ export const MentionSuggestion = Extension.create({
         },
         items: async ({ query }: { query: string }): Promise<MentionItem[]> => {
           try {
-            const paths = getSearchPaths();
+            const paths = getAllSearchPaths();
             const mentions = await tauriApi.indexMentions(paths, query || undefined);
             return mentions.slice(0, 20).map((m) => ({ name: m.mention }));
           } catch {

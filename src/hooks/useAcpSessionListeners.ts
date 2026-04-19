@@ -4,9 +4,10 @@
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { usePermissionStore } from '@/stores/permission-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { isToolCallAllowed } from '@/lib/ai/path-filter';
 import { log } from '@/lib/logger';
-import type { ChatMessage, AgentActivity, ToolCallSegment, ToolResultSegment, Segment } from '@/lib/ai/types';
+import type { ChatMessage, AgentActivity, ToolCallSegment, ToolResultSegment, Segment, ActivityApprovalMode } from '@/lib/ai/types';
 import { useChatStore } from '@/stores/chat-store';
 import {
   type AcpSessionUpdatePayload,
@@ -54,6 +55,12 @@ interface ChatListenerDeps {
   addActivity: (messageId: number, activity: AgentActivity) => void;
   completeLastActivity: (messageId: number) => void;
   completeAllActivities: (messageId: number) => void;
+  /**
+   * Patch `approvalMode` on the most recent activity on this message. Called
+   * from the permission handler once we know whether the tool was auto-approved,
+   * user-approved, or denied — keeps the activity panel badge accurate.
+   */
+  setLastActivityApprovalMode: (messageId: number, mode: ActivityApprovalMode) => void;
   // Segment actions (dual-write for chronological rendering)
   appendTextSegment: (messageId: number, text: string) => void;
   appendThinkingSegment: (messageId: number, text: string) => void;
@@ -162,12 +169,17 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
     } else if (update.sessionUpdate === 'tool_call') {
       const toolLabel = formatAcpToolName(update.kind, update.title);
       deps.setActiveTool(toolLabel);
+      // Optimistic `approvalMode: 'auto'`. If a permission request arrives for
+      // this call, the handler below patches it to 'user' or 'denied' via
+      // `setLastActivityApprovalMode`. Tools that don't trigger a permission
+      // request (auto-allowed, e.g. read-only) stay 'auto'.
       deps.addActivity(deps.assistantMessageId, {
         kind: update.kind || 'unknown',
         label: toolLabel,
         detail: update.rawInput ? truncateDetail(update.rawInput) : undefined,
         status: 'running',
         timestamp: Date.now(),
+        approvalMode: 'auto',
       });
       // Segment: push tool call with descriptive label
       const parsedArgs = parseRawInput(update.rawInput);
@@ -320,24 +332,38 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
     if (!filterResult.allowed) {
       const scopeLabel = deps.pathFilterRoots.length > 0 ? deps.pathFilterRoots.join(', ') : '(no project selected)';
       log.info('ai', `Chat tool call denied: ${toolInfo.title} targets ${filterResult.deniedPath} outside scope ${scopeLabel}`);
+      deps.setLastActivityApprovalMode(deps.assistantMessageId, 'denied');
       invoke('acp_permission_respond', { instanceId: deps.instanceId, requestId: payload.requestId, optionId: null }).catch(() => {}); // Expected: fire-and-forget deny
       return;
     }
+
+    // Global kill-switch: `requireAllToolConfirmations` forces EVERY tool call
+    // through the user-approval card, overriding built-in auto-allow and any
+    // persisted "always allow" entries. The activity was optimistically tagged
+    // 'auto' on `tool_call`; the PermissionCard will flip it to 'user' on
+    // approval or 'denied' on rejection (handled where the decision is resolved).
+    const requireAll = useSettingsStore.getState().requireAllToolConfirmations;
 
     // Scope-bound lookup (#6b angle 2): pass connection + active project so an
     // "always allow" granted for one project does not auto-approve in another.
     // Legacy unscoped (`null, null`) entries still wildcard-match — backward compat.
     const lookupConnectionId = deps.connectionId ?? null;
     const lookupProjectRoot = deps.activeProjectRoot ?? null;
-    if (usePermissionStore.getState().isAutoAllowed(toolInfo.kind, lookupConnectionId, lookupProjectRoot)) {
-      // Tool kinds in session or always allow-lists: auto-approve silently
+    if (!requireAll && usePermissionStore.getState().isAutoAllowed(toolInfo.kind, lookupConnectionId, lookupProjectRoot)) {
+      // Tool kinds in session or always allow-lists: auto-approve silently.
+      // Activity already tagged 'auto' at creation time — no update needed.
       invoke('acp_permission_respond', {
         instanceId: deps.instanceId,
         requestId: payload.requestId,
         optionId: firstOptionId,
       }).catch(() => {}); // Expected: fire-and-forget auto-approve
     } else {
-      // Write tools: add to permission store, let PermissionCard UI handle response
+      // Write tools: add to permission store, let PermissionCard UI handle response.
+      // Flip the activity's approvalMode from optimistic 'auto' to 'user' — the
+      // user is being prompted. (If they later deny, the tool result/error
+      // conveys that outcome; the 'user' badge reflects "user had to approve".)
+      deps.setLastActivityApprovalMode(deps.assistantMessageId, 'user');
+
       const options = Array.isArray(rawOptions)
         ? rawOptions.map((o) => {
             const opt = o as Record<string, unknown>;

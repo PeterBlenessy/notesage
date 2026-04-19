@@ -65,12 +65,14 @@ export function useAIContext(): UseAIContextReturn {
     return s.tabs.find((t) => t.id === s.activeTabId) ?? null;
   });
 
-  // Skill context for AI prompts — all skills available to all agents,
-  // user controls access via the permission system (allow/reject per call)
-  const skillDescriptions = useSkillStore((s) => s.getSkillDescriptionsForPrompt());
-  const notesageSkillDescriptions = useSkillStore((s) => s.getNotesageSkillDescriptionsForPrompt());
-  const agentInstructions = useSkillStore((s) => s.getMergedAgentInstructions());
-  const notesageAgentInstructions = useSkillStore((s) => s.getNotesageAgentInstructions());
+  // Skill context for AI prompts — scoped to the active conversation's
+  // project selection so Project A's skills/instructions do not leak into a
+  // chat that has only Project B selected (Task #18 isolation). Global
+  // (~/.notesage/) skills and instructions are always included.
+  const skillDescriptions = useSkillStore((s) => s.getSkillDescriptionsForPrompt(selectedProjectPaths));
+  const notesageSkillDescriptions = useSkillStore((s) => s.getNotesageSkillDescriptionsForPrompt(selectedProjectPaths));
+  const agentInstructions = useSkillStore((s) => s.getMergedAgentInstructions(selectedProjectPaths));
+  const notesageAgentInstructions = useSkillStore((s) => s.getNotesageAgentInstructions(selectedProjectPaths));
 
   // Shared project/goals/file-tree context builder
   const buildProjectContext = useCallback((attachedFilePaths?: string[]): string[] => {

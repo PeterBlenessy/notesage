@@ -82,10 +82,26 @@ impl Drop for TestAgent {
 /// today). Network config is `None`: the filesystem invariants this harness
 /// is built for are independent of the network sandbox layer.
 pub fn spawn_test_acp_agent_with_sandbox(writable_paths: &[&str]) -> TestAgent {
+    spawn_test_acp_agent_with_sandbox_for("claude-agent-acp", writable_paths)
+}
+
+/// Variant that lets an attack test exercise a specific agent_binary's
+/// narrowed config allow-list (task #24). Most tests use the default
+/// wrapper above and don't care.
+pub fn spawn_test_acp_agent_with_sandbox_for(
+    agent_binary: &str,
+    writable_paths: &[&str],
+) -> TestAgent {
     let instance_id = format!("notesage-test-{}", uuid::Uuid::new_v4());
     let writable: Vec<String> = writable_paths.iter().map(|p| (*p).to_string()).collect();
-    let profile_path = sandbox::generate_seatbelt_profile(&instance_id, &writable, None, false)
-        .expect("failed to generate Seatbelt profile");
+    let profile_path = sandbox::generate_seatbelt_profile(
+        &instance_id,
+        agent_binary,
+        &writable,
+        None,
+        false,
+    )
+    .expect("failed to generate Seatbelt profile");
     let spawned_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())

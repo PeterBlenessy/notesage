@@ -152,7 +152,7 @@ In `src-tauri/tauri.conf.json`:
 
 Removing these does not break any feature we ship today (verified by the audit).
 
-#### 1.12 Activity panel visibility for auto-approved tools (leak #4)
+#### 1.12 Activity panel visibility for auto-approved tools (leak #4) ✅
 
 The audit's revalidation confirmed `addActivity` IS called for auto-approved calls at `useDirectApiChat.ts:281` and `useAcpSessionListeners.ts:151`. But the activity panel doesn't visually distinguish auto-approved from user-approved calls, and the path argument is often truncated.
 
@@ -176,11 +176,11 @@ Same fix in `useAIContext.ts:150-160` (`Currently editing: ${activeTab.filePath}
 
 `src-tauri/src/commands/sandbox.rs:101-111` grants every agent writable access to `~/.claude`, `~/.codex`, `~/.copilot`, `~/.gemini`, `~/.notesage`. Change: pass `agent_binary` into the profile generator, emit only the relevant config subpath for that specific agent.
 
-#### 2.3 Per-project command palette / autocomplete (leak #19)
+#### 2.3 Per-project command palette / autocomplete (leak #19) ✅
 
 `@` mentions, `#` tags, and research (`?`) search in the command palette currently query all projects' SQLite indexes. Change: filter to `selectedProjectPaths` by default; add a "Search all projects" toggle for explicit cross-project search.
 
-#### 2.4 History tab project scope (leak #20)
+#### 2.4 History tab project scope (leak #20) ✅
 
 The History tab surfaces all past conversations regardless of which project they were in. Change: filter to conversations whose `projectPaths` intersect `selectedProjectPaths`. Add an "All projects" toggle.
 
@@ -334,19 +334,19 @@ None — isolation enforcement happens in Rust at the sandbox level (`sandbox.rs
 
 - [ ] Inline completions skip the LSP request for out-of-scope active tabs
 
-- [ ] Skills, agents, agent instructions, and MCP servers loaded into the chat system prompt match exactly `global ∪ selectedProjectPaths` (no union with other projects)
+- [~] Skills, agents, agent instructions, and MCP servers loaded into the chat system prompt match exactly `global ∪ selectedProjectPaths` (no union with other projects) — skills/agents/agent-instructions shipped via #18 + #19 (red-team tests in `src/stores/__tests__/skill-store.test.ts`, `src/hooks/__tests__/useSkillOperations.test.ts`, `src/hooks/__tests__/useAIContext.test.ts`); MCP servers pending #20
 
-- [ ] Tauri `assetProtocol.scope.allow` is narrowed; `fs:allow-*` dropped; app still launches and all features work
+- [x] Tauri `assetProtocol.scope.allow` is narrowed; `fs:allow-*` dropped; app still launches and all features work
 
-- [ ] Activity panel shows an "auto-approved" badge on silent tool calls; path visible on hover
+- [x] Activity panel shows an "auto-approved" badge on silent tool calls; path visible on hover
 
 ### Track 2
 
 - [ ] Opening a non-project file does not auto-attach it to chats
 
-- [ ] Each agent binary only has writable access to its own config subpath under `$HOME/.<agent>`
+- [x] Each agent binary only has writable access to its own config subpath under `$HOME/.<agent>`
 
-- [ ] Command palette / History tab / autocomplete filter to selected projects by default
+- [x] Command palette / History tab / autocomplete filter to selected projects by default
 
 - [ ] File-tree system-prompt injection is scoped to selected projects
 

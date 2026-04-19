@@ -66,18 +66,30 @@ function getConnectedProviderTypes(): string[] {
 // connection/project changes only re-scan directories (no extraction).
 let bundledExtracted = false;
 
-/** Build skill and agent directory lists for scanning. No async — all paths resolved synchronously. */
+/**
+ * Build skill and agent discovery directory buckets for scanning.
+ *
+ * Returns per-project buckets so `scanSkills`/`scanAgents` can annotate each
+ * discovered entry with its `projectRoot` — the store then filters entries by
+ * the active chat's `selectedProjectPaths` to prevent cross-project leaks
+ * (Task #18).
+ *
+ * Explorer folders are grouped alongside projects so their skills/agents also
+ * get scoped (treated as pseudo-projects for isolation purposes).
+ */
 function buildDiscoveryDirs(
   home: string,
   connections: { provider: ConnectionProvider; authMethod: string; status: string }[],
   projects: { path: string }[],
   explorerFolders: { path: string }[],
 ) {
-  const baseDirs: string[] = [];
-  baseDirs.push(`${home}/.notesage/skills`);
+  // --- Skill directories ---
+  const skillGlobalDirs: string[] = [`${home}/.notesage/skills`];
+  const skillByProject: Record<string, string[]> = {};
   for (const project of projects) {
-    baseDirs.push(`${project.path}/.notesage/skills`);
+    skillByProject[project.path] = [`${project.path}/.notesage/skills`];
   }
+
   const seen = new Set<string>();
   for (const conn of connections) {
     if (conn.status !== 'connected' && conn.status !== 'expired') continue;
@@ -86,59 +98,79 @@ function buildDiscoveryDirs(
       const expanded = expandHomeSync(p, home);
       if (!seen.has(expanded)) {
         seen.add(expanded);
-        baseDirs.push(expanded);
+        skillGlobalDirs.push(expanded);
       }
     }
   }
 
-  // Agent directories: global, per-project, per-explorer-folder, per-provider
-  const agentBaseDirs: string[] = [];
-  const agentSeen = new Set<string>();
-  const addAgentDir = (dir: string) => {
-    if (!agentSeen.has(dir)) {
-      agentSeen.add(dir);
-      agentBaseDirs.push(dir);
+  // --- Agent directories (per-project buckets) ---
+  const agentGlobalDirs: string[] = [];
+  const agentByProject: Record<string, string[]> = {};
+
+  const globalSeen = new Set<string>();
+  const addGlobal = (dir: string) => {
+    if (!globalSeen.has(dir)) {
+      globalSeen.add(dir);
+      agentGlobalDirs.push(dir);
     }
   };
 
   // Global Notesage agents
-  addAgentDir(`${home}/.notesage/agents`);
+  addGlobal(`${home}/.notesage/agents`);
 
   // Global provider agent directories — always scanned, not gated on connections.
-  // Discovery is fast (just reads directory + parses frontmatter) and showing all
-  // agents in the @ menu is useful even before connecting a provider.
-  addAgentDir(`${home}/.claude/agents`);
-  addAgentDir(`${home}/.codex/agents`);
-  addAgentDir(`${home}/.gemini/agents`);
-  addAgentDir(`${home}/.copilot/agents`);
+  addGlobal(`${home}/.claude/agents`);
+  addGlobal(`${home}/.codex/agents`);
+  addGlobal(`${home}/.gemini/agents`);
+  addGlobal(`${home}/.copilot/agents`);
 
-  // Per-project agent directories (all provider conventions)
-  for (const project of projects) {
-    addAgentDir(`${project.path}/.notesage/agents`);
-    addAgentDir(`${project.path}/.github/agents`);
-    addAgentDir(`${project.path}/.claude/agents`);
-    addAgentDir(`${project.path}/.gemini/agents`);
-  }
-
-  // Explorer folders — also scan for agents (same provider directories)
-  for (const folder of explorerFolders) {
-    addAgentDir(`${folder.path}/.notesage/agents`);
-    addAgentDir(`${folder.path}/.github/agents`);
-    addAgentDir(`${folder.path}/.claude/agents`);
-    addAgentDir(`${folder.path}/.gemini/agents`);
-  }
-
-  // Additional provider-specific agent directories from active connections
-  // (catches any paths not covered by the unconditional global scan above)
+  // Additional provider-specific agent dirs from active connections
   for (const conn of connections) {
     if (conn.status !== 'connected' && conn.status !== 'expired') continue;
     const paths = getAgentPathsForConnection(conn.provider, conn.authMethod);
-    for (const p of paths) {
-      addAgentDir(expandHomeSync(p, home));
-    }
+    for (const p of paths) addGlobal(expandHomeSync(p, home));
   }
 
-  return { baseDirs, agentBaseDirs };
+  // Per-project agent directories (scoped).
+  const addToBucket = (root: string, dir: string) => {
+    (agentByProject[root] ??= []).push(dir);
+  };
+  for (const project of projects) {
+    addToBucket(project.path, `${project.path}/.notesage/agents`);
+    addToBucket(project.path, `${project.path}/.github/agents`);
+    addToBucket(project.path, `${project.path}/.claude/agents`);
+    addToBucket(project.path, `${project.path}/.gemini/agents`);
+  }
+
+  // Explorer folders — treat each as its own scope bucket so their skills/agents
+  // don't leak into arbitrary project chats either.
+  for (const folder of explorerFolders) {
+    addToBucket(folder.path, `${folder.path}/.notesage/agents`);
+    addToBucket(folder.path, `${folder.path}/.github/agents`);
+    addToBucket(folder.path, `${folder.path}/.claude/agents`);
+    addToBucket(folder.path, `${folder.path}/.gemini/agents`);
+  }
+
+  // Backward-compatible flat views (deprecated — still used by the Phase 2
+  // rescan path that re-reads after bundled extraction). Computed from the
+  // buckets so callers don't need to iterate twice.
+  const baseDirs: string[] = [
+    ...skillGlobalDirs,
+    ...Object.values(skillByProject).flat(),
+  ];
+  const agentBaseDirs: string[] = [
+    ...agentGlobalDirs,
+    ...Object.values(agentByProject).flat(),
+  ];
+
+  return {
+    baseDirs,
+    agentBaseDirs,
+    skillGlobalDirs,
+    skillByProject,
+    agentGlobalDirs,
+    agentByProject,
+  };
 }
 
 /**
@@ -186,16 +218,20 @@ export function useSkillDiscovery() {
       log.info('skills', `Home directory: ${home}`);
 
       // --- Phase 1: Scan existing files and populate tools immediately ---
-      const { baseDirs, agentBaseDirs } = buildDiscoveryDirs(home, connections, projects, explorerFolders);
+      const dirs = buildDiscoveryDirs(home, connections, projects, explorerFolders);
 
-      log.info('skills', `Scanning skills in ${baseDirs.length} directories`);
+      const totalSkillDirs = dirs.skillGlobalDirs.length + Object.values(dirs.skillByProject).flat().length;
+      log.info('skills', `Scanning skills in ${totalSkillDirs} directories (${Object.keys(dirs.skillByProject).length} projects)`);
       let stepStart = performance.now();
-      await useSkillStore.getState().scanSkills(baseDirs);
+      await useSkillStore.getState().scanSkills({
+        globalDirs: dirs.skillGlobalDirs,
+        byProject: dirs.skillByProject,
+      });
       const initialSkillCount = useSkillStore.getState().skills.length;
       log.info('skills', `Discovered ${initialSkillCount} skills`);
       console.log('[perf:skills]', { step: 'skill-scan', ms: Math.round(performance.now() - stepStart) });
 
-      // Extract tool definitions from script-bearing skills
+      // Extract tool definitions from script-bearing skills (all active, unscoped).
       stepStart = performance.now();
       try {
         const activeSkills = useSkillStore.getState().getActiveSkills();
@@ -207,18 +243,25 @@ export function useSkillDiscovery() {
         log.error('skills', 'Skill tool extraction failed', e);
       }
 
-      log.info('skills', `Scanning agents in ${agentBaseDirs.length} directories`);
+      const totalAgentDirs = dirs.agentGlobalDirs.length + Object.values(dirs.agentByProject).flat().length;
+      log.info('skills', `Scanning agents in ${totalAgentDirs} directories`);
       stepStart = performance.now();
-      await useSkillStore.getState().scanAgents(agentBaseDirs);
+      await useSkillStore.getState().scanAgents({
+        globalDirs: dirs.agentGlobalDirs,
+        byProject: dirs.agentByProject,
+      });
       const initialAgentCount = useSkillStore.getState().agents.length;
       log.info('skills', `Discovered ${initialAgentCount} agents`);
       console.log('[perf:skills]', { step: 'agent-scan', ms: Math.round(performance.now() - stepStart) });
 
-      // Scan agent instructions (use first project as root, or null)
-      const projectRoot = projects.length > 0 ? projects[0].path : null;
+      // Scan agent instructions for ALL known projects + global. Scoping
+      // happens at read time via `selectedProjectPaths` (see useAIContext.ts).
+      // This fixes Task #19: the old path only scanned `projects[0]`, silently
+      // leaking Project A's CLAUDE.md into Project B's chat.
+      const allProjectRoots = projects.map((p) => p.path);
       const providerTypes = getConnectedProviderTypes();
       stepStart = performance.now();
-      await useSkillStore.getState().scanAgentInstructions(projectRoot, providerTypes);
+      await useSkillStore.getState().scanAgentInstructions(allProjectRoots, providerTypes);
       console.log('[perf:skills]', { step: 'instruction-scan', ms: Math.round(performance.now() - stepStart) });
 
       const phase1Ms = Math.round(performance.now() - pipelineStart);
@@ -253,10 +296,17 @@ export function useSkillDiscovery() {
 
         bundledExtracted = true;
 
-        // Rescan to pick up any new or updated bundled skills
-        await useSkillStore.getState().scanSkills(baseDirs);
+        // Rescan to pick up any new or updated bundled skills — same
+        // per-project buckets so projectRoot annotations stay intact.
+        await useSkillStore.getState().scanSkills({
+          globalDirs: dirs.skillGlobalDirs,
+          byProject: dirs.skillByProject,
+        });
         const finalSkillCount = useSkillStore.getState().skills.length;
-        await useSkillStore.getState().scanAgents(agentBaseDirs);
+        await useSkillStore.getState().scanAgents({
+          globalDirs: dirs.agentGlobalDirs,
+          byProject: dirs.agentByProject,
+        });
         const finalAgentCount = useSkillStore.getState().agents.length;
 
         // Re-extract tool definitions if skill count changed

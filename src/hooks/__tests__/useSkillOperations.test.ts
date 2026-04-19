@@ -123,9 +123,9 @@ function resetStores() {
 
 /** Set up store spy methods for skill/agent scanning. */
 function setupStoreMocks() {
-  const scanSkills = vi.fn(async () => {});
-  const scanAgents = vi.fn(async () => {});
-  const scanAgentInstructions = vi.fn(async () => {});
+  const scanSkills = vi.fn(async (..._args: unknown[]) => {});
+  const scanAgents = vi.fn(async (..._args: unknown[]) => {});
+  const scanAgentInstructions = vi.fn(async (..._args: unknown[]) => {});
   const setActiveAgent = vi.fn();
 
   useSkillStore.setState({
@@ -138,6 +138,22 @@ function setupStoreMocks() {
   } as unknown as Parameters<typeof useSkillStore.setState>[0]);
 
   return { scanSkills, scanAgents, scanAgentInstructions, setActiveAgent };
+}
+
+/**
+ * Flatten the current scan argument (either legacy flat array or per-project
+ * `{ globalDirs, byProject }` form) to a flat list of dirs for assertion.
+ */
+function flattenScanArg(arg: unknown): string[] {
+  if (Array.isArray(arg)) return arg;
+  if (arg && typeof arg === 'object') {
+    const { globalDirs = [], byProject = {} } = arg as {
+      globalDirs?: string[];
+      byProject?: Record<string, string[]>;
+    };
+    return [...globalDirs, ...Object.values(byProject).flat()];
+  }
+  return [];
 }
 
 // ---------------------------------------------------------------------------
@@ -230,17 +246,22 @@ describe('useSkillDiscovery', () => {
       await new Promise((r) => setTimeout(r, 100));
     });
 
-    const skillDirs = (scanSkills.mock.calls as unknown as [string[]][])[0][0];
+    const skillDirs = flattenScanArg(scanSkills.mock.calls[0][0]);
     expect(skillDirs).toContain('/Users/test/.notesage/skills');
     expect(skillDirs).toContain('/projects/alpha/.notesage/skills');
     expect(skillDirs).toContain('/projects/beta/.notesage/skills');
 
-    const agentDirs = (scanAgents.mock.calls as unknown as [string[]][])[0][0];
+    const agentDirs = flattenScanArg(scanAgents.mock.calls[0][0]);
     expect(agentDirs).toContain('/Users/test/.notesage/agents');
     expect(agentDirs).toContain('/projects/alpha/.notesage/agents');
     expect(agentDirs).toContain('/projects/beta/.notesage/agents');
     expect(agentDirs).toContain('/projects/alpha/.github/agents');
     expect(agentDirs).toContain('/projects/beta/.github/agents');
+
+    // Per-project isolation: project dirs bucketed by projectRoot (Task #18)
+    const skillArg = scanSkills.mock.calls[0][0] as { byProject?: Record<string, string[]> };
+    expect(skillArg.byProject?.['/projects/alpha']).toContain('/projects/alpha/.notesage/skills');
+    expect(skillArg.byProject?.['/projects/beta']).toContain('/projects/beta/.notesage/skills');
   });
 
   it('includes provider-specific paths for agent_managed connections', async () => {
@@ -260,11 +281,11 @@ describe('useSkillDiscovery', () => {
       await new Promise((r) => setTimeout(r, 100));
     });
 
-    const skillDirs = (scanSkills.mock.calls as unknown as [string[]][])[0][0];
+    const skillDirs = flattenScanArg(scanSkills.mock.calls[0][0]);
     expect(skillDirs).toContain('/Users/test/.claude/skills');
     expect(skillDirs).toContain('/Users/test/.codex/skills');
 
-    const agentDirs = (scanAgents.mock.calls as unknown as [string[]][])[0][0];
+    const agentDirs = flattenScanArg(scanAgents.mock.calls[0][0]);
     expect(agentDirs).toContain('/Users/test/.claude/agents');
     expect(agentDirs).toContain('/Users/test/.codex/agents');
   });
@@ -290,7 +311,7 @@ describe('useSkillDiscovery', () => {
       await new Promise((r) => setTimeout(r, 100));
     });
 
-    const skillDirs = (scanSkills.mock.calls as unknown as [string[]][])[0][0];
+    const skillDirs = flattenScanArg(scanSkills.mock.calls[0][0]);
     // Only the global dir, no provider-specific paths
     expect(skillDirs).toEqual(['/Users/test/.notesage/skills']);
   });
@@ -313,7 +334,7 @@ describe('useSkillDiscovery', () => {
       await new Promise((r) => setTimeout(r, 100));
     });
 
-    const skillDirs = (scanSkills.mock.calls as unknown as [string[]][])[0][0];
+    const skillDirs = flattenScanArg(scanSkills.mock.calls[0][0]);
     const geminiCount = skillDirs.filter((d) => d === '/Users/test/.gemini/skills').length;
     expect(geminiCount).toBe(1);
   });
@@ -340,7 +361,7 @@ describe('useSkillDiscovery', () => {
       await new Promise((r) => setTimeout(r, 100));
     });
 
-    const agentDirs = (scanAgents.mock.calls as unknown as [string[]][])[0][0];
+    const agentDirs = flattenScanArg(scanAgents.mock.calls[0][0]);
     expect(agentDirs).toContain('/Users/test/.copilot/agents');
   });
 
@@ -383,11 +404,18 @@ describe('useSkillDiscovery', () => {
     expect(scanSkills).toHaveBeenCalledTimes(2);
   });
 
-  it('passes first project and connected provider types to scanAgentInstructions', async () => {
+  // Task #19 — scanAgentInstructions now accepts an ARRAY of project roots so
+  // each project's CLAUDE.md / AGENTS.md is discovered and stored with its
+  // projectRoot annotation. The scoped getters then filter by
+  // `selectedProjectPaths` so project A's CLAUDE.md doesn't leak into project B.
+  it('passes ALL known project roots and provider types to scanAgentInstructions (Task #19)', async () => {
     const { scanAgentInstructions } = setupStoreMocks();
 
     useWorkspaceStore.setState({
-      projects: [{ path: '/projects/first', fileTree: [] }],
+      projects: [
+        { path: '/projects/first', fileTree: [] },
+        { path: '/projects/second', fileTree: [] },
+      ],
     });
     useConnectionsStore.setState({
       connections: [
@@ -410,9 +438,15 @@ describe('useSkillDiscovery', () => {
     });
 
     expect(scanAgentInstructions).toHaveBeenCalledWith(
-      '/projects/first',
+      expect.arrayContaining(['/projects/first', '/projects/second']),
       expect.arrayContaining(['claude-code', 'gemini']),
     );
+
+    // Regression lock for Task #19 — the old behaviour called with `projects[0]`
+    // alone, silently dropping project B's instructions. Ensure we never revert.
+    const callArgs = (scanAgentInstructions.mock.calls as unknown as [string[], string[]][])[0];
+    expect(Array.isArray(callArgs[0])).toBe(true);
+    expect(callArgs[0]).toHaveLength(2);
   });
 
   it('skips disconnected connections for provider paths', async () => {
@@ -464,11 +498,23 @@ describe('project-level agent discovery', () => {
       await new Promise((r) => setTimeout(r, 100));
     });
 
-    const agentDirs = (scanAgents.mock.calls as unknown as [string[]][])[0][0];
+    const agentDirs = flattenScanArg(scanAgents.mock.calls[0][0]);
     expect(agentDirs).toContain('/projects/myapp/.claude/agents');
     expect(agentDirs).toContain('/projects/myapp/.gemini/agents');
     expect(agentDirs).toContain('/projects/myapp/.notesage/agents');
     expect(agentDirs).toContain('/projects/myapp/.github/agents');
+
+    // Per-project isolation: bucketed under the project root so
+    // `scanAgents` store action can annotate entries with projectRoot (Task #18).
+    const arg = scanAgents.mock.calls[0][0] as { byProject?: Record<string, string[]> };
+    expect(arg.byProject?.['/projects/myapp']).toEqual(
+      expect.arrayContaining([
+        '/projects/myapp/.notesage/agents',
+        '/projects/myapp/.github/agents',
+        '/projects/myapp/.claude/agents',
+        '/projects/myapp/.gemini/agents',
+      ]),
+    );
   });
 });
 

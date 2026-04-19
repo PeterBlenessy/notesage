@@ -4,14 +4,16 @@ import {
   CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
-import type { SymbolSearchConfig, SymbolOccurrence } from "@/lib/command-palette";
-import { getSearchPaths } from "@/lib/command-palette";
+import type { SymbolSearchConfig, SymbolOccurrence, PaletteSearchScope } from "@/lib/command-palette";
+import { resolveSearchPaths, getDefaultPaletteScope } from "@/lib/command-palette";
 
 interface SymbolSearchResultsProps {
   config: SymbolSearchConfig;
   query: string;
   open: boolean;
   drilldownName?: string;
+  /** Search scope — defaults to selected project paths, falls back to 'all'. */
+  scope?: PaletteSearchScope;
   onSelect: (path: string, name: string, symbol: string, occurrenceInFile: number) => void;
 }
 
@@ -20,6 +22,7 @@ export function SymbolSearchResults({
   query,
   open,
   drilldownName,
+  scope,
   onSelect,
 }: SymbolSearchResultsProps) {
   const [drilldown, setDrilldown] = useState<string | null>(null);
@@ -40,7 +43,7 @@ export function SymbolSearchResults({
     const fetchStartTotal = performance.now();
     fetchTimerRef.current = setTimeout(async () => {
       try {
-        const paths = getSearchPaths();
+        const paths = resolveSearchPaths(scope ?? getDefaultPaletteScope());
         const q = query.trim();
         const modeName = config.label.toLowerCase() as 'tags' | 'mentions';
         const ipcStart = performance.now();
@@ -58,7 +61,7 @@ export function SymbolSearchResults({
     return () => {
       if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current);
     };
-  }, [open, query, config, drilldown]);
+  }, [open, query, config, drilldown, scope]);
 
   // Reset when palette closes
   useEffect(() => {
@@ -72,7 +75,7 @@ export function SymbolSearchResults({
   const handleItemSelect = useCallback(async (name: string) => {
     setDrilldown(name);
     try {
-      const paths = getSearchPaths();
+      const paths = resolveSearchPaths(scope ?? getDefaultPaletteScope());
       if (paths.length > 0) {
         const modeName = config.label.toLowerCase() as 'tags' | 'mentions';
         const ipcStart = performance.now();
@@ -84,7 +87,7 @@ export function SymbolSearchResults({
       log.error('palette', `Failed to find ${config.labelSingular.toLowerCase()} occurrences`, error);
       setFetchError(`Error loading occurrences`);
     }
-  }, [config]);
+  }, [config, scope]);
 
   // Auto-drilldown when opened with a specific name (e.g. from badge click)
   useEffect(() => {
