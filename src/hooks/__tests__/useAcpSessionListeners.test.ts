@@ -375,11 +375,12 @@ describe('setupAcpChatListeners', () => {
       // The path filter must run BEFORE auto-allow — denial wins.
       expect(respondedOptionId).toBeNull();
 
-      // System message records the denial so the user has a trail.
+      // No system message — the agent narrates the denial itself, and the tool_call
+      // segment shows the error state. A third "denied" notice would be redundant noise
+      // (verified by user feedback on 2026-04-19: "I get double info").
       const conv = useChatStore.getState().conversations.find((c) => c.id === 'conv-l');
       const denyMsg = conv?.messages.find((m) => m.role === 'system' && /denied/i.test(m.content));
-      expect(denyMsg).toBeDefined();
-      expect(denyMsg?.content).toContain(PROJECT_B);
+      expect(denyMsg).toBeUndefined();
 
       unlisten();
       unlistenPermission();
@@ -428,4 +429,137 @@ describe('setupAcpChatListeners', () => {
       unlistenPermission();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Project-scoped auto-allow lookup (task #6b)
+  //
+  // Invariant: an "always allow read" granted within Project A must NOT
+  // auto-approve reads while Project B is selected. The listener must
+  // pass the active project root (and connection id) into `isAutoAllowed`
+  // — currently it passes `null, null` so a single global always-entry
+  // matches everywhere.
+  // -------------------------------------------------------------------------
+  describe('project-scoped auto-allow lookup (#6b)', () => {
+    const PROJECT_A = '/Users/peter/Development/project-a';
+    const PROJECT_B = '/Users/peter/Development/project-b';
+    const CONN_ID = 'conn-claude';
+
+    beforeEach(() => {
+      usePermissionStore.getState().clearAll();
+      usePermissionStore.setState({ alwaysAllowed: [] });
+    });
+
+    function emitPermissionRequest(filePath: string, toolKind = 'write'): void {
+      emitMockEvent('acp-permission-request', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        requestId: 'req-1',
+        toolCall: {
+          kind: toolKind,
+          title: `${toolKind} ${filePath}`,
+          rawInput: JSON.stringify({ file_path: filePath }),
+        },
+        options: [{ optionId: 'allow_once', kind: 'allow_once', name: 'Allow once' }],
+      });
+    }
+
+    it('does not auto-approve when "always" was granted for a different project', async () => {
+      // Always-allow `write` granted in Project A only.
+      usePermissionStore.getState().allowAlways('write', CONN_ID, PROJECT_A);
+
+      let respondedOptionId: unknown = 'unset';
+      setMockInvokeHandler('acp_permission_respond', (args) => {
+        respondedOptionId = args?.optionId;
+        return undefined;
+      });
+
+      // User is now in Project B with the same connection.
+      const baseDeps = makeDeps();
+      const deps = {
+        ...baseDeps,
+        pathFilterRoots: [PROJECT_B],
+        homeDir: '/Users/peter',
+        connectionId: CONN_ID,
+        activeProjectRoot: PROJECT_B,
+      };
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(deps);
+
+      // Permission request for an in-scope (Project B) write — passes path filter.
+      emitPermissionRequest(PROJECT_B + '/output.txt');
+
+      // Auto-approve must NOT fire — the always-entry was for Project A, not B.
+      // The permission UI takes over instead (no immediate respond call with allow_once).
+      expect(respondedOptionId).toBe('unset');
+
+      // Permission request was added to the store for the UI to handle.
+      expect(usePermissionStore.getState().requests.length).toBe(1);
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('does auto-approve when "always" was granted for the active project', async () => {
+      usePermissionStore.getState().allowAlways('write', CONN_ID, PROJECT_A);
+
+      let respondedOptionId: unknown = 'unset';
+      setMockInvokeHandler('acp_permission_respond', (args) => {
+        respondedOptionId = args?.optionId;
+        return undefined;
+      });
+
+      const baseDeps = makeDeps();
+      const deps = {
+        ...baseDeps,
+        pathFilterRoots: [PROJECT_A],
+        homeDir: '/Users/peter',
+        connectionId: CONN_ID,
+        activeProjectRoot: PROJECT_A,
+      };
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(deps);
+
+      emitPermissionRequest(PROJECT_A + '/output.txt');
+
+      expect(respondedOptionId).toBe('allow_once');
+      expect(usePermissionStore.getState().requests.length).toBe(0);
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    // Regression-lock for the documented backward-compat behavior. Legacy
+    // `(null, null)` always-entries (created by users on prior versions before
+    // scoped approvals existed) wildcard-match every project query. That's the
+    // intended migration path — task #2 added a launch toast prompting users
+    // to review and re-scope these. This test makes the behavior explicit so
+    // any future change that breaks it (e.g., narrowing legacy entries) trips.
+    it('legacy (null, null) always-entry still wildcard-matches across projects', async () => {
+      usePermissionStore.getState().allowAlways('write', null, null);
+
+      let respondedOptionId: unknown = 'unset';
+      setMockInvokeHandler('acp_permission_respond', (args) => {
+        respondedOptionId = args?.optionId;
+        return undefined;
+      });
+
+      const baseDeps = makeDeps();
+      const deps = {
+        ...baseDeps,
+        pathFilterRoots: [PROJECT_B],
+        homeDir: '/Users/peter',
+        connectionId: CONN_ID,
+        activeProjectRoot: PROJECT_B,
+      };
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(deps);
+
+      emitPermissionRequest(PROJECT_B + '/output.txt');
+
+      // Legacy wildcard auto-approves regardless of active project — the
+      // remediation is the migration toast (task #2), not silent re-scoping.
+      expect(respondedOptionId).toBe('allow_once');
+
+      unlisten();
+      unlistenPermission();
+    });
+  });
+
 });

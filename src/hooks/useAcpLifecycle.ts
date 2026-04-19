@@ -530,12 +530,18 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       );
       const pathFilterRoots = sandboxScope;
       const homeDir = await getHomeDirCached();
+      // Active project for scoped auto-allow lookup (#6b). Use the first selected
+      // project — multi-select edge cases (where the tool acts on a file in one of
+      // several roots) are an open question; first-selected is a reasonable default.
+      const activeProjectRoot = selectedProjectPaths[0] ?? null;
 
       const listenerDeps = {
         assistantMessageId,
         conversationId: useChatStore.getState().activeConversationId,
         pathFilterRoots,
         homeDir,
+        connectionId: effectiveConnection.id,
+        activeProjectRoot,
         updateMessage,
         addMessage,
         setActiveTool,
@@ -820,6 +826,8 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         conversationId: useChatStore.getState().activeConversationId,
         pathFilterRoots,
         homeDir: prompt.homeDir,
+        connectionId: effectiveConnection.id,
+        activeProjectRoot: selectedProjectPaths[0] ?? null,
         updateMessage,
         addMessage,
         setActiveTool,

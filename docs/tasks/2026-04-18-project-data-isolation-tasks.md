@@ -6,7 +6,7 @@
 | **Status** | Not started |
 | **PRD** | [project-data-isolation](../prds/2026-04-18-project-data-isolation.md) |
 | **Audit** | [project-isolation](../audits/2026-04-18-project-isolation.md) |
-| **Total** | 34 tasks: 15S, 16M, 3L |
+| **Total** | 36 tasks: 16S, 16M, 4L (added #6b project-scoped auto-allow + #6c kernel-level read denial after #6's literal fix proved insufficient — see #6c "Why this is the only viable enforcement layer" for the research log) |
 | **Suggested order** | Verification harness (#0) → Foundations (#1–#3) → Track 1 Critical (#4–#9) → Track 1 High (#10–#22) → Track 2 hardening (#23–#27) → Track 3 correctness (#28–#31) → Verification & docs (#32–#33) |
 
 ## Execution discipline — red-team TDD
@@ -171,7 +171,7 @@ This is the foundation of the red-team TDD discipline. Before implementing any T
 
 ---
 
-### #6 — Unconditional ACP path filter with multi-root support ✅
+### #6 — Unconditional ACP path filter with multi-root support ✅ (literal criteria; outcome unmet — see #6b)
 
 **Description:** Remove the `opts.sandboxPaths` gate in `useAcpLifecycle.ts:509`. Set `pathFilterRoot` unconditionally for single-project chats. For multi-select, extend `isToolCallAllowed` to accept `projectRoots: string[]` and allow paths inside any of them.
 
@@ -189,6 +189,74 @@ This is the foundation of the red-team TDD discipline. Before implementing any T
 - `src/hooks/useAcpLifecycle.ts`
 - `src/hooks/useAcpSessionListeners.ts`
 - `src/lib/ai/__tests__/path-filter.test.ts`
+
+---
+
+### #6b — Project-scoped auto-allow lookup
+
+**Description:** Task #2 added scoped `ScopedApproval` data; the lookup site (`useAcpSessionListeners.ts`) still passes `(null, null)` so any persisted always-entry wildcard-matches every project. Pass the active connection + project into `isAutoAllowed` so an "always allow" granted in Project A does not auto-approve in Project B.
+
+**Background — what was tried and why it's now smaller:** An earlier draft of #6b also added a frontend filter on `tool_call` events with `acp_session_cancel` on out-of-scope. Manual testing on 2026-04-19 confirmed that Claude Code (and presumably other ACP agents) handles read operations entirely inside its own subprocess — `fs.readFile` against the host filesystem, no ACP `tool_call` event emitted, only the textual result streams back as `agent_message_chunk`. A frontend filter cannot intercept what it cannot see. The `tool_call` filter was dropped in favour of routing read enforcement through the only layer that can actually catch it: the kernel sandbox (#6c). #6b retains the scoped-auto-allow change because it's an independent, narrowly-useful improvement that closes a real leak (per-project approvals weren't scoped at lookup time even though the data structure supports it).
+
+**Acceptance criteria (outcome-shaped):**
+
+- An "always allow `write`" granted within Project A does NOT auto-approve writes while only Project B is selected. The user sees the permission card again. Verified by unit test on `setupAcpChatListeners`.
+- An "always allow `write`" granted within Project A DOES auto-approve writes while Project A is selected. Verified by unit test.
+- Legacy unscoped `(null, null)` always-entries (created by users on prior versions) continue to wildcard-match every query. The migration toast from task #2 is the user-facing path to re-scope them. Verified by a regression-lock unit test so this backward-compat behaviour is explicit.
+
+**Non-goals (file as #6c):**
+
+- **Out-of-scope read enforcement.** Only the kernel can catch agent-internal reads — see #6c.
+- **Scoped grant from the UI.** Today the `PermissionCard` calls `allowAlways(kind, null, null)` regardless of context; making the grant itself scoped (so future approvals are recorded against the active project) is a UI change worth its own follow-up — file as #6d when needed.
+
+**Complexity:** S **Category:** frontend **Dependencies:** #2, #6 **Files:**
+
+- `src/hooks/useAcpSessionListeners.ts` — pass `connectionId` and `activeProjectRoot` into `isAutoAllowed`
+- `src/hooks/useAcpLifecycle.ts` — populate the new `connectionId` and `activeProjectRoot` fields on `listenerDeps` (primary + retry paths)
+- `src/hooks/__tests__/useAcpSessionListeners.test.ts` — scoped lookup tests + legacy wildcard regression-lock
+
+---
+
+### #6c — Kernel-level read denial for out-of-scope paths (Seatbelt)
+
+**Description:** True prevention of out-of-scope reads. The Seatbelt profile in `src-tauri/src/commands/sandbox.rs` currently uses `(allow file-read*)`, so the kernel imposes no read restriction. Switch to a selective allow-list so the kernel returns `EACCES` when the agent attempts a read outside scope, and the agent receives a normal tool-error result.
+
+**Why this is the only viable enforcement layer (research log, 2026-04-19):**
+
+The natural assumption — that an ACP agent honours its `cwd` from `NewSessionRequest` and confines its tools to that directory — is wrong. We confirmed via documentation review and reproduction:
+
+- The Claude Agent SDK explicitly does not bound filesystem tools by `cwd`. From the SDK docs: *"Setting the* `cwd` *option does set the working directory correctly, but does not limit file operations to that directory. For example, parent directories can be read and written to."*
+- `allowedTools` does not restrict built-in tools (Read, Edit, Write, Bash) — see [claude-agent-sdk-typescript#115](https://github.com/anthropics/claude-agent-sdk-typescript/issues/115). It only pre-approves tools to skip permission prompts.
+- ACP's unstable `additional_directories` parameter *expands* the session's filesystem scope; there is no parameter that *restricts* it.
+- All ACP permission modes (Default, Accept Edits, Don't Ask, Bypass Permissions) auto-handle reads on the agent side without emitting `tool_call` events to the client. So no client-side filter can intercept reads.
+- An open community feature request ([claude-agent-sdk-python#36](https://github.com/anthropics/claude-agent-sdk-python/issues/36)) tracks proper cwd-bounded sandboxing. Anthropic has not shipped it.
+
+The kernel sandbox is the only enforcement boundary the agent cannot bypass. Each ACP agent (Claude Code, Codex, Copilot, Gemini) reads from system locations that aren't in `writable_paths` (libraries, language runtimes, npm caches, agent-binary configs). The new profile must allow those paths or agents break.
+
+**Acceptance criteria (outcome-shaped):**
+
+- With Project A selected, an ACP agent attempting `read_file('/path/in/project-B/foo')` receives a permission-denied error from the OS — no file content is returned to the agent. Verified by:
+  - Rust integration test in `src-tauri/tests/sandbox_isolation.rs` (the harness from #0): spawn an agent under the new profile with `writable_paths = [tmpdir_A]`, attempt `cat tmpdir_B/file.txt`, assert the agent's tool result is an error AND no Seatbelt deny entry is missed by the monitor.
+  - Manual repro: same scenario as #6b's manual test (Project A selected, ask Claude Code in Default mode to read a Project B file), but observe that the agent itself reports inability to read — not just the post-hoc cancel.
+- All four supported ACP agents (Claude Code, Codex, Copilot, Gemini) complete a normal "read a file in the selected project, edit it, save it" workflow without permission errors.
+- The frontend cancel from #6b becomes redundant for kernel-supported reads but stays in place as defense-in-depth (catches violations on platforms without Seatbelt, and makes the violation visible in chat even when the kernel denies silently).
+
+**Implementation sketch:**
+
+- Replace `(allow file-read*)` with `(deny file-read* (subpath "{home}"))` followed by explicit `(allow file-read* (subpath …))` for each `writable_paths` entry, system prefixes (`/usr`, `/bin`, `/Library`, etc.), and safe home dirs (`~/.claude`, `~/.codex`, etc. — the same set as `SAFE_HOME_DIRS` in `src/lib/ai/path-filter.ts`).
+- Keep `(allow file-read*)` for everything outside `$HOME` so system libraries continue to work.
+- Verify with each agent's normal workflow before merging.
+
+**Risks:**
+
+- Agents that read from `~/Documents`, `~/Downloads`, or other non-safe home dirs will break. Mitigate by surveying current agent behavior; add discovered paths to the allow-list with a comment explaining why each is needed.
+- Cross-device differences (developer machines vs. user machines) could mean the developer's profile passes locally but breaks on a user with a different `$HOME` layout. Document required structure.
+
+**Complexity:** L **Category:** backend **Dependencies:** #6b, #0 (verification harness) **Files:**
+
+- `src-tauri/src/commands/sandbox.rs` — selective read profile
+- `src-tauri/tests/sandbox_isolation.rs` — kernel-level deny test (extend or use harness from #0)
+- `src/lib/ai/path-filter.ts` — keep frontend filter as defense-in-depth (no change required, but document the relationship in a comment)
 
 ---
 

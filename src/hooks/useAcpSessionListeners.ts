@@ -38,6 +38,15 @@ interface ChatListenerDeps {
    */
   pathFilterRoots: string[];
   homeDir: string;
+  /**
+   * Active connection id and project root used to scope `isAutoAllowed` lookups
+   * (#6b angle 2). An "always allow X" granted in Project A must NOT auto-approve
+   * X while the user is in Project B. Optional for backward compat with callers
+   * that haven't been updated; when undefined the lookup falls back to the
+   * legacy unscoped `(null, null)` query and behaves as before.
+   */
+  connectionId?: string | null;
+  activeProjectRoot?: string | null;
   // Chat store actions
   updateMessage: (id: number, content: string) => void;
   addMessage: (msg: ChatMessage) => void;
@@ -303,21 +312,24 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
 
     // Path filtering runs unconditionally and BEFORE auto-approval — a denied path
     // must stay denied even if the tool kind is on the auto-allow list. Mirrors the
-    // kernel sandbox so the user sees a clear in-app reason matching what Seatbelt blocks.
+    // kernel sandbox; the agent receives a normal tool error and narrates the denial
+    // itself. We don't add a system message here because (a) the tool_call segment
+    // already shows the error state and (b) the agent's response explains the why,
+    // so a third deny notice is just noise. Log retained for debugging.
     const filterResult = isToolCallAllowed(toolInfo.kind, toolInfo.input, deps.pathFilterRoots, deps.homeDir);
     if (!filterResult.allowed) {
       const scopeLabel = deps.pathFilterRoots.length > 0 ? deps.pathFilterRoots.join(', ') : '(no project selected)';
       log.info('ai', `Chat tool call denied: ${toolInfo.title} targets ${filterResult.deniedPath} outside scope ${scopeLabel}`);
-      deps.addMessage({
-        role: 'system',
-        content: `Tool call denied: **${toolInfo.title}** \u2014 targets path outside project scope (\`${filterResult.deniedPath}\`)`,
-        timestamp: Date.now(),
-      });
       invoke('acp_permission_respond', { instanceId: deps.instanceId, requestId: payload.requestId, optionId: null }).catch(() => {}); // Expected: fire-and-forget deny
       return;
     }
 
-    if (usePermissionStore.getState().isAutoAllowed(toolInfo.kind, null, null)) {
+    // Scope-bound lookup (#6b angle 2): pass connection + active project so an
+    // "always allow" granted for one project does not auto-approve in another.
+    // Legacy unscoped (`null, null`) entries still wildcard-match — backward compat.
+    const lookupConnectionId = deps.connectionId ?? null;
+    const lookupProjectRoot = deps.activeProjectRoot ?? null;
+    if (usePermissionStore.getState().isAutoAllowed(toolInfo.kind, lookupConnectionId, lookupProjectRoot)) {
       // Tool kinds in session or always allow-lists: auto-approve silently
       invoke('acp_permission_respond', {
         instanceId: deps.instanceId,

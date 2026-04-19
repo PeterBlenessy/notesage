@@ -318,7 +318,7 @@ None — isolation enforcement happens in Rust at the sandbox level (`sandbox.rs
 
 - [ ] An ACP chat scoped to project A cannot read/write files in project B at the kernel level (integration test via `acp_agent_spawn` + Seatbelt violation monitor)
 
-- [x] `isToolCallAllowed` fires for every ACP tool call in regular chat, not only comment delegation
+- [ ] `isToolCallAllowed` fires for every ACP tool call in regular chat, not only comment delegation (#6 wired the permission-request path; #6b extends to `tool_call` events as defense-in-depth; #6c adds kernel-level deny in Seatbelt for true prevention — gate closes when #6c lands)
 
 - [ ] Direct-API `read_file`/`list_directory`/`write_file` deny paths outside `selectedProjectPaths` (integration test)
 
